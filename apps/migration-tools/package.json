@@ -1,0 +1,12 @@
+{
+  "name": "@breef/app-migration-tools",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@breef/shared-kernel": "workspace:*"
+  }
+}

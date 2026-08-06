@@ -1,0 +1,20 @@
+{
+  "name": "breef-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "packages/modules/*"
+  ],
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "turbo": "^1.13.0"
+  }
+}
