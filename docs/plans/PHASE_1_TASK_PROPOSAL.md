@@ -1,6 +1,8 @@
 # Phase 1 Foundation Task Proposal
 
-Status: **proposal only; execution is blocked until `PHASE 0 APPROVED`**.
+Status: **proposal only; Phase 0 approved on 2026-08-06; execution not started**.
+
+The proposal may now be initiated explicitly. Phase 1 remains limited to foundation work and does not authorize production domain behavior or bypass the later phase and release gates.
 
 These are intentionally small review units. They create foundation seams and verification, not domain implementation, tables, or migrations.
 

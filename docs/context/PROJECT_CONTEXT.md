@@ -2,7 +2,7 @@
 
 ## Phase 0 status
 
-This document is a discovery baseline, not an implementation approval. Phase 0 remains **in review** until the stakeholder responds with the exact phrase `PHASE 0 APPROVED`.
+This document is the approved Phase 0 discovery baseline as of 2026-08-06. Phase 1 is now eligible to begin, but no implementation has started automatically.
 
 The stakeholder confirmed during Phase 0 that **Breev is both the company name and the public product name**. Phase 1 will normalize new workspace/app/package identifiers to `breev`/`@breev/*`. The governing source documents, PDF, conversation, and prototype remain unchanged historical evidence; their legacy `Breef`/`breef` wording will not be destructively rewritten.
 
@@ -74,7 +74,7 @@ Neither workspace has dependencies installed. Non-installing build checks fail a
 
 - Clinic/doctor workflow: excluded.
 - Multi-branch, multi-currency, delivery, e-commerce, broad marketing, supplier comparison/automatic ordering, inter-pharmacy need network, biometric attendance/payroll, and e-invoicing: future packages unless explicitly promoted later.
-- Telegram, SMS, Zapier/API automation, two-way cloud editing, OCR, and AI: separately entitled capabilities; most are later than the core POS path.
+- Telegram, SMS, Zapier/API automation, two-way cloud editing, and broad AI remain outside the initial core path. OCR is included in the client's first commercial delivery as an optional, separately entitled, human-reviewed draft capability; its provider and privacy gates remain mandatory.
 - Clinical support is limited initially to licensed deterministic drug–drug, drug–allergy, and validated duplicate-therapy alerts. Diagnosis, prescribing, dosage, pregnancy, renal/hepatic adjustment, contraindication, disease-interaction, and therapeutic advice remain prohibited unless separately licensed and pharmacist-validated.
 
 ## Domain invariants already supported by the sources
@@ -90,9 +90,9 @@ Neither workspace has dependencies installed. Non-installing build checks fail a
 - The product details side panel is allowed in Sales and Purchases, not globally and not in Inventory/Product definition under the current clarification.
 - The purchase entry order is Item/Barcode → Quantity → Cost → Selling Price → Expiry, followed by a new row.
 
-## Phase 0 decision gates
+## Remaining phase and release gates
 
-Implementation must not begin while the following are unresolved:
+The following are gates for the affected engineering phases or production capabilities. They do not block the Phase 1 Foundation unless a specific Phase 1 entry gate names them:
 
 - validated upgrade/recovery procedure for the approved managed PostgreSQL Windows service;
 - Iraqi accountant/legal validation of the approved human document-number series and correction records;
@@ -116,4 +116,4 @@ Implementation must not begin while the following are unresolved:
 
 ## Phase 0 rule
 
-No backend code, schema, migrations, dependency installation, production implementation, or irreversible accounting/sync decision is authorized by these documents. Phase 1 may start only after Phase 0 approval and is limited to the approved foundation tasks.
+Phase 0 approval authorizes scheduling the Phase 1 Foundation only. It does not authorize production domain implementation, release of conditionally approved integrations, or bypassing the remaining phase and release gates above. Phase 1 may proceed only with the approved foundation tasks; later phases remain blocked by their own entry gates.
