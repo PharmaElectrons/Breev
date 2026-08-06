@@ -15,7 +15,7 @@
 - `risks/RISK_REGISTER.md` — discovery risks and gates.
 - `decisions/ADR-001` through `ADR-027` — architecture decisions, including stakeholder-approved naming, offline licensing, LAN/device trust, conditionally approved patient/clinical-data policies, WhatsApp/OCR, external-payment/e-invoicing, and provisional cloud-operations, Windows/hardware, update-safety, authorization, external-integration, and performance/accessibility boundaries.
 - `plans/MASTER_DELIVERY_PLAN.md` — phases and approval gates.
-- `plans/PHASE_1_TASK_PROPOSAL.md` — reviewable foundation tasks, blocked until approval.
+- `plans/PHASE_1_TASK_PROPOSAL.md` — reviewable foundation tasks, eligible after Phase 0 approval and explicit initiation.
 
 ## Governing sources
 
@@ -25,4 +25,4 @@
 
 ## Current gate
 
-Phase 0 is in review. No production implementation is authorized. The current question queue is complete through Q-025. Present the consolidated Phase 0 results and wait for the exact approval phrase `PHASE 0 APPROVED` before Phase 1.
+Phase 0 was approved on 2026-08-06. No production implementation has started. Phase 1 is eligible to begin from `plans/PHASE_1_TASK_PROPOSAL.md` when explicitly initiated; all later legal, provider, hardware, benchmark, and release gates remain active.
