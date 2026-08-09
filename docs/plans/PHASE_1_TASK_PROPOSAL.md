@@ -1,8 +1,8 @@
 # Phase 1 Foundation Task Proposal
 
-Status: **proposal only; Phase 0 approved on 2026-08-06; execution not started**.
+Status: **decomposed planning baseline; Phase 0 approved on 2026-08-06; no task claimed or started**.
 
-The proposal may now be initiated explicitly. Phase 1 remains limited to foundation work and does not authorize production domain behavior or bypass the later phase and release gates.
+The task set is eligible for stakeholder review and explicit task-by-task initiation. Phase 1 remains limited to foundation work and does not authorize production domain behavior or bypass later phase and release gates.
 
 These are intentionally small review units. They create foundation seams and verification, not domain implementation, tables, or migrations.
 
@@ -29,6 +29,8 @@ These are intentionally small review units. They create foundation seams and ver
 - No production installer/update rollout until the ADR-004/011 proofs and later release phase.
 - No visual rewrite of all prototype screens; only the shared shell/design-system proof needed for foundation acceptance.
 
-## Task-document rule after approval
+## Executable task documents
 
-Each row becomes one local Markdown task/spec with scope, acceptance criteria, files allowed, test plan, risks, and doc updates. Do not combine the whole phase into one implementation change.
+Each row now has one detailed local User Story task under `.scratch/breef-phase-1-offline-first-pharmacy-platform/issues/17-*.md` through `28-*.md`. The task set is indexed in that effort's `map.md`. The documents define scope, exclusions, likely files, data/API/security/offline impact, Given/When/Then acceptance criteria, test plan, risks, documentation updates, and completion evidence.
+
+These documents are ready for review and explicit initiation, not automatically claimed. Do not combine the whole phase into one implementation change and do not begin a later task automatically after completing one.

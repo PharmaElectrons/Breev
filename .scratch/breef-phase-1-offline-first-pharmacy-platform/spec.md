@@ -1,8 +1,21 @@
 # Breev Commercial Stage 1 — Offline-first pharmacy platform
 
-Status: ready-for-agent
+Status: planning baseline for stakeholder review; gated delivery; only the Phase 1 task set is eligible for explicit initiation
+GitHub specification issue: #2
 
 This is the client-facing first commercial delivery described in the interview. It spans multiple engineering phases in the delivery plan; it is not limited to the engineering `Phase 1 — Foundation`.
+
+## How to use this specification
+
+This file defines the product outcome and capability-level User Stories. It is not one executable task. Delivery is organized at three levels:
+
+1. This specification answers **what Stage 1 must achieve** and describes the expected end-to-end workflow.
+2. Issues `01`–`16` are **delivery epics**. They group related outcomes, dependencies, release gates, and expected user-visible behavior; no epic may be claimed as one implementation change.
+3. Small `Type: task` issues answer **what one agent implements and verifies in one focused session**. Only Phase 1 has been decomposed into executable tasks because later phases have not passed their entry gates.
+
+GitHub mirrors this hierarchy: this specification is #2, delivery epics 01–16 are #3–#18, and executable Phase 1 tasks 17–28 are #19–#30. The local delivery/task ID remains the stable planning identifier; the GitHub number is the collaboration record.
+
+A story or epic being present here does not bypass an ADR, provider, accountant, legal, pharmacist, hardware, or production-release gate. If a gate is unresolved, the safe result is disabled/unavailable behavior with an explanation and an unaffected manual or Free Core path where specified.
 
 ## Problem Statement
 
@@ -20,7 +33,76 @@ The local application is the authority for ordinary pharmacy operations. A sale,
 
 The release provides a complete core workflow for catalog setup, purchasing, batch and expiry-aware inventory, POS sales and returns, continuous Cash Box management, optional Patient Profiles and consent, accounting, reports, backups/restore foundations, subscriptions and Free Core POS fallback, WhatsApp workflows, and OCR Drafts. OCR and WhatsApp are gated by entitlement, privacy, provider, and jurisdiction checks and always retain manual/offline fallback paths.
 
-## User Stories
+## Expected end-to-end workflow
+
+The primary operational journey is:
+
+```mermaid
+flowchart LR
+  Install[Install and initialize Main Pharmacy Computer] --> Owner[Create attributable owner and Pharmacy context]
+  Owner --> Setup[Configure catalog, units, Suppliers, accounting, permissions, and entitlements]
+  Setup --> Buy[Create and review purchase draft]
+  Buy --> PostPurchase[Post purchase atomically]
+  PostPurchase --> Stock[Batch-aware stock and valuation become available]
+  Stock --> DraftSale[Scan/search into durable sale draft]
+  DraftSale --> Validate[Revalidate permission, entitlement, price, stock, batch, safety, money, and identity basis]
+  Validate -->|fails| Recover[Keep draft; explain correction]
+  Recover --> DraftSale
+  Validate -->|passes| PostSale[Post invoice, stock, payment/debt, Cash Box, journal, audit, and outbox atomically]
+  PostSale --> Output[Print/reprint and show immutable history]
+  PostSale --> Correct[Linked return/reversal when authorized]
+  PostSale --> Report[Read-only operational and accounting reports]
+  PostSale --> Sync[Durable one-way cloud synchronization when entitled/online]
+```
+
+The rules that apply to every step are:
+
+- The Main Pharmacy Computer is the single local transaction authority. Internet, cloud, OCR, WhatsApp, or provider failure must not stop manual purchasing, Free Core POS, local history, print, backup, export, or renewal.
+- A draft is recoverable and editable; a Posted Invoice and its stock/accounting facts are immutable. Corrections create linked Return, Reversal, or approved replacement records.
+- Each posting is all-or-nothing. A failure leaves no partial stock, Cash Box, payable/receivable, journal, audit, or outbox effect; success creates every required effect exactly once.
+- Permission, Entitlement, Tenant, device, current-record version, validation, and audit rules are enforced at the execution boundary, not only through hidden buttons.
+- External OCR and WhatsApp work is optional, entitled, provider-gated, privacy-gated, durable, attributable, and human-controlled. OCR can only produce a reviewed draft; messaging is revalidated at send time.
+- Every user-visible flow includes loading, empty, validation, permission denial, entitlement denial, offline, retryable failure, non-retryable failure, duplicate submission, restart/recovery, and success states in Arabic/RTL and English/LTR.
+- Hardware output is downstream of posting. Printer, scanner, or drawer failure never repeats, deletes, or reverses a business transaction.
+
+### Delivery workflow and gates
+
+```mermaid
+flowchart TD
+  Scope[Stage 1 planning baseline] --> Epic[Select next gated epic]
+  Epic --> Gate{Entry decisions and evidence approved?}
+  Gate -- no --> Block[Keep epic planned/blocked; resolve named gate]
+  Gate -- yes --> Split[Write small User Story tasks]
+  Split --> Claim[Explicitly initiate and claim one task]
+  Claim --> Implement[Implement smallest complete vertical slice with tests]
+  Implement --> Verify[Format, lint, typecheck, unit, integration, E2E, failure and offline checks]
+  Verify --> Evidence{Acceptance criteria and evidence complete?}
+  Evidence -- no --> Implement
+  Evidence -- yes --> Docs[Update task, requirements, workflow, ADR/risk docs]
+  Docs --> Review[Review and stop; do not auto-start next task]
+```
+
+### Story-to-epic traceability
+
+| Story range | Product outcome | Epic | Engineering phase | Gate state |
+|---|---|---|---|---|
+| US-001–009 | Install, initialize, configure, localize, and work offline | 01 Foundation runtime; 02 Identity | P1–P2 | P1 may be explicitly initiated; P2 still gated |
+| US-010–017 | Product, naming, units, barcode, search, and Supplier setup | 04 Catalog | P3 | Planned; requires P3 entry decisions |
+| US-018–030 | Manual purchase and optional human-reviewed OCR | 05 Purchasing; 12 OCR | P4/P8 | Manual path precedes provider-gated OCR |
+| US-031–040 | Batch inventory, expiry, counts, disposition, and valuation | 05 Purchasing/inventory | P4 | Accountant valuation examples required |
+| US-041–055 | Durable, keyboard-first, atomic POS sale | 07 POS/Cash Box | P5 | P3/P4/P6 foundations and action rules required |
+| US-056–060 | Return, reversal, Cash Box, and variance control | 08 Corrections; 07 POS/Cash Box | P5 | Numbering/accounting/approval rules required |
+| US-061–070 | Ledger, AP/AR, journals, Trial Balance, P&L, and reports | 06 Accounting; 14 Reports | P6/P10 | Accountant-approved posting matrix required |
+| US-071–077 | Optional Patient Profile, consent, and bounded clinical outcome | 09 Patients/clinical | P7 | Legal, pharmacist, licence, mapping, and retention gates apply |
+| US-078–083 | Pharmacy-owned WhatsApp identity and durable messaging | 13 WhatsApp | P8 | Provider/DPA/template/legal/pharmacist gates apply |
+| US-084–092 | Plans, permissions, terminals, offline licence, and Free Core | 03 Entitlements; 10 Terminals | P2/P9 | Licence/pairing decisions and cloud revalidation apply |
+| US-093–096 | Durable one-way local-to-cloud projection | 11 Sync | P9 | Cloud provider/location/operations gate applies |
+| US-097–099 | Backup, restore, repair, and safe update | 15 Recovery | P11 | Windows/hardware/signing/update evidence required |
+| US-100–102 | Operable release, support handoff, and isolated extensions | 16 Release/handoff | P11 | All included epics and release evidence required |
+
+## Capability-level User Stories
+
+The identifiers below are stable traceability IDs, written as `US-001` through `US-102`. Their current numeric order is the ID (for example, item 41 is `US-041`). They describe product outcomes; they are not implementation tickets. Each executable task must quote the relevant story IDs and add concrete Given/When/Then acceptance scenarios.
 
 1. As a pharmacy owner, I want to install Breev on a Windows Main Pharmacy Computer, so that the Pharmacy has a dependable local operating system.
 2. As a pharmacy owner, I want Breev to initialize a private local API and PostgreSQL database, so that pharmacy data remains available without the internet.
