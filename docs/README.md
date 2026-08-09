@@ -16,6 +16,8 @@
 - `decisions/ADR-001` through `ADR-027` — architecture decisions, including stakeholder-approved naming, offline licensing, LAN/device trust, conditionally approved patient/clinical-data policies, WhatsApp/OCR, external-payment/e-invoicing, and provisional cloud-operations, Windows/hardware, update-safety, authorization, external-integration, and performance/accessibility boundaries.
 - `plans/MASTER_DELIVERY_PLAN.md` — phases and approval gates.
 - `plans/PHASE_1_TASK_PROPOSAL.md` — reviewable foundation tasks, eligible after Phase 0 approval and explicit initiation.
+- `../.scratch/breef-phase-1-offline-first-pharmacy-platform/spec.md` — commercial Stage 1 outcome, expected workflow, User Stories, and story-to-epic traceability.
+- `../.scratch/breef-phase-1-offline-first-pharmacy-platform/map.md` — local epic/task hierarchy, dependencies, gates, and execution order.
 
 ## Governing sources
 
@@ -25,4 +27,4 @@
 
 ## Current gate
 
-Phase 0 was approved on 2026-08-06. No production implementation has started. Phase 1 is eligible to begin from `plans/PHASE_1_TASK_PROPOSAL.md` when explicitly initiated; all later legal, provider, hardware, benchmark, and release gates remain active.
+Phase 0 was approved on 2026-08-06. No production implementation has started. The Phase 1 proposal has been decomposed into detailed local User Story tasks, but none is claimed or started. Phase 1 remains eligible only when explicitly initiated; all later legal, provider, hardware, benchmark, and release gates remain active.

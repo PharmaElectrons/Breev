@@ -19,6 +19,10 @@ This plan follows the governing master prompt. These are engineering phases, not
 | 10 — Reports | Permissioned reports, filters, exports, audit experience, high-risk export approvals, and approved outbound evidence | Accounting/projection sources stable; ADR-017/ADR-025/ADR-026 export and connector controls accepted | Reconciles to ledgers; step-up/dual-control export/privacy tests; connector allow-list/callback/deletion tests; AR/EN/print | Not started |
 | 11 — Production release | Windows installer, PostgreSQL lifecycle, backup/restore, signing, updates, observability, Certified Hardware Profiles, accessibility/performance evidence, and runbooks | ADR-023/024/027 exact OS, hardware, signing/update, accessibility, performance, and support evidence revalidated; certified OS/hardware/update/backup policies | Fresh install/upgrade/rollback/restore/power/peripheral/migration drills, security review, compatibility/accessibility matrix, p95/p99 evidence, operational acceptance | Not started |
 
+### Cross-phase dependency clarification
+
+Phase numbers group delivery outcomes and gates; they do not authorize an unsafe partial posting merely because a later-numbered workstream owns a required component. P4 can establish purchase drafts, batches, Stock Movements, valuation, and the reviewed operational-to-accounting fact contract. The P6 ledger core and signed purchase/sale posting templates may then start before all P4/P5 UI slices are complete. A Posted Purchase or Posted Sale vertical slice is accepted only after the relevant ledger template participates in the same atomic local transaction. No phase may temporarily post operational facts and promise to add journals later.
+
 ## Phase 0 exit checklist
 
 - [x] Master prompt, product brief, Arabic PDF, conversation, `frontend/`, and `breef/` inspected.
@@ -49,4 +53,4 @@ Clinic is excluded. Multi-branch, multi-currency, delivery, e-commerce, broad ma
 
 ## Immediate next step
 
-Phase 0 was approved on 2026-08-06. Phase 1 may now be scheduled from `PHASE_1_TASK_PROPOSAL.md`; its tasks remain unstarted until explicitly initiated. Q-025's benchmark and final accessibility evidence remain release gates.
+Phase 0 was approved on 2026-08-06. Phase 1 is decomposed into the detailed local User Story tasks indexed by `.scratch/breef-phase-1-offline-first-pharmacy-platform/map.md`; every task remains unstarted until explicitly initiated. The commercial Stage 1 epics for later engineering phases are planning containers, not executable mega-tasks, and must be decomposed only after their entry gates pass. Q-025's benchmark and final accessibility evidence remain release gates.
