@@ -1,0 +1,1 @@
+ALTER TABLE public.sales_invoices ADD COLUMN IF NOT EXISTS paid_amount numeric(14,2) NOT NULL DEFAULT 0;

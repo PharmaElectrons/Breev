@@ -1,0 +1,117 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Clinical corporate palette — pure white dominant, premium slate/teal accent.
+     Legacy token names retained so existing utilities (bg-slate-*, emerald)
+     continue to resolve, but retinted to the medical palette. */
+  --color-slate-800: #FFFFFF;          /* input surface — pure white */
+  --color-slate-850: #FFFFFF;
+  --color-slate-900: #FFFFFF;          /* main workspace */
+  --color-slate-950: #FFFFFF;          /* header / panels */
+  --color-yellow-soft: #EEF2F5;        /* subtle slate tint (secondary surface) */
+  --color-yellow-softer: #F5F8FA;
+  --color-emerald: #4A6B82;            /* primary slate/teal accent */
+  --color-emerald-dim: #3C5A6F;
+
+  --font-display: "IBM Plex Sans Arabic", "Cairo", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Pure white background; slate/teal accent for institutional medical UI */
+  --background: #FFFFFF;
+  --foreground: #1E2A33;
+  --card: #FFFFFF;
+  --card-foreground: #1E2A33;
+  --popover: #FFFFFF;
+  --popover-foreground: #1E2A33;
+  --primary: #4A6B82;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EEF2F5;
+  --secondary-foreground: #1E2A33;
+  --muted: #F5F8FA;
+  --muted-foreground: #5C7385;
+  --accent: #EEF2F5;
+  --accent-foreground: #1E2A33;
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: #FFFFFF;
+  --border: rgb(74 107 130 / 0.22);
+  --input: rgb(74 107 130 / 0.20);
+  --ring: #4A6B82;
+}
+
+
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@utility animate-reveal {
+  animation: reveal-in 0.5s var(--ease-out-expo) both;
+}
+
+@utility scanline {
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 3px,
+    color-mix(in oklab, var(--color-emerald) 5%, transparent) 3px,
+    color-mix(in oklab, var(--color-emerald) 5%, transparent) 4px
+  );
+  background-size: 100% 4px;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html, body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-display);
+  }
+
+  body {
+    direction: rtl;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-emerald) 30%, transparent);
+    color: var(--color-foreground);
+  }
+}
