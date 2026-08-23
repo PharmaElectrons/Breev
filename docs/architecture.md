@@ -11,6 +11,8 @@ Electron client ── authenticated HTTPS/REST ──> local API Windows servic
 
 The Main Pharmacy Computer runs all three local components. An Additional POS Terminal runs only the Electron client and talks to the Main Pharmacy Computer's API. Closing Electron never stops the local service or other terminals. The cloud deployment is separate and optional. Local posting never depends on it.
 
+This chosen stack differs from the client's proposed technologies (SQLite, Laravel/PHP), which the scope labels "planned". It satisfies every underlying business constraint — offline-first local operation, a main device hosting the database behind a local service, secondary devices that never open the raw database file, and one-way cloud sync. [`traceability.md`](traceability.md) records the reconciliation.
+
 This is a modular monolith with three eventual deployables, one real shared package, and no microservices:
 
 ```text
@@ -22,7 +24,7 @@ packages/
   contracts/               # runtime-validated wire/preload/sync schemas and inferred types
 ```
 
-The first implementation phase contains only `desktop`, `local-api`, and `contracts`. Create `cloud-api` when M4 delivers paid subscription and licence issuance. Do not create it as an empty placeholder. Extend that same deployable with One-Way Sync in M7. Continue using pnpm and Turborepo for these workspaces.
+The first implementation phase contains only `desktop`, `local-api`, and `contracts`. Create `cloud-api` when milestone 4 delivers automated subscription and licence issuance. Do not create it as an empty placeholder. Extend that same deployable with One-Way Sync later in milestone 4. Continue using pnpm and Turborepo for these workspaces.
 
 ## Workspace and process boundaries
 
@@ -33,7 +35,7 @@ Extract a workspace only when it has at least two real consumers that need the s
 | Current placeholder | Disposition |
 |---|---|
 | `apps/desktop`, `apps/local-api` | Replace directly with the real runtimes and `@breev/*` identifiers. |
-| `apps/cloud-api` | Delete the marker; create the real deployable with M4's paid licensing and control-plane implementation. |
+| `apps/cloud-api` | Delete the marker; create the real deployable with milestone 4's licensing and control-plane implementation. |
 | `apps/super-admin` | Remove. Keep initial protected operations and reporting in `cloud-api`. Split them only if deployment or security ownership diverges. |
 | `apps/migration-tools` | Remove. Schema migrations, repair, and operational commands live with the database-owning app. Add an importer only for a real external source. |
 | all `packages/modules/*` | Move each concept into a cohesive feature module inside the owning app. Do not publish or version these modules as packages. |
@@ -54,8 +56,8 @@ The table assigns ownership. It does not prescribe matching folders or classes.
 | Identity/access | users, roles, permissions, sessions, Step-Up/Dual Control policy | verified execution context and named authorization checks |
 | Licensing/devices | signed licences, Trusted Breev Time state, terminal pairing/certificates/revocation | entitlement/device checks; no user-permission inference |
 | Catalog | products, generated names, barcodes, packaging, suppliers/archive/merge | product/package/supplier facts; no stock balance |
-| Purchasing | Purchase Draft/Post/Return and supplier settlement intent | `postPurchase`, `postPurchaseReturn` orchestration |
-| Inventory | batches/status, movements, physical allocation, valuation arithmetic and WAC/FIFO state, cost allocations, frozen carrying amounts, counts/reorder | availability/allocation/movement/valuation operations inside caller transaction |
+| Purchasing | Purchase Draft/Post, Purchase Invoice Adjustment (Delta), Purchase Return, and supplier settlement intent | `postPurchase`, `postPurchaseAdjustment`, `postPurchaseReturn` orchestration |
+| Inventory | batches/status, movements, physical allocation, WAC valuation arithmetic and state, cost allocations, frozen carrying amounts, counts/reorder | availability/allocation/movement/valuation operations inside caller transaction |
 | Sales | Sale Draft/Post/Return/Reversal, price evidence, tender intent | `postSale`, `postReturn`, `reverseSale` orchestration |
 | Accounting | posting-template rule versions, AP/AR/Cash Box, balanced journals/periods; consumes Inventory's valuation facts | pure preview plus posting operations inside caller transaction |
 | Patients | optional profile, necessary identity, typed facts, consent/access/retention state | purpose-limited authorized commands/queries |
@@ -81,9 +83,9 @@ Treat the renderer as an untrusted browser:
 
 All terminal-to-main traffic uses mutual TLS and individual authorization. Prefer TLS 1.3. Permit TLS 1.2 only as a securely configured fallback. Disable TLS 1.0 and 1.1, lower-version fallback, TLS 1.3 0-RTT, plaintext and anonymous modes, certificate-warning bypass, and accept-any-certificate behavior.
 
-A loopback address does not establish Main-client trust. M0 must prove device and session binding for state-changing REST. It must also prove exact-Origin and CORS enforcement plus CSRF and DNS-rebinding defenses. The proof must use current browser and Electron behavior and [OWASP CSRF guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
+A loopback address does not establish Main-client trust. The milestone 1 runtime-proof stage must prove device and session binding for state-changing REST. It must also prove exact-Origin and CORS enforcement plus CSRF and DNS-rebinding defenses. The proof must use current browser and Electron behavior and [OWASP CSRF guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
 
-Keep the desktop build Vite-compatible. `electron-vite` is the leading M0 proof candidate for one main, preload, and renderer configuration. The packager, updater, and installer choices remain open. M0 must first compare `electron-builder` with NSIS, the leading service-aware candidate, against Electron Forge and any necessary Windows installer layer. The comparison must cover signing, Electron fuses, service and database lifecycle, repair, update, and recovery evidence. Select one build and packaging path after the proof. Do not install competing stacks in production.
+Keep the desktop build Vite-compatible. `electron-vite` is the leading runtime-proof candidate for one main, preload, and renderer configuration. The packager, updater, and installer choices remain open. The runtime-proof stage must first compare `electron-builder` with NSIS, the leading service-aware candidate, against Electron Forge and any necessary Windows installer layer. The comparison must cover signing, Electron fuses, service and database lifecycle, repair, update, and recovery evidence. Select one build and packaging path after the proof. Do not install competing stacks in production.
 
 Evidence: [Electron security](https://www.electronjs.org/docs/latest/tutorial/security), [context bridge](https://www.electronjs.org/docs/latest/api/context-bridge), [protocols](https://www.electronjs.org/docs/latest/api/protocol/), [fuses](https://www.electronjs.org/docs/latest/tutorial/fuses), [electron-vite](https://electron-vite.org/guide/), [electron-builder NSIS](https://www.electron.build/docs/nsis/), and [Electron Forge Vite status](https://www.electronforge.io/config/plugins/vite).
 
@@ -111,7 +113,7 @@ Store authoritative IQD in PostgreSQL `bigint`. Store exact rates and intermedia
 
 ## Durable work, backup, and cloud
 
-One local API process runs all durable jobs, and PostgreSQL is their only durable store. Do not hand-write the generic queue mechanics — claiming, leases, abandoned-job recovery, uniqueness, scheduling, retries, backoff, dead letters, retention, and shutdown. Use a maintained PostgreSQL-native job library embedded in the API process: `pg-boss` is the leading candidate because it can enqueue inside an existing database transaction; Graphile Worker is the fallback. The library's schema migrations run through Breev's privileged migration path, its version is pinned, and M1 proves it on Windows with Drizzle, including crash points, restore, and transactional enqueue. Perform provider work outside any claim transaction, then record the outcome separately; provider idempotency and reconciliation stay mandatory because provider calls remain at least once.
+One local API process runs all durable jobs, and PostgreSQL is their only durable store. Do not hand-write the generic queue mechanics — claiming, leases, abandoned-job recovery, uniqueness, scheduling, retries, backoff, dead letters, retention, and shutdown. Use a maintained PostgreSQL-native job library embedded in the API process: `pg-boss` is the leading candidate because it can enqueue inside an existing database transaction; Graphile Worker is the fallback. The library's schema migrations run through Breev's privileged migration path, its version is pinned, and milestone 1 proves it on Windows with Drizzle, including crash points, restore, and transactional enqueue. Perform provider work outside any claim transaction, then record the outcome separately; provider idempotency and reconciliation stay mandatory because provider calls remain at least once.
 
 The versioned sync outbox remains a Breev-owned domain record with its own identity, checkpoints, and replay state; a library job may reference an outbox row but never replaces it. This design handles expiry evaluation, outbox publication, backup coordination, provider calls, and cleanup without Redis or a worker service. Extract a separate process only when measured scaling or availability requirements demand it. Evidence: [pg-boss](https://github.com/timgit/pg-boss), [Graphile Worker](https://worker.graphile.org/docs), [PostgreSQL locking clause](https://www.postgresql.org/docs/current/sql-select.html), [Nest queues and their Redis dependency](https://docs.nestjs.com/techniques/queues).
 
@@ -119,7 +121,7 @@ Local recovery must provide encrypted hourly recovery points and daily verified 
 
 Use PostgreSQL-supported base backup, WAL, and PITR tools as needed. `pg_dump` alone does not prove the RPO. Every restore enters quarantine before normal use. Evidence: [PostgreSQL backup methods](https://www.postgresql.org/docs/current/backup.html), [continuous archiving](https://www.postgresql.org/docs/current/continuous-archiving.html), [`pg_verifybackup`](https://www.postgresql.org/docs/current/app-pgverifybackup.html).
 
-Starting in M4, `cloud-api` is one NestJS deployable with its own managed PostgreSQL. It owns tenant, subscription, device, and licence authority, plus a minimal protected operations UI. M7 adds sync ingestion and read projections to the same deployable.
+Starting in milestone 4, `cloud-api` is one NestJS deployable with its own managed PostgreSQL. It owns tenant, subscription, device, and licence authority, plus a minimal protected operations UI. One-Way Sync ingestion and read projections extend the same deployable.
 
 Initial tenancy uses immutable `tenant_id`, verified application context, query, job and storage scoping, cross-tenant negative tests, and `FORCE ROW LEVEL SECURITY` as defense in depth. Inside the one deployable, keep machine licensing, sync ingestion, remote read views, and operator actions in separate route namespaces with distinct authentication audiences and guards; give sync ingestion its own rate, body, and connection-pool limits; provide no generic table editor, SQL console, or tenant-bypass role; and audit every cross-tenant operator action with its reason and target tenant. The One-Way milestone has no broker, microservice, separate admin backend, or Cloud Command path. Provider, region, and recovery choices remain gated. Free Core never needs this service at transaction time.
 

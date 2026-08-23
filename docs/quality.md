@@ -4,7 +4,7 @@
 
 | Layer | Required evidence |
 |---|---|
-| Pure domain | Put Vitest unit and property tests beside the module. Cover exact money, conversions, state transitions, authorization and entitlement policy, pricing, WAC and FIFO conservation, and posting-template balance. Test through the module's narrow public interface. |
+| Pure domain | Put Vitest unit and property tests beside the module. Cover exact money, conversions, state transitions, authorization and entitlement policy, pricing, WAC conservation on the Primary Supplier Cost, and posting-template balance. Test through the module's narrow public interface. |
 | Local persistence | Run integration tests against the supported real PostgreSQL version. Cover migrations, constraints, triggers, roles, transactions, failure and rollback after every step, locks, contention, idempotency races, immutable rows, durable jobs, backup metadata, and reconciliation. Do not mock repositories to make these claims. |
 | Cloud persistence | Use real PostgreSQL to test verified tenant context, `FORCE RLS`, cross-tenant negative cases, inbox deduplication, replay, checkpoints, projections, deletion, Restore Quarantine, and subscription authority. |
 | Contracts/adapters | Test runtime schemas for local REST, preload, sync, and every actual provider. Cover success, timeout, duplicate and reordered messages, forged callbacks, mismatched tenant, amount, or reference, redaction, cancellation, and the provider-deletion outcome. |
@@ -24,6 +24,19 @@ Use Testcontainers or another direct, disposable fixture for the supported Postg
 - Test visible behavior when the internet, cloud, a provider, printer, scanner, drawer, local API, PostgreSQL, disk, backup, or process fails. A peripheral or provider retry cannot replay a transaction.
 - Outbox entries and jobs survive a crash before claim, after claim, after external success, and before Breev records the outcome. Duplicate and out-of-order callbacks are safe, as is restore replay.
 - Expiry, grace, clock rollback, certificate renewal, revocation, CA rotation, an incompatible terminal, and a paid-to-Free-Core transition never hide data or disable core operation.
+
+## Requirement acceptance scenarios
+
+These client-stated examples are acceptance tests, not negotiable targets.
+
+- Search: "panadol gs" returns "Panadol Extra GSK"; "extra" returns every item containing "Extra"; Arabic, English, and barcode queries all match instantly.
+- Margin: cost 80 with a 20% margin yields a selling price of 100 before rounding (margin on selling price, not markup); rounding to 250/500/1,000 IQD applies only when enabled.
+- Units: 1 pack = 4 strips — purchasing 1 pack records 4 strips in the base unit; a stocktake entry of "2 packs + 1 strip" converts to 9 strips at that ratio; no fractional base-unit balance ever posts.
+- Purchase adjustment: changing a posted line quantity from 4 to 8 posts exactly +4; unchanged lines create no movements; an adjustment whose delta would break the balance or batch state is blocked.
+- Supplier settlement: the mandatory five-invoice test — Primary Supplier Cost 5,000, Cost After Discount 4,650, paid 4,500, actual allowance 500, allowance difference 150 — ends with a zero supplier balance and unchanged original invoices, percentages, and average cost.
+- Card sale: sale 1,000,000 with a 10,000 commission keeps revenue at 1,000,000, records net received 990,000 in the card account, posts the commission as an expense, and never touches the physical drawer.
+- Devices: four devices operate simultaneously over LAN; an authorized user signs in from any licensed device; raising the permitted count requires no code change.
+- Reconciliation: an employee drawer zeroed at start of work, compared at end of work, transfers the matched amount to the treasury and leaves the discrepancy visible or in the discrepancies account.
 
 ## Usability and accessibility
 

@@ -14,20 +14,25 @@ This is the canonical glossary. Definitions describe the business language, not 
 | Entitlement | A signed plan capability grant, such as an added terminal, OCR, messaging, or cloud sync. It never grants user authority. |
 | Step-Up Authorization | Immediate reauthentication by the same authorized user for a named sensitive action. |
 | Dual Control | Two distinct authorized users prepare and approve a sensitive action. A user cannot approve their own action. |
-| Cash Box | A continuous cash ledger. Sales do not require a forced employee shift or open/close cycle. |
+| Cash Box | A continuous cash ledger, including per-employee cash drawers. Reconciliation never locks the sales screen; there is no forced open/close shift cycle. |
 | Draft | Editable, durable work with no final stock or accounting effect. |
 | Posted Document | An immutable sale, purchase, return, reversal, or other completed transaction. |
 | Snapshot | A record of product, party, quantity, price, cost, rule, actor, device, and other facts at transaction time. It does not change when master data changes later. |
 | Return | A new linked transaction for goods actually returned by a customer or to a supplier, with its own stock, money, and accounting effects. |
 | Reversal | A new linked transaction that offsets a wrongly posted transaction without deleting it. Any needed replacement is a separate posted transaction. |
-| Inventory Unit | The smallest exact unit the inventory ledger uses to record a product's stock. |
+| Inventory Unit | The smallest exact unit the inventory ledger uses to record a product's stock. Also called the base unit; larger package units convert to it by integer ratios. |
+| Frozen Snapshot | The client's roadmap concept of freezing every item detail inside a saved invoice. Phase One stores only the data saved with the document; the expanded concept is Phase Two. |
 | Packaging Conversion | A product-specific positive integer ratio between a selling, purchasing, or counting package and its Inventory Unit. |
-| Tertiary Clinical Unit | The optional smallest clinical unit, such as a tablet. It is a real quantity unit — never a reminder-days field — and does not affect sale or purchase stock unless later approved. |
+| Third Unit | An optional per-product unit stored only for number-of-days or dosage follow-up (for example, treatment days). It is never an inventory-balance, purchasing, or sales unit and has no stock effect. |
 | Batch | Stock of one product with shared acquisition, lot, expiry, and status facts. Expiry is not a Product field. |
 | Stock Movement | An append-only, reasoned quantity change. Movements determine on-hand stock. |
 | FEFO | Physical allocation from the batch that expires first. It is separate from accounting valuation. |
-| WAC | Weighted-average inventory valuation; Breev's default after accountant validation. |
-| FIFO | First-in-first-out inventory valuation, optionally selected during setup after accountant review. It is not FEFO. |
+| WAC | Weighted-average inventory valuation on the Primary Supplier Cost. It is Phase One's single costing method. |
+| Primary Supplier Cost | The full nominal purchase cost before supplier allowance or discount. It is the basis for inventory valuation, average cost, and COGS. |
+| Cost After Discount | The informational purchase cost after the invoice's snapshot allowance percentage. Shown on invoices and supplier statements; never a valuation basis. |
+| Allowance | A supplier discount (*samah*). The supplier's default percentage on the invoice date is copied into each invoice as a snapshot. |
+| Allowance Difference | The separate transaction recording the gap between the allowance calculated from invoices and the actual allowance granted at settlement. |
+| Purchase Invoice Adjustment | A delta-only correction document (A01, A02, …) linked to a posted purchase invoice. Only the difference moves stock and the supplier account. |
 | Carrying Amount | The exact inventory ledger value under the approved valuation method. Posting a movement freezes that value. |
 | IQD Money | An exact signed integer count of fils, where 1 IQD equals 1,000 fils. Authoritative values never use binary floating point. |
 | Anonymous Sale | A core sale without an optional Patient Profile. Required transaction identity remains separate when legally or commercially necessary. |

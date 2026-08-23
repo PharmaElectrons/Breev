@@ -9,7 +9,7 @@ These workflows are user-visible contracts. The local API controls every busines
 - Dialogs trap focus and return it to the control that opened them. Async completion always leaves a control focused. RTL may mirror the layout, but it never changes the logical entry order.
 - Handling an unknown product or quickly creating a patient keeps the active draft intact. On success, Breev attaches the new record and returns to the unresolved line. Cancel changes nothing.
 - Each command includes a draft version and idempotency key. After a timeout or restart, a retry returns the existing outcome or a clear rejection. The client never guesses whether posting succeeded.
-- Breev will not finalize function keys, duplicate-scan behavior, or fractional-quantity policy until the team observes them with pharmacists, Windows, browsers, and certified scanners.
+- Breev will not finalize function keys or duplicate-scan behavior until the team observes them with pharmacists, Windows, browsers, and certified scanners.
 
 ## Start and connect
 
@@ -21,12 +21,16 @@ These workflows are user-visible contracts. The local API controls every busines
 
 ## Purchase and receive
 
-1. Open or resume a server-durable Purchase Draft. Select the supplier, date/reference, cash/debt context, and supplier discount outside the repeated line path.
-2. Repeat exactly: **Item/Barcode → Quantity → Cost → Selling Price → Expiry → Enter (next row)**. Enter validates and commits that draft row, then focuses the next Item/Barcode field. Optional controls — unit, lot, margin, special pricing, or notes — may be reachable but must not interrupt this sequence unless the pharmacist/legal product-class rule requires resolution before posting.
+1. Open or resume a server-durable Purchase Draft. Enter the supplier invoice number, supplier, and cash/debt context first, outside the repeated line path; the supplier's invoice-date allowance snapshot fills automatically. Columns can be shown, hidden, and reordered, and each item's retail price appears with By Price/By Percentage field locking. The item-details side panel appears as in Sales.
+2. Repeat the row: Enter moves through the active fields in their configured column order — by default **Item/Barcode → Quantity → Cost → Selling Price → Expiry** — validates and commits the row, then either opens a new row or returns focus to the Item/Barcode field, according to the user's setting. Optional controls — unit, lot, margin, special pricing, or notes — may be reachable but must not interrupt the flow unless the pharmacist/legal product-class rule requires resolution before posting.
 3. Unknown item opens quick Product creation without losing the row or draft. Product packaging converts the selected purchase unit to Inventory Units.
 4. Review gross/discount/net, batches/expiry, tender/payable effect, warnings, and the accountant-approved preview. Posting requires a separate explicit action. Enter on Expiry never posts the document.
 5. The API locks and revalidates the draft, allocates a number, and atomically posts the snapshots, batches, movements/value, cash/payable, balanced journal, audit, idempotency result, and outbox.
-6. On success, Breev shows the immutable purchase and starts a new draft. On rejection, Breev keeps the draft and identifies the field/rule. A supplier Return follows the correction flow. No one edits or deletes a posted purchase.
+6. On success, Breev shows the immutable purchase and starts a new draft. On rejection, Breev keeps the draft and identifies the field/rule. No one edits or deletes a posted purchase.
+
+### Adjust or return a posted purchase
+
+The purchase search button opens the list of previous purchase invoices; subject to permissions, users view an invoice or open its items or supplier. "Edit Invoice" starts a Purchase Invoice Adjustment draft under the Delta rules in [`domain.md`](domain.md): correct the copy, review the before-and-after summary and impact, confirm, and post only the differences as a linked A-numbered adjustment. A Purchase Return — goods physically going back to the supplier — is a separate document linked to the original, full or partial, reducing stock and the supplier balance. Both paths keep the original invoice untouched and navigable from its corrections.
 
 ### OCR-assisted entry
 
@@ -34,21 +38,24 @@ An upload creates one source-hashed job. Provider output and highlighted locatio
 
 ## Sell and settle
 
-1. Open or resume a server-durable Sale Draft with the scan/search field focused.
-2. Scan or search to add or select a product/package. Edit the allowed unit, integer quantity, and authorized selling price/discount, then repeat. An unknown product opens quick creation without losing lines.
-3. Optionally attach or create a Patient Profile. Anonymous remains the default. Patient work never changes sale lines.
-4. Before checkout, compare every changed draft price with the current price/version and total impact. Refresh is the default. Keeping an old price requires permission and a reason. The server always revalidates current stock, FEFO batch eligibility, expiry/recall/quarantine, restriction, tax, cost, and posting rules.
-5. Review totals and cash, credit, or mixed settlement. Post is an explicit authorized action. Negative stock and Regulatory Hard Blocks stop posting without override; the durable draft remains.
-6. One transaction posts the sale snapshots, physical and valuation movements, tender/receivable/Cash Box, balanced journal, audit, idempotency result, and outbox.
-7. Printing and drawer pulse occur after commit. Breev links a normal drawer opening to its cash transaction. Manual opening requires named permission and audit. A printing or drawer failure shows a recoverable reprint/drawer state and never rolls back or reposts the sale. On success, focus returns to a new sale's scan field.
+1. Open or resume a server-durable Sale Draft with the scan/search field focused. Invoices can be suspended and resumed without losing data, and unsaved invoice data survives navigating away and back. Clicking **New**, or deleting or clearing an invoice that contains items, requires confirmation before any data is lost.
+2. Scan or search to add or select a product/package. Change the unit with the row selector, quantity with the `+`/`-` controls or the side calculator, and price through the numeric dialog opened by clicking the price. The side calculator applies an entered number as quantity, price, or discount to the selected item or invoice; a separate invoice-level discount field remains available. Scanning an unregistered barcode — or pressing Enter/Add after an empty Pick Item name search — opens the item-definition dialog without leaving the sale. Subject to permissions, a quick Add button creates a miscellaneous item or service line; with no entered cost, cost defaults to zero. The quick-access icon opens the manager-configured grid of frequently sold items grouped in categories, each showing the item name and image when available; clicking one adds it with its default unit and price. An "Add to Order Basket" row action feeds the reorder basket without disrupting the invoice.
+3. Optionally attach or create a Patient Profile through the `+` button beside patient search, without leaving the sale. Anonymous remains the default. Selecting a patient shows the approved summary (chronic conditions, chronic medications, interests); important notes such as allergies trigger a dismissable review popup. Chronic medications can be added to the invoice in one click, and invoice medications can be saved to the patient's chronic-treatment list before the sale completes or cancels. Where defined, frequency-of-use, food-instruction, and number-of-days fields appear and feed follow-up scheduling. Patient work never changes sale lines.
+4. The item-details side panel (Sales and Purchasing only) shows the item name and, per settings, scientific name, balance, packaging, min/max levels, batch data, expiry with days remaining, 1/2/3-month average consumption, estimated surplus, and an item thumbnail when available; the sales table shows only the retail price, while the panel may show the wholesale/special price subject to permissions. The employee's current cash-drawer balance appears per setting/permission. Opening the item record from an invoice line (double-click or action icon) keeps unsaved invoice data intact.
+5. Before checkout, compare every changed draft price with the current price/version and total impact. Refresh is the default. Keeping an old price requires permission and a reason. The server always revalidates current stock, FEFO batch eligibility, expiry/recall/quarantine, restriction, tax, cost, and posting rules, and shows the below-cost warning where it applies.
+6. Review totals and cash, card, or deferred settlement per the rules in [`domain.md`](domain.md). Post is an explicit authorized action. Negative stock and Regulatory Hard Blocks stop posting without override; the durable draft remains.
+7. One transaction posts the sale snapshots, physical and valuation movements, tender/receivable/Cash Box, balanced journal, audit, idempotency result, and outbox.
+8. Printing and drawer pulse occur after commit. Breev links a normal drawer opening to its cash transaction. Manual opening requires named permission and audit. A printing or drawer failure shows a recoverable reprint/drawer state and never rolls back or reposts the sale. On success, focus returns to a new sale's scan field.
+
+The sales search button opens the popup list of completed/saved invoices with previous/next navigation; subject to permissions, users open them for viewing only. A posted sales invoice is never edited — correction uses a linked sales Return (or a full Reversal for a wholly wrong posting). Later item-record changes never alter an earlier invoice; historical views use the data stored with the saved invoice, and the expanded Frozen Snapshot concept beyond that stored data is Phase Two.
 
 ## Count, block, and dispose stock
 
 ### Count
 
 1. Start/resume a Count Session and focus Barcode/Item.
-2. Repeat Barcode/Item → package/unit → physical count → Enter.
-3. Show recorded value, converted Inventory Unit count, variance, and required reason/evidence/approval. Applying a variance posts a movement; it does not edit Product or Batch quantity.
+2. Repeat Barcode/Item → new balance → Enter. The balance may be entered in the base unit or as a combination of large and small units (at 1 pack = 4 strips, "2 packs + 1 strip" = 9 strips); the system converts to an integer base-unit quantity. An input calculator may assist entry.
+3. Show recorded value, converted Inventory Unit count, variance, balances before and after, and required reason/evidence/approval. Applying a variance posts an independent movement that never rewrites prior history; it does not edit Product or Batch quantity.
 4. Return focus to Barcode/Item. The session keeps both the observation and the applied movement for audit/reconciliation.
 
 ### Expiry, recall, quarantine
@@ -68,6 +75,14 @@ For each affected quantity, the owner approves a supplier return, write-off, des
 4. Post the new linked document atomically. If the original business should still exist, create and post a new replacement draft after the Reversal.
 5. Keep and show the original and the full chain. Never edit, delete, or hide the source.
 
+## Cash drawers, vouchers, and statements
+
+1. At the start of work, the employee's cash drawer is reconciled to zero. During the day, cash sales, receipts, payments, and transfers post to it continuously; reconciliation never locks the sales screen.
+2. At the end of work, the system compares the expected drawer balance with counted cash. The matched amount transfers to the safe/treasury account; any shortage or overage stays visible in the drawer or moves to the discrepancies account. The daily transfer records date, time, and user.
+3. Vouchers (transfer, supplier payment, receipt, expense) follow the field and allowance rules in [`domain.md`](domain.md), including the editable open-period voucher date and immutable creation timestamp.
+4. Each operational interface's search button opens the popup list for its own document type — sales, purchases, or vouchers — with previous/next navigation. Each type keeps its correction rules: saved sales invoices allow viewing and returns only; purchase invoices use Delta adjustments or returns; vouchers follow permissions and approved rules.
+5. Account statements open per account with chronological movements and document references; double-clicking a movement opens the original document per permissions.
+
 ## Terminal pairing and revocation
 
 1. An owner or trusted user reauthenticates on the Main Pharmacy Computer and starts a five-minute, one-use pairing session.
@@ -78,7 +93,7 @@ For each affected quantity, the owner approves a supplier return, write-off, des
 
 ## Subscription expiry and renewal
 
-The owner/admin sees the expiry and grace dates before disruption; ordinary cashiers do not receive repetitive disruptive warnings. Paid capabilities continue through seven inclusive grace days, except for new terminal pairing unless explicitly licensed. At 00:00 on day eight under Trusted Breev Time, Breev stops new paid work and the UI states why. Queued or stopped provider work and all history remain visible. Core-compatible drafts can still complete on the Main Pharmacy Computer; paid-only drafts remain preserved read-only or are explicitly converted. Free Core, backup/export/restore, and renewal remain usable. A validated renewed licence re-enables capabilities without reinstalling Breev or changing data.
+The owner/admin sees the expiry and grace dates before disruption; ordinary cashiers do not receive repetitive disruptive warnings. Under the proposed default rule (pending client approval — see [`open-decisions.md`](open-decisions.md)), paid capabilities continue through seven inclusive grace days, except for new terminal pairing unless explicitly licensed, and at 00:00 on day eight under Trusted Breev Time Breev stops new paid work and the UI states why. Queued or stopped provider work and all history remain visible. Core-compatible drafts can still complete on the Main Pharmacy Computer; paid-only drafts remain preserved read-only or are explicitly converted. Free Core, backup/export/restore, and renewal remain usable. A validated renewed licence re-enables capabilities without reinstalling Breev or changing data.
 
 ## One-Way Sync and future Cloud Commands
 
@@ -92,4 +107,5 @@ A future Cloud Command remains `Pending` until the local API receives it, verifi
 2. For optional use, present the purpose-specific bilingual notice and destination/provider/region context. Record grant, denial, or withdrawal as an immutable event. Do not infer consent or extend it to another purpose.
 3. Before sensitive access or external send, recheck current staff permission, purpose/basis, patient/representative scope, consent/opt-out, destination, retention/hold, provider/jurisdiction gate, and entitlement.
 4. Run clinical evaluation only with approved entered facts, product mapping, fresh signed licensed content, and versioned rules. Otherwise, show `Not Evaluated`. Never suppress Regulatory Hard Blocks.
-5. Queue only an approved current template for WhatsApp. Send-time failure, withdrawal, number change, provider outage, policy block, or paid expiry cancels or stops the optional send without affecting the sale. Authenticated callbacks update delivery evidence idempotently.
+5. In the paid follow-up interface: select the patient, select the message template (or, with permission, add a new template from the interface), then send immediately or schedule for an approved time. Enabled message types — invoice delivery, medication-depletion reminders, birthday greetings, reserved-item availability, price-change notices — depend on the plan and the client-approved final list. Follow-up lists order by due time, and completed actions leave the list; a reservation clears after its availability message is sent or delivered.
+6. Queue only an approved current template for WhatsApp. Send-time failure, withdrawal, Do Not Disturb, number change, provider outage, policy block, or paid expiry cancels or stops the optional send without affecting the sale. Authenticated callbacks update delivery evidence idempotently.

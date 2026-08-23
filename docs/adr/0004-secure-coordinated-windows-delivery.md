@@ -1,6 +1,6 @@
 # ADR 0004: Secure coordinated Windows delivery
 
-**Status:** Accepted safety direction; tooling decision open pending M0 proof, 2026-08-23
+**Status:** Accepted safety direction; tooling decision open pending the milestone 1 runtime proof, 2026-08-23
 
 ## Context
 
@@ -10,7 +10,7 @@ Breev ships an Electron client, a local API service, a PostgreSQL service, schem
 
 Keep the build compatible with Vite. Package the desktop client, pinned service runtimes, compatibility manifest, and schema requirements as one signed and tested release set.
 
-During M0, compare the leading `electron-vite` with `electron-builder` and NSIS candidate against Electron Forge and any Windows installer layer it requires. Select and record the build, packager, updater, and installer only after proving signed installation, update, repair, and restore. After selection, use one production stack.
+During the milestone 1 runtime-proof stage, compare the leading `electron-vite` with `electron-builder` and NSIS candidate against Electron Forge and any Windows installer layer it requires. Select and record the build, packager, updater, and installer only after proving signed installation, update, repair, and restore. After selection, use one production stack.
 
 The updater must verify signed hashes and manifests. It must support staged Internal, Pilot, Stable, and Emergency channels. Before an update, it must check system health, free disk space, backups, and compatibility. It must stop new transactions and jobs, let active ones finish safely, then create a fresh encrypted recovery point.
 
@@ -18,9 +18,9 @@ Migrations must move forward only. They must support resumption and record each 
 
 ## Alternatives considered
 
-- Forge with its experimental Vite plugin offers general packaging and established security tools. M0 must prove its Vite path and fit with a service installer.
-- `electron-vite` with electron-builder and NSIS is the current leading candidate. It offers a compact three-target build and established support for signing, fuses, and updates. M0 must still prove the service and database lifecycle.
-- A manual Vite, packager, and custom updater stack would repeat standard work for builds, fuses, signing, updates, and targets. Choose it only if M0 proves that the standard tools leave an unavoidable gap.
+- Forge with its experimental Vite plugin offers general packaging and established security tools. The runtime proof must validate its Vite path and fit with a service installer.
+- `electron-vite` with electron-builder and NSIS is the current leading candidate. It offers a compact three-target build and established support for signing, fuses, and updates. The runtime proof must still cover the service and database lifecycle.
+- A manual Vite, packager, and custom updater stack would repeat standard work for builds, fuses, signing, updates, and targets. Choose it only if the runtime proof shows that the standard tools leave an unavoidable gap.
 - Independent component updates can create unsupported combinations of the desktop client, API, and schema.
 - A blind database rollback can lose posted work or cause Breev to read it incorrectly.
 
