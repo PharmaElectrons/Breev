@@ -8,9 +8,9 @@ The local system controls core operations and must keep working offline. The clo
 
 ## Decision
 
-M4 creates `cloud-api` for cloud-owned tenant, subscription, device, and licence state. It does not sync or edit pharmacy data.
+Milestone 4 creates `cloud-api` for cloud-owned tenant, subscription, device, and licence state. It does not sync or edit pharmacy data.
 
-M7 adds at-least-once One-Way Sync. The local business transaction writes a versioned outbox entry. The cloud commits inbox deduplication and its read projection in one transaction. The cloud acknowledgement then advances a durable local checkpoint. Local posting never waits for sync.
+One-Way Sync follows in the same milestone as at-least-once replication. The local business transaction writes a versioned outbox entry. The cloud commits inbox deduplication and its read projection in one transaction. The cloud acknowledgement then advances a durable local checkpoint. Local posting never waits for sync.
 
 Posted operational and financial facts remain under permanent local authority. A future higher tier may request changes only through Cloud Commands for an explicit field-ownership allowlist. Each command has a unique identity, an expiry, and an expected version. The local system alone validates and applies the command. The cloud marks it `Applied` only after the local system acknowledges it.
 
@@ -27,7 +27,7 @@ The first cloud deployment uses one managed PostgreSQL database with immutable t
 
 ## Consequences
 
-At M4, protected commercial operations may change only cloud-owned tenant, subscription, device, and licence state. At M7, the first remote pharmacy-data UI remains read-only and shows freshness and backlog.
+In milestone 4, protected commercial operations may change only cloud-owned tenant, subscription, device, and licence state. The first remote pharmacy-data UI remains read-only and shows freshness and backlog.
 
 Every sync schema carries a version for the supported in-flight horizon. Before a release removes compatibility, the team drains affected work or coordinates the update. Breev does not keep fallback decoders indefinitely. Any future editable pharmacy field needs explicit approval and tests before the team adds it to the allowlist.
 

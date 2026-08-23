@@ -8,7 +8,7 @@ The scaffold defines five app workspaces and twenty-five package workspaces, but
 
 ## Decision
 
-Begin with `desktop`, `local-api`, and the cross-runtime `contracts` package. Add `cloud-api` when M4 implements paid subscription and licence issuance. Extend the same app later for sync.
+Begin with `desktop`, `local-api`, and the cross-runtime `contracts` package. Add `cloud-api` when milestone 4 implements automated subscription and licence issuance. Extend the same app later for sync.
 
 Keep each local domain in a cohesive feature module inside `local-api`. Expose narrow public operations, keep tables private, reject dependency cycles and disallowed imports, and test through those operations. Delete all marker packages and apps. Do not add compatibility exports.
 

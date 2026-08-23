@@ -1,96 +1,73 @@
 # Source and requirement traceability
 
-## Fixed evidence baseline
+## Current requirement sources
 
-Local Git retains the full pre-consolidation repository documentation at commit `6ddc0431b58a43efdbc3bf2899e3f6251cd69c82`, dated 9 August 2026. Current docs do not duplicate it. To inspect an old file locally, use `git show 6ddc043:<path>`.
+The client's business requirements live in `docs/requirements/`. [`README.md`](README.md) defines the authority order. The three sources are:
 
-| Source | Evidence and authority |
+| Source | Role |
 |---|---|
-| `docs/requirements/Breef_Master_Architecture_Build_Prompt.md` | Contains 1,607 lines, SHA-256 `e01353f9540ef8c656206aac2a64a79149d26cbd8f9af3db9cfe3deb5fe4923c`. It governs engineering constraints and staged-delivery intent, but does not authorize blindly creating its sample tree. |
-| `docs/requirements/PROJECT_BRIEF.md` | Contains 630 lines, SHA-256 `0ddf4f1fd4442afac309d799218ecc776bb57ec112e199cde30398e600ed499c`. It is the primary consolidated product brief. |
-| Original Arabic brief | The evidence pass extracted and read all 11 pages, SHA-256 `ef96be18…3953`. Later evidence supersedes its older technology and future scope where they differ. This checkout does not contain the original file. |
-| Client/developer conversation | The evidence pass read 621 lines, SHA-256 `0feb9e40…fa2e`. Only explicit client and meeting conclusions have highest authority. This checkout does not contain the original file. |
-| Prototype repository | The earlier review inspected about 29k TS/TSX/CSS lines as visual and workflow evidence only. The prototype used direct Supabase/browser state and unsafe multi-write behavior, which this baseline rejects. The recorded `/mnt/data/Cefeldeen-clinic-pos` path is now absent. |
-| Current scaffold | Contains five app and twenty-five package marker workspaces and thirty lines of TypeScript total. It has no production behavior or accepted seams. |
+| [`requirements/breev-phase1-mvp-scope.md`](requirements/breev-phase1-mvp-scope.md) | Governing Phase One scope, v1.2 of 9 August 2026. Latest and most specific; its own conflict rule makes the latest approved specific written clarification win. |
+| [`requirements/client-chat.md`](requirements/client-chat.md) | Chronological client/developer record. Later entries supersede earlier ones; it also carries commercial terms (maintenance tiers, first-offer right, SLA) reflected in `delivery.md`. |
+| [`requirements/project-breif/`](requirements/project-breif/) | The client's detailed draft with 52 interface images. Details are commitments only where the scope incorporates them (scope §Document control); otherwise supporting evidence. |
 
-The old consolidated register contains **238** requirement rows. This file maps every row family to its current authoritative location. A family row records coverage. It does not replace individual acceptance details. Before implementing a gated or future family, read its original rows at the fixed commit and update current docs with the approved behavior.
+The pre-consolidation documentation baseline (the earlier 238-row register and its since-removed sources) is preserved at Git commit `6ddc0431b58a43efdbc3bf2899e3f6251cd69c82` for archaeology only.
 
-## Coverage matrix
+## Coverage map
 
-| Requirement family | Count | Current authoritative representation | Disposition |
-|---|---:|---|---|
-| `REQ-ARCH-001` through `012` | 12 | `architecture.md`, `delivery.md`, ADRs | Current docs retain all confirmed constraints and reject the sample package tree as a proposal. |
-| `REQ-UX-000` through `010` | 11 | `product.md`, `workflows.md`, `quality.md`, root `AGENTS.md` | Current docs retain Breev naming, language/theme/states, side-panel scope, keyboard/accessibility, and prototype authority. |
-| `REQ-CAT-001`, `001A`, and `002` through `006` | 7 | `domain.md`, `workflows.md`, M1/M3 | Current docs cover all naming, identity, search, package, quick-create, and supplier rules. |
-| `REQ-INV-001` through `013` | 13 | `domain.md`, `workflows.md`, G-01/G-02, M1/M3 | Current docs cover movement/negative-stock/batch/FEFO/valuation/block/cadence/disposition/expiry-correction rules. |
-| `REQ-PUR-001` through `007` | 7 | `product.md`, `domain.md`, `workflows.md`, M1/M3 | Current docs cover the exact row sequence, discount, atomic post, immutability/snapshots, and OCR boundary. |
-| `REQ-OCR-001` through `012` | 12 | `domain.md`, OCR workflow, G-10, M6 | Current docs cover the safety/continuity/qualification/quota boundary. When gate promotion begins, consult the original rows for provider-specific details. |
-| `REQ-SAL-001` through `012` | 12 | `domain.md`, sell/correction workflows, M1/M2 | Current docs cover draft, price, settlement, Cash Box, atomic/immutable/correction/exact-money rules. |
-| `REQ-PAY-001` through `011` | 11 | `domain.md`, G-12, M6 | This family is deferred. Current docs retain provider/custody/security/idempotency/unknown/settlement/refund/callback/expiry boundaries. At promotion, consult the original rows for exact adapter acceptance. |
-| `REQ-EINV-001` through `006` | 6 | `product.md`, `domain.md`, G-13 | This family is deferred, and Breev must not make a false "official" claim. At promotion, consult the original rows for the exact future authority workflow. |
-| `REQ-ACC-001` through `007` | 7 | `domain.md`, G-01, M1 through M3, `quality.md` | Current docs cover double entry, rule ownership, postings, times/backdating, write-off, and professional gates. |
-| `REQ-REP-001` through `002` | 2 | `domain.md`, architecture ownership, M1/M8 | Reports remain read-only, reconciled, and access-controlled. |
-| `REQ-IAM-001` through `021` | 21 | `product.md`, `domain.md`, pairing/subscription workflows, G-03 through G-05, M1/M2/M4 | Current docs cover identity/permission/entitlement/device/licence/grace/free-core/step-up/dual-control rules. The exact permission matrix remains gated. |
-| `REQ-SYN-001` through `010` | 10 | `domain.md`, sync workflow, architecture, G-14/G-15, M7 | Current docs cover one-way, authority, outbox/inbox, future commands/conflicts, and draft prices. Two-way implementation remains deferred. |
-| `REQ-PAT-001` through `029` | 29 | `domain.md`, patient workflow, G-08/G-11, provisional retention table, M5/M6 | Current docs cover core separations and privacy/external-link/connector gates. Consult the original rows for detailed conditional connector activation only if this family is promoted. |
-| `REQ-CLN-001` through `013` | 13 | `product.md`, `domain.md`, patient/clinical workflow, G-09 provisional timing, M6 | Current docs cover prohibitions, sources, mappings, severities, snapshots, updates/freshness/kill switch, and release gates. |
-| `REQ-MSG-001` through `010` | 10 | `product.md`, `domain.md`, messaging workflow, G-11, M6 | Current docs retain WhatsApp as the only candidate and cover ownership/templates/costs/callback plus the Iraq content gate. Other channels remain deferred. |
-| `REQ-AI-001` | 1 | `product.md`, `domain.md`, G-09/G-10, M6 | This family remains optional, entitled, privacy-reviewed, and non-authoritative. |
-| `REQ-NFR-001` through `049` | 49 | `architecture.md`, `quality.md`, G-04 through G-07/G-14/G-16, M0/M4/M7/M8 | Current docs cover security, recovery, cloud, hardware, updates, performance, and accessibility. During the M8 evidence audit, consult the original rows for detailed release checklists. |
-| `REQ-FUT-001` through `005` | 5 | `product.md` scope boundaries and delivery promotion rule | This family remains deliberately deferred. Do not create placeholder architecture. |
-| **Total** | **238** | | The rows above represent every requirement or trace it to gated promotion or release-audit evidence. |
+Every business-requirement area of the governing scope maps to one owning document. Acceptance-level detail lives in the owner, not here.
+
+| Scope area | Requirement | Owning documents |
+|---|---|---|
+| §1–§2 product model, offline-first, devices, units/sync model | Plans/add-ons, offline local authority, four-device testing without a hard-coded limit, integer unit model, one-way sync | `product.md`; `domain.md` (units, sync); `architecture.md` (chosen runtime) |
+| §3.1 login, users, permissions, attendance | Mandatory login, role set, configurable permissions, audit of sensitive changes, optional manual attendance | `product.md`; `domain.md` (identity/authorization) |
+| §3.2–§3.3 plans, feature control, Super Admin | Per-pharmacy licensing, hidden disabled features, founder grants, device counts, expiry behavior, Super Admin minimum | `product.md`; expiry rule pending in `open-decisions.md` |
+| §3.4 dashboard and alerts | Summaries, sortable item-summary fields, unified notification center | `product.md` |
+| §4 item definition, search, packaging, pricing | Two naming modes, Arabic name, ordered sequential search with acceptance example, base/sub units, third unit (days/dosage only), By Price / By Percentage, margin-on-selling-price, rounding, colors, movement history, barcode actions, daily matching | `domain.md` (catalog and pricing rules); `workflows.md` |
+| §5 sales and POS | Full POS flow, suspend/preserve/confirm, quick patient and item creation, patient context, controls and calculator, saved-invoice viewing with returns-only correction, panel fields, drawer balance, expired/damaged approval flow, quick access, reorder from sales | `workflows.md` (Sell and settle); `domain.md` (settlement, write-off) |
+| §6 purchases, suppliers, OCR | Entry order and keyboard flow, allowance snapshots, dual cost values, Purchase Invoice Adjustment (Delta) with A-numbered identifiers and conflict blocking, purchase returns, no deletion, OCR as reviewed draft | `domain.md`; `workflows.md`; `product.md` (OCR boundary) |
+| §7 inventory, stocktaking, reorder | Read-only inventory with approved columns, owner-only export, quick stocktake with unit combinations, reorder basket (max − current) and Ordered Items | `domain.md`; `workflows.md` (Count) |
+| §8 patients, CRM, messaging, AI boundaries | Profile contents, purchase history with continuation indicators, weight/BMI, automatic discount, Do Not Disturb, follow-up/reservations, templates and scheduling, Phase One AI limits | `domain.md` (patients, messaging); `product.md` (AI boundaries); `workflows.md` |
+| §9 cash accounts and accounting | Employee drawers without shift locking, start/end reconciliation, chart of accounts, vouchers with editable business date + immutable creation time, statements, Ledger source of truth, main accounts, pre-discount cost basis, settlement allowances and allowance differences, card commissions, debt aging, traceable transaction list | `domain.md` (accounting sections) |
+| §10 search lists, reports, audit, export | Per-type search popups, essential report catalogue, From/To and user filters, owner-password exports, Excel-like named-patient table + read API + Sheets guidance | `domain.md` (reports); `product.md` (spreadsheet boundary); `workflows.md` |
+| §11 cloud services | One-way upload, read-only remote viewing, page approval before milestone 4, Breev-owned provider accounts and resale, external-integration boundaries | `domain.md` (sync/cloud, providers); `product.md` |
+| §12 interface and branding | Breev naming, Arabic/English, themes, fewer clicks, keyboard, preserved unsaved data, clinics excluded, visuals add no scope | `product.md`; `workflows.md` (interaction rules) |
+| §13–§15, §18, §20–§21 delivery, acceptance, change control, responsibilities, handover, maintenance | Four funded milestones with acceptance criteria, review process, defect definition, schedule protection, client responsibilities, ownership and handover, maintenance tiers | `delivery.md` |
+| §16–§17 deferred and excluded | Phase Two list, AI roadmap as non-binding direction, price exclusions | `product.md` (scope boundaries) |
+| §19 open decisions | Client approvals before final implementation | `open-decisions.md` (client-decision table) |
 
 ## Governing reconciliations
 
-| Conflict in old docs | Governing result in this baseline |
+Where sources conflict or the engineering baseline deliberately differs, this table records the governing result.
+
+| Conflict | Governing result |
 |---|---|
-| Breef vs Breev | Breev is the company and product. New identifiers use `breev`/`@breev/*`. Old spellings get no compatibility layer. |
-| Laravel/SQLite/direct Supabase vs NestJS/PostgreSQL/Drizzle | The later architecture governs. The renderer never owns data or business logic. |
-| Prototype "95% complete" | The prototype supplies visual composition evidence only. It does not establish product behavior, security, persistence, or readiness. |
-| Side panel everywhere | The product panel exists only in Sales and Purchasing. |
-| Forced shifts | Breev uses continuous Cash Boxes with optional reconciliation. |
-| Clinic and broad future routes | Breev excludes Clinic and defers or hides the other named capabilities. |
-| Mutable/delete history and direct quantity | Breev uses immutable snapshots, linked corrections, and movement-derived inventory. |
-| Prototype purchase order | The confirmed Item/Barcode → Quantity → Cost → Selling Price → Expiry → Enter (next row) sequence governs. |
-| Whole IQD/open rounding | The later decision confirms signed integer fils, exact intermediates, and no automatic cash rounding. Accountant golden rules remain gated. |
-| Human numbering "open" | The confirmed direction uses UUIDv7 plus local pharmacy/type/year sequences. Final legal and accountant presentation remains gated. |
-| WAC/FIFO/last purchase ambiguity | WAC is the default. FIFO is the setup-time, accountant-reviewed alternative. Last purchase is a reference only, and FEFO remains separate. |
-| Supplier discount ambiguity | Net purchase-price discounts reduce acquisition cost. Later rebates adjust inventory/COGS. Genuine expense and financing remain separate. |
-| Negative stock/expiry cadence/map-only concern | Later explicit stakeholder requirements confirm hard negative-stock/block rules and daily/monthly expiry behavior. |
-| Grace "open" | The later decision confirms seven inclusive days and Free Core on day eight. Trusted-time implementation remains gated. |
-| WhatsApp ownership "open" | Breev requires a pharmacy-owned dedicated identity/number/template/cost. Provider/template/legal/pharmacist release remains gated. |
-| Two-way sync ownership "open" | Breev confirms command/field ownership, expected-version, and conflict semantics. The capability remains deferred. |
-| 27 proposed/stale ADRs | Current docs place product rules in domain/workflow/gates and retain only four hard-to-reverse structural ADRs. |
-| Amendment model "open" | Financial corrections use Return, Reversal, and replacement only; an amendment is limited to a non-financial note. Printed correction presentation remains G-01-gated. |
-| Master prompt Phase 1 cloud/commercial scope | Subscription and commercial operations move to M4 under the earn-a-workspace rule; the prompt's own phases were internally inconsistent about this. |
-| Master prompt Arabic reporting and task-template process | Replaced by the root `AGENTS.md` working agreement. The bilingual product requirement is unchanged. |
+| Proposed stack (SQLite, Laravel/PHP, JWT/Sanctum) vs chosen stack (PostgreSQL, NestJS, Drizzle, device certificates) | The scope labels its technologies "planned"; the chosen stack satisfies every stated business constraint (offline-first, local service owning the database, no raw file sharing, one-way sync). `architecture.md` governs implementation. |
+| Earlier chat: three selectable costing methods (average default) vs scope v1.2: average cost on pre-discount Primary Supplier Cost | The later scope governs: Phase One uses WAC on Primary Supplier Cost as the single method. Method selection would be a change request. |
+| Older engineering baseline: discounts reduce acquisition cost (net cost, IAS 2 style) | Replaced. The client's explicit rule governs: valuation, average cost, and COGS use the pre-discount Primary Supplier Cost; Cost After Discount is informational. |
+| Older engineering baseline: tertiary unit as a real quantity unit | Replaced. The scope and brief agree the third unit exists only for days/dosage follow-up with no stock effect. |
+| Older engineering baseline: mandatory Step-Up for every below-cost sale | Replaced by the scope's rule: red warning always; approval setting disabled by default. |
+| Older engineering baseline: Step-Up-gated effective-date backdating for every document | Narrowed: the business/document date is an ordinary editable field at creation within an open period (the client's routine voucher workflow); creation timestamps stay immutable; closed periods still require a current-period correction. |
+| Older engineering baseline: reconciliation "optional" | Clarified: the daily employee-drawer start/end reconciliation workflow is a required feature; what remains true is that reconciliation never locks the sales screen. |
+| Older engineering baseline: pharmacy-owned WhatsApp identity | Replaced by the Breev-administered model with segregated per-pharmacy identities (scope §11.3 and chat: Breev owns/manages provider accounts and resells access). Provider-policy titling details settle at the G-11 activation gate. |
+| Older engineering baseline: numeric OCR release thresholds (≥99%/≥95%) | Removed. The scope states accuracy is provider-dependent and not an acceptance requirement; the client approves provider/budget/test set, and accuracy is measured and reported, not gated. |
+| Brief page 1: "past sales invoice editing under RBAC (under study)" | Superseded by scope §5.5: saved sales invoices are never edited; corrections use linked sales returns (Reversal covers a wholly wrong posting). |
+| Scope §6.3: exceptional gated deletion option for purchase invoices | Satisfied more strictly: the requirement makes deletion "unavailable by default" and forbids silently erasing approved history — the docs provide no delete at all. Undoing an entire wrong purchase uses a full-offset Purchase Invoice Adjustment or a full Purchase Return, both preserving the original and its audit trail. |
+| Brief-only details not incorporated by the scope | Not promoted to requirements: Free Product checkbox, four configurable custom fields (sales/item/patient), Official Price third price, drag-and-drop column reorder in sales, initial-stocktaking icon, branch column/switching, hide-item-from-sales-search control, the user-facing Replace-Item-with-Another settings screen (the underlying need is met by the archive/merge integrity rule), diagnosis field, dose D/W/M keys as specific UI, Excel import icon. Adding any of them is a change request. |
+| Breef vs Breev | Breev is the company and product name. New identifiers use `breev`/`@breev/*`. |
+| Prototype "95% of final appearance" | The prototype and images supply visual composition evidence only; the written scope defines behavior. |
 
-Engineering elaborations beyond the register — multiple package barcodes, the named startup states, the PostgreSQL-native job library, contracts subpath seams, and the loopback CSRF/Origin proofs — are design decisions under the working agreement, not new product requirements.
+## Visual evidence register
 
-## Research used to choose, not invent
+All 52 brief images (49 unique) were inspected and classified against the written rules. Written requirements win; an image adds no scope.
 
-- Electron, T3 Code, VS Code, and Bitwarden provided precedents for isolated renderers, named preload methods, constrained navigation/protocols, typed privileged-server boundaries, and hardened packaging. Breev also requires its API to outlive the desktop and serve LAN terminals.
-- Shopify, Square, Odoo, and Oracle Retail provided precedents for durable/saved carts, scan-review-confirm receiving/counting, linked corrections, one stock unit plus package conversions, batch traceability, and explicit provider-offline states. Breev keeps stronger local authority and pharmacy safety rules.
-- PostgreSQL and Drizzle support the required exact types, constraints, transactions, locks, RLS, outbox/job claims, backups, and Windows service lifecycle. Breev does not need repository frameworks, Redis, or a broker for those jobs.
-- IAS 2/IFRIC provide accounting precedents for WAC/FIFO and purchase-cost discount treatment. Iraqi accountant and legal validation still govern Breev.
-- OWASP/AWS/Azure tenant guidance supports default deny, verified tenant context, authorization on every request, and layered isolation. PostgreSQL RLS adds defense in depth but cannot be the only check.
-- JWS/JWT/TUF and Windows protected-key APIs support signed offline claims and rollback evidence. They also establish that a signature cannot make a fully offline editable clock perfectly trustworthy.
-- Official WhatsApp policy, CBI lists, and Iraqi/Kurdistan materials support provider/template/role-specific gates. They also support the decision not to claim a current pharmacy e-invoice mandate.
+**Accepted (visuals matching written requirements):** dashboard cards and item-summary grid (p4); POS layout with patient search, chronic-med insertion, suspend/save/return (p5); quick-access grid with categories (p6, p8); per-item discount and batch column (p9); purchase screen with left panel, OCR import, pricing columns (p10); saved-purchase list with dual costs and Adjusted/Return tags (p12); quick-stocktake dialog with dual-unit entry (p15); Item Master Card fields and movement history (p16); patient profile with weight/BMI, chronic facts, discount (p19); message templates, scheduling, and reservations (p20–23); reorder basket with proposed quantity and risk columns (p24–25); the report screens for sales, purchases/suppliers, items/inventory, patients, and profit (p26–39 within scope §10.2 categories); the Accounts screen with chart-of-accounts types (p42); supplier-settlement voucher allowance fields (p43/p56).
 
-Primary citations sit next to the decisions in `architecture.md`, `domain.md`, and the four ADRs. External research never promotes a provider or resolves a regulated gate.
+**Superseded (visuals overridden by written rules):** the Clinics tab appearing in nearly every navigation bar (excluded); the inventory grid's item-delete icon and branch column/transfer control (p14 — read-only, no delete, no branch in Phase One); AI predictive/forecast screens and the persistent AI-forecast/BI navigation buttons (p40–41 and report headers — advanced AI is deferred); AI supplier-price comparison buttons in the basket (p24–25 — Phase Two); Doctor/Lab EMR tabs (p19 — Phase Two readiness only); AI-drafted message wording (p20 — future roadmap); multi-currency USD/exchange-rate fields and the Delete action on the legacy voucher reference (p42/p43 — single currency, no deletion of approved movements); the thrice-repeated "4 configurable fields" settings screen (p8/p18/p20 — explicitly non-committed).
 
-## Consolidation record
+**Unresolved (visual evidence only, no written basis):** patient CRM metric cards (LTV, average invoice, visit count) on p18; a configurable commission-percentage field on the sales-analysis report (p27); column show/hide/reorder in the sales grid (written scope grants column configuration to purchasing only); add-to-basket from report rows (p26 — written scope names sales and inventory only); report grouping taxonomies such as "by family" (p39). None of these is a requirement; implementing one needs client confirmation or a change request.
 
-The consolidation removed the previous 46-file `docs/` tree instead of archiving it inside current documentation.
+The final unified visual PDF (including the quick-stocktake design) remains a pending client delivery in [`open-decisions.md`](open-decisions.md) and, when received, is a visual reference that adds no scope.
 
-- The requirements and contradiction registers became this coverage index.
-- The project context and glossary became root `CONTEXT.md`.
-- Three workflow inventories became `workflows.md`.
-- The architecture/module map and 27 ADRs became `architecture.md` plus four ADRs.
-- Questions and risks became `open-decisions.md`.
-- Two phase plans became vertical milestones.
-- Three agent-convention files became root `AGENTS.md`.
+## Commercial terms traced
 
-The consolidation deleted repeated requirement prose and stale statuses. Git records the history.
-
-A final independent review on 23 August 2026 validated the consolidation against the 238-row register, the governing sources, and the old ADRs, then restored compressed confirmed rules to their owning documents: the three-tier unit model, the additional sale item, invalid-batch resolution, below-cost permission, support-access defaults, the OCR patient-data block and Supplier Invoice Evidence, export identity rules, grace-period draft and warning behavior, mDNS/DNS-SD discovery, the decided permission names, UTC time storage, and clinical kill-switch and Essential-Drugs-List rules. It also recorded the second-opinion architecture refinements now in `architecture.md` and the sharpened G-04/G-05/G-14/G-15 gate evidence.
+The four milestones with durations, payments, and acceptance criteria; the three-business-day review with one consolidated feedback list; the defect definition; schedule protection; change control; client responsibilities; ownership and handover; and the $10/$30/$50 maintenance tiers with the developer's first-opportunity right on future work are carried in [`delivery.md`](delivery.md) from scope §13–§15, §18, §20–§21 and the client record's maintenance/SLA agreement of 31 July 2026.

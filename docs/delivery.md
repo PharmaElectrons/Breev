@@ -1,89 +1,52 @@
 # End-to-end delivery plan
 
-Each milestone must end with demonstrable working software. Do not create apps, packages, provider adapters, tables, or generic extension points before a milestone requires them. A milestone's **Gate** names the professional or security approval its own outputs must obtain before the milestone exits; the milestone's bounded research, prototype, or proof tasks produce that evidence. Only a gate item that requires a prior external decision — such as selecting a provider — blocks the start of the dependent production work.
+Phase One is one contract delivered through four funded Mostaql milestones (56 calendar days, $1,900 total). Each milestone begins after funding, ends with a testable build and delivery note, and closes against its written acceptance criterion. The engineering stages below nest inside those milestones. Do not create apps, packages, provider adapters, tables, or generic extension points before a stage requires them. A **Gate** names the professional or security approval a stage's outputs must obtain before its milestone exits; only a gate that requires a prior external decision blocks dependent production work.
 
-## M0: Runtime and installation proof
+## Milestone 1: Foundation and Local Core — 12 days, $400
 
-Delete the marker scaffold. Pin and configure pnpm, Turborepo, TypeScript, ESLint, Prettier, Vitest, and Playwright. Add the lockfile, `@breev/*` names, boundary checks, and only the `desktop`, `local-api`, and `contracts` projects.
+**Stage 1a — runtime and installation proof.** Delete the marker scaffold. Pin and configure pnpm, Turborepo, TypeScript, ESLint, Prettier, Vitest, and Playwright. Add the lockfile, `@breev/*` names, boundary checks, and only the `desktop`, `local-api`, and `contracts` projects. Prove: a packaged, sandboxed Electron screen with a narrow preload method; a REST health/version handshake; managed loopback PostgreSQL and local API Windows services; explicit Main and Terminal states; Main loopback device/session defenses plus browser-request defenses; clean install, repair, and uninstall with data preservation; and a real-PostgreSQL test harness. Closing Electron leaves the API healthy; PostgreSQL accepts no LAN connections; internet loss changes nothing locally.
 
-Prove:
+**Stage 1b — identity, licensing, and platform foundation.** Owner and user accounts, authentication (no bypass), the role set with default-deny permissions, pharmacy settings, exact IQD and inventory primitives, plan-entitlement context with complete feature hiding and the founder-override path, the signed offline licence foundation with Trusted Breev Time, local backup foundation, and the Arabic/English and theme foundations. Prove restart and idempotency recovery on a minimal transaction path.
 
-- a packaged, sandboxed Electron screen with a narrow, harmless preload method;
-- a REST health and version handshake;
-- managed loopback PostgreSQL and local API Windows services;
-- explicit Main and Terminal states;
-- Main loopback device and session defenses, plus browser-request defenses;
-- clean install, repair, and uninstall with data preservation; and
-- a real-PostgreSQL test harness.
+**Stage 1c — minimum multi-device operation.** Terminal enrollment with device certificates and mTLS, licensed seat allocation, and sign-in from any licensed device under role permissions. Pairing UX polish, certificate rotation, CA-recovery tooling, and revocation drills complete in milestone 4's hardening stage; the security boundary itself (every request carries a verified device and user) ships now.
 
-**Exit.** Closing Electron leaves the API healthy. PostgreSQL accepts no LAN connections. A second client can reach only the API. Internet loss does not change local operation. Windows proof identifies every unresolved release-tooling gate. No pharmacy transaction exists yet.
+> **Acceptance.** The application installs and runs on the main device without internet, and four devices work simultaneously over LAN (Wi-Fi or Ethernet). An authorized user signs in from any licensed device according to their role. Disabled features are hidden, and licensing can increase the permitted device count without a fixed software limit.
 
-## M1: First complete local pharmacy loop
+**Gates.** Close G-15 for the first local event envelope. G-05's loopback and CA-key proofs land here.
 
-Implement one owner, one pharmacy, and the installed Main-device identity. Add a built-in Free Core entitlement context, minimum default-deny authorization, and exact IQD and inventory primitives.
+## Milestone 2: Items, Purchases, and Inventory — 14 days, $450
 
-Implement one product/package/barcode, one supplier, one batch/expiry purchase, and one cash Sale Draft/Post. Allocate the minimal `S` and `P` human-number sequences; their printed presentation stays provisional until G-01 closes. The transaction must produce FEFO/WAC movement/value, continuous Cash Box records, a balanced journal, an immutable receipt, one read-only reconciliation report, an audit record, and a versioned local outbox row. Add restart and idempotency recovery. Use the exact purchase and scan-first sale focus paths.
+Medication and general-item definition with generated naming and the Arabic search name; ordered sequential smart search and barcodes; the integer base-unit and package-conversion model without fractions; By Price and By Percentage modes with field locking and 250/500/1,000 rounding; retail and wholesale pricing; suppliers with historical allowance snapshots; purchase invoices with the uninterrupted keyboard row flow; Purchase Invoice Adjustments (Delta) and purchase returns; batches and expiry with FEFO and hard blocks; the read-only inventory view; quick stocktaking; item colors and alerts; the reorder basket and Ordered Items; purchase-invoice search and the item-details panel in purchasing.
 
-**Gate.** Obtain accountant approval for the minimal purchase, sale, COGS, and Cash Box examples and for the precision and remainder rules. Close G-15 for the first local event envelope and its retention decision.
+> **Acceptance.** A user defines an item and finds it with the approved smart-search behavior, then enters and saves a supplier invoice with cost and price updated per the item's pricing mode. A purchase adjustment records only the difference, or the user creates a separate purchase return. Quantities, batches, and expiry appear correctly in inventory, stocktaking, and the reorder basket.
 
-**Exit.** On the Main Pharmacy Computer, a pharmacist can purchase stock, sell it, and inspect stock and the ledger. After a simulated printer failure, the pharmacist can reprint. The system can restart at every failure point and restore the data. All of this works without internet.
+**Gates.** Accountant approval for WAC-on-primary-cost, allowance, and adjustment golden examples. Pharmacist approval for product-class lot/expiry requirements (G-02).
 
-## M2: Safe multi-user operation and corrections
+## Milestone 3: Sales, Patients, Cash Accounts, and Accounting — 16 days, $600
 
-Add roles and permissions, Step-Up Authorization, and Dual Control only after approval. Configure sensitive visibility. Support cash, credit, and mixed settlement; AP/AR; suspended drafts; and current-price comparison. Add Sales Return, Purchase Return, Reversal/replacement, non-financial notes, optional Cash Box reconciliation, the remaining number sequences and their controls, and audit and export controls.
+The complete POS flow with quick patient and item creation, patient context popups, the quick-access list, quantity/unit/price/discount controls and the side calculator, cash/card/deferred settlement, the below-cost warning with its disabled-by-default approval setting, and sales returns instead of edits, plus invoice search and navigation, barcode printing, and multiple barcodes. Patient profiles with weight history, purchase history, the special discount, follow-up lists, and reservations. Approval-based expired/damaged write-offs. Employee cash drawers with start/end reconciliation, discrepancies, transfer and payment vouchers, and card commissions. The complete Ledger for approved transactions, supplier statements with allowances, payments, allowance differences, and debt aging, essential reports, and the audit trail. Multi-user controls: Step-Up Authorization, sensitive visibility, suspended drafts, current-price comparison, remaining number sequences, and correction posting matrices.
 
-**Gates.** Obtain accountant and legal approval for numbering and the complete correction and settlement posting matrices. Approve the permissions and no-invoice-return policy.
+> **Acceptance.** A complete operating cycle works from purchase through sale and accounting. A sale reduces inventory, links the selected patient, records cash, card, or deferred payment in the correct account, and appears in the Ledger, statements, and reports. Users cannot edit a saved sales invoice directly; correction uses a sales return. Expired or damaged stock is recorded as a separate loss.
 
-**Exit.** Every correction remains linked, immutable, and atomic. Unauthorized, stale, duplicate, and closed-period attempts fail without partial effects.
+**Gates.** G-01 accountant/legal golden postings and the settlement/correction matrices. G-08 patient identity, consent, and retention wording. G-03 POS observation items.
 
-## M3: Purchasing and inventory depth
+## Milestone 4: Paid Services, Synchronization, and Final Delivery — 14 days, $450
 
-Add full product naming and search, multiple package barcodes and conversions, supplier discount and later-rebate behavior, and multi-line purchasing. Add durable counts, batch status, daily and monthly expiry operations, recall, and quarantine. Add supplier return, write-off, destruction, a reorder basket, movement and value history, and stock and purchasing reports. Add import only when the team receives a real source.
+Create the minimal `cloud-api` control plane: tenant, subscription, device-seat, and licence authority; automated licence issuance; and the protected Super Admin operations UI (register pharmacies, assign plans and add-ons, founder grants, device counts, feature toggles, license and sync status). Complete terminal-security hardening (pairing UX, rotation, revocation and recovery drills) and multi-device load testing on four devices. One-Way Sync with the approved read-only cloud pages. OCR as a reviewed draft, AI, and WhatsApp within the client-approved functions and providers. The spreadsheet read/export API and Google Sheets guidance. Final reports, backup and restore proof, stability testing, release hardening (performance, accessibility, signed installer, update and recovery drills, security review), and the handover package: installation files, code, database, documentation, and support-team training.
 
-**Gates.** Obtain pharmacist approval for product-class and lot requirements. Obtain accountant approval for WAC, FIFO, discount, and write-off examples.
+> **Acceptance.** The pilot pharmacy operates on the approved devices, eligible data synchronizes one-way, the agreed paid add-ons work, a tested backup restores, and the developer hands over the complete delivery package.
 
-**Exit.** Quantity, value, and journal reconciliation tests pass at realistic volume. Concurrency tests pass with two simultaneous clients.
+**Gates.** G-14 cloud provider/tenancy. G-15 sync allowlist and checkpoints. G-10 OCR provider/budget/test set (client approval). G-11 WhatsApp provider and templates. G-04 trusted time and subscription collection. G-07/G-16 release evidence.
 
-## M4: Secure additional terminals and offline licensing
+## Acceptance process, schedule, and change control
 
-Create the minimal `cloud-api` control plane for tenant, subscription, and device-seat authority; signed licence issuance; and protected commercial operations. Do not add sync or remote pharmacy editing.
-
-Implement a pharmacy CA and five-minute pairing with terminal keys and certificates. Require mTLS plus individual login. Support revocation, replacement, and rotation. Add signed offline licences, a seven-day grace period, Trusted Breev Time, paid terminal seats, and fail-open Free Core. Prove LAN-only operation and CA-loss recovery and re-pairing. Routine pharmacy transactions must never call the cloud.
-
-**Gates.** Approve the trusted-time threat model and recovery process, service-account and key storage, certificate rotation, and certified LAN, firewall, and discovery rules. Close the G-14 requirements for licence issuance: provider, region, tenant, key, and recovery.
-
-**Exit.** Device, user, permission, entitlement, tenant-bypass, and time-rollback tests pass. Licence issuance can fail without interrupting transactions. A paid-feature failure never interrupts main-computer Free Core.
-
-## M5: Patient scope
-
-Add Anonymous Sale separation, necessary transaction identity, an optional quick Patient Profile, typed facts, and append-only purpose consent. Add link, detach, and merge operations; access, export, retention, deletion, hold, and support workflows; and patient-safe reports. Do not add clinical evaluation or outbound providers.
-
-**Gate.** Obtain Iraqi legal and pharmacist approval for identity, basis, representative, consent, retention and deletion, controlled-medicine and dispensing, export, and support policies.
-
-**Exit.** Tests pass for withdrawal, deletion outcomes, backup-restore replay, cross-role access, and anonymous-sale behavior.
-
-## M6: One provider-assisted capability at a time
-
-Promote OCR first only if it passes its corpus and contract gate. Implement source-highlighted OCR Draft to ordinary purchase posting.
-
-Promote deterministic clinical alerts, WhatsApp, payment, or official e-invoicing only as separate later slices. Each slice requires its own gate, production adapter, test fake, policy version, quotas and costs, durable job, callback, failure handling, data location, retention, and exit evidence. Never build a generic integration platform.
-
-## M7: One-Way cloud
-
-Extend the M4 `cloud-api` and managed cloud PostgreSQL with an idempotent inbox, read projections, freshness, backlog, and dead-letter views, expanded restore and incident evidence, and the first approved local outbox projection. Keep remote views read-only.
-
-**Gates.** Approve the provider, region, DPA, subprocessors, and data-location matrix. Provide tenancy proof, assign ownership for cloud recovery, monitoring, incidents, and costs, and approve the exact synchronized allowlist and retention.
-
-**Exit.** Local posting and backup continue throughout a cloud outage. Duplicate, reordered, replayed, and cross-tenant sync cannot mutate or leak facts.
-
-## M8: Release hardening
-
-Complete all required local reports and exports. Remediate performance and accessibility with realistic data. Certify Windows, hardware, and peripherals. Deliver a signed staged installer, update, and offline bundle. Prove forward migration, failed-update recovery, backup and restore, and incident drills.
-
-Complete the security review and penetration-test checklist, the privacy-reviewed crash-reporting decision and implementation, support diagnostics and runbooks, admin training documentation, compatibility matrix, release notes, SBOM, licence, secret, and vulnerability checks, and operational ownership.
-
-**Exit.** Every applicable item in [`quality.md`](quality.md) has evidence. Do not waive any release gate without recording the waiver. A clean, supported pharmacy can install, operate offline, update, fail, restore, and export its data.
+- Each milestone is funded on Mostaql before work on it begins. The developer delivers a testable build with a short delivery note tied to the milestone scope. The client reviews within three business days and sends one consolidated list of deviations from the approved scope.
+- A defect is an implemented function that does not meet the approved written requirement or agreed acceptance outcome; corrections to reach compliance are included. A preference or flow change, another screen, report, or integration is a change request with its own written approval, price, and timeline, and work on it begins only after written approval and funding — no verbal request, chat message, image comment, or prototype change enters scope automatically. Approval of a milestone closes its scope except for proven defects found in final integration testing.
+- The 56-day period excludes delays caused by client approvals, accounting decisions, current-system access, OCR samples, service accounts, or provider responses. The final ten days are reserved for integration, testing, and fixes.
+- Client responsibilities: written scope and milestone approval; AnyDesk access to the current system; final account names, permissions, and any accounting details not explicitly settled in the scope — once implementation begins, changes to the fundamental Ledger rules require a change request; a database copy or export if a separate old-data-extraction quotation is requested; representative printed supplier invoices for OCR; approved rules/medical source for any dosage or clinical activation; brand identity and the final unified visual PDF (including the quick-stocktake design); test devices, network, and power hardware; creation and funding of server, WhatsApp, Meta, and AI/OCR provider accounts; approval of cloud pages, reports, and message templates; consolidated feedback within the review period. Professional tax, legal, or accounting certification is excluded from the development price, as are hardware, provider fees, data migration and manual data entry, and any OCR-accuracy guarantee.
+- Handover, ownership, and confidentiality: after full payment, Breev Company owns the source code, database design, installation files, and delivered documentation. Handover includes build and installation instructions, environment setup, backup and restore instructions, and support-team guidance including deploying, selling, and activating a new copy. Project details, images, logic, code, and pharmacy data may be shared with other parties only as needed for implementation and with the client's approval. The architecture avoids unnecessary vendor lock-in and supports server migration with reasonable cooperation.
+- Post-delivery maintenance (commercial understanding of 31 July 2026, confirmed separately): $10/month for the main version plus one subscribed pharmacy, $30/month total for 2–10, $50/month total for 11 or more. Agreed basic-maintenance coverage: fixing bugs caused by the developer's implementation; resolving simple synchronization or integration problems; investigating performance problems and identifying causes; basic monitoring of error logs, backups, and cloud services; and security updates and minor corrective updates that do not require major system changes, all during agreed working hours. Every future change or addition is offered to the original developer first (the developer's first-opportunity right); if the parties do not agree and another developer builds it, maintenance continues only with a clear responsibility boundary and their documented, reviewable changes. Excluded: server and provider charges, continuous 24/7 monitoring, major upgrades, data migration, problems caused by another developer's unreviewed or unapproved changes, and out-of-scope work — which must be explained and priced before implementation and proceeds only after client approval. The agreed working-hours SLA: a critical incident that stops sales or threatens data integrity — start within 4 hours; a core function unavailable while the rest works — start within 1 business day; limited-impact or cosmetic issues — start within 2 business days, fixed in the nearest suitable update.
 
 ## Deferred promotion rule
 
-Before work starts on a deferred capability, review current official sources and update the product, domain, workflow, and traceability documents. Close the capability's named gate, then deliver one thin end-to-end milestone. Do not begin by restoring old placeholder packages.
+Before work starts on a deferred capability, review current official sources and update the product, domain, workflow, and traceability documents. Close the capability's named gate, then deliver one thin end-to-end slice. Do not begin by restoring old placeholder packages.

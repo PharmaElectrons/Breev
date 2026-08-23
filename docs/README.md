@@ -30,19 +30,19 @@ No document may turn a release gate into a guessed default. Stale documents do n
 
 ## Source authority
 
-When sources disagree, apply this order:
+The client's business requirements live in [`docs/requirements/`](requirements/). When sources disagree, apply this order:
 
-1. later explicit client/stakeholder clarification;
-2. confirmed meeting conclusion;
-3. consolidated product brief;
-4. master architecture/build prompt for delivery and engineering constraints;
-5. original Arabic brief for intent where later sources are silent;
-6. prototype for visual and interaction evidence only;
-7. scaffold or developer proposal.
+1. [`requirements/breev-phase1-mvp-scope.md`](requirements/breev-phase1-mvp-scope.md) — the Phase One scope, version 1.2 of 9 August 2026. It is the latest and most specific requirement statement and carries its own conflict rule: the latest approved, specific written clarification wins.
+2. Later dated client clarifications recorded in [`requirements/client-chat.md`](requirements/client-chat.md). The record is chronological; a later entry supersedes an earlier one on the same point.
+3. [`requirements/project-breif/`](requirements/project-breif/) — the client's detailed draft and its interface images. Per the scope's own document control, its details are commitments only where the scope incorporates them; elsewhere they are supporting evidence of intent.
+4. Prototype and interface images — visual and interaction evidence only. Written requirements override conflicting visuals; images add no scope by themselves.
+5. This engineering baseline — for the implementation choices the business requirements do not constrain (stack, module boundaries, security engineering, delivery mechanics).
+
+The scope's formal Mostaql approval fields are blank in this copy; the client record confirms it was sent for approval. Treat it as governing unless a later approved revision replaces it.
 
 Use external standards and product precedents to validate approaches. They do not overrule confirmed Breev policy or decide Iraqi legal, accounting, pharmacist, privacy, or security questions.
 
-The complete prior repository-documentation baseline is fixed at local Git commit `6ddc0431b58a43efdbc3bf2899e3f6251cd69c82`. The two governing Markdown sources had SHA-256 hashes `e01353f9…4923c` for the master prompt and `0ddf4f1f…99c` for the product brief. The earlier evidence pass inspected the original Arabic PDF and conversation, but this checkout does not contain them. [`traceability.md`](traceability.md) retains their recorded hashes and derived decisions. The old prototype path is also unavailable, so it cannot supply new business logic.
+The pre-consolidation repository documentation (the earlier requirement register and its sources) is fixed at local Git commit `6ddc0431b58a43efdbc3bf2899e3f6251cd69c82` for archaeology only. It cannot reopen decisions the current requirement set settles.
 
 ## Current implementation state
 
