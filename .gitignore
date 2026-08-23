@@ -1,3 +1,6 @@
+.agents/
+.claude/
+.scratch/
 node_modules
 dist
 .turbo
@@ -5,3 +8,4 @@ dist
 *.log
 .env
 .env.local
+skills-lock.json
