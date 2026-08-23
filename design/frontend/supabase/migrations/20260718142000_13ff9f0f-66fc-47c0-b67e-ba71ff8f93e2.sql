@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS medicines_no_negative_stock ON public.medicines;
