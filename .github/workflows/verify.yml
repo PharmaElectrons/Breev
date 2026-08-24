@@ -48,6 +48,12 @@ jobs:
       - name: Verify PostgreSQL integration seam
         run: pnpm test:integration
 
+      - name: Install browser test dependencies
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify renderer browser seam
+        run: pnpm test:browser
+
       - name: Verify packaged Electron seam
         run: xvfb-run --auto-servernum pnpm test:smoke
 

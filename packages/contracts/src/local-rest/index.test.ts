@@ -102,7 +102,7 @@ describe("local REST health contract", () => {
   });
 
   it.each([
-    ["2", LOCAL_SCHEMA_VERSION],
+    ["1", LOCAL_SCHEMA_VERSION],
     [LOCAL_API_VERSION, "2"],
   ])(
     "reports API version %s and schema version %s as incompatible",

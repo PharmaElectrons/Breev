@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -6,6 +7,7 @@ import {
   createStartupConfigIpcGuard,
   createHardenedWindowOptions,
   resolveAppAssetPath,
+  resolveRendererEntry,
 } from "./security.js";
 
 describe("breev app protocol", () => {
@@ -122,6 +124,28 @@ describe("startup configuration IPC", () => {
 });
 
 describe("Electron window security", () => {
+  it("always selects the custom protocol for a packaged app", () => {
+    expect(resolveRendererEntry(true, "https://attacker.example")).toEqual({
+      origin: "breev://app",
+      url: "breev://app/index.html",
+    });
+  });
+
+  it("normalizes only a loopback HTTP development renderer", () => {
+    expect(resolveRendererEntry(false, "http://localhost:5173")).toEqual({
+      origin: "http://localhost:5173",
+      url: "http://localhost:5173/",
+    });
+    for (const invalidUrl of [
+      "https://localhost:5173/",
+      "http://attacker.example:5173/",
+      "file:///tmp/index.html",
+      "http://user:secret@localhost:5173/",
+    ]) {
+      expect(() => resolveRendererEntry(false, invalidUrl)).toThrow();
+    }
+  });
+
   it("uses the required production web preferences", () => {
     const options = createHardenedWindowOptions(
       "/opt/breev/preload/index.cjs",
@@ -146,5 +170,14 @@ describe("Electron window security", () => {
     expect(APP_CONTENT_SECURITY_POLICY).toContain("connect-src 'self'");
     expect(APP_CONTENT_SECURITY_POLICY).not.toContain("unsafe-inline");
     expect(APP_CONTENT_SECURITY_POLICY).not.toContain("unsafe-eval");
+  });
+
+  it("keeps the development meta policy identical to the protocol header", () => {
+    const rendererHtml = readFileSync(
+      path.resolve(import.meta.dirname, "../renderer/index.html"),
+      "utf8",
+    );
+
+    expect(rendererHtml).toContain(`content="${APP_CONTENT_SECURITY_POLICY}"`);
   });
 });

@@ -43,7 +43,7 @@ describe("desktop startup state", () => {
 
   it("separates version mismatch from ordinary unavailability", () => {
     expect(
-      stateFromStartupFailure(new LocalRestVersionMismatchError("2", "1")),
+      stateFromStartupFailure(new LocalRestVersionMismatchError("1", "1")),
     ).toBe("incompatible-version");
     expect(stateFromStartupFailure(new TypeError("fetch failed"))).toBe(
       "main-unavailable",

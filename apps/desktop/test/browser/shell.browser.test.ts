@@ -1,5 +1,9 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
+import {
+  LOCAL_API_VERSION,
+  LOCAL_SCHEMA_VERSION,
+} from "@breev/contracts/local-rest";
 import { expect, test, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
@@ -172,6 +176,26 @@ test.describe.serial("bilingual desktop shell", () => {
 
           const accessibility = await new AxeBuilder({ page }).analyze();
           expect(accessibility.violations).toEqual([]);
+          const buttons = page.getByRole("button");
+          await buttons.nth(0).focus();
+          await expect(buttons.nth(0)).toBeFocused();
+          await page.keyboard.press("Tab");
+          await expect(buttons.nth(1)).toBeFocused();
+          if (state !== "starting" && state !== "connecting") {
+            await page.keyboard.press("Tab");
+            await expect(buttons.nth(2)).toBeFocused();
+          }
+          const focusOutlineWidth = await page
+            .locator(":focus")
+            .evaluate((element) => {
+              const view = element.ownerDocument.defaultView;
+              return view === null
+                ? 0
+                : Number.parseFloat(
+                    view.getComputedStyle(element).outlineWidth,
+                  );
+            });
+          expect(focusOutlineWidth).toBeGreaterThanOrEqual(3);
           await page.screenshot({
             animations: "disabled",
             path: path.resolve(
@@ -369,8 +393,8 @@ async function startRendererServer(apiOrigin: string): Promise<RendererServer> {
           response.writeHead(200, { "content-type": "application/json" });
           response.end(
             JSON.stringify({
-              apiVersion: "2",
-              schemaVersion: "1",
+              apiVersion: "1",
+              schemaVersion: LOCAL_SCHEMA_VERSION,
               status: "healthy",
               database: "available",
             }),
@@ -381,8 +405,8 @@ async function startRendererServer(apiOrigin: string): Promise<RendererServer> {
           response.writeHead(503, { "content-type": "application/json" });
           response.end(
             JSON.stringify({
-              apiVersion: "1",
-              schemaVersion: "1",
+              apiVersion: LOCAL_API_VERSION,
+              schemaVersion: LOCAL_SCHEMA_VERSION,
               status: "repair-required",
               repair: { code: "installation-state-invalid" },
             }),
