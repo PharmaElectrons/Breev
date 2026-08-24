@@ -235,7 +235,7 @@ export function readMainDeviceBinding(
   }
   if (
     presentCount !== 3 ||
-    !isUuid(binding.deviceId) ||
+    !isUuidV7(binding.deviceId) ||
     !isHighEntropySecret(binding.deviceSecret) ||
     !isHighEntropySecret(binding.sessionToken)
   ) {
@@ -277,10 +277,10 @@ export function addMainDeviceRequestHeaders(
   };
 }
 
-function isUuid(value: string | undefined): value is string {
+function isUuidV7(value: string | undefined): value is string {
   return (
     value !== undefined &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
       value,
     )
   );

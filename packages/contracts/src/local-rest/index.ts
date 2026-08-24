@@ -54,7 +54,7 @@ export const localHealthContract = {
   },
 } as const;
 
-export const localSecurityDenialCodeSchema = z.enum([
+export const LOCAL_SECURITY_DENIAL_CODES = [
   "binding-invalid",
   "binding-missing",
   "body-invalid",
@@ -66,12 +66,16 @@ export const localSecurityDenialCodeSchema = z.enum([
   "rate-limit-exceeded",
   "request-too-large",
   "session-binding-invalid",
-]);
+] as const;
+
+export const localSecurityDenialCodeSchema = z.enum(
+  LOCAL_SECURITY_DENIAL_CODES,
+);
 
 export const localSecurityDenialSchema = z.strictObject({
   status: z.literal("denied"),
   code: localSecurityDenialCodeSchema,
-  requestId: z.uuid(),
+  requestId: z.uuidv7(),
 });
 
 const nonNegativeIntegerStringSchema = z.string().regex(/^(?:0|[1-9]\d*)$/u);

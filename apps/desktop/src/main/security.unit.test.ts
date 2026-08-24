@@ -203,6 +203,13 @@ describe("Main device request binding", () => {
     expect(() =>
       readMainDeviceBinding({ BREEV_MAIN_DEVICE_ID: binding.deviceId }),
     ).toThrow();
+    expect(() =>
+      readMainDeviceBinding({
+        BREEV_MAIN_DEVICE_ID: "b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4",
+        BREEV_MAIN_DEVICE_SECRET: binding.deviceSecret,
+        BREEV_MAIN_DEVICE_SESSION: binding.sessionToken,
+      }),
+    ).toThrow();
   });
 
   it("injects binding headers only into the trusted window's exact API origin", () => {

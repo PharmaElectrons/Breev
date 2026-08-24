@@ -18,7 +18,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { createServer } from "node:net";
 import path from "node:path";
+import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import {
+  createSeparatedDatabaseRoles,
+  type SeparatedDatabaseRoles,
+} from "../../test/database-roles.js";
+import { hashMainDeviceSecret } from "./main-device-binding.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const PACKAGED_RENDERER_ORIGIN = "breev://app";
@@ -37,14 +44,16 @@ describe.sequential("Main device security persistence seam", () => {
   let apiOrigin: string;
   let apiPort: number;
   let credentials: MainDeviceCredentials;
+  let databaseRoles: SeparatedDatabaseRoles;
   let postgres: StartedPostgreSqlContainer;
 
   beforeAll(async () => {
     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+    databaseRoles = await createSeparatedDatabaseRoles(postgres);
     credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
-    api = spawnLocalApi(apiPort, postgres.getConnectionUri(), credentials);
+    api = spawnLocalApi(apiPort, databaseRoles, credentials);
     api.stdout.on("data", collectApiOutput);
     api.stderr.on("data", collectApiOutput);
     await waitForHealth(apiOrigin, () => apiOutput);
@@ -104,6 +113,61 @@ describe.sequential("Main device security persistence seam", () => {
     ]);
     const after = await getProofEvidence(apiOrigin, credentials);
     expect(after.mutationCount).toBe(String(BigInt(before.mutationCount) + 3n));
+  });
+
+  it("runs journaled Drizzle migrations outside the least-privilege application role", async () => {
+    const applicationPool = new Pool({
+      connectionString: databaseRoles.applicationUrl,
+    });
+    const administratorPool = new Pool({
+      connectionString: postgres.getConnectionUri(),
+    });
+    try {
+      const application = await applicationPool.query<{
+        can_create_schema: boolean;
+        role_name: string;
+      }>(
+        `select current_user as role_name,
+                has_schema_privilege(current_user, 'public', 'create')
+                  as can_create_schema`,
+      );
+      expect(application.rows[0]).toEqual({
+        can_create_schema: false,
+        role_name: "breev_app",
+      });
+      await expect(
+        applicationPool.query(
+          "create table forbidden_runtime_ddl (id integer)",
+        ),
+      ).rejects.toThrow();
+
+      const migration = await administratorPool.query<{
+        migration_count: string;
+        tableowner: string;
+      }>(
+        `select p.tableowner,
+                (select count(*)::text
+                 from breev_migrations.breev_schema_migrations)
+                  as migration_count
+         from pg_tables p
+         where p.schemaname = 'public' and p.tablename = 'main_devices'`,
+      );
+      expect(migration.rows[0]).toEqual({
+        migration_count: "1",
+        tableowner: "breev_schema_owner",
+      });
+
+      await expect(
+        applicationPool.query(
+          `insert into main_devices (id, credential_hash)
+           values ($1, $2)`,
+          [randomUUID(), randomBytes(32)],
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await applicationPool.end();
+      await administratorPool.end();
+    }
   });
 
   it("rejects and audits a mutation without an Origin", async () => {
@@ -184,12 +248,39 @@ describe.sequential("Main device security persistence seam", () => {
     });
   });
 
-  it("rejects a session token replayed from another device context", async () => {
+  it("rejects a caller-selected unregistered device context", async () => {
     const headers = mutationHeaders(credentials);
     headers.set(LOCAL_DEVICE_ID_HEADER, randomUUID());
     await expectDeniedWithoutMutation({
       apiOrigin,
       code: "binding-invalid",
+      credentials,
+      headers,
+      status: 401,
+    });
+  });
+
+  it("rejects a stolen session replayed with another verified device", async () => {
+    const otherDevice = createMainDeviceCredentials();
+    const applicationPool = new Pool({
+      connectionString: databaseRoles.applicationUrl,
+    });
+    try {
+      await applicationPool.query(
+        `insert into main_devices (id, credential_hash)
+         values ($1, $2)`,
+        [otherDevice.deviceId, hashMainDeviceSecret(otherDevice.deviceSecret)],
+      );
+    } finally {
+      await applicationPool.end();
+    }
+
+    const headers = mutationHeaders(credentials);
+    headers.set(LOCAL_DEVICE_ID_HEADER, otherDevice.deviceId);
+    headers.set("Authorization", `Breev-Device ${otherDevice.deviceSecret}`);
+    await expectDeniedWithoutMutation({
+      apiOrigin,
+      code: "session-binding-invalid",
       credentials,
       headers,
       status: 401,
@@ -371,6 +462,32 @@ describe.sequential("Main device security persistence seam", () => {
     expect(denialCount(after, "origin-not-allowed")).toBe(
       denialCount(before, "origin-not-allowed") + 1,
     );
+
+    const widened = await fetch(
+      new URL(localProofMutationContract.path, apiOrigin),
+      {
+        headers: {
+          "Access-Control-Request-Headers":
+            "content-type, x-breev-csrf, x-attacker-header",
+          "Access-Control-Request-Method": "POST",
+          Origin: PACKAGED_RENDERER_ORIGIN,
+        },
+        method: "OPTIONS",
+      },
+    );
+    expect(widened.status).toBe(403);
+    expect(widened.headers.get("access-control-allow-origin")).toBeNull();
+    expect(
+      parseLocalProofMutationResponse(widened.status, await widened.json()),
+    ).toMatchObject({
+      status: "denied",
+      code: "cors-preflight-not-allowed",
+    });
+    const afterWidened = await getProofEvidence(apiOrigin, credentials);
+    expect(afterWidened.mutationCount).toBe(before.mutationCount);
+    expect(denialCount(afterWidened, "cors-preflight-not-allowed")).toBe(
+      denialCount(after, "cors-preflight-not-allowed") + 1,
+    );
   });
 
   it("rejects a rebound Host before the mutation handler", async () => {
@@ -401,9 +518,12 @@ describe.sequential("Main device security persistence seam", () => {
       headers: mutationHeaders(credentials),
       status: 429,
     });
+    expect(
+      await latestDenialDeviceId(databaseRoles, "rate-limit-exceeded"),
+    ).toBe(credentials.deviceId);
 
     await stopProcess(api);
-    api = spawnLocalApi(apiPort, postgres.getConnectionUri(), credentials);
+    api = spawnLocalApi(apiPort, databaseRoles, credentials);
     api.stdout.on("data", collectApiOutput);
     api.stderr.on("data", collectApiOutput);
     await waitForHealth(apiOrigin, () => apiOutput);
@@ -457,10 +577,19 @@ describe.sequential("Main device security persistence seam", () => {
 
 function createMainDeviceCredentials(): MainDeviceCredentials {
   return {
-    deviceId: randomUUID(),
+    deviceId: createUuidV7(),
     deviceSecret: randomBytes(32).toString("base64url"),
     sessionToken: randomBytes(32).toString("base64url"),
   };
+}
+
+function createUuidV7(): string {
+  const bytes = randomBytes(16);
+  bytes.writeUIntBE(Date.now(), 0, 6);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x70;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function trustedHeaders(credentials: MainDeviceCredentials): HttpHeaders {
@@ -629,6 +758,26 @@ function denialCount(
   );
 }
 
+async function latestDenialDeviceId(
+  databaseRoles: SeparatedDatabaseRoles,
+  code: string,
+): Promise<string | null | undefined> {
+  const pool = new Pool({ connectionString: databaseRoles.applicationUrl });
+  try {
+    const result = await pool.query<{ device_id: string | null }>(
+      `select device_id
+       from main_device_recent_denials
+       where code = $1
+       order by denied_at desc, id desc
+       limit 1`,
+      [code],
+    );
+    return result.rows[0]?.device_id;
+  } finally {
+    await pool.end();
+  }
+}
+
 async function expectDeniedWithoutMutation({
   apiOrigin,
   code,
@@ -666,7 +815,7 @@ async function expectDeniedWithoutMutation({
 
 function spawnLocalApi(
   port: number,
-  databaseUrl: string,
+  databaseRoles: SeparatedDatabaseRoles,
   credentials: MainDeviceCredentials,
 ): ChildProcessWithoutNullStreams {
   return spawn(
@@ -682,7 +831,8 @@ function spawnLocalApi(
         BREEV_MAIN_DEVICE_SESSION: credentials.sessionToken,
         BREEV_PROOF_RATE_LIMIT: "3",
         BREEV_PROOF_RATE_WINDOW_SECONDS: "2",
-        DATABASE_URL: databaseUrl,
+        DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+        DATABASE_URL: databaseRoles.applicationUrl,
       },
     },
   );

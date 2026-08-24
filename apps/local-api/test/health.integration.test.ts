@@ -11,16 +11,23 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import {
+  createSeparatedDatabaseRoles,
+  type SeparatedDatabaseRoles,
+} from "./database-roles.js";
+
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
 describe.sequential("local API health persistence seam", () => {
   let api: ChildProcessWithoutNullStreams;
   let apiOutput = "";
   let baseUrl: string;
+  let databaseRoles: SeparatedDatabaseRoles;
   let postgres: StartedPostgreSqlContainer;
 
   beforeAll(async () => {
     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+    databaseRoles = await createSeparatedDatabaseRoles(postgres);
     const port = await reservePort();
     baseUrl = `http://127.0.0.1:${port}`;
     api = spawn(
@@ -31,7 +38,8 @@ describe.sequential("local API health persistence seam", () => {
           ...process.env,
           API_HOST: "127.0.0.1",
           API_PORT: String(port),
-          DATABASE_URL: postgres.getConnectionUri(),
+          DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+          DATABASE_URL: databaseRoles.applicationUrl,
         },
       },
     );
@@ -77,7 +85,8 @@ describe.sequential("local API health persistence seam", () => {
           API_HOST: "127.0.0.1",
           API_PORT: String(repairPort),
           BREEV_INSTALLATION_STATE: "repair-required",
-          DATABASE_URL: postgres.getConnectionUri(),
+          DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+          DATABASE_URL: databaseRoles.applicationUrl,
         },
       },
     );
