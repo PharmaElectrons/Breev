@@ -328,7 +328,7 @@ function Configure-Service {
     [string] $Description
   )
 
-  Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("config", $Name, "start=", "auto", "obj=", "NT SERVICE\$Name", "password=", "") -FailureMessage "Could not assign the dedicated identity for $Name"
+  Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("config", $Name, "start=", "auto", "obj=", "NT SERVICE\$Name") -FailureMessage "Could not assign the dedicated identity for $Name"
   Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("description", $Name, $Description) -FailureMessage "Could not describe service $Name"
   Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("sidtype", $Name, "restricted") -FailureMessage "Could not restrict service $Name"
   Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("failure", $Name, "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/30000") -FailureMessage "Could not configure recovery for $Name"

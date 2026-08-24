@@ -36,8 +36,8 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $productName = "Breev Forge Comparison (Machine)"
 $dataRoot = Join-Path $env:ProgramData "Breev"
-$sentinelRoot = Join-Path $dataRoot "issue-34-forge-comparison"
-$sentinelPath = Join-Path $sentinelRoot "preservation-sentinel.json"
+$apiServiceName = "BreevLocalApi"
+$postgresqlServiceName = "BreevPostgreSQL"
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -52,12 +52,42 @@ if ($InstallerVersion -ne "0.0.0" -or $UpdateInstallerVersion -ne "0.0.1") {
 }
 
 function Invoke-MsiExec {
-  param([string[]] $Arguments)
+  param([string[]] $Arguments, [switch] $ExpectFailure)
   $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $Arguments -Wait -PassThru
-  if ($process.ExitCode -ne 0) {
+  if ($ExpectFailure -and $process.ExitCode -ne 1603) {
+    throw "msiexec returned $($process.ExitCode) instead of the injected failure code 1603"
+  }
+  if (-not $ExpectFailure -and $process.ExitCode -ne 0) {
     throw "msiexec failed with exit code $($process.ExitCode)"
   }
   return $process.ExitCode
+}
+
+function Get-InjectedFailureEvidence {
+  param([string] $ExpectedToken, [string] $LogPath)
+
+  $markerPath = Join-Path $dataRoot "state\forge-injected-failure.txt"
+  if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+    throw "The deferred Forge failure action did not write its marker"
+  }
+  if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+    throw "The failed Forge MSI operation did not produce its verbose log"
+  }
+  $actualToken = (Get-Content -LiteralPath $markerPath -Raw).Trim()
+  $log = Get-Content -LiteralPath $LogPath -Raw
+  $evidence = [ordered]@{
+    logPath = $LogPath
+    markerMatched = $actualToken -eq $ExpectedToken
+    markerSha256 = (Get-FileHash -LiteralPath $markerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    logSha256 = (Get-FileHash -LiteralPath $LogPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    logBytes = (Get-Item -LiteralPath $LogPath).Length
+    deferredActionLogged = $log -match 'BreevInjectedFailure'
+  }
+  Remove-Item -LiteralPath $markerPath -Force
+  if ($evidence.logBytes -le 0 -or -not $evidence.markerMatched -or -not $evidence.deferredActionLogged) {
+    throw "The failed Forge MSI operation did not reach the correlated deferred failure action"
+  }
+  return $evidence
 }
 
 function Get-InstalledProduct {
@@ -123,6 +153,164 @@ function Get-InstalledPayloadRecord {
   }
 }
 
+function Wait-Healthy {
+  param([int] $TimeoutSeconds = 90)
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    try {
+      $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:31310/health" -TimeoutSec 2
+      $body = $response.Content | ConvertFrom-Json
+      if ($response.StatusCode -eq 200 -and $body.status -eq "healthy" -and $body.database -eq "available") {
+        return $body
+      }
+    } catch {
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  throw "The Forge candidate services did not become healthy"
+}
+
+function Read-DatabaseConnection {
+  param([ValidateSet("runtime", "schema-owner")][string] $Role)
+
+  $name = if ($Role -eq "runtime") { "database-url" } else { "schema-owner-url" }
+  $uri = [Uri]::new((Get-Content -LiteralPath (Join-Path $dataRoot "config\$name") -Raw).Trim())
+  $userInfo = $uri.UserInfo.Split(':', 2)
+  return [ordered]@{
+    user = [Uri]::UnescapeDataString($userInfo[0])
+    password = [Uri]::UnescapeDataString($userInfo[1])
+    database = $uri.AbsolutePath.TrimStart('/')
+    port = $uri.Port
+  }
+}
+
+function Invoke-Psql {
+  param(
+    [string] $PayloadRoot,
+    [ValidateSet("runtime", "schema-owner")][string] $Role,
+    [string] $Sql
+  )
+
+  $connection = Read-DatabaseConnection -Role $Role
+  $previousPassword = $env:PGPASSWORD
+  try {
+    $env:PGPASSWORD = $connection.password
+    $output = & (Join-Path $PayloadRoot "postgresql\bin\psql.exe") --no-psqlrc --set=ON_ERROR_STOP=1 --host=127.0.0.1 --port=$($connection.port) --username=$($connection.user) --dbname=$($connection.database) --tuples-only --no-align --command=$Sql 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "A Forge database comparison query failed" }
+    return ($output -join "`n").Trim()
+  } finally {
+    $env:PGPASSWORD = $previousPassword
+  }
+}
+
+function Get-PreservationMarker {
+  param([string] $PayloadRoot)
+
+  $controlData = & (Join-Path $PayloadRoot "postgresql\bin\pg_controldata.exe") (Join-Path $dataRoot "postgresql")
+  if ($LASTEXITCODE -ne 0) { throw "Could not read Forge PostgreSQL control data" }
+  $identifierLine = $controlData | Where-Object { $_ -match '^Database system identifier:' }
+  return [ordered]@{
+    installationId = (Get-Content -LiteralPath (Join-Path $dataRoot "config\installation.json") -Raw | ConvertFrom-Json).installationId
+    runtimeConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\database-url") -Algorithm SHA256).Hash.ToLowerInvariant()
+    ownerConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\schema-owner-url") -Algorithm SHA256).Hash.ToLowerInvariant()
+    databaseSystemIdentifier = ($identifierLine -replace '^Database system identifier:\s*', '').Trim()
+  }
+}
+
+function Get-PostgresqlControlState {
+  param([string] $PayloadRoot)
+
+  $controlData = & (Join-Path $PayloadRoot "postgresql\bin\pg_controldata.exe") (Join-Path $dataRoot "postgresql")
+  if ($LASTEXITCODE -ne 0) { throw "Could not read Forge PostgreSQL control state" }
+  $stateLines = @($controlData | Where-Object { $_ -match '^Database cluster state:' })
+  if ($stateLines.Count -ne 1) { throw "Forge PostgreSQL control data did not report exactly one cluster state" }
+  return ($stateLines[0] -replace '^Database cluster state:\s*', '').Trim()
+}
+
+function Test-PreservationMarker {
+  param([object] $Expected, [string] $PayloadRoot)
+
+  $baseMatches = (Get-Content -LiteralPath (Join-Path $dataRoot "config\installation.json") -Raw | ConvertFrom-Json).installationId -eq $Expected.installationId -and
+    (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\database-url") -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Expected.runtimeConfigHash -and
+    (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\schema-owner-url") -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Expected.ownerConfigHash -and
+    (Get-Content -LiteralPath (Join-Path $dataRoot "postgresql\PG_VERSION") -Raw).Trim() -eq "18"
+  if (-not $baseMatches -or [string]::IsNullOrWhiteSpace($PayloadRoot)) { return $baseMatches }
+  return (Get-PreservationMarker -PayloadRoot $PayloadRoot).databaseSystemIdentifier -eq $Expected.databaseSystemIdentifier
+}
+
+function Test-Witness {
+  param([string] $PayloadRoot, [string] $WitnessId)
+  return (Invoke-Psql -PayloadRoot $PayloadRoot -Role runtime -Sql "SELECT count(*) FROM public.issue34_forge_witness WHERE id = '$WitnessId';") -eq "1"
+}
+
+function Get-ServiceEvidence {
+  param([string] $PayloadRoot)
+
+  return @(@($apiServiceName, $postgresqlServiceName) | ForEach-Object {
+    $name = $_
+    $service = Get-CimInstance Win32_Service -Filter "Name='$name'"
+    $childPath = if ($name -eq $apiServiceName) {
+      Join-Path $PayloadRoot "node\node.exe"
+    } else {
+      Join-Path $PayloadRoot "postgresql\bin\postgres.exe"
+    }
+    $child = Get-CimInstance Win32_Process | Where-Object {
+      $_.ParentProcessId -eq $service.ProcessId -and $_.ExecutablePath -eq $childPath
+    } | Select-Object -First 1
+    [ordered]@{
+      name = $name
+      state = $service.State
+      startMode = $service.StartMode
+      startName = $service.StartName
+      processId = $service.ProcessId
+      childProcessId = if ($null -eq $child) { 0 } else { $child.ProcessId }
+      childParentProcessId = if ($null -eq $child) { 0 } else { $child.ParentProcessId }
+      childExecutablePath = if ($null -eq $child) { $null } else { $child.ExecutablePath }
+      expectedChildExecutablePath = $childPath
+    }
+  })
+}
+
+function Test-ExactServices {
+  param([object[]] $Services)
+  return $Services.Count -eq 2 -and @($Services | Where-Object {
+    $_.state -ne "Running" -or $_.startMode -ne "Auto" -or
+    $_.startName -ne "NT SERVICE\$($_.name)" -or $_.processId -eq 0 -or
+    $_.childProcessId -eq 0 -or $_.childParentProcessId -ne $_.processId -or
+    $_.childExecutablePath -ne $_.expectedChildExecutablePath
+  }).Count -eq 0
+}
+
+function Invoke-ChildCrashRecovery {
+  param(
+    [string] $PayloadRoot,
+    [string] $ServiceName,
+    [string] $ExecutableName,
+    [string] $ExecutablePath
+  )
+
+  $wrapper = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+  $children = @(Get-CimInstance Win32_Process -Filter "Name='$ExecutableName'" | Where-Object {
+    $_.ParentProcessId -eq $wrapper.ProcessId -and $_.ExecutablePath -eq $ExecutablePath
+  })
+  if ($children.Count -ne 1) { throw "Could not identify the exact $ServiceName child before its crash proof" }
+  $before = $children[0].ProcessId
+  Stop-Process -Id $before -Force
+  $deadline = [DateTime]::UtcNow.AddSeconds(90)
+  do {
+    $after = Get-CimInstance Win32_Process -Filter "Name='$ExecutableName'" | Where-Object {
+      $_.ProcessId -ne $before -and $_.ParentProcessId -eq $wrapper.ProcessId -and $_.ExecutablePath -eq $ExecutablePath
+    } | Select-Object -First 1
+    if ($null -ne $after) {
+      Wait-Healthy | Out-Null
+      return [ordered]@{ service = $ServiceName; wrapperProcessId = $wrapper.ProcessId; before = $before; after = $after.ProcessId }
+    }
+    Start-Sleep -Milliseconds 250
+  } while ([DateTime]::UtcNow -lt $deadline)
+  throw "$ServiceName did not recover its child process"
+}
+
 function Corrupt-LastByte {
   param([string] $Path)
 
@@ -176,6 +364,8 @@ try {
   $InstallerPath = [IO.Path]::GetFullPath($InstallerPath)
   $UpdateInstallerPath = [IO.Path]::GetFullPath($UpdateInstallerPath)
   $OutputPath = [IO.Path]::GetFullPath($OutputPath)
+  $outputRoot = Split-Path -Parent $OutputPath
+  New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
   $ExpectedSignerThumbprint = $ExpectedSignerThumbprint.ToUpperInvariant()
   $expectedInstallRoot = [IO.Path]::GetFullPath((Join-Path $env:ProgramFiles "Breev Forge Comparison")).TrimEnd('\')
   foreach ($path in @($InstallerPath, $UpdateInstallerPath)) {
@@ -193,6 +383,7 @@ try {
   }
   if ((Get-InstalledProduct).Count -ne 0) { throw "The Forge comparison product is already installed" }
   if (Test-Path -LiteralPath $expectedInstallRoot) { throw "The Forge comparison install root already exists" }
+  if (Test-Path -LiteralPath $dataRoot) { throw "The Forge comparison requires a clean restored snapshot with no Breev data" }
   $baselineServices = [ordered]@{
     localApi = $null -ne (Get-Service -Name "BreevLocalApi" -ErrorAction SilentlyContinue)
     postgresql = $null -ne (Get-Service -Name "BreevPostgreSQL" -ErrorAction SilentlyContinue)
@@ -202,14 +393,10 @@ try {
   }
   $result.serviceLifecycle["beforeInstall"] = $baselineServices
 
-  New-Item -ItemType Directory -Force -Path $sentinelRoot | Out-Null
-  [ordered]@{ id = [Guid]::NewGuid().ToString(); value = "synthetic-disposable-data" } |
-    ConvertTo-Json | Set-Content -LiteralPath $sentinelPath -Encoding UTF8
-  $expectedSentinelHash = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant()
-
   $quotedInstallerPath = '"' + $InstallerPath + '"'
   $quotedUpdateInstallerPath = '"' + $UpdateInstallerPath + '"'
   $result.operations["cleanInstallExitCode"] = Invoke-MsiExec -Arguments @("/i", $quotedInstallerPath, "/qn", "/norestart")
+  $installHealth = Wait-Healthy
   $installed = Get-InstalledProduct
   if ($installed.Count -ne 1) { throw "The Forge candidate did not register exactly one installed product" }
   $installRoot = [IO.Path]::GetFullPath($installed[0].InstallPath).TrimEnd('\')
@@ -218,14 +405,60 @@ try {
   }
   $result.operations["installedVersion"] = $installed[0].DisplayVersion
   $result.operations["installRoot"] = $installRoot
-  $result.serviceLifecycle["afterInstall"] = [ordered]@{
-    localApi = $null -ne (Get-Service -Name "BreevLocalApi" -ErrorAction SilentlyContinue)
-    postgresql = $null -ne (Get-Service -Name "BreevPostgreSQL" -ErrorAction SilentlyContinue)
-  }
   $result.signing["afterInstall"] = Get-InstalledSigningCoverage -Root $installRoot
   $result.payload["afterInstall"] = Get-InstalledPayloadRecord -InstallRoot $installRoot
   $result.application["afterInstall"] = Get-InstalledAsarRecord -InstallRoot $installRoot
   if ($result.application.afterInstall.version -ne $InstallerVersion) { throw "The installed Forge application has the wrong initial version" }
+  $payloadRoot = $result.payload.afterInstall.root
+  $result.serviceLifecycle["afterInstall"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
+  if (-not (Test-ExactServices -Services @($result.serviceLifecycle.afterInstall))) {
+    throw "The Forge candidate did not install the exact two service trees"
+  }
+
+  Invoke-Psql -PayloadRoot $payloadRoot -Role schema-owner -Sql "CREATE TABLE public.issue34_forge_witness(id text PRIMARY KEY, value text NOT NULL);" | Out-Null
+  $witnessId = [Guid]::NewGuid().ToString()
+  Invoke-Psql -PayloadRoot $payloadRoot -Role runtime -Sql "INSERT INTO public.issue34_forge_witness(id, value) VALUES ('$witnessId', 'committed');" | Out-Null
+  $preservationMarker = Get-PreservationMarker -PayloadRoot $payloadRoot
+  $result.dataPreservation["afterInstall"] = (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId) -and
+    $installHealth.status -eq "healthy"
+
+  Stop-Service -Name $postgresqlServiceName
+  (Get-Service -Name $postgresqlServiceName).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(60))
+  $result.serviceLifecycle["postgresqlStoppedControlState"] = Get-PostgresqlControlState -PayloadRoot $payloadRoot
+  Start-Service -Name $postgresqlServiceName
+  Wait-Healthy | Out-Null
+
+  $result.serviceLifecycle["apiChildRecovery"] = Invoke-ChildCrashRecovery `
+    -PayloadRoot $payloadRoot `
+    -ServiceName $apiServiceName `
+    -ExecutableName "node.exe" `
+    -ExecutablePath (Join-Path $payloadRoot "node\node.exe")
+  $result.serviceLifecycle["postgresqlChildRecovery"] = Invoke-ChildCrashRecovery `
+    -PayloadRoot $payloadRoot `
+    -ServiceName $postgresqlServiceName `
+    -ExecutableName "postgres.exe" `
+    -ExecutablePath (Join-Path $payloadRoot "postgresql\bin\postgres.exe")
+  $result.serviceLifecycle["afterRecovery"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
+
+  $failedRepairToken = "issue-34-injected-failure"
+  $failedRepairLog = Join-Path $outputRoot "forge-failed-repair.log"
+  Remove-Item -LiteralPath @((Join-Path $dataRoot "state\forge-injected-failure.txt"), $failedRepairLog) -Force -ErrorAction SilentlyContinue
+  $result.operations["failedRepairExitCode"] = Invoke-MsiExec `
+    -Arguments @("/fa", $quotedInstallerPath, "BREEVFORGEINJECTFAILURE=1", "/qn", "/norestart", "/l*v", ('"' + $failedRepairLog + '"')) `
+    -ExpectFailure
+  $result.operations["failedRepairMarker"] = Get-InjectedFailureEvidence -ExpectedToken $failedRepairToken -LogPath $failedRepairLog
+  Wait-Healthy | Out-Null
+  $afterFailedRepair = Get-InstalledProduct
+  if ($afterFailedRepair.Count -ne 1 -or $afterFailedRepair[0].DisplayVersion -ne $InstallerVersion) {
+    throw "The failed Forge repair did not roll back to the installed version"
+  }
+  $result.signing["afterFailedRepair"] = Get-InstalledSigningCoverage -Root $installRoot
+  $result.payload["afterFailedRepair"] = Get-InstalledPayloadRecord -InstallRoot $installRoot
+  $result.application["afterFailedRepair"] = Get-InstalledAsarRecord -InstallRoot $installRoot
+  $payloadRoot = $result.payload.afterFailedRepair.root
+  $result.serviceLifecycle["afterFailedRepair"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
+  $result.dataPreservation["afterFailedRepair"] = (Test-PreservationMarker -Expected $preservationMarker -PayloadRoot $payloadRoot) -and
+    (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
 
   $repairTargetPath = $result.application.afterInstall.path
   $repairTargetHash = (Get-FileHash -LiteralPath $repairTargetPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -233,10 +466,38 @@ try {
   $result.operations["repairCorruptionCreated"] = (Get-FileHash -LiteralPath $repairTargetPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $repairTargetHash
 
   $result.operations["repairExitCode"] = Invoke-MsiExec -Arguments @("/fa", $quotedInstallerPath, "/qn", "/norestart")
+  Wait-Healthy | Out-Null
   $result.operations["repairRestoredMsiFile"] = (Get-FileHash -LiteralPath $repairTargetPath -Algorithm SHA256).Hash.ToLowerInvariant() -eq $repairTargetHash
-  $result.dataPreservation["afterRepair"] = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expectedSentinelHash
+  $result.signing["afterRepair"] = Get-InstalledSigningCoverage -Root $installRoot
+  $result.payload["afterRepair"] = Get-InstalledPayloadRecord -InstallRoot $installRoot
+  $result.application["afterRepair"] = Get-InstalledAsarRecord -InstallRoot $installRoot
+  $payloadRoot = $result.payload.afterRepair.root
+  $result.serviceLifecycle["afterRepair"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
+  $result.dataPreservation["afterRepair"] = (Test-PreservationMarker -Expected $preservationMarker -PayloadRoot $payloadRoot) -and
+    (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
+
+  $failedUpdateToken = "issue-34-injected-failure"
+  $failedUpdateLog = Join-Path $outputRoot "forge-failed-update.log"
+  Remove-Item -LiteralPath @((Join-Path $dataRoot "state\forge-injected-failure.txt"), $failedUpdateLog) -Force -ErrorAction SilentlyContinue
+  $result.operations["failedUpdateExitCode"] = Invoke-MsiExec `
+    -Arguments @("/i", $quotedUpdateInstallerPath, "BREEVFORGEINJECTFAILURE=1", "/qn", "/norestart", "/l*v", ('"' + $failedUpdateLog + '"')) `
+    -ExpectFailure
+  $result.operations["failedUpdateMarker"] = Get-InjectedFailureEvidence -ExpectedToken $failedUpdateToken -LogPath $failedUpdateLog
+  Wait-Healthy | Out-Null
+  $afterFailedUpdate = Get-InstalledProduct
+  if ($afterFailedUpdate.Count -ne 1 -or $afterFailedUpdate[0].DisplayVersion -ne $InstallerVersion) {
+    throw "The failed Forge update did not restore the prior installed version"
+  }
+  $result.signing["afterFailedUpdate"] = Get-InstalledSigningCoverage -Root $installRoot
+  $result.payload["afterFailedUpdate"] = Get-InstalledPayloadRecord -InstallRoot $installRoot
+  $result.application["afterFailedUpdate"] = Get-InstalledAsarRecord -InstallRoot $installRoot
+  $payloadRoot = $result.payload.afterFailedUpdate.root
+  $result.serviceLifecycle["afterFailedUpdate"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
+  $result.dataPreservation["afterFailedUpdate"] = (Test-PreservationMarker -Expected $preservationMarker -PayloadRoot $payloadRoot) -and
+    (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
 
   $result.operations["updateExitCode"] = Invoke-MsiExec -Arguments @("/i", $quotedUpdateInstallerPath, "/qn", "/norestart")
+  Wait-Healthy | Out-Null
   $updated = Get-InstalledProduct
   if ($updated.Count -ne 1) { throw "The Forge candidate update did not leave exactly one installed product" }
   $updatedInstallRoot = [IO.Path]::GetFullPath($updated[0].InstallPath).TrimEnd('\')
@@ -246,40 +507,112 @@ try {
   $result.payload["afterUpdate"] = Get-InstalledPayloadRecord -InstallRoot $installRoot
   $result.application["afterUpdate"] = Get-InstalledAsarRecord -InstallRoot $installRoot
   if ($result.application.afterUpdate.version -ne $UpdateInstallerVersion) { throw "The installed Forge application has the wrong update version" }
-  $result.dataPreservation["afterUpdate"] = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expectedSentinelHash
+  $payloadRoot = $result.payload.afterUpdate.root
+  $result.serviceLifecycle["afterUpdate"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
+  $result.dataPreservation["afterUpdate"] = (Test-PreservationMarker -Expected $preservationMarker -PayloadRoot $payloadRoot) -and
+    (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
 
   $result.operations["uninstallExitCode"] = Invoke-MsiExec -Arguments @("/x", $quotedUpdateInstallerPath, "/qn", "/norestart")
   $result.operations["uninstalled"] = (Get-InstalledProduct).Count -eq 0
   $result.operations["installRootRemoved"] = -not (Test-Path -LiteralPath $installRoot)
-  $result.dataPreservation["afterUninstall"] = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expectedSentinelHash
+  $result.serviceLifecycle["afterUninstall"] = [ordered]@{
+    localApi = $null -ne (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)
+    postgresql = $null -ne (Get-Service -Name $postgresqlServiceName -ErrorAction SilentlyContinue)
+  }
+  $result.dataPreservation["afterUninstall"] = Test-PreservationMarker -Expected $preservationMarker -PayloadRoot ""
+
+  $result.operations["reinstallExitCode"] = Invoke-MsiExec -Arguments @("/i", $quotedUpdateInstallerPath, "/qn", "/norestart")
+  Wait-Healthy | Out-Null
+  $reinstalled = Get-InstalledProduct
+  if ($reinstalled.Count -ne 1 -or $reinstalled[0].DisplayVersion -ne $UpdateInstallerVersion) {
+    throw "The Forge candidate did not reinstall its update version"
+  }
+  $result.signing["afterReinstall"] = Get-InstalledSigningCoverage -Root $installRoot
+  $result.payload["afterReinstall"] = Get-InstalledPayloadRecord -InstallRoot $installRoot
+  $result.application["afterReinstall"] = Get-InstalledAsarRecord -InstallRoot $installRoot
+  $payloadRoot = $result.payload.afterReinstall.root
+  $result.serviceLifecycle["afterReinstall"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
+  $result.dataPreservation["afterReinstall"] = (Test-PreservationMarker -Expected $preservationMarker -PayloadRoot $payloadRoot) -and
+    (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
+
+  $result.operations["finalUninstallExitCode"] = Invoke-MsiExec -Arguments @("/x", $quotedUpdateInstallerPath, "/qn", "/norestart")
+  $result.operations["finalUninstalled"] = (Get-InstalledProduct).Count -eq 0 -and
+    -not (Test-Path -LiteralPath $installRoot) -and
+    $null -eq (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue) -and
+    $null -eq (Get-Service -Name $postgresqlServiceName -ErrorAction SilentlyContinue)
+  $result.dataPreservation["afterFinalUninstall"] = Test-PreservationMarker -Expected $preservationMarker -PayloadRoot ""
   $result.signing["installedGapObserved"] = -not $result.signing.afterInstall.allSignedByExpectedCertificate -or
-    -not $result.signing.afterUpdate.allSignedByExpectedCertificate
-  $result.serviceLifecycle["integratesRequiredServices"] = $result.serviceLifecycle.afterInstall.localApi -and $result.serviceLifecycle.afterInstall.postgresql
-  $result.serviceLifecycle["repair"] = "unsupported-no-service-authoring"
-  $result.serviceLifecycle["update"] = "unsupported-no-service-authoring"
-  $result.serviceLifecycle["recovery"] = "unsupported-no-service-authoring"
+    -not $result.signing.afterRepair.allSignedByExpectedCertificate -or
+    -not $result.signing.afterUpdate.allSignedByExpectedCertificate -or
+    -not $result.signing.afterReinstall.allSignedByExpectedCertificate
+  $result.serviceLifecycle["integratesRequiredServices"] = Test-ExactServices -Services @($result.serviceLifecycle.afterInstall)
+  $result.serviceLifecycle["repair"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterRepair)) -and $result.dataPreservation.afterRepair
+  $result.serviceLifecycle["update"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterUpdate)) -and $result.dataPreservation.afterUpdate
+  $result.serviceLifecycle["failedRepairRecovery"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterFailedRepair)) -and
+    $result.dataPreservation.afterFailedRepair
+  $result.serviceLifecycle["failedUpdateRecovery"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterFailedUpdate)) -and
+    $result.dataPreservation.afterFailedUpdate -and
+    $result.application.afterFailedUpdate.version -eq $InstallerVersion
+  $result.serviceLifecycle["recovery"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterRecovery)) -and
+    $result.serviceLifecycle.postgresqlStoppedControlState -eq "shut down" -and
+    $result.serviceLifecycle.apiChildRecovery.before -ne $result.serviceLifecycle.apiChildRecovery.after -and
+    $result.serviceLifecycle.postgresqlChildRecovery.before -ne $result.serviceLifecycle.postgresqlChildRecovery.after
+  $result.serviceLifecycle["reinstall"] = Test-ExactServices -Services @($result.serviceLifecycle.afterReinstall)
   $result["comparisonExecuted"] = $result.operations.uninstalled -and
+    $result.operations.finalUninstalled -and
     $result.operations.installedVersion -eq $InstallerVersion -and
     $result.operations.updatedVersion -eq $UpdateInstallerVersion -and
     $result.operations.repairCorruptionCreated -and
     $result.operations.repairRestoredMsiFile -and
+    $result.operations.failedRepairExitCode -eq 1603 -and
+    $result.operations.failedUpdateExitCode -eq 1603 -and
+    $result.operations.failedRepairMarker.markerMatched -and
+    $result.operations.failedRepairMarker.deferredActionLogged -and
+    $result.operations.failedRepairMarker.logBytes -gt 0 -and
+    $result.operations.failedUpdateMarker.markerMatched -and
+    $result.operations.failedUpdateMarker.deferredActionLogged -and
+    $result.operations.failedUpdateMarker.logBytes -gt 0 -and
     $result.operations.installRootRemoved -and
     $result.application.afterInstall.version -eq $InstallerVersion -and
+    $result.application.afterRepair.version -eq $InstallerVersion -and
+    $result.application.afterFailedRepair.version -eq $InstallerVersion -and
     $result.application.afterUpdate.version -eq $UpdateInstallerVersion -and
-    -not $result.serviceLifecycle.afterInstall.localApi -and
-    -not $result.serviceLifecycle.afterInstall.postgresql -and
+    $result.application.afterReinstall.version -eq $UpdateInstallerVersion -and
+    $result.serviceLifecycle.integratesRequiredServices -and
+    $result.serviceLifecycle.repair -and
+    $result.serviceLifecycle.update -and
+    $result.serviceLifecycle.failedRepairRecovery -and
+    $result.serviceLifecycle.failedUpdateRecovery -and
+    $result.serviceLifecycle.recovery -and
+    $result.serviceLifecycle.reinstall -and
+    -not $result.serviceLifecycle.afterUninstall.localApi -and
+    -not $result.serviceLifecycle.afterUninstall.postgresql -and
     $result.signing.afterInstall.files.Count -gt 0 -and
+    $result.signing.afterFailedRepair.files.Count -gt 0 -and
+    $result.signing.afterRepair.files.Count -gt 0 -and
+    $result.signing.afterFailedUpdate.files.Count -gt 0 -and
     $result.signing.afterUpdate.files.Count -gt 0 -and
+    $result.signing.afterReinstall.files.Count -gt 0 -and
     $result.signing.installedGapObserved -and
     $result.payload.afterInstall.files.Count -eq 8 -and
+    $result.payload.afterRepair.files.Count -eq 8 -and
+    $result.payload.afterFailedRepair.files.Count -eq 8 -and
+    $result.payload.afterFailedUpdate.files.Count -eq 8 -and
     $result.payload.afterUpdate.files.Count -eq 8 -and
+    $result.payload.afterReinstall.files.Count -eq 8 -and
+    $result.dataPreservation.afterInstall -and
     $result.dataPreservation.afterRepair -and
+    $result.dataPreservation.afterFailedRepair -and
+    $result.dataPreservation.afterFailedUpdate -and
     $result.dataPreservation.afterUpdate -and
-    $result.dataPreservation.afterUninstall
+    $result.dataPreservation.afterUninstall -and
+    $result.dataPreservation.afterReinstall -and
+    $result.dataPreservation.afterFinalUninstall
   $result["meetsIssueRequirements"] = $result.comparisonExecuted -and
-    $result.serviceLifecycle.integratesRequiredServices -and
     $result.signing.afterInstall.allSignedByExpectedCertificate -and
-    $result.signing.afterUpdate.allSignedByExpectedCertificate
+    $result.signing.afterRepair.allSignedByExpectedCertificate -and
+    $result.signing.afterUpdate.allSignedByExpectedCertificate -and
+    $result.signing.afterReinstall.allSignedByExpectedCertificate
 } catch {
   $result["error"] = $_.Exception.Message
 } finally {

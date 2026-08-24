@@ -173,6 +173,7 @@ Invoke-Checked -FilePath "pnpm.cmd" -Arguments @("build")
 Invoke-Checked -FilePath "pnpm.cmd" -Arguments @("package:windows:payload")
 $sourcePayloadLockSha256 = (Get-FileHash -LiteralPath (Join-Path $repoRoot "artifacts/windows/payload/payload-lock.json") -Algorithm SHA256).Hash.ToLowerInvariant()
 Invoke-Checked -FilePath "pnpm.cmd" -Arguments @("install", "--frozen-lockfile") -WorkingDirectory (Join-Path $PSScriptRoot "forge-comparison")
+Invoke-Checked -FilePath "pnpm.cmd" -Arguments @("test") -WorkingDirectory (Join-Path $PSScriptRoot "forge-comparison")
 
 $wixRoot = & (Join-Path $PSScriptRoot "forge-comparison/prepare-wix.ps1")
 $previousPath = $env:Path

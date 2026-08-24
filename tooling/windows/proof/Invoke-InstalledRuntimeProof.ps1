@@ -87,7 +87,12 @@ function Get-MachineGate {
   $physicalMemory = @(Get-CimInstance Win32_PhysicalMemory)
   $processors = @(Get-CimInstance Win32_Processor)
   $systemDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($env:SystemDrive)'"
-  $physicalDisks = @(Get-PhysicalDisk | Select-Object FriendlyName, MediaType, BusType, Size)
+  $systemPartition = Get-Partition -DriveLetter ($env:SystemDrive).TrimEnd(':')
+  $systemDisk = Get-Disk -Number $systemPartition.DiskNumber
+  $physicalDisks = @(Get-PhysicalDisk | Select-Object DeviceId, FriendlyName, MediaType, BusType, Size)
+  $systemPhysicalDisks = @($physicalDisks | Where-Object { $_.DeviceId.ToString() -eq $systemDisk.Number.ToString() })
+  $systemDriveOnEligibleSsd = $systemPhysicalDisks.Count -eq 1 -and
+    $systemPhysicalDisks[0].MediaType -eq "SSD" -and $systemDisk.Size -ge 256GB
   $videoControllers = @(Get-CimInstance Win32_VideoController | Select-Object Name, CurrentHorizontalResolution, CurrentVerticalResolution)
   $bitLocker = Get-BitLockerVolume -MountPoint $env:SystemDrive
   $latestHotfix = Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1
@@ -98,7 +103,7 @@ function Get-MachineGate {
   if (-not $acSleepMatch.Success -or -not $dcSleepMatch.Success) {
     throw "Could not parse the active AC and DC sleep timeouts on the required English Windows image"
   }
-  $hibernateEnabled = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Power" -Name HibernateEnabled).HibernateEnabled
+  $hibernateEnabled = Test-Path -LiteralPath (Join-Path $env:SystemDrive "hiberfil.sys")
   $updateSession = New-Object -ComObject Microsoft.Update.Session
   $updateSearcher = $updateSession.CreateUpdateSearcher()
   $pendingUpdateSearch = $updateSearcher.Search("IsInstalled=0 and IsHidden=0 and Type='Software'")
@@ -131,6 +136,9 @@ function Get-MachineGate {
     machineId = (Get-CimInstance Win32_ComputerSystemProduct).UUID
     physicalCores = @($processors | Measure-Object -Property NumberOfCores -Sum).Sum
     systemDriveBytes = [uint64] $systemDrive.Size
+    systemDisk = $systemDisk | Select-Object Number, FriendlyName, BusType, Size
+    systemPhysicalDisk = if ($systemPhysicalDisks.Count -eq 1) { $systemPhysicalDisks[0] } else { $null }
+    systemDriveOnEligibleSsd = [bool] $systemDriveOnEligibleSsd
     physicalDisks = $physicalDisks
     display = $videoControllers
     bitLockerProtection = $bitLocker.ProtectionStatus.ToString()
@@ -156,7 +164,7 @@ function Get-MachineGate {
     $gate.logicalProcessors -ge 4 -and
     $gate.physicalCores -ge 4 -and
     $gate.installedMemoryBytes -ge 8GB -and
-    @($gate.physicalDisks | Where-Object { $_.MediaType -eq "SSD" -and $_.Size -ge 256GB }).Count -gt 0 -and
+    $gate.systemDriveOnEligibleSsd -and
     @($gate.display | Where-Object { $_.CurrentHorizontalResolution -ge 1366 -and $_.CurrentVerticalResolution -ge 768 }).Count -gt 0 -and
     $gate.bitLockerProtection -eq "On" -and
     $gate.bitLockerVolumeStatus -eq "FullyEncrypted" -and
@@ -197,6 +205,30 @@ function Invoke-Installer {
     throw "The installer failed with exit code $($process.ExitCode)"
   }
   return $process.ExitCode
+}
+
+function Get-InjectedLifecycleFailureEvidence {
+  param([string] $ExpectedFailurePoint)
+
+  $lifecyclePath = Join-Path $dataRoot "state\lifecycle.json"
+  if (-not (Test-Path -LiteralPath $lifecyclePath -PathType Leaf)) {
+    throw "The injected Builder lifecycle failure did not write its state record"
+  }
+  $lifecycle = Get-Content -LiteralPath $lifecyclePath -Raw | ConvertFrom-Json
+  $evidence = [ordered]@{
+    path = $lifecyclePath
+    sha256 = (Get-FileHash -LiteralPath $lifecyclePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    action = $lifecycle.action
+    status = $lifecycle.status
+    failurePoint = $lifecycle.failurePoint
+    matched = $lifecycle.action -eq "Install" -and
+      $lifecycle.status -eq "failed-data-preserved" -and
+      $lifecycle.failurePoint -eq $ExpectedFailurePoint
+  }
+  if (-not $evidence.matched) {
+    throw "The failed Builder installer did not reach the expected $ExpectedFailurePoint lifecycle seam"
+  }
+  return $evidence
 }
 
 function Wait-Healthy {
@@ -294,6 +326,15 @@ function Get-PreservationMarker {
   }
 }
 
+function Get-PostgresqlControlState {
+  $payloadRoot = Get-PayloadRoot
+  $controlData = & (Join-Path $payloadRoot "postgresql\bin\pg_controldata.exe") (Join-Path $dataRoot "postgresql")
+  if ($LASTEXITCODE -ne 0) { throw "Could not read PostgreSQL control state" }
+  $stateLines = @($controlData | Where-Object { $_ -match '^Database cluster state:' })
+  if ($stateLines.Count -ne 1) { throw "PostgreSQL control data did not report exactly one cluster state" }
+  return ($stateLines[0] -replace '^Database cluster state:\s*', '').Trim()
+}
+
 function Test-PreservationMarker {
   param([object] $Expected)
   $installationId = (Get-Content -LiteralPath (Join-Path $dataRoot "config\installation.json") -Raw | ConvertFrom-Json).installationId
@@ -379,6 +420,9 @@ function Invoke-ServiceAclProbe {
     "-OutputPath", (ConvertTo-CommandLineToken $probeOutputPath)
   )
 
+  $probeResult = $null
+  $probeFailure = $null
+  $cleanupErrors = [Collections.Generic.List[string]]::new()
   try {
     Stop-Service -Name $ServiceName
     (Get-Service -Name $ServiceName).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(75))
@@ -397,18 +441,55 @@ function Invoke-ServiceAclProbe {
       throw "The $ServiceName identity ACL probe did not produce a result"
     }
     $probeResult = Get-Content -LiteralPath $probeOutputPath -Raw | ConvertFrom-Json
+  } catch {
+    $probeFailure = $_
   } finally {
-    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-    & sc.exe config $ServiceName "binPath=" $originalImagePath | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Could not restore the $ServiceName command through SCM" }
-    & sc.exe failure $ServiceName "reset=" "86400" "actions=" "restart/5000/restart/15000/restart/30000" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Could not restore $ServiceName recovery through SCM" }
-    & sc.exe failureflag $ServiceName "1" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Could not restore $ServiceName non-crash recovery through SCM" }
-    Start-Service -Name $ServiceName
-    Wait-Healthy | Out-Null
-    Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue
+    try {
+      Stop-Service -Name $ServiceName -Force -ErrorAction Stop
+      (Get-Service -Name $ServiceName).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(75))
+    } catch {
+      $cleanupErrors.Add("stop: $($_.Exception.Message)")
+    }
+    $commandRestored = $false
+    try {
+      & sc.exe config $ServiceName "binPath=" $originalImagePath | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "sc.exe exited with $LASTEXITCODE" }
+      $commandRestored = $true
+    } catch {
+      $cleanupErrors.Add("command: $($_.Exception.Message)")
+    }
+    try {
+      & sc.exe failure $ServiceName "reset=" "86400" "actions=" "restart/5000/restart/15000/restart/30000" | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "sc.exe exited with $LASTEXITCODE" }
+    } catch {
+      $cleanupErrors.Add("recovery: $($_.Exception.Message)")
+    }
+    try {
+      & sc.exe failureflag $ServiceName "1" | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "sc.exe exited with $LASTEXITCODE" }
+    } catch {
+      $cleanupErrors.Add("non-crash recovery: $($_.Exception.Message)")
+    }
+    if ($commandRestored) {
+      try {
+        Start-Service -Name $ServiceName
+        Wait-Healthy | Out-Null
+      } catch {
+        $cleanupErrors.Add("restart: $($_.Exception.Message)")
+      }
+    }
+    try {
+      Remove-Item -LiteralPath $probePath -Force -ErrorAction Stop
+    } catch {
+      $cleanupErrors.Add("probe removal: $($_.Exception.Message)")
+    }
   }
+  if ($cleanupErrors.Count -gt 0) {
+    $originalMessage = if ($null -eq $probeFailure) { "ACL probe completed" } else { $probeFailure.Exception.Message }
+    throw "$originalMessage; $ServiceName restoration failed: $($cleanupErrors -join '; ')"
+  }
+  if ($null -ne $probeFailure) { throw $probeFailure }
+  if ($null -eq $probeResult) { throw "The $ServiceName ACL probe produced no result" }
   return $probeResult
 }
 
@@ -689,6 +770,10 @@ try {
 
   Stop-Service -Name $postgresqlServiceName
   (Get-Service -Name $postgresqlServiceName).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(60))
+  $postgresqlStoppedControlState = Get-PostgresqlControlState
+  Add-Check -Name "postgresql-service-stop-clean-shutdown" -Passed (
+    $postgresqlStoppedControlState -eq "shut down"
+  ) -Details @{ clusterState = $postgresqlStoppedControlState }
   $degraded = Get-HealthResponse
   Add-Check -Name "api-independent-while-postgresql-stopped" -Passed (
     $degraded.statusCode -eq 503 -and $degraded.body.database -eq "unavailable" -and
@@ -802,7 +887,10 @@ try {
 
   foreach ($failurePoint in @("AfterDataPrepared", "AfterPostgreSqlService", "AfterApiService", "BeforeReadiness")) {
     $failureExitCode = Invoke-Installer -Path $InstallerPath -InjectFailure $failurePoint -ExpectFailure
-    Add-Check -Name "failed-install-$failurePoint-preserves-data-and-configuration" -Passed (Test-PreservationMarker -Expected $preservationMarker) -Details @{ exitCode = $failureExitCode }
+    $failureEvidence = Get-InjectedLifecycleFailureEvidence -ExpectedFailurePoint $failurePoint
+    Add-Check -Name "failed-install-$failurePoint-preserves-data-and-configuration" -Passed (
+      $failureEvidence.matched -and (Test-PreservationMarker -Expected $preservationMarker)
+    ) -Details @{ exitCode = $failureExitCode; lifecycle = $failureEvidence }
     Invoke-Installer -Path $InstallerPath | Out-Null
     Wait-Healthy | Out-Null
     Add-Check -Name "failed-install-$failurePoint-recovers" -Passed (Assert-Witness -WitnessId $witnessId)

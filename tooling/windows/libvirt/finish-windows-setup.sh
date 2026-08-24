@@ -211,7 +211,7 @@ pause "Press Enter after Windows reaches its desktop."
 
 stage "Enable noninteractive host observation"
 "$SCRIPT_ROOT/attach-qemu-guest-agent.sh" --name "$DOMAIN_NAME"
-step 'In an elevated PowerShell, run: $d=(Get-Volume -FileSystemLabel BREEV_QEMU_GA).DriveLetter; $m=Get-ChildItem "${d}:\" -Filter qemu-ga-x86_64-*.msi | Select-Object -First 1; Start-Process msiexec.exe -ArgumentList @("/i",$m.FullName,"/qn","/norestart") -Wait'
+step 'In an elevated PowerShell, run: $d=(Get-Volume -FileSystemLabel BREEV_QEMU_GA).DriveLetter; $m=@(Get-ChildItem "${d}:\" -Filter *.msi); if($m.Count -ne 1 -or (Get-FileHash $m[0].FullName -Algorithm SHA256).Hash -ne "C50EA2E7C04730A1097AB6C112138645BE4DA26015518329DAEBE8D3630E0790"){throw "Pinned QEMU Guest Agent media check failed"}; $p=Start-Process msiexec.exe -ArgumentList @("/i",$m[0].FullName,"/qn","/norestart") -Wait -PassThru; if($p.ExitCode -notin @(0,1641,3010)){throw "QEMU Guest Agent installation failed with exit code $($p.ExitCode)"}'
 step 'Run: Set-Service QEMU-GA -StartupType Automatic; Start-Service QEMU-GA'
 pause "Press Enter after the QEMU Guest Agent service is running."
 virsh --connect qemu:///system qemu-agent-command "$DOMAIN_NAME" '{"execute":"guest-ping"}' >/dev/null

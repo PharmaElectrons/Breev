@@ -1,10 +1,15 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createServer } from "node:net";
-import { hostname, userInfo } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import path from "node:path";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { chromium } from "playwright";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 
 if (process.platform !== "win32") {
   throw new Error("The standard-user proof must run on Windows");
@@ -19,6 +24,19 @@ const runId = readArgument("--run-id");
 const sourceCommit = readArgument("--source-commit");
 const snapshotId = readArgument("--snapshot-id");
 const protectedDataRoot = path.resolve(readArgument("--protected-data-root"));
+const uiAutomationPath = path.join(
+  import.meta.dirname,
+  "DesktopUiAutomation.ps1",
+);
+const temporaryRoot = await mkdtemp(
+  path.join(tmpdir(), "breev-issue-34-standard-user-"),
+);
+const profilePath = path.join(temporaryRoot, "profile");
+const liveDesktopProcessIds = new Set();
+const stateText = Object.freeze({
+  "main-unavailable": "Main unavailable",
+  ready: "Ready",
+});
 const restartStoppedPath = `${restartCompletePath}.stopped`;
 const restartUnavailablePath = `${restartReadyPath}.unavailable`;
 await Promise.all(
@@ -43,7 +61,9 @@ const result = {
     "(Get-CimInstance Win32_ComputerSystemProduct).UUID",
   ),
   desktopExecutableSha256: await sha256(executablePath),
-  user: userInfo().username,
+  userSid: runPowerShell(
+    "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+  ),
   startedAtUtc: new Date().toISOString(),
   checks: {},
   observations: {},
@@ -108,17 +128,26 @@ try {
   if (!result.checks.initialApiHealth) {
     throw new Error("The local API was not healthy before the desktop started");
   }
+  const expectedHandshake = {
+    apiVersion: initialHealth.body.apiVersion,
+    schemaVersion: initialHealth.body.schemaVersion,
+  };
 
   const firstRun = await launchAndInspect(executablePath, screenshotPath);
   result.checks.desktopReady = firstRun.ready;
-  result.checks.packagedProtocol = firstRun.url.startsWith("breev://app/");
-  await closeDesktopWindow(firstRun.port);
+  await closeDesktopWindows(firstRun.pid);
   result.checks.desktopExitsWhenLastWindowCloses = await waitForProcessExit(
     firstRun.pid,
   );
+  if (result.checks.desktopExitsWhenLastWindowCloses) {
+    liveDesktopProcessIds.delete(firstRun.pid);
+  }
 
   const postCloseHealth = await fetchHealth();
-  result.checks.apiHealthyAfterEveryWindowCloses = isHealthy(postCloseHealth);
+  result.checks.apiHealthyAfterEveryWindowCloses = isHealthy(
+    postCloseHealth,
+    expectedHandshake,
+  );
   if (!result.checks.apiHealthyAfterEveryWindowCloses) {
     throw new Error("Closing Electron also stopped or damaged the local API");
   }
@@ -129,7 +158,7 @@ try {
     runId,
     desktopProcessId: secondRun.pid,
     desktopExecutablePath: executablePath,
-    desktopUser: result.user,
+    desktopUserSid: result.userSid,
     readyAtUtc: new Date().toISOString(),
   });
   const stoppedResult = await waitForJson(restartStoppedPath, 90_000);
@@ -138,10 +167,7 @@ try {
       "The API restart controller did not prove the stopped phase",
     );
   }
-  const duringRestart = await inspectDesktop(
-    secondRun.port,
-    "main-unavailable",
-  );
+  const duringRestart = await inspectDesktop(secondRun.pid, "main-unavailable");
   result.checks.desktopObservedApiOutage =
     duringRestart.state === "main-unavailable";
   await writeJson(restartUnavailablePath, {
@@ -153,13 +179,16 @@ try {
   const restartResult = await waitForJson(restartCompletePath, 90_000);
   result.checks.apiRestartControllerPassed =
     restartResult.passed === true && restartResult.runId === runId;
-  const afterRestart = await inspectDesktop(secondRun.port, "ready");
+  const afterRestart = await inspectDesktop(secondRun.pid, "ready");
   result.checks.desktopReadyAfterApiRestart = afterRestart.ready;
   const killedProcessIds = await forceKillTree(secondRun.pid);
   result.checks.completeElectronTreeForceKilled = killedProcessIds.length > 1;
 
   const postKillHealth = await fetchHealth();
-  result.checks.apiHealthyAfterElectronTreeKill = isHealthy(postKillHealth);
+  result.checks.apiHealthyAfterElectronTreeKill = isHealthy(
+    postKillHealth,
+    expectedHandshake,
+  );
   if (!result.checks.apiHealthyAfterElectronTreeKill) {
     throw new Error("Killing Electron also stopped or damaged the local API");
   }
@@ -172,6 +201,28 @@ try {
 } catch (error) {
   result.error = error instanceof Error ? error.message : String(error);
 } finally {
+  const cleanupErrors = [];
+  for (const processId of liveDesktopProcessIds) {
+    if (!processExists(processId)) continue;
+    await forceKillTree(processId).catch((error) => {
+      cleanupErrors.push(
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+  }
+  await rm(temporaryRoot, { recursive: true, force: true }).catch((error) => {
+    cleanupErrors.push(
+      `Temporary desktop profile cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
+  result.observations.cleanupErrors = cleanupErrors;
+  if (cleanupErrors.length > 0) {
+    result.passed = false;
+    const cleanupMessage = cleanupErrors.join("; ");
+    result.error = result.error
+      ? `${result.error}; ${cleanupMessage}`
+      : cleanupMessage;
+  }
   result.completedAtUtc = new Date().toISOString();
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
@@ -183,87 +234,81 @@ if (!result.passed) {
 }
 
 async function launchAndInspect(executable, screenshot) {
-  const port = await reservePort();
   const desktop = spawn(
     executable,
-    [
-      `--remote-debugging-port=${port}`,
-      `--user-data-dir=${outputPath}.profile`,
-    ],
+    ["--force-renderer-accessibility", `--user-data-dir=${profilePath}`],
     { detached: false, stdio: "ignore" },
   );
+  if (desktop.pid === undefined) {
+    throw new Error("Electron did not report a process ID");
+  }
+  liveDesktopProcessIds.add(desktop.pid);
   try {
-    const browser = await connectToDesktop(port);
-    try {
-      const page = await waitForWindow(browser);
-      await waitForShellState(page, "ready");
-      const ready = true;
-      if (screenshot !== undefined) {
-        await mkdir(path.dirname(screenshot), { recursive: true });
-        await page.screenshot({ animations: "disabled", path: screenshot });
-      }
-      return { pid: desktop.pid, port, ready, url: page.url() };
-    } finally {
-      await browser.close();
-    }
+    const observation = runUiAutomation(
+      "WaitForText",
+      desktop.pid,
+      stateText.ready,
+      screenshot,
+    );
+    return { pid: desktop.pid, ready: observation.matched === true };
   } catch (error) {
     await forceKillTree(desktop.pid).catch(() => undefined);
     throw error;
   }
 }
 
-async function inspectDesktop(port, expectedState) {
-  const browser = await connectToDesktop(port);
-  try {
-    const page = await waitForWindow(browser);
-    await waitForShellState(page, expectedState);
-    return {
-      ready: expectedState === "ready",
-      state: expectedState,
-      url: page.url(),
-    };
-  } finally {
-    await browser.close();
+async function inspectDesktop(processId, expectedState) {
+  const observation = runUiAutomation(
+    "WaitForText",
+    processId,
+    stateText[expectedState],
+  );
+  return {
+    ready: expectedState === "ready" && observation.matched === true,
+    state: observation.matched === true ? expectedState : "not-observed",
+  };
+}
+
+async function closeDesktopWindows(processId) {
+  const observation = runUiAutomation("CloseWindows", processId);
+  if (
+    observation.windowCount < 1 ||
+    observation.closed !== observation.windowCount
+  ) {
+    throw new Error("Windows UI Automation did not close every desktop window");
   }
 }
 
-async function waitForShellState(page, expectedState) {
-  await page.locator(`[data-state="${expectedState}"]`).waitFor({
-    state: "visible",
-    timeout: 30_000,
+function runUiAutomation(action, processId, expectedText, screenshot) {
+  const argumentsList = [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    uiAutomationPath,
+    "-Action",
+    action,
+    "-ProcessId",
+    String(processId),
+  ];
+  if (expectedText !== undefined) {
+    argumentsList.push("-ExpectedText", expectedText);
+  }
+  if (screenshot !== undefined) {
+    argumentsList.push("-ScreenshotPath", screenshot);
+  }
+  const completed = spawnSync("powershell.exe", argumentsList, {
+    encoding: "utf8",
   });
-}
-
-async function closeDesktopWindow(port) {
-  const browser = await connectToDesktop(port);
-  try {
-    const page = await waitForWindow(browser);
-    await page.close();
-  } finally {
-    await browser.close();
+  if (completed.status !== 0) {
+    throw new Error(
+      completed.stderr.trim() ||
+        "Windows UI Automation could not observe the Breev desktop",
+    );
   }
-}
-
-async function connectToDesktop(port) {
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    try {
-      return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-    } catch {
-      await delay(200);
-    }
-  }
-  throw new Error("The packaged desktop debugging endpoint did not start");
-}
-
-async function waitForWindow(browser) {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const page = browser.contexts()[0]?.pages()[0];
-    if (page !== undefined) return page;
-    await delay(100);
-  }
-  throw new Error("The packaged desktop did not create a window");
+  return JSON.parse(completed.stdout);
 }
 
 async function fetchHealth() {
@@ -273,11 +318,16 @@ async function fetchHealth() {
   return { statusCode: response.status, body: await response.json() };
 }
 
-function isHealthy(response) {
+function isHealthy(response, expectedHandshake) {
   return (
     response.statusCode === 200 &&
     response.body.status === "healthy" &&
-    response.body.database === "available"
+    response.body.database === "available" &&
+    typeof response.body.apiVersion === "string" &&
+    typeof response.body.schemaVersion === "string" &&
+    (expectedHandshake === undefined ||
+      (response.body.apiVersion === expectedHandshake.apiVersion &&
+        response.body.schemaVersion === expectedHandshake.schemaVersion))
   );
 }
 
@@ -294,6 +344,7 @@ async function forceKillTree(pid) {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (processIds.every((processId) => !processExists(processId))) {
+      liveDesktopProcessIds.delete(pid);
       return processIds;
     }
     await delay(100);
@@ -393,21 +444,6 @@ function runPowerShell(command) {
     throw new Error("A standard-user environment check failed");
   }
   return result.stdout.trim();
-}
-
-async function reservePort() {
-  const server = createServer();
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  const port =
-    typeof address === "object" && address !== null ? address.port : 0;
-  await new Promise((resolve, reject) =>
-    server.close((error) => (error === undefined ? resolve() : reject(error))),
-  );
-  return port;
 }
 
 function delay(milliseconds) {

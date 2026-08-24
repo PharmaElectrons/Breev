@@ -37,6 +37,11 @@ if (-not (Test-Path -LiteralPath $EvidenceRoot -PathType Container)) {
 }
 
 $files = @(Get-ChildItem -LiteralPath $EvidenceRoot -File -Recurse)
+$allowedExtensions = @(".json", ".txt", ".log", ".png")
+$unexpectedFiles = @($files | Where-Object { $_.Extension.ToLowerInvariant() -notin $allowedExtensions })
+if ($unexpectedFiles.Count -gt 0) {
+  throw "The evidence directory contains a file type that is not exportable: $($unexpectedFiles[0].FullName)"
+}
 $jsonFiles = @($files | Where-Object { $_.Extension -eq ".json" })
 if ($jsonFiles.Count -lt 7) {
   throw "The pre-restore evidence set is incomplete"
