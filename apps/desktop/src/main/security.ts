@@ -5,6 +5,8 @@ import {
   type DesktopStartupConfigRequest,
 } from "@breev/contracts/desktop-preload";
 
+export const PACKAGED_APP_ENTRY_URL = "breev://app/index.html";
+
 export const APP_CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "base-uri 'none'",
@@ -43,6 +45,40 @@ export function createHardenedWindowOptions(
     },
     width: 1080,
   };
+}
+
+interface RendererEntry {
+  readonly origin: string;
+  readonly url: string;
+}
+
+export function resolveRendererEntry(
+  isPackaged: boolean,
+  developmentUrl: string | undefined,
+): RendererEntry {
+  if (isPackaged || developmentUrl === undefined) {
+    return { origin: "breev://app", url: PACKAGED_APP_ENTRY_URL };
+  }
+
+  const url = new URL(developmentUrl);
+  const isLoopbackHost =
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "localhost" ||
+    url.hostname === "[::1]";
+  if (
+    url.protocol !== "http:" ||
+    !isLoopbackHost ||
+    url.port.length === 0 ||
+    url.username.length > 0 ||
+    url.password.length > 0 ||
+    url.pathname !== "/" ||
+    url.search.length > 0 ||
+    url.hash.length > 0
+  ) {
+    throw new Error("The Breev development renderer URL must be loopback HTTP");
+  }
+
+  return { origin: url.origin, url: url.toString() };
 }
 
 interface IpcInvocation {

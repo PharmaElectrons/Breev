@@ -42,12 +42,12 @@ test("the packaged desktop enforces its outer security and health seams", async 
       [
         `--remote-debugging-port=${debuggingPort}`,
         `--user-data-dir=${userDataDirectory}`,
-        ...(process.platform === "linux" ? ["--no-sandbox"] : []),
       ],
       {
         env: {
           ...process.env,
           BREEV_LOCAL_API_URL: proxy.origin,
+          ELECTRON_RENDERER_URL: "https://attacker.example",
         },
       },
     );
@@ -211,7 +211,7 @@ async function startHealthProxy(apiOrigin: string): Promise<HealthProxy> {
     if (incompatible) {
       response.writeHead(200, headers).end(
         JSON.stringify({
-          apiVersion: "2",
+          apiVersion: "1",
           schemaVersion: "1",
           status: "healthy",
           database: "available",

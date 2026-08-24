@@ -11,9 +11,9 @@ import {
   createHardenedWindowOptions,
   createStartupConfigIpcGuard,
   resolveAppAssetPath,
+  resolveRendererEntry,
 } from "./security.js";
 
-const APP_ENTRY_URL = "breev://app/index.html";
 const DEFAULT_LOCAL_API_ORIGIN = "http://127.0.0.1:31310";
 
 let mainWindow: BrowserWindow | undefined;
@@ -33,22 +33,22 @@ protocol.registerSchemesAsPrivileged([
 function createWindow(): void {
   const localApiOrigin = readLocalApiOrigin(process.env.BREEV_LOCAL_API_URL);
   const preloadPath = path.join(import.meta.dirname, "../preload/index.cjs");
-  const developmentUrl = process.env.ELECTRON_RENDERER_URL;
-  const entryUrl =
-    developmentUrl === undefined
-      ? APP_ENTRY_URL
-      : new URL(developmentUrl).toString();
-  const trustedOrigin =
-    developmentUrl === undefined
-      ? "breev://app"
-      : new URL(developmentUrl).origin;
+  const rendererEntry = resolveRendererEntry(
+    app.isPackaged,
+    process.env.ELECTRON_RENDERER_URL,
+  );
 
   mainWindow = new BrowserWindow(
     createHardenedWindowOptions(preloadPath, app.isPackaged),
   );
   const window = mainWindow;
 
-  registerStartupConfigHandler(window, localApiOrigin, trustedOrigin, entryUrl);
+  registerStartupConfigHandler(
+    window,
+    localApiOrigin,
+    rendererEntry.origin,
+    rendererEntry.url,
+  );
   hardenWebContents(window);
 
   window.once("ready-to-show", () => window.show());
@@ -59,7 +59,7 @@ function createWindow(): void {
     }
   });
 
-  void window.loadURL(entryUrl);
+  void window.loadURL(rendererEntry.url);
 }
 
 function registerStartupConfigHandler(

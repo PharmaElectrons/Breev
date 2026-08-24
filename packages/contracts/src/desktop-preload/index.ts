@@ -3,7 +3,6 @@ import { z } from "zod";
 export const DESKTOP_API_GLOBAL = "breevDesktop" as const;
 export const DESKTOP_STARTUP_CONFIG_CHANNEL =
   "breev:desktop:get-startup-config" as const;
-export const DESKTOP_API_METHODS = ["getStartupConfig"] as const;
 
 export const desktopStartupConfigRequestSchema = z.strictObject({});
 
