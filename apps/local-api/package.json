@@ -8,6 +8,7 @@
     "dev": "tsc -p tsconfig.build.json --watch",
     "start": "node dist/main.js",
     "test:integration": "vitest run --config vitest.config.ts",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
