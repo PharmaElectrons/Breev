@@ -3,9 +3,15 @@
 .scratch/
 node_modules
 dist
+out
+artifacts
+coverage
+playwright-report
+test-results
 .turbo
 .DS_Store
 *.log
+*.tsbuildinfo
 .env
 .env.local
 skills-lock.json
