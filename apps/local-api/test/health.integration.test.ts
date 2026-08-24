@@ -112,7 +112,9 @@ describe.sequential("local API health persistence seam", () => {
 async function getHealth(
   baseUrl: string,
 ): Promise<{ response: Response; body: LocalHealthResponse }> {
-  const response = await fetch(`${baseUrl}/health`);
+  const response = await fetch(`${baseUrl}/health`, {
+    headers: { Origin: "breev://app" },
+  });
   const payload: unknown = await response.json();
   return {
     response,

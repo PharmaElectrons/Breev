@@ -9,6 +9,9 @@ export default defineConfig({
   testDir: "test/browser",
   timeout: 120_000,
   use: {
+    launchOptions: {
+      args: ["--host-resolver-rules=MAP rebound.test 127.0.0.1"],
+    },
     viewport: { height: 768, width: 1_024 },
   },
   workers: 1,
