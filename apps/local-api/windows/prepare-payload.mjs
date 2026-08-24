@@ -105,14 +105,25 @@ const deploymentRoot = await mkdtemp(
 );
 try {
   const stagedLocalApiRoot = path.join(deploymentRoot, "local-api");
-  run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", [
+  const pnpmArguments = [
     "--config.inject-workspace-packages=true",
     "--filter",
     "@breev/local-api",
     "deploy",
     "--prod",
     stagedLocalApiRoot,
-  ]);
+  ];
+  if (process.platform === "win32") {
+    run(process.env.ComSpec ?? "cmd.exe", [
+      "/d",
+      "/s",
+      "/c",
+      "pnpm.cmd",
+      ...pnpmArguments,
+    ]);
+  } else {
+    run("pnpm", pnpmArguments);
+  }
   await rename(stagedLocalApiRoot, localApiRoot);
 } finally {
   await rm(deploymentRoot, { recursive: true, force: true });
