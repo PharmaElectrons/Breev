@@ -266,12 +266,11 @@ try {
     $builderTamper = Test-TamperInvalidatesSignature -Path $retainedBuilderInstaller
     $forgeTamper = Test-TamperInvalidatesSignature -Path $retainedForgeInstaller
     $signatureRecords = @($builderRecord, $builderExecutableRecord, $forgeRecord, $forgeExecutableRecord)
-    $coverageRecords = @($signatureRecords) + @($builderCoverage) + @($forgeCoverage)
     if ($RequireSigning -and (
       @($signatureRecords | Where-Object { $_.signatureStatus -ne "Valid" }).Count -ne 0 -or
       @($builderCoverage | Where-Object { $_.signatureStatus -ne "Valid" }).Count -ne 0 -or
       @($forgeCoverage | Where-Object { $_.signatureStatus -ne "Valid" }).Count -ne 0 -or
-      @($coverageRecords | Where-Object { $_.signerThumbprint -ne $certificateThumbprint }).Count -ne 0 -or
+      @($signatureRecords | Where-Object { $_.signerThumbprint -ne $certificateThumbprint }).Count -ne 0 -or
       -not $builderTamper.rejected -or -not $forgeTamper.rejected
     )) {
       throw "A required candidate signature is not valid"
@@ -313,6 +312,7 @@ $evidence = [ordered]@{
     required = [bool] $RequireSigning
     certificatePurpose = if ($RequireSigning) { "issue-34-comparison-only" } else { $null }
     certificateThumbprint = if ($RequireSigning) { $certificateThumbprint } else { $null }
+    coveragePolicy = if ($RequireSigning) { "valid-authenticode-with-product-artifacts-comparison-signed" } else { $null }
     trustStoreLocation = if ($RequireSigning) { "LocalMachine\Root" } else { $null }
     productionTrusted = $false
   }
