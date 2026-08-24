@@ -3,14 +3,16 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
 import { Pool } from "pg";
 
+import { readDatabaseConnectionString } from "./database-connection.js";
+
 @Injectable()
 export class DatabaseHealthService implements OnApplicationShutdown {
   private readonly database: NodePgDatabase | undefined;
   private readonly pool: Pool | undefined;
 
   public constructor() {
-    const connectionString = process.env.DATABASE_URL;
-    if (connectionString === undefined || connectionString.length === 0) {
+    const connectionString = readDatabaseConnectionString(process.env);
+    if (connectionString === undefined) {
       return;
     }
 
