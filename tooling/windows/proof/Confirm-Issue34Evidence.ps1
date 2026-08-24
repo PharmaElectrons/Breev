@@ -223,14 +223,17 @@ $signedCandidates = $packagingVersions.Count -eq 2 -and @($packagingVersions | W
 }).Count -eq 0
 $signedByComparisonCertificate = $packaging.signing.required -and
   $packaging.signing.certificatePurpose -eq "issue-34-comparison-only" -and
+  $packaging.signing.coveragePolicy -eq "valid-authenticode-with-product-artifacts-comparison-signed" -and
   $packaging.signing.trustStoreLocation -eq "LocalMachine\Root" -and
   -not $packaging.signing.productionTrusted -and
   -not [string]::IsNullOrWhiteSpace($packaging.signing.certificateThumbprint) -and
   @($packagingVersions | Where-Object {
     $_.electronBuilderApplicationVersion -ne $_.version -or
     $_.electronForgeApplicationVersion -ne $_.version -or
-    @($_.electronBuilderSigningCoverage | Where-Object { $_.signerThumbprint -ne $packaging.signing.certificateThumbprint }).Count -ne 0 -or
-    @($_.electronForgeSigningCoverage | Where-Object { $_.signerThumbprint -ne $packaging.signing.certificateThumbprint }).Count -ne 0
+    $_.electronBuilderNsis.signerThumbprint -ne $packaging.signing.certificateThumbprint -or
+    $_.electronBuilderExecutable.signerThumbprint -ne $packaging.signing.certificateThumbprint -or
+    $_.electronForgeWix.signerThumbprint -ne $packaging.signing.certificateThumbprint -or
+    $_.electronForgeExecutable.signerThumbprint -ne $packaging.signing.certificateThumbprint
   }).Count -eq 0
 $samePinnedPayload = -not [string]::IsNullOrWhiteSpace($packaging.payloadLockSha256) -and
   @($packagingVersions | Where-Object {
