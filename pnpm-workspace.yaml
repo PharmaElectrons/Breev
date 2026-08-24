@@ -1,4 +1,15 @@
 packages:
-  - 'apps/*'
-  - 'packages/*'
-  - 'packages/modules/*'
+  - "apps/desktop"
+  - "apps/local-api"
+  - "packages/contracts"
+
+allowBuilds:
+  cpu-features: false
+  electron: true
+  esbuild: true
+  protobufjs: false
+  ssh2: false
+
+disallowWorkspaceCycles: true
+saveExact: true
+strictPeerDependencies: true

@@ -1,12 +1,37 @@
 {
-  "name": "@breef/app-desktop",
-  "version": "0.1.0",
+  "name": "@breev/desktop",
+  "productName": "Breev",
+  "version": "0.0.0",
   "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
   "scripts": {
-    "build": "tsc --build",
-    "dev": "tsc --watch"
+    "build": "electron-vite build",
+    "dev": "electron-vite dev",
+    "package": "node scripts/package.mjs",
+    "postinstall": "install-electron",
+    "test:smoke": "pnpm package && playwright test --config playwright.config.ts",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   },
-  "dependencies": {
-    "@breef/shared-kernel": "workspace:*"
+  "devDependencies": {
+    "@breev/contracts": "workspace:*",
+    "@electron/packager": "20.3.0",
+    "@playwright/test": "1.62.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@testcontainers/postgresql": "12.1.0",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "5.1.4",
+    "clsx": "2.1.1",
+    "electron": "43.4.1",
+    "electron-vite": "5.0.0",
+    "playwright": "1.62.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "3.6.0",
+    "tailwindcss": "4.3.3",
+    "vite": "7.3.6"
   }
 }
