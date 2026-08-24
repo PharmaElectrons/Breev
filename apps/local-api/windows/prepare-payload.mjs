@@ -107,6 +107,7 @@ try {
   const stagedLocalApiRoot = path.join(deploymentRoot, "local-api");
   const pnpmArguments = [
     "--config.inject-workspace-packages=true",
+    "--config.node-linker=hoisted",
     "--filter",
     "@breev/local-api",
     "deploy",
