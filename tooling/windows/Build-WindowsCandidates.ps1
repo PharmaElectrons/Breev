@@ -36,7 +36,7 @@ if ($RequireSigning -and ([string]::IsNullOrWhiteSpace($certificateFile) -or [st
 if ($RequireSigning) {
   $certificateThumbprint = $certificateThumbprint.Replace(" ", "").ToUpperInvariant()
   $signingCertificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$certificateThumbprint" -ErrorAction SilentlyContinue
-  $trustedCertificate = Get-Item -LiteralPath "Cert:\CurrentUser\Root\$certificateThumbprint" -ErrorAction SilentlyContinue
+  $trustedCertificate = Get-Item -LiteralPath "Cert:\LocalMachine\Root\$certificateThumbprint" -ErrorAction SilentlyContinue
   if ($null -eq $signingCertificate -or $null -eq $trustedCertificate -or
       $signingCertificate.Subject -ne "CN=Breev issue 34 comparison only" -or
       $signingCertificate.NotAfter.ToUniversalTime() -le [DateTime]::UtcNow) {
@@ -308,6 +308,7 @@ $evidence = [ordered]@{
     required = [bool] $RequireSigning
     certificatePurpose = if ($RequireSigning) { "issue-34-comparison-only" } else { $null }
     certificateThumbprint = if ($RequireSigning) { $certificateThumbprint } else { $null }
+    trustStoreLocation = if ($RequireSigning) { "LocalMachine\Root" } else { $null }
     productionTrusted = $false
   }
   payloadLockSha256 = $sourcePayloadLockSha256
