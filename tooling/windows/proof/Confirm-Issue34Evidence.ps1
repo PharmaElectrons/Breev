@@ -223,6 +223,7 @@ $signedCandidates = $packagingVersions.Count -eq 2 -and @($packagingVersions | W
 }).Count -eq 0
 $signedByComparisonCertificate = $packaging.signing.required -and
   $packaging.signing.certificatePurpose -eq "issue-34-comparison-only" -and
+  $packaging.signing.trustStoreLocation -eq "LocalMachine\Root" -and
   -not $packaging.signing.productionTrusted -and
   -not [string]::IsNullOrWhiteSpace($packaging.signing.certificateThumbprint) -and
   @($packagingVersions | Where-Object {

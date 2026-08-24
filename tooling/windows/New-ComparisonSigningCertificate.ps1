@@ -8,6 +8,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = [Security.Principal.WindowsPrincipal]::new($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+  throw "Creating the machine-trusted comparison certificate requires an elevated administrator token"
+}
+
 $passwordValue = $env:BREEV_WINDOWS_CERTIFICATE_PASSWORD
 if ([string]::IsNullOrWhiteSpace($passwordValue)) {
   throw "Set BREEV_WINDOWS_CERTIFICATE_PASSWORD to a temporary secret before creating the comparison certificate"
@@ -30,12 +36,13 @@ $certificate = New-SelfSignedCertificate `
 
 Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $password | Out-Null
 Export-Certificate -Cert $certificate -FilePath $cerPath | Out-Null
-Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
+Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\LocalMachine\Root" | Out-Null
 
 $certificateEvidence = [ordered]@{
   schemaVersion = 1
   purpose = "issue-34-comparison-only"
   productionTrusted = $false
+  trustStoreLocation = "LocalMachine\Root"
   pfxPath = $pfxPath
   thumbprint = $certificate.Thumbprint
   notAfterUtc = $certificate.NotAfter.ToUniversalTime().ToString("o")
