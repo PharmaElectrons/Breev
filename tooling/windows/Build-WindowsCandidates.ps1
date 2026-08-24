@@ -23,8 +23,13 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') { throw "Could not identify the source commit" }
-$workingTreeStatus = ((& git -C $repoRoot status --porcelain) | Out-String).Trim()
-if (-not [string]::IsNullOrWhiteSpace($workingTreeStatus)) {
+$null = & git -C $repoRoot diff --quiet --no-ext-diff --
+$workingTreeDiffExitCode = $LASTEXITCODE
+$null = & git -C $repoRoot diff --cached --quiet --no-ext-diff --
+$indexDiffExitCode = $LASTEXITCODE
+$untrackedFiles = @(& git -C $repoRoot ls-files --others --exclude-standard)
+if ($LASTEXITCODE -ne 0) { throw "Could not inspect untracked source files" }
+if ($workingTreeDiffExitCode -ne 0 -or $indexDiffExitCode -ne 0 -or $untrackedFiles.Count -ne 0) {
   throw "Candidate evidence must be built from a clean source checkout"
 }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
