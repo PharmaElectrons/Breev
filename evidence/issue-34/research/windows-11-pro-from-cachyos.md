@@ -1,7 +1,9 @@
 # Running the issue #34 Windows proof from CachyOS
 
-**Research date:** 2026-08-24  
-**Scope:** A practical, supportable host environment for destructive installer and Windows-service tests. This note does not record issue #34 results.  
+**Research date:** 2026-08-24
+
+**Scope:** A practical, supportable host environment for destructive installer and Windows-service tests. This note does not record issue #34 results.
+
 **Status:** Research complete; the recommended environment was subsequently provisioned for the issue #34 run. No Windows acceptance result is implied by this note.
 
 ## Recommendation

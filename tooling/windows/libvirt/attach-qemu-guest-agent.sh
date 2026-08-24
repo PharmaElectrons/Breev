@@ -9,8 +9,9 @@ agent_url="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/arch
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
 cache_root="$repo_root/artifacts/windows/host-cache"
 agent_path="$cache_root/qemu-ga-x86_64-${agent_version}.msi"
-iso_path="$cache_root/breev-issue-34-qemu-ga-${agent_version}.iso"
-volume_name="breev-issue-34-qemu-ga-${agent_version}.iso"
+agent_hash_prefix=${agent_hash:0:12}
+iso_path="$cache_root/breev-issue-34-qemu-ga-${agent_version}-${agent_hash_prefix}.iso"
+volume_name="breev-issue-34-qemu-ga-${agent_version}-${agent_hash_prefix}.iso"
 
 if [[ ${1:-} == "--name" && -n ${2:-} && $# -eq 2 ]]; then
   domain_name=$2
@@ -35,7 +36,7 @@ fi
   exit 1
 }
 
-xorriso -as mkisofs -quiet -V BREEV_QEMU_GA -o "$iso_path" "$agent_path"
+xorriso -as mkisofs -quiet -J -R -V BREEV_QEMU_GA -o "$iso_path" "$agent_path"
 if ! virsh --connect "$connection" vol-info --pool default "$volume_name" >/dev/null 2>&1; then
   virsh --connect "$connection" vol-create-as default "$volume_name" --capacity "$(stat -c %s -- "$iso_path")" --format raw
   virsh --connect "$connection" vol-upload --pool default "$volume_name" "$iso_path"

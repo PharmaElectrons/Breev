@@ -1,10 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createServer } from "node:net";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import path from "node:path";
-import { chromium } from "playwright";
 
 if (process.platform !== "win32") {
   throw new Error("The ASAR integrity proof must run on Windows");
@@ -22,6 +20,10 @@ if (!new Set(["electron-builder", "electron-forge"]).has(candidate)) {
 }
 const applicationRoot = path.dirname(executablePath);
 const originalAsarPath = path.join(applicationRoot, "resources", "app.asar");
+const uiAutomationPath = path.resolve(
+  import.meta.dirname,
+  "../../../apps/desktop/test/windows/DesktopUiAutomation.ps1",
+);
 const result = {
   schemaVersion: 1,
   runId,
@@ -46,6 +48,7 @@ const result = {
 const temporaryRoot = await mkdtemp(
   path.join(tmpdir(), "breev-issue-34-asar-"),
 );
+let launchIndex = 0;
 
 try {
   const original = await launchAndCheck(executablePath);
@@ -99,40 +102,41 @@ if (!result.passed) {
 }
 
 async function launchAndCheck(executable) {
-  const port = await reservePort();
   const profilePath = path.join(
     temporaryRoot,
-    `profile-${path.basename(executable)}-${port}`,
+    `profile-${launchIndex++}-${path.basename(executable)}`,
   );
   const application = spawn(
     executable,
-    [`--remote-debugging-port=${port}`, `--user-data-dir=${profilePath}`],
+    ["--force-renderer-accessibility", `--user-data-dir=${profilePath}`],
     { stdio: "ignore" },
   );
+  if (application.pid === undefined) {
+    throw new Error("Electron did not report a process ID");
+  }
   try {
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline && application.exitCode === null) {
-      try {
-        const browser = await chromium.connectOverCDP(
-          `http://127.0.0.1:${port}`,
-        );
-        try {
-          const page = browser.contexts()[0]?.pages()[0];
-          if (page !== undefined) {
-            await page.locator('[data-state="ready"]').waitFor({
-              state: "visible",
-              timeout: 5_000,
-            });
-            return { ready: true };
-          }
-        } finally {
-          await browser.close();
-        }
-      } catch {
-        await delay(200);
-      }
-    }
-    return { ready: false };
+    const completed = spawnSync(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        uiAutomationPath,
+        "-Action",
+        "WaitForText",
+        "-ProcessId",
+        String(application.pid),
+        "-ExpectedText",
+        "Ready",
+        "-TimeoutSeconds",
+        "15",
+      ],
+      { encoding: "utf8" },
+    );
+    return { ready: completed.status === 0 };
   } finally {
     if (application.exitCode === null) {
       spawnSync("taskkill.exe", ["/PID", String(application.pid), "/T", "/F"], {
@@ -140,25 +144,6 @@ async function launchAndCheck(executable) {
       });
     }
   }
-}
-
-async function reservePort() {
-  const server = createServer();
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  const port =
-    typeof address === "object" && address !== null ? address.port : 0;
-  await new Promise((resolve, reject) =>
-    server.close((error) => (error === undefined ? resolve() : reject(error))),
-  );
-  return port;
-}
-
-function delay(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function sha256(filePath) {

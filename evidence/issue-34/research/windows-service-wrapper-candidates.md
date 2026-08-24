@@ -1,6 +1,7 @@
 # Windows service-wrapper candidates for issue #34
 
-**Research date:** 2026-08-24  
+**Research date:** 2026-08-24
+
 **Decision status:** Proof candidate only. G-06 and G-07 remain open.
 
 ## Recommendation for the proof
@@ -30,7 +31,7 @@ PostgreSQL 18.6's native Windows `pg_ctl` service path waits for the postmaster 
 
 Shawl instead supervises `postgres.exe -D <protected data directory>` directly. On an ordinary stop it sends Ctrl-C; PostgreSQL maps that on Windows to `SIGINT`, which requests fast shutdown and rolls back active transactions before the shutdown checkpoint. See PostgreSQL's [Windows signal handler](https://github.com/postgres/postgres/blob/REL_18_6/src/backend/port/win32/signal.c#L374-L387) and [postmaster shutdown handling](https://github.com/postgres/postgres/blob/REL_18_6/src/backend/postmaster/postmaster.c#L2043-L2063).
 
-This is `pg_ctl`-class registration rather than a manual third-party setup path: the installer registers and owns the pinned wrapper and PostgreSQL binary as one tested set. The real Windows run must still verify that interpretation against actual restart and mid-transaction behavior.
+The issue's phrase “`pg_ctl`-class registration” is ambiguous. If it means only that PostgreSQL must be installer-owned and registered as a real SCM service, this candidate satisfies it. If it mandates PostgreSQL's native `pg_ctl register`, it conflicts with the same issue's required crash recovery because the observed postmaster failure is reported to SCM as a successful service exit. The governing ADR and architecture require the service behavior while G-06 leaves the wrapper open, so this proof uses Shawl and records the wording conflict instead of treating the wrapper choice as final. Real restart and mid-transaction evidence is still required.
 
 ## Identity and secret boundaries
 

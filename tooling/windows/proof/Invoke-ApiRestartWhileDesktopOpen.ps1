@@ -75,8 +75,8 @@ try {
   if ($null -eq $desktopProcess -or $desktopProcess.ExecutablePath -ne $ExpectedDesktopPath) {
     throw "The ready marker does not identify the expected live desktop executable"
   }
-  $desktopOwner = Invoke-CimMethod -InputObject $desktopProcess -MethodName GetOwner
-  if ($desktopOwner.ReturnValue -ne 0 -or $desktopOwner.User -ne $result.readyMarker.desktopUser) {
+  $desktopOwner = Invoke-CimMethod -InputObject $desktopProcess -MethodName GetOwnerSid
+  if ($desktopOwner.ReturnValue -ne 0 -or $desktopOwner.Sid -ne $result.readyMarker.desktopUserSid) {
     throw "The ready marker desktop is not owned by the standard proof user"
   }
   $before = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
@@ -139,6 +139,21 @@ try {
 } catch {
   $result["error"] = $_.Exception.Message
 } finally {
+  try {
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($null -ne $service -and $service.Status -ne [ServiceProcess.ServiceControllerStatus]::Running) {
+      Start-Service -Name $serviceName
+      (Get-Service -Name $serviceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(60))
+    }
+  } catch {
+    $result["passed"] = $false
+    $recoveryMessage = "API service recovery failed: $($_.Exception.Message)"
+    $result["error"] = if ([string]::IsNullOrWhiteSpace($result.error)) {
+      $recoveryMessage
+    } else {
+      "$($result.error); $recoveryMessage"
+    }
+  }
   $result["completedAtUtc"] = [DateTime]::UtcNow.ToString("o")
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $CompletePath) | Out-Null
   Write-JsonUtf8NoBom -Path $CompletePath -Value $result

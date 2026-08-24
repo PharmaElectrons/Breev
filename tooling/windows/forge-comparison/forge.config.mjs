@@ -10,6 +10,51 @@ const certificateFile = process.env.BREEV_WINDOWS_CERTIFICATE_FILE;
 const certificatePassword = process.env.BREEV_WINDOWS_CERTIFICATE_PASSWORD;
 const buildVersion = process.env.BREEV_WINDOWS_BUILD_VERSION ?? "0.0.0";
 
+export function addBreevLifecycleActions(creator) {
+  const productEnd = "  </Product>";
+  const majorUpgrade =
+    '    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of this product is already installed. Setup will now exit."/>';
+  if (
+    !creator.wixTemplate.includes(productEnd) ||
+    !creator.wixTemplate.includes(majorUpgrade)
+  ) {
+    throw new Error("The pinned MakerWix template shape changed");
+  }
+  creator.wixTemplate = creator.wixTemplate.replace(
+    majorUpgrade,
+    majorUpgrade.replace("/>", ' Schedule="afterInstallInitialize"/>'),
+  );
+  const powerShell =
+    "&quot;[System64Folder]WindowsPowerShell\\v1.0\\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass";
+  const script =
+    "&quot;[APPLICATIONROOTDIRECTORY]resources\\payload\\lifecycle.ps1&quot;";
+  const common =
+    "-InstallRoot &quot;[APPLICATIONROOTDIRECTORY].&quot; -PayloadRoot &quot;[APPLICATIONROOTDIRECTORY]resources\\payload&quot;";
+  creator.wixTemplate = creator.wixTemplate.replace(
+    productEnd,
+    `    <Property Id="BREEVFORGEINJECTFAILURE" Secure="yes" />
+    <CustomAction Id="BreevStopForRepair" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Uninstall&quot; ${common}" Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="BreevRollbackStop" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Uninstall&quot; ${common}" Execute="rollback" Impersonate="no" Return="ignore" />
+    <CustomAction Id="BreevRollbackRepair" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Repair&quot; ${common}" Execute="rollback" Impersonate="no" Return="ignore" />
+    <CustomAction Id="BreevRollbackUninstall" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Repair&quot; ${common}" Execute="rollback" Impersonate="no" Return="ignore" />
+    <CustomAction Id="BreevInstallLifecycle" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Install&quot; ${common}" Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="BreevRepairLifecycle" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Repair&quot; ${common}" Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="BreevUninstallLifecycle" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Uninstall&quot; ${common}" Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="BreevInjectedFailure" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -Command &quot;&amp; { Set-Content -LiteralPath '[CommonAppDataFolder]Breev\\state\\forge-injected-failure.txt' -Value 'issue-34-injected-failure' -NoNewline -Encoding ASCII; exit 34 }&quot;" Execute="deferred" Impersonate="no" Return="check" />
+    <InstallExecuteSequence>
+      <Custom Action="BreevRollbackRepair" Before="BreevStopForRepair"><![CDATA[Installed AND REINSTALL]]></Custom>
+      <Custom Action="BreevStopForRepair" Before="InstallFiles"><![CDATA[Installed AND REINSTALL]]></Custom>
+      <Custom Action="BreevRollbackStop" After="InstallFiles"><![CDATA[NOT Installed OR (Installed AND REINSTALL)]]></Custom>
+      <Custom Action="BreevInstallLifecycle" After="BreevRollbackStop"><![CDATA[NOT Installed]]></Custom>
+      <Custom Action="BreevRepairLifecycle" After="BreevInstallLifecycle"><![CDATA[Installed AND REINSTALL]]></Custom>
+      <Custom Action="BreevInjectedFailure" After="BreevRepairLifecycle"><![CDATA[BREEVFORGEINJECTFAILURE = "1" AND NOT REMOVE~="ALL"]]></Custom>
+      <Custom Action="BreevRollbackUninstall" Before="BreevUninstallLifecycle"><![CDATA[REMOVE~="ALL"]]></Custom>
+      <Custom Action="BreevUninstallLifecycle" Before="RemoveFiles"><![CDATA[REMOVE~="ALL"]]></Custom>
+    </InstallExecuteSequence>
+${productEnd}`,
+  );
+}
+
 const windowsFuseConfig = Object.freeze({
   version: FuseVersion.V1,
   strictlyRequireAllFuses: true,
@@ -84,6 +129,7 @@ export default {
   makers: [
     new MakerWix({
       arch: "x64",
+      beforeCreate: addBreevLifecycleActions,
       defaultInstallMode: "perMachine",
       exe: "BreevForgeComparison.exe",
       manufacturer: "Breev",

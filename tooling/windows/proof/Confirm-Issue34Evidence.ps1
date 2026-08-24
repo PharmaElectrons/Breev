@@ -241,18 +241,82 @@ $samePinnedPayload = -not [string]::IsNullOrWhiteSpace($packaging.payloadLockSha
 $forgeInstalledSigningMeasured = $forge.signing.expectedSignerThumbprint -eq $packaging.signing.certificateThumbprint -and
   $forge.signing.installedGapObserved -and
   @($forge.signing.afterInstall.files).Count -gt 0 -and
+  @($forge.signing.afterFailedRepair.files).Count -gt 0 -and
+  @($forge.signing.afterRepair.files).Count -gt 0 -and
+  @($forge.signing.afterFailedUpdate.files).Count -gt 0 -and
   @($forge.signing.afterUpdate.files).Count -gt 0 -and
-  @($forge.signing.afterInstall.files | Where-Object { $_.sha256 -eq $initialPackaging[0].electronForgeExecutable.sha256 }).Count -eq 1 -and
-  @($forge.signing.afterUpdate.files | Where-Object { $_.sha256 -eq $updatePackaging[0].electronForgeExecutable.sha256 }).Count -eq 1 -and
+  @($forge.signing.afterReinstall.files).Count -gt 0 -and
+  @($forge.signing.afterInstall.files | Where-Object {
+    $_.path.EndsWith("\BreevForgeComparison.exe") -and
+    $_.sha256 -ne $initialPackaging[0].electronForgeExecutable.sha256 -and $_.signatureStatus -ne "Valid"
+  }).Count -eq 1 -and
+  @($forge.signing.afterFailedRepair.files | Where-Object {
+    $_.path.EndsWith("\BreevForgeComparison.exe") -and
+    $_.sha256 -ne $initialPackaging[0].electronForgeExecutable.sha256 -and $_.signatureStatus -ne "Valid"
+  }).Count -eq 1 -and
+  @($forge.signing.afterRepair.files | Where-Object {
+    $_.path.EndsWith("\BreevForgeComparison.exe") -and
+    $_.sha256 -ne $initialPackaging[0].electronForgeExecutable.sha256 -and $_.signatureStatus -ne "Valid"
+  }).Count -eq 1 -and
+  @($forge.signing.afterFailedUpdate.files | Where-Object {
+    $_.path.EndsWith("\BreevForgeComparison.exe") -and
+    $_.sha256 -ne $initialPackaging[0].electronForgeExecutable.sha256 -and $_.signatureStatus -ne "Valid"
+  }).Count -eq 1 -and
+  @($forge.signing.afterUpdate.files | Where-Object {
+    $_.path.EndsWith("\BreevForgeComparison.exe") -and
+    $_.sha256 -ne $updatePackaging[0].electronForgeExecutable.sha256 -and $_.signatureStatus -ne "Valid"
+  }).Count -eq 1 -and
+  @($forge.signing.afterReinstall.files | Where-Object {
+    $_.path.EndsWith("\BreevForgeComparison.exe") -and
+    $_.sha256 -ne $updatePackaging[0].electronForgeExecutable.sha256 -and $_.signatureStatus -ne "Valid"
+  }).Count -eq 1 -and
   $forge.application.afterInstall.sha256 -eq $initialPackaging[0].electronForgeAsar.sha256 -and
   $forge.application.afterInstall.version -eq "0.0.0" -and
+  $forge.application.afterFailedRepair.sha256 -eq $initialPackaging[0].electronForgeAsar.sha256 -and
+  $forge.application.afterFailedRepair.version -eq "0.0.0" -and
+  $forge.application.afterRepair.sha256 -eq $initialPackaging[0].electronForgeAsar.sha256 -and
+  $forge.application.afterRepair.version -eq "0.0.0" -and
+  $forge.application.afterFailedUpdate.sha256 -eq $initialPackaging[0].electronForgeAsar.sha256 -and
+  $forge.application.afterFailedUpdate.version -eq "0.0.0" -and
   $forge.application.afterUpdate.sha256 -eq $updatePackaging[0].electronForgeAsar.sha256 -and
   $forge.application.afterUpdate.version -eq "0.0.1" -and
+  $forge.application.afterReinstall.sha256 -eq $updatePackaging[0].electronForgeAsar.sha256 -and
+  $forge.application.afterReinstall.version -eq "0.0.1" -and
   $forge.payload.afterInstall.payloadLockSha256 -eq $packaging.payloadLockSha256 -and
+  $forge.payload.afterFailedRepair.payloadLockSha256 -eq $packaging.payloadLockSha256 -and
+  $forge.payload.afterRepair.payloadLockSha256 -eq $packaging.payloadLockSha256 -and
+  $forge.payload.afterFailedUpdate.payloadLockSha256 -eq $packaging.payloadLockSha256 -and
   $forge.payload.afterUpdate.payloadLockSha256 -eq $packaging.payloadLockSha256 -and
+  $forge.payload.afterReinstall.payloadLockSha256 -eq $packaging.payloadLockSha256 -and
   $forge.operations.repairCorruptionCreated -and
   $forge.operations.repairRestoredMsiFile -and
-  $forge.operations.installRootRemoved
+  $forge.operations.failedRepairExitCode -eq 1603 -and
+  $forge.operations.failedUpdateExitCode -eq 1603 -and
+  $forge.operations.failedRepairMarker.markerMatched -and
+  $forge.operations.failedRepairMarker.deferredActionLogged -and
+  $forge.operations.failedRepairMarker.logBytes -gt 0 -and
+  -not [string]::IsNullOrWhiteSpace($forge.operations.failedRepairMarker.logSha256) -and
+  $forge.operations.failedUpdateMarker.markerMatched -and
+  $forge.operations.failedUpdateMarker.deferredActionLogged -and
+  $forge.operations.failedUpdateMarker.logBytes -gt 0 -and
+  -not [string]::IsNullOrWhiteSpace($forge.operations.failedUpdateMarker.logSha256) -and
+  $forge.operations.installRootRemoved -and
+  $forge.operations.finalUninstalled -and
+  $forge.serviceLifecycle.integratesRequiredServices -and
+  $forge.serviceLifecycle.repair -and
+  $forge.serviceLifecycle.update -and
+  $forge.serviceLifecycle.failedRepairRecovery -and
+  $forge.serviceLifecycle.failedUpdateRecovery -and
+  $forge.serviceLifecycle.recovery -and
+  $forge.serviceLifecycle.reinstall -and
+  $forge.dataPreservation.afterInstall -and
+  $forge.dataPreservation.afterRepair -and
+  $forge.dataPreservation.afterFailedRepair -and
+  $forge.dataPreservation.afterFailedUpdate -and
+  $forge.dataPreservation.afterUpdate -and
+  $forge.dataPreservation.afterUninstall -and
+  $forge.dataPreservation.afterReinstall -and
+  $forge.dataPreservation.afterFinalUninstall
 $builderInstalledSigningMeasured = $runtime.signing.expectedSignerThumbprint -eq $packaging.signing.certificateThumbprint -and
   $runtime.signing.afterInstall.allSignedByExpectedCertificate -and
   $runtime.signing.afterRepair.allSignedByExpectedCertificate -and
@@ -288,11 +352,21 @@ $physicalProfilePassed = $physicalProfile.schemaVersion -eq 1 -and $physicalProf
   $physicalProfile.facts.editionId -eq "Professional" -and
   $physicalProfile.facts.displayVersion -eq "25H2" -and
   $physicalProfile.facts.architecture -eq "64-bit" -and
-  $physicalProfile.facts.physicalMachineObserved -and
+  $physicalProfile.facts.physicalMachineOperatorAttested -and
+  @($physicalProfile.facts.knownVirtualPlatformIndicators).Count -eq 0 -and
   $physicalProfile.facts.activated -and $physicalProfile.facts.secureBoot -and
-  $physicalProfile.facts.tpmPresent -and $physicalProfile.facts.tpmReady
+  $physicalProfile.facts.tpmPresent -and $physicalProfile.facts.tpmReady -and
+  $physicalProfile.application.candidate -eq "electron-builder" -and
+  $physicalProfile.application.version -eq "0.0.1" -and
+  $physicalProfile.application.executableSha256 -eq $updatePackaging[0].electronBuilderExecutable.sha256 -and
+  $physicalProfile.application.asarSha256 -eq $updatePackaging[0].electronBuilderAsar.sha256 -and
+  $physicalProfile.application.signerThumbprint -eq $packaging.signing.certificateThumbprint -and
+  $physicalProfile.application.fuseWirePassed -and
+  $physicalProfile.application.launchObservedMainUnavailable -and
+  $physicalProfile.application.cleanupPassed -and
+  @($physicalProfile.application.remainingProcessIds).Count -eq 0
 
-Add-Criterion $criteria "SUPPORTED-ENVIRONMENT" "Windows CI and a non-destructive physical Windows 11 Pro profile test both pass; destructive lifecycle evidence remains confined to the disposable VM." (
+Add-Criterion $criteria "SUPPORTED-ENVIRONMENT" "Windows CI and a non-destructive signed-application launch on the physical Windows 11 Pro profile both pass; destructive lifecycle evidence remains confined to the disposable VM." (
   $windowsCiPassed -and $physicalProfilePassed -and $runtime.certificationEligible
 ) @($WindowsCiResultPath, $PhysicalProfileResultPath, $RuntimeResultPath)
 
@@ -300,6 +374,7 @@ Add-Criterion $criteria "AC-1" "Two independent auto-start services use pinned b
   $runtime.certificationEligible -and
   (Get-RuntimeCheck $runtime "independent-auto-services") -and
   (Get-RuntimeCheck $runtime "pinned-runtime-set") -and
+  (Get-RuntimeCheck $runtime "postgresql-service-stop-clean-shutdown") -and
   (Get-RuntimeCheck $runtime "dedicated-protected-postgresql-data-directory") -and
   (Get-RuntimeCheck $runtime "separate-least-privilege-database-roles") -and
   (Get-RuntimeCheck $runtime "runtime-role-cannot-own-or-assume-schema-owner") -and
@@ -360,12 +435,14 @@ Add-Criterion $criteria "AC-7" "Clean install, repair, update, failed installati
   @($runtime.checks | Where-Object { $_.name -like "failed-install-*-recovers" -and $_.passed }).Count -eq 4
 ) @($RuntimeResultPath)
 
-Add-Criterion $criteria "AC-8" "A complete current local cycle succeeds with the internet disconnected." (
+Add-Criterion $criteria "AC-8" "The complete Stage 1a local health/version-handshake cycle succeeds with the internet disconnected, including desktop close, force-kill, and restart." (
+  $standardUser.passed -and
   $standardUser.checks.internetDisconnected -and
   $offlineNetwork.passed -and
   $standardUser.checks.initialApiHealth -and
   $standardUser.checks.desktopReady -and
-  $standardUser.checks.packagedProtocol -and
+  $standardUser.checks.apiHealthyAfterEveryWindowCloses -and
+  $standardUser.checks.apiHealthyAfterElectronTreeKill -and
   $standardUser.checks.desktopRestartsReady
 ) @($StandardUserResultPath, $OfflineNetworkResultPath)
 
