@@ -2,9 +2,16 @@ import { Module } from "@nestjs/common";
 
 import { DatabaseHealthService } from "./database-health.service.js";
 import { HealthController } from "./health.controller.js";
+import { LocalDatabaseService } from "./local-database.service.js";
+import { MainDeviceProofController } from "./main-device/main-device-proof.controller.js";
+import { MainDeviceSecurityService } from "./main-device/main-device-security.service.js";
 
 @Module({
-  controllers: [HealthController],
-  providers: [DatabaseHealthService],
+  controllers: [HealthController, MainDeviceProofController],
+  providers: [
+    DatabaseHealthService,
+    LocalDatabaseService,
+    MainDeviceSecurityService,
+  ],
 })
 export class AppModule {}

@@ -4,6 +4,10 @@ import {
   desktopStartupConfigRequestSchema,
   type DesktopStartupConfigRequest,
 } from "@breev/contracts/desktop-preload";
+import {
+  LOCAL_DEVICE_ID_HEADER,
+  LOCAL_DEVICE_SESSION_HEADER,
+} from "@breev/contracts/local-rest";
 
 export const PACKAGED_APP_ENTRY_URL = "breev://app/index.html";
 
@@ -17,7 +21,7 @@ export const APP_CONTENT_SECURITY_POLICY = [
   "style-src 'self'",
   "img-src 'self'",
   "font-src 'self'",
-  "connect-src 'self' http://127.0.0.1:* http://localhost:*",
+  "connect-src 'self' http://127.0.0.1:*",
 ].join("; ");
 
 export function createHardenedWindowOptions(
@@ -195,4 +199,97 @@ export function resolveAppAssetPath(
   }
 
   return assetPath;
+}
+
+export interface MainDeviceBinding {
+  readonly deviceId: string;
+  readonly deviceSecret: string;
+  readonly sessionToken: string;
+}
+
+interface MainDeviceRequestDetails {
+  readonly requestHeaders: Readonly<Record<string, string>>;
+  readonly url: string;
+  readonly webContentsId?: number;
+}
+
+interface MainDeviceRequestOptions {
+  readonly binding: MainDeviceBinding;
+  readonly localApiOrigin: string;
+  readonly trustedWebContentsId: number;
+}
+
+export function readMainDeviceBinding(
+  environment: Readonly<Record<string, string | undefined>>,
+): MainDeviceBinding | undefined {
+  const binding = {
+    deviceId: environment.BREEV_MAIN_DEVICE_ID,
+    deviceSecret: environment.BREEV_MAIN_DEVICE_SECRET,
+    sessionToken: environment.BREEV_MAIN_DEVICE_SESSION,
+  };
+  const presentCount = Object.values(binding).filter(
+    (value) => value !== undefined,
+  ).length;
+  if (presentCount === 0) {
+    return undefined;
+  }
+  if (
+    presentCount !== 3 ||
+    !isUuid(binding.deviceId) ||
+    !isHighEntropySecret(binding.deviceSecret) ||
+    !isHighEntropySecret(binding.sessionToken)
+  ) {
+    throw new Error("The Main device binding configuration is invalid");
+  }
+  return {
+    deviceId: binding.deviceId,
+    deviceSecret: binding.deviceSecret,
+    sessionToken: binding.sessionToken,
+  };
+}
+
+export function addMainDeviceRequestHeaders(
+  details: MainDeviceRequestDetails,
+  options: MainDeviceRequestOptions,
+): Record<string, string> {
+  if (
+    details.webContentsId !== options.trustedWebContentsId ||
+    new URL(details.url).origin !== options.localApiOrigin
+  ) {
+    return { ...details.requestHeaders };
+  }
+
+  const reservedHeaders = new Set([
+    "authorization",
+    LOCAL_DEVICE_ID_HEADER.toLowerCase(),
+    LOCAL_DEVICE_SESSION_HEADER.toLowerCase(),
+  ]);
+  const requestHeaders = Object.fromEntries(
+    Object.entries(details.requestHeaders).filter(
+      ([name]) => !reservedHeaders.has(name.toLowerCase()),
+    ),
+  );
+  return {
+    ...requestHeaders,
+    Authorization: `Breev-Device ${options.binding.deviceSecret}`,
+    [LOCAL_DEVICE_ID_HEADER]: options.binding.deviceId,
+    [LOCAL_DEVICE_SESSION_HEADER]: options.binding.sessionToken,
+  };
+}
+
+function isUuid(value: string | undefined): value is string {
+  return (
+    value !== undefined &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+      value,
+    )
+  );
+}
+
+function isHighEntropySecret(value: string | undefined): value is string {
+  return (
+    value !== undefined &&
+    /^[A-Za-z0-9_-]{43}$/u.test(value) &&
+    Buffer.from(value, "base64url").length === 32
+  );
 }

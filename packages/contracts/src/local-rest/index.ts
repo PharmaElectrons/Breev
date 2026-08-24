@@ -4,6 +4,13 @@ export const LOCAL_API_VERSION = "2" as const;
 export const LOCAL_SCHEMA_VERSION = "1" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
+export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
+export const LOCAL_PROOF_MUTATION_SUCCESS_STATUS = 201 as const;
+
+export const BREEV_CSRF_HEADER = "X-Breev-CSRF" as const;
+export const BREEV_CSRF_VALUE = "1" as const;
+export const LOCAL_DEVICE_ID_HEADER = "X-Breev-Device-Id" as const;
+export const LOCAL_DEVICE_SESSION_HEADER = "X-Breev-Device-Session" as const;
 
 export const localHealthQuerySchema = z.strictObject({});
 
@@ -47,6 +54,81 @@ export const localHealthContract = {
   },
 } as const;
 
+export const localSecurityDenialCodeSchema = z.enum([
+  "binding-invalid",
+  "binding-missing",
+  "body-invalid",
+  "content-type-not-allowed",
+  "cors-preflight-not-allowed",
+  "csrf-header-missing",
+  "host-not-allowed",
+  "origin-not-allowed",
+  "rate-limit-exceeded",
+  "request-too-large",
+  "session-binding-invalid",
+]);
+
+export const localSecurityDenialSchema = z.strictObject({
+  status: z.literal("denied"),
+  code: localSecurityDenialCodeSchema,
+  requestId: z.uuid(),
+});
+
+const nonNegativeIntegerStringSchema = z.string().regex(/^(?:0|[1-9]\d*)$/u);
+
+export const localProofMutationRequestSchema = z.strictObject({
+  increment: z.literal(1),
+});
+
+export const localProofMutationSuccessSchema = z.strictObject({
+  status: z.literal("committed"),
+  mutationCount: nonNegativeIntegerStringSchema,
+});
+
+export const localProofEvidenceSuccessSchema = z.strictObject({
+  mutationCount: nonNegativeIntegerStringSchema,
+  recentDenialCount: nonNegativeIntegerStringSchema,
+  denials: z
+    .array(
+      z.strictObject({
+        code: localSecurityDenialCodeSchema,
+        count: nonNegativeIntegerStringSchema,
+      }),
+    )
+    .max(localSecurityDenialCodeSchema.options.length),
+});
+
+const localSecurityDenialResponses = {
+  400: localSecurityDenialSchema,
+  401: localSecurityDenialSchema,
+  403: localSecurityDenialSchema,
+  413: localSecurityDenialSchema,
+  415: localSecurityDenialSchema,
+  421: localSecurityDenialSchema,
+  429: localSecurityDenialSchema,
+} as const;
+
+export const localProofMutationContract = {
+  method: "POST",
+  path: "/security/device-session-proof",
+  request: {
+    body: localProofMutationRequestSchema,
+  },
+  responses: {
+    [LOCAL_PROOF_MUTATION_SUCCESS_STATUS]: localProofMutationSuccessSchema,
+    ...localSecurityDenialResponses,
+  },
+} as const;
+
+export const localProofEvidenceContract = {
+  method: "GET",
+  path: localProofMutationContract.path,
+  responses: {
+    [LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS]: localProofEvidenceSuccessSchema,
+    ...localSecurityDenialResponses,
+  },
+} as const;
+
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
 export type LocalHealthDatabaseUnavailable = z.infer<
   typeof localHealthDatabaseUnavailableSchema
@@ -59,6 +141,19 @@ export type LocalHealthResponse =
   | LocalHealthDatabaseUnavailable
   | LocalHealthRepairRequired;
 export type LocalHealthStatusCode = keyof typeof localHealthContract.responses;
+export type LocalSecurityDenialCode = z.infer<
+  typeof localSecurityDenialCodeSchema
+>;
+export type LocalSecurityDenial = z.infer<typeof localSecurityDenialSchema>;
+export type LocalProofMutationRequest = z.infer<
+  typeof localProofMutationRequestSchema
+>;
+export type LocalProofMutationSuccess = z.infer<
+  typeof localProofMutationSuccessSchema
+>;
+export type LocalProofEvidenceSuccess = z.infer<
+  typeof localProofEvidenceSuccessSchema
+>;
 
 export class LocalRestVersionMismatchError extends Error {
   public constructor(
@@ -103,6 +198,68 @@ export function parseLocalHealthResponse(
     throw new LocalRestPayloadError(statusCode);
   }
 
+  return result.data;
+}
+
+export function parseLocalProofMutationResponse(
+  statusCode: number,
+  payload: unknown,
+): LocalProofMutationSuccess | LocalSecurityDenial {
+  if (statusCode === LOCAL_PROOF_MUTATION_SUCCESS_STATUS) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      localProofMutationSuccessSchema,
+    );
+  }
+  if (isSecurityDenialStatus(statusCode)) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      localSecurityDenialSchema,
+    );
+  }
+  throw new LocalRestPayloadError(statusCode);
+}
+
+export function parseLocalProofEvidenceResponse(
+  statusCode: number,
+  payload: unknown,
+): LocalProofEvidenceSuccess | LocalSecurityDenial {
+  if (statusCode === LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      localProofEvidenceSuccessSchema,
+    );
+  }
+  if (isSecurityDenialStatus(statusCode)) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      localSecurityDenialSchema,
+    );
+  }
+  throw new LocalRestPayloadError(statusCode);
+}
+
+function isSecurityDenialStatus(statusCode: number): boolean {
+  return Object.hasOwn(localSecurityDenialResponses, statusCode);
+}
+
+function parseContractResponse<T>(
+  statusCode: number,
+  payload: unknown,
+  schema: z.ZodType<T> | undefined,
+): T {
+  if (schema === undefined) {
+    throw new LocalRestPayloadError(statusCode);
+  }
+
+  const result = schema.safeParse(payload);
+  if (!result.success) {
+    throw new LocalRestPayloadError(statusCode);
+  }
   return result.data;
 }
 

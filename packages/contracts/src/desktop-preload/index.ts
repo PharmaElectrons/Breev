@@ -22,8 +22,6 @@ export interface BreevDesktopApi {
 }
 
 function isLocalApiOrigin(value: string): boolean {
-  const match = /^http:\/\/(?:127\.0\.0\.1|localhost):([1-9]\d{0,4})$/u.exec(
-    value,
-  );
+  const match = /^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})$/u.exec(value);
   return match !== null && Number(match[1]) <= 65_535;
 }
