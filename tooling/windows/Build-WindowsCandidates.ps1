@@ -210,7 +210,7 @@ try {
     $retainedBuilderInstaller = Join-Path $builderDestination "installer.exe"
     $retainedBuilderApp = Join-Path $builderDestination "app"
     Copy-Item -LiteralPath $builderInstaller -Destination $retainedBuilderInstaller
-    Copy-Item -LiteralPath (Join-Path $builderOutput "win-unpacked") -Destination $retainedBuilderApp -Recurse
+    Move-Item -LiteralPath (Join-Path $builderOutput "win-unpacked") -Destination $retainedBuilderApp
     $retainedBuilderExecutable = Join-Path $retainedBuilderApp "Breev.exe"
     $builderPayload = Get-PayloadRecord -Root (Join-Path $retainedBuilderApp "resources/windows-payload")
     $builderApplicationVersion = (& node.exe (Join-Path $PSScriptRoot "proof/read-asar-package-version.mjs") --asar (Join-Path $retainedBuilderApp "resources/app.asar")).Trim()
@@ -238,7 +238,7 @@ try {
     $retainedForgeInstaller = Join-Path $forgeDestination "installer.msi"
     $retainedForgeApp = Join-Path $forgeDestination "app"
     Copy-Item -LiteralPath $forgeInstaller.FullName -Destination $retainedForgeInstaller
-    Copy-Item -LiteralPath (Join-Path $forgeOutput "BreevForgeComparison-win32-x64") -Destination $retainedForgeApp -Recurse
+    Move-Item -LiteralPath (Join-Path $forgeOutput "BreevForgeComparison-win32-x64") -Destination $retainedForgeApp
     $retainedForgeExecutable = Join-Path $retainedForgeApp "BreevForgeComparison.exe"
     $forgePayload = Get-PayloadRecord -Root (Join-Path $retainedForgeApp "resources/payload")
     if ($builderPayload.payloadLockSha256 -ne $sourcePayloadLockSha256 -or
