@@ -1,20 +1,14 @@
-import { contextBridge } from "electron";
+import {
+  DESKTOP_API_GLOBAL,
+  DESKTOP_STARTUP_CONFIG_CHANNEL,
+} from "@breev/contracts/desktop-preload";
+import { contextBridge, ipcRenderer } from "electron";
 
-const LOCAL_API_ARGUMENT = "--breev-local-api-url=";
-
-const encodedLocalApiUrl = process.argv
-  .find((argument) => argument.startsWith(LOCAL_API_ARGUMENT))
-  ?.slice(LOCAL_API_ARGUMENT.length);
-
-if (encodedLocalApiUrl === undefined) {
-  throw new Error("The Breev local API URL was not provided to preload");
-}
-
-const localApiUrl = decodeURIComponent(encodedLocalApiUrl);
+import { createBreevDesktopApi } from "./api.js";
 
 contextBridge.exposeInMainWorld(
-  "breevRuntime",
-  Object.freeze({
-    getLocalApiUrl: async (): Promise<string> => localApiUrl,
-  }),
+  DESKTOP_API_GLOBAL,
+  createBreevDesktopApi(async (_channel, payload) =>
+    ipcRenderer.invoke(DESKTOP_STARTUP_CONFIG_CHANNEL, payload),
+  ),
 );

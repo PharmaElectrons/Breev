@@ -56,10 +56,44 @@ describe.sequential("local API health persistence seam", () => {
     const { response, body } = await getHealth(baseUrl);
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "breev://app",
+    );
     expect(body).toMatchObject({
       status: "healthy",
       database: "available",
     });
+  });
+
+  it("reports the defined repair requirement from the real API", async () => {
+    const repairPort = await reservePort();
+    const repairBaseUrl = `http://127.0.0.1:${repairPort}`;
+    const repairApi = spawn(
+      process.execPath,
+      [path.resolve(import.meta.dirname, "../dist/main.js")],
+      {
+        env: {
+          ...process.env,
+          API_HOST: "127.0.0.1",
+          API_PORT: String(repairPort),
+          BREEV_INSTALLATION_STATE: "repair-required",
+          DATABASE_URL: postgres.getConnectionUri(),
+        },
+      },
+    );
+
+    try {
+      const { response, body } = await waitForRepairRequired(repairBaseUrl);
+      expect(response.status).toBe(503);
+      expect(body).toEqual({
+        apiVersion: "1",
+        schemaVersion: "1",
+        status: "repair-required",
+        repair: { code: "installation-state-invalid" },
+      });
+    } finally {
+      await stopProcess(repairApi);
+    }
   });
 
   it("keeps the API reachable and reports PostgreSQL failure", async () => {
@@ -115,6 +149,24 @@ async function waitForDatabaseUnavailable(
   }
 
   throw new Error("Local API did not report the stopped PostgreSQL instance");
+}
+
+async function waitForRepairRequired(
+  baseUrl: string,
+): Promise<{ response: Response; body: LocalHealthResponse }> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try {
+      const result = await getHealth(baseUrl);
+      if (result.body.status === "repair-required") {
+        return result;
+      }
+    } catch {
+      await delay(100);
+    }
+  }
+
+  throw new Error("Local API did not report the repair-required signal");
 }
 
 async function reservePort(): Promise<number> {

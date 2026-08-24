@@ -4,10 +4,12 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
   },
-  outputDir: "../../test-results/desktop",
+  outputDir: "../../test-results/desktop-browser",
   reporter: "line",
-  testDir: "test",
-  testMatch: "**/*.smoke.test.ts",
+  testDir: "test/browser",
   timeout: 120_000,
+  use: {
+    viewport: { height: 768, width: 1_024 },
+  },
   workers: 1,
 });

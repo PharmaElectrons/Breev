@@ -34,6 +34,19 @@ describe("local REST health contract", () => {
     expect(parseLocalHealthResponse(503, payload)).toEqual(payload);
   });
 
+  it("accepts only the defined repair-required signal", () => {
+    const payload = {
+      apiVersion: LOCAL_API_VERSION,
+      schemaVersion: LOCAL_SCHEMA_VERSION,
+      status: "repair-required",
+      repair: {
+        code: "installation-state-invalid",
+      },
+    };
+
+    expect(parseLocalHealthResponse(503, payload)).toEqual(payload);
+  });
+
   it.each([
     [200, null],
     [200, { status: "healthy" }],
@@ -54,6 +67,23 @@ describe("local REST health contract", () => {
         schemaVersion: LOCAL_SCHEMA_VERSION,
         status: "healthy",
         database: "available",
+      },
+    ],
+    [
+      503,
+      {
+        apiVersion: LOCAL_API_VERSION,
+        schemaVersion: LOCAL_SCHEMA_VERSION,
+        status: "repair-required",
+      },
+    ],
+    [
+      503,
+      {
+        apiVersion: LOCAL_API_VERSION,
+        schemaVersion: LOCAL_SCHEMA_VERSION,
+        status: "repair-required",
+        repair: { code: "generic-repair" },
       },
     ],
     [
