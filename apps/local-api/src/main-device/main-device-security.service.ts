@@ -22,7 +22,12 @@ import type {
   Response,
 } from "express";
 
-import { hashSecret, LocalDatabaseService } from "../local-database.service.js";
+import { LocalDatabaseService } from "../local-database.service.js";
+import {
+  hashMainDeviceSecret,
+  isHighEntropyMainDeviceSecret,
+  isUuidV7,
+} from "./main-device-binding.js";
 
 const PACKAGED_RENDERER_ORIGIN = "breev://app";
 const DEVICE_AUTHORIZATION_PREFIX = "Breev-Device ";
@@ -40,6 +45,7 @@ type RequestClass = "cors-preflight" | "other-state-change" | "proof-mutation";
 
 @Injectable()
 export class MainDeviceSecurityService {
+  private readonly verifiedDeviceIds = new WeakMap<Request, string>();
   private readonly rateLimit = readPositiveInteger(
     process.env.BREEV_PROOF_RATE_LIMIT,
     5,
@@ -65,8 +71,8 @@ export class MainDeviceSecurityService {
       return { status: "binding-missing" };
     }
     if (
-      !isUuid(deviceId) ||
-      !isHighEntropySecret(sessionToken) ||
+      !isUuidV7(deviceId) ||
+      !isHighEntropyMainDeviceSecret(sessionToken) ||
       !authorization.startsWith(DEVICE_AUTHORIZATION_PREFIX)
     ) {
       return { status: "binding-invalid" };
@@ -74,7 +80,7 @@ export class MainDeviceSecurityService {
     const deviceSecret = authorization.slice(
       DEVICE_AUTHORIZATION_PREFIX.length,
     );
-    if (!isHighEntropySecret(deviceSecret)) {
+    if (!isHighEntropyMainDeviceSecret(deviceSecret)) {
       return { status: "binding-invalid" };
     }
 
@@ -84,7 +90,7 @@ export class MainDeviceSecurityService {
       [deviceId],
     );
     const storedHash = device.rows[0]?.credential_hash;
-    const presentedHash = hashSecret(deviceSecret);
+    const presentedHash = hashMainDeviceSecret(deviceSecret);
     if (
       storedHash === undefined ||
       storedHash.length !== presentedHash.length ||
@@ -97,12 +103,17 @@ export class MainDeviceSecurityService {
       `select 1
        from main_device_sessions
        where token_hash = $1 and device_id = $2`,
-      [hashSecret(sessionToken), deviceId],
+      [hashMainDeviceSecret(sessionToken), deviceId],
     );
     if (session.rowCount !== 1) {
       return { status: "session-binding-invalid" };
     }
+    this.verifiedDeviceIds.set(request, deviceId);
     return { deviceId, status: "verified" };
+  }
+
+  public verifiedDeviceId(request: Request): string | undefined {
+    return this.verifiedDeviceIds.get(request);
   }
 
   public async consumeRate(deviceId: string): Promise<boolean> {
@@ -182,6 +193,7 @@ export class MainDeviceSecurityService {
     code: LocalSecurityDenialCode,
     requestClass: RequestClass,
     deviceContext: DeviceContext,
+    deviceId?: string,
   ): Promise<LocalSecurityDenial> {
     const client = await this.localDatabase.requirePool().connect();
     let requestId = "";
@@ -190,10 +202,10 @@ export class MainDeviceSecurityService {
       await client.query("select pg_advisory_xact_lock(165308856)");
       const denial = await client.query<{ id: string }>(
         `insert into main_device_recent_denials
-           (code, request_class, device_context)
-         values ($1, $2, $3)
+           (code, request_class, device_context, device_id)
+         values ($1, $2, $3, $4)
          returning id`,
-        [code, requestClass, deviceContext],
+        [code, requestClass, deviceContext, deviceId ?? null],
       );
       requestId = denial.rows[0]?.id ?? "";
       await client.query(
@@ -234,8 +246,14 @@ export class MainDeviceSecurityService {
     statusCode: number,
     requestClass: RequestClass = "proof-mutation",
     deviceContext: DeviceContext = "present",
+    deviceId?: string,
   ): Promise<never> {
-    const denial = await this.recordDenial(code, requestClass, deviceContext);
+    const denial = await this.recordDenial(
+      code,
+      requestClass,
+      deviceContext,
+      deviceId,
+    );
     throw new HttpException(denial, statusCode);
   }
 }
@@ -277,6 +295,7 @@ export function createMainRequestBodyErrorMiddleware(
       denial.code,
       classifyRequest(request),
       "verified",
+      security.verifiedDeviceId(request),
     ).catch(next);
   };
 }
@@ -425,6 +444,7 @@ async function protectRequest(
       "rate-limit-exceeded",
       requestClass,
       "verified",
+      binding.deviceId,
     );
     return;
   }
@@ -438,8 +458,14 @@ async function sendDenial(
   code: LocalSecurityDenialCode,
   requestClass: RequestClass,
   deviceContext: DeviceContext,
+  deviceId?: string,
 ): Promise<void> {
-  const denial = await security.recordDenial(code, requestClass, deviceContext);
+  const denial = await security.recordDenial(
+    code,
+    requestClass,
+    deviceContext,
+    deviceId,
+  );
   response.status(statusCode).json(denial);
 }
 
@@ -507,17 +533,4 @@ function readErrorType(error: unknown): string | undefined {
     return undefined;
   }
   return typeof error.type === "string" ? error.type : undefined;
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
-    value,
-  );
-}
-
-function isHighEntropySecret(value: string): boolean {
-  return (
-    /^[A-Za-z0-9_-]{43}$/u.test(value) &&
-    Buffer.from(value, "base64url").length === 32
-  );
 }

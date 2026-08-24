@@ -3,104 +3,62 @@ import {
   type OnApplicationShutdown,
   type OnModuleInit,
 } from "@nestjs/common";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { timingSafeEqual } from "node:crypto";
+import path from "node:path";
 import { Pool, type PoolClient } from "pg";
 
-const MAIN_DEVICE_MIGRATION = `
-  create table if not exists breev_schema_migrations (
-    version integer primary key,
-    applied_at timestamptz not null default statement_timestamp()
-  );
+import {
+  hashMainDeviceSecret,
+  readMainDeviceProvisioning,
+  type MainDeviceProvisioning,
+} from "./main-device/main-device-binding.js";
 
-  create table if not exists main_devices (
-    id uuid primary key,
-    credential_hash bytea not null unique,
-    created_at timestamptz not null default statement_timestamp()
-  );
+const APPLICATION_DATABASE_ROLE = "breev_app";
+const MIGRATION_LOCK_ID = 165_308_855;
 
-  create table if not exists main_device_sessions (
-    token_hash bytea primary key,
-    device_id uuid not null references main_devices(id),
-    created_at timestamptz not null default statement_timestamp()
-  );
-
-  create table if not exists main_device_proof_state (
-    singleton boolean primary key default true check (singleton),
-    mutation_count bigint not null default 0 check (mutation_count >= 0)
-  );
-
-  insert into main_device_proof_state (singleton, mutation_count)
-  values (true, 0)
-  on conflict (singleton) do nothing;
-
-  create table if not exists main_device_denial_totals (
-    code varchar(40) primary key,
-    denial_count bigint not null default 0 check (denial_count >= 0),
-    last_denied_at timestamptz not null
-  );
-
-  create table if not exists main_device_recent_denials (
-    id uuid primary key default uuidv7(),
-    denied_at timestamptz not null default statement_timestamp(),
-    code varchar(40) not null,
-    request_class varchar(32) not null,
-    device_context varchar(16) not null
-  );
-
-  create table if not exists main_device_rate_windows (
-    device_id uuid not null references main_devices(id),
-    action varchar(32) not null,
-    window_number bigint not null,
-    request_count integer not null check (request_count > 0),
-    primary key (device_id, action, window_number)
-  );
-`;
-
-export interface MainDeviceProvisioning {
-  readonly deviceId: string;
-  readonly deviceSecret: string;
-  readonly sessionToken: string;
+interface DatabaseConfiguration {
+  readonly applicationUrl: string;
+  readonly migrationUrl: string;
 }
 
 @Injectable()
 export class LocalDatabaseService
   implements OnModuleInit, OnApplicationShutdown
 {
+  private migrationUrl: string | undefined;
   private readonly pool: Pool | undefined;
   private readonly provisioning: MainDeviceProvisioning | undefined;
 
   public constructor() {
+    const configuration = readDatabaseConfiguration(process.env);
     this.provisioning = readMainDeviceProvisioning(process.env);
-    const connectionString = process.env.DATABASE_URL;
-    if (connectionString === undefined || connectionString.length === 0) {
+    if (configuration === undefined) {
       return;
     }
 
-    this.pool = new Pool({
-      connectionString,
-      connectionTimeoutMillis: 1_000,
-      idleTimeoutMillis: 1_000,
-      max: 5,
-    });
-    this.pool.on("error", () => undefined);
+    this.migrationUrl = configuration.migrationUrl;
+    delete process.env.DATABASE_MIGRATION_URL;
+    this.pool = createPool(configuration.applicationUrl);
   }
 
   public async onModuleInit(): Promise<void> {
-    if (this.pool === undefined) {
+    if (this.pool === undefined || this.migrationUrl === undefined) {
+      return;
+    }
+
+    const migrationUrl = this.migrationUrl;
+    this.migrationUrl = undefined;
+    await runMigrations(this.pool, migrationUrl);
+    if (this.provisioning === undefined) {
       return;
     }
 
     const client = await this.pool.connect();
     try {
       await client.query("begin");
-      await client.query("select pg_advisory_xact_lock(165308855)");
-      await client.query(MAIN_DEVICE_MIGRATION);
-      await client.query(
-        "insert into breev_schema_migrations (version) values (1) on conflict (version) do nothing",
-      );
-      if (this.provisioning !== undefined) {
-        await provisionMainDevice(client, this.provisioning);
-      }
+      await provisionMainDevice(client, this.provisioning);
       await client.query("commit");
     } catch (error) {
       await client.query("rollback");
@@ -135,12 +93,81 @@ export class LocalDatabaseService
   }
 }
 
+async function runMigrations(
+  applicationPool: Pool,
+  migrationUrl: string,
+): Promise<void> {
+  const migrationPool = createPool(migrationUrl);
+  const migrationClient = await migrationPool.connect();
+  try {
+    await assertSeparatedDatabaseRoles(applicationPool, migrationClient);
+    await migrationClient.query("select pg_advisory_lock($1)", [
+      MIGRATION_LOCK_ID,
+    ]);
+    try {
+      await migrate(drizzle({ client: migrationClient }), {
+        migrationsFolder: path.resolve(import.meta.dirname, "../drizzle"),
+        migrationsSchema: "breev_migrations",
+        migrationsTable: "breev_schema_migrations",
+      });
+    } finally {
+      await migrationClient.query("select pg_advisory_unlock($1)", [
+        MIGRATION_LOCK_ID,
+      ]);
+    }
+  } finally {
+    migrationClient.release();
+    await migrationPool.end();
+  }
+}
+
+async function assertSeparatedDatabaseRoles(
+  applicationPool: Pool,
+  migrationClient: PoolClient,
+): Promise<void> {
+  const application = await applicationPool.query<{
+    can_create_schema: boolean;
+    role_name: string;
+    rolsuper: boolean;
+  }>(
+    `select current_user as role_name,
+            rolsuper,
+            has_schema_privilege(current_user, 'public', 'create')
+              as can_create_schema
+     from pg_roles
+     where rolname = current_user`,
+  );
+  const migration = await migrationClient.query<{
+    role_name: string;
+    rolsuper: boolean;
+  }>(
+    `select current_user as role_name, rolsuper
+     from pg_roles
+     where rolname = current_user`,
+  );
+  const applicationRole = application.rows[0];
+  const migrationRole = migration.rows[0];
+  if (
+    applicationRole === undefined ||
+    migrationRole === undefined ||
+    applicationRole.role_name !== APPLICATION_DATABASE_ROLE ||
+    applicationRole.role_name === migrationRole.role_name ||
+    applicationRole.rolsuper ||
+    applicationRole.can_create_schema ||
+    migrationRole.rolsuper
+  ) {
+    throw new Error(
+      "Breev requires separate least-privilege application and schema-owner database roles",
+    );
+  }
+}
+
 async function provisionMainDevice(
   client: PoolClient,
   provisioning: MainDeviceProvisioning,
 ): Promise<void> {
-  const credentialHash = hashSecret(provisioning.deviceSecret);
-  const sessionHash = hashSecret(provisioning.sessionToken);
+  const credentialHash = hashMainDeviceSecret(provisioning.deviceSecret);
+  const sessionHash = hashMainDeviceSecret(provisioning.sessionToken);
 
   await client.query(
     `insert into main_devices (id, credential_hash)
@@ -176,63 +203,34 @@ async function provisionMainDevice(
   }
 }
 
-export function hashSecret(secret: string): Buffer {
-  return createHash("sha256").update(secret, "utf8").digest();
+function createPool(connectionString: string): Pool {
+  const pool = new Pool({
+    connectionString,
+    connectionTimeoutMillis: 1_000,
+    idleTimeoutMillis: 1_000,
+    max: 5,
+  });
+  pool.on("error", () => undefined);
+  return pool;
 }
 
-function readMainDeviceProvisioning(
+function readDatabaseConfiguration(
   environment: NodeJS.ProcessEnv,
-): MainDeviceProvisioning | undefined {
-  const values = {
-    deviceId: environment.BREEV_MAIN_DEVICE_ID,
-    deviceSecret: environment.BREEV_MAIN_DEVICE_SECRET,
-    sessionToken: environment.BREEV_MAIN_DEVICE_SESSION,
-  };
-  const presentCount = Object.values(values).filter(
-    (value) => value !== undefined,
-  ).length;
-  if (presentCount === 0) {
+): DatabaseConfiguration | undefined {
+  const applicationUrl = environment.DATABASE_URL;
+  const migrationUrl = environment.DATABASE_MIGRATION_URL;
+  if (applicationUrl === undefined && migrationUrl === undefined) {
     return undefined;
   }
-  if (presentCount !== 3) {
+  if (
+    applicationUrl === undefined ||
+    applicationUrl.length === 0 ||
+    migrationUrl === undefined ||
+    migrationUrl.length === 0
+  ) {
     throw new Error(
-      "Main device provisioning requires an ID, credential, and session",
+      "DATABASE_URL and DATABASE_MIGRATION_URL must be configured together",
     );
   }
-
-  if (!isUuid(values.deviceId)) {
-    throw new Error("BREEV_MAIN_DEVICE_ID must be a UUID");
-  }
-  if (!isHighEntropySecret(values.deviceSecret)) {
-    throw new Error(
-      "BREEV_MAIN_DEVICE_SECRET must be a 32-byte base64url value",
-    );
-  }
-  if (!isHighEntropySecret(values.sessionToken)) {
-    throw new Error(
-      "BREEV_MAIN_DEVICE_SESSION must be a 32-byte base64url value",
-    );
-  }
-
-  return {
-    deviceId: values.deviceId,
-    deviceSecret: values.deviceSecret,
-    sessionToken: values.sessionToken,
-  };
-}
-
-function isUuid(value: string | undefined): value is string {
-  return (
-    value !== undefined &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
-      value,
-    )
-  );
-}
-
-function isHighEntropySecret(value: string | undefined): value is string {
-  if (value === undefined || !/^[A-Za-z0-9_-]{43}$/u.test(value)) {
-    return false;
-  }
-  return Buffer.from(value, "base64url").length === 32;
+  return { applicationUrl, migrationUrl };
 }

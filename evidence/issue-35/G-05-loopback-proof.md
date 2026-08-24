@@ -18,9 +18,10 @@ The smallest complete boundary is one early global Main REST guard plus a persis
 2. Every unsafe REST method requires exact `Origin: breev://app`. CORS is emitted only for that exact origin, without credential support. The one preflight permits only `POST`, `Content-Type`, and `X-Breev-CSRF` on the proof path.
 3. Unsafe requests require the exact wire value `Content-Type: application/json` and `X-Breev-CSRF: 1`. The typed client uses `credentials: "omit"`; cookies are never authority.
 4. Electron main attaches a 256-bit device credential and a separate 256-bit session token only to the trusted packaged window's exact local API origin. Neither value is exposed through preload, renderer storage, a URL, or a request body.
-5. PostgreSQL stores only SHA-256 hashes of the high-entropy secrets. The device credential is verified with constant-time comparison, then the session hash must resolve to that device. A copied session token or caller-selected device ID is insufficient.
+5. PostgreSQL stores only SHA-256 hashes of the high-entropy secrets. Internal device and denial identities are UUIDv7 and are enforced by database checks. The device credential is verified with constant-time comparison, then the session hash must resolve to that device. A copied session token or caller-selected device ID is insufficient.
 6. The proof mutation is one atomic PostgreSQL update. A durable fixed-window limit defaults to five verified mutation attempts per 60 seconds. Device/session records, mutation state, rate windows, and denial evidence survive process restart.
-7. Each denial returns a UUIDv7 correlation ID and increments one fixed reason counter. Recent evidence retains at most 256 rows under a PostgreSQL advisory lock; aggregate storage has one row per fixed denial enum. It records no body, raw header, URL, secret, tenant, patient data, IP address, or user agent.
+7. Schema changes are forward-only Drizzle migrations recorded in a journal. A short-lived non-superuser schema-owner connection applies them under an advisory lock, then closes and discards its credential. The long-lived `breev_app` connection cannot create schema objects. PostgreSQL enums and checks enforce denial reasons, request classes, contexts, rate actions, hash lengths, counters, relationships, and UUID versions.
+8. Each denial returns a UUIDv7 correlation ID and increments one fixed reason counter. Recent evidence retains at most 256 rows under a PostgreSQL advisory lock; aggregate storage has one row per fixed denial enum. A verified denial retains its safe device UUID; evidence records no body, raw header, URL, secret, tenant, patient data, IP address, or user agent.
 
 No request body carries pharmacy, tenant, user, permission, entitlement, or other authority. This issue intentionally proves the device layer beneath later user authorization.
 
@@ -56,11 +57,11 @@ Every denial below asserts a typed denial, one additional fixed audit count with
 | Missing Origin; `null`; foreign, prefix, and suffix Origins                                     | Real HTTP API                                               | `origin-not-allowed`                                                |
 | Raw forged `Origin: breev://app` without binding                                                | Real HTTP API                                               | `binding-missing`; Origin is not authority                          |
 | Missing device/session; session without device credential                                       | Real HTTP API                                               | `binding-missing`                                                   |
-| Stolen session under another device ID or wrong session under a valid device                    | Real HTTP API and PostgreSQL                                | `binding-invalid` or `session-binding-invalid`                      |
+| Stolen session with a second verified device credential; wrong session under a valid device     | Real HTTP API and PostgreSQL                                | `session-binding-invalid`                                           |
 | URL-encoded, multipart, text, missing, parameterized, and case-changed content types            | Real HTTP API                                               | `content-type-not-allowed`                                          |
 | Missing custom CSRF header                                                                      | Real HTTP API                                               | `csrf-header-missing`                                               |
 | Invalid authority-bearing body, malformed JSON, declared oversized body, chunked oversized body | Real HTTP API and parser                                    | `body-invalid` or `request-too-large`                               |
-| Foreign or widened preflight                                                                    | Real HTTP API                                               | no permissive CORS; audited denial                                  |
+| Foreign preflight; exact Origin with a widened requested-header set                             | Real HTTP API                                               | no permissive CORS; audited denial                                  |
 | Attacker DNS name mapped to `127.0.0.1`                                                         | Chromium page and real HTTP API                             | `host-not-allowed` before routing                                   |
 | Cross-site HTML form                                                                            | Chromium page and real HTTP API                             | audited Origin denial; no mutation                                  |
 | `no-cors` text fetch while script attempts forbidden Host/Origin headers                        | Chromium page and real HTTP API                             | browser controls the wire Origin/Host; audited denial               |
@@ -87,14 +88,24 @@ Full worktree validation:
 
 ```text
 $ pnpm verify
-lint + 41-file boundary check: passed
+lint + 45-file boundary check: passed
 format check: passed
 strict typecheck: 4 tasks passed
 production build: 3 tasks passed
 unit: contracts 32 passed; desktop 44 passed; deliberate boundary violations failed as expected
-integration: 27 passed against PostgreSQL 18.6
+integration: 29 passed against PostgreSQL 18.6, including migration-role isolation
 browser: 7 passed in Chromium 151.0.7922.34
 packaged Electron smoke: 2 passed in Electron 43.4.1 / Chromium 150.0.7871.224
 ```
 
-The clean-checkout result is appended after validation from the committed tree. The repository's authoritative documents were intentionally not edited under the issue instruction; therefore `docs/open-decisions.md` correctly leaves G-05 open for #36 and the remaining named evidence.
+Clean checkout of the committed branch:
+
+```text
+$ pnpm install --frozen-lockfile
+603 lockfile entries passed supply-chain policy; install completed
+$ pnpm verify
+the same lint, format, strict typecheck, build, unit, integration, browser,
+and packaged-Electron checks passed from the detached clean worktree
+```
+
+The repository's authoritative documents were intentionally not edited under the issue instruction; therefore `docs/open-decisions.md` correctly leaves G-05 open for #36 and the remaining named evidence.

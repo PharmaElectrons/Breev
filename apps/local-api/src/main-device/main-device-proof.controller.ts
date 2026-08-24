@@ -6,7 +6,8 @@ import {
   type LocalProofEvidenceSuccess,
   type LocalProofMutationSuccess,
 } from "@breev/contracts/local-rest";
-import { Body, Controller, Get, HttpCode, Post } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Post, Req } from "@nestjs/common";
+import type { Request } from "express";
 
 import { MainDeviceSecurityService } from "./main-device-security.service.js";
 
@@ -18,9 +19,16 @@ export class MainDeviceProofController {
   @HttpCode(LOCAL_PROOF_MUTATION_SUCCESS_STATUS)
   public async mutate(
     @Body() body: unknown,
+    @Req() request: Request,
   ): Promise<LocalProofMutationSuccess> {
     if (!localProofMutationRequestSchema.safeParse(body).success) {
-      return await this.security.deny("body-invalid", 400);
+      return await this.security.deny(
+        "body-invalid",
+        400,
+        "proof-mutation",
+        "verified",
+        this.security.verifiedDeviceId(request),
+      );
     }
     return await this.security.mutate();
   }

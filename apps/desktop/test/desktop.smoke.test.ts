@@ -2,7 +2,7 @@ import { FuseState, FuseV1Options, getCurrentFuseWire } from "@electron/fuses";
 import { expect, test } from "@playwright/test";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import {
@@ -12,6 +12,11 @@ import {
 import path from "node:path";
 import os from "node:os";
 import { chromium, type Browser } from "playwright";
+
+import {
+  createSeparatedDatabaseRoles,
+  type SeparatedDatabaseRoles,
+} from "./database-roles.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
@@ -23,12 +28,13 @@ interface MainDeviceCredentials {
 
 test("the packaged desktop enforces its outer security and health seams", async () => {
   const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+  const databaseRoles = await createSeparatedDatabaseRoles(postgres);
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
   let api: ChildProcessWithoutNullStreams | undefined = spawnLocalApi(
     apiPort,
-    postgres.getConnectionUri(),
+    databaseRoles,
     "ready",
     credentials,
   );
@@ -137,12 +143,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
     );
     await expectNoFallbackStorage(window);
 
-    api = spawnLocalApi(
-      apiPort,
-      postgres.getConnectionUri(),
-      "ready",
-      credentials,
-    );
+    api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
     await waitForHealth(apiOrigin, "healthy");
     await expect(window.getByTestId("shell-state")).toHaveText("Ready");
 
@@ -154,12 +155,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
     await expect(window.getByTestId("shell-state")).toHaveText("Ready");
 
     await stopProcess(api);
-    api = spawnLocalApi(
-      apiPort,
-      postgres.getConnectionUri(),
-      "repair-required",
-      credentials,
-    );
+    api = spawnLocalApi(apiPort, databaseRoles, "repair-required", credentials);
     await waitForHealth(apiOrigin, "repair-required");
     await expect(window.getByTestId("shell-state")).toHaveText(
       "Repair required",
@@ -179,12 +175,13 @@ test("the packaged desktop enforces its outer security and health seams", async 
 
 test("the packaged desktop commits through its bound Main session offline and after API restart", async () => {
   const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+  const databaseRoles = await createSeparatedDatabaseRoles(postgres);
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
   let api: ChildProcessWithoutNullStreams | undefined = spawnLocalApi(
     apiPort,
-    postgres.getConnectionUri(),
+    databaseRoles,
     "ready",
     credentials,
   );
@@ -304,12 +301,7 @@ test("the packaged desktop commits through its bound Main session offline and af
     await expect(window.getByTestId("shell-state")).toHaveText(
       "Main unavailable",
     );
-    api = spawnLocalApi(
-      apiPort,
-      postgres.getConnectionUri(),
-      "ready",
-      credentials,
-    );
+    api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
     await waitForHealth(apiOrigin, "healthy");
     await expect(window.getByTestId("shell-state")).toHaveText("Ready");
     await window.getByRole("button", { name: "Verify Main device" }).click();
@@ -454,7 +446,7 @@ async function expectNoFallbackStorage(
 
 function spawnLocalApi(
   port: number,
-  databaseUrl: string,
+  databaseRoles: SeparatedDatabaseRoles,
   installationState: "ready" | "repair-required" = "ready",
   credentials?: MainDeviceCredentials,
 ): ChildProcessWithoutNullStreams {
@@ -470,7 +462,8 @@ function spawnLocalApi(
         BREEV_MAIN_DEVICE_ID: credentials?.deviceId,
         BREEV_MAIN_DEVICE_SECRET: credentials?.deviceSecret,
         BREEV_MAIN_DEVICE_SESSION: credentials?.sessionToken,
-        DATABASE_URL: databaseUrl,
+        DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+        DATABASE_URL: databaseRoles.applicationUrl,
       },
     },
   );
@@ -478,10 +471,19 @@ function spawnLocalApi(
 
 function createMainDeviceCredentials(): MainDeviceCredentials {
   return {
-    deviceId: randomUUID(),
+    deviceId: createUuidV7(),
     deviceSecret: randomBytes(32).toString("base64url"),
     sessionToken: randomBytes(32).toString("base64url"),
   };
+}
+
+function createUuidV7(): string {
+  const bytes = randomBytes(16);
+  bytes.writeUIntBE(Date.now(), 0, 6);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x70;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 async function waitForMutationCount(
