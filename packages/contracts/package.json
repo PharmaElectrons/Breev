@@ -7,6 +7,10 @@
     "dist"
   ],
   "exports": {
+    "./desktop-preload": {
+      "types": "./dist/desktop-preload/index.d.ts",
+      "import": "./dist/desktop-preload/index.js"
+    },
     "./local-rest": {
       "types": "./dist/local-rest/index.d.ts",
       "import": "./dist/local-rest/index.js"
