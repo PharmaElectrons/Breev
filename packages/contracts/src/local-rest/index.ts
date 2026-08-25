@@ -58,14 +58,23 @@ export const LOCAL_SECURITY_DENIAL_CODES = [
   "binding-invalid",
   "binding-missing",
   "body-invalid",
+  "cert-chain-invalid",
+  "cert-expired",
+  "cert-installation-mismatch",
+  "cert-not-yet-valid",
+  "cert-role-mismatch",
   "content-type-not-allowed",
   "cors-preflight-not-allowed",
   "csrf-header-missing",
+  "device-revoked",
   "host-not-allowed",
+  "mtls-cert-invalid",
+  "mtls-cert-missing",
   "origin-not-allowed",
   "rate-limit-exceeded",
   "request-too-large",
   "session-binding-invalid",
+  "tls-version-rejected",
 ] as const;
 
 export const localSecurityDenialCodeSchema = z.enum(
