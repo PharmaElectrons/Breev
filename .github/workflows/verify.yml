@@ -1,0 +1,60 @@
+name: Verify
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.0.10
+        with:
+          run_install: false
+          version: 11.23.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          cache: pnpm
+          node-version-file: .node-version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify source and unit seams
+        run: |
+          pnpm lint
+          pnpm format:check
+          pnpm typecheck
+          pnpm build
+          pnpm test:unit
+
+      - name: Verify PostgreSQL integration seam
+        run: pnpm test:integration
+
+      - name: Verify packaged Electron seam
+        run: xvfb-run --auto-servernum pnpm test:smoke
+
+      - name: Upload smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: ignore
+          name: desktop-smoke-evidence
+          path: test-results/desktop

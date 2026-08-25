@@ -1,20 +1,50 @@
 {
-  "name": "breef-monorepo",
+  "name": "breev",
+  "version": "0.0.0",
   "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.23.0",
+  "engines": {
+    "node": "24.19.0",
+    "pnpm": "11.23.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.19.0",
+      "onFail": "download"
+    },
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.23.0",
+      "onFail": "error"
+    }
+  },
   "scripts": {
     "build": "turbo run build",
+    "check:boundaries": "node tooling/boundaries/check.mjs",
     "dev": "turbo run dev",
-    "test": "turbo run test",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . && pnpm check:boundaries",
+    "package:desktop": "pnpm --filter @breev/desktop package",
+    "test": "pnpm test:unit && pnpm test:integration && pnpm test:smoke",
+    "test:boundaries": "node tooling/boundaries/prove.mjs",
+    "test:integration": "turbo run test:integration --filter=@breev/local-api",
+    "test:smoke": "pnpm build && pnpm --filter @breev/desktop test:smoke",
+    "test:unit": "turbo run test:unit && pnpm test:boundaries",
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test:unit && pnpm test:integration && pnpm test:smoke"
   },
-  "workspaces": [
-    "apps/*",
-    "packages/*",
-    "packages/modules/*"
-  ],
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "turbo": "^1.13.0"
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "eslint": "10.9.0",
+    "globals": "17.11.0",
+    "prettier": "3.9.6",
+    "turbo": "2.10.11",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.11"
   }
 }

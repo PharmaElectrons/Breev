@@ -1,20 +1,27 @@
 {
-  "$schema": "https://turbo.build/schema.json",
-  "pipeline": {
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "out/**"]
     },
-    "test": {
-      "dependsOn": [
-        "^build"
-      ]
+    "dev": {
+      "cache": false,
+      "persistent": true
     },
-    "lint": {},
-    "typecheck": {}
+    "test:integration": {
+      "cache": false,
+      "dependsOn": ["build", "^build"]
+    },
+    "test:smoke": {
+      "cache": false,
+      "dependsOn": ["build", "^build"]
+    },
+    "test:unit": {
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    }
   }
 }
