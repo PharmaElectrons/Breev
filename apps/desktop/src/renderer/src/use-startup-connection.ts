@@ -2,6 +2,7 @@ import type { LocalHealthSuccess } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { requestLocalHealth } from "./local-api";
+import { requestMainDeviceProofMutation } from "./local-api";
 import {
   stateFromHealth,
   stateFromStartupFailure,
@@ -12,8 +13,10 @@ const HEALTH_POLL_INTERVAL_MS = 1_000;
 
 interface StartupConnection {
   readonly checkNow: () => void;
+  readonly deviceProof: "committed" | "denied" | "failed" | "idle" | "running";
   readonly handshake: LocalHealthSuccess | null;
   readonly lastCheckedAt: Date | null;
+  readonly runDeviceProof: () => Promise<void>;
   readonly state: StartupState;
 }
 
@@ -21,6 +24,9 @@ export function useStartupConnection(): StartupConnection {
   const [state, setState] = useState<StartupState>("starting");
   const [handshake, setHandshake] = useState<LocalHealthSuccess | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
+  const [deviceProof, setDeviceProof] =
+    useState<StartupConnection["deviceProof"]>("idle");
+  const localApiOriginRef = useRef<string | undefined>(undefined);
   const checkNowRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
@@ -75,6 +81,7 @@ export function useStartupConnection(): StartupConnection {
           return;
         }
         localApiOrigin = config.localApiOrigin;
+        localApiOriginRef.current = config.localApiOrigin;
         await check(true);
       } catch (error) {
         if (!active) {
@@ -108,5 +115,26 @@ export function useStartupConnection(): StartupConnection {
   }, []);
 
   const checkNow = useCallback(() => checkNowRef.current(), []);
-  return { checkNow, handshake, lastCheckedAt, state };
+  const runDeviceProof = useCallback(async (): Promise<void> => {
+    const localApiOrigin = localApiOriginRef.current;
+    if (localApiOrigin === undefined) {
+      setDeviceProof("failed");
+      return;
+    }
+    setDeviceProof("running");
+    try {
+      const result = await requestMainDeviceProofMutation(localApiOrigin);
+      setDeviceProof(result.status === "committed" ? "committed" : "denied");
+    } catch {
+      setDeviceProof("failed");
+    }
+  }, []);
+  return {
+    checkNow,
+    deviceProof,
+    handshake,
+    lastCheckedAt,
+    runDeviceProof,
+    state,
+  };
 }
