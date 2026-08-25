@@ -6,7 +6,7 @@ import {
   LOCAL_SCHEMA_VERSION,
   localHealthContract,
 } from "@breev/contracts/local-rest";
-import { Controller, Get, Header, Res } from "@nestjs/common";
+import { Controller, Get, Res } from "@nestjs/common";
 import type { Response } from "express";
 
 import { DatabaseHealthService } from "./database-health.service.js";
@@ -20,7 +20,6 @@ export class HealthController {
   public constructor(private readonly databaseHealth: DatabaseHealthService) {}
 
   @Get(localHealthContract.path)
-  @Header("Access-Control-Allow-Origin", "breev://app")
   public async getHealth(
     @Res({ passthrough: true }) response: Response,
   ): Promise<LocalHealthResponse> {

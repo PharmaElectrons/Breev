@@ -16,7 +16,14 @@ import { useStartupConnection } from "./use-startup-connection";
 
 export function App(): React.JSX.Element {
   const { locale, setLocale, setTheme, theme } = usePreferences();
-  const { checkNow, handshake, lastCheckedAt, state } = useStartupConnection();
+  const {
+    checkNow,
+    deviceProof,
+    handshake,
+    lastCheckedAt,
+    runDeviceProof,
+    state,
+  } = useStartupConnection();
   const checkButtonRef = useRef<HTMLButtonElement>(null);
   const copy = messages[locale];
   const status = copy.status[state];
@@ -101,16 +108,37 @@ export function App(): React.JSX.Element {
                   ? "\u00a0"
                   : `${copy.lastChecked}: ${formatDateTime(lastCheckedAt, locale)}`}
               </p>
-              <button
-                ref={checkButtonRef}
-                className="primary-button"
-                type="button"
-                disabled={isChecking}
-                onClick={checkNow}
-              >
-                {isChecking ? copy.checking : copy.checkAgain}
-              </button>
+              <div className="status-buttons">
+                <button
+                  ref={checkButtonRef}
+                  className="primary-button"
+                  type="button"
+                  disabled={isChecking}
+                  onClick={checkNow}
+                >
+                  {isChecking ? copy.checking : copy.checkAgain}
+                </button>
+                {state === "ready" ? (
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    disabled={deviceProof === "running"}
+                    onClick={() => void runDeviceProof()}
+                  >
+                    {copy.deviceProofAction}
+                  </button>
+                ) : null}
+              </div>
             </div>
+            {deviceProof === "idle" ? null : (
+              <p
+                className="device-proof-status"
+                role="status"
+                aria-live="polite"
+              >
+                {copy.deviceProof[deviceProof]}
+              </p>
+            )}
           </CardContent>
         </Card>
       </section>
