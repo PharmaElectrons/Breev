@@ -124,7 +124,13 @@ export function openPersistedKey(opts: OpenKeyOptions): KeyResult {
   if (process.platform === "win32") {
     return openWindowsCngKey(opts);
   }
-  throw new Error("Key persistence lookup is only supported on Windows CNG");
+  const found = softwareKeyStore.get(opts.keyName);
+  if (found) {
+    return found;
+  }
+  throw new Error(
+    `Key ${opts.keyName} not found in fallback key store for provider ${opts.providerName}`,
+  );
 }
 
 export function signData(
@@ -206,6 +212,8 @@ export function deletePersistedKey(opts: OpenKeyOptions): void {
     } catch {
       // Best-effort cleanup
     }
+  } else {
+    softwareKeyStore.delete(opts.keyName);
   }
 }
 
@@ -341,6 +349,8 @@ function signDataWithWindowsCng(
   return Buffer.from(sigBase64, "base64");
 }
 
+const softwareKeyStore = new Map<string, KeyResult>();
+
 function createSoftwareFallbackKey(opts: CreateKeyOptions): KeyResult {
   const { publicKey, privateKey } = generateKeyPairSync("rsa", {
     modulusLength: opts.keyBits || 2048,
@@ -348,7 +358,7 @@ function createSoftwareFallbackKey(opts: CreateKeyOptions): KeyResult {
 
   const publicKeyDer = publicKey.export({ format: "der", type: "spki" });
 
-  return {
+  const result: KeyResult = {
     keyHandle: {
       keyName: opts.keyName,
       providerName: opts.providerName,
@@ -358,4 +368,7 @@ function createSoftwareFallbackKey(opts: CreateKeyOptions): KeyResult {
     publicKeyDer,
     providerName: opts.providerName,
   };
+
+  softwareKeyStore.set(opts.keyName, result);
+  return result;
 }
