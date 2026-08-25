@@ -94,7 +94,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const initialId = pharmacyCa.installationId;
       const fakeInstallationId = createUuidV7();
       const testPool = new Pool({
-        connectionString: databaseRoles.applicationUrl,
+        connectionString: databaseRoles.migrationUrl,
       });
       try {
         await testPool.query(
