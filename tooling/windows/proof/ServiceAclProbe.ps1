@@ -27,8 +27,8 @@ $deniedReads = foreach ($path in $DeniedPaths.Split(@("||"), [StringSplitOptions
     [void] [IO.File]::ReadAllText($path)
     $false
   } catch {
-    $exception = $_.Exception
-    $_.Exception -is [UnauthorizedAccessException]
+    $exception = $_.Exception.GetBaseException()
+    $exception -is [UnauthorizedAccessException]
   }
   [ordered]@{
     path = $path
