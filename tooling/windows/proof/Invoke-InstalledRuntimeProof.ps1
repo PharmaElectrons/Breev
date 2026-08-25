@@ -441,8 +441,11 @@ function Invoke-ServiceAclProbe {
     if ($LASTEXITCODE -ne 0) { throw "Could not suspend $ServiceName recovery for its bounded ACL probe" }
     & sc.exe failureflag $ServiceName "0" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not suspend $ServiceName non-crash recovery for its bounded ACL probe" }
-    & sc.exe config $ServiceName "binPath=" ($arguments -join " ") | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Could not configure the $ServiceName ACL probe through SCM" }
+    $probeCommandChange = Invoke-CimMethod -InputObject (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'") `
+      -MethodName Change -Arguments @{ PathName = ($arguments -join " ") }
+    if ($probeCommandChange.ReturnValue -ne 0) {
+      throw "Could not configure the $ServiceName ACL probe through SCM; Win32_Service.Change returned $($probeCommandChange.ReturnValue)"
+    }
     Start-Service -Name $ServiceName
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $probeOutputPath -PathType Leaf)) {
@@ -463,8 +466,11 @@ function Invoke-ServiceAclProbe {
     }
     $commandRestored = $false
     try {
-      & sc.exe config $ServiceName "binPath=" $originalImagePath | Out-Null
-      if ($LASTEXITCODE -ne 0) { throw "sc.exe exited with $LASTEXITCODE" }
+      $restoreCommandChange = Invoke-CimMethod -InputObject (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'") `
+        -MethodName Change -Arguments @{ PathName = $originalImagePath }
+      if ($restoreCommandChange.ReturnValue -ne 0) {
+        throw "Win32_Service.Change returned $($restoreCommandChange.ReturnValue)"
+      }
       $commandRestored = $true
     } catch {
       $cleanupErrors.Add("command: $($_.Exception.Message)")
