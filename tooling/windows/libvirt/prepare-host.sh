@@ -21,7 +21,9 @@ if ! virsh --connect "$connection" net-info default >/dev/null 2>&1; then
   virsh --connect "$connection" net-define /usr/share/libvirt/networks/default.xml
 fi
 virsh --connect "$connection" net-autostart default
-if ! virsh --connect "$connection" net-info default | grep -q 'Active:.*yes'; then
+# Under pipefail, grep -q closes the pipe after its match and can make virsh's
+# SIGPIPE look like an inactive resource. Search captured output instead.
+if ! grep -q 'Active:.*yes' <<<"$(virsh --connect "$connection" net-info default)"; then
   virsh --connect "$connection" net-start default
 fi
 
@@ -29,7 +31,7 @@ if ! virsh --connect "$connection" net-info "$isolated_network" >/dev/null 2>&1;
   virsh --connect "$connection" net-define "$script_root/issue-34-isolated.xml"
 fi
 virsh --connect "$connection" net-autostart "$isolated_network"
-if ! virsh --connect "$connection" net-info "$isolated_network" | grep -q 'Active:.*yes'; then
+if ! grep -q 'Active:.*yes' <<<"$(virsh --connect "$connection" net-info "$isolated_network")"; then
   virsh --connect "$connection" net-start "$isolated_network"
 fi
 
@@ -38,7 +40,7 @@ if ! virsh --connect "$connection" pool-info default >/dev/null 2>&1; then
   virsh --connect "$connection" pool-build default
 fi
 virsh --connect "$connection" pool-autostart default
-if ! virsh --connect "$connection" pool-info default | grep -q 'State:.*running'; then
+if ! grep -q 'State:.*running' <<<"$(virsh --connect "$connection" pool-info default)"; then
   virsh --connect "$connection" pool-start default
 fi
 

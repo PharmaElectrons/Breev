@@ -12,7 +12,7 @@ iso_path="$cache_root/$iso_name"
 iso_url="https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/$iso_name"
 key_path="$cache_root/issue-34-peer-ed25519"
 
-for command_name in curl ssh-keygen virsh virt-install; do
+for command_name in curl ssh-keygen uuidgen virsh virt-install; do
   command -v "$command_name" >/dev/null || {
     echo "Missing host command: $command_name" >&2
     exit 1
@@ -43,6 +43,9 @@ cleanup() {
 }
 trap cleanup EXIT
 public_key=$(<"$key_path.pub")
+# Alpine's disk setup copied the ISO machine-id into every peer. Give each
+# installed peer a stable unique id so evidence identifies the real VM.
+peer_machine_id=$(uuidgen | tr -d '-')
 user_data="$cloud_root/user-data"
 metadata="$cloud_root/meta-data"
 printf '%s\n' \
@@ -69,6 +72,7 @@ printf '%s\n' \
   "  - mount /dev/vda3 /mnt" \
   "  - mount /dev/vda1 /mnt/boot" \
   "  - mkdir -p /mnt/root/.ssh" \
+  "  - printf '%s\n' '$peer_machine_id' > /mnt/etc/machine-id" \
   "  - printf '%s\\n' '$public_key' > /mnt/root/.ssh/authorized_keys" \
   "  - chmod 700 /mnt/root/.ssh" \
   "  - chmod 600 /mnt/root/.ssh/authorized_keys" \

@@ -15,7 +15,9 @@ param(
   [string] $DataRoot = (Join-Path $env:ProgramData "Breev"),
 
   [ValidateSet("None", "AfterDataPrepared", "AfterPostgreSqlService", "AfterApiService", "BeforeReadiness")]
-  [string] $InjectFailure = "None"
+  [string] $InjectFailure = "None",
+
+  [switch] $SkipStateWrite
 )
 
 Set-StrictMode -Version Latest
@@ -98,12 +100,20 @@ function Set-ProtectedAcl {
   $grants = @(
     [ordered]@{ identity = "S-1-5-18"; rights = [Security.AccessControl.FileSystemRights]::FullControl },
     [ordered]@{ identity = "S-1-5-32-544"; rights = [Security.AccessControl.FileSystemRights]::FullControl }
-  ) + $AdditionalGrants
-  $acl = Get-Acl -LiteralPath $Path
-  $acl.SetAccessRuleProtection($true, $false)
-  foreach ($rule in @($acl.Access | Where-Object { -not $_.IsInherited })) {
-    [void] $acl.RemoveAccessRuleSpecific($rule)
+    # PowerShell 5.1 binds an empty array argument to $null. Do not turn that
+    # absence into a third ACL entry when the installer runs as LocalSystem.
+    @($AdditionalGrants) | Where-Object { $null -ne $_ }
+  )
+  # Build the allowlist from an empty descriptor. Windows Installer rollback can
+  # expose an existing descriptor in noncanonical order, which .NET refuses to
+  # protect or edit even though Windows can still read it.
+  $item = Get-Item -LiteralPath $Path
+  $acl = if ($item.PSIsContainer) {
+    [Security.AccessControl.DirectorySecurity]::new()
+  } else {
+    [Security.AccessControl.FileSecurity]::new()
   }
+  $acl.SetAccessRuleProtection($true, $false)
   foreach ($grant in $grants) {
     $identity = if ($grant.identity -match '^S-\d(?:-\d+)+$') {
       [Security.Principal.SecurityIdentifier]::new($grant.identity)
@@ -521,7 +531,9 @@ $DataRoot = [IO.Path]::GetFullPath($DataRoot)
 if ($Action -eq "Uninstall") {
   Stop-And-DeleteService -Name $apiServiceName
   Stop-And-DeleteService -Name $postgresqlServiceName
-  Write-LifecycleState -Status "data-preserved"
+  if (-not $SkipStateWrite) {
+    Write-LifecycleState -Status "data-preserved"
+  }
   exit 0
 }
 

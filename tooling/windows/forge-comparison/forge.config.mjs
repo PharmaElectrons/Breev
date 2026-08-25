@@ -26,15 +26,16 @@ export function addBreevLifecycleActions(creator) {
   );
   const powerShell =
     "&quot;[System64Folder]WindowsPowerShell\\v1.0\\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass";
-  const script =
-    "&quot;[APPLICATIONROOTDIRECTORY]resources\\payload\\lifecycle.ps1&quot;";
-  const common =
-    "-InstallRoot &quot;[APPLICATIONROOTDIRECTORY].&quot; -PayloadRoot &quot;[APPLICATIONROOTDIRECTORY]resources\\payload&quot;";
+  // MakerWix puts packaged resources below app-<version>, not directly below
+  // APPLICATIONROOTDIRECTORY. Deferred actions otherwise fail with file-not-found.
+  const applicationRoot = `[APPLICATIONROOTDIRECTORY]app-${buildVersion}`;
+  const script = `&quot;${applicationRoot}\\resources\\payload\\lifecycle.ps1&quot;`;
+  const common = `-InstallRoot &quot;${applicationRoot}&quot; -PayloadRoot &quot;${applicationRoot}\\resources\\payload&quot;`;
   creator.wixTemplate = creator.wixTemplate.replace(
     productEnd,
     `    <Property Id="BREEVFORGEINJECTFAILURE" Secure="yes" />
     <CustomAction Id="BreevStopForRepair" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Uninstall&quot; ${common}" Execute="deferred" Impersonate="no" Return="check" />
-    <CustomAction Id="BreevRollbackStop" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Uninstall&quot; ${common}" Execute="rollback" Impersonate="no" Return="ignore" />
+    <CustomAction Id="BreevRollbackStop" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Uninstall&quot; ${common} -SkipStateWrite" Execute="rollback" Impersonate="no" Return="ignore" />
     <CustomAction Id="BreevRollbackRepair" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Repair&quot; ${common}" Execute="rollback" Impersonate="no" Return="ignore" />
     <CustomAction Id="BreevRollbackUninstall" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Repair&quot; ${common}" Execute="rollback" Impersonate="no" Return="ignore" />
     <CustomAction Id="BreevInstallLifecycle" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Install&quot; ${common}" Execute="deferred" Impersonate="no" Return="check" />
@@ -132,6 +133,10 @@ export default {
       beforeCreate: addBreevLifecycleActions,
       defaultInstallMode: "perMachine",
       exe: "BreevForgeComparison.exe",
+      icon: path.resolve(
+        import.meta.dirname,
+        "../../../design/prototype/public/favicon.ico",
+      ),
       manufacturer: "Breev",
       name: "Breev Forge Comparison",
       programFilesFolderName: "Breev Forge Comparison",

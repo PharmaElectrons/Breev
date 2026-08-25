@@ -57,10 +57,16 @@ $allInteractiveSessions = @(Get-CimInstance Win32_LogonSession | Where-Object { 
   [ordered]@{ logonId = $session.LogonId; logonType = $session.LogonType; startTimeUtc = $session.StartTime.ToUniversalTime().ToString("o"); accounts = $accounts }
 })
 $nonUserSidPattern = '^S-1-5-(18|19|20)$|^S-1-5-(80|82|90|96)-'
+# Session records without an associated user are incomplete system records, not
+# proof that an interactive user logged on.
 $interactiveSessions = @($allInteractiveSessions | Where-Object {
-  $_.accounts.Count -eq 0 -or @($_.accounts | Where-Object { $_.sid -notmatch $nonUserSidPattern }).Count -gt 0
+  @($_.accounts | Where-Object { $_.sid -notmatch $nonUserSidPattern }).Count -gt 0
 })
-$allInteractiveLogonEvents = @(Get-WinEvent -FilterHashtable @{ LogName = "Security"; Id = 4624; StartTime = $bootTime } -ErrorAction Stop | ForEach-Object {
+# Get-WinEvent interprets StartTime as local time while Win32_OperatingSystem
+# gives a UTC DateTime here. Query in local time, then compare events in UTC.
+$allInteractiveLogonEvents = @(Get-WinEvent -FilterHashtable @{ LogName = "Security"; Id = 4624; StartTime = $bootTime.ToLocalTime() } -ErrorAction Stop | Where-Object {
+  $_.TimeCreated.ToUniversalTime() -ge $bootTime
+} | ForEach-Object {
   $xml = [xml] $_.ToXml()
   $logonType = [int] (($xml.Event.EventData.Data | Where-Object { $_.Name -eq "LogonType" }).'#text')
   if ($logonType -in @(2, 10, 11, 12, 13)) {

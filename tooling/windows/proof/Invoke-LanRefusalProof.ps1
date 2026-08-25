@@ -31,7 +31,46 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $port = 31311
 $firewallRuleName = "BreevIssue34PostgresqlLanProbe"
+$firewallRestoreTaskName = "BreevIssue34RestorePublicFirewall"
 $statePath = "$OutputPath.prepared"
+
+function Remove-FirewallRestoreTask {
+  Unregister-ScheduledTask -TaskName $firewallRestoreTaskName -Confirm:$false -ErrorAction SilentlyContinue
+}
+
+function Restore-ProbeFirewall {
+  Set-NetFirewallProfile -Name Public -Enabled True
+  Remove-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
+  Remove-FirewallRestoreTask
+  $profile = Get-NetFirewallProfile -Name Public
+  return [ordered]@{
+    publicProfileEnabled = [bool] $profile.Enabled
+    probeRuleRemoved = $null -eq (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)
+    watchdogRemoved = $null -eq (Get-ScheduledTask -TaskName $firewallRestoreTaskName -ErrorAction SilentlyContinue)
+    restoredAtUtc = [DateTime]::UtcNow.ToString("o")
+  }
+}
+
+function Register-FirewallRestoreTask {
+  # Windows stealth mode drops the TCP reset for a closed allowed port. The
+  # bounded watchdog restores the Public profile if this controller is killed
+  # before Collect can observe ECONNREFUSED and restore it itself.
+  $watchdogCommand = "Set-NetFirewallProfile -Name Public -Enabled True; Remove-NetFirewallRule -DisplayName '$firewallRuleName' -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName '$firewallRestoreTaskName' -Confirm:`$false -ErrorAction SilentlyContinue"
+  $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($watchdogCommand))
+  $action = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encodedCommand"
+  $trigger = New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddMinutes(10))
+  $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::FromMinutes(2))
+  Register-ScheduledTask `
+    -TaskName $firewallRestoreTaskName `
+    -Action $action `
+    -Trigger $trigger `
+    -Principal $principal `
+    -Settings $settings `
+    -Force | Out-Null
+}
 
 function Invoke-LoopbackSqlProbe {
   $payloadRoot = Join-Path $env:ProgramFiles "Breev\resources\windows-payload"
@@ -71,26 +110,51 @@ if ($Action -eq "Prepare") {
   if ($listeners.Count -eq 0 -or @($listeners | Where-Object { $_.LocalAddress -notin @("127.0.0.1", "::1") }).Count -ne 0) {
     throw "PostgreSQL is not exclusively listening on loopback"
   }
-  Remove-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
-  New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Enabled True -Profile Any -Protocol TCP -LocalAddress $WindowsLanAddress -LocalPort $port -RemoteAddress $PeerAddress | Out-Null
-  $loopback = Invoke-LoopbackSqlProbe
-  $state = [ordered]@{
-    schemaVersion = 1
-    runId = $RunId.ToString()
-    sourceCommit = $SourceCommit
-    snapshotId = $SnapshotId
-    windowsMachine = $env:COMPUTERNAME
-    windowsMachineId = (Get-CimInstance Win32_ComputerSystemProduct).UUID
-    windowsLanAddress = $WindowsLanAddress
-    peerAddress = $PeerAddress
-    port = $port
-    listeners = $listeners
-    loopbackBeforePeer = $loopback
-    firewallRule = $firewallRuleName
-    preparedAtUtc = [DateTime]::UtcNow.ToString("o")
+  $publicProfile = Get-NetFirewallProfile -Name Public
+  if (-not $publicProfile.Enabled) {
+    throw "The LAN refusal proof requires the Public firewall profile to start enabled"
   }
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $statePath) | Out-Null
-  $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $statePath -Encoding UTF8
+  try {
+    Remove-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
+    Remove-FirewallRestoreTask
+    New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Enabled True -Profile Any -Protocol TCP -LocalAddress $WindowsLanAddress -LocalPort $port -RemoteAddress $PeerAddress | Out-Null
+    Register-FirewallRestoreTask
+    # The VM's Public firewall otherwise hides a loopback-only PostgreSQL socket
+    # behind a timeout. Disable it only for the isolated peer probe so the peer
+    # must receive Windows' real closed-port refusal.
+    Set-NetFirewallProfile -Name Public -Enabled False
+    if ((Get-NetFirewallProfile -Name Public).Enabled) {
+      throw "Windows did not expose the closed-port refusal seam"
+    }
+    $loopback = Invoke-LoopbackSqlProbe
+    $state = [ordered]@{
+      schemaVersion = 1
+      runId = $RunId.ToString()
+      sourceCommit = $SourceCommit
+      snapshotId = $SnapshotId
+      windowsMachine = $env:COMPUTERNAME
+      windowsMachineId = (Get-CimInstance Win32_ComputerSystemProduct).UUID
+      windowsLanAddress = $WindowsLanAddress
+      peerAddress = $PeerAddress
+      port = $port
+      listeners = $listeners
+      loopbackBeforePeer = $loopback
+      firewall = [ordered]@{
+        rule = $firewallRuleName
+        publicProfileInitiallyEnabled = $true
+        publicProfileTemporarilyDisabled = $true
+        restoreWatchdog = $firewallRestoreTaskName
+        restoreDeadlineUtc = [DateTime]::UtcNow.AddMinutes(10).ToString("o")
+      }
+      preparedAtUtc = [DateTime]::UtcNow.ToString("o")
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $statePath) | Out-Null
+    $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $statePath -Encoding UTF8
+  } catch {
+    Restore-ProbeFirewall | Out-Null
+    Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
+    throw
+  }
   Write-Output "Run probe-lan-refusal.mjs on $PeerAddress against ${WindowsLanAddress}:$port, copy its JSON to Windows, then run Collect."
   exit 0
 }
@@ -108,6 +172,8 @@ try {
   $listenersAfter = @(Get-NetTCPConnection -State Listen -LocalPort $port | Select-Object LocalAddress, LocalPort, OwningProcess)
   $loopbackAfterPeer = Invoke-LoopbackSqlProbe
   $collectTime = [DateTime]::UtcNow
+  $firewallRestoration = Restore-ProbeFirewall
+  $completedAt = [DateTime]::UtcNow
   $passed = $peer.passed -and
     $state.runId -eq $RunId.ToString() -and
     $state.sourceCommit -eq $SourceCommit -and
@@ -129,7 +195,12 @@ try {
     ([DateTime]::Parse($peer.completedAtUtc).ToUniversalTime() -le $collectTime) -and
     ([DateTime]::Parse($state.preparedAtUtc).ToUniversalTime() -ge $collectTime.AddMinutes(-10)) -and
     $listenersAfter.Count -gt 0 -and
-    @($listenersAfter | Where-Object { $_.LocalAddress -notin @("127.0.0.1", "::1") }).Count -eq 0
+    @($listenersAfter | Where-Object { $_.LocalAddress -notin @("127.0.0.1", "::1") }).Count -eq 0 -and
+    $state.firewall.publicProfileInitiallyEnabled -and
+    $state.firewall.publicProfileTemporarilyDisabled -and
+    $firewallRestoration.publicProfileEnabled -and
+    $firewallRestoration.probeRuleRemoved -and
+    $firewallRestoration.watchdogRemoved
   $result = [ordered]@{
     schemaVersion = 1
     runId = $RunId.ToString()
@@ -139,12 +210,18 @@ try {
     independentPeer = $peer
     listenersAfterPeer = $listenersAfter
     loopbackAfterPeer = $loopbackAfterPeer
+    firewallRestoration = $firewallRestoration
     passed = [bool] $passed
-    completedAtUtc = $collectTime.ToString("o")
+    completedAtUtc = $completedAt.ToString("o")
   }
   [IO.File]::WriteAllText($OutputPath, ($result | ConvertTo-Json -Depth 10) + "`n", [Text.UTF8Encoding]::new($false))
 } finally {
-  Remove-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
+  $probeFirewallChanged = (Test-Path -LiteralPath $statePath -PathType Leaf) -or
+    $null -ne (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue) -or
+    $null -ne (Get-ScheduledTask -TaskName $firewallRestoreTaskName -ErrorAction SilentlyContinue)
+  if ($probeFirewallChanged) {
+    Restore-ProbeFirewall | Out-Null
+  }
   Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
 }
 
