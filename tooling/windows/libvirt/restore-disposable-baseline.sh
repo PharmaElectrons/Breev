@@ -85,7 +85,8 @@ tpm_hash=$(pkexec tar -C "$tpm_path" -cf - . | sha256sum | awk '{print $1}')
 [[ "$disk_hash" == "$(jq -r .diskSha256 "$manifest_path")" ]]
 [[ "$nvram_hash" == "$(jq -r .nvramSha256 "$manifest_path")" ]]
 [[ "$tpm_hash" == "$(jq -r .tpmSha256 "$manifest_path")" ]]
-virsh --connect "$connection" dumpxml "$domain_name" --inactive > "$restored_xml"
+restored_xml_content=$(virsh --connect "$connection" dumpxml "$domain_name" --inactive)
+printf '%s\n' "$restored_xml_content" > "$restored_xml"
 xml_hash=$(sha256sum "$restored_xml" | awk '{print $1}')
 [[ "$xml_hash" == "$(jq -r .domainXmlSha256 "$manifest_path")" ]]
 mkdir -p -- "$(dirname -- "$output_path")"
