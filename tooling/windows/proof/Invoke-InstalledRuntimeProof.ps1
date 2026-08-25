@@ -202,7 +202,13 @@ function Invoke-Installer {
   if ($ExpectFailure) {
     if ($process.ExitCode -eq 0) { throw "The injected installer failure unexpectedly succeeded" }
   } elseif ($process.ExitCode -ne 0) {
-    throw "The installer failed with exit code $($process.ExitCode)"
+    $lifecyclePath = Join-Path $dataRoot "state\lifecycle.json"
+    if (Test-Path -LiteralPath $lifecyclePath -PathType Leaf) {
+      $lifecycle = Get-Content -LiteralPath $lifecyclePath -Raw | ConvertFrom-Json
+      $lifecycleError = if ($lifecycle.PSObject.Properties["error"]) { $lifecycle.error } else { "not recorded" }
+      throw "The installer failed with exit code $($process.ExitCode); lifecycle error: $lifecycleError"
+    }
+    throw "The installer failed with exit code $($process.ExitCode) before the lifecycle wrote a state record"
   }
   return $process.ExitCode
 }
@@ -221,9 +227,11 @@ function Get-InjectedLifecycleFailureEvidence {
     action = $lifecycle.action
     status = $lifecycle.status
     failurePoint = $lifecycle.failurePoint
+    error = $lifecycle.error
     matched = $lifecycle.action -eq "Install" -and
       $lifecycle.status -eq "failed-data-preserved" -and
-      $lifecycle.failurePoint -eq $ExpectedFailurePoint
+      $lifecycle.failurePoint -eq $ExpectedFailurePoint -and
+      $lifecycle.error -eq "Injected lifecycle failure at $ExpectedFailurePoint"
   }
   if (-not $evidence.matched) {
     throw "The failed Builder installer did not reach the expected $ExpectedFailurePoint lifecycle seam"
