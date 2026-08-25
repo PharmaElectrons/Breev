@@ -10,6 +10,7 @@
   },
   "include": [
     "electron.vite.config.ts",
+    "playwright.browser.config.ts",
     "playwright.config.ts",
     "scripts/**/*.mjs",
     "src/main/**/*.ts",

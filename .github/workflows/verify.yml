@@ -48,8 +48,22 @@ jobs:
       - name: Verify PostgreSQL integration seam
         run: pnpm test:integration
 
+      - name: Install browser test dependencies
+        run: pnpm --filter @breev/desktop exec playwright install --with-deps chromium
+
+      - name: Verify renderer browser seam
+        run: pnpm test:browser
+
+      - name: Package desktop for the Electron seam
+        run: pnpm build && pnpm package:desktop
+
+      - name: Configure the runner Chromium sandbox
+        run: |
+          sudo chown root:root artifacts/Breev-linux-x64/chrome-sandbox
+          sudo chmod 4755 artifacts/Breev-linux-x64/chrome-sandbox
+
       - name: Verify packaged Electron seam
-        run: xvfb-run --auto-servernum pnpm test:smoke
+        run: xvfb-run --auto-servernum pnpm --filter @breev/desktop exec playwright test --config playwright.config.ts
 
       - name: Upload smoke evidence
         if: always()

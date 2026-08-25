@@ -13,13 +13,27 @@ import { DatabaseHealthService } from "./database-health.service.js";
 
 @Controller()
 export class HealthController {
+  private readonly installationState = readInstallationState(
+    process.env.BREEV_INSTALLATION_STATE,
+  );
+
   public constructor(private readonly databaseHealth: DatabaseHealthService) {}
 
   @Get(localHealthContract.path)
-  @Header("Access-Control-Allow-Origin", "null")
+  @Header("Access-Control-Allow-Origin", "breev://app")
   public async getHealth(
     @Res({ passthrough: true }) response: Response,
   ): Promise<LocalHealthResponse> {
+    if (this.installationState === "repair-required") {
+      response.status(LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS);
+      return {
+        apiVersion: LOCAL_API_VERSION,
+        schemaVersion: LOCAL_SCHEMA_VERSION,
+        status: "repair-required",
+        repair: { code: "installation-state-invalid" },
+      };
+    }
+
     if (await this.databaseHealth.isAvailable()) {
       response.status(LOCAL_HEALTH_SUCCESS_STATUS);
       return {
@@ -38,4 +52,16 @@ export class HealthController {
       database: "unavailable",
     };
   }
+}
+
+function readInstallationState(
+  value: string | undefined,
+): "ready" | "repair-required" {
+  if (value === undefined || value === "ready") {
+    return "ready";
+  }
+  if (value === "repair-required") {
+    return value;
+  }
+  throw new Error("BREEV_INSTALLATION_STATE must be ready or repair-required");
 }
