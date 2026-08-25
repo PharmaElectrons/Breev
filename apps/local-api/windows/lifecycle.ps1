@@ -268,6 +268,7 @@ function Initialize-Database {
     "listen_addresses = '127.0.0.1, ::1'",
     "port = $postgresqlPort",
     "password_encryption = 'scram-sha-256'",
+    "log_min_error_statement = fatal",
     "ssl = off"
   )
   Set-Content -LiteralPath (Join-Path $stagedPostgresqlRoot "pg_hba.conf") -Encoding ASCII -Value @(
@@ -279,7 +280,7 @@ function Initialize-Database {
   $bootstrapSqlTemplate = Get-Content -LiteralPath (Join-Path $PayloadRoot "bootstrap.sql") -Raw
   $bootstrapSql = $bootstrapSqlTemplate.Replace("__RUNTIME_PASSWORD__", $runtimePassword).Replace("__SCHEMA_OWNER_PASSWORD__", $schemaOwnerPassword)
   $bootstrapSqlPath = Join-Path $stagingRoot "bootstrap.generated.sql"
-  Set-Content -LiteralPath $bootstrapSqlPath -Value $bootstrapSql -NoNewline -Encoding UTF8
+  [IO.File]::WriteAllText($bootstrapSqlPath, $bootstrapSql, [Text.UTF8Encoding]::new($false))
   $pgpassPath = Join-Path $stagingRoot "pgpass"
   Set-Content -LiteralPath $pgpassPath -Value @(
     "127.0.0.1:${postgresqlPort}:postgres:breev_bootstrap:$bootstrapPassword",
