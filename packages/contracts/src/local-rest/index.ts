@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "1" as const;
+export const LOCAL_API_VERSION = "2" as const;
 export const LOCAL_SCHEMA_VERSION = "1" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
@@ -24,6 +24,14 @@ export const localHealthDatabaseUnavailableSchema = z.strictObject({
   database: z.literal("unavailable"),
 });
 
+export const localHealthRepairRequiredSchema = z.strictObject({
+  ...localHealthVersionFields,
+  status: z.literal("repair-required"),
+  repair: z.strictObject({
+    code: z.literal("installation-state-invalid"),
+  }),
+});
+
 export const localHealthContract = {
   method: "GET",
   path: "/health",
@@ -32,8 +40,10 @@ export const localHealthContract = {
   },
   responses: {
     [LOCAL_HEALTH_SUCCESS_STATUS]: localHealthSuccessSchema,
-    [LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS]:
+    [LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS]: z.union([
       localHealthDatabaseUnavailableSchema,
+      localHealthRepairRequiredSchema,
+    ]),
   },
 } as const;
 
@@ -41,8 +51,13 @@ export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
 export type LocalHealthDatabaseUnavailable = z.infer<
   typeof localHealthDatabaseUnavailableSchema
 >;
+export type LocalHealthRepairRequired = z.infer<
+  typeof localHealthRepairRequiredSchema
+>;
 export type LocalHealthResponse =
-  LocalHealthSuccess | LocalHealthDatabaseUnavailable;
+  | LocalHealthSuccess
+  | LocalHealthDatabaseUnavailable
+  | LocalHealthRepairRequired;
 export type LocalHealthStatusCode = keyof typeof localHealthContract.responses;
 
 export class LocalRestVersionMismatchError extends Error {

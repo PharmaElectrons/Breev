@@ -10,12 +10,15 @@
     "dev": "electron-vite dev",
     "package": "node scripts/package.mjs",
     "postinstall": "install-electron",
+    "test:browser": "playwright test --config playwright.browser.config.ts",
     "test:smoke": "pnpm package && playwright test --config playwright.config.ts",
     "test:unit": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@breev/contracts": "workspace:*",
+    "@electron/fuses": "2.1.3",
     "@electron/packager": "20.3.0",
     "@playwright/test": "1.62.1",
     "@tailwindcss/vite": "4.3.3",

@@ -1,5 +1,4 @@
-import type { LocalHealthSuccess } from "@breev/contracts/local-rest";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   Card,
@@ -8,115 +7,185 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { requestLocalHealth } from "@/local-api";
 
-type HandshakeState =
-  | { kind: "connecting" }
-  | { kind: "ready"; handshake: LocalHealthSuccess }
-  | { kind: "database-unavailable" }
-  | { kind: "api-unreachable" };
+import { messages } from "./messages";
+import { formatDateTime } from "./preferences";
+import { usePreferences } from "./preferences-provider";
+import type { StartupState } from "./startup-state";
+import { useStartupConnection } from "./use-startup-connection";
 
 export function App(): React.JSX.Element {
-  const [state, setState] = useState<HandshakeState>({ kind: "connecting" });
-  const [attempt, setAttempt] = useState(0);
+  const { locale, setLocale, setTheme, theme } = usePreferences();
+  const { checkNow, handshake, lastCheckedAt, state } = useStartupConnection();
+  const checkButtonRef = useRef<HTMLButtonElement>(null);
+  const copy = messages[locale];
+  const status = copy.status[state];
+  const isChecking = state === "starting" || state === "connecting";
 
   useEffect(() => {
-    let active = true;
-    setState({ kind: "connecting" });
-
-    void window.breevRuntime
-      .getLocalApiUrl()
-      .then((baseUrl) => requestLocalHealth(baseUrl))
-      .then((handshake) => {
-        if (!active) {
-          return;
-        }
-
-        if (handshake.database === "available") {
-          setState({ kind: "ready", handshake });
-        } else {
-          setState({ kind: "database-unavailable" });
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setState({ kind: "api-unreachable" });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [attempt]);
-
-  const retry = useCallback(() => setAttempt((current) => current + 1), []);
-  const content = getStatusContent(state);
+    if (!isChecking && document.activeElement === document.body) {
+      checkButtonRef.current?.focus();
+    }
+  }, [isChecking, state]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-8 text-foreground">
-      <Card className="w-full max-w-xl" role="status" aria-live="polite">
-        <CardHeader>
-          <p className="text-sm font-medium text-primary">
-            Breev local runtime
-          </p>
-          <CardTitle data-testid="handshake-state">{content.title}</CardTitle>
-          <CardDescription>{content.description}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-5">
-          {state.kind === "ready" ? (
-            <dl className="grid grid-cols-2 gap-3 rounded-lg bg-muted p-4 text-sm">
-              <dt>API version</dt>
-              <dd className="text-right font-mono">
-                {state.handshake.apiVersion}
-              </dd>
-              <dt>Schema version</dt>
-              <dd className="text-right font-mono">
-                {state.handshake.schemaVersion}
-              </dd>
-              <dt>PostgreSQL</dt>
-              <dd className="text-right font-medium">Available</dd>
-            </dl>
-          ) : null}
-          {state.kind !== "connecting" ? (
-            <button
-              className="min-h-11 rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              type="button"
-              onClick={retry}
-            >
-              Retry
-            </button>
-          ) : null}
-        </CardContent>
-      </Card>
+    <main className="shell-page">
+      <div className="shell-orb shell-orb-start" aria-hidden="true" />
+      <div className="shell-orb shell-orb-end" aria-hidden="true" />
+
+      <header className="shell-header" aria-label="Breev">
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true">
+            B
+          </span>
+          <span>
+            <strong className="brand-name">Breev</strong>
+            <span className="brand-description">{copy.brandDescription}</span>
+          </span>
+        </div>
+
+        <div className="preference-controls">
+          <button
+            className="quiet-button"
+            type="button"
+            aria-label={copy.switchLanguage}
+            onClick={() => setLocale(locale === "en" ? "ar" : "en")}
+          >
+            <LanguageIcon />
+            <span>{locale === "en" ? "العربية" : "English"}</span>
+          </button>
+          <button
+            className="quiet-button"
+            type="button"
+            aria-label={
+              theme === "light"
+                ? copy.switchToDarkTheme
+                : copy.switchToLightTheme
+            }
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+          >
+            <ThemeIcon theme={theme} />
+            <span>{theme === "light" ? copy.themeLight : copy.themeDark}</span>
+          </button>
+        </div>
+      </header>
+
+      <section className="status-region" aria-label={copy.connectionStatus}>
+        <Card className="status-card" data-state={state}>
+          <CardHeader className="status-header">
+            <StatusIcon state={state} />
+            <div className="status-copy" role="status" aria-live="polite">
+              <p className="status-kicker">{copy.connectionStatus}</p>
+              <CardTitle data-testid="shell-state">{status.title}</CardTitle>
+              <CardDescription>{status.description}</CardDescription>
+            </div>
+          </CardHeader>
+
+          <CardContent className="status-content">
+            {state === "ready" && handshake !== null ? (
+              <dl className="version-list">
+                <div>
+                  <dt>{copy.apiVersion}</dt>
+                  <dd>{handshake.apiVersion}</dd>
+                </div>
+                <div>
+                  <dt>{copy.schemaVersion}</dt>
+                  <dd>{handshake.schemaVersion}</dd>
+                </div>
+              </dl>
+            ) : null}
+
+            <div className="status-actions">
+              <p className="last-checked">
+                {lastCheckedAt === null
+                  ? "\u00a0"
+                  : `${copy.lastChecked}: ${formatDateTime(lastCheckedAt, locale)}`}
+              </p>
+              <button
+                ref={checkButtonRef}
+                className="primary-button"
+                type="button"
+                disabled={isChecking}
+                onClick={checkNow}
+              >
+                {isChecking ? copy.checking : copy.checkAgain}
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <footer className="shell-footer">Breev</footer>
     </main>
   );
 }
 
-function getStatusContent(state: HandshakeState): {
-  title: string;
-  description: string;
-} {
-  switch (state.kind) {
-    case "connecting":
-      return {
-        title: "Connecting to local services",
-        description: "Checking the local API and PostgreSQL.",
-      };
-    case "ready":
-      return {
-        title: "Breev runtime ready",
-        description: "The local API and PostgreSQL handshake succeeded.",
-      };
-    case "database-unavailable":
-      return {
-        title: "Database unavailable",
-        description:
-          "The local API is reachable, but it cannot query PostgreSQL.",
-      };
-    case "api-unreachable":
-      return {
-        title: "Local API unreachable",
-        description: "Breev could not reach the local API.",
-      };
-  }
+function StatusIcon({ state }: { state: StartupState }): React.JSX.Element {
+  const icon =
+    state === "ready" ? (
+      <path d="m7 12 3 3 7-7" />
+    ) : state === "repair-required" ? (
+      <>
+        <path d="M14.5 6.5a4 4 0 0 0-5 5L4 17l3 3 5.5-5.5a4 4 0 0 0 5-5l-3 3-3-3 3-3Z" />
+      </>
+    ) : state === "incompatible-version" ? (
+      <>
+        <path d="M8 7h9l-2-2" />
+        <path d="m17 17-9 0 2 2" />
+        <path d="m17 7-2 2" />
+        <path d="m8 17 2-2" />
+      </>
+    ) : state === "main-unavailable" ? (
+      <>
+        <path d="M6 8h12v8H6z" />
+        <path d="m4 4 16 16" />
+      </>
+    ) : (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 8v4l3 2" />
+      </>
+    );
+
+  return (
+    <span className="status-icon" data-icon-state={state} aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        {icon}
+      </svg>
+    </span>
+  );
+}
+
+function LanguageIcon(): React.JSX.Element {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </svg>
+  );
+}
+
+function ThemeIcon({ theme }: { theme: "dark" | "light" }): React.JSX.Element {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+    >
+      {theme === "light" ? (
+        <>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </>
+      ) : (
+        <path d="M20 15.3A8.5 8.5 0 0 1 8.7 4 8.5 8.5 0 1 0 20 15.3Z" />
+      )}
+    </svg>
+  );
 }

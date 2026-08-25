@@ -20,6 +20,15 @@ describe("desktop local REST client", () => {
     await expect(
       requestLocalHealth("http://127.0.0.1:31310", fetcher),
     ).resolves.toMatchObject({ database: "available" });
+    expect(fetcher).toHaveBeenCalledWith(
+      new URL("http://127.0.0.1:31310/health"),
+      expect.objectContaining({
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        method: "GET",
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it("returns database unavailability from the reachable API", async () => {
@@ -48,5 +57,20 @@ describe("desktop local REST client", () => {
     await expect(
       requestLocalHealth("http://127.0.0.1:31310", fetcher),
     ).rejects.toThrow("fetch failed");
+  });
+
+  it("passes an abort signal so a stalled API becomes unavailable", async () => {
+    const signal = AbortSignal.abort(new Error("health check timed out"));
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation((_, init) => Promise.reject(init?.signal?.reason));
+
+    await expect(
+      requestLocalHealth("http://127.0.0.1:31310", fetcher, signal),
+    ).rejects.toThrow("health check timed out");
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({ signal }),
+    );
   });
 });
