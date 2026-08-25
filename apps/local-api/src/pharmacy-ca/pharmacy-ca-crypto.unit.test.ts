@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import https from "node:https";
 import type { TLSSocket } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -14,12 +14,13 @@ import {
   buildCACertificate,
   buildDeviceCertificate,
   buildServerCertificate,
+  createUuidV7,
   validateCertificate,
   type IssuedCertificate,
 } from "./pharmacy-ca-crypto.js";
 
 describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
-  const installationId = randomUUID();
+  const installationId = createUuidV7();
   let providerName: string;
   let caKeyResult: KeyResult;
   let caCert: IssuedCertificate;
@@ -93,7 +94,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   // ─── 3. Device Certificate Issuance & Validation ──────────────────────────
 
   it("builds a device certificate with breev-device role and validates against CA", () => {
-    const deviceId = randomUUID();
+    const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
@@ -129,7 +130,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   // ─── 4. Validation Rejection Scenarios ────────────────────────────────────
 
   it("rejects expired certificates with cert-expired", () => {
-    const deviceId = randomUUID();
+    const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
@@ -188,8 +189,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   });
 
   it("rejects installation identity mismatch", () => {
-    const otherInstallationId = randomUUID();
-    const deviceId = randomUUID();
+    const otherInstallationId = createUuidV7();
+    const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
@@ -235,7 +236,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       validityDays: 3650,
     });
 
-    const deviceId = randomUUID();
+    const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
@@ -284,7 +285,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       validityDays: 365,
     });
 
-    const deviceId = randomUUID();
+    const deviceId = createUuidV7();
     const { publicKey, privateKey } = generateKeyPairSync("rsa", {
       modulusLength: 2048,
     });
