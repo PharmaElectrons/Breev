@@ -306,11 +306,14 @@ function Invoke-Psql {
   $psql = Join-Path $payloadRoot "postgresql\bin\psql.exe"
   $connection = Read-DatabaseConnection -Role $Role
   $previousPassword = $env:PGPASSWORD
+  $previousErrorActionPreference = $ErrorActionPreference
   try {
     $env:PGPASSWORD = $connection.password
+    $ErrorActionPreference = "Continue"
     $output = & $psql --no-psqlrc --set=ON_ERROR_STOP=1 --host=127.0.0.1 --port=$($connection.port) --username=$($connection.user) --dbname=$($connection.database) --tuples-only --no-align --command=$Sql 2>&1
     $exitCode = $LASTEXITCODE
   } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
     $env:PGPASSWORD = $previousPassword
   }
   if ($ExpectFailure) {
