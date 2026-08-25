@@ -1,8 +1,16 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
 import {
+  BREEV_CSRF_HEADER,
+  BREEV_CSRF_VALUE,
   LOCAL_API_VERSION,
+  LOCAL_DEVICE_ID_HEADER,
+  LOCAL_DEVICE_SESSION_HEADER,
   LOCAL_SCHEMA_VERSION,
+  localProofEvidenceContract,
+  localProofMutationContract,
+  parseLocalProofEvidenceResponse,
+  type LocalProofEvidenceSuccess,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -10,10 +18,16 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
+
+import {
+  createSeparatedDatabaseRoles,
+  type SeparatedDatabaseRoles,
+} from "../database-roles.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
@@ -36,18 +50,28 @@ interface DesktopFakeOptions {
   readonly theme?: "dark" | "light";
 }
 
+interface MainDeviceCredentials {
+  readonly deviceId: string;
+  readonly deviceSecret: string;
+  readonly sessionToken: string;
+}
+
 test.describe.serial("bilingual desktop shell", () => {
   let api: ChildProcessWithoutNullStreams | undefined;
   let apiOrigin: string;
   let apiPort: number;
+  let credentials: MainDeviceCredentials;
+  let databaseRoles: SeparatedDatabaseRoles;
   let postgres: StartedPostgreSqlContainer;
   let renderer: RendererServer;
 
   test.beforeAll(async () => {
     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
-    api = spawnLocalApi(apiPort, postgres.getConnectionUri());
+    api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
     await waitForHealth(apiOrigin, "healthy");
     renderer = await startRendererServer(apiOrigin);
   });
@@ -89,7 +113,7 @@ test.describe.serial("bilingual desktop shell", () => {
     );
     await expectBrowserStorageToContainPreferencesOnly(page);
 
-    api = spawnLocalApi(apiPort, postgres.getConnectionUri());
+    api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
     await waitForHealth(apiOrigin, "healthy");
     await expect(page.getByTestId("shell-state")).toHaveText("جاهز");
   });
@@ -108,16 +132,12 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
 
     await stopProcess(api);
-    api = spawnLocalApi(
-      apiPort,
-      postgres.getConnectionUri(),
-      "repair-required",
-    );
+    api = spawnLocalApi(apiPort, databaseRoles, "repair-required", credentials);
     await waitForHealth(apiOrigin, "repair-required");
     await expect(page.getByTestId("shell-state")).toHaveText("Repair required");
 
     await stopProcess(api);
-    api = spawnLocalApi(apiPort, postgres.getConnectionUri());
+    api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
     await waitForHealth(apiOrigin, "healthy");
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
   });
@@ -294,6 +314,122 @@ test.describe.serial("bilingual desktop shell", () => {
       expect(box?.width).toBeGreaterThanOrEqual(24);
     }
   });
+
+  test("a plain browser cannot mutate through form, fetch, forged headers, or rebound DNS", async ({
+    browser,
+    page,
+  }) => {
+    expect(browser.version()).toContain("151.0.7922.34");
+    renderer.setMode("pass");
+    await page.route(`${apiOrigin}/health`, async (route) => {
+      await route.fulfill({
+        body: JSON.stringify({
+          apiVersion: LOCAL_API_VERSION,
+          schemaVersion: LOCAL_SCHEMA_VERSION,
+          status: "healthy",
+          database: "available",
+        }),
+        contentType: "application/json",
+        status: 200,
+      });
+    });
+    await installDesktopFake(page, apiOrigin);
+    await page.goto(renderer.origin);
+    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+
+    const before = await getProofEvidence(apiOrigin, credentials);
+    await page.getByRole("button", { name: "Verify Main device" }).click();
+    await expect(
+      page.getByText("The device binding check could not complete."),
+    ).toBeVisible();
+    const afterTypedFetch = await waitForDenialCount(
+      apiOrigin,
+      credentials,
+      "origin-not-allowed",
+      denialCount(before, "origin-not-allowed") + 1,
+    );
+    expect(afterTypedFetch.mutationCount).toBe(before.mutationCount);
+
+    const attackerPage = await page.context().newPage();
+    await attackerPage.goto(`${renderer.origin}/attacker.html`);
+    await submitCrossSiteForm(
+      attackerPage,
+      `${apiOrigin}${localProofMutationContract.path}`,
+    );
+    const afterForm = await waitForDenialCount(
+      apiOrigin,
+      credentials,
+      "origin-not-allowed",
+      denialCount(afterTypedFetch, "origin-not-allowed") + 1,
+    );
+    expect(afterForm.mutationCount).toBe(before.mutationCount);
+
+    await attackerPage.evaluate(
+      async ({ path: proofPath, target }) => {
+        await fetch(`${target}${proofPath}`, {
+          body: '{"increment":1}',
+          headers: {
+            "Content-Type": "text/plain",
+            Host: "127.0.0.1",
+            Origin: "breev://app",
+          },
+          method: "POST",
+          mode: "no-cors",
+        });
+      },
+      { path: localProofMutationContract.path, target: apiOrigin },
+    );
+    const afterForbiddenHeaders = await waitForDenialCount(
+      apiOrigin,
+      credentials,
+      "origin-not-allowed",
+      denialCount(afterForm, "origin-not-allowed") + 1,
+    );
+    expect(afterForbiddenHeaders.mutationCount).toBe(before.mutationCount);
+
+    await submitCrossSiteForm(
+      attackerPage,
+      `http://rebound.test:${apiPort}${localProofMutationContract.path}`,
+    );
+    const afterRebound = await waitForDenialCount(
+      apiOrigin,
+      credentials,
+      "host-not-allowed",
+      denialCount(afterForbiddenHeaders, "host-not-allowed") + 1,
+    );
+    expect(afterRebound.mutationCount).toBe(before.mutationCount);
+
+    await attackerPage.evaluate(
+      async ({ path: proofPath, sessionToken, target }) => {
+        try {
+          await fetch(`${target}${proofPath}`, {
+            body: '{"increment":1}',
+            headers: {
+              "Content-Type": "application/json",
+              "X-Breev-CSRF": "1",
+              "X-Breev-Device-Session": sessionToken,
+            },
+            method: "POST",
+          });
+        } catch {
+          // The server denial is proved through its audit evidence below.
+        }
+      },
+      {
+        path: localProofMutationContract.path,
+        sessionToken: credentials.sessionToken,
+        target: apiOrigin,
+      },
+    );
+    const afterStolenSession = await waitForDenialCount(
+      apiOrigin,
+      credentials,
+      "origin-not-allowed",
+      denialCount(afterForbiddenHeaders, "origin-not-allowed") + 1,
+    );
+    expect(afterStolenSession.mutationCount).toBe(before.mutationCount);
+    await attackerPage.close();
+  });
 });
 
 function modeForState(
@@ -379,6 +515,13 @@ async function startRendererServer(apiOrigin: string): Promise<RendererServer> {
   let mode: BackendMode = "pass";
   const server = createServer(async (request, response) => {
     try {
+      if (request.url === "/attacker.html") {
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+        });
+        response.end("<!doctype html><html><body>attack page</body></html>");
+        return;
+      }
       if (request.url === "/health") {
         const requestMode = mode;
         if (requestMode === "connecting") {
@@ -455,8 +598,9 @@ async function startRendererServer(apiOrigin: string): Promise<RendererServer> {
 
 function spawnLocalApi(
   port: number,
-  databaseUrl: string,
+  databaseRoles: SeparatedDatabaseRoles,
   installationState: "ready" | "repair-required" = "ready",
+  credentials?: MainDeviceCredentials,
 ): ChildProcessWithoutNullStreams {
   return spawn(
     process.execPath,
@@ -467,10 +611,103 @@ function spawnLocalApi(
         API_HOST: "127.0.0.1",
         API_PORT: String(port),
         BREEV_INSTALLATION_STATE: installationState,
-        DATABASE_URL: databaseUrl,
+        BREEV_MAIN_DEVICE_ID: credentials?.deviceId,
+        BREEV_MAIN_DEVICE_SECRET: credentials?.deviceSecret,
+        BREEV_MAIN_DEVICE_SESSION: credentials?.sessionToken,
+        DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+        DATABASE_URL: databaseRoles.applicationUrl,
       },
     },
   );
+}
+
+function createMainDeviceCredentials(): MainDeviceCredentials {
+  return {
+    deviceId: createUuidV7(),
+    deviceSecret: randomBytes(32).toString("base64url"),
+    sessionToken: randomBytes(32).toString("base64url"),
+  };
+}
+
+function createUuidV7(): string {
+  const bytes = randomBytes(16);
+  bytes.writeUIntBE(Date.now(), 0, 6);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x70;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+async function getProofEvidence(
+  apiOrigin: string,
+  credentials: MainDeviceCredentials,
+): Promise<LocalProofEvidenceSuccess> {
+  const response = await fetch(
+    new URL(localProofEvidenceContract.path, apiOrigin),
+    {
+      headers: {
+        Authorization: `Breev-Device ${credentials.deviceSecret}`,
+        [BREEV_CSRF_HEADER]: BREEV_CSRF_VALUE,
+        [LOCAL_DEVICE_ID_HEADER]: credentials.deviceId,
+        [LOCAL_DEVICE_SESSION_HEADER]: credentials.sessionToken,
+        Origin: "breev://app",
+      },
+    },
+  );
+  const body = parseLocalProofEvidenceResponse(
+    response.status,
+    await response.json(),
+  );
+  if ("status" in body) {
+    throw new Error(`Proof evidence was denied: ${body.code}`);
+  }
+  return body;
+}
+
+function denialCount(
+  evidence: LocalProofEvidenceSuccess,
+  code: string,
+): number {
+  return Number(
+    evidence.denials.find((denial) => denial.code === code)?.count ?? "0",
+  );
+}
+
+async function waitForDenialCount(
+  apiOrigin: string,
+  credentials: MainDeviceCredentials,
+  code: string,
+  expected: number,
+): Promise<LocalProofEvidenceSuccess> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const evidence = await getProofEvidence(apiOrigin, credentials);
+    if (denialCount(evidence, code) >= expected) {
+      return evidence;
+    }
+    await delay(50);
+  }
+  throw new Error(`The API did not audit ${code}`);
+}
+
+async function submitCrossSiteForm(page: Page, action: string): Promise<void> {
+  await page.locator("body").evaluate((body, target) => {
+    const document = body.ownerDocument;
+    const frame = document.createElement("iframe");
+    frame.name = `attack-${crypto.randomUUID()}`;
+    frame.hidden = true;
+    document.body.append(frame);
+    const form = document.createElement("form");
+    form.action = target;
+    form.method = "POST";
+    form.target = frame.name;
+    const input = document.createElement("input");
+    input.name = "increment";
+    input.value = "1";
+    form.append(input);
+    document.body.append(form);
+    form.submit();
+  }, action);
 }
 
 async function waitForHealth(

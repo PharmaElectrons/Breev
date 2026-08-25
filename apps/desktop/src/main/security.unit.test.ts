@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   APP_CONTENT_SECURITY_POLICY,
+  addMainDeviceRequestHeaders,
   createStartupConfigIpcGuard,
   createHardenedWindowOptions,
   resolveAppAssetPath,
   resolveRendererEntry,
+  readMainDeviceBinding,
 } from "./security.js";
 
 describe("breev app protocol", () => {
@@ -180,4 +182,75 @@ describe("Electron window security", () => {
 
     expect(rendererHtml).toContain(`content="${APP_CONTENT_SECURITY_POLICY}"`);
   });
+});
+
+describe("Main device request binding", () => {
+  const binding = {
+    deviceId: "0198dcbb-d7e3-7000-8000-000000000001",
+    deviceSecret: "A".repeat(43),
+    sessionToken: "B".repeat(43),
+  } as const;
+
+  it("accepts only a complete high-entropy Main binding", () => {
+    expect(
+      readMainDeviceBinding({
+        BREEV_MAIN_DEVICE_ID: binding.deviceId,
+        BREEV_MAIN_DEVICE_SECRET: binding.deviceSecret,
+        BREEV_MAIN_DEVICE_SESSION: binding.sessionToken,
+      }),
+    ).toEqual(binding);
+    expect(readMainDeviceBinding({})).toBeUndefined();
+    expect(() =>
+      readMainDeviceBinding({ BREEV_MAIN_DEVICE_ID: binding.deviceId }),
+    ).toThrow();
+    expect(() =>
+      readMainDeviceBinding({
+        BREEV_MAIN_DEVICE_ID: "b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4",
+        BREEV_MAIN_DEVICE_SECRET: binding.deviceSecret,
+        BREEV_MAIN_DEVICE_SESSION: binding.sessionToken,
+      }),
+    ).toThrow();
+  });
+
+  it("injects binding headers only into the trusted window's exact API origin", () => {
+    expect(
+      addMainDeviceRequestHeaders(
+        {
+          requestHeaders: { Accept: "application/json" },
+          url: "http://127.0.0.1:31310/security/device-session-proof",
+          webContentsId: 7,
+        },
+        {
+          binding,
+          localApiOrigin: "http://127.0.0.1:31310",
+          trustedWebContentsId: 7,
+        },
+      ),
+    ).toEqual({
+      Accept: "application/json",
+      Authorization: `Breev-Device ${binding.deviceSecret}`,
+      "X-Breev-Device-Id": binding.deviceId,
+      "X-Breev-Device-Session": binding.sessionToken,
+    });
+  });
+
+  it.each([
+    ["http://127.0.0.1:31311/security/device-session-proof", 7],
+    ["https://attacker.example/security/device-session-proof", 7],
+    ["http://127.0.0.1:31310/security/device-session-proof", 8],
+  ])(
+    "does not attach secrets to URL %s from web contents %i",
+    (url, webContentsId) => {
+      expect(
+        addMainDeviceRequestHeaders(
+          { requestHeaders: {}, url, webContentsId },
+          {
+            binding,
+            localApiOrigin: "http://127.0.0.1:31310",
+            trustedWebContentsId: 7,
+          },
+        ),
+      ).toEqual({});
+    },
+  );
 });

@@ -26,6 +26,7 @@ describe("desktop preload contract", () => {
   it.each([
     "file:///tmp/breev",
     "https://example.com",
+    "http://localhost:31310",
     "http://127.0.0.1:31310/health",
     "http://user:secret@127.0.0.1:31310",
   ])("rejects an unsafe local API origin: %s", (localApiOrigin) => {

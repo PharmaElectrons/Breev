@@ -12,6 +12,11 @@ interface Messages {
   readonly checkAgain: string;
   readonly checking: string;
   readonly connectionStatus: string;
+  readonly deviceProof: Record<
+    "committed" | "denied" | "failed" | "idle" | "running",
+    string
+  >;
+  readonly deviceProofAction: string;
   readonly lastChecked: string;
   readonly schemaVersion: string;
   readonly status: Record<StartupState, StatusMessage>;
@@ -29,6 +34,14 @@ export const messages: Record<Locale, Messages> = {
     checkAgain: "تحقق الآن",
     checking: "جارٍ التحقق",
     connectionStatus: "حالة الاتصال",
+    deviceProof: {
+      committed: "تم التحقق من ارتباط هذه الحاسبة والجلسة.",
+      denied: "رفض الخادم ارتباط هذه الحاسبة والجلسة.",
+      failed: "تعذر إكمال التحقق من ارتباط الحاسبة.",
+      idle: "",
+      running: "جارٍ التحقق من ارتباط الحاسبة",
+    },
+    deviceProofAction: "تحقق من ارتباط الحاسبة",
     lastChecked: "آخر تحقق",
     schemaVersion: "إصدار مخطط البيانات",
     status: {
@@ -73,6 +86,14 @@ export const messages: Record<Locale, Messages> = {
     checkAgain: "Check now",
     checking: "Checking",
     connectionStatus: "Connection status",
+    deviceProof: {
+      committed: "This device and session binding is verified.",
+      denied: "The local API denied this device and session binding.",
+      failed: "The device binding check could not complete.",
+      idle: "",
+      running: "Checking the device binding",
+    },
+    deviceProofAction: "Verify Main device",
     lastChecked: "Last checked",
     schemaVersion: "Schema version",
     status: {
