@@ -94,13 +94,19 @@ function Get-InstalledProduct {
   $entries = @(
     Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue
     Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue
-  ) | Where-Object { $_.DisplayName -eq $productName -and $_.Publisher -eq "Breev" }
+  ) | Where-Object {
+    $displayName = $_.PSObject.Properties["DisplayName"]
+    $publisher = $_.PSObject.Properties["Publisher"]
+    $null -ne $displayName -and $displayName.Value -eq $productName -and
+      $null -ne $publisher -and $publisher.Value -eq "Breev"
+  }
   return @($entries)
 }
 
 function Get-InstalledSigningCoverage {
   param([string] $Root)
 
+  $normalizedRoot = [IO.Path]::GetFullPath($Root).TrimEnd('\')
   $extensions = @(".exe", ".dll", ".node", ".sys", ".efi", ".scr", ".msi", ".cat", ".cab", ".xap", ".vbs", ".wsf", ".ps1")
   $files = @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object {
     $_.Extension.ToLowerInvariant() -in $extensions
@@ -114,12 +120,17 @@ function Get-InstalledSigningCoverage {
     }
   })
   if ($files.Count -eq 0) { throw "The installed Forge candidate contains no signable files" }
+  $productExecutables = @($files | Where-Object {
+    [IO.Path]::GetExtension($_.path).ToLowerInvariant() -eq ".exe" -and
+      [IO.Path]::GetDirectoryName($_.path).TrimEnd('\') -eq $normalizedRoot
+  })
   return [ordered]@{
     root = $Root
     files = $files
-    allSignedByExpectedCertificate = @($files | Where-Object {
-      $_.signatureStatus -ne "Valid" -or $_.signerThumbprint -ne $ExpectedSignerThumbprint
-    }).Count -eq 0
+    allSignaturesValid = @($files | Where-Object { $_.signatureStatus -ne "Valid" }).Count -eq 0
+    productExecutables = $productExecutables
+    productExecutablesSignedByExpectedCertificate = $productExecutables.Count -ge 1 -and
+      @($productExecutables | Where-Object { $_.signerThumbprint -ne $ExpectedSignerThumbprint }).Count -eq 0
   }
 }
 
@@ -541,10 +552,10 @@ try {
     $null -eq (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue) -and
     $null -eq (Get-Service -Name $postgresqlServiceName -ErrorAction SilentlyContinue)
   $result.dataPreservation["afterFinalUninstall"] = Test-PreservationMarker -Expected $preservationMarker -PayloadRoot ""
-  $result.signing["installedGapObserved"] = -not $result.signing.afterInstall.allSignedByExpectedCertificate -or
-    -not $result.signing.afterRepair.allSignedByExpectedCertificate -or
-    -not $result.signing.afterUpdate.allSignedByExpectedCertificate -or
-    -not $result.signing.afterReinstall.allSignedByExpectedCertificate
+  $result.signing["installedGapObserved"] = -not $result.signing.afterInstall.allSignaturesValid -or
+    -not $result.signing.afterRepair.allSignaturesValid -or
+    -not $result.signing.afterUpdate.allSignaturesValid -or
+    -not $result.signing.afterReinstall.allSignaturesValid
   $result.serviceLifecycle["integratesRequiredServices"] = Test-ExactServices -Services @($result.serviceLifecycle.afterInstall)
   $result.serviceLifecycle["repair"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterRepair)) -and $result.dataPreservation.afterRepair
   $result.serviceLifecycle["update"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterUpdate)) -and $result.dataPreservation.afterUpdate
@@ -609,10 +620,14 @@ try {
     $result.dataPreservation.afterReinstall -and
     $result.dataPreservation.afterFinalUninstall
   $result["meetsIssueRequirements"] = $result.comparisonExecuted -and
-    $result.signing.afterInstall.allSignedByExpectedCertificate -and
-    $result.signing.afterRepair.allSignedByExpectedCertificate -and
-    $result.signing.afterUpdate.allSignedByExpectedCertificate -and
-    $result.signing.afterReinstall.allSignedByExpectedCertificate
+    $result.signing.afterInstall.allSignaturesValid -and
+    $result.signing.afterInstall.productExecutablesSignedByExpectedCertificate -and
+    $result.signing.afterRepair.allSignaturesValid -and
+    $result.signing.afterRepair.productExecutablesSignedByExpectedCertificate -and
+    $result.signing.afterUpdate.allSignaturesValid -and
+    $result.signing.afterUpdate.productExecutablesSignedByExpectedCertificate -and
+    $result.signing.afterReinstall.allSignaturesValid -and
+    $result.signing.afterReinstall.productExecutablesSignedByExpectedCertificate
 } catch {
   $result["error"] = $_.Exception.Message
 } finally {

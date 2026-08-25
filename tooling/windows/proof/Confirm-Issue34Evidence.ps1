@@ -227,6 +227,8 @@ $signedByComparisonCertificate = $packaging.signing.required -and
   $packaging.signing.trustStoreLocation -eq "LocalMachine\Root" -and
   -not $packaging.signing.productionTrusted -and
   -not [string]::IsNullOrWhiteSpace($packaging.signing.certificateThumbprint) -and
+  -not [string]::IsNullOrWhiteSpace($packaging.signing.publicCertificate.sha256) -and
+  $packaging.signing.publicCertificate.size -gt 0 -and
   @($packagingVersions | Where-Object {
     $_.electronBuilderApplicationVersion -ne $_.version -or
     $_.electronForgeApplicationVersion -ne $_.version -or
@@ -322,10 +324,14 @@ $forgeInstalledSigningMeasured = $forge.signing.expectedSignerThumbprint -eq $pa
   $forge.dataPreservation.afterReinstall -and
   $forge.dataPreservation.afterFinalUninstall
 $builderInstalledSigningMeasured = $runtime.signing.expectedSignerThumbprint -eq $packaging.signing.certificateThumbprint -and
-  $runtime.signing.afterInstall.allSignedByExpectedCertificate -and
-  $runtime.signing.afterRepair.allSignedByExpectedCertificate -and
-  $runtime.signing.afterUpdate.allSignedByExpectedCertificate -and
-  $runtime.signing.afterReinstall.allSignedByExpectedCertificate -and
+  $runtime.signing.afterInstall.allSignaturesValid -and
+  $runtime.signing.afterInstall.productExecutablesSignedByExpectedCertificate -and
+  $runtime.signing.afterRepair.allSignaturesValid -and
+  $runtime.signing.afterRepair.productExecutablesSignedByExpectedCertificate -and
+  $runtime.signing.afterUpdate.allSignaturesValid -and
+  $runtime.signing.afterUpdate.productExecutablesSignedByExpectedCertificate -and
+  $runtime.signing.afterReinstall.allSignaturesValid -and
+  $runtime.signing.afterReinstall.productExecutablesSignedByExpectedCertificate -and
   @($runtime.signing.afterInstall.files | Where-Object { $_.sha256 -eq $initialPackaging[0].electronBuilderExecutable.sha256 }).Count -eq 1 -and
   @($runtime.signing.afterUpdate.files | Where-Object { $_.sha256 -eq $updatePackaging[0].electronBuilderExecutable.sha256 }).Count -eq 1 -and
   @($runtime.signing.afterReinstall.files | Where-Object { $_.sha256 -eq $updatePackaging[0].electronBuilderExecutable.sha256 }).Count -eq 1
@@ -364,7 +370,10 @@ $physicalProfilePassed = $physicalProfile.schemaVersion -eq 1 -and $physicalProf
   $physicalProfile.application.version -eq "0.0.1" -and
   $physicalProfile.application.executableSha256 -eq $updatePackaging[0].electronBuilderExecutable.sha256 -and
   $physicalProfile.application.asarSha256 -eq $updatePackaging[0].electronBuilderAsar.sha256 -and
+  $physicalProfile.application.signatureStatus -eq "Valid" -and
   $physicalProfile.application.signerThumbprint -eq $packaging.signing.certificateThumbprint -and
+  $physicalProfile.application.comparisonCertificateSha256 -eq $packaging.signing.publicCertificate.sha256 -and
+  $physicalProfile.application.temporaryTrustRemoved -and
   $physicalProfile.application.fuseWirePassed -and
   $physicalProfile.application.launchObservedMainUnavailable -and
   $physicalProfile.application.cleanupPassed -and

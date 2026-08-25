@@ -279,7 +279,10 @@ function Initialize-Database {
   $bootstrapSqlPath = Join-Path $stagingRoot "bootstrap.generated.sql"
   Set-Content -LiteralPath $bootstrapSqlPath -Value $bootstrapSql -NoNewline -Encoding UTF8
   $pgpassPath = Join-Path $stagingRoot "pgpass"
-  Set-Content -LiteralPath $pgpassPath -Value "127.0.0.1:${postgresqlPort}:postgres:breev_bootstrap:$bootstrapPassword" -NoNewline -Encoding ASCII
+  Set-Content -LiteralPath $pgpassPath -Value @(
+    "127.0.0.1:${postgresqlPort}:postgres:breev_bootstrap:$bootstrapPassword",
+    "127.0.0.1:${postgresqlPort}:breev:breev_bootstrap:$bootstrapPassword"
+  ) -Encoding ASCII
 
   $pgCtlPath = Join-Path $PayloadRoot "postgresql\bin\pg_ctl.exe"
   $psqlPath = Join-Path $PayloadRoot "postgresql\bin\psql.exe"
@@ -290,7 +293,7 @@ function Initialize-Database {
   try {
     Invoke-CheckedCommand -FilePath $pgCtlPath -Arguments @("start", "--pgdata=$stagedPostgresqlRoot", "--log=$bootstrapLogPath", "--wait", "--timeout=60") -FailureMessage "The staged PostgreSQL server did not start"
     $started = $true
-    Invoke-CheckedCommand -FilePath $psqlPath -Arguments @("--host=127.0.0.1", "--port=$postgresqlPort", "--username=breev_bootstrap", "--dbname=postgres", "--file=$bootstrapSqlPath") -FailureMessage "Could not create the separated database roles"
+    Invoke-CheckedCommand -FilePath $psqlPath -Arguments @("--no-password", "--host=127.0.0.1", "--port=$postgresqlPort", "--username=breev_bootstrap", "--dbname=postgres", "--file=$bootstrapSqlPath") -FailureMessage "Could not create the separated database roles"
   } finally {
     $stopFailure = $null
     try {
