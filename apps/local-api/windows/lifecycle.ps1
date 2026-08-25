@@ -234,7 +234,9 @@ function Initialize-Database {
   if (Test-Path -LiteralPath $stagingRoot) {
     Remove-Item -LiteralPath $stagingRoot -Recurse -Force
   }
-  Set-DirectoryAcl -Path $stagingRoot -AdditionalGrants @()
+  $installerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $installerGrant = if ($installerSid -eq "S-1-5-18") { @() } else { @("*${installerSid}:(OI)(CI)F") }
+  Set-DirectoryAcl -Path $stagingRoot -AdditionalGrants $installerGrant
 
   $stagedConfigRoot = Join-Path $stagingRoot "config"
   $stagedPostgresqlRoot = Join-Path $stagingRoot "postgresql"
@@ -431,7 +433,8 @@ function Wait-ApiReady {
 function Write-LifecycleState {
   param(
     [string] $Status,
-    [string] $Failure = ""
+    [string] $FailurePoint = "",
+    [string] $ErrorMessage = ""
   )
 
   $stateRoot = Join-Path $DataRoot "state"
@@ -440,7 +443,8 @@ function Write-LifecycleState {
     schemaVersion = 1
     action = $Action
     status = $Status
-    failurePoint = $Failure
+    failurePoint = $FailurePoint
+    error = $ErrorMessage
     completedAtUtc = [DateTime]::UtcNow.ToString("o")
   } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stateRoot "lifecycle.json") -Encoding UTF8
 }
@@ -485,13 +489,26 @@ try {
   Wait-ApiReady
   Write-LifecycleState -Status "healthy"
 } catch {
+  $lifecycleFailure = $_
+  $cleanupErrors = [Collections.Generic.List[string]]::new()
   foreach ($serviceName in $createdServices) {
-    Stop-And-DeleteService -Name $serviceName
+    try {
+      Stop-And-DeleteService -Name $serviceName
+    } catch {
+      [void] $cleanupErrors.Add($_.Exception.Message)
+    }
+  }
+  $failureMessage = $lifecycleFailure.Exception.Message
+  if ($cleanupErrors.Count -gt 0) {
+    $failureMessage += "; cleanup failed: $($cleanupErrors -join '; ')"
   }
   try {
-    Write-LifecycleState -Status "failed-data-preserved" -Failure $InjectFailure
+    Write-LifecycleState -Status "failed-data-preserved" -FailurePoint $InjectFailure -ErrorMessage $failureMessage
   } catch {
     # Preserve the original lifecycle failure if even the state record cannot be written.
   }
-  throw
+  if ($cleanupErrors.Count -gt 0) {
+    throw $failureMessage
+  }
+  throw $lifecycleFailure
 }
