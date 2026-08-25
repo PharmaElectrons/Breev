@@ -2,7 +2,7 @@ import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import https from "node:https";
 import type { AddressInfo } from "node:net";
 import type { TLSSocket } from "node:tls";
@@ -18,6 +18,7 @@ import { tryExportPrivateKey } from "./cng-addon.js";
 import {
   buildCACertificate,
   buildDeviceCertificate,
+  createUuidV7,
 } from "./pharmacy-ca-crypto.js";
 import { PharmacyCaService } from "./pharmacy-ca.service.js";
 
@@ -90,7 +91,8 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
 
     it("fails closed when the existing CA key is missing or inaccessible", async () => {
       // Simulate broken/missing key by pointing database to non-existent key
-      const fakeInstallationId = randomUUID();
+      const initialId = pharmacyCa.installationId;
+      const fakeInstallationId = createUuidV7();
       const testPool = new Pool({
         connectionString: databaseRoles.applicationUrl,
       });
@@ -103,18 +105,16 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
         );
 
         const brokenService = new PharmacyCaService(localDb);
-        if (process.platform === "win32") {
-          await expect(brokenService.initializeCA()).rejects.toThrow(
-            /PHARMACY_CA_KEY_INACCESSIBLE|Repair is required/,
-          );
-        }
+        await expect(brokenService.initializeCA()).rejects.toThrow(
+          /PHARMACY_CA_KEY_INACCESSIBLE|Repair is required/,
+        );
       } finally {
         // Restore original installation ID
         await testPool.query(
           `update pharmacy_ca
            set installation_id = $1
            where singleton = true`,
-          [pharmacyCa.installationId],
+          [initialId],
         );
         await testPool.end();
       }
@@ -124,7 +124,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
   // ─── Group B: Certificate Issuance ────────────────────────────────────────
 
   describe("Group B: Certificate Issuance", () => {
-    const testDeviceId = randomUUID();
+    const testDeviceId = createUuidV7();
 
     it("issues a server certificate chaining to CA with breev-server role", async () => {
       const creds = await pharmacyCa.issueServerCertificate(["127.0.0.1"]);
@@ -198,7 +198,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const expiredCert = buildDeviceCertificate({
         caKeyHandle: state.keyHandle,
         caCertPem: state.caCertPem,
-        deviceId: randomUUID(),
+        deviceId: createUuidV7(),
         installationId: state.installationId,
         devicePublicKeyDer: deviceSpki,
         validityDays: -1, // expired yesterday
@@ -230,7 +230,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     });
 
     it("rejects role mismatch (device presented as server)", async () => {
-      const deviceId = randomUUID();
+      const deviceId = createUuidV7();
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
@@ -252,14 +252,14 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
 
     it("rejects a certificate with a mismatched installation identity", async () => {
       const state = pharmacyCa.requireState();
-      const foreignInstallationId = randomUUID();
+      const foreignInstallationId = createUuidV7();
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
       const mismatchedCert = buildDeviceCertificate({
         caKeyHandle: state.keyHandle,
         caCertPem: state.caCertPem,
-        deviceId: randomUUID(),
+        deviceId: createUuidV7(),
         installationId: foreignInstallationId,
         devicePublicKeyDer: deviceSpki,
         validityDays: 365,
@@ -307,7 +307,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
           softwareFallbackKey: foreignKeys.privateKey,
         },
         caCertPem: foreignCa.certPem,
-        deviceId: randomUUID(),
+        deviceId: createUuidV7(),
         installationId: pharmacyCa.installationId,
         devicePublicKeyDer: deviceSpki,
         validityDays: 365,
@@ -327,7 +327,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     });
 
     it("detects and enforces device revocation per request in PostgreSQL", async () => {
-      const deviceId = randomUUID();
+      const deviceId = createUuidV7();
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
@@ -441,11 +441,11 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     });
 
     afterAll(async () => {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => server?.close(() => resolve()));
     });
 
     it("authenticates a terminal over mTLS with a valid device certificate", async () => {
-      const deviceId = randomUUID();
+      const deviceId = createUuidV7();
       const { publicKey, privateKey } = generateKeyPairSync("rsa", {
         modulusLength: 2048,
       });
@@ -490,7 +490,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     });
 
     it("rejects an mTLS request with a revoked device certificate", async () => {
-      const deviceId = randomUUID();
+      const deviceId = createUuidV7();
       const { publicKey, privateKey } = generateKeyPairSync("rsa", {
         modulusLength: 2048,
       });
