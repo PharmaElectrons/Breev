@@ -712,7 +712,7 @@ try {
       -not $_.wrapperPathMatches -or $_.childProcessId -eq 0 -or
       $_.childParentProcessId -ne $_.processId -or $_.childExecutablePath -ne $_.expectedChildExecutablePath
     }).Count -eq 0 -and
-    @($serviceEvidence | Select-Object -ExpandProperty processId -Unique).Count -eq 2
+    @($serviceEvidence | ForEach-Object { $_.processId } | Select-Object -Unique).Count -eq 2
   ) -Details $serviceEvidence
 
   $payloadManifest = Get-Content -LiteralPath (Join-Path $payloadRoot "payload-manifest.json") -Raw | ConvertFrom-Json
