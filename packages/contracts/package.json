@@ -1,9 +1,23 @@
 {
-  "name": "@breef/contracts",
-  "version": "0.1.0",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "name": "@breev/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./local-rest": {
+      "types": "./dist/local-rest/index.d.ts",
+      "import": "./dist/local-rest/index.js"
+    }
+  },
   "scripts": {
-    "build": "tsc --build"
+    "build": "tsc -p tsconfig.build.json",
+    "test:unit": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
   }
 }

@@ -1,0 +1,16 @@
+.agents/
+.scratch/
+.turbo/
+artifacts/
+coverage/
+design/
+dist/
+docs/
+node_modules/
+out/
+playwright-report/
+test-results/
+AGENTS.md
+CONTEXT.md
+T3CODE-AGENTS.md
+pnpm-lock.yaml
