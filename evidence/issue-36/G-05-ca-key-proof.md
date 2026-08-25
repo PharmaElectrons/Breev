@@ -15,6 +15,7 @@ This record satisfies the Stage 1c prerequisite for Gate G-05 ("Prove the pharma
 A local area network (LAN) in a community pharmacy is an untrusted medium. Counter terminals, secondary dispensers, and tablet devices communicate with the Main local API over LAN.
 
 An attacker on the LAN may attempt to:
+
 1. Intercept or tamper with unencrypted LAN traffic (eAVESDROPPING / MITM).
 2. Connect arbitrary HTTP clients to the Local API LAN port without authentication.
 3. Exfiltrate the Pharmacy CA private key to forge device certificates offline.
@@ -62,18 +63,18 @@ The implementation establishes a cryptographic perimeter:
 
 ## 2. Rejection & Denial Matrix
 
-| Attack / Fault Scenario | Tested Seam | Result / Denial Code |
-| :--- | :--- | :--- |
-| Attempt to export CA private key via CNG PKCS#8 export | `cng-addon.ts` | `exportBlocked: true`, `exportError: "The requested operation is not supported"` |
-| Client connects without TLS client certificate | Live mTLS HTTPS Server | `401 Unauthorized`, `code: "mtls-cert-missing"` |
-| Client certificate expired (`notAfter < now`) | `validateCertificate` / Live mTLS | `403 Forbidden`, `code: "cert-expired"` |
-| Client certificate not yet valid (`notBefore > now`) | `validateCertificate` / Live mTLS | `403 Forbidden`, `code: "cert-not-yet-valid"` |
-| Server certificate presented as device certificate | `validateCertificate` / Live mTLS | `403 Forbidden`, `code: "cert-role-mismatch"` |
-| Certificate issued for a different pharmacy `installationId` | `validateCertificate` / Live mTLS | `403 Forbidden`, `code: "cert-installation-mismatch"` |
-| Certificate signed by untrusted / foreign CA root | `validateCertificate` / Live mTLS | `403 Forbidden`, `code: "cert-chain-invalid"` |
-| Revoked device certificate connects to LAN API | `checkDeviceRevocation` / Middleware | `403 Forbidden`, `code: "device-revoked"` |
-| TLS connection attempt using TLS 1.0 or TLS 1.1 | Live TLS handshake | Handshake failure / `tls-version-rejected` |
-| Legacy CBC / RC4 / 3DES cipher suites | Live TLS handshake | Handshake failure (cipher negotiation rejected) |
+| Attack / Fault Scenario                                      | Tested Seam                          | Result / Denial Code                                                             |
+| :----------------------------------------------------------- | :----------------------------------- | :------------------------------------------------------------------------------- |
+| Attempt to export CA private key via CNG PKCS#8 export       | `cng-addon.ts`                       | `exportBlocked: true`, `exportError: "The requested operation is not supported"` |
+| Client connects without TLS client certificate               | Live mTLS HTTPS Server               | `401 Unauthorized`, `code: "mtls-cert-missing"`                                  |
+| Client certificate expired (`notAfter < now`)                | `validateCertificate` / Live mTLS    | `403 Forbidden`, `code: "cert-expired"`                                          |
+| Client certificate not yet valid (`notBefore > now`)         | `validateCertificate` / Live mTLS    | `403 Forbidden`, `code: "cert-not-yet-valid"`                                    |
+| Server certificate presented as device certificate           | `validateCertificate` / Live mTLS    | `403 Forbidden`, `code: "cert-role-mismatch"`                                    |
+| Certificate issued for a different pharmacy `installationId` | `validateCertificate` / Live mTLS    | `403 Forbidden`, `code: "cert-installation-mismatch"`                            |
+| Certificate signed by untrusted / foreign CA root            | `validateCertificate` / Live mTLS    | `403 Forbidden`, `code: "cert-chain-invalid"`                                    |
+| Revoked device certificate connects to LAN API               | `checkDeviceRevocation` / Middleware | `403 Forbidden`, `code: "device-revoked"`                                        |
+| TLS connection attempt using TLS 1.0 or TLS 1.1              | Live TLS handshake                   | Handshake failure / `tls-version-rejected`                                       |
+| Legacy CBC / RC4 / 3DES cipher suites                        | Live TLS handshake                   | Handshake failure (cipher negotiation rejected)                                  |
 
 ---
 
@@ -100,6 +101,7 @@ The implementation establishes a cryptographic perimeter:
 ## 4. Verification Transcripts
 
 ### Unit & Boundary Tests (`pnpm test:unit`)
+
 ```text
 $ turbo run test:unit && pnpm test:boundaries
 • turbo 2.10.11
@@ -144,6 +146,7 @@ Deliberate boundary violations failed as expected.
 ```
 
 ### Static Analysis, Linting & Formatting Check
+
 ```text
 $ pnpm lint
 $ eslint . && pnpm check:boundaries
