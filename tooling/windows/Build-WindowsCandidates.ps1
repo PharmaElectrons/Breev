@@ -152,21 +152,26 @@ function Get-PayloadRecord {
 function Test-TamperInvalidatesSignature {
   param([string] $Path)
 
+  $tamperOffset = 512
   $temporaryPath = Join-Path $OutputRoot (".tamper-" + [Guid]::NewGuid().ToString() + [IO.Path]::GetExtension($Path))
   Copy-Item -LiteralPath $Path -Destination $temporaryPath
   try {
     $stream = [IO.File]::Open($temporaryPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try {
-      if ($stream.Length -eq 0) { throw "Cannot tamper with an empty artifact" }
-      [void] $stream.Seek(-1, [IO.SeekOrigin]::End)
-      $lastByte = $stream.ReadByte()
-      [void] $stream.Seek(-1, [IO.SeekOrigin]::End)
-      $stream.WriteByte($lastByte -bxor 0x01)
+      if ($stream.Length -le $tamperOffset) { throw "Cannot tamper with an artifact smaller than the authenticated probe offset" }
+      [void] $stream.Seek($tamperOffset, [IO.SeekOrigin]::Begin)
+      $originalByte = $stream.ReadByte()
+      [void] $stream.Seek($tamperOffset, [IO.SeekOrigin]::Begin)
+      $stream.WriteByte($originalByte -bxor 0x01)
     } finally {
       $stream.Dispose()
     }
     $status = (Get-AuthenticodeSignature -LiteralPath $temporaryPath).Status.ToString()
-    return [ordered]@{ signatureStatusAfterTamper = $status; rejected = $status -ne "Valid" }
+    return [ordered]@{
+      tamperOffset = $tamperOffset
+      signatureStatusAfterTamper = $status
+      rejected = $status -ne "Valid"
+    }
   } finally {
     Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
   }
