@@ -50,17 +50,29 @@ if systemctl is-active --quiet ufw.service; then
   }
   ensure_ufw_rule() {
     local marker=$1
-    shift
-    if ! pkexec ufw status | grep -Fq "$marker"; then
-      pkexec ufw "$@" comment "$marker"
+    local expected_fragment=$2
+    local status marker_lines rule_number
+    shift 2
+    status=$(pkexec ufw status numbered)
+    marker_lines=$(grep -F "# $marker" <<<"$status" || true)
+    if [[ -n "$marker_lines" &&
+       ( -z "$expected_fragment" || "$marker_lines" == *"$expected_fragment"* ) ]]; then
+      return
     fi
+    while read -r rule_number; do
+      [[ -n "$rule_number" ]] || continue
+      pkexec ufw --force delete "$rule_number"
+    done < <(
+      sed -n 's/^\[[[:space:]]*\([0-9][0-9]*\)\].*/\1/p' <<<"$marker_lines" | sort -rn
+    )
+    pkexec ufw "$@" comment "$marker"
   }
-  ensure_ufw_rule "Breev issue 34 VM DHCP broadcast" allow in on virbr0 proto udp to any port 67
-  ensure_ufw_rule "Breev issue 34 VM DNS" allow in on virbr0 to 192.168.122.1 port 53
-  ensure_ufw_rule "Breev issue 34 VM internet" route allow in on virbr0 out on "$outbound_interface" from 192.168.122.0/24
-  ensure_ufw_rule "Breev issue 34 LAN DHCP broadcast" allow in on virbr34 proto udp to any port 67
-  ensure_ufw_rule "Breev issue 34 LAN DNS" allow in on virbr34 to 192.168.134.1 port 53
-  ensure_ufw_rule "Breev issue 34 isolated LAN" route allow in on virbr34 out on virbr34 from 192.168.134.0/24 to 192.168.134.0/24
+  ensure_ufw_rule "Breev issue 34 VM DHCP broadcast" "" allow in on virbr0 proto udp to any port 67
+  ensure_ufw_rule "Breev issue 34 VM DNS" "" allow in on virbr0 to 192.168.122.1 port 53
+  ensure_ufw_rule "Breev issue 34 VM internet" "$outbound_interface" route allow in on virbr0 out on "$outbound_interface" from 192.168.122.0/24
+  ensure_ufw_rule "Breev issue 34 LAN DHCP broadcast" "" allow in on virbr34 proto udp to any port 67
+  ensure_ufw_rule "Breev issue 34 LAN DNS" "" allow in on virbr34 to 192.168.134.1 port 53
+  ensure_ufw_rule "Breev issue 34 isolated LAN" "" route allow in on virbr34 out on virbr34 from 192.168.134.0/24 to 192.168.134.0/24
 fi
 
 virt-host-validate qemu
