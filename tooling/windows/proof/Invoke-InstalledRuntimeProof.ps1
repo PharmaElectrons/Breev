@@ -582,7 +582,12 @@ function Get-BreevInstalledProducts {
     Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue
   ) | Where-Object {
     $displayName = $_.PSObject.Properties["DisplayName"]
-    $null -ne $displayName -and $displayName.Value -eq "Breev"
+    $displayVersion = $_.PSObject.Properties["DisplayVersion"]
+    $publisher = $_.PSObject.Properties["Publisher"]
+    $null -ne $displayName -and $null -ne $displayVersion -and $null -ne $publisher -and
+      $displayVersion.Value -match '^\d+\.\d+\.\d+$' -and
+      $displayName.Value -eq "Breev $($displayVersion.Value)" -and
+      $publisher.Value -eq "Breev"
   })
 }
 
