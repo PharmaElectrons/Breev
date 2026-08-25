@@ -9,6 +9,7 @@ import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { Pool, type PoolClient } from "pg";
 
+import { readDatabaseConnectionString } from "./database-connection.js";
 import {
   hashMainDeviceSecret,
   readMainDeviceProvisioning,
@@ -20,7 +21,7 @@ const MIGRATION_LOCK_ID = 165_308_855;
 
 interface DatabaseConfiguration {
   readonly applicationUrl: string;
-  readonly migrationUrl: string;
+  readonly migrationUrl?: string;
 }
 
 @Injectable()
@@ -44,13 +45,15 @@ export class LocalDatabaseService
   }
 
   public async onModuleInit(): Promise<void> {
-    if (this.pool === undefined || this.migrationUrl === undefined) {
+    if (this.pool === undefined) {
       return;
     }
 
     const migrationUrl = this.migrationUrl;
     this.migrationUrl = undefined;
-    await runMigrations(this.pool, migrationUrl);
+    if (migrationUrl !== undefined) {
+      await runMigrations(this.pool, migrationUrl);
+    }
     if (this.provisioning === undefined) {
       return;
     }
@@ -217,20 +220,20 @@ function createPool(connectionString: string): Pool {
 function readDatabaseConfiguration(
   environment: NodeJS.ProcessEnv,
 ): DatabaseConfiguration | undefined {
-  const applicationUrl = environment.DATABASE_URL;
-  const migrationUrl = environment.DATABASE_MIGRATION_URL;
+  const applicationUrl = readDatabaseConnectionString(environment);
+  const migrationUrl = environment.DATABASE_MIGRATION_URL?.trim();
   if (applicationUrl === undefined && migrationUrl === undefined) {
     return undefined;
   }
-  if (
-    applicationUrl === undefined ||
-    applicationUrl.length === 0 ||
-    migrationUrl === undefined ||
-    migrationUrl.length === 0
-  ) {
+  if (applicationUrl === undefined) {
     throw new Error(
-      "DATABASE_URL and DATABASE_MIGRATION_URL must be configured together",
+      "DATABASE_URL or DATABASE_URL_FILE is required when DATABASE_MIGRATION_URL is configured",
     );
   }
-  return { applicationUrl, migrationUrl };
+  if (migrationUrl === "") {
+    throw new Error("DATABASE_MIGRATION_URL must not be empty");
+  }
+  return migrationUrl === undefined
+    ? { applicationUrl }
+    : { applicationUrl, migrationUrl };
 }

@@ -15,8 +15,10 @@ import {
 } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -167,6 +169,54 @@ describe.sequential("Main device security persistence seam", () => {
     } finally {
       await applicationPool.end();
       await administratorPool.end();
+    }
+  });
+
+  it("serves health from the protected runtime connection file without the schema-owner credential", async () => {
+    const runtimeRoot = await mkdtemp(
+      path.join(tmpdir(), "breev-runtime-connection-"),
+    );
+    const runtimeUrlPath = path.join(runtimeRoot, "database-url");
+    const runtimePort = await reservePort();
+    let runtimeOutput = "";
+    let runtimeApi: ChildProcessWithoutNullStreams | undefined;
+
+    try {
+      await writeFile(runtimeUrlPath, databaseRoles.applicationUrl, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+      const environment: NodeJS.ProcessEnv = {
+        ...process.env,
+        API_HOST: "127.0.0.1",
+        API_PORT: String(runtimePort),
+        DATABASE_URL_FILE: runtimeUrlPath,
+      };
+      delete environment.DATABASE_MIGRATION_URL;
+      delete environment.DATABASE_URL;
+      runtimeApi = spawn(
+        process.execPath,
+        [path.resolve(import.meta.dirname, "../../dist/main.js")],
+        { env: environment },
+      );
+      runtimeApi.stdout.on("data", (chunk: Buffer) => {
+        runtimeOutput += chunk.toString();
+      });
+      runtimeApi.stderr.on("data", (chunk: Buffer) => {
+        runtimeOutput += chunk.toString();
+      });
+
+      const runtimeOrigin = `http://127.0.0.1:${runtimePort}`;
+      await waitForHealth(runtimeOrigin, () => runtimeOutput);
+      const response = await fetch(`${runtimeOrigin}/health`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        status: "healthy",
+        database: "available",
+      });
+    } finally {
+      await stopProcess(runtimeApi);
+      await rm(runtimeRoot, { force: true, recursive: true });
     }
   });
 
