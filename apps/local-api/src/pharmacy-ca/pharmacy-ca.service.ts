@@ -1,5 +1,4 @@
 import { Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 
 import { LocalDatabaseService } from "../local-database.service.js";
 import {
@@ -12,6 +11,7 @@ import {
   buildCACertificate,
   buildDeviceCertificate,
   buildServerCertificate,
+  createUuidV7,
   validateCertificate,
   type CertRole,
   type CertValidationResult,
@@ -93,7 +93,7 @@ export class PharmacyCaService {
     }
 
     const { providerName, assuranceLevel } = selectKeyStorageProvider();
-    const installationId = randomUUID();
+    const installationId = createUuidV7();
 
     const keyResult = createPersistedKeyPair({
       providerName,
