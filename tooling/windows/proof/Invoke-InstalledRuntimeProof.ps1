@@ -572,7 +572,10 @@ function Get-BreevInstalledProducts {
   return @(@(
     Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue
     Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue
-  ) | Where-Object { $_.DisplayName -eq "Breev" })
+  ) | Where-Object {
+    $displayName = $_.PSObject.Properties["DisplayName"]
+    $null -ne $displayName -and $displayName.Value -eq "Breev"
+  })
 }
 
 function Get-UninstallerPath {
@@ -594,6 +597,7 @@ function Get-InstalledVersion {
 function Get-InstalledSigningCoverage {
   param([string] $Root)
 
+  $normalizedRoot = [IO.Path]::GetFullPath($Root).TrimEnd('\')
   $extensions = @(".exe", ".dll", ".node", ".sys", ".efi", ".scr", ".msi", ".cat", ".cab", ".xap", ".vbs", ".wsf", ".ps1")
   $files = @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object {
     $_.Extension.ToLowerInvariant() -in $extensions
@@ -607,12 +611,17 @@ function Get-InstalledSigningCoverage {
     }
   })
   if ($files.Count -eq 0) { throw "The installed Builder candidate contains no signable files" }
+  $productExecutables = @($files | Where-Object {
+    [IO.Path]::GetExtension($_.path).ToLowerInvariant() -eq ".exe" -and
+      [IO.Path]::GetDirectoryName($_.path).TrimEnd('\') -eq $normalizedRoot
+  })
   return [ordered]@{
     root = $Root
     files = $files
-    allSignedByExpectedCertificate = @($files | Where-Object {
-      $_.signatureStatus -ne "Valid" -or $_.signerThumbprint -ne $ExpectedSignerThumbprint
-    }).Count -eq 0
+    allSignaturesValid = @($files | Where-Object { $_.signatureStatus -ne "Valid" }).Count -eq 0
+    productExecutables = $productExecutables
+    productExecutablesSignedByExpectedCertificate = $productExecutables.Count -ge 2 -and
+      @($productExecutables | Where-Object { $_.signerThumbprint -ne $ExpectedSignerThumbprint }).Count -eq 0
   }
 }
 
@@ -676,7 +685,10 @@ try {
   $installRoot = Join-Path $env:ProgramFiles "Breev"
   $result.signing["expectedSignerThumbprint"] = $ExpectedSignerThumbprint
   $result.signing["afterInstall"] = Get-InstalledSigningCoverage -Root $installRoot
-  Add-Check -Name "installed-files-signed-after-clean-install" -Passed $result.signing.afterInstall.allSignedByExpectedCertificate -Details $result.signing.afterInstall
+  Add-Check -Name "installed-files-signed-after-clean-install" -Passed (
+    $result.signing.afterInstall.allSignaturesValid -and
+    $result.signing.afterInstall.productExecutablesSignedByExpectedCertificate
+  ) -Details $result.signing.afterInstall
   $payloadRoot = Get-PayloadRoot
   $serviceEvidence = Get-ServiceEvidence -PayloadRoot $payloadRoot
   Add-Check -Name "independent-auto-services" -Passed (
@@ -883,7 +895,10 @@ try {
     (Test-PreservationMarker -Expected $preservationMarker) -and (Assert-Witness -WitnessId $witnessId)
   )
   $result.signing["afterRepair"] = Get-InstalledSigningCoverage -Root $installRoot
-  Add-Check -Name "installed-files-signed-after-repair" -Passed $result.signing.afterRepair.allSignedByExpectedCertificate -Details $result.signing.afterRepair
+  Add-Check -Name "installed-files-signed-after-repair" -Passed (
+    $result.signing.afterRepair.allSignaturesValid -and
+    $result.signing.afterRepair.productExecutablesSignedByExpectedCertificate
+  ) -Details $result.signing.afterRepair
 
   foreach ($failurePoint in @("AfterDataPrepared", "AfterPostgreSqlService", "AfterApiService", "BeforeReadiness")) {
     $failureExitCode = Invoke-Installer -Path $InstallerPath -InjectFailure $failurePoint -ExpectFailure
@@ -903,7 +918,10 @@ try {
     (Test-PreservationMarker -Expected $preservationMarker) -and (Assert-Witness -WitnessId $witnessId)
   )
   $result.signing["afterUpdate"] = Get-InstalledSigningCoverage -Root $installRoot
-  Add-Check -Name "installed-files-signed-after-update" -Passed $result.signing.afterUpdate.allSignedByExpectedCertificate -Details $result.signing.afterUpdate
+  Add-Check -Name "installed-files-signed-after-update" -Passed (
+    $result.signing.afterUpdate.allSignaturesValid -and
+    $result.signing.afterUpdate.productExecutablesSignedByExpectedCertificate
+  ) -Details $result.signing.afterUpdate
 
   $uninstallerPath = Get-UninstallerPath
   $preUninstallServices = Get-ServiceEvidence -PayloadRoot $payloadRoot
@@ -936,7 +954,10 @@ try {
       $_.processId -in $preUninstallProcessIds -or $_.childProcessId -in $preUninstallProcessIds
     }).Count -eq 0
   $result.signing["afterReinstall"] = Get-InstalledSigningCoverage -Root $installRoot
-  Add-Check -Name "installed-files-signed-after-reinstall" -Passed $result.signing.afterReinstall.allSignedByExpectedCertificate -Details $result.signing.afterReinstall
+  Add-Check -Name "installed-files-signed-after-reinstall" -Passed (
+    $result.signing.afterReinstall.allSignaturesValid -and
+    $result.signing.afterReinstall.productExecutablesSignedByExpectedCertificate
+  ) -Details $result.signing.afterReinstall
   Add-Check -Name "reinstall-opens-preserved-data" -Passed (
     $reinstalledServicesAreExact -and
     (Test-PreservationMarker -Expected $preservationMarker) -and

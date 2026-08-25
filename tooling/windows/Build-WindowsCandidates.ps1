@@ -35,6 +35,7 @@ if ($workingTreeDiffExitCode -ne 0 -or $indexDiffExitCode -ne 0 -or $untrackedFi
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $certificateFile = $env:BREEV_WINDOWS_CERTIFICATE_FILE
 $certificateThumbprint = $env:BREEV_WINDOWS_CERTIFICATE_THUMBPRINT
+$certificatePublicFile = if ([string]::IsNullOrWhiteSpace($certificateFile)) { $null } else { [IO.Path]::ChangeExtension($certificateFile, ".cer") }
 if ($RequireSigning -and ([string]::IsNullOrWhiteSpace($certificateFile) -or [string]::IsNullOrWhiteSpace($certificateThumbprint))) {
   throw "The comparison certificate file and thumbprint are required for the signing comparison"
 }
@@ -46,6 +47,13 @@ if ($RequireSigning) {
       $signingCertificate.Subject -ne "CN=Breev issue 34 comparison only" -or
       $signingCertificate.NotAfter.ToUniversalTime() -le [DateTime]::UtcNow) {
     throw "The expected temporary issue-34 comparison certificate is not installed and trusted"
+  }
+  if (-not (Test-Path -LiteralPath $certificatePublicFile -PathType Leaf)) {
+    throw "The comparison certificate's public file is missing"
+  }
+  $publicCertificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($certificatePublicFile)
+  if ($publicCertificate.Thumbprint -ne $certificateThumbprint -or $publicCertificate.HasPrivateKey) {
+    throw "The comparison certificate's public file does not match the signing identity"
   }
 }
 $Versions = @("0.0.0", "0.0.1")
@@ -178,6 +186,12 @@ function Test-TamperInvalidatesSignature {
 }
 
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
+$publicCertificateRecord = $null
+if ($RequireSigning) {
+  $retainedPublicCertificate = Join-Path $OutputRoot "comparison-signing.cer"
+  Copy-Item -LiteralPath $certificatePublicFile -Destination $retainedPublicCertificate -Force
+  $publicCertificateRecord = Get-FileRecord -Path $retainedPublicCertificate
+}
 Invoke-Checked -FilePath "pnpm.cmd" -Arguments @("install", "--frozen-lockfile")
 Invoke-Checked -FilePath "pnpm.cmd" -Arguments @("build")
 Invoke-Checked -FilePath "pnpm.cmd" -Arguments @("package:windows:payload")
@@ -320,6 +334,7 @@ $evidence = [ordered]@{
     coveragePolicy = if ($RequireSigning) { "valid-authenticode-with-product-artifacts-comparison-signed" } else { $null }
     trustStoreLocation = if ($RequireSigning) { "LocalMachine\Root" } else { $null }
     productionTrusted = $false
+    publicCertificate = $publicCertificateRecord
   }
   payloadLockSha256 = $sourcePayloadLockSha256
   versions = $results

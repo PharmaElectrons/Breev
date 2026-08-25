@@ -15,6 +15,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string] $BuilderApplicationRoot,
 
+  [Parameter(Mandatory = $true)]
+  [string] $ComparisonCertificatePath,
+
   [string] $ApplicationScreenshotPath,
 
   [switch] $PhysicalMachineAcknowledged,
@@ -66,6 +69,7 @@ function Wait-ProcessTreeExit {
 
 $PackagingResultPath = [IO.Path]::GetFullPath($PackagingResultPath)
 $BuilderApplicationRoot = [IO.Path]::GetFullPath($BuilderApplicationRoot)
+$ComparisonCertificatePath = [IO.Path]::GetFullPath($ComparisonCertificatePath)
 $packaging = Get-Content -LiteralPath $PackagingResultPath -Raw | ConvertFrom-Json
 $packagedVersions = @($packaging.versions | Where-Object { $_.version -eq "0.0.1" })
 if ($packaging.sourceCommit -ne $SourceCommit -or $packagedVersions.Count -ne 1) {
@@ -75,6 +79,16 @@ if ((Get-Service -Name "BreevLocalApi", "BreevPostgreSQL" -ErrorAction SilentlyC
     (Test-Path -LiteralPath (Join-Path $env:ProgramData "Breev")) -or
     (Test-Path -LiteralPath (Join-Path $env:ProgramFiles "Breev"))) {
   throw "The physical profile must run on a non-pharmacy machine without an installed Breev runtime"
+}
+if (-not (Test-Path -LiteralPath $ComparisonCertificatePath -PathType Leaf)) {
+  throw "The comparison certificate's public file is missing"
+}
+$comparisonCertificateHash = (Get-FileHash -LiteralPath $ComparisonCertificatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$comparisonCertificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($ComparisonCertificatePath)
+if ($comparisonCertificateHash -ne $packaging.signing.publicCertificate.sha256 -or
+    $comparisonCertificate.Thumbprint -ne $packaging.signing.certificateThumbprint -or
+    $comparisonCertificate.HasPrivateKey) {
+  throw "The physical profile comparison certificate does not match the packaging evidence"
 }
 
 $builderExecutable = Join-Path $BuilderApplicationRoot "Breev.exe"
@@ -87,7 +101,10 @@ foreach ($path in @($builderExecutable, $builderAsar)) {
 $packagedVersion = $packagedVersions[0]
 $builderExecutableHash = (Get-FileHash -LiteralPath $builderExecutable -Algorithm SHA256).Hash.ToLowerInvariant()
 $builderAsarHash = (Get-FileHash -LiteralPath $builderAsar -Algorithm SHA256).Hash.ToLowerInvariant()
-$builderSignature = Get-AuthenticodeSignature -LiteralPath $builderExecutable
+$builderSignature = $null
+$comparisonTrustPath = "Cert:\CurrentUser\Root\$($comparisonCertificate.Thumbprint)"
+$comparisonTrustPreexisting = Test-Path -LiteralPath $comparisonTrustPath
+$comparisonTrustImported = $false
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("breev-issue-34-physical-" + [Guid]::NewGuid().ToString())
 $fuseResultPath = Join-Path $temporaryRoot "fuses.json"
 $profileRoot = Join-Path $temporaryRoot "profile"
@@ -97,6 +114,11 @@ $cleanupErrors = [Collections.Generic.List[string]]::new()
 $remainingApplicationProcessIds = @()
 New-Item -ItemType Directory -Force -Path $temporaryRoot | Out-Null
 try {
+  if (-not $comparisonTrustPreexisting) {
+    Import-Certificate -FilePath $ComparisonCertificatePath -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
+    $comparisonTrustImported = $true
+  }
+  $builderSignature = Get-AuthenticodeSignature -LiteralPath $builderExecutable
   & node.exe (Join-Path $PSScriptRoot "read-fuses.mjs") --executable $builderExecutable --output $fuseResultPath | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "The physical profile could not verify the Electron fuse wire" }
   $fuses = Get-Content -LiteralPath $fuseResultPath -Raw | ConvertFrom-Json
@@ -136,6 +158,13 @@ try {
   if (Test-Path -LiteralPath $temporaryRoot) {
     $cleanupErrors.Add("The temporary application profile still exists")
   }
+  if ($comparisonTrustImported) {
+    try {
+      Remove-Item -LiteralPath $comparisonTrustPath -Force -ErrorAction Stop
+    } catch {
+      $cleanupErrors.Add("Temporary comparison-certificate trust cleanup failed: $($_.Exception.Message)")
+    }
+  }
 }
 
 $applicationFacts = [ordered]@{
@@ -145,6 +174,9 @@ $applicationFacts = [ordered]@{
   asarSha256 = $builderAsarHash
   signatureStatus = $builderSignature.Status.ToString()
   signerThumbprint = if ($null -eq $builderSignature.SignerCertificate) { $null } else { $builderSignature.SignerCertificate.Thumbprint }
+  comparisonCertificateSha256 = $comparisonCertificateHash
+  comparisonTrustPreexisting = [bool] $comparisonTrustPreexisting
+  temporaryTrustRemoved = -not (Test-Path -LiteralPath $comparisonTrustPath) -or $comparisonTrustPreexisting
   fuseWirePassed = [bool] $fuses.passed
   launchObservedMainUnavailable = [bool] $launchObservedMainUnavailable
   cleanupPassed = $cleanupErrors.Count -eq 0
@@ -154,7 +186,10 @@ $applicationFacts = [ordered]@{
 $applicationPassed = $applicationFacts.version -eq "0.0.1" -and
   $applicationFacts.executableSha256 -eq $packagedVersion.electronBuilderExecutable.sha256 -and
   $applicationFacts.asarSha256 -eq $packagedVersion.electronBuilderAsar.sha256 -and
+  $applicationFacts.signatureStatus -eq "Valid" -and
   $applicationFacts.signerThumbprint -eq $packaging.signing.certificateThumbprint -and
+  $applicationFacts.comparisonCertificateSha256 -eq $packaging.signing.publicCertificate.sha256 -and
+  $applicationFacts.temporaryTrustRemoved -and
   $applicationFacts.fuseWirePassed -and
   $fuses.executableSha256 -eq $applicationFacts.executableSha256 -and
   $applicationFacts.launchObservedMainUnavailable -and

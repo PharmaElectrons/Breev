@@ -42,18 +42,24 @@ if ! virsh --connect "$connection" vol-info --pool default "$volume_name" >/dev/
   virsh --connect "$connection" vol-upload --pool default "$volume_name" "$iso_path"
 fi
 managed_iso_path=$(virsh --connect "$connection" vol-path --pool default "$volume_name")
-cdrom_target=$(virsh --connect "$connection" domblklist "$domain_name" --details | awk '$2 == "cdrom" { print $3; exit }')
-if [[ -n "$cdrom_target" ]]; then
-  virsh --connect "$connection" change-media "$domain_name" "$cdrom_target" "$managed_iso_path" --update --config
-  if [[ "$(virsh --connect "$connection" domstate "$domain_name")" == "running" ]]; then
-    virsh --connect "$connection" change-media "$domain_name" "$cdrom_target" "$managed_iso_path" --update --live
-  fi
-else
+cdroms=$(virsh --connect "$connection" domblklist "$domain_name" --details)
+if ! awk -v source="$managed_iso_path" '$2 == "cdrom" && $4 == source { found = 1 } END { exit !found }' <<<"$cdroms"; then
+  cdrom_target=
+  for candidate in sdb sdc sdd sde; do
+    if ! awk -v target="$candidate" '$3 == target { found = 1 } END { exit !found }' <<<"$cdroms"; then
+      cdrom_target=$candidate
+      break
+    fi
+  done
+  [[ -n "$cdrom_target" ]] || {
+    echo "No unused SATA target is available for the QEMU guest agent media" >&2
+    exit 1
+  }
   attach_flags=(--config)
   if [[ "$(virsh --connect "$connection" domstate "$domain_name")" == "running" ]]; then
     attach_flags+=(--live)
   fi
-  virsh --connect "$connection" attach-disk "$domain_name" "$managed_iso_path" sdc \
+  virsh --connect "$connection" attach-disk "$domain_name" "$managed_iso_path" "$cdrom_target" \
     --type cdrom --mode readonly "${attach_flags[@]}"
 fi
 echo "Attached the pinned QEMU guest agent MSI media to $domain_name."
