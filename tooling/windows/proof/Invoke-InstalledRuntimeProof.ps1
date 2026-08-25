@@ -258,18 +258,19 @@ function Wait-Healthy {
 }
 
 function Get-HealthResponse {
+  Add-Type -AssemblyName System.Net.Http
+  $client = [Net.Http.HttpClient]::new()
+  $client.Timeout = [TimeSpan]::FromSeconds(5)
   try {
-    $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:31310/health" -TimeoutSec 5
-    return [ordered]@{ statusCode = [int] $response.StatusCode; body = ($response.Content | ConvertFrom-Json) }
-  } catch {
-    if ($null -eq $_.Exception.Response) { throw }
-    $response = $_.Exception.Response
-    $reader = [IO.StreamReader]::new($response.GetResponseStream())
+    $response = $client.GetAsync("http://127.0.0.1:31310/health").GetAwaiter().GetResult()
     try {
-      return [ordered]@{ statusCode = [int] $response.StatusCode; body = ($reader.ReadToEnd() | ConvertFrom-Json) }
+      $content = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+      return [ordered]@{ statusCode = [int] $response.StatusCode; body = ($content | ConvertFrom-Json) }
     } finally {
-      $reader.Dispose()
+      $response.Dispose()
     }
+  } finally {
+    $client.Dispose()
   }
 }
 
