@@ -707,8 +707,8 @@ try {
   Add-Check -Name "independent-auto-services" -Passed (
     @($serviceEvidence | Where-Object {
       $_.state -ne "Running" -or $_.startMode -ne "Auto" -or
-      $_.startName -ne "NT SERVICE\$($_.name)" -or $_.dependencies.Count -ne 0
-      -or $_.serviceSidType -ne 3 -or $_.failureActionsOnNonCrashFailures -ne 1 -or
+      $_.startName -ne "NT SERVICE\$($_.name)" -or $_.dependencies.Count -ne 0 -or
+      $_.serviceSidType -ne 3 -or $_.failureActionsOnNonCrashFailures -ne 1 -or
       -not $_.wrapperPathMatches -or $_.childProcessId -eq 0 -or
       $_.childParentProcessId -ne $_.processId -or $_.childExecutablePath -ne $_.expectedChildExecutablePath
     }).Count -eq 0 -and
