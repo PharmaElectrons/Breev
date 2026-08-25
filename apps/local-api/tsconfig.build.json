@@ -6,5 +6,6 @@
     "rootDir": "src",
     "tsBuildInfoFile": "dist/local-api.tsbuildinfo"
   },
+  "exclude": ["src/**/*.test.ts"],
   "include": ["src/**/*.ts"]
 }

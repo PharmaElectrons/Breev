@@ -8,8 +8,10 @@ import { pathToFileURL } from "node:url";
 
 import {
   APP_CONTENT_SECURITY_POLICY,
+  addMainDeviceRequestHeaders,
   createHardenedWindowOptions,
   createStartupConfigIpcGuard,
+  readMainDeviceBinding,
   resolveAppAssetPath,
   resolveRendererEntry,
 } from "./security.js";
@@ -49,6 +51,7 @@ function createWindow(): void {
     rendererEntry.origin,
     rendererEntry.url,
   );
+  registerMainDeviceHeaderInjection(window, localApiOrigin);
   hardenWebContents(window);
 
   window.once("ready-to-show", () => window.show());
@@ -60,6 +63,28 @@ function createWindow(): void {
   });
 
   void window.loadURL(rendererEntry.url);
+}
+
+function registerMainDeviceHeaderInjection(
+  window: BrowserWindow,
+  localApiOrigin: string,
+): void {
+  const binding = readMainDeviceBinding(process.env);
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: [`${localApiOrigin}/*`] },
+    (details, callback) => {
+      callback({
+        requestHeaders:
+          binding === undefined
+            ? details.requestHeaders
+            : addMainDeviceRequestHeaders(details, {
+                binding,
+                localApiOrigin,
+                trustedWebContentsId: window.webContents.id,
+              }),
+      });
+    },
+  );
 }
 
 function registerStartupConfigHandler(
