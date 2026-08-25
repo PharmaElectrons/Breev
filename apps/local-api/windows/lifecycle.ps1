@@ -88,33 +88,69 @@ function Stop-And-DeleteService {
   Wait-ServiceAbsent -Name $Name
 }
 
+function Set-ProtectedAcl {
+  param(
+    [string] $Path,
+    [object[]] $AdditionalGrants,
+    [Security.AccessControl.InheritanceFlags] $InheritanceFlags
+  )
+
+  $grants = @(
+    [ordered]@{ identity = "S-1-5-18"; rights = [Security.AccessControl.FileSystemRights]::FullControl },
+    [ordered]@{ identity = "S-1-5-32-544"; rights = [Security.AccessControl.FileSystemRights]::FullControl }
+  ) + $AdditionalGrants
+  $acl = Get-Acl -LiteralPath $Path
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($rule in @($acl.Access | Where-Object { -not $_.IsInherited })) {
+    [void] $acl.RemoveAccessRuleSpecific($rule)
+  }
+  foreach ($grant in $grants) {
+    $identity = if ($grant.identity -match '^S-\d(?:-\d+)+$') {
+      [Security.Principal.SecurityIdentifier]::new($grant.identity)
+    } else {
+      [Security.Principal.NTAccount]::new($grant.identity)
+    }
+    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+      $identity,
+      $grant.rights,
+      $InheritanceFlags,
+      [Security.AccessControl.PropagationFlags]::None,
+      [Security.AccessControl.AccessControlType]::Allow
+    ))
+  }
+  Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
 function Set-DirectoryAcl {
   param(
     [string] $Path,
-    [string[]] $AdditionalGrants
+    [object[]] $AdditionalGrants,
+    [switch] $ResetDescendants
   )
 
   New-Item -ItemType Directory -Force -Path $Path | Out-Null
-  Invoke-CheckedCommand -FilePath "icacls.exe" -Arguments @($Path, "/inheritance:r") -FailureMessage "Could not disable ACL inheritance"
-  $grants = @(
-    "*S-1-5-18:(OI)(CI)F",
-    "*S-1-5-32-544:(OI)(CI)F"
-  ) + $AdditionalGrants
-  Invoke-CheckedCommand -FilePath "icacls.exe" -Arguments (@($Path, "/grant:r") + $grants) -FailureMessage "Could not apply a protected directory ACL"
+  $inheritanceFlags = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+  Set-ProtectedAcl -Path $Path -AdditionalGrants $AdditionalGrants -InheritanceFlags $inheritanceFlags
+
+  if ($ResetDescendants -and @(Get-ChildItem -LiteralPath $Path -Force).Count -gt 0) {
+    # The parent is already protected, so descendants can inherit only this exact allowlist.
+    Invoke-CheckedCommand `
+      -FilePath "icacls.exe" `
+      -Arguments @((Join-Path $Path "*"), "/reset", "/T", "/C", "/Q") `
+      -FailureMessage "Could not reset descendant ACLs to the protected boundary"
+  }
 }
 
 function Set-FileAcl {
   param(
     [string] $Path,
-    [string[]] $AdditionalGrants
+    [object[]] $AdditionalGrants
   )
 
-  Invoke-CheckedCommand -FilePath "icacls.exe" -Arguments @($Path, "/inheritance:r") -FailureMessage "Could not disable file ACL inheritance"
-  $grants = @(
-    "*S-1-5-18:F",
-    "*S-1-5-32-544:F"
-  ) + $AdditionalGrants
-  Invoke-CheckedCommand -FilePath "icacls.exe" -Arguments (@($Path, "/grant:r") + $grants) -FailureMessage "Could not apply a protected file ACL"
+  Set-ProtectedAcl `
+    -Path $Path `
+    -AdditionalGrants $AdditionalGrants `
+    -InheritanceFlags ([Security.AccessControl.InheritanceFlags]::None)
 }
 
 function New-RandomSecret {
@@ -235,7 +271,11 @@ function Initialize-Database {
     Remove-Item -LiteralPath $stagingRoot -Recurse -Force
   }
   $installerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-  $installerGrant = if ($installerSid -eq "S-1-5-18") { @() } else { @("*${installerSid}:(OI)(CI)F") }
+  $installerGrant = if ($installerSid -eq "S-1-5-18") {
+    @()
+  } else {
+    @([ordered]@{ identity = $installerSid; rights = [Security.AccessControl.FileSystemRights]::FullControl })
+  }
   Set-DirectoryAcl -Path $stagingRoot -AdditionalGrants $installerGrant
 
   $stagedConfigRoot = Join-Path $stagingRoot "config"
@@ -383,23 +423,39 @@ function Set-ServiceAcls {
   $apiLogRoot = Join-Path $DataRoot "logs\local-api"
   $postgresqlLogRoot = Join-Path $DataRoot "logs\postgresql"
   $stateRoot = Join-Path $DataRoot "state"
-  Set-DirectoryAcl -Path $DataRoot -AdditionalGrants @()
-  Set-DirectoryAcl -Path $configRoot -AdditionalGrants @()
-  Set-FileAcl -Path (Join-Path $configRoot "database-url") -AdditionalGrants @("NT SERVICE\${apiServiceName}:R")
+  Set-DirectoryAcl -Path $DataRoot -AdditionalGrants @() -ResetDescendants
+  Set-DirectoryAcl -Path $configRoot -AdditionalGrants @() -ResetDescendants
+  Set-FileAcl -Path (Join-Path $configRoot "database-url") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read }
+  )
   Set-FileAcl -Path (Join-Path $configRoot "schema-owner-url") -AdditionalGrants @()
-  Set-FileAcl -Path (Join-Path $configRoot "installation.json") -AdditionalGrants @("NT SERVICE\${apiServiceName}:R")
-  Set-DirectoryAcl -Path $postgresqlDataRoot -AdditionalGrants @("NT SERVICE\${postgresqlServiceName}:(OI)(CI)F")
-  Set-DirectoryAcl -Path $apiLogRoot -AdditionalGrants @("NT SERVICE\${apiServiceName}:(OI)(CI)M")
-  Set-DirectoryAcl -Path $postgresqlLogRoot -AdditionalGrants @("NT SERVICE\${postgresqlServiceName}:(OI)(CI)M")
-  Set-DirectoryAcl -Path $stateRoot -AdditionalGrants @()
+  Set-FileAcl -Path (Join-Path $configRoot "installation.json") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read }
+  )
+  Set-DirectoryAcl -Path $postgresqlDataRoot -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = [Security.AccessControl.FileSystemRights]::FullControl }
+  ) -ResetDescendants
+  Set-DirectoryAcl -Path $apiLogRoot -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Modify }
+  ) -ResetDescendants
+  Set-DirectoryAcl -Path $postgresqlLogRoot -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Modify }
+  ) -ResetDescendants
+  Set-DirectoryAcl -Path $stateRoot -AdditionalGrants @() -ResetDescendants
 
   Set-DirectoryAcl -Path (Join-Path $PayloadRoot "service-wrapper") -AdditionalGrants @(
-    "NT SERVICE\${apiServiceName}:(OI)(CI)RX",
-    "NT SERVICE\${postgresqlServiceName}:(OI)(CI)RX"
-  )
-  Set-DirectoryAcl -Path (Join-Path $PayloadRoot "node") -AdditionalGrants @("NT SERVICE\${apiServiceName}:(OI)(CI)RX")
-  Set-DirectoryAcl -Path (Join-Path $PayloadRoot "local-api") -AdditionalGrants @("NT SERVICE\${apiServiceName}:(OI)(CI)RX")
-  Set-DirectoryAcl -Path (Join-Path $PayloadRoot "postgresql") -AdditionalGrants @("NT SERVICE\${postgresqlServiceName}:(OI)(CI)RX")
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute },
+    [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute }
+  ) -ResetDescendants
+  Set-DirectoryAcl -Path (Join-Path $PayloadRoot "node") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute }
+  ) -ResetDescendants
+  Set-DirectoryAcl -Path (Join-Path $PayloadRoot "local-api") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute }
+  ) -ResetDescendants
+  Set-DirectoryAcl -Path (Join-Path $PayloadRoot "postgresql") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute }
+  ) -ResetDescendants
 }
 
 function Wait-PostgresqlReady {
@@ -439,7 +495,7 @@ function Write-LifecycleState {
   )
 
   $stateRoot = Join-Path $DataRoot "state"
-  Set-DirectoryAcl -Path $stateRoot -AdditionalGrants @()
+  Set-DirectoryAcl -Path $stateRoot -AdditionalGrants @() -ResetDescendants
   [ordered]@{
     schemaVersion = 1
     action = $Action

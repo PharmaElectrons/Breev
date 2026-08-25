@@ -223,8 +223,11 @@ function Get-PreservationMarker {
   $identifierLine = $controlData | Where-Object { $_ -match '^Database system identifier:' }
   return [ordered]@{
     installationId = (Get-Content -LiteralPath (Join-Path $dataRoot "config\installation.json") -Raw | ConvertFrom-Json).installationId
+    installationConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\installation.json") -Algorithm SHA256).Hash.ToLowerInvariant()
     runtimeConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\database-url") -Algorithm SHA256).Hash.ToLowerInvariant()
     ownerConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\schema-owner-url") -Algorithm SHA256).Hash.ToLowerInvariant()
+    postgresqlConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "postgresql\postgresql.conf") -Algorithm SHA256).Hash.ToLowerInvariant()
+    postgresqlHbaHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "postgresql\pg_hba.conf") -Algorithm SHA256).Hash.ToLowerInvariant()
     databaseSystemIdentifier = ($identifierLine -replace '^Database system identifier:\s*', '').Trim()
   }
 }
@@ -243,8 +246,11 @@ function Test-PreservationMarker {
   param([object] $Expected, [string] $PayloadRoot)
 
   $baseMatches = (Get-Content -LiteralPath (Join-Path $dataRoot "config\installation.json") -Raw | ConvertFrom-Json).installationId -eq $Expected.installationId -and
+    (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\installation.json") -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Expected.installationConfigHash -and
     (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\database-url") -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Expected.runtimeConfigHash -and
     (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\schema-owner-url") -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Expected.ownerConfigHash -and
+    (Get-FileHash -LiteralPath (Join-Path $dataRoot "postgresql\postgresql.conf") -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Expected.postgresqlConfigHash -and
+    (Get-FileHash -LiteralPath (Join-Path $dataRoot "postgresql\pg_hba.conf") -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Expected.postgresqlHbaHash -and
     (Get-Content -LiteralPath (Join-Path $dataRoot "postgresql\PG_VERSION") -Raw).Trim() -eq "18"
   if (-not $baseMatches -or [string]::IsNullOrWhiteSpace($PayloadRoot)) { return $baseMatches }
   return (Get-PreservationMarker -PayloadRoot $PayloadRoot).databaseSystemIdentifier -eq $Expected.databaseSystemIdentifier
@@ -261,6 +267,7 @@ function Get-ServiceEvidence {
   return @(@($apiServiceName, $postgresqlServiceName) | ForEach-Object {
     $name = $_
     $service = Get-CimInstance Win32_Service -Filter "Name='$name'"
+    $serviceRegistry = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$name"
     $childPath = if ($name -eq $apiServiceName) {
       Join-Path $PayloadRoot "node\node.exe"
     } else {
@@ -275,6 +282,11 @@ function Get-ServiceEvidence {
       startMode = $service.StartMode
       startName = $service.StartName
       processId = $service.ProcessId
+      pathName = $service.PathName
+      serviceSidType = $serviceRegistry.ServiceSidType
+      failureActionsOnNonCrashFailures = $serviceRegistry.FailureActionsOnNonCrashFailures
+      dependencies = @((Get-Service -Name $name).ServicesDependedOn | ForEach-Object { $_.Name })
+      wrapperPathMatches = $service.PathName -match ('^"?' + [regex]::Escape((Join-Path $PayloadRoot "service-wrapper\shawl.exe")) + '"? run --name ' + [regex]::Escape($name) + '(?: |$)')
       childProcessId = if ($null -eq $child) { 0 } else { $child.ProcessId }
       childParentProcessId = if ($null -eq $child) { 0 } else { $child.ParentProcessId }
       childExecutablePath = if ($null -eq $child) { $null } else { $child.ExecutablePath }
@@ -287,10 +299,13 @@ function Test-ExactServices {
   param([object[]] $Services)
   return $Services.Count -eq 2 -and @($Services | Where-Object {
     $_.state -ne "Running" -or $_.startMode -ne "Auto" -or
-    $_.startName -ne "NT SERVICE\$($_.name)" -or $_.processId -eq 0 -or
-    $_.childProcessId -eq 0 -or $_.childParentProcessId -ne $_.processId -or
+    $_.startName -ne "NT SERVICE\$($_.name)" -or $_.dependencies.Count -ne 0 -or
+    $_.serviceSidType -ne 3 -or $_.failureActionsOnNonCrashFailures -ne 1 -or
+    -not $_.wrapperPathMatches -or $_.processId -eq 0 -or $_.childProcessId -eq 0 -or
+    $_.childParentProcessId -ne $_.processId -or
     $_.childExecutablePath -ne $_.expectedChildExecutablePath
-  }).Count -eq 0
+  }).Count -eq 0 -and
+    @($Services | ForEach-Object { $_.processId } | Select-Object -Unique).Count -eq 2
 }
 
 function Invoke-ChildCrashRecovery {
@@ -320,6 +335,72 @@ function Invoke-ChildCrashRecovery {
     Start-Sleep -Milliseconds 250
   } while ([DateTime]::UtcNow -lt $deadline)
   throw "$ServiceName did not recover its child process"
+}
+
+function Get-ProcessTreeIds {
+  param([int] $RootProcessId)
+
+  $allProcesses = @(Get-CimInstance Win32_Process)
+  $found = [Collections.Generic.List[int]]::new()
+  $pending = [Collections.Generic.Queue[int]]::new()
+  $pending.Enqueue($RootProcessId)
+  while ($pending.Count -gt 0) {
+    $processId = $pending.Dequeue()
+    if (-not $found.Contains($processId)) {
+      $found.Add($processId)
+      $allProcesses | Where-Object { $_.ParentProcessId -eq $processId } | ForEach-Object {
+        $pending.Enqueue([int] $_.ProcessId)
+      }
+    }
+  }
+  return @($found)
+}
+
+function Wait-ProcessTreeExit {
+  param([int[]] $ProcessIds, [int] $TimeoutSeconds = 30)
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if (@(Get-Process -Id $ProcessIds -ErrorAction SilentlyContinue).Count -eq 0) { return $true }
+    Start-Sleep -Milliseconds 200
+  }
+  return $false
+}
+
+function Invoke-WrapperCrashRecovery {
+  param(
+    [string] $ServiceName,
+    [string] $ExecutableName,
+    [string] $ExecutablePath
+  )
+
+  $before = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+  $oldTree = Get-ProcessTreeIds -RootProcessId $before.ProcessId
+  Stop-Process -Id $before.ProcessId -Force
+  $deadline = [DateTime]::UtcNow.AddSeconds(90)
+  do {
+    $after = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+    if ($after.State -eq "Running" -and $after.ProcessId -ne 0 -and $after.ProcessId -ne $before.ProcessId) {
+      $child = Get-CimInstance Win32_Process -Filter "Name='$ExecutableName'" | Where-Object {
+        $_.ParentProcessId -eq $after.ProcessId -and $_.ExecutablePath -eq $ExecutablePath
+      } | Select-Object -First 1
+      if ($null -ne $child) {
+        $oldTreeExited = Wait-ProcessTreeExit -ProcessIds $oldTree
+        Wait-Healthy | Out-Null
+        return [ordered]@{
+          service = $ServiceName
+          before = $before.ProcessId
+          oldTree = $oldTree
+          oldTreeExited = $oldTreeExited
+          after = $after.ProcessId
+          child = $child.ProcessId
+          childParent = $child.ParentProcessId
+        }
+      }
+    }
+    Start-Sleep -Milliseconds 250
+  } while ([DateTime]::UtcNow -lt $deadline)
+  throw "The SCM did not recover the $ServiceName wrapper and child process"
 }
 
 function Corrupt-LastByte {
@@ -449,6 +530,14 @@ try {
     -ServiceName $postgresqlServiceName `
     -ExecutableName "postgres.exe" `
     -ExecutablePath (Join-Path $payloadRoot "postgresql\bin\postgres.exe")
+  $result.serviceLifecycle["apiWrapperRecovery"] = Invoke-WrapperCrashRecovery `
+    -ServiceName $apiServiceName `
+    -ExecutableName "node.exe" `
+    -ExecutablePath (Join-Path $payloadRoot "node\node.exe")
+  $result.serviceLifecycle["postgresqlWrapperRecovery"] = Invoke-WrapperCrashRecovery `
+    -ServiceName $postgresqlServiceName `
+    -ExecutableName "postgres.exe" `
+    -ExecutablePath (Join-Path $payloadRoot "postgresql\bin\postgres.exe")
   $result.serviceLifecycle["afterRecovery"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
 
   $failedRepairToken = "issue-34-injected-failure"
@@ -507,6 +596,10 @@ try {
   $result.dataPreservation["afterFailedUpdate"] = (Test-PreservationMarker -Expected $preservationMarker -PayloadRoot $payloadRoot) -and
     (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
 
+  $preUpdateServiceEvidence = @($result.serviceLifecycle.afterFailedUpdate)
+  $preUpdateProcessIds = @($preUpdateServiceEvidence | ForEach-Object {
+    Get-ProcessTreeIds -RootProcessId $_.processId
+  } | Sort-Object -Unique)
   $result.operations["updateExitCode"] = Invoke-MsiExec -Arguments @("/i", $quotedUpdateInstallerPath, "/qn", "/norestart")
   Wait-Healthy | Out-Null
   $updated = Get-InstalledProduct
@@ -520,6 +613,16 @@ try {
   if ($result.application.afterUpdate.version -ne $UpdateInstallerVersion) { throw "The installed Forge application has the wrong update version" }
   $payloadRoot = $result.payload.afterUpdate.root
   $result.serviceLifecycle["afterUpdate"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
+  $updateTreesExited = Wait-ProcessTreeExit -ProcessIds $preUpdateProcessIds
+  $result.serviceLifecycle["updateTransition"] = [ordered]@{
+    before = $preUpdateServiceEvidence
+    previousProcessIds = $preUpdateProcessIds
+    previousTreesExited = $updateTreesExited
+    after = $result.serviceLifecycle.afterUpdate
+    freshProcesses = @($result.serviceLifecycle.afterUpdate | Where-Object {
+      $_.processId -in $preUpdateProcessIds -or $_.childProcessId -in $preUpdateProcessIds
+    }).Count -eq 0
+  }
   $result.dataPreservation["afterUpdate"] = (Test-PreservationMarker -Expected $preservationMarker -PayloadRoot $payloadRoot) -and
     (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
 
@@ -558,7 +661,10 @@ try {
     -not $result.signing.afterReinstall.allSignaturesValid
   $result.serviceLifecycle["integratesRequiredServices"] = Test-ExactServices -Services @($result.serviceLifecycle.afterInstall)
   $result.serviceLifecycle["repair"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterRepair)) -and $result.dataPreservation.afterRepair
-  $result.serviceLifecycle["update"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterUpdate)) -and $result.dataPreservation.afterUpdate
+  $result.serviceLifecycle["update"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterUpdate)) -and
+    $result.serviceLifecycle.updateTransition.previousTreesExited -and
+    $result.serviceLifecycle.updateTransition.freshProcesses -and
+    $result.dataPreservation.afterUpdate
   $result.serviceLifecycle["failedRepairRecovery"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterFailedRepair)) -and
     $result.dataPreservation.afterFailedRepair
   $result.serviceLifecycle["failedUpdateRecovery"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterFailedUpdate)) -and
@@ -567,7 +673,13 @@ try {
   $result.serviceLifecycle["recovery"] = (Test-ExactServices -Services @($result.serviceLifecycle.afterRecovery)) -and
     $result.serviceLifecycle.postgresqlStoppedControlState -eq "shut down" -and
     $result.serviceLifecycle.apiChildRecovery.before -ne $result.serviceLifecycle.apiChildRecovery.after -and
-    $result.serviceLifecycle.postgresqlChildRecovery.before -ne $result.serviceLifecycle.postgresqlChildRecovery.after
+    $result.serviceLifecycle.postgresqlChildRecovery.before -ne $result.serviceLifecycle.postgresqlChildRecovery.after -and
+    $result.serviceLifecycle.apiWrapperRecovery.before -ne $result.serviceLifecycle.apiWrapperRecovery.after -and
+    $result.serviceLifecycle.apiWrapperRecovery.oldTreeExited -and
+    $result.serviceLifecycle.apiWrapperRecovery.childParent -eq $result.serviceLifecycle.apiWrapperRecovery.after -and
+    $result.serviceLifecycle.postgresqlWrapperRecovery.before -ne $result.serviceLifecycle.postgresqlWrapperRecovery.after -and
+    $result.serviceLifecycle.postgresqlWrapperRecovery.oldTreeExited -and
+    $result.serviceLifecycle.postgresqlWrapperRecovery.childParent -eq $result.serviceLifecycle.postgresqlWrapperRecovery.after
   $result.serviceLifecycle["reinstall"] = Test-ExactServices -Services @($result.serviceLifecycle.afterReinstall)
   $result["comparisonExecuted"] = $result.operations.uninstalled -and
     $result.operations.finalUninstalled -and
