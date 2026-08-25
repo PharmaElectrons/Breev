@@ -11,6 +11,9 @@ export default defineConfig({
   },
   plugins: [react(), tailwindcss()],
   resolve: {
+    // Forge's Vite preset preserves pnpm symlink paths and then misses scheduler
+    // beside React. Resolve the real package locations for the renderer bundle.
+    preserveSymlinks: false,
     alias: {
       "@": path.resolve(
         import.meta.dirname,

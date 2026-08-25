@@ -473,7 +473,9 @@ try {
       ([version] $InstallerVersion) -ge ([version] $UpdateInstallerVersion)) {
     throw "The Forge proof requires two distinct increasing versions"
   }
-  if ((Get-InstalledProduct).Count -ne 0) { throw "The Forge comparison product is already installed" }
+  # PowerShell unwraps a single registry result. Keep every product lookup as an
+  # array so one installed version still has a reliable Count and index zero.
+  if (@(Get-InstalledProduct).Count -ne 0) { throw "The Forge comparison product is already installed" }
   if (Test-Path -LiteralPath $expectedInstallRoot) { throw "The Forge comparison install root already exists" }
   if (Test-Path -LiteralPath $dataRoot) { throw "The Forge comparison requires a clean restored snapshot with no Breev data" }
   $baselineServices = [ordered]@{
@@ -489,7 +491,7 @@ try {
   $quotedUpdateInstallerPath = '"' + $UpdateInstallerPath + '"'
   $result.operations["cleanInstallExitCode"] = Invoke-MsiExec -Arguments @("/i", $quotedInstallerPath, "/qn", "/norestart")
   $installHealth = Wait-Healthy
-  $installed = Get-InstalledProduct
+  $installed = @(Get-InstalledProduct)
   if ($installed.Count -ne 1) { throw "The Forge candidate did not register exactly one installed product" }
   $installRoot = [IO.Path]::GetFullPath($installed[0].InstallPath).TrimEnd('\')
   if ($installRoot -ne $expectedInstallRoot -or -not (Test-Path -LiteralPath $installRoot -PathType Container)) {
@@ -543,12 +545,14 @@ try {
   $failedRepairToken = "issue-34-injected-failure"
   $failedRepairLog = Join-Path $outputRoot "forge-failed-repair.log"
   Remove-Item -LiteralPath @((Join-Path $dataRoot "state\forge-injected-failure.txt"), $failedRepairLog) -Force -ErrorAction SilentlyContinue
+  # msiexec /fa discarded BREEVFORGEINJECTFAILURE before the deferred action.
+  # The explicit /i repair form preserves the public property in the MSI session.
   $result.operations["failedRepairExitCode"] = Invoke-MsiExec `
-    -Arguments @("/fa", $quotedInstallerPath, "BREEVFORGEINJECTFAILURE=1", "/qn", "/norestart", "/l*v", ('"' + $failedRepairLog + '"')) `
+    -Arguments @("/i", $quotedInstallerPath, "REINSTALL=ALL", "REINSTALLMODE=amus", "BREEVFORGEINJECTFAILURE=1", "/qn", "/norestart", "/l*v", ('"' + $failedRepairLog + '"')) `
     -ExpectFailure
   $result.operations["failedRepairMarker"] = Get-InjectedFailureEvidence -ExpectedToken $failedRepairToken -LogPath $failedRepairLog
   Wait-Healthy | Out-Null
-  $afterFailedRepair = Get-InstalledProduct
+  $afterFailedRepair = @(Get-InstalledProduct)
   if ($afterFailedRepair.Count -ne 1 -or $afterFailedRepair[0].DisplayVersion -ne $InstallerVersion) {
     throw "The failed Forge repair did not roll back to the installed version"
   }
@@ -584,7 +588,7 @@ try {
     -ExpectFailure
   $result.operations["failedUpdateMarker"] = Get-InjectedFailureEvidence -ExpectedToken $failedUpdateToken -LogPath $failedUpdateLog
   Wait-Healthy | Out-Null
-  $afterFailedUpdate = Get-InstalledProduct
+  $afterFailedUpdate = @(Get-InstalledProduct)
   if ($afterFailedUpdate.Count -ne 1 -or $afterFailedUpdate[0].DisplayVersion -ne $InstallerVersion) {
     throw "The failed Forge update did not restore the prior installed version"
   }
@@ -602,7 +606,7 @@ try {
   } | Sort-Object -Unique)
   $result.operations["updateExitCode"] = Invoke-MsiExec -Arguments @("/i", $quotedUpdateInstallerPath, "/qn", "/norestart")
   Wait-Healthy | Out-Null
-  $updated = Get-InstalledProduct
+  $updated = @(Get-InstalledProduct)
   if ($updated.Count -ne 1) { throw "The Forge candidate update did not leave exactly one installed product" }
   $updatedInstallRoot = [IO.Path]::GetFullPath($updated[0].InstallPath).TrimEnd('\')
   if ($updatedInstallRoot -ne $installRoot) { throw "The Forge candidate update changed its machine-wide root" }
@@ -627,7 +631,7 @@ try {
     (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
 
   $result.operations["uninstallExitCode"] = Invoke-MsiExec -Arguments @("/x", $quotedUpdateInstallerPath, "/qn", "/norestart")
-  $result.operations["uninstalled"] = (Get-InstalledProduct).Count -eq 0
+  $result.operations["uninstalled"] = @(Get-InstalledProduct).Count -eq 0
   $result.operations["installRootRemoved"] = -not (Test-Path -LiteralPath $installRoot)
   $result.serviceLifecycle["afterUninstall"] = [ordered]@{
     localApi = $null -ne (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)
@@ -637,7 +641,7 @@ try {
 
   $result.operations["reinstallExitCode"] = Invoke-MsiExec -Arguments @("/i", $quotedUpdateInstallerPath, "/qn", "/norestart")
   Wait-Healthy | Out-Null
-  $reinstalled = Get-InstalledProduct
+  $reinstalled = @(Get-InstalledProduct)
   if ($reinstalled.Count -ne 1 -or $reinstalled[0].DisplayVersion -ne $UpdateInstallerVersion) {
     throw "The Forge candidate did not reinstall its update version"
   }
@@ -650,7 +654,7 @@ try {
     (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
 
   $result.operations["finalUninstallExitCode"] = Invoke-MsiExec -Arguments @("/x", $quotedUpdateInstallerPath, "/qn", "/norestart")
-  $result.operations["finalUninstalled"] = (Get-InstalledProduct).Count -eq 0 -and
+  $result.operations["finalUninstalled"] = @(Get-InstalledProduct).Count -eq 0 -and
     -not (Test-Path -LiteralPath $installRoot) -and
     $null -eq (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue) -and
     $null -eq (Get-Service -Name $postgresqlServiceName -ErrorAction SilentlyContinue)

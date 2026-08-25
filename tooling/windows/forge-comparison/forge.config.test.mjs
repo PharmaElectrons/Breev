@@ -3,6 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { addBreevLifecycleActions } from "./forge.config.mjs";
+import rendererConfig from "./vite.renderer.config.mjs";
+
+test("keeps renderer dependencies resolvable with pnpm", () => {
+  assert.equal(rendererConfig.resolve.preserveSymlinks, false);
+});
 
 test("adds one complete machine lifecycle sequence to the pinned WiX template", async () => {
   const creator = {
@@ -35,6 +40,24 @@ test("adds one complete machine lifecycle sequence to the pinned WiX template", 
     assert.equal(count(creator.wixTemplate, `<CustomAction Id="${action}"`), 1);
     assert.equal(count(creator.wixTemplate, `<Custom Action="${action}"`), 1);
   }
+  assert.equal(
+    count(
+      creator.wixTemplate,
+      "[APPLICATIONROOTDIRECTORY]app-0.0.0\\resources\\payload\\lifecycle.ps1",
+    ),
+    7,
+  );
+  assert.equal(
+    count(
+      creator.wixTemplate,
+      "-PayloadRoot &quot;[APPLICATIONROOTDIRECTORY]app-0.0.0\\resources\\payload&quot;",
+    ),
+    7,
+  );
+  assert.doesNotMatch(
+    creator.wixTemplate,
+    /\[APPLICATIONROOTDIRECTORY\]resources\\payload/,
+  );
   assert.match(
     creator.wixTemplate,
     /BreevRollbackRepair[\s\S]*Before="BreevStopForRepair"><!\[CDATA\[Installed AND REINSTALL\]\]>/,
@@ -46,6 +69,10 @@ test("adds one complete machine lifecycle sequence to the pinned WiX template", 
   assert.match(
     creator.wixTemplate,
     /BreevRollbackStop[\s\S]*After="InstallFiles"><!\[CDATA\[NOT Installed OR \(Installed AND REINSTALL\)\]\]>/,
+  );
+  assert.match(
+    creator.wixTemplate,
+    /CustomAction Id="BreevRollbackStop"[^>]*-SkipStateWrite"/,
   );
   assert.match(
     creator.wixTemplate,

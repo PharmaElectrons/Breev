@@ -55,7 +55,20 @@ try {
   result.originalStartedReady = original.ready;
 
   const copiedApplicationRoot = path.join(temporaryRoot, "application");
-  await cp(applicationRoot, copiedApplicationRoot, { recursive: true });
+  const servicePayloadRoot = path.join(
+    applicationRoot,
+    "resources",
+    candidate === "electron-builder" ? "windows-payload" : "payload",
+  );
+  // Copying the installed service payload would duplicate PostgreSQL and Node
+  // data that the ASAR tamper launch never reads. Exclude only that candidate's
+  // known payload directory while retaining the complete Electron application.
+  await cp(applicationRoot, copiedApplicationRoot, {
+    recursive: true,
+    filter: (source) =>
+      source !== servicePayloadRoot &&
+      !source.startsWith(`${servicePayloadRoot}${path.sep}`),
+  });
   const copiedExecutablePath = path.join(
     copiedApplicationRoot,
     path.basename(executablePath),

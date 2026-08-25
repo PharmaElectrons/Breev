@@ -48,7 +48,10 @@ baseline_manifest="$repo_root/artifacts/windows/host-cache/${domain_name}-${snap
   echo "The reboot target does not match the correlated disposable baseline" >&2
   exit 1
 }
-viewer_process_count=$(ps -C virt-viewer -C remote-viewer -o args= 2>/dev/null | awk -v domain="$domain_name" 'index($0, domain) { count++ } END { print count + 0 }')
+# ps exits 1 when no viewer exists. That is the required no-login state, not a
+# pipefail error, so keep the empty process list flowing into awk.
+viewer_process_count=$({ ps -C virt-viewer -C remote-viewer -o args= 2>/dev/null || true; } |
+  awk -v domain="$domain_name" 'index($0, domain) { count++ } END { print count + 0 }')
 spice_display=$(virsh --connect "$connection" domdisplay "$domain_name")
 spice_port=${spice_display##*:}
 spice_client_count=$(ss -Hnt state established "( sport = :$spice_port )" | awk 'END { print NR + 0 }')

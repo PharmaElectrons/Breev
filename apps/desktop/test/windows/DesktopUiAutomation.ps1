@@ -80,7 +80,9 @@ function Save-WindowScreenshot {
 
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 do {
-  $windows = Get-ProcessWindows
+  # PowerShell unwraps a single window object; @() keeps .Count and iteration
+  # correct when Electron has exactly one top-level window.
+  $windows = @(Get-ProcessWindows)
   if ($Action -eq "CloseWindows" -and $windows.Count -gt 0) {
     $closed = 0
     foreach ($window in $windows) {
