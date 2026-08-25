@@ -325,6 +325,54 @@ function Invoke-Psql {
   return ($output -join "`n").Trim()
 }
 
+function Get-ExactDirectoryAclEvidence {
+  param(
+    [string] $Path,
+    [string[]] $ExpectedSids
+  )
+
+  $acl = Get-Acl -LiteralPath $Path
+  $rules = @($acl.Access | ForEach-Object {
+    $sid = try {
+      $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+    } catch {
+      $_.IdentityReference.Value
+    }
+    [ordered]@{
+      sid = $sid
+      accessControlType = $_.AccessControlType.ToString()
+      fileSystemRights = [int] $_.FileSystemRights
+      inheritanceFlags = [int] $_.InheritanceFlags
+      propagationFlags = [int] $_.PropagationFlags
+      inherited = [bool] $_.IsInherited
+    }
+  })
+  $expectedInheritance = [int] (
+    [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+  )
+  $unexpectedRules = @($rules | Where-Object {
+    $_.sid -notin $ExpectedSids -or
+    $_.accessControlType -ne "Allow" -or
+    $_.fileSystemRights -ne [int] [Security.AccessControl.FileSystemRights]::FullControl -or
+    $_.inheritanceFlags -ne $expectedInheritance -or
+    $_.propagationFlags -ne [int] [Security.AccessControl.PropagationFlags]::None -or
+    $_.inherited
+  })
+  $missingSids = @($ExpectedSids | Where-Object {
+    $expectedSid = $_
+    @($rules | Where-Object { $_.sid -eq $expectedSid }).Count -ne 1
+  })
+  return [ordered]@{
+    path = $Path
+    sddl = $acl.Sddl
+    protected = [bool] $acl.AreAccessRulesProtected
+    expectedSids = @($ExpectedSids)
+    rules = $rules
+    exact = $acl.AreAccessRulesProtected -and $unexpectedRules.Count -eq 0 -and $missingSids.Count -eq 0 -and
+      $rules.Count -eq $ExpectedSids.Count
+  }
+}
+
 function Get-PreservationMarker {
   $payloadRoot = Get-PayloadRoot
   $controlData = & (Join-Path $payloadRoot "postgresql\bin\pg_controldata.exe") (Join-Path $dataRoot "postgresql")
@@ -332,8 +380,11 @@ function Get-PreservationMarker {
   $identifierLine = $controlData | Where-Object { $_ -match '^Database system identifier:' }
   return [ordered]@{
     installationId = (Get-Content -LiteralPath (Join-Path $dataRoot "config\installation.json") -Raw | ConvertFrom-Json).installationId
+    installationConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\installation.json") -Algorithm SHA256).Hash.ToLowerInvariant()
     runtimeConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\database-url") -Algorithm SHA256).Hash.ToLowerInvariant()
     ownerConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\schema-owner-url") -Algorithm SHA256).Hash.ToLowerInvariant()
+    postgresqlConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "postgresql\postgresql.conf") -Algorithm SHA256).Hash.ToLowerInvariant()
+    postgresqlHbaHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "postgresql\pg_hba.conf") -Algorithm SHA256).Hash.ToLowerInvariant()
     databaseSystemIdentifier = ($identifierLine -replace '^Database system identifier:\s*', '').Trim()
   }
 }
@@ -350,11 +401,17 @@ function Get-PostgresqlControlState {
 function Test-PreservationMarker {
   param([object] $Expected)
   $installationId = (Get-Content -LiteralPath (Join-Path $dataRoot "config\installation.json") -Raw | ConvertFrom-Json).installationId
+  $installationConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\installation.json") -Algorithm SHA256).Hash.ToLowerInvariant()
   $runtimeHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\database-url") -Algorithm SHA256).Hash.ToLowerInvariant()
   $ownerHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "config\schema-owner-url") -Algorithm SHA256).Hash.ToLowerInvariant()
+  $postgresqlConfigHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "postgresql\postgresql.conf") -Algorithm SHA256).Hash.ToLowerInvariant()
+  $postgresqlHbaHash = (Get-FileHash -LiteralPath (Join-Path $dataRoot "postgresql\pg_hba.conf") -Algorithm SHA256).Hash.ToLowerInvariant()
   $baseMatches = $installationId -eq $Expected.installationId -and
+    $installationConfigHash -eq $Expected.installationConfigHash -and
     $runtimeHash -eq $Expected.runtimeConfigHash -and
     $ownerHash -eq $Expected.ownerConfigHash -and
+    $postgresqlConfigHash -eq $Expected.postgresqlConfigHash -and
+    $postgresqlHbaHash -eq $Expected.postgresqlHbaHash -and
     (Get-Content -LiteralPath (Join-Path $dataRoot "postgresql\PG_VERSION") -Raw).Trim() -eq "18"
   if (-not $baseMatches) { return $false }
   if ($null -eq (Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)) { return $true }
@@ -393,6 +450,20 @@ function Get-ServiceEvidence {
     }
   }
   return @($services)
+}
+
+function Test-ExactServices {
+  param([object[]] $Services)
+
+  return $Services.Count -eq 2 -and
+    @($Services | Where-Object {
+      $_.state -ne "Running" -or $_.startMode -ne "Auto" -or
+      $_.startName -ne "NT SERVICE\$($_.name)" -or $_.dependencies.Count -ne 0 -or
+      $_.serviceSidType -ne 3 -or $_.failureActionsOnNonCrashFailures -ne 1 -or
+      -not $_.wrapperPathMatches -or $_.childProcessId -eq 0 -or
+      $_.childParentProcessId -ne $_.processId -or $_.childExecutablePath -ne $_.expectedChildExecutablePath
+    }).Count -eq 0 -and
+    @($Services | ForEach-Object { $_.processId } | Select-Object -Unique).Count -eq 2
 }
 
 function ConvertTo-CommandLineToken {
@@ -715,14 +786,7 @@ try {
   $payloadRoot = Get-PayloadRoot
   $serviceEvidence = Get-ServiceEvidence -PayloadRoot $payloadRoot
   Add-Check -Name "independent-auto-services" -Passed (
-    @($serviceEvidence | Where-Object {
-      $_.state -ne "Running" -or $_.startMode -ne "Auto" -or
-      $_.startName -ne "NT SERVICE\$($_.name)" -or $_.dependencies.Count -ne 0 -or
-      $_.serviceSidType -ne 3 -or $_.failureActionsOnNonCrashFailures -ne 1 -or
-      -not $_.wrapperPathMatches -or $_.childProcessId -eq 0 -or
-      $_.childParentProcessId -ne $_.processId -or $_.childExecutablePath -ne $_.expectedChildExecutablePath
-    }).Count -eq 0 -and
-    @($serviceEvidence | ForEach-Object { $_.processId } | Select-Object -Unique).Count -eq 2
+    Test-ExactServices -Services @($serviceEvidence)
   ) -Details $serviceEvidence
 
   $payloadManifest = Get-Content -LiteralPath (Join-Path $payloadRoot "payload-manifest.json") -Raw | ConvertFrom-Json
@@ -755,13 +819,16 @@ try {
     @($runtimeHashes | Where-Object { -not $_.passed }).Count -eq 0
   ) -Details @{ components = $payloadManifest.components; provenance = $runtimeProvenance; executableHashes = $runtimeHashes }
 
-  $postgresqlAcl = Get-Acl -LiteralPath (Join-Path $dataRoot "postgresql")
-  $postgresqlAclIdentities = @($postgresqlAcl.Access | ForEach-Object { $_.IdentityReference.Value })
+  $postgresqlServiceSid = ([Security.Principal.NTAccount]::new("NT SERVICE\$postgresqlServiceName")).Translate(
+    [Security.Principal.SecurityIdentifier]
+  ).Value
+  $postgresqlAclExpectedSids = @("S-1-5-18", "S-1-5-32-544", $postgresqlServiceSid)
+  $postgresqlAclEvidence = Get-ExactDirectoryAclEvidence `
+    -Path (Join-Path $dataRoot "postgresql") `
+    -ExpectedSids $postgresqlAclExpectedSids
   Add-Check -Name "dedicated-protected-postgresql-data-directory" -Passed (
-    $postgresqlAcl.AreAccessRulesProtected -and
-    $postgresqlAclIdentities -contains "NT SERVICE\$postgresqlServiceName" -and
-    @($postgresqlAclIdentities | Where-Object { $_ -in @("BUILTIN\Users", "NT AUTHORITY\Authenticated Users", "Everyone") }).Count -eq 0
-  ) -Details @{ path = (Join-Path $dataRoot "postgresql"); sddl = $postgresqlAcl.Sddl }
+    $postgresqlAclEvidence.exact
+  ) -Details $postgresqlAclEvidence
 
   $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 31311 | Select-Object LocalAddress, LocalPort, OwningProcess)
   Add-Check -Name "postgresql-loopback-listeners" -Passed (
@@ -769,11 +836,13 @@ try {
     @($listeners | Where-Object { $_.LocalAddress -notin @("127.0.0.1", "::1") }).Count -eq 0
   ) -Details $listeners
 
-  $roleRows = Invoke-Psql -Role schema-owner -Sql "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication FROM pg_roles WHERE rolname IN ('breev_runtime','breev_schema_owner') ORDER BY rolname;"
+  $roleRows = Invoke-Psql -Role schema-owner -Sql "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('breev_runtime','breev_schema_owner') ORDER BY rolname;"
+  $roleMembershipRows = Invoke-Psql -Role schema-owner -Sql "SELECT member_role.rolname || '|' || granted_role.rolname FROM pg_auth_members membership JOIN pg_roles member_role ON member_role.oid = membership.member JOIN pg_roles granted_role ON granted_role.oid = membership.roleid WHERE member_role.rolname IN ('breev_runtime','breev_schema_owner') ORDER BY member_role.rolname, granted_role.rolname;"
   Add-Check -Name "separate-least-privilege-database-roles" -Passed (
-    $roleRows -match 'breev_runtime\|f\|f\|f\|f\|f' -and
-    $roleRows -match 'breev_schema_owner\|f\|f\|f\|f\|f'
-  ) -Details $roleRows
+    $roleRows -match 'breev_runtime\|f\|f\|f\|f\|f\|f' -and
+    $roleRows -match 'breev_schema_owner\|f\|f\|f\|f\|f\|f' -and
+    [string]::IsNullOrWhiteSpace($roleMembershipRows)
+  ) -Details @{ attributes = $roleRows; memberships = $roleMembershipRows }
   Invoke-Psql -Role runtime -Sql "CREATE TABLE public.issue34_forbidden(id integer);" -ExpectFailure | Out-Null
   Invoke-Psql -Role runtime -Sql "SET ROLE breev_schema_owner;" -ExpectFailure | Out-Null
   Add-Check -Name "runtime-role-cannot-own-or-assume-schema-owner" -Passed $true
@@ -909,6 +978,24 @@ try {
   Add-Content -LiteralPath $apiEntryPath -Value "`n// issue-34 intentional repair corruption" -Encoding UTF8
   $corruptedApiEntryHash = (Get-FileHash -LiteralPath $apiEntryPath -Algorithm SHA256).Hash.ToLowerInvariant()
   Add-Check -Name "repair-seam-corruption-created" -Passed ($corruptedApiEntryHash -ne $apiEntryHash)
+  $unexpectedAclSid = "S-1-5-32-546"
+  $postgresqlDataRoot = Join-Path $dataRoot "postgresql"
+  $unexpectedChildAclPath = Join-Path $postgresqlDataRoot "PG_VERSION"
+  & icacls.exe $postgresqlDataRoot "/grant" "*${unexpectedAclSid}:(RX)" "/Q" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Could not create the intentional repair ACL seam" }
+  & icacls.exe $unexpectedChildAclPath "/grant" "*${unexpectedAclSid}:R" "/Q" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Could not create the intentional descendant repair ACL seam" }
+  $unexpectedAclEvidence = Get-ExactDirectoryAclEvidence `
+    -Path $postgresqlDataRoot `
+    -ExpectedSids $postgresqlAclExpectedSids
+  $unexpectedChildAclSids = @((Get-Acl -LiteralPath $unexpectedChildAclPath).Access | ForEach-Object {
+    $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+  })
+  Add-Check -Name "repair-seam-unexpected-access-created" -Passed (
+    -not $unexpectedAclEvidence.exact -and
+    @($unexpectedAclEvidence.rules | Where-Object { $_.sid -eq $unexpectedAclSid }).Count -eq 1 -and
+    $unexpectedAclSid -in $unexpectedChildAclSids
+  ) -Details @{ root = $unexpectedAclEvidence; descendant = $unexpectedChildAclPath; descendantSids = $unexpectedChildAclSids }
   Invoke-Installer -Path $InstallerPath -Repair | Out-Null
   Wait-Healthy | Out-Null
   Add-Check -Name "repair-restores-corrupted-binary" -Passed (
@@ -917,6 +1004,17 @@ try {
   Add-Check -Name "repair-preserves-data-and-configuration" -Passed (
     (Test-PreservationMarker -Expected $preservationMarker) -and (Assert-Witness -WitnessId $witnessId)
   )
+  $repairedAclEvidence = Get-ExactDirectoryAclEvidence `
+    -Path $postgresqlDataRoot `
+    -ExpectedSids $postgresqlAclExpectedSids
+  $repairedChildAclSids = @((Get-Acl -LiteralPath $unexpectedChildAclPath).Access | ForEach-Object {
+    $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+  })
+  Add-Check -Name "repair-removes-unexpected-access" -Passed (
+    $repairedAclEvidence.exact -and
+    @($repairedAclEvidence.rules | Where-Object { $_.sid -eq $unexpectedAclSid }).Count -eq 0 -and
+    $unexpectedAclSid -notin $repairedChildAclSids
+  ) -Details @{ root = $repairedAclEvidence; descendant = $unexpectedChildAclPath; descendantSids = $repairedChildAclSids }
   $result.signing["afterRepair"] = Get-InstalledSigningCoverage -Root $installRoot
   Add-Check -Name "installed-files-signed-after-repair" -Passed (
     $result.signing.afterRepair.allSignaturesValid -and
@@ -934,9 +1032,37 @@ try {
     Add-Check -Name "failed-install-$failurePoint-recovers" -Passed (Assert-Witness -WitnessId $witnessId)
   }
 
+  $preUpdateServiceEvidence = Get-ServiceEvidence -PayloadRoot $payloadRoot
+  $preUpdateProcessIds = @($preUpdateServiceEvidence | ForEach-Object {
+    Get-ProcessTreeIds -RootProcessId $_.processId
+  } | Sort-Object -Unique)
+  $updateStartedAtUtc = [DateTime]::UtcNow
   Invoke-Installer -Path $UpdateInstallerPath | Out-Null
   Wait-Healthy | Out-Null
   Add-Check -Name "installer-update-version" -Passed ((Get-InstalledVersion) -eq $UpdateInstallerVersion) -Details @{ expected = $UpdateInstallerVersion; actual = (Get-InstalledVersion) }
+  $postUpdatePayloadRoot = Get-PayloadRoot
+  $postUpdateServiceEvidence = Get-ServiceEvidence -PayloadRoot $postUpdatePayloadRoot
+  $updateTreeExited = Wait-ProcessTreeExit -ProcessIds $preUpdateProcessIds
+  $updateLifecycle = Get-Content -LiteralPath (Join-Path $dataRoot "state\lifecycle.json") -Raw | ConvertFrom-Json
+  $updateLifecycleMatched = $updateLifecycle.action -eq "Install" -and
+    $updateLifecycle.status -eq "healthy" -and
+    [string]::IsNullOrEmpty($updateLifecycle.failurePoint) -and
+    [DateTime]::Parse($updateLifecycle.completedAtUtc).ToUniversalTime() -ge $updateStartedAtUtc
+  Add-Check -Name "installer-update-replaces-service-trees" -Passed (
+    $updateTreeExited -and
+    (Test-ExactServices -Services @($postUpdateServiceEvidence)) -and
+    @($postUpdateServiceEvidence | Where-Object {
+      $_.processId -in $preUpdateProcessIds -or $_.childProcessId -in $preUpdateProcessIds
+    }).Count -eq 0 -and
+    $updateLifecycleMatched
+  ) -Details @{
+    before = $preUpdateServiceEvidence
+    previousProcessIds = $preUpdateProcessIds
+    previousTreesExited = $updateTreeExited
+    after = $postUpdateServiceEvidence
+    lifecycle = $updateLifecycle
+  }
+  $payloadRoot = $postUpdatePayloadRoot
   Add-Check -Name "installer-update-preserves-data-and-configuration" -Passed (
     (Test-PreservationMarker -Expected $preservationMarker) -and (Assert-Witness -WitnessId $witnessId)
   )
@@ -968,12 +1094,8 @@ try {
   Invoke-Installer -Path $UpdateInstallerPath | Out-Null
   Wait-Healthy | Out-Null
   $reinstalledServiceEvidence = Get-ServiceEvidence -PayloadRoot (Get-PayloadRoot)
-  $reinstalledServicesAreExact = @($reinstalledServiceEvidence).Count -eq 2 -and
+  $reinstalledServicesAreExact = (Test-ExactServices -Services @($reinstalledServiceEvidence)) -and
     @($reinstalledServiceEvidence | Where-Object {
-      $_.state -ne "Running" -or $_.startMode -ne "Auto" -or
-      $_.startName -ne "NT SERVICE\$($_.name)" -or $_.dependencies.Count -ne 0 -or
-      -not $_.wrapperPathMatches -or $_.childProcessId -eq 0 -or
-      $_.childParentProcessId -ne $_.processId -or $_.childExecutablePath -ne $_.expectedChildExecutablePath -or
       $_.processId -in $preUninstallProcessIds -or $_.childProcessId -in $preUninstallProcessIds
     }).Count -eq 0
   $result.signing["afterReinstall"] = Get-InstalledSigningCoverage -Root $installRoot

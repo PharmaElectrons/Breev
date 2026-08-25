@@ -437,9 +437,12 @@ Add-Criterion $criteria "AC-7" "Clean install, repair, update, failed installati
   (Get-RuntimeCheck $runtime "clean-snapshot") -and
   (Get-RuntimeCheck $runtime "initial-local-cycle") -and
   (Get-RuntimeCheck $runtime "repair-seam-corruption-created") -and
+  (Get-RuntimeCheck $runtime "repair-seam-unexpected-access-created") -and
   (Get-RuntimeCheck $runtime "repair-restores-corrupted-binary") -and
+  (Get-RuntimeCheck $runtime "repair-removes-unexpected-access") -and
   (Get-RuntimeCheck $runtime "repair-preserves-data-and-configuration") -and
   (Get-RuntimeCheck $runtime "installer-update-version") -and
+  (Get-RuntimeCheck $runtime "installer-update-replaces-service-trees") -and
   (Get-RuntimeCheck $runtime "installer-update-preserves-data-and-configuration") -and
   (Get-RuntimeCheck $runtime "uninstall-completes") -and
   (Get-RuntimeCheck $runtime "uninstall-preserves-data-and-configuration") -and
