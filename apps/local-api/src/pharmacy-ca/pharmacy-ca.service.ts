@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { LocalDatabaseService } from "../local-database.service.js";
 import {
   createPersistedKeyPair,
+  deletePersistedKey,
   openPersistedKey,
   selectKeyStorageProvider,
   type CngKeyHandle,
@@ -11,6 +12,7 @@ import {
   buildCACertificate,
   buildDeviceCertificate,
   buildServerCertificate,
+  caCertificateMatches,
   createUuidV7,
   validateCertificate,
   type CertRole,
@@ -50,87 +52,117 @@ export class PharmacyCaService {
 
   public async initializeCA(): Promise<void> {
     const pool = this.localDatabase.requirePool();
-    const existing = await pool.query<{
-      installation_id: string;
-      ca_certificate: string;
-      ca_fingerprint: string;
-      provider_name: string;
-      assurance_level: "platform-tpm" | "software-cng-fallback";
-    }>(
-      `select installation_id, ca_certificate, ca_fingerprint,
-              provider_name, assurance_level
-       from pharmacy_ca
-       where singleton = true`,
-    );
+    const client = await pool.connect();
+    let createdKey: { keyName: string; providerName: string } | undefined;
+    try {
+      await client.query("begin");
+      await client.query("select pg_advisory_xact_lock(165308857)");
+      const existing = await client.query<{
+        installation_id: string;
+        ca_certificate: string;
+        ca_fingerprint: string;
+        provider_name: string;
+        assurance_level: "platform-tpm" | "software-cng-fallback";
+      }>(
+        `select installation_id, ca_certificate, ca_fingerprint,
+                provider_name, assurance_level
+         from pharmacy_ca
+         where singleton = true`,
+      );
 
-    if (existing.rowCount === 1) {
-      const row = existing.rows[0]!;
-      let keyResult: { keyHandle: CngKeyHandle; publicKeyDer: Buffer };
-      try {
-        keyResult = openPersistedKey({
+      if (existing.rowCount === 1) {
+        const row = existing.rows[0]!;
+        let keyResult: { keyHandle: CngKeyHandle; publicKeyDer: Buffer };
+        try {
+          keyResult = openPersistedKey({
+            providerName: row.provider_name,
+            keyName: caKeyName(row.installation_id),
+          });
+        } catch (error) {
+          throw Object.assign(
+            new Error(
+              "The pharmacy CA private key is inaccessible. " +
+                "Repair is required — the CA cannot be silently replaced. " +
+                `Provider: ${row.provider_name}, key: ${caKeyName(row.installation_id)}`,
+            ),
+            { code: "PHARMACY_CA_KEY_INACCESSIBLE", cause: error },
+          );
+        }
+        if (
+          !caCertificateMatches({
+            certPem: row.ca_certificate,
+            fingerprint: row.ca_fingerprint,
+            installationId: row.installation_id,
+            publicKeyDer: keyResult.publicKeyDer,
+          })
+        ) {
+          throw Object.assign(
+            new Error(
+              "The pharmacy CA certificate does not match its persisted key and installation identity.",
+            ),
+            { code: "PHARMACY_CA_IDENTITY_MISMATCH" },
+          );
+        }
+        const state: PharmacyCaState = {
+          keyHandle: keyResult.keyHandle,
+          publicKeyDer: keyResult.publicKeyDer,
+          caCertPem: row.ca_certificate,
+          installationId: row.installation_id,
           providerName: row.provider_name,
-          keyName: caKeyName(row.installation_id),
-        });
-      } catch (error) {
-        throw Object.assign(
-          new Error(
-            "The pharmacy CA private key is inaccessible. " +
-              "Repair is required — the CA cannot be silently replaced. " +
-              `Provider: ${row.provider_name}, key: ${caKeyName(row.installation_id)}`,
-          ),
-          { code: "PHARMACY_CA_KEY_INACCESSIBLE", cause: error },
-        );
+          assuranceLevel: row.assurance_level,
+        };
+        await client.query("commit");
+        this.state = state;
+        return;
       }
+
+      const { providerName, assuranceLevel } = selectKeyStorageProvider();
+      const installationId = createUuidV7();
+      createdKey = { providerName, keyName: caKeyName(installationId) };
+      const keyResult = createPersistedKeyPair({
+        ...createdKey,
+        algorithm: "RSA",
+        keyBits: 2048,
+      });
+      const issued = buildCACertificate({
+        keyHandle: keyResult.keyHandle,
+        publicKeyDer: keyResult.publicKeyDer,
+        installationId,
+        validityDays: CA_VALIDITY_DAYS,
+      });
+
+      await client.query(
+        `insert into pharmacy_ca
+           (singleton, installation_id, ca_fingerprint, ca_certificate,
+            provider_name, assurance_level)
+         values (true, $1, $2, $3, $4, $5)`,
+        [
+          installationId,
+          issued.fingerprint,
+          issued.certPem,
+          providerName,
+          assuranceLevel,
+        ],
+      );
+      await client.query("commit");
+      createdKey = undefined;
       this.state = {
         keyHandle: keyResult.keyHandle,
         publicKeyDer: keyResult.publicKeyDer,
-        caCertPem: row.ca_certificate,
-        installationId: row.installation_id,
-        providerName: row.provider_name,
-        assuranceLevel: row.assurance_level,
-      };
-      return;
-    }
-
-    const { providerName, assuranceLevel } = selectKeyStorageProvider();
-    const installationId = createUuidV7();
-
-    const keyResult = createPersistedKeyPair({
-      providerName,
-      keyName: caKeyName(installationId),
-      algorithm: "RSA",
-      keyBits: 2048,
-    });
-
-    const issued = buildCACertificate({
-      keyHandle: keyResult.keyHandle,
-      publicKeyDer: keyResult.publicKeyDer,
-      installationId,
-      validityDays: CA_VALIDITY_DAYS,
-    });
-
-    await pool.query(
-      `insert into pharmacy_ca
-         (singleton, installation_id, ca_fingerprint, ca_certificate,
-          provider_name, assurance_level)
-       values (true, $1, $2, $3, $4, $5)`,
-      [
+        caCertPem: issued.certPem,
         installationId,
-        issued.fingerprint,
-        issued.certPem,
         providerName,
         assuranceLevel,
-      ],
-    );
-
-    this.state = {
-      keyHandle: keyResult.keyHandle,
-      publicKeyDer: keyResult.publicKeyDer,
-      caCertPem: issued.certPem,
-      installationId,
-      providerName,
-      assuranceLevel,
-    };
+      };
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      if (createdKey !== undefined) {
+        deletePersistedKey(createdKey);
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   public async issueServerCertificate(
@@ -208,27 +240,33 @@ export class PharmacyCaService {
   public validateCertificate(
     certDer: Buffer,
     expectedRole: CertRole,
-    now?: Date,
+    options?: {
+      readonly expectedServerIp?: string;
+      readonly now?: Date;
+    },
   ): CertValidationResult {
     const state = this.requireState();
     return validateCertificate({
       certDer,
       caCertPem: state.caCertPem,
       expectedRole,
+      expectedServerIp: options?.expectedServerIp,
       installationId: state.installationId,
-      now,
+      now: options?.now,
     });
   }
 
   public async checkDeviceRevocation(
     deviceId: string,
+    fingerprint: string,
   ): Promise<{ revoked: true; reason: string } | { revoked: false }> {
     const pool = this.localDatabase.requirePool();
     const result = await pool.query<{
       revoked_at: Date | null;
       revocation_reason: string | null;
+      cert_fingerprint: string | null;
     }>(
-      `select revoked_at, revocation_reason
+      `select revoked_at, revocation_reason, cert_fingerprint
        from terminal_devices
        where id = $1`,
       [deviceId],
@@ -239,6 +277,9 @@ export class PharmacyCaService {
         revoked: true,
         reason: row?.revocation_reason ?? "device not registered",
       };
+    }
+    if (row.cert_fingerprint !== fingerprint) {
+      return { revoked: true, reason: "certificate replaced" };
     }
     return { revoked: false };
   }
