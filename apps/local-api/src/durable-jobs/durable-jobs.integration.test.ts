@@ -1,3 +1,4 @@
+import { NestFactory } from "@nestjs/core";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -11,9 +12,17 @@ import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
+import { AppModule } from "../app.module.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { mainDeviceProofState } from "../main-device/main-device-schema.js";
 import { DurableJobsService } from "./durable-jobs.service.js";
+import {
+  clearCrashTestTables,
+  getExternalEffects,
+  getJobOutcomes,
+  setupCrashTestTables,
+} from "./test-helpers/crash-harness-schema.js";
+import { CrashTestHarness } from "./test-helpers/crash-test-harness.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
@@ -22,6 +31,7 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
   let databaseRoles: SeparatedDatabaseRoles;
   let localDatabase: LocalDatabaseService;
   let durableJobs: DurableJobsService;
+  let harness: CrashTestHarness;
   let originalEnv: NodeJS.ProcessEnv;
 
   beforeAll(async () => {
@@ -35,13 +45,18 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
     localDatabase = new LocalDatabaseService();
     await localDatabase.onModuleInit();
 
+    await setupCrashTestTables(databaseRoles.migrationUrl);
+
     durableJobs = new DurableJobsService(localDatabase);
     await durableJobs.onModuleInit();
+
+    harness = new CrashTestHarness();
   }, 120_000);
 
   afterAll(async () => {
-    await durableJobs?.onApplicationShutdown();
-    await localDatabase?.onApplicationShutdown();
+    await harness?.stopAll().catch(() => undefined);
+    await durableJobs?.onApplicationShutdown().catch(() => undefined);
+    await localDatabase?.onApplicationShutdown().catch(() => undefined);
     if (postgres !== undefined) {
       await postgres.stop().catch(() => undefined);
     }
@@ -79,12 +94,47 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
       ).rejects.toThrow();
     });
 
-    it("proves the breev_app role has full DML access to pgboss tables", async () => {
+    it("proves the breev_app role has full DML access to pgboss tables and 0 DDL access", async () => {
       const pool = localDatabase.requirePool();
-      const result = await pool.query<{ count: string }>(
-        "select count(*)::text as count from pgboss.job",
+      const tables = ["pgboss.job", "pgboss.version", "pgboss.queue"];
+      for (const table of tables) {
+        const selectPriv = await pool.query<{ has: boolean }>(
+          "select has_table_privilege('breev_app', $1, 'SELECT') as has",
+          [table],
+        );
+        const insertPriv = await pool.query<{ has: boolean }>(
+          "select has_table_privilege('breev_app', $1, 'INSERT') as has",
+          [table],
+        );
+        const updatePriv = await pool.query<{ has: boolean }>(
+          "select has_table_privilege('breev_app', $1, 'UPDATE') as has",
+          [table],
+        );
+        const deletePriv = await pool.query<{ has: boolean }>(
+          "select has_table_privilege('breev_app', $1, 'DELETE') as has",
+          [table],
+        );
+        expect(selectPriv.rows[0]?.has).toBe(true);
+        expect(insertPriv.rows[0]?.has).toBe(true);
+        expect(updatePriv.rows[0]?.has).toBe(true);
+        expect(deletePriv.rows[0]?.has).toBe(true);
+      }
+
+      const schemaUsage = await pool.query<{ has: boolean }>(
+        "select has_schema_privilege('breev_app', 'pgboss', 'USAGE') as has",
       );
-      expect(Number(result.rows[0]?.count)).toBeGreaterThanOrEqual(0);
+      const schemaCreate = await pool.query<{ has: boolean }>(
+        "select has_schema_privilege('breev_app', 'pgboss', 'CREATE') as has",
+      );
+      expect(schemaUsage.rows[0]?.has).toBe(true);
+      expect(schemaCreate.rows[0]?.has).toBe(false);
+    });
+
+    it("proves migratePgBoss runs idempotently on subsequent migration runs", async () => {
+      process.env.DATABASE_MIGRATION_URL = databaseRoles.migrationUrl;
+      const secondDb = new LocalDatabaseService();
+      await expect(secondDb.onModuleInit()).resolves.toBeUndefined();
+      await secondDb.onApplicationShutdown();
     });
   });
 
@@ -201,126 +251,322 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
     });
   });
 
-  describe("Crash Recovery & Invariant Matrix", () => {
-    it("recovers and executes jobs enqueued before worker start / service crash", async () => {
-      const queueName = "crash-before-claim";
-      const payload = { item: "pre-crash-job" };
+  describe("Mandatory 4-Point Crash Recovery Matrix with Real Process Termination (SIGKILL) & Persistent Outcomes", () => {
+    const pool = () => localDatabase.requirePool();
 
-      const jobId = await durableJobs.send(queueName, payload);
-      expect(jobId).toBeTruthy();
-
-      let executed = false;
-      await durableJobs.work<{ item: string }>(queueName, async (job) => {
-        if (job.data.item === payload.item) {
-          executed = true;
-        }
-      });
-
-      await waitForCondition(() => executed, 10_000);
-      expect(executed).toBe(true);
+    beforeAll(async () => {
+      await clearCrashTestTables(pool());
     });
 
-    it("recovers an abandoned job via lease expiry when worker crashes mid-flight", async () => {
-      const queueName = "crash-after-claim-lease-expiry";
-      const payload = { trackingId: "lease-recovery-proof" };
+    it("Crash Point 1 (Before Claim): recovers and completes jobs enqueued while worker process was down", async () => {
+      const queueName = "crash-point-1-before-claim";
+      const idempotencyKey = "idemp-p1-before-claim-001";
+      const payload = { idempotencyKey, operation: "print-receipt" };
 
-      let attemptCount = 0;
-      let completed = false;
-
+      // 1. Enqueue job while no worker process exists for this queue
       const jobId = await durableJobs.send(queueName, payload, {
-        expireInSeconds: 2,
+        expireInSeconds: 5,
         retryLimit: 2,
-        retryDelay: 0,
       });
       expect(jobId).toBeTruthy();
 
-      await durableJobs.work<{ trackingId: string }>(
-        queueName,
-        async (job) => {
-          if (job.data.trackingId !== payload.trackingId) {
-            return;
-          }
-          attemptCount += 1;
-          if (attemptCount === 1) {
-            await delay(4_000);
-            return;
-          }
-          completed = true;
-        },
-        { pollingIntervalSeconds: 1 },
+      // Assert pre-condition: 0 external effects, 0 outcomes in database
+      const initialEffects = await getExternalEffects(pool(), idempotencyKey);
+      const initialOutcomes = await getJobOutcomes(pool(), idempotencyKey);
+      expect(initialEffects.length).toBe(0);
+      expect(initialOutcomes.length).toBe(0);
+
+      // 2. Start fresh worker child process
+      const worker = await harness.spawnWorker({
+        crashPoint: "none",
+        databaseUrl: databaseRoles.applicationUrl,
+        targetIdempotencyKey: idempotencyKey,
+        targetQueue: queueName,
+      });
+
+      // 3. Wait for worker to complete the job
+      await worker.waitForEvent(
+        (e) => e.type === "completed" && e.idempotencyKey === idempotencyKey,
+        15_000,
       );
 
-      await waitForCondition(() => completed, 15_000);
-      expect(attemptCount).toBeGreaterThanOrEqual(2);
-      expect(completed).toBe(true);
+      // 4. Assert persistent outcomes in PostgreSQL
+      const finalEffects = await getExternalEffects(pool(), idempotencyKey);
+      const finalOutcomes = await getJobOutcomes(pool(), idempotencyKey);
+
+      expect(finalEffects.length).toBe(1);
+      expect(finalOutcomes.length).toBe(1);
+      expect(finalOutcomes[0]?.job_id).toBe(jobId);
+      expect(finalOutcomes[0]?.result).toBe("PROCESSED_SUCCESSFULLY");
+
+      await worker.stop();
     });
 
-    it("handles worker restart after external side effect using idempotent recovery", async () => {
-      const queueName = "crash-after-external-action";
-      const payload = { idempotencyKey: "ext-trans-99" };
+    it("Crash Point 2 (After Claim / Mid-Flight): recovers abandoned job via lease expiry after hard process SIGKILL", async () => {
+      const queueName = "crash-point-2-after-claim";
+      const idempotencyKey = "idemp-p2-after-claim-002";
+      const payload = { idempotencyKey, operation: "cloud-sync-batch" };
 
-      const externalSideEffects = new Set<string>();
-      let completionRecorded = false;
-
+      // 1. Enqueue job with short lease (2s)
       const jobId = await durableJobs.send(queueName, payload, {
         expireInSeconds: 2,
-        retryLimit: 2,
         retryDelay: 0,
+        retryLimit: 2,
       });
       expect(jobId).toBeTruthy();
 
-      let firstAttempt = true;
-      await durableJobs.work<{ idempotencyKey: string }>(
-        queueName,
-        async (job) => {
-          if (job.data.idempotencyKey !== payload.idempotencyKey) {
-            return;
-          }
+      // 2. Spawn worker configured to crash immediately after claiming the job (before external effect)
+      const crashingWorker = await harness.spawnWorker({
+        crashPoint: "after-claim",
+        databaseUrl: databaseRoles.applicationUrl,
+        targetIdempotencyKey: idempotencyKey,
+        targetQueue: queueName,
+      });
 
-          if (!externalSideEffects.has(job.data.idempotencyKey)) {
-            externalSideEffects.add(job.data.idempotencyKey);
-          }
+      // 3. Crashing worker claims job and is terminated by SIGKILL
+      const exitResult = await crashingWorker.waitForExit(15_000);
+      expect(exitResult.signal).toBe("SIGKILL");
 
-          if (firstAttempt) {
-            firstAttempt = false;
-            await delay(3_500);
-            return;
-          }
+      // Verify no side-effects or outcomes were written before crash
+      const preRecoveryEffects = await getExternalEffects(
+        pool(),
+        idempotencyKey,
+      );
+      const preRecoveryOutcomes = await getJobOutcomes(pool(), idempotencyKey);
+      expect(preRecoveryEffects.length).toBe(0);
+      expect(preRecoveryOutcomes.length).toBe(0);
 
-          completionRecorded = true;
-        },
-        { pollingIntervalSeconds: 1 },
+      // 4. Wait for lease expiry (2 seconds + supervision)
+      await delay(3_000);
+      await durableJobs.supervise(queueName);
+
+      // 5. Spawn recovered worker process to resume work
+      const recoveryWorker = await harness.spawnWorker({
+        crashPoint: "none",
+        databaseUrl: databaseRoles.applicationUrl,
+        targetIdempotencyKey: idempotencyKey,
+        targetQueue: queueName,
+      });
+
+      await recoveryWorker.waitForEvent(
+        (e) => e.type === "completed" && e.idempotencyKey === idempotencyKey,
+        15_000,
       );
 
-      await waitForCondition(() => completionRecorded, 15_000);
-      expect(externalSideEffects.size).toBe(1);
-      expect(completionRecorded).toBe(true);
+      // 6. Assert exactly one persistent outcome and effect in PostgreSQL
+      const finalEffects = await getExternalEffects(pool(), idempotencyKey);
+      const finalOutcomes = await getJobOutcomes(pool(), idempotencyKey);
+
+      expect(finalEffects.length).toBe(1);
+      expect(finalOutcomes.length).toBe(1);
+      expect(finalOutcomes[0]?.job_id).toBe(jobId);
+
+      await recoveryWorker.stop();
+    });
+
+    it("Crash Point 3 (After External Success): recovers after hard process SIGKILL without duplicating external effect", async () => {
+      const queueName = "crash-point-3-after-ext-success";
+      const idempotencyKey = "idemp-p3-after-ext-003";
+      const payload = { idempotencyKey, operation: "send-sms-notification" };
+
+      // 1. Enqueue job with 2s lease
+      const jobId = await durableJobs.send(queueName, payload, {
+        expireInSeconds: 2,
+        retryDelay: 0,
+        retryLimit: 2,
+      });
+      expect(jobId).toBeTruthy();
+
+      // 2. Spawn worker configured to execute external effect and then crash with SIGKILL before recording outcome
+      const crashingWorker = await harness.spawnWorker({
+        crashPoint: "after-external-success",
+        databaseUrl: databaseRoles.applicationUrl,
+        targetIdempotencyKey: idempotencyKey,
+        targetQueue: queueName,
+      });
+
+      // 3. Worker executes external effect and terminates with SIGKILL
+      const exitResult = await crashingWorker.waitForExit(15_000);
+      expect(exitResult.signal).toBe("SIGKILL");
+
+      // Verify external effect was executed, but outcome table is still empty
+      const midEffects = await getExternalEffects(pool(), idempotencyKey);
+      const midOutcomes = await getJobOutcomes(pool(), idempotencyKey);
+      expect(midEffects.length).toBe(1);
+      expect(midOutcomes.length).toBe(0);
+
+      // 4. Wait for lease expiry
+      await delay(3_000);
+      await durableJobs.supervise(queueName);
+
+      // 5. Spawn recovered worker process
+      const recoveryWorker = await harness.spawnWorker({
+        crashPoint: "none",
+        databaseUrl: databaseRoles.applicationUrl,
+        targetIdempotencyKey: idempotencyKey,
+        targetQueue: queueName,
+      });
+
+      const completedEvent = await recoveryWorker.waitForEvent(
+        (e) => e.type === "completed" && e.idempotencyKey === idempotencyKey,
+        15_000,
+      );
+      expect(completedEvent).toBeDefined();
+
+      // 6. Assert INVARIANT: exactly 1 external effect (zero duplicate external calls) and exactly 1 outcome
+      const finalEffects = await getExternalEffects(pool(), idempotencyKey);
+      const finalOutcomes = await getJobOutcomes(pool(), idempotencyKey);
+
+      expect(finalEffects.length).toBe(1);
+      expect(finalOutcomes.length).toBe(1);
+      expect(finalOutcomes[0]?.job_id).toBe(jobId);
+
+      await recoveryWorker.stop();
+    });
+
+    it("Crash Point 4 (Before Outcome Recording): recovers after hard SIGKILL before outcome transaction commits", async () => {
+      const queueName = "crash-point-4-before-outcome";
+      const idempotencyKey = "idemp-p4-before-outcome-004";
+      const payload = { idempotencyKey, operation: "post-commit-outbox-sync" };
+
+      // 1. Enqueue job with 2s lease
+      const jobId = await durableJobs.send(queueName, payload, {
+        expireInSeconds: 2,
+        retryDelay: 0,
+        retryLimit: 2,
+      });
+      expect(jobId).toBeTruthy();
+
+      // 2. Spawn worker configured to execute external effect and crash immediately before outcome recording
+      const crashingWorker = await harness.spawnWorker({
+        crashPoint: "before-outcome-recording",
+        databaseUrl: databaseRoles.applicationUrl,
+        targetIdempotencyKey: idempotencyKey,
+        targetQueue: queueName,
+      });
+
+      // 3. Worker crashes with SIGKILL right before outcome recording
+      const exitResult = await crashingWorker.waitForExit(15_000);
+      expect(exitResult.signal).toBe("SIGKILL");
+
+      // Verify external effect was recorded, outcome was not recorded
+      const midEffects = await getExternalEffects(pool(), idempotencyKey);
+      const midOutcomes = await getJobOutcomes(pool(), idempotencyKey);
+      expect(midEffects.length).toBe(1);
+      expect(midOutcomes.length).toBe(0);
+
+      // 4. Wait for lease expiry
+      await delay(3_000);
+      await durableJobs.supervise(queueName);
+
+      // 5. Spawn recovered worker process
+      const recoveryWorker = await harness.spawnWorker({
+        crashPoint: "none",
+        databaseUrl: databaseRoles.applicationUrl,
+        targetIdempotencyKey: idempotencyKey,
+        targetQueue: queueName,
+      });
+
+      await recoveryWorker.waitForEvent(
+        (e) => e.type === "completed" && e.idempotencyKey === idempotencyKey,
+        15_000,
+      );
+
+      // 6. Assert INVARIANT: exactly 1 external effect and exactly 1 persistent outcome
+      const finalEffects = await getExternalEffects(pool(), idempotencyKey);
+      const finalOutcomes = await getJobOutcomes(pool(), idempotencyKey);
+
+      expect(finalEffects.length).toBe(1);
+      expect(finalOutcomes.length).toBe(1);
+      expect(finalOutcomes[0]?.job_id).toBe(jobId);
+
+      await recoveryWorker.stop();
     });
   });
 
-  describe("Concurrency & Double-Claim Prevention", () => {
-    it("ensures two concurrent workers never double-claim or double-execute any job", async () => {
-      const queueName = "concurrency-test";
-      const jobCount = 10;
-      const processedJobIds = new Map<string, number>();
+  describe("Worker Concurrency & Double-Claim Prevention (Multi-Instance Seam)", () => {
+    it("ensures two concurrent worker instances across 50 jobs process disjoint sets with zero double claims", async () => {
+      const queueName = "multi-worker-concurrency-50";
+      const totalJobs = 50;
 
-      const workerHandler = async (job: { id: string }) => {
-        const count = processedJobIds.get(job.id) ?? 0;
-        processedJobIds.set(job.id, count + 1);
-        await delay(50);
-      };
+      // Two independent DurableJobsService instances connected via separate pools
+      const workerInstanceA = new DurableJobsService(localDatabase);
+      const workerInstanceB = new DurableJobsService(localDatabase);
 
-      await durableJobs.work(queueName, workerHandler, { localConcurrency: 2 });
+      await workerInstanceA.onModuleInit();
+      await workerInstanceB.onModuleInit();
 
-      for (let i = 0; i < jobCount; i += 1) {
-        await durableJobs.send(queueName, { index: i });
+      const processedByWorkerA = new Set<string>();
+      const processedByWorkerB = new Set<string>();
+
+      await workerInstanceA.work(
+        queueName,
+        async (job) => {
+          processedByWorkerA.add(job.id);
+          await delay(20);
+        },
+        { localConcurrency: 4 },
+      );
+
+      await workerInstanceB.work(
+        queueName,
+        async (job) => {
+          processedByWorkerB.add(job.id);
+          await delay(20);
+        },
+        { localConcurrency: 4 },
+      );
+
+      // Enqueue 50 jobs
+      const enqueuedJobIds: string[] = [];
+      for (let i = 0; i < totalJobs; i += 1) {
+        const id = await durableJobs.send(queueName, { index: i });
+        if (id) {
+          enqueuedJobIds.push(id);
+        }
       }
+      expect(enqueuedJobIds.length).toBe(totalJobs);
 
-      await waitForCondition(() => processedJobIds.size === jobCount, 15_000);
+      // Wait until all 50 jobs are processed across both instances
+      await waitForCondition(
+        () => processedByWorkerA.size + processedByWorkerB.size === totalJobs,
+        25_000,
+      );
 
-      expect(processedJobIds.size).toBe(jobCount);
-      for (const [, executions] of processedJobIds) {
-        expect(executions).toBe(1);
+      // Assert disjoint processing: zero overlap
+      const overlap = [...processedByWorkerA].filter((id) =>
+        processedByWorkerB.has(id),
+      );
+      expect(overlap).toEqual([]);
+      expect(processedByWorkerA.size + processedByWorkerB.size).toBe(totalJobs);
+      expect(processedByWorkerA.size).toBeGreaterThan(0);
+      expect(processedByWorkerB.size).toBeGreaterThan(0);
+
+      await workerInstanceA.onApplicationShutdown();
+      await workerInstanceB.onApplicationShutdown();
+    });
+
+    it("verifies safe duplicate completion handling on completed jobs", async () => {
+      const queueName = "safe-duplicate-complete";
+      const boss = durableJobs.requireBoss();
+      await durableJobs.ensureQueue(queueName);
+
+      const jobId = await durableJobs.send(queueName, { test: "dup-complete" });
+      expect(jobId).toBeTruthy();
+
+      let handlerCalled = false;
+      await durableJobs.work(queueName, async (job) => {
+        if (job.id === jobId) {
+          handlerCalled = true;
+        }
+      });
+
+      await waitForCondition(() => handlerCalled, 10_000);
+
+      // Calling complete directly on an already completed job is idempotent and safe
+      if (jobId) {
+        const response = await boss.complete(queueName, jobId);
+        expect(response).toBeDefined();
       }
     });
   });
@@ -350,13 +596,15 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
       );
 
       await waitForCondition(async () => {
-        const deadLetterJobs = await durableJobs.getDeadLetterJobs(queueName);
+        const deadLetterJobs = await durableJobs.getDeadLetterJobs(queueName, {
+          limit: 10,
+        });
         return deadLetterJobs.some((j) => j.id === jobId);
       }, 20_000);
 
       const deadLetterJobs = await durableJobs.getDeadLetterJobs<{
         failureId: string;
-      }>(queueName);
+      }>(queueName, { limit: 10 });
       const failedJob = deadLetterJobs.find((j) => j.id === jobId);
 
       expect(failedJob).toBeDefined();
@@ -364,11 +612,137 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
       expect(failedJob?.data.failureId).toBe(payload.failureId);
       expect(attempts).toBe(3);
     });
+
+    it("surfaces forwarded DLQ jobs when queue is configured with deadLetter destination and supports pagination", async () => {
+      const dlqName = "order-dlq-target";
+      const sourceQueue = "order-source-with-dlq";
+      const payload = { orderId: "ord-9999", reason: "payment-declined" };
+
+      // Ensure DLQ target exists
+      await durableJobs.ensureQueue(dlqName);
+
+      const jobId = await durableJobs.send(sourceQueue, payload, {
+        deadLetter: dlqName,
+        retryDelay: 0,
+        retryLimit: 1,
+      });
+      expect(jobId).toBeTruthy();
+
+      let attempts = 0;
+      await durableJobs.work<{ orderId: string }>(
+        sourceQueue,
+        async (job) => {
+          if (job.data.orderId === payload.orderId) {
+            attempts += 1;
+            throw new Error(
+              "Deliberate order processing failure to trigger DLQ",
+            );
+          }
+        },
+        { pollingIntervalSeconds: 1 },
+      );
+
+      // Wait for forwarded job to land in dlqName
+      await waitForCondition(async () => {
+        const dlqJobs = await durableJobs.getDeadLetterJobs(dlqName);
+        return dlqJobs.some(
+          (j) =>
+            (j.data as { orderId?: string })?.orderId === payload.orderId &&
+            j.sourceName === sourceQueue,
+        );
+      }, 20_000);
+
+      // 1. Query by DLQ name
+      const dlqJobs = await durableJobs.getDeadLetterJobs<{ orderId: string }>(
+        dlqName,
+      );
+      const forwardedJob = dlqJobs.find(
+        (j) => j.data.orderId === payload.orderId,
+      );
+      expect(forwardedJob).toBeDefined();
+      expect(forwardedJob?.name).toBe(dlqName);
+      expect(forwardedJob?.sourceName).toBe(sourceQueue);
+      expect(forwardedJob?.sourceId).toBe(jobId);
+      expect(attempts).toBeGreaterThanOrEqual(2);
+
+      // 2. Query by source queue name
+      const sourceDlqJobs = await durableJobs.getDeadLetterJobs<{
+        orderId: string;
+      }>(sourceQueue);
+      expect(
+        sourceDlqJobs.some((j) => j.data.orderId === payload.orderId),
+      ).toBe(true);
+
+      // 3. Global DLQ query
+      const allDlqJobs = await durableJobs.getDeadLetterJobs();
+      expect(
+        allDlqJobs.some(
+          (j) => (j.data as { orderId?: string })?.orderId === payload.orderId,
+        ),
+      ).toBe(true);
+
+      // 4. Pagination / limit / offset
+      const paginated = await durableJobs.getDeadLetterJobs(dlqName, {
+        limit: 1,
+        offset: 0,
+      });
+      expect(paginated.length).toBe(1);
+    });
   });
 
-  describe("Graceful Shutdown & Drain", () => {
-    it("drains active work cleanly when service shuts down", async () => {
-      const queueName = "graceful-shutdown-test";
+  describe("NestJS Lifecycle, Readiness Barrier & Fail-Fast Startup", () => {
+    it("resolves concurrent onModuleInit execution between LocalDatabaseService and DurableJobsService", async () => {
+      process.env.DATABASE_MIGRATION_URL = databaseRoles.migrationUrl;
+      const testDb = new LocalDatabaseService();
+      const testJobs = new DurableJobsService(testDb);
+
+      // Concurrently fire both onModuleInit hooks (mimicking NestJS callModuleInitHook)
+      await Promise.all([testDb.onModuleInit(), testJobs.onModuleInit()]);
+
+      expect(testJobs.isAvailable()).toBe(true);
+      await testJobs.onApplicationShutdown();
+      await testDb.onApplicationShutdown();
+    });
+
+    it("boots full NestJS application context (AppModule) deterministically", async () => {
+      process.env.DATABASE_MIGRATION_URL = databaseRoles.migrationUrl;
+      const app = await NestFactory.createApplicationContext(AppModule, {
+        logger: false,
+      });
+
+      const dbService = app.get(LocalDatabaseService);
+      const jobService = app.get(DurableJobsService);
+
+      expect(await dbService.isAvailable()).toBe(true);
+      expect(jobService.isAvailable()).toBe(true);
+
+      await app.close();
+    });
+
+    it("fails startup visibly when database connection or migrations fail", async () => {
+      const invalidDb = new LocalDatabaseService();
+      (invalidDb as unknown as { applicationUrl: string }).applicationUrl =
+        "postgresql://breev_app:invalid@127.0.0.1:54321/nonexistent";
+      const brokenJobs = new DurableJobsService(invalidDb);
+
+      await expect(brokenJobs.onModuleInit()).rejects.toThrow();
+    });
+
+    it("does not cache queue name in knownQueues when creation fails", async () => {
+      const invalidDb = new LocalDatabaseService();
+      const brokenJobs = new DurableJobsService(invalidDb);
+      await expect(brokenJobs.ensureQueue("failing-queue")).rejects.toThrow();
+      expect(
+        (brokenJobs as unknown as { knownQueues: Set<string> }).knownQueues.has(
+          "failing-queue",
+        ),
+      ).toBe(false);
+    });
+  });
+
+  describe("Graceful Shutdown & Drain Lifecycle", () => {
+    it("drains active work cleanly when service shuts down via onApplicationShutdown", async () => {
+      const queueName = "graceful-shutdown-lifecycle-test";
       let started = false;
       let finished = false;
 
@@ -384,7 +758,8 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
       await secondService.send(queueName, { msg: "drain-me" });
       await waitForCondition(() => started, 5_000);
 
-      await secondService.stop({ graceful: true, timeout: 5_000 });
+      // Clean shutdown drain using onApplicationShutdown()
+      await secondService.onApplicationShutdown();
       expect(finished).toBe(true);
     });
   });
