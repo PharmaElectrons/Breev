@@ -3,6 +3,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { generateKeyPairSync } from "node:crypto";
+import express from "express";
 import https from "node:https";
 import type { AddressInfo } from "node:net";
 import type { TLSSocket } from "node:tls";
@@ -14,7 +15,9 @@ import {
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
 import { LocalDatabaseService } from "../local-database.service.js";
+import { MainDeviceSecurityService } from "../main-device/main-device-security.service.js";
 import { tryExportPrivateKey } from "./cng-addon.js";
+import { createLanMtlsServer } from "./lan-mtls-server.js";
 import {
   buildCACertificate,
   buildDeviceCertificate,
@@ -29,6 +32,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
   let databaseRoles: SeparatedDatabaseRoles;
   let pool: Pool;
   let localDb: LocalDatabaseService;
+  let security: MainDeviceSecurityService;
   let pharmacyCa: PharmacyCaService;
 
   beforeAll(async () => {
@@ -41,6 +45,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     localDb = new LocalDatabaseService();
     await localDb.onModuleInit();
     pool = localDb.requirePool();
+    security = new MainDeviceSecurityService(localDb);
     pharmacyCa = new PharmacyCaService(localDb);
   }, 120_000);
 
@@ -119,6 +124,31 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
         await testPool.end();
       }
     });
+
+    it("fails closed when the stored CA identity does not match its key", async () => {
+      const testPool = new Pool({
+        connectionString: databaseRoles.migrationUrl,
+      });
+      const original = await testPool.query<{ ca_fingerprint: string }>(
+        "select ca_fingerprint from pharmacy_ca where singleton = true",
+      );
+      const originalFingerprint = original.rows[0]?.ca_fingerprint ?? "";
+      try {
+        await testPool.query(
+          "update pharmacy_ca set ca_fingerprint = repeat('0', 64) where singleton = true",
+        );
+        const mismatchedService = new PharmacyCaService(localDb);
+        await expect(mismatchedService.initializeCA()).rejects.toMatchObject({
+          code: "PHARMACY_CA_IDENTITY_MISMATCH",
+        });
+      } finally {
+        await testPool.query(
+          "update pharmacy_ca set ca_fingerprint = $1 where singleton = true",
+          [originalFingerprint],
+        );
+        await testPool.end();
+      }
+    });
   });
 
   // ─── Group B: Certificate Issuance ────────────────────────────────────────
@@ -144,7 +174,9 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
         creds.certPem.replace(/-----[^-]+-----/g, "").replace(/\s/g, ""),
         "base64",
       );
-      const validation = pharmacyCa.validateCertificate(certDer, "server");
+      const validation = pharmacyCa.validateCertificate(certDer, "server", {
+        expectedServerIp: "127.0.0.1",
+      });
       expect(validation).toEqual({
         valid: true,
         role: "server",
@@ -243,7 +275,9 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
         deviceCert.certPem.replace(/-----[^-]+-----/g, "").replace(/\s/g, ""),
         "base64",
       );
-      const validation = pharmacyCa.validateCertificate(certDer, "server");
+      const validation = pharmacyCa.validateCertificate(certDer, "server", {
+        expectedServerIp: "127.0.0.1",
+      });
       expect(validation).toEqual({
         valid: false,
         denialCode: "cert-role-mismatch",
@@ -331,31 +365,67 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-      await pharmacyCa.issueDeviceCertificate({
+      const certificate = await pharmacyCa.issueDeviceCertificate({
         deviceId,
         devicePublicKeyDer: deviceSpki,
       });
 
       // Initially active
-      let check = await pharmacyCa.checkDeviceRevocation(deviceId);
+      let check = await pharmacyCa.checkDeviceRevocation(
+        deviceId,
+        certificate.fingerprint,
+      );
       expect(check).toEqual({ revoked: false });
 
       // Revoke the device
       await pharmacyCa.revokeDevice(deviceId, "terminal replaced");
 
       // Now revoked
-      check = await pharmacyCa.checkDeviceRevocation(deviceId);
+      check = await pharmacyCa.checkDeviceRevocation(
+        deviceId,
+        certificate.fingerprint,
+      );
       expect(check).toEqual({
         revoked: true,
         reason: "terminal replaced",
       });
+    });
+
+    it("rejects a replaced certificate while accepting the current certificate", async () => {
+      const deviceId = createUuidV7();
+      const firstKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const first = await pharmacyCa.issueDeviceCertificate({
+        deviceId,
+        devicePublicKeyDer: firstKey.publicKey.export({
+          format: "der",
+          type: "spki",
+        }),
+      });
+      const secondKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const second = await pharmacyCa.issueDeviceCertificate({
+        deviceId,
+        devicePublicKeyDer: secondKey.publicKey.export({
+          format: "der",
+          type: "spki",
+        }),
+      });
+
+      await expect(
+        pharmacyCa.checkDeviceRevocation(deviceId, first.fingerprint),
+      ).resolves.toEqual({
+        revoked: true,
+        reason: "certificate replaced",
+      });
+      await expect(
+        pharmacyCa.checkDeviceRevocation(deviceId, second.fingerprint),
+      ).resolves.toEqual({ revoked: false });
     });
   });
 
   // ─── Group D & E: HTTPS mTLS Connection & Hardening Fixture ───────────────
 
   describe("Group D & E: HTTPS mTLS Connection & Hardening Fixture", () => {
-    let server: https.Server;
+    let server: https.Server | undefined;
     let serverPort: number;
     let serverKeyPem: string;
     let serverCertPem: string;
@@ -367,81 +437,40 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       serverKeyPem = serverCreds.privateKeyPem;
       serverCertPem = serverCreds.certPem;
 
-      server = https.createServer(
-        {
-          key: serverKeyPem,
-          cert: serverCertPem,
-          ca: [pharmacyCa.caCertPem],
-          requestCert: true,
-          rejectUnauthorized: false,
-          minVersion: "TLSv1.2",
-          maxVersion: "TLSv1.3",
-          ciphers: [
-            "TLS_AES_256_GCM_SHA384",
-            "TLS_AES_128_GCM_SHA256",
-            "TLS_CHACHA20_POLY1305_SHA256",
-            "ECDHE-ECDSA-AES256-GCM-SHA384",
-            "ECDHE-RSA-AES256-GCM-SHA384",
-            "ECDHE-ECDSA-AES128-GCM-SHA256",
-            "ECDHE-RSA-AES128-GCM-SHA256",
-          ].join(":"),
-          honorCipherOrder: true,
-        },
-        async (req, res) => {
-          const socket = req.socket as TLSSocket;
-          const peerCert = socket.getPeerCertificate?.(true);
-          if (!peerCert || !peerCert.raw) {
-            res.writeHead(401, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({ status: "denied", code: "mtls-cert-missing" }),
-            );
-            return;
-          }
+      const lanApp = express();
+      lanApp.get("/", (request, response) => {
+        const socket = request.socket as TLSSocket;
+        response.json({
+          status: "authenticated",
+          deviceId: (request as unknown as Record<string, unknown>)[
+            "breevMtlsDeviceId"
+          ],
+          tlsVersion: socket.getProtocol?.(),
+        });
+      });
 
-          const validation = pharmacyCa.validateCertificate(
-            Buffer.from(peerCert.raw),
-            "device",
-          );
-          if (!validation.valid) {
-            res.writeHead(403, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({ status: "denied", code: validation.denialCode }),
-            );
-            return;
-          }
-
-          const revocation = await pharmacyCa.checkDeviceRevocation(
-            validation.deviceId!,
-          );
-          if (revocation.revoked) {
-            res.writeHead(403, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({ status: "denied", code: "device-revoked" }),
-            );
-            return;
-          }
-
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              status: "authenticated",
-              deviceId: validation.deviceId,
-              tlsVersion: socket.getProtocol?.(),
-            }),
-          );
-        },
-      );
+      server = await createLanMtlsServer({
+        apiHandler: lanApp,
+        host: "127.0.0.1",
+        pharmacyCa,
+        security,
+      });
 
       await new Promise<void>((resolve) => {
-        server.listen(0, "127.0.0.1", () => {
-          serverPort = (server.address() as AddressInfo).port;
+        server!.listen(0, "127.0.0.1", () => {
+          serverPort = (server!.address() as AddressInfo).port;
           resolve();
         });
       });
     });
 
     afterAll(async () => {
-      await new Promise<void>((resolve) => server?.close(() => resolve()));
+      if (server !== undefined) {
+        const activeServer = server;
+        await new Promise<void>((resolve) =>
+          activeServer.close(() => resolve()),
+        );
+      }
     });
 
     it("authenticates a terminal over mTLS with a valid device certificate", async () => {
@@ -483,7 +512,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       });
 
       expect(response.statusCode).toBe(401);
-      expect(response.body).toEqual({
+      expect(response.body).toMatchObject({
         status: "denied",
         code: "mtls-cert-missing",
       });
@@ -516,10 +545,18 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       });
 
       expect(response.statusCode).toBe(403);
-      expect(response.body).toEqual({
+      expect(response.body).toMatchObject({
         status: "denied",
         code: "device-revoked",
       });
+      const audit = await pool.query<{ terminal_device_id: string }>(
+        `select terminal_device_id
+         from main_device_recent_denials
+         where code = 'device-revoked'
+         order by denied_at desc, id desc
+         limit 1`,
+      );
+      expect(audit.rows[0]?.terminal_device_id).toBe(deviceId);
     });
 
     it("rejects an mTLS request when server cert is used as client cert", async () => {
@@ -531,7 +568,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       });
 
       expect(response.statusCode).toBe(403);
-      expect(response.body).toEqual({
+      expect(response.body).toMatchObject({
         status: "denied",
         code: "cert-role-mismatch",
       });

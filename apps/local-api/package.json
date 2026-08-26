@@ -16,6 +16,8 @@
     "@nestjs/common": "11.2.1",
     "@nestjs/core": "11.2.1",
     "@nestjs/platform-express": "11.2.1",
+    "@peculiar/asn1-schema": "2.9.4",
+    "@peculiar/asn1-x509": "2.9.4",
     "drizzle-orm": "0.45.2",
     "express": "5.2.1",
     "pg": "8.23.0",

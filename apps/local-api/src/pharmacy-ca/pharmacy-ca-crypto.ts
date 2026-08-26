@@ -1,17 +1,48 @@
-/**
- * Pure TypeScript X.509 ASN.1 DER certificate generator and validator.
- *
- * Implements RFC 5280 X.509 v3 certificate construction with standard and
- * custom extensions, and delegates signing to a signing callback (CNG signHash
- * for the CA, or Node.js RSA crypto for leaf keys).
- *
- * Validation uses Node.js built-in crypto.X509Certificate for RFC-compliant
- * parsing, validity checking, and cryptographic signature verification.
- */
+import { AsnParser, AsnSerializer, OctetString } from "@peculiar/asn1-schema";
+import {
+  AlgorithmIdentifier,
+  AttributeTypeAndValue,
+  AttributeValue,
+  BasicConstraints,
+  Certificate,
+  ExtendedKeyUsage,
+  Extension,
+  Extensions,
+  GeneralName,
+  KeyUsage,
+  KeyUsageFlags,
+  Name,
+  RelativeDistinguishedName,
+  SubjectAlternativeName,
+  SubjectPublicKeyInfo,
+  TBSCertificate,
+  Validity,
+  Version,
+  id_ce_basicConstraints,
+  id_ce_extKeyUsage,
+  id_ce_keyUsage,
+  id_ce_subjectAltName,
+  id_kp_clientAuth,
+  id_kp_serverAuth,
+} from "@peculiar/asn1-x509";
+import {
+  generateKeyPairSync,
+  randomBytes,
+  timingSafeEqual,
+  X509Certificate,
+} from "node:crypto";
+import { isIP } from "node:net";
 
-import { generateKeyPairSync, randomBytes, X509Certificate } from "node:crypto";
 import type { CngKeyHandle } from "./cng-addon.js";
-import { signHash } from "./cng-addon.js";
+import { signData } from "./cng-addon.js";
+
+const OID_SHA256_WITH_RSA = "1.2.840.113549.1.1.11";
+const OID_COMMON_NAME = "2.5.4.3";
+const OID_ORGANIZATION = "2.5.4.10";
+const INSTALLATION_URI_PREFIX = "urn:breev:installation:";
+const DEVICE_URI_PREFIX = "urn:breev:device:";
+const UUID_V7_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export function createUuidV7(): string {
   const bytes = randomBytes(16);
@@ -21,26 +52,6 @@ export function createUuidV7(): string {
   const hex = bytes.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-
-// ─── OID Constants ────────────────────────────────────────────────────────────
-
-export const OID_BREEV_SERVER = "1.3.6.1.4.1.0.7265.1.1" as const;
-export const OID_BREEV_DEVICE = "1.3.6.1.4.1.0.7265.1.2" as const;
-export const OID_INSTALLATION_ID = "1.3.6.1.4.1.0.7265.2.1" as const;
-export const OID_DEVICE_ID = "1.3.6.1.4.1.0.7265.2.2" as const;
-
-export const OID_TLS_SERVER_AUTH = "1.3.6.1.5.5.7.3.1" as const;
-export const OID_TLS_CLIENT_AUTH = "1.3.6.1.5.5.7.3.2" as const;
-
-const OID_SHA256_WITH_RSA = "1.2.840.113549.1.1.11";
-const OID_COMMON_NAME = "2.5.4.3";
-const OID_ORGANIZATION = "2.5.4.10";
-const OID_BASIC_CONSTRAINTS = "2.5.29.19";
-const OID_KEY_USAGE = "2.5.29.15";
-const OID_EXT_KEY_USAGE = "2.5.29.37";
-const OID_SAN = "2.5.29.17";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CertRole = "server" | "device";
 
@@ -77,188 +88,49 @@ export interface CertValidationFailure {
 export type CertValidationResult =
   CertValidationSuccess | CertValidationFailure;
 
-// ─── ASN.1 DER Encoding Helpers ───────────────────────────────────────────────
-
-function derLength(len: number): Buffer {
-  if (len < 128) return Buffer.from([len]);
-  const bytes: number[] = [];
-  let temp = len;
-  while (temp > 0) {
-    bytes.unshift(temp & 0xff);
-    temp >>= 8;
-  }
-  return Buffer.from([0x80 | bytes.length, ...bytes]);
-}
-
-function derTag(tag: number, content: Buffer): Buffer {
-  return Buffer.concat([
-    Buffer.from([tag]),
-    derLength(content.length),
-    content,
-  ]);
-}
-
-function derSequence(items: Buffer[]): Buffer {
-  return derTag(0x30, Buffer.concat(items));
-}
-
-function derSet(items: Buffer[]): Buffer {
-  return derTag(0x31, Buffer.concat(items));
-}
-
-function derInteger(num: bigint | number): Buffer {
-  let hex =
-    typeof num === "bigint" ? num.toString(16) : BigInt(num).toString(16);
-  if (hex.length % 2 !== 0) hex = "0" + hex;
-  let buf = Buffer.from(hex, "hex");
-  if (buf[0]! & 0x80) {
-    buf = Buffer.concat([Buffer.from([0x00]), buf]);
-  }
-  return derTag(0x02, buf);
-}
-
-function derBitString(data: Buffer): Buffer {
-  return derTag(0x03, Buffer.concat([Buffer.from([0x00]), data]));
-}
-
-function derOctetString(data: Buffer): Buffer {
-  return derTag(0x04, data);
-}
-
-function derNull(): Buffer {
-  return Buffer.from([0x05, 0x00]);
-}
-
-function derOid(oidStr: string): Buffer {
-  const parts = oidStr.split(".").map(Number);
-  const first = parts[0]! * 40 + parts[1]!;
-  const bytes: number[] = [first];
-  for (let i = 2; i < parts.length; i++) {
-    let val = parts[i]!;
-    if (val < 128) {
-      bytes.push(val);
-    } else {
-      const sub: number[] = [];
-      sub.push(val & 0x7f);
-      val >>= 7;
-      while (val > 0) {
-        sub.unshift((val & 0x7f) | 0x80);
-        val >>= 7;
-      }
-      bytes.push(...sub);
-    }
-  }
-  return derTag(0x06, Buffer.from(bytes));
-}
-
-function derUtf8String(str: string): Buffer {
-  return derTag(0x0c, Buffer.from(str, "utf8"));
-}
-
-function derUtcTime(d: Date): Buffer {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const yr = pad(d.getUTCFullYear() % 100);
-  const mo = pad(d.getUTCMonth() + 1);
-  const da = pad(d.getUTCDate());
-  const hr = pad(d.getUTCHours());
-  const mi = pad(d.getUTCMinutes());
-  const se = pad(d.getUTCSeconds());
-  return derTag(0x17, Buffer.from(`${yr}${mo}${da}${hr}${mi}${se}Z`, "ascii"));
-}
-
-function derAlgorithmIdentifier(oid: string): Buffer {
-  return derSequence([derOid(oid), derNull()]);
-}
-
-function derRdn(typeOid: string, value: string): Buffer {
-  return derSet([derSequence([derOid(typeOid), derUtf8String(value)])]);
-}
-
-function pemEncodeCert(der: Buffer): string {
-  const b64 = der.toString("base64");
-  const lines = b64.match(/.{1,64}/g) ?? [b64];
-  return `-----BEGIN CERTIFICATE-----\n${lines.join("\n")}\n-----END CERTIFICATE-----\n`;
-}
-
-// ─── CA Certificate Construction ──────────────────────────────────────────────
-
 export function buildCACertificate(params: {
   readonly keyHandle: CngKeyHandle;
   readonly publicKeyDer: Buffer;
   readonly installationId: string;
   readonly validityDays: number;
 }): IssuedCertificate {
-  const { keyHandle, publicKeyDer, installationId, validityDays } = params;
-
-  const notBefore = new Date(Date.now() - 60000);
-  const notAfter = new Date(notBefore.getTime() + validityDays * 86400000);
-
-  const issuer = derSequence([
-    derRdn(OID_ORGANIZATION, "Breev"),
-    derRdn(OID_COMMON_NAME, "breev-pharmacy-ca"),
-  ]);
-  const subject = issuer;
-  const validity = derSequence([derUtcTime(notBefore), derUtcTime(notAfter)]);
-
-  // Extensions
-  const extBasicConstraints = derSequence([
-    derOid(OID_BASIC_CONSTRAINTS),
-    Buffer.from([0x01, 0x01, 0xff]), // critical TRUE
-    derOctetString(
-      derSequence([Buffer.from([0x01, 0x01, 0xff]), derInteger(0)]),
-    ),
-  ]);
-
-  const extKeyUsage = derSequence([
-    derOid(OID_KEY_USAGE),
-    Buffer.from([0x01, 0x01, 0xff]), // critical TRUE
-    derOctetString(derTag(0x03, Buffer.from([0x01, 0x06]))), // keyCertSign + cRLSign
-  ]);
-
-  const extInstallationId = derSequence([
-    derOid(OID_INSTALLATION_ID),
-    derOctetString(derUtf8String(installationId)),
-  ]);
-
-  const extensions = derTag(
-    0xa3,
-    derSequence([extBasicConstraints, extKeyUsage, extInstallationId]),
-  );
-
-  const serialNum = 1;
-  const tbs = derSequence([
-    derTag(0xa0, derInteger(2)), // v3
-    derInteger(serialNum),
-    derAlgorithmIdentifier(OID_SHA256_WITH_RSA),
-    issuer,
-    validity,
+  assertUuidV7(params.installationId, "installationId");
+  const notBefore = new Date(Date.now() - 60_000);
+  const notAfter = validityEnd(notBefore, params.validityDays);
+  const subject = certificateName("breev-pharmacy-ca");
+  const serial = createCertificateSerial();
+  const tbs = new TBSCertificate({
+    version: Version.v3,
+    serialNumber: toArrayBuffer(serial),
+    signature: signatureAlgorithm(),
+    issuer: subject,
+    validity: new Validity({ notBefore, notAfter }),
     subject,
-    publicKeyDer,
-    extensions,
-  ]);
+    subjectPublicKeyInfo: parsePublicKey(params.publicKeyDer),
+    extensions: new Extensions([
+      extension(
+        id_ce_basicConstraints,
+        new BasicConstraints({ cA: true, pathLenConstraint: 0 }),
+        true,
+      ),
+      extension(
+        id_ce_keyUsage,
+        new KeyUsage(KeyUsageFlags.keyCertSign | KeyUsageFlags.cRLSign),
+        true,
+      ),
+      extension(
+        id_ce_subjectAltName,
+        new SubjectAlternativeName([
+          new GeneralName({
+            uniformResourceIdentifier: installationUri(params.installationId),
+          }),
+        ]),
+      ),
+    ]),
+  });
 
-  // Sign TBS with CNG key
-  const sig = signHash(keyHandle, tbs, { algorithm: "SHA256" });
-
-  const certDer = derSequence([
-    tbs,
-    derAlgorithmIdentifier(OID_SHA256_WITH_RSA),
-    derBitString(sig),
-  ]);
-
-  const certPem = pemEncodeCert(certDer);
-  const certObj = new X509Certificate(certPem);
-
-  return {
-    certPem,
-    fingerprint: certObj.fingerprint256.replace(/:/g, "").toLowerCase(),
-    notBefore,
-    notAfter,
-    serialHex: "01",
-  };
+  return signCertificate(tbs, params.keyHandle, notBefore, notAfter, serial);
 }
-
-// ─── Server Certificate Construction ──────────────────────────────────────────
 
 export function buildServerCertificate(params: {
   readonly caKeyHandle: CngKeyHandle;
@@ -267,118 +139,75 @@ export function buildServerCertificate(params: {
   readonly sanIPs: readonly string[];
   readonly validityDays: number;
 }): IssuedLeafCertificate {
-  const { caKeyHandle, installationId, sanIPs, validityDays } = params;
+  assertUuidV7(params.installationId, "installationId");
+  if (
+    params.sanIPs.length === 0 ||
+    params.sanIPs.some((ip) => isIP(ip) === 0)
+  ) {
+    throw new Error("A server certificate requires valid IP subject names");
+  }
 
-  const notBefore = new Date(Date.now() - 60000);
-  const notAfter = new Date(notBefore.getTime() + validityDays * 86400000);
-
+  const notBefore = new Date(Date.now() - 60_000);
+  const notAfter = validityEnd(notBefore, params.validityDays);
   const { publicKey, privateKey } = generateKeyPairSync("rsa", {
     modulusLength: 2048,
   });
-
-  const serverSpki = publicKey.export({ format: "der", type: "spki" });
-  const serverPrivatePem = privateKey.export({
-    format: "pem",
-    type: "pkcs8",
-  }) as string;
-
-  const issuer = derSequence([
-    derRdn(OID_ORGANIZATION, "Breev"),
-    derRdn(OID_COMMON_NAME, "breev-pharmacy-ca"),
-  ]);
-
-  const subject = derSequence([
-    derRdn(OID_ORGANIZATION, "Breev"),
-    derRdn(OID_COMMON_NAME, `breev-server-${installationId}`),
-  ]);
-
-  const validity = derSequence([derUtcTime(notBefore), derUtcTime(notAfter)]);
-
-  // Build SAN extension (IP addresses)
-  const sanEntries: Buffer[] = [];
-  for (const ip of sanIPs) {
-    if (ip === "127.0.0.1") {
-      sanEntries.push(derTag(0x87, Buffer.from([127, 0, 0, 1])));
-    } else {
-      const parts = ip.split(".").map(Number);
-      if (parts.length === 4) {
-        sanEntries.push(derTag(0x87, Buffer.from(parts)));
-      }
-    }
-  }
-
-  const extBasicConstraints = derSequence([
-    derOid(OID_BASIC_CONSTRAINTS),
-    derOctetString(derSequence([Buffer.from([0x01, 0x01, 0x00])])), // CA=FALSE
-  ]);
-
-  const extKeyUsage = derSequence([
-    derOid(OID_KEY_USAGE),
-    derOctetString(derTag(0x03, Buffer.from([0x01, 0xa0]))), // digitalSignature, keyEncipherment
-  ]);
-
-  const extEku = derSequence([
-    derOid(OID_EXT_KEY_USAGE),
-    derOctetString(
-      derSequence([derOid(OID_TLS_SERVER_AUTH), derOid(OID_BREEV_SERVER)]),
+  const serial = createCertificateSerial();
+  const tbs = new TBSCertificate({
+    version: Version.v3,
+    serialNumber: toArrayBuffer(serial),
+    signature: signatureAlgorithm(),
+    issuer: parseCertificate(params.caCertPem).tbsCertificate.subject,
+    validity: new Validity({ notBefore, notAfter }),
+    subject: certificateName(`breev-server-${params.installationId}`),
+    subjectPublicKeyInfo: parsePublicKey(
+      publicKey.export({ format: "der", type: "spki" }),
     ),
-  ]);
-
-  const extSan = derSequence([
-    derOid(OID_SAN),
-    derOctetString(derSequence(sanEntries)),
-  ]);
-
-  const extInstallationId = derSequence([
-    derOid(OID_INSTALLATION_ID),
-    derOctetString(derUtf8String(installationId)),
-  ]);
-
-  const extensions = derTag(
-    0xa3,
-    derSequence([
-      extBasicConstraints,
-      extKeyUsage,
-      extEku,
-      extSan,
-      extInstallationId,
+    extensions: new Extensions([
+      extension(
+        id_ce_basicConstraints,
+        new BasicConstraints({ cA: false }),
+        true,
+      ),
+      extension(
+        id_ce_keyUsage,
+        new KeyUsage(
+          KeyUsageFlags.digitalSignature | KeyUsageFlags.keyEncipherment,
+        ),
+        true,
+      ),
+      extension(
+        id_ce_extKeyUsage,
+        new ExtendedKeyUsage([id_kp_serverAuth]),
+        true,
+      ),
+      extension(
+        id_ce_subjectAltName,
+        new SubjectAlternativeName([
+          ...params.sanIPs.map((ip) => new GeneralName({ iPAddress: ip })),
+          new GeneralName({
+            uniformResourceIdentifier: installationUri(params.installationId),
+          }),
+        ]),
+      ),
     ]),
-  );
-
-  const serialNum = 2;
-  const tbs = derSequence([
-    derTag(0xa0, derInteger(2)),
-    derInteger(serialNum),
-    derAlgorithmIdentifier(OID_SHA256_WITH_RSA),
-    issuer,
-    validity,
-    subject,
-    serverSpki,
-    extensions,
-  ]);
-
-  const sig = signHash(caKeyHandle, tbs, { algorithm: "SHA256" });
-
-  const certDer = derSequence([
+  });
+  const issued = signCertificate(
     tbs,
-    derAlgorithmIdentifier(OID_SHA256_WITH_RSA),
-    derBitString(sig),
-  ]);
-
-  const certPem = pemEncodeCert(certDer);
-  const certObj = new X509Certificate(certPem);
-
-  return {
-    certPem,
-    fingerprint: certObj.fingerprint256.replace(/:/g, "").toLowerCase(),
+    params.caKeyHandle,
     notBefore,
     notAfter,
-    serialHex: "02",
-    privateKeyPem: serverPrivatePem,
+    serial,
+  );
+
+  return {
+    ...issued,
+    privateKeyPem: privateKey.export({
+      format: "pem",
+      type: "pkcs8",
+    }) as string,
   };
 }
-
-// ─── Device Certificate Construction ──────────────────────────────────────────
 
 export function buildDeviceCertificate(params: {
   readonly caKeyHandle: CngKeyHandle;
@@ -388,185 +217,430 @@ export function buildDeviceCertificate(params: {
   readonly devicePublicKeyDer: Buffer;
   readonly validityDays: number;
 }): IssuedCertificate {
-  const {
-    caKeyHandle,
-    deviceId,
-    installationId,
-    devicePublicKeyDer,
-    validityDays,
-  } = params;
-
-  const notBefore = new Date(Date.now() - 60000);
-  const notAfter = new Date(notBefore.getTime() + validityDays * 86400000);
-
-  const issuer = derSequence([
-    derRdn(OID_ORGANIZATION, "Breev"),
-    derRdn(OID_COMMON_NAME, "breev-pharmacy-ca"),
-  ]);
-
-  const subject = derSequence([
-    derRdn(OID_ORGANIZATION, "Breev"),
-    derRdn(OID_COMMON_NAME, `breev-device-${deviceId}`),
-  ]);
-
-  const validity = derSequence([derUtcTime(notBefore), derUtcTime(notAfter)]);
-
-  const extBasicConstraints = derSequence([
-    derOid(OID_BASIC_CONSTRAINTS),
-    derOctetString(derSequence([Buffer.from([0x01, 0x01, 0x00])])),
-  ]);
-
-  const extKeyUsage = derSequence([
-    derOid(OID_KEY_USAGE),
-    derOctetString(derTag(0x03, Buffer.from([0x01, 0x80]))), // digitalSignature
-  ]);
-
-  const extEku = derSequence([
-    derOid(OID_EXT_KEY_USAGE),
-    derOctetString(
-      derSequence([derOid(OID_TLS_CLIENT_AUTH), derOid(OID_BREEV_DEVICE)]),
-    ),
-  ]);
-
-  const extInstallationId = derSequence([
-    derOid(OID_INSTALLATION_ID),
-    derOctetString(derUtf8String(installationId)),
-  ]);
-
-  const extDeviceId = derSequence([
-    derOid(OID_DEVICE_ID),
-    derOctetString(derUtf8String(deviceId)),
-  ]);
-
-  const extensions = derTag(
-    0xa3,
-    derSequence([
-      extBasicConstraints,
-      extKeyUsage,
-      extEku,
-      extInstallationId,
-      extDeviceId,
+  assertUuidV7(params.deviceId, "deviceId");
+  assertUuidV7(params.installationId, "installationId");
+  const notBefore = new Date(Date.now() - 60_000);
+  const notAfter = validityEnd(notBefore, params.validityDays);
+  const serial = createCertificateSerial();
+  const tbs = new TBSCertificate({
+    version: Version.v3,
+    serialNumber: toArrayBuffer(serial),
+    signature: signatureAlgorithm(),
+    issuer: parseCertificate(params.caCertPem).tbsCertificate.subject,
+    validity: new Validity({ notBefore, notAfter }),
+    subject: certificateName(`breev-device-${params.deviceId}`),
+    subjectPublicKeyInfo: parsePublicKey(params.devicePublicKeyDer),
+    extensions: new Extensions([
+      extension(
+        id_ce_basicConstraints,
+        new BasicConstraints({ cA: false }),
+        true,
+      ),
+      extension(
+        id_ce_keyUsage,
+        new KeyUsage(KeyUsageFlags.digitalSignature),
+        true,
+      ),
+      extension(
+        id_ce_extKeyUsage,
+        new ExtendedKeyUsage([id_kp_clientAuth]),
+        true,
+      ),
+      extension(
+        id_ce_subjectAltName,
+        new SubjectAlternativeName([
+          new GeneralName({
+            uniformResourceIdentifier: installationUri(params.installationId),
+          }),
+          new GeneralName({
+            uniformResourceIdentifier: deviceUri(params.deviceId),
+          }),
+        ]),
+      ),
     ]),
-  );
+  });
 
-  const serialNum = 3;
-  const tbs = derSequence([
-    derTag(0xa0, derInteger(2)),
-    derInteger(serialNum),
-    derAlgorithmIdentifier(OID_SHA256_WITH_RSA),
-    issuer,
-    validity,
-    subject,
-    devicePublicKeyDer,
-    extensions,
-  ]);
-
-  const sig = signHash(caKeyHandle, tbs, { algorithm: "SHA256" });
-
-  const certDer = derSequence([
-    tbs,
-    derAlgorithmIdentifier(OID_SHA256_WITH_RSA),
-    derBitString(sig),
-  ]);
-
-  const certPem = pemEncodeCert(certDer);
-  const certObj = new X509Certificate(certPem);
-
-  return {
-    certPem,
-    fingerprint: certObj.fingerprint256.replace(/:/g, "").toLowerCase(),
-    notBefore,
-    notAfter,
-    serialHex: "03",
-  };
+  return signCertificate(tbs, params.caKeyHandle, notBefore, notAfter, serial);
 }
-
-// ─── Certificate Validation Pipeline ──────────────────────────────────────────
 
 export function validateCertificate(params: {
   readonly certDer: Buffer;
   readonly caCertPem: string;
   readonly expectedRole: CertRole;
   readonly installationId: string;
+  readonly expectedServerIp?: string | undefined;
   readonly now?: Date | undefined;
 }): CertValidationResult {
-  const { certDer, caCertPem, expectedRole, installationId } = params;
   const now = params.now ?? new Date();
-
   let cert: X509Certificate;
   let caCert: X509Certificate;
+  let parsed: Certificate;
+  let parsedCa: Certificate;
   try {
-    cert = new X509Certificate(certDer);
-    caCert = new X509Certificate(caCertPem);
+    cert = new X509Certificate(params.certDer);
+    caCert = new X509Certificate(params.caCertPem);
+    parsed = parseCertificate(params.certDer);
+    parsedCa = parseCertificate(params.caCertPem);
   } catch {
-    return { valid: false, denialCode: "mtls-cert-invalid" };
+    return invalid("mtls-cert-invalid");
   }
 
-  // 1. Validity window
   if (now < new Date(cert.validFrom)) {
-    return { valid: false, denialCode: "cert-not-yet-valid" };
+    return invalid("cert-not-yet-valid");
   }
   if (now > new Date(cert.validTo)) {
-    return { valid: false, denialCode: "cert-expired" };
+    return invalid("cert-expired");
+  }
+  if (
+    now < new Date(caCert.validFrom) ||
+    now > new Date(caCert.validTo) ||
+    !caCert.ca ||
+    !caCert.verify(caCert.publicKey) ||
+    !cert.checkIssued(caCert) ||
+    !cert.verify(caCert.publicKey)
+  ) {
+    return invalid("cert-chain-invalid");
   }
 
-  // 2. Cryptographic signature check against CA public key
-  if (!cert.verify(caCert.publicKey)) {
-    return { valid: false, denialCode: "cert-chain-invalid" };
+  try {
+    assertCaExtensions(parsedCa, params.installationId);
+    const role = certificateRole(parsed);
+    if (role !== params.expectedRole) {
+      return invalid("cert-role-mismatch");
+    }
+    const names = subjectAlternativeNames(parsed);
+    const expectedInstallationUri = installationUri(params.installationId);
+    if (!hasSingleUri(names, expectedInstallationUri)) {
+      return invalid("cert-installation-mismatch");
+    }
+    if (role === "server") {
+      if (
+        params.expectedServerIp === undefined ||
+        names.length < 2 ||
+        names.some(
+          (name) =>
+            name.uniformResourceIdentifier !== expectedInstallationUri &&
+            name.iPAddress === undefined,
+        ) ||
+        cert.checkIP(params.expectedServerIp) === undefined
+      ) {
+        return invalid("mtls-cert-invalid");
+      }
+      return valid(role, undefined, cert);
+    }
+
+    const deviceIds = names
+      .map((name) => name.uniformResourceIdentifier)
+      .filter(
+        (uri): uri is string =>
+          uri !== undefined && uri.startsWith(DEVICE_URI_PREFIX),
+      )
+      .map((uri) => uri.slice(DEVICE_URI_PREFIX.length));
+    if (
+      names.length !== 2 ||
+      deviceIds.length !== 1 ||
+      !UUID_V7_PATTERN.test(deviceIds[0] ?? "")
+    ) {
+      return invalid("mtls-cert-invalid");
+    }
+    return valid(role, deviceIds[0], cert);
+  } catch {
+    return invalid("mtls-cert-invalid");
   }
+}
 
-  // 3. Role verification (search raw DER for role OIDs)
-  const role = extractRoleFromDer(certDer);
-  if (role !== expectedRole) {
-    return { valid: false, denialCode: "cert-role-mismatch" };
+export function caCertificateMatches(params: {
+  readonly certPem: string;
+  readonly fingerprint: string;
+  readonly installationId: string;
+  readonly publicKeyDer: Buffer;
+}): boolean {
+  try {
+    const cert = new X509Certificate(params.certPem);
+    const parsed = parseCertificate(params.certPem);
+    const certificatePublicKey = cert.publicKey.export({
+      format: "der",
+      type: "spki",
+    });
+    const expectedFingerprint = cert.fingerprint256
+      .replace(/:/g, "")
+      .toLowerCase();
+    assertCaExtensions(parsed, params.installationId);
+    return (
+      cert.ca &&
+      cert.verify(cert.publicKey) &&
+      expectedFingerprint === params.fingerprint &&
+      certificatePublicKey.length === params.publicKeyDer.length &&
+      timingSafeEqual(certificatePublicKey, params.publicKeyDer)
+    );
+  } catch {
+    return false;
   }
+}
 
-  // 4. Installation identity verification
-  const certInstallationId = extractOidString(certDer, OID_INSTALLATION_ID);
-  if (certInstallationId !== installationId) {
-    return { valid: false, denialCode: "cert-installation-mismatch" };
+function signCertificate(
+  tbs: TBSCertificate,
+  keyHandle: CngKeyHandle,
+  notBefore: Date,
+  notAfter: Date,
+  serial: Buffer,
+): IssuedCertificate {
+  const tbsDer = Buffer.from(AsnSerializer.serialize(tbs));
+  const signature = signData(keyHandle, tbsDer, { algorithm: "SHA256" });
+  const certDer = Buffer.from(
+    AsnSerializer.serialize(
+      new Certificate({
+        tbsCertificate: tbs,
+        signatureAlgorithm: signatureAlgorithm(),
+        signatureValue: toArrayBuffer(signature),
+      }),
+    ),
+  );
+  const certPem = pemEncodeCert(certDer);
+  const cert = new X509Certificate(certPem);
+  if (cert.subject === cert.issuer && !cert.verify(cert.publicKey)) {
+    throw new Error("The generated self-signed certificate is invalid");
   }
+  return {
+    certPem,
+    fingerprint: cert.fingerprint256.replace(/:/g, "").toLowerCase(),
+    notBefore,
+    notAfter,
+    serialHex: serial.toString("hex"),
+  };
+}
 
-  // 5. Device ID
-  const deviceId =
-    expectedRole === "device"
-      ? (extractOidString(certDer, OID_DEVICE_ID) ?? undefined)
-      : undefined;
+function assertCaExtensions(
+  certificate: Certificate,
+  installationId: string,
+): void {
+  assertExtensionSet(certificate, [
+    id_ce_basicConstraints,
+    id_ce_keyUsage,
+    id_ce_subjectAltName,
+  ]);
+  const constraints = parseExtension(
+    certificate,
+    id_ce_basicConstraints,
+    BasicConstraints,
+    true,
+  );
+  const usage = parseExtension(certificate, id_ce_keyUsage, KeyUsage, true);
+  const names = subjectAlternativeNames(certificate);
+  if (
+    !constraints.cA ||
+    constraints.pathLenConstraint !== 0 ||
+    usage.toNumber() !== (KeyUsageFlags.keyCertSign | KeyUsageFlags.cRLSign) ||
+    names.length !== 1 ||
+    !hasSingleUri(names, installationUri(installationId))
+  ) {
+    throw new Error("The pharmacy CA certificate does not match its state");
+  }
+}
 
+function certificateRole(certificate: Certificate): CertRole | null {
+  assertExtensionSet(certificate, [
+    id_ce_basicConstraints,
+    id_ce_keyUsage,
+    id_ce_extKeyUsage,
+    id_ce_subjectAltName,
+  ]);
+  const constraints = parseExtension(
+    certificate,
+    id_ce_basicConstraints,
+    BasicConstraints,
+    true,
+  );
+  const usage = parseExtension(certificate, id_ce_keyUsage, KeyUsage, true);
+  const eku = parseExtension(
+    certificate,
+    id_ce_extKeyUsage,
+    ExtendedKeyUsage,
+    true,
+  );
+  if (constraints.cA || (usage.toNumber() & KeyUsageFlags.keyCertSign) !== 0) {
+    return null;
+  }
+  if (
+    eku.length === 1 &&
+    eku[0] === id_kp_serverAuth &&
+    usage.toNumber() ===
+      (KeyUsageFlags.digitalSignature | KeyUsageFlags.keyEncipherment)
+  ) {
+    return "server";
+  }
+  if (
+    eku.length === 1 &&
+    eku[0] === id_kp_clientAuth &&
+    usage.toNumber() === KeyUsageFlags.digitalSignature
+  ) {
+    return "device";
+  }
+  return null;
+}
+
+function subjectAlternativeNames(
+  certificate: Certificate,
+): SubjectAlternativeName {
+  return parseExtension(
+    certificate,
+    id_ce_subjectAltName,
+    SubjectAlternativeName,
+  );
+}
+
+function parseExtension<T>(
+  certificate: Certificate,
+  oid: string,
+  type: new () => T,
+  critical = false,
+): T {
+  const matching = certificate.tbsCertificate.extensions?.filter(
+    (item) => item.extnID === oid,
+  );
+  if (matching?.length !== 1 || matching[0]?.critical !== critical) {
+    throw new Error(`Certificate extension ${oid} is missing or duplicated`);
+  }
+  return AsnParser.parse(matching[0]!.extnValue.buffer, type);
+}
+
+function assertExtensionSet(
+  certificate: Certificate,
+  expectedOids: readonly string[],
+): void {
+  const extensions = certificate.tbsCertificate.extensions ?? [];
+  if (
+    extensions.length !== expectedOids.length ||
+    expectedOids.some(
+      (oid) =>
+        extensions.filter((extension) => extension.extnID === oid).length !== 1,
+    )
+  ) {
+    throw new Error("Certificate extensions do not match the expected profile");
+  }
+}
+
+function hasSingleUri(
+  names: SubjectAlternativeName,
+  expected: string,
+): boolean {
+  const matches = names.filter(
+    (name) => name.uniformResourceIdentifier === expected,
+  );
+  return matches.length === 1;
+}
+
+function extension(oid: string, value: unknown, critical = false): Extension {
+  return new Extension({
+    extnID: oid,
+    critical,
+    extnValue: new OctetString(AsnSerializer.serialize(value)),
+  });
+}
+
+function certificateName(commonName: string): Name {
+  return new Name([
+    new RelativeDistinguishedName([
+      new AttributeTypeAndValue({
+        type: OID_ORGANIZATION,
+        value: new AttributeValue({ utf8String: "Breev" }),
+      }),
+    ]),
+    new RelativeDistinguishedName([
+      new AttributeTypeAndValue({
+        type: OID_COMMON_NAME,
+        value: new AttributeValue({ utf8String: commonName }),
+      }),
+    ]),
+  ]);
+}
+
+function parsePublicKey(publicKeyDer: Buffer): SubjectPublicKeyInfo {
+  return AsnParser.parse(publicKeyDer, SubjectPublicKeyInfo);
+}
+
+function parseCertificate(input: Buffer | string): Certificate {
+  const der =
+    typeof input === "string"
+      ? Buffer.from(
+          input.replace(/-----[^-]+-----/g, "").replace(/\s/g, ""),
+          "base64",
+        )
+      : input;
+  return AsnParser.parse(der, Certificate, {
+    berOptions: {
+      maxDepth: 32,
+      maxNodes: 512,
+      maxContentLength: 64 * 1024,
+    },
+  });
+}
+
+function signatureAlgorithm(): AlgorithmIdentifier {
+  return new AlgorithmIdentifier({
+    algorithm: OID_SHA256_WITH_RSA,
+    parameters: null,
+  });
+}
+
+function createCertificateSerial(): Buffer {
+  const serial = randomBytes(16);
+  serial[0] = (serial[0] ?? 0) & 0x7f;
+  if (serial.every((byte) => byte === 0)) {
+    serial[serial.length - 1] = 1;
+  }
+  return serial;
+}
+
+function validityEnd(notBefore: Date, validityDays: number): Date {
+  const notAfter = new Date(notBefore.getTime() + validityDays * 86_400_000);
+  if (notAfter.getTime() === notBefore.getTime()) {
+    throw new Error("Certificate validity must not be empty");
+  }
+  return notAfter;
+}
+
+function installationUri(installationId: string): string {
+  return `${INSTALLATION_URI_PREFIX}${installationId}`;
+}
+
+function deviceUri(deviceId: string): string {
+  return `${DEVICE_URI_PREFIX}${deviceId}`;
+}
+
+function assertUuidV7(value: string, name: string): void {
+  if (!UUID_V7_PATTERN.test(value)) {
+    throw new Error(`${name} must be an RFC 9562 UUIDv7`);
+  }
+}
+
+function pemEncodeCert(der: Buffer): string {
+  const lines = der.toString("base64").match(/.{1,64}/g) ?? [];
+  return `-----BEGIN CERTIFICATE-----\n${lines.join("\n")}\n-----END CERTIFICATE-----\n`;
+}
+
+function toArrayBuffer(value: Buffer): ArrayBuffer {
+  return value.buffer.slice(
+    value.byteOffset,
+    value.byteOffset + value.byteLength,
+  ) as ArrayBuffer;
+}
+
+function invalid(
+  denialCode: CertValidationFailure["denialCode"],
+): CertValidationFailure {
+  return { valid: false, denialCode };
+}
+
+function valid(
+  role: CertRole,
+  deviceId: string | undefined,
+  cert: X509Certificate,
+): CertValidationSuccess {
   return {
     valid: true,
     role,
     deviceId,
     fingerprint: cert.fingerprint256.replace(/:/g, "").toLowerCase(),
   };
-}
-
-// ─── DER Extraction Helpers ───────────────────────────────────────────────────
-
-function extractRoleFromDer(certDer: Buffer): CertRole | null {
-  const serverOidDer = derOid(OID_BREEV_SERVER);
-  const deviceOidDer = derOid(OID_BREEV_DEVICE);
-
-  if (certDer.includes(serverOidDer)) return "server";
-  if (certDer.includes(deviceOidDer)) return "device";
-  return null;
-}
-
-function extractOidString(certDer: Buffer, oidStr: string): string | null {
-  const targetOidDer = derOid(oidStr);
-  const idx = certDer.indexOf(targetOidDer);
-  if (idx === -1) return null;
-
-  // Search ahead for the UTF8String tag (0x0C)
-  const searchSlice = certDer.slice(
-    idx + targetOidDer.length,
-    idx + targetOidDer.length + 64,
-  );
-  const tagIdx = searchSlice.indexOf(0x0c);
-  if (tagIdx === -1) return null;
-
-  const len = searchSlice[tagIdx + 1];
-  if (len === undefined || tagIdx + 2 + len > searchSlice.length) return null;
-
-  return searchSlice.slice(tagIdx + 2, tagIdx + 2 + len).toString("utf8");
 }

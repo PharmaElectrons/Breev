@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createPersistedKeyPair,
   deletePersistedKey,
+  readPersistedKeyAcl,
   selectKeyStorageProvider,
   tryExportPrivateKey,
   type KeyResult,
@@ -80,6 +81,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       certDer,
       caCertPem: caCert.certPem,
       expectedRole: "server",
+      expectedServerIp: "127.0.0.1",
       installationId,
     });
 
@@ -125,6 +127,27 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       deviceId,
       fingerprint: expect.any(String),
     });
+  });
+
+  it("assigns a unique positive serial to every certificate", () => {
+    const issueDevice = () => {
+      const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      return buildDeviceCertificate({
+        caKeyHandle: caKeyResult.keyHandle,
+        caCertPem: caCert.certPem,
+        deviceId: createUuidV7(),
+        installationId,
+        devicePublicKeyDer: publicKey.export({ format: "der", type: "spki" }),
+        validityDays: 365,
+      });
+    };
+
+    const first = issueDevice();
+    const second = issueDevice();
+
+    expect(first.serialHex).toMatch(/^[0-9a-f]+$/);
+    expect(BigInt(`0x${first.serialHex}`)).toBeGreaterThan(0n);
+    expect(first.serialHex).not.toBe(second.serialHex);
   });
 
   // ─── 4. Validation Rejection Scenarios ────────────────────────────────────
@@ -311,7 +334,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
         ca: [caCert.certPem],
         requestCert: true,
         rejectUnauthorized: false,
-        minVersion: "TLSv1.2",
+        minVersion: "TLSv1.3",
         maxVersion: "TLSv1.3",
       },
       (req, res) => {
@@ -398,6 +421,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       expect(successRes.body).toMatchObject({
         status: "authenticated",
         deviceId,
+        tlsVersion: "TLSv1.3",
       });
 
       // 2. Client without certificate
@@ -445,8 +469,14 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     "Windows CNG Non-Exportability",
     () => {
       it("proves the CA key export fails", () => {
+        expect(caKeyResult.keyHandle.isMachineKey).toBe(true);
+        expect(caKeyResult.keyHandle.serviceAccountSid).toMatch(/^S-1-/);
+        expect(readPersistedKeyAcl(caKeyResult.keyHandle)).toBe(
+          `D:P(A;;GA;;;${caKeyResult.keyHandle.serviceAccountSid})`,
+        );
         const exportResult = tryExportPrivateKey(caKeyResult.keyHandle);
         expect(exportResult.exported).toBe(false);
+        expect(exportResult.message).toContain("EXPORT_DENIED");
       });
     },
   );
