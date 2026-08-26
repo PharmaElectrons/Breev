@@ -82,12 +82,16 @@ describe("identity mutation contracts", () => {
         kind: "check-in",
       },
     ],
-  ])("requires idempotency and current versions for command %s", (schema, body) => {
-    expect(schema.safeParse(body).success).toBe(true);
-    const withoutIdempotency = { ...body };
-    delete withoutIdempotency.idempotencyKey;
-    expect(schema.safeParse(withoutIdempotency).success).toBe(false);
-  });
+  ])(
+    "requires idempotency and current versions for command %s",
+    (schema, body) => {
+      expect(schema.safeParse(body).success).toBe(true);
+      const withoutIdempotency = Object.fromEntries(
+        Object.entries(body).filter(([key]) => key !== "idempotencyKey"),
+      );
+      expect(schema.safeParse(withoutIdempotency).success).toBe(false);
+    },
+  );
 });
 
 describe("local REST health contract", () => {
@@ -228,6 +232,20 @@ describe("local REST Main device proof contract", () => {
         mutationCount: "1",
       }),
     ).toEqual({ status: "committed", mutationCount: "1" });
+  });
+
+  it("accepts the post-bootstrap user-authentication denial", () => {
+    expect(
+      parseLocalProofMutationResponse(401, {
+        status: "denied",
+        code: "session-missing",
+        requestId: "0198dcbb-d7e3-7000-8000-000000000001",
+      }),
+    ).toEqual({
+      status: "denied",
+      code: "session-missing",
+      requestId: "0198dcbb-d7e3-7000-8000-000000000001",
+    });
   });
 
   it.each([400, 401, 403, 413, 415, 421, 429])(

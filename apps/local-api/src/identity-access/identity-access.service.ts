@@ -378,7 +378,9 @@ export class IdentityAccessService {
     }
 
     const usernameKey = normalizeUsername(input.username);
-    if (!(await this.consumeAuthAttempt(device.deviceId, "login", usernameKey))) {
+    if (
+      !(await this.consumeAuthAttempt(device.deviceId, "login", usernameKey))
+    ) {
       const requestId = await this.writeAudit(pool, {
         action: "identity.login",
         deviceId: device.deviceId,
@@ -2180,9 +2182,10 @@ export class IdentityAccessService {
     input: IdentityCommandInput,
     parser: PayloadParser<T>,
   ): Promise<T | undefined> {
-    await client.query("select pg_advisory_xact_lock(hashtextextended($1, 38))", [
-      `${context.pharmacyId}:${context.actorId}:${input.idempotencyKey}`,
-    ]);
+    await client.query(
+      "select pg_advisory_xact_lock(hashtextextended($1, 38))",
+      [`${context.pharmacyId}:${context.actorId}:${input.idempotencyKey}`],
+    );
     const fingerprint = commandFingerprint(commandName, input);
     const result = await client.query<{
       command_name: string;

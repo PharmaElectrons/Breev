@@ -479,15 +479,11 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Add user" }).click();
+    await expectStepUpStateMatrix(page);
+    await page.getByRole("button", { name: "Add user" }).focus();
+    await page.keyboard.press("Enter");
     const stepUpPassword = page.getByRole("dialog").getByLabel("Password");
     await expect(stepUpPassword).toBeFocused();
-    await expectIdentityStateMatrix(page, {
-      arabicHeading: "تأكيد كلمة المرور",
-      englishHeading: "Confirm password",
-      evidenceName: "step-up",
-      focusLabel: { ar: "كلمة المرور", en: "Password" },
-    });
     await page.keyboard.press("Shift+Tab");
     await expect(
       page.getByRole("dialog").getByRole("button", { name: "Cancel" }),
@@ -500,7 +496,10 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(stepUpPassword).toHaveValue("wrong password");
     await expect(stepUpPassword).toBeFocused();
-    await page.locator(".denial-alert .dismiss-button").click();
+    await page
+      .getByRole("dialog")
+      .locator(".denial-alert .dismiss-button")
+      .click();
     await stepUpPassword.fill("browser owner password is private");
     await page.keyboard.press("Enter");
     await expect(
@@ -683,6 +682,9 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
     await administrator.query(
       `update identity_sessions
        set revoked_at = statement_timestamp(), revocation_reason = 'administrative'
@@ -859,8 +861,7 @@ async function expectIdentityStateMatrix(
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await expect(
         page.getByRole("heading", {
-          name:
-            locale === "ar" ? state.arabicHeading : state.englishHeading,
+          name: locale === "ar" ? state.arabicHeading : state.englishHeading,
         }),
       ).toBeVisible();
       const focusTarget = page.getByLabel(state.focusLabel[locale]).last();
@@ -885,6 +886,67 @@ async function expectIdentityStateMatrix(
       });
     }
   }
+  await setPreferences(page, initialLocale, initialTheme);
+}
+
+async function expectStepUpStateMatrix(page: Page): Promise<void> {
+  const initialLocale =
+    (await page.locator("html").getAttribute("lang")) === "ar" ? "ar" : "en";
+  const initialTheme =
+    (await page.locator("html").getAttribute("data-theme")) === "dark"
+      ? "dark"
+      : "light";
+
+  for (const locale of ["en", "ar"] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      await setPreferences(page, locale, theme);
+      const addUser = page.getByRole("button", {
+        name: locale === "ar" ? "إضافة مستخدم" : "Add user",
+      });
+      await addUser.focus();
+      await page.keyboard.press("Enter");
+
+      const dialog = page.getByRole("dialog");
+      const password = dialog.getByLabel(
+        locale === "ar" ? "كلمة المرور" : "Password",
+      );
+      const cancel = dialog.getByRole("button", {
+        name: locale === "ar" ? "إلغاء" : "Cancel",
+      });
+      await expect(
+        dialog.getByRole("heading", {
+          name: locale === "ar" ? "تأكيد كلمة المرور" : "Confirm password",
+        }),
+      ).toBeVisible();
+      await expect(password).toBeFocused();
+      const outlineWidth = await password.evaluate((element) => {
+        const view = element.ownerDocument.defaultView;
+        return view === null
+          ? 0
+          : Number.parseFloat(view.getComputedStyle(element).outlineWidth);
+      });
+      expect(outlineWidth).toBeGreaterThanOrEqual(3);
+      await page.keyboard.press("Shift+Tab");
+      await expect(cancel).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(password).toBeFocused();
+      const accessibility = await new AxeBuilder({ page }).analyze();
+      expect(accessibility.violations).toEqual([]);
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: true,
+        path: path.resolve(
+          import.meta.dirname,
+          `../../../../evidence/issue-38/after/step-up-${locale}-${theme}.png`,
+        ),
+      });
+      await cancel.focus();
+      await page.keyboard.press("Enter");
+      await expect(dialog).toHaveCount(0);
+      await expect(addUser).toBeFocused();
+    }
+  }
+
   await setPreferences(page, initialLocale, initialTheme);
 }
 

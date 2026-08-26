@@ -466,6 +466,7 @@ export const localProofMutationContract = {
   responses: {
     [LOCAL_PROOF_MUTATION_SUCCESS_STATUS]: localProofMutationSuccessSchema,
     ...localSecurityDenialResponses,
+    401: z.union([localSecurityDenialSchema, identityDenialSchema]),
   },
 } as const;
 
@@ -594,12 +595,19 @@ export function parseLocalHealthResponse(
 export function parseLocalProofMutationResponse(
   statusCode: number,
   payload: unknown,
-): LocalProofMutationSuccess | LocalSecurityDenial {
+): LocalProofMutationSuccess | LocalSecurityDenial | IdentityDenial {
   if (statusCode === LOCAL_PROOF_MUTATION_SUCCESS_STATUS) {
     return parseContractResponse(
       statusCode,
       payload,
       localProofMutationSuccessSchema,
+    );
+  }
+  if (statusCode === 401) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      localProofMutationContract.responses[401],
     );
   }
   if (isSecurityDenialStatus(statusCode)) {
