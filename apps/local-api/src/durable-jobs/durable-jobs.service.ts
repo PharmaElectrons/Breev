@@ -1,5 +1,7 @@
 import {
+  Inject,
   Injectable,
+  Logger,
   type OnApplicationShutdown,
   type OnModuleInit,
 } from "@nestjs/common";
@@ -16,6 +18,7 @@ import {
 import { LocalDatabaseService } from "../local-database.service.js";
 import type {
   DeadLetterJob,
+  DeadLetterJobOptions,
   DurableJob,
   DurableJobRecord,
   DurableJobSendOptions,
@@ -36,35 +39,42 @@ export interface QueueConfigOptions {
 
 @Injectable()
 export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
+  private readonly logger = new Logger(DurableJobsService.name);
   private boss: PgBoss | undefined;
   private readonly knownQueues = new Set<string>();
 
-  public constructor(private readonly localDatabase: LocalDatabaseService) {}
+  public constructor(
+    @Inject(LocalDatabaseService)
+    private readonly localDatabase: LocalDatabaseService,
+  ) {}
 
   public async onModuleInit(): Promise<void> {
-    const applicationUrl = this.localDatabase.getApplicationUrl();
+    if (this.localDatabase !== undefined) {
+      await this.localDatabase.ensureReady();
+    }
+
+    const applicationUrl = this.localDatabase?.getApplicationUrl();
     if (applicationUrl === undefined) {
       return;
     }
 
-    try {
-      this.boss = new PgBoss({
-        allowSchemaCaseVariant: true,
-        connectionString: applicationUrl,
-        createSchema: false,
-        migrate: false,
-        persistQueueStats: false,
-        persistWarnings: false,
-        schedule: false,
-        schema: "pgboss",
-        supervise: true,
-      });
+    this.boss = new PgBoss({
+      connectionString: applicationUrl,
+      createSchema: false,
+      migrate: false,
+      monitorIntervalSeconds: 1,
+      persistQueueStats: false,
+      persistWarnings: false,
+      schedule: false,
+      schema: "pgboss",
+      supervise: true,
+      superviseIntervalSeconds: 1,
+    });
 
-      this.boss.on("error", () => undefined);
-      await this.boss.start();
-    } catch {
-      this.boss = undefined;
-    }
+    this.boss.on("error", (error) => {
+      this.logger.error("Durable jobs background error", error);
+    });
+    await this.boss.start();
   }
 
   public isAvailable(): boolean {
@@ -76,6 +86,11 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
       throw new Error("The Breev durable job service is unavailable");
     }
     return this.boss;
+  }
+
+  public async supervise(name?: string): Promise<void> {
+    const boss = this.requireBoss();
+    await boss.supervise(name);
   }
 
   public async ensureQueue(
@@ -104,11 +119,7 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
       queueOptions.deadLetter = options.deadLetter;
     }
 
-    try {
-      await boss.createQueue(name, queueOptions);
-    } catch {
-      // Queue creation might already exist in database
-    }
+    await boss.createQueue(name, queueOptions);
     this.knownQueues.add(name);
   }
 
@@ -200,18 +211,39 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
 
   public async getDeadLetterJobs<T = unknown>(
     name?: string,
+    options?: DeadLetterJobOptions | number,
   ): Promise<DeadLetterJob<T>[]> {
     const pool = this.localDatabase.requirePool();
-    const queryText = name
-      ? `select id, name, data, state, retry_count, output, completed_on, created_on
+    const normalizedOptions: DeadLetterJobOptions | undefined =
+      typeof options === "number" ? { limit: options } : options;
+    const parameters: unknown[] = [];
+    let queryText: string;
+
+    if (name !== undefined) {
+      parameters.push(name);
+      queryText = `select id, name, data, state, retry_count, output, completed_on, created_on, source_name, source_id
          from pgboss.job
-         where name = $1 and state = 'failed'
-         order by coalesce(completed_on, created_on) desc`
-      : `select id, name, data, state, retry_count, output, completed_on, created_on
-         from pgboss.job
-         where state = 'failed'
+         where (name = $1 and state = 'failed')
+            or (name = $1 and source_name is not null)
+            or (source_name = $1)
          order by coalesce(completed_on, created_on) desc`;
-    const parameters = name ? [name] : [];
+    } else {
+      queryText = `select id, name, data, state, retry_count, output, completed_on, created_on, source_name, source_id
+         from pgboss.job
+         where state = 'failed' or source_name is not null
+         order by coalesce(completed_on, created_on) desc`;
+    }
+
+    if (normalizedOptions?.limit !== undefined) {
+      parameters.push(normalizedOptions.limit);
+      queryText += ` limit $${parameters.length}`;
+    }
+
+    if (normalizedOptions?.offset !== undefined) {
+      parameters.push(normalizedOptions.offset);
+      queryText += ` offset $${parameters.length}`;
+    }
+
     const result = await pool.query<{
       completed_on: Date | null;
       created_on: Date;
@@ -220,6 +252,8 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
       name: string;
       output: unknown;
       retry_count: number;
+      source_id: string | null;
+      source_name: string | null;
       state: string;
     }>(queryText, parameters);
 
@@ -230,6 +264,8 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
       name: row.name,
       output: row.output,
       retryCount: row.retry_count,
+      sourceId: row.source_id ?? undefined,
+      sourceName: row.source_name ?? undefined,
       state: row.state,
     }));
   }
@@ -245,6 +281,6 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
   }
 
   public async onApplicationShutdown(): Promise<void> {
-    await this.stop({ graceful: false });
+    await this.stop({ graceful: true, timeout: 10_000 });
   }
 }
