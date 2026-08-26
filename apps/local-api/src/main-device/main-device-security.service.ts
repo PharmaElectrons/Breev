@@ -1,12 +1,22 @@
 import {
+  attendanceEventContract,
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
+  identityBootstrapContract,
+  identityCreateUserContract,
+  identityLoginContract,
+  identityLogoutContract,
+  identityStepUpApproveContract,
+  identityStepUpCreateContract,
+  identityUpdateRolePermissionsContract,
+  identityUpdateUserContract,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   localProofEvidenceSuccessSchema,
   localProofMutationContract,
   localProofMutationSuccessSchema,
   localSecurityDenialSchema,
+  pharmacySettingsContract,
   type LocalProofEvidenceSuccess,
   type LocalProofMutationSuccess,
   type LocalSecurityDenial,
@@ -39,13 +49,25 @@ type BindingResult =
       readonly status:
         "binding-invalid" | "binding-missing" | "session-binding-invalid";
     }
-  | { readonly deviceId: string; readonly status: "verified" };
+  | {
+      readonly context: VerifiedMainDeviceContext;
+      readonly deviceId: string;
+      readonly status: "verified";
+    };
 type DeviceContext = "missing" | "present" | "verified";
 type RequestClass = "cors-preflight" | "other-state-change" | "proof-mutation";
 
+export interface VerifiedMainDeviceContext {
+  readonly deviceId: string;
+  readonly deviceSessionHash: Buffer;
+}
+
 @Injectable()
 export class MainDeviceSecurityService {
-  private readonly verifiedDeviceIds = new WeakMap<Request, string>();
+  private readonly verifiedDevices = new WeakMap<
+    Request,
+    VerifiedMainDeviceContext
+  >();
   private readonly rateLimit = readPositiveInteger(
     process.env.BREEV_PROOF_RATE_LIMIT,
     5,
@@ -99,21 +121,29 @@ export class MainDeviceSecurityService {
       return { status: "binding-invalid" };
     }
 
+    const deviceSessionHash = hashMainDeviceSecret(sessionToken);
     const session = await pool.query(
       `select 1
        from main_device_sessions
        where token_hash = $1 and device_id = $2`,
-      [hashMainDeviceSecret(sessionToken), deviceId],
+      [deviceSessionHash, deviceId],
     );
     if (session.rowCount !== 1) {
       return { status: "session-binding-invalid" };
     }
-    this.verifiedDeviceIds.set(request, deviceId);
-    return { deviceId, status: "verified" };
+    const context = { deviceId, deviceSessionHash };
+    this.verifiedDevices.set(request, context);
+    return { context, deviceId, status: "verified" };
   }
 
   public verifiedDeviceId(request: Request): string | undefined {
-    return this.verifiedDeviceIds.get(request);
+    return this.verifiedDevices.get(request)?.deviceId;
+  }
+
+  public verifiedDeviceContext(
+    request: Request,
+  ): VerifiedMainDeviceContext | undefined {
+    return this.verifiedDevices.get(request);
   }
 
   public async consumeRate(deviceId: string): Promise<boolean> {
@@ -338,9 +368,7 @@ async function protectRequest(
   }
 
   const stateChanging = STATE_CHANGING_METHODS.has(request.method);
-  const protectedRead =
-    request.method === "GET" &&
-    request.path === localProofMutationContract.path;
+  const protectedRead = request.method === "GET" && request.path !== "/health";
   const origin = request.get("origin");
   if (origin !== undefined && origin !== PACKAGED_RENDERER_ORIGIN) {
     await sendDenial(
@@ -371,7 +399,8 @@ async function protectRequest(
   }
 
   if (request.method === "OPTIONS") {
-    if (!isExactProofPreflight(request)) {
+    const allowedMethod = preflightMethod(request);
+    if (allowedMethod === undefined) {
       response.removeHeader("Access-Control-Allow-Origin");
       await sendDenial(
         response,
@@ -383,7 +412,7 @@ async function protectRequest(
       );
       return;
     }
-    response.setHeader("Access-Control-Allow-Methods", "POST");
+    response.setHeader("Access-Control-Allow-Methods", allowedMethod);
     response.setHeader(
       "Access-Control-Allow-Headers",
       "Content-Type, X-Breev-CSRF",
@@ -499,23 +528,80 @@ function setExactCorsHeaders(response: Response): void {
   response.setHeader("Vary", "Origin");
 }
 
-function isExactProofPreflight(request: Request): boolean {
-  if (
-    request.path !== localProofMutationContract.path ||
-    request.get("access-control-request-method") !== "POST"
-  ) {
-    return false;
+function preflightMethod(request: Request): string | undefined {
+  const requestedMethod = request.get("access-control-request-method");
+  const route = CORS_MUTATION_ROUTES.find(
+    (candidate) =>
+      candidate.method === requestedMethod && candidate.path.test(request.path),
+  );
+  if (route === undefined) {
+    return undefined;
   }
   const requestedHeaders = request
     .get("access-control-request-headers")
     ?.split(",")
     .map((header) => header.trim().toLowerCase())
     .sort();
-  return (
+  const exactHeaders =
     requestedHeaders?.length === 2 &&
     requestedHeaders[0] === "content-type" &&
-    requestedHeaders[1] === "x-breev-csrf"
-  );
+    requestedHeaders[1] === "x-breev-csrf";
+  return exactHeaders ? route.method : undefined;
+}
+
+const UUID_V7_PATH_PART =
+  "[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+const CORS_MUTATION_ROUTES = [
+  exactMutation(
+    localProofMutationContract.method,
+    localProofMutationContract.path,
+  ),
+  exactMutation(
+    identityBootstrapContract.method,
+    identityBootstrapContract.path,
+  ),
+  exactMutation(identityLoginContract.method, identityLoginContract.path),
+  exactMutation(identityLogoutContract.method, identityLogoutContract.path),
+  exactMutation(
+    identityCreateUserContract.method,
+    identityCreateUserContract.path,
+  ),
+  dynamicMutation(
+    identityUpdateUserContract.method,
+    identityUpdateUserContract.path,
+  ),
+  exactMutation(
+    identityStepUpCreateContract.method,
+    identityStepUpCreateContract.path,
+  ),
+  dynamicMutation(
+    identityStepUpApproveContract.method,
+    identityStepUpApproveContract.path,
+  ),
+  dynamicMutation(
+    identityUpdateRolePermissionsContract.method,
+    identityUpdateRolePermissionsContract.path,
+  ),
+  exactMutation(pharmacySettingsContract.method, pharmacySettingsContract.path),
+  exactMutation(attendanceEventContract.method, attendanceEventContract.path),
+] as const;
+
+function exactMutation(method: string, path: string): MutationRoute {
+  return { method, path: new RegExp(`^${escapeRegExp(path)}$`, "u") };
+}
+
+function dynamicMutation(method: string, path: string): MutationRoute {
+  const source = escapeRegExp(path).replace(/:[a-zA-Z]+/gu, UUID_V7_PATH_PART);
+  return { method, path: new RegExp(`^${source}$`, "u") };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+interface MutationRoute {
+  readonly method: string;
+  readonly path: RegExp;
 }
 
 function classifyRequest(request: Request): RequestClass {

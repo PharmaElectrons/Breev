@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "2" as const;
-export const LOCAL_SCHEMA_VERSION = "1" as const;
+export const LOCAL_API_VERSION = "3" as const;
+export const LOCAL_SCHEMA_VERSION = "2" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -11,6 +11,321 @@ export const BREEV_CSRF_HEADER = "X-Breev-CSRF" as const;
 export const BREEV_CSRF_VALUE = "1" as const;
 export const LOCAL_DEVICE_ID_HEADER = "X-Breev-Device-Id" as const;
 export const LOCAL_DEVICE_SESSION_HEADER = "X-Breev-Device-Session" as const;
+
+export const PHARMACY_ROLE_KEYS = [
+  "owner",
+  "manager",
+  "pharmacist",
+  "sales_employee",
+  "purchasing_employee",
+  "inventory_employee",
+  "accountant",
+  "support",
+] as const;
+export const pharmacyRoleKeySchema = z.enum(PHARMACY_ROLE_KEYS);
+export const permissionNameSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/u)
+  .max(96);
+export const stepUpActionSchema = z.enum([
+  "identity.role.permissions.update",
+  "identity.user.create",
+  "identity.user.update",
+]);
+
+export const IDENTITY_DENIAL_CODES = [
+  "attendance-already-checked-in",
+  "attendance-already-checked-out",
+  "attendance-disabled",
+  "body-invalid",
+  "bootstrap-already-complete",
+  "bootstrap-required",
+  "invalid-credentials",
+  "identity-resource-not-found",
+  "last-owner-required",
+  "permission-denied",
+  "session-expired",
+  "session-missing",
+  "session-revoked",
+  "step-up-context-mismatch",
+  "step-up-expired",
+  "step-up-missing-permission",
+  "step-up-not-approved",
+  "step-up-reused",
+  "step-up-stale",
+  "step-up-wrong-password",
+  "username-taken",
+] as const;
+export const identityDenialCodeSchema = z.enum(IDENTITY_DENIAL_CODES);
+export const identityDenialSchema = z.strictObject({
+  status: z.literal("denied"),
+  code: identityDenialCodeSchema,
+  requestId: z.uuidv7(),
+  requiredPermission: permissionNameSchema.optional(),
+});
+
+const usernameSchema = z
+  .string()
+  .min(3)
+  .max(64)
+  .refine((value) => value === value.trim());
+const displayNameSchema = z
+  .string()
+  .min(1)
+  .max(96)
+  .refine((value) => value === value.trim());
+const passwordSchema = z.string().min(15).max(128);
+const decimalRevisionSchema = z.string().regex(/^[1-9]\d*$/u);
+export const identityResourceIdSchema = z.uuidv7();
+
+export const identityUserSchema = z.strictObject({
+  id: z.uuidv7(),
+  displayName: displayNameSchema,
+  username: usernameSchema,
+  role: pharmacyRoleKeySchema,
+  status: z.enum(["active", "locked"]),
+  revision: decimalRevisionSchema,
+});
+export const pharmacySettingsSchema = z.strictObject({
+  attendanceEnabled: z.boolean(),
+  revision: decimalRevisionSchema,
+});
+const attendanceStateSchema = z.strictObject({
+  status: z.enum(["checked-in", "checked-out"]),
+  version: decimalRevisionSchema,
+});
+const authenticatedStateSchema = z.strictObject({
+  state: z.literal("authenticated"),
+  pharmacy: z.strictObject({
+    id: z.uuidv7(),
+    name: z.string().min(1).max(160),
+  }),
+  user: identityUserSchema,
+  session: z.strictObject({ id: z.uuidv7(), expiresAt: z.iso.datetime() }),
+  allowedPermissions: z.array(permissionNameSchema),
+  settings: pharmacySettingsSchema,
+  attendance: attendanceStateSchema.nullable(),
+});
+export const identityStateSchema = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("bootstrap-required") }),
+  z.strictObject({ state: z.literal("unauthenticated") }),
+  z.strictObject({ state: z.literal("session-expired") }),
+  z.strictObject({ state: z.literal("session-revoked") }),
+  authenticatedStateSchema,
+]);
+
+export const identityBootstrapRequestSchema = z.strictObject({
+  pharmacyName: z
+    .string()
+    .min(1)
+    .max(160)
+    .refine((value) => value === value.trim()),
+  owner: z.strictObject({
+    displayName: displayNameSchema,
+    username: usernameSchema,
+    password: passwordSchema,
+  }),
+});
+export const identityLoginRequestSchema = z.strictObject({
+  username: usernameSchema,
+  password: z.string().min(1).max(128),
+});
+export const identityLogoutRequestSchema = z.strictObject({});
+export const identityStepUpCreateRequestSchema = z.strictObject({
+  action: stepUpActionSchema,
+  subjectId: z.uuidv7().optional(),
+});
+export const identityStepUpApproveRequestSchema = z.strictObject({
+  password: z.string().min(1).max(128),
+});
+export const identityStepUpChallengeSchema = z.strictObject({
+  id: z.uuidv7(),
+  action: stepUpActionSchema,
+  expiresAt: z.iso.datetime(),
+  status: z.enum(["approved", "pending"]),
+});
+export const identityCreateUserRequestSchema = z.strictObject({
+  challengeId: z.uuidv7(),
+  displayName: displayNameSchema,
+  username: usernameSchema,
+  password: passwordSchema,
+  role: pharmacyRoleKeySchema,
+});
+export const identityUpdateUserRequestSchema = z.strictObject({
+  challengeId: z.uuidv7(),
+  role: pharmacyRoleKeySchema.optional(),
+  status: z.enum(["active", "locked"]).optional(),
+});
+export const identityRoleSchema = z.strictObject({
+  id: z.uuidv7(),
+  key: pharmacyRoleKeySchema,
+  revision: decimalRevisionSchema,
+  grants: z.array(permissionNameSchema),
+});
+export const identityRolesSchema = z.strictObject({
+  roles: z.array(identityRoleSchema).length(PHARMACY_ROLE_KEYS.length),
+  permissions: z.array(permissionNameSchema),
+});
+export const identityUpdateRolePermissionsRequestSchema = z.strictObject({
+  challengeId: z.uuidv7(),
+  permissions: z.array(permissionNameSchema).max(128),
+});
+export const pharmacySettingsUpdateRequestSchema = z.strictObject({
+  attendanceEnabled: z.boolean(),
+});
+export const attendanceEventRequestSchema = z.strictObject({
+  kind: z.enum(["check-in", "check-out"]),
+});
+export const attendanceEventSchema = z.strictObject({
+  id: z.uuidv7(),
+  kind: z.enum(["check-in", "check-out"]),
+  occurredAt: z.iso.datetime(),
+  status: z.enum(["checked-in", "checked-out"]),
+  version: decimalRevisionSchema,
+});
+
+export const identityStateContract = {
+  method: "GET",
+  path: "/identity/state",
+  responses: { 200: identityStateSchema },
+} as const;
+export const identityBootstrapContract = {
+  method: "POST",
+  path: "/identity/bootstrap",
+  request: { body: identityBootstrapRequestSchema },
+  responses: {
+    201: authenticatedStateSchema,
+    400: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
+export const identityLoginContract = {
+  method: "POST",
+  path: "/identity/login",
+  request: { body: identityLoginRequestSchema },
+  responses: {
+    200: authenticatedStateSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
+export const identityLogoutContract = {
+  method: "POST",
+  path: "/identity/logout",
+  request: { body: identityLogoutRequestSchema },
+  responses: { 204: z.undefined(), 401: identityDenialSchema },
+} as const;
+export const identityRolesContract = {
+  method: "GET",
+  path: "/identity/roles",
+  responses: {
+    200: identityRolesSchema,
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+  },
+} as const;
+export const identityUsersContract = {
+  method: "GET",
+  path: "/identity/users",
+  responses: {
+    200: z.strictObject({ users: z.array(identityUserSchema) }),
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+  },
+} as const;
+export const identityCreateUserContract = {
+  method: "POST",
+  path: "/identity/users",
+  request: { body: identityCreateUserRequestSchema },
+  responses: {
+    201: identityUserSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
+export const identityUpdateUserContract = {
+  method: "PATCH",
+  path: "/identity/users/:userId",
+  request: { body: identityUpdateUserRequestSchema },
+  responses: {
+    200: identityUserSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
+export const identityUserPath = (userId: string): string =>
+  `/identity/users/${userId}`;
+export const identityStepUpCreateContract = {
+  method: "POST",
+  path: "/identity/step-up-challenges",
+  request: { body: identityStepUpCreateRequestSchema },
+  responses: {
+    201: identityStepUpChallengeSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+    404: identityDenialSchema,
+  },
+} as const;
+export const identityStepUpApprovePath = (challengeId: string): string =>
+  `/identity/step-up-challenges/${challengeId}/approve`;
+export const identityStepUpApproveContract = {
+  method: "POST",
+  path: "/identity/step-up-challenges/:challengeId/approve",
+  request: { body: identityStepUpApproveRequestSchema },
+  responses: {
+    200: identityStepUpChallengeSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
+export const identityRolePermissionsPath = (roleId: string): string =>
+  `/identity/roles/${roleId}/permissions`;
+export const identityUpdateRolePermissionsContract = {
+  method: "PUT",
+  path: "/identity/roles/:roleId/permissions",
+  request: { body: identityUpdateRolePermissionsRequestSchema },
+  responses: {
+    200: identityRoleSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
+export const pharmacySettingsContract = {
+  method: "PATCH",
+  path: "/pharmacy/settings",
+  request: { body: pharmacySettingsUpdateRequestSchema },
+  responses: {
+    200: pharmacySettingsSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+  },
+} as const;
+export const attendanceEventContract = {
+  method: "POST",
+  path: "/attendance/events",
+  request: { body: attendanceEventRequestSchema },
+  responses: {
+    201: attendanceEventSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
 
 export const localHealthQuerySchema = z.strictObject({});
 
@@ -167,6 +482,47 @@ export type LocalProofMutationSuccess = z.infer<
 export type LocalProofEvidenceSuccess = z.infer<
   typeof localProofEvidenceSuccessSchema
 >;
+export type PharmacyRoleKey = z.infer<typeof pharmacyRoleKeySchema>;
+export type StepUpAction = z.infer<typeof stepUpActionSchema>;
+export type IdentityDenialCode = z.infer<typeof identityDenialCodeSchema>;
+export type IdentityDenial = z.infer<typeof identityDenialSchema>;
+export type IdentityUser = z.infer<typeof identityUserSchema>;
+export type PharmacySettings = z.infer<typeof pharmacySettingsSchema>;
+export type IdentityState = z.infer<typeof identityStateSchema>;
+export type IdentityAuthenticatedState = z.infer<
+  typeof authenticatedStateSchema
+>;
+export type IdentityBootstrapRequest = z.infer<
+  typeof identityBootstrapRequestSchema
+>;
+export type IdentityLoginRequest = z.infer<typeof identityLoginRequestSchema>;
+export type IdentityStepUpCreateRequest = z.infer<
+  typeof identityStepUpCreateRequestSchema
+>;
+export type IdentityStepUpApproveRequest = z.infer<
+  typeof identityStepUpApproveRequestSchema
+>;
+export type IdentityStepUpChallenge = z.infer<
+  typeof identityStepUpChallengeSchema
+>;
+export type IdentityCreateUserRequest = z.infer<
+  typeof identityCreateUserRequestSchema
+>;
+export type IdentityUpdateUserRequest = z.infer<
+  typeof identityUpdateUserRequestSchema
+>;
+export type IdentityRole = z.infer<typeof identityRoleSchema>;
+export type IdentityRoles = z.infer<typeof identityRolesSchema>;
+export type IdentityUpdateRolePermissionsRequest = z.infer<
+  typeof identityUpdateRolePermissionsRequestSchema
+>;
+export type PharmacySettingsUpdateRequest = z.infer<
+  typeof pharmacySettingsUpdateRequestSchema
+>;
+export type AttendanceEventRequest = z.infer<
+  typeof attendanceEventRequestSchema
+>;
+export type AttendanceEvent = z.infer<typeof attendanceEventSchema>;
 
 export class LocalRestVersionMismatchError extends Error {
   public constructor(
