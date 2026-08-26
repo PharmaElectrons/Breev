@@ -471,9 +471,12 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       it("proves the CA key export fails", () => {
         expect(caKeyResult.keyHandle.isMachineKey).toBe(true);
         expect(caKeyResult.keyHandle.serviceAccountSid).toMatch(/^S-1-/);
-        expect(readPersistedKeyAcl(caKeyResult.keyHandle)).toBe(
-          `D:P(A;;GA;;;${caKeyResult.keyHandle.serviceAccountSid})`,
-        );
+        expect(readPersistedKeyAcl(caKeyResult.keyHandle)).toEqual({
+          aceCount: 1,
+          aceType: "AccessAllowed",
+          allowedSid: caKeyResult.keyHandle.serviceAccountSid,
+          protected: true,
+        });
         const exportResult = tryExportPrivateKey(caKeyResult.keyHandle);
         expect(exportResult.exported).toBe(false);
         expect(exportResult.message).toContain("EXPORT_DENIED");
