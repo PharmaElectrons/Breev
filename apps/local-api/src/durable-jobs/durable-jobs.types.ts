@@ -14,6 +14,13 @@ export interface DeadLetterJob<T = unknown> {
   readonly state: string;
   readonly retryCount: number;
   readonly output: unknown;
+  readonly sourceName?: string | undefined;
+  readonly sourceId?: string | undefined;
+}
+
+export interface DeadLetterJobOptions {
+  readonly limit?: number;
+  readonly offset?: number;
 }
 
 export interface DurableJobSendOptions extends SendOptions {
