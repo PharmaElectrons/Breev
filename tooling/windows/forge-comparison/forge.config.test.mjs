@@ -110,6 +110,23 @@ test("fails closed if the pinned MakerWix template shape changes", () => {
   );
 });
 
+test("tracks process identity across long MSI transitions", async () => {
+  const lifecycleProof = await readFile(
+    new URL(
+      "../proof/Invoke-ForgeCandidateLifecycleProof.ps1",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(lifecycleProof, /function Get-ProcessTreeRecords/);
+  assert.match(lifecycleProof, /createdAtUtcTicks/);
+  assert.match(
+    lifecycleProof,
+    /Wait-ProcessTreeExit -Processes \$preUpdateProcesses/,
+  );
+});
+
 function count(value, pattern) {
   return value.split(pattern).length - 1;
 }
