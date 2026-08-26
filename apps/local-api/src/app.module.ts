@@ -5,7 +5,6 @@ import { HealthController } from "./health.controller.js";
 import { LocalDatabaseService } from "./local-database.service.js";
 import { MainDeviceProofController } from "./main-device/main-device-proof.controller.js";
 import { MainDeviceSecurityService } from "./main-device/main-device-security.service.js";
-import { PharmacyCaService } from "./pharmacy-ca/pharmacy-ca.service.js";
 
 @Module({
   controllers: [HealthController, MainDeviceProofController],
@@ -13,7 +12,6 @@ import { PharmacyCaService } from "./pharmacy-ca/pharmacy-ca.service.js";
     DatabaseHealthService,
     LocalDatabaseService,
     MainDeviceSecurityService,
-    PharmacyCaService,
   ],
 })
 export class AppModule {}

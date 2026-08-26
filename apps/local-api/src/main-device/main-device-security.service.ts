@@ -194,7 +194,6 @@ export class MainDeviceSecurityService {
     requestClass: RequestClass,
     deviceContext: DeviceContext,
     deviceId?: string,
-    terminalDeviceId?: string,
   ): Promise<LocalSecurityDenial> {
     const client = await this.localDatabase.requirePool().connect();
     let requestId = "";
@@ -203,16 +202,10 @@ export class MainDeviceSecurityService {
       await client.query("select pg_advisory_xact_lock(165308856)");
       const denial = await client.query<{ id: string }>(
         `insert into main_device_recent_denials
-           (code, request_class, device_context, device_id, terminal_device_id)
-         values ($1, $2, $3, $4, $5)
+           (code, request_class, device_context, device_id)
+         values ($1, $2, $3, $4)
          returning id`,
-        [
-          code,
-          requestClass,
-          deviceContext,
-          deviceId ?? null,
-          terminalDeviceId ?? null,
-        ],
+        [code, requestClass, deviceContext, deviceId ?? null],
       );
       requestId = denial.rows[0]?.id ?? "";
       await client.query(
@@ -266,22 +259,16 @@ export class MainDeviceSecurityService {
 }
 
 export function createMainRequestSecurityMiddleware({
-  additionalExpectedHosts = [],
   expectedHost,
   security,
 }: {
-  readonly additionalExpectedHosts?: readonly string[];
   readonly expectedHost: string;
   readonly security: MainDeviceSecurityService;
 }): RequestHandler {
   return (request, response, next) => {
-    void protectRequest(
-      request,
-      response,
+    void protectRequest(request, response, next, expectedHost, security).catch(
       next,
-      [expectedHost, ...additionalExpectedHosts],
-      security,
-    ).catch(next);
+    );
   };
 }
 
@@ -317,15 +304,13 @@ async function protectRequest(
   request: Request,
   response: Response,
   next: NextFunction,
-  expectedHosts: readonly string[],
+  expectedHost: string,
   security: MainDeviceSecurityService,
 ): Promise<void> {
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("X-Content-Type-Options", "nosniff");
   const requestClass = classifyRequest(request);
-  if (
-    !expectedHosts.some((expectedHost) => hasExactHost(request, expectedHost))
-  ) {
+  if (!hasExactHost(request, expectedHost)) {
     await sendDenial(
       response,
       security,
