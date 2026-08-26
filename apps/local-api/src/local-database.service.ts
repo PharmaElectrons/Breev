@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { Pool, type PoolClient } from "pg";
+import { PgBoss } from "pg-boss";
 
 import { readDatabaseConnectionString } from "./database-connection.js";
 import {
@@ -28,9 +29,11 @@ interface DatabaseConfiguration {
 export class LocalDatabaseService
   implements OnModuleInit, OnApplicationShutdown
 {
+  private readonly applicationUrl: string | undefined;
   private migrationUrl: string | undefined;
   private readonly pool: Pool | undefined;
   private readonly provisioning: MainDeviceProvisioning | undefined;
+  private readyPromise: Promise<void> | undefined;
 
   public constructor() {
     const configuration = readDatabaseConfiguration(process.env);
@@ -39,12 +42,24 @@ export class LocalDatabaseService
       return;
     }
 
+    this.applicationUrl = configuration.applicationUrl;
     this.migrationUrl = configuration.migrationUrl;
     delete process.env.DATABASE_MIGRATION_URL;
     this.pool = createPool(configuration.applicationUrl);
   }
 
+  public async ensureReady(): Promise<void> {
+    if (this.readyPromise === undefined) {
+      this.readyPromise = this.initialize();
+    }
+    return this.readyPromise;
+  }
+
   public async onModuleInit(): Promise<void> {
+    await this.ensureReady();
+  }
+
+  private async initialize(): Promise<void> {
     if (this.pool === undefined) {
       return;
     }
@@ -69,6 +84,10 @@ export class LocalDatabaseService
     } finally {
       client.release();
     }
+  }
+
+  public getApplicationUrl(): string | undefined {
+    return this.applicationUrl;
   }
 
   public async isAvailable(): Promise<boolean> {
@@ -113,6 +132,7 @@ async function runMigrations(
         migrationsSchema: "breev_migrations",
         migrationsTable: "breev_schema_migrations",
       });
+      await migratePgBoss(migrationUrl, migrationClient);
     } finally {
       await migrationClient.query("select pg_advisory_unlock($1)", [
         MIGRATION_LOCK_ID,
@@ -122,6 +142,32 @@ async function runMigrations(
     migrationClient.release();
     await migrationPool.end();
   }
+}
+
+async function migratePgBoss(
+  migrationUrl: string,
+  migrationClient: PoolClient,
+): Promise<void> {
+  const boss = new PgBoss({
+    connectionString: migrationUrl,
+    createSchema: true,
+    migrate: true,
+    schedule: false,
+    schema: "pgboss",
+    supervise: false,
+  });
+  await boss.start();
+  await boss.stop({ graceful: false });
+
+  await migrationClient.query(`
+    grant usage on schema pgboss to breev_app;
+    grant select, insert, update, delete on all tables in schema pgboss to breev_app;
+    grant usage, select, update on all sequences in schema pgboss to breev_app;
+    grant execute on all functions in schema pgboss to breev_app;
+    alter default privileges in schema pgboss grant select, insert, update, delete on tables to breev_app;
+    alter default privileges in schema pgboss grant usage, select, update on sequences to breev_app;
+    alter default privileges in schema pgboss grant execute on functions to breev_app;
+  `);
 }
 
 async function assertSeparatedDatabaseRoles(

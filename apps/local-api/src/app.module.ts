@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { DatabaseHealthService } from "./database-health.service.js";
+import { DurableJobsService } from "./durable-jobs/durable-jobs.service.js";
 import { HealthController } from "./health.controller.js";
 import { IdentityAccessController } from "./identity-access/identity-access.controller.js";
 import { IdentityAccessService } from "./identity-access/identity-access.service.js";
@@ -17,6 +18,7 @@ import { PharmacyCaService } from "./pharmacy-ca/pharmacy-ca.service.js";
   ],
   providers: [
     DatabaseHealthService,
+    DurableJobsService,
     IdentityAccessService,
     LocalDatabaseService,
     MainDeviceSecurityService,
