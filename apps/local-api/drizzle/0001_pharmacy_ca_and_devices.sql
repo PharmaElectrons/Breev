@@ -77,6 +77,12 @@ create table terminal_devices (
   )
 );
 --> statement-breakpoint
+alter table main_device_recent_denials
+  add column terminal_device_id uuid references terminal_devices(id),
+  add constraint main_device_recent_denials_one_device_kind check (
+    num_nonnulls(device_id, terminal_device_id) <= 1
+  );
+--> statement-breakpoint
 revoke all on table
   pharmacy_ca,
   server_certificates,
