@@ -836,10 +836,10 @@ try {
     @($listeners | Where-Object { $_.LocalAddress -notin @("127.0.0.1", "::1") }).Count -eq 0
   ) -Details $listeners
 
-  $roleRows = Invoke-Psql -Role schema-owner -Sql "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('breev_runtime','breev_schema_owner') ORDER BY rolname;"
-  $roleMembershipRows = Invoke-Psql -Role schema-owner -Sql "SELECT member_role.rolname || '|' || granted_role.rolname FROM pg_auth_members membership JOIN pg_roles member_role ON member_role.oid = membership.member JOIN pg_roles granted_role ON granted_role.oid = membership.roleid WHERE member_role.rolname IN ('breev_runtime','breev_schema_owner') ORDER BY member_role.rolname, granted_role.rolname;"
+  $roleRows = Invoke-Psql -Role schema-owner -Sql "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ('breev_app','breev_schema_owner') ORDER BY rolname;"
+  $roleMembershipRows = Invoke-Psql -Role schema-owner -Sql "SELECT member_role.rolname || '|' || granted_role.rolname FROM pg_auth_members membership JOIN pg_roles member_role ON member_role.oid = membership.member JOIN pg_roles granted_role ON granted_role.oid = membership.roleid WHERE member_role.rolname IN ('breev_app','breev_schema_owner') ORDER BY member_role.rolname, granted_role.rolname;"
   Add-Check -Name "separate-least-privilege-database-roles" -Passed (
-    $roleRows -match 'breev_runtime\|f\|f\|f\|f\|f\|f' -and
+    $roleRows -match 'breev_app\|f\|f\|f\|f\|f\|f' -and
     $roleRows -match 'breev_schema_owner\|f\|f\|f\|f\|f\|f' -and
     [string]::IsNullOrWhiteSpace($roleMembershipRows)
   ) -Details @{ attributes = $roleRows; memberships = $roleMembershipRows }
