@@ -97,7 +97,9 @@ button:not(:disabled) {
   cursor: pointer;
 }
 
-button:focus-visible {
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
@@ -107,8 +109,8 @@ button:focus-visible {
   isolation: isolate;
   display: grid;
   min-height: 100vh;
-  grid-template-rows: auto 1fr auto;
-  overflow: hidden;
+  grid-template-rows: auto auto 1fr auto;
+  overflow-x: hidden;
   background:
     linear-gradient(
       145deg,
@@ -226,6 +228,19 @@ button:focus-visible {
   justify-self: center;
   padding-block: clamp(2rem, 8vh, 5rem);
   padding-inline: 1rem;
+}
+
+.status-region:has(.status-card[data-state="ready"]) {
+  align-self: start;
+  padding-block: 1.25rem;
+}
+
+.status-card[data-state="ready"] .status-header {
+  padding-block: 1.25rem;
+}
+
+.status-card[data-state="ready"] .status-copy h1 {
+  font-size: 1.5rem;
 }
 
 .status-card {
@@ -408,6 +423,372 @@ button:focus-visible {
   text-align: center;
 }
 
+.identity-region {
+  display: grid;
+  inline-size: min(100%, 72rem);
+  align-self: start;
+  justify-self: center;
+  gap: 1rem;
+  padding-block: 0.25rem 3rem;
+  padding-inline: 1rem;
+}
+
+.identity-card {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: 0 1rem 2.5rem var(--shadow);
+}
+
+.identity-loading {
+  display: flex;
+  min-block-size: 10rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+}
+
+.identity-loading p,
+.identity-heading p,
+.workspace-summary p,
+.compact-card p,
+.step-up-dialog p,
+.denial-alert p {
+  margin: 0;
+}
+
+.status-spinner {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border: 2px solid var(--border);
+  border-block-start-color: var(--primary);
+  border-radius: 50%;
+  animation: status-spin 0.8s linear infinite;
+}
+
+.auth-card {
+  inline-size: min(100%, 42rem);
+  justify-self: center;
+  padding: clamp(1.25rem, 4vw, 2.25rem);
+}
+
+.identity-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+  margin-block-end: 1.5rem;
+  text-align: start;
+}
+
+.identity-heading h2,
+.workspace-summary h2,
+.admin-card h3,
+.compact-card h3,
+.step-up-dialog h3 {
+  margin: 0;
+}
+
+.identity-heading p,
+.workspace-summary p,
+.compact-card p,
+.step-up-dialog p {
+  margin-block-start: 0.5rem;
+  color: var(--muted-foreground);
+  line-height: 1.65;
+}
+
+.identity-symbol {
+  display: grid;
+  inline-size: 2.8rem;
+  block-size: 2.8rem;
+  place-items: center;
+  border-radius: 0.85rem;
+  background: var(--info-soft);
+  color: var(--info);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.identity-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.field-label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--card-foreground);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: start;
+}
+
+.field-label input,
+.field-label select {
+  inline-size: 100%;
+  min-block-size: 2.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding-inline: 0.8rem;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 500;
+}
+
+.session-banner {
+  display: grid;
+  gap: 0.3rem;
+  margin-block-end: 1.25rem;
+  border-inline-start: 0.3rem solid var(--warning);
+  border-radius: 0.65rem;
+  padding: 0.85rem 1rem;
+  background: var(--warning-soft);
+  color: var(--warning);
+  text-align: start;
+}
+
+.session-banner h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.workspace-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.workspace-summary,
+.compact-card,
+.admin-heading,
+.workspace-actions,
+.user-actions,
+.form-actions,
+.inline-form {
+  display: flex;
+  align-items: center;
+}
+
+.workspace-summary,
+.compact-card {
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  text-align: start;
+}
+
+.identity-eyebrow {
+  margin-block-end: 0.35rem !important;
+  color: var(--primary) !important;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+[dir="rtl"] .identity-eyebrow {
+  letter-spacing: 0;
+}
+
+.workspace-actions,
+.user-actions,
+.form-actions {
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.state-chip {
+  display: inline-flex;
+  min-block-size: 2rem;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding-inline: 0.65rem;
+  color: var(--ready);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.state-chip[data-status="locked"] {
+  color: var(--danger);
+}
+
+.state-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.permission-summary {
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+
+.admin-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  text-align: start;
+}
+
+.admin-heading,
+.inline-form {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.check-row {
+  display: flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.88rem;
+}
+
+.check-row input {
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+  accent-color: var(--primary);
+}
+
+.user-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  background: var(--muted);
+}
+
+.user-form .form-actions {
+  grid-column: 1 / -1;
+}
+
+.user-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.user-list li {
+  display: flex;
+  min-block-size: 4.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-block-start: 1px solid var(--border);
+  padding-block: 0.75rem;
+}
+
+.user-list li > div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.user-list li span:not(.state-chip) {
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.role-grid fieldset {
+  display: grid;
+  align-content: start;
+  gap: 0.15rem;
+  min-inline-size: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 1rem;
+}
+
+.role-grid legend {
+  padding-inline: 0.35rem;
+  font-weight: 800;
+}
+
+.permission-row span {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.75rem;
+}
+
+.denial-alert {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.8rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  background: var(--danger-soft);
+  color: var(--danger);
+  text-align: start;
+}
+
+.denial-alert small {
+  display: block;
+  margin-block-start: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.denial-icon {
+  display: grid;
+  inline-size: 1.7rem;
+  block-size: 1.7rem;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-weight: 900;
+}
+
+.dismiss-button {
+  inline-size: 2.2rem;
+  block-size: 2.2rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: currentColor;
+  font-size: 1.4rem;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: color-mix(in srgb, #000000 58%, transparent);
+}
+
+.step-up-dialog {
+  inline-size: min(100%, 30rem);
+  padding: 1.5rem;
+  box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.45);
+  text-align: start;
+}
+
+.step-up-dialog .identity-form {
+  margin-block-start: 1.25rem;
+}
+
+@keyframes status-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 @keyframes status-pulse {
   50% {
     opacity: 0.48;
@@ -451,6 +832,25 @@ button:focus-visible {
 
   .primary-button {
     inline-size: 100%;
+  }
+
+  .workspace-summary,
+  .compact-card,
+  .admin-heading,
+  .inline-form,
+  .user-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .user-form,
+  .role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-actions,
+  .user-actions {
+    justify-content: space-between;
   }
 }
 
