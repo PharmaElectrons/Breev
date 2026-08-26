@@ -23,6 +23,7 @@ import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
+import { Pool } from "pg";
 
 import {
   createSeparatedDatabaseRoles,
@@ -56,7 +57,15 @@ interface MainDeviceCredentials {
   readonly sessionToken: string;
 }
 
+interface IdentityStateMatrix {
+  readonly arabicHeading: string;
+  readonly englishHeading: string;
+  readonly evidenceName: string;
+  readonly focusLabel: { readonly ar: string; readonly en: string };
+}
+
 test.describe.serial("bilingual desktop shell", () => {
+  let administrator: Pool;
   let api: ChildProcessWithoutNullStreams | undefined;
   let apiOrigin: string;
   let apiPort: number;
@@ -73,12 +82,14 @@ test.describe.serial("bilingual desktop shell", () => {
     apiOrigin = `http://127.0.0.1:${apiPort}`;
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
     await waitForHealth(apiOrigin, "healthy");
-    renderer = await startRendererServer(apiOrigin);
+    administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
+    renderer = await startRendererServer(apiOrigin, credentials);
   });
 
   test.afterAll(async () => {
     await closeServer(renderer?.server);
     await stopProcess(api);
+    await administrator?.end().catch(() => undefined);
     await postgres?.stop().catch(() => undefined);
   });
 
@@ -237,6 +248,9 @@ test.describe.serial("bilingual desktop shell", () => {
     await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+    await expect(
+      page.getByRole("heading", { name: "Set up this pharmacy" }),
+    ).toBeVisible();
 
     const language = page.getByRole("button", { name: "Switch to Arabic" });
     const theme = page.getByRole("button", { name: "Use dark theme" });
@@ -313,6 +327,400 @@ test.describe.serial("bilingual desktop shell", () => {
       expect(box?.height).toBeGreaterThanOrEqual(24);
       expect(box?.width).toBeGreaterThanOrEqual(24);
     }
+  });
+
+  test("bootstraps the pharmacy through the real API with keyboard-only English light interaction", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Set up this pharmacy" }),
+    ).toBeVisible();
+    await expectIdentityStateMatrix(page, {
+      arabicHeading: "إعداد الصيدلية",
+      englishHeading: "Set up this pharmacy",
+      evidenceName: "bootstrap",
+      focusLabel: { ar: "اسم الصيدلية", en: "Pharmacy name" },
+    });
+    await expect(page.getByRole("heading", { name: "Attendance" })).toHaveCount(
+      0,
+    );
+
+    const pharmacyName = page.getByLabel("Pharmacy name");
+    await pharmacyName.focus();
+    await page.keyboard.type("Breev Browser Pharmacy");
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Display name")).toBeFocused();
+    await page.keyboard.type("Browser Owner");
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Username")).toBeFocused();
+    await page.keyboard.type("browser.owner");
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Password")).toBeFocused();
+    const focusOutlineWidth = await page
+      .getByLabel("Password")
+      .evaluate((element) => {
+        const view = element.ownerDocument.defaultView;
+        return view === null
+          ? 0
+          : Number.parseFloat(view.getComputedStyle(element).outlineWidth);
+      });
+    expect(focusOutlineWidth).toBeGreaterThanOrEqual(3);
+    await page.keyboard.type("browser owner password is private");
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: "Create pharmacy and owner" }),
+    ).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Configure role permissions" }),
+    ).toBeVisible();
+    await expectBrowserStorageToContainPreferencesOnly(page);
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.resolve(
+        import.meta.dirname,
+        "../../../../evidence/issue-38/after/en-light-owner.png",
+      ),
+    });
+  });
+
+  test("shows generic login denial and Arabic dark authenticated states", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Sign in to Breev" }),
+    ).toBeVisible();
+    await expectIdentityStateMatrix(page, {
+      arabicHeading: "تسجيل الدخول إلى بريف",
+      englishHeading: "Sign in to Breev",
+      evidenceName: "login",
+      focusLabel: { ar: "اسم المستخدم", en: "Username" },
+    });
+
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("wrong password");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByText("The username or password is incorrect."),
+    ).toBeVisible();
+    await expect(page.getByLabel("Username")).toHaveValue("browser.owner");
+    await expect(page.getByLabel("Password")).toHaveValue("wrong password");
+    await expect(page.getByLabel("Password")).toBeFocused();
+    await expectIdentityStateMatrix(page, {
+      arabicHeading: "تسجيل الدخول إلى بريف",
+      englishHeading: "Sign in to Breev",
+      evidenceName: "wrong-password",
+      focusLabel: { ar: "كلمة المرور", en: "Password" },
+    });
+    await page.locator(".denial-alert .dismiss-button").click();
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(
+      page.getByRole("heading", { name: "مرحباً, Browser Owner" }),
+    ).toBeVisible();
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.resolve(
+        import.meta.dirname,
+        "../../../../evidence/issue-38/after/ar-dark-owner.png",
+      ),
+    });
+
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
+  test("requires Step-Up to create a default-deny user and enforces denial through the API", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    await expectStepUpStateMatrix(page);
+    await page.getByRole("button", { name: "Add user" }).focus();
+    await page.keyboard.press("Enter");
+    const stepUpPassword = page.getByRole("dialog").getByLabel("Password");
+    await expect(stepUpPassword).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(
+      page.getByRole("dialog").getByRole("button", { name: "Cancel" }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(stepUpPassword).toBeFocused();
+    await page.keyboard.type("wrong password");
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("The password is incorrect.")).toBeVisible();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(stepUpPassword).toHaveValue("wrong password");
+    await expect(stepUpPassword).toBeFocused();
+    await page
+      .getByRole("dialog")
+      .locator(".denial-alert .dismiss-button")
+      .click();
+    await stepUpPassword.fill("browser owner password is private");
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("button", { name: "Create user" }),
+    ).toBeVisible();
+    await page.getByLabel("Display name").last().fill("Browser Manager");
+    await page.getByLabel("Username").last().fill("browser.manager");
+    await page
+      .getByLabel("Password")
+      .last()
+      .fill("browser manager password is private");
+    await page.getByRole("combobox", { name: "Role" }).selectOption("manager");
+    await page.getByRole("button", { name: "Create user" }).click();
+    await expect(page.getByText("Browser Manager")).toBeVisible();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.manager");
+    await page
+      .getByLabel("Password")
+      .fill("browser manager password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Manager" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "User management" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("Your account does not have the required permission."),
+    ).toBeVisible();
+    const directApi = (await page.evaluate(async () => {
+      const response = await fetch("/identity/users", {
+        headers: { Accept: "application/json" },
+      });
+      return {
+        body: (await response.json()) as { code?: string },
+        status: response.status,
+      };
+    })) as { body: { code?: string }; status: number };
+    expect(directApi).toEqual({
+      body: expect.objectContaining({ code: "permission-denied" }),
+      status: 403,
+    });
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.resolve(
+        import.meta.dirname,
+        "../../../../evidence/issue-38/after/en-light-default-deny.png",
+      ),
+    });
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+  });
+
+  test("configures attendance and roles with Step-Up, then presents a locked login generically", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    const managerRole = page.getByRole("group", { name: "Manager" });
+    await expect(managerRole).toBeVisible();
+    for (const permission of [
+      "attendance.record",
+      "pharmacy.settings.manage",
+    ]) {
+      await managerRole.getByLabel(permission).check();
+    }
+    await managerRole.getByRole("button", { name: "Save" }).click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+
+    await expect(page.getByRole("heading", { name: "Attendance" })).toHaveCount(
+      0,
+    );
+    const settings = page
+      .getByRole("heading", { name: "Pharmacy settings" })
+      .locator("..");
+    await settings.getByRole("checkbox").check();
+    await settings.getByRole("button", { name: "Save" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Attendance" }),
+    ).toBeVisible();
+    await expectIdentityStateMatrix(page, {
+      arabicHeading: "مرحباً, Browser Owner",
+      englishHeading: "Welcome, Browser Owner",
+      evidenceName: "attendance-enabled",
+      focusLabel: {
+        ar: "تفعيل تسجيل الحضور والانصراف اليدوي",
+        en: "Enable manual check-in and check-out",
+      },
+    });
+    await page.getByRole("button", { name: "Check in" }).click();
+    await expect(page.getByRole("button", { name: "Check out" })).toBeVisible();
+
+    const managerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Manager" });
+    await managerRow.getByRole("button", { name: "Lock user" }).click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+    await expect(managerRow.getByText("Locked")).toBeVisible();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.manager");
+    await page
+      .getByLabel("Password")
+      .fill("browser manager password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByText("The username or password is incorrect."),
+    ).toBeVisible();
+    await expectIdentityStateMatrix(page, {
+      arabicHeading: "تسجيل الدخول إلى بريف",
+      englishHeading: "Sign in to Breev",
+      evidenceName: "locked-user",
+      focusLabel: { ar: "كلمة المرور", en: "Password" },
+    });
+  });
+
+  test("surfaces session expiry and removes attendance when its setting is disabled", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "dark",
+    });
+    await page.goto(renderer.origin);
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Attendance" }),
+    ).toBeVisible();
+
+    await administrator.query(
+      `update identity_sessions
+       set expires_at = created_at + interval '1 millisecond'
+       where revoked_at is null`,
+    );
+    await expect(
+      page.getByRole("heading", { name: "Session expired" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expectIdentityStateMatrix(page, {
+      arabicHeading: "انتهت الجلسة",
+      englishHeading: "Session expired",
+      evidenceName: "session-expired",
+      focusLabel: { ar: "اسم المستخدم", en: "Username" },
+    });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.resolve(
+        import.meta.dirname,
+        "../../../../evidence/issue-38/after/en-dark-session-expired.png",
+      ),
+    });
+
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+    await administrator.query(
+      `update identity_sessions
+       set revoked_at = statement_timestamp(), revocation_reason = 'administrative'
+       where revoked_at is null`,
+    );
+    await expect(
+      page.getByRole("heading", { name: "Session ended" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expectIdentityStateMatrix(page, {
+      arabicHeading: "تم إنهاء الجلسة",
+      englishHeading: "Session ended",
+      evidenceName: "session-revoked",
+      focusLabel: { ar: "اسم المستخدم", en: "Username" },
+    });
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    const settings = page
+      .getByRole("heading", { name: "Pharmacy settings" })
+      .locator("..");
+    await settings.getByRole("checkbox").uncheck();
+    await settings.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("heading", { name: "Attendance" })).toHaveCount(
+      0,
+    );
+    await expectIdentityStateMatrix(page, {
+      arabicHeading: "مرحباً, Browser Owner",
+      englishHeading: "Welcome, Browser Owner",
+      evidenceName: "attendance-disabled",
+      focusLabel: {
+        ar: "تفعيل تسجيل الحضور والانصراف اليدوي",
+        en: "Enable manual check-in and check-out",
+      },
+    });
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
   });
 
   test("a plain browser cannot mutate through form, fetch, forged headers, or rebound DNS", async ({
@@ -432,6 +840,149 @@ test.describe.serial("bilingual desktop shell", () => {
   });
 });
 
+async function expectIdentityStateMatrix(
+  page: Page,
+  state: IdentityStateMatrix,
+): Promise<void> {
+  const initialLocale =
+    (await page.locator("html").getAttribute("lang")) === "ar" ? "ar" : "en";
+  const initialTheme =
+    (await page.locator("html").getAttribute("data-theme")) === "dark"
+      ? "dark"
+      : "light";
+  for (const locale of ["en", "ar"] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      await setPreferences(page, locale, theme);
+      await expect(page.locator("html")).toHaveAttribute("lang", locale);
+      await expect(page.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "ar" ? "rtl" : "ltr",
+      );
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      await expect(
+        page.getByRole("heading", {
+          name: locale === "ar" ? state.arabicHeading : state.englishHeading,
+        }),
+      ).toBeVisible();
+      const focusTarget = page.getByLabel(state.focusLabel[locale]).last();
+      await focusTarget.focus();
+      await expect(focusTarget).toBeFocused();
+      const outlineWidth = await focusTarget.evaluate((element) => {
+        const view = element.ownerDocument.defaultView;
+        return view === null
+          ? 0
+          : Number.parseFloat(view.getComputedStyle(element).outlineWidth);
+      });
+      expect(outlineWidth).toBeGreaterThanOrEqual(3);
+      const accessibility = await new AxeBuilder({ page }).analyze();
+      expect(accessibility.violations).toEqual([]);
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: true,
+        path: path.resolve(
+          import.meta.dirname,
+          `../../../../evidence/issue-38/after/${state.evidenceName}-${locale}-${theme}.png`,
+        ),
+      });
+    }
+  }
+  await setPreferences(page, initialLocale, initialTheme);
+}
+
+async function expectStepUpStateMatrix(page: Page): Promise<void> {
+  const initialLocale =
+    (await page.locator("html").getAttribute("lang")) === "ar" ? "ar" : "en";
+  const initialTheme =
+    (await page.locator("html").getAttribute("data-theme")) === "dark"
+      ? "dark"
+      : "light";
+
+  for (const locale of ["en", "ar"] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      await setPreferences(page, locale, theme);
+      const addUser = page.getByRole("button", {
+        name: locale === "ar" ? "إضافة مستخدم" : "Add user",
+      });
+      await addUser.focus();
+      await page.keyboard.press("Enter");
+
+      const dialog = page.getByRole("dialog");
+      const password = dialog.getByLabel(
+        locale === "ar" ? "كلمة المرور" : "Password",
+      );
+      const cancel = dialog.getByRole("button", {
+        name: locale === "ar" ? "إلغاء" : "Cancel",
+      });
+      await expect(
+        dialog.getByRole("heading", {
+          name: locale === "ar" ? "تأكيد كلمة المرور" : "Confirm password",
+        }),
+      ).toBeVisible();
+      await expect(password).toBeFocused();
+      const outlineWidth = await password.evaluate((element) => {
+        const view = element.ownerDocument.defaultView;
+        return view === null
+          ? 0
+          : Number.parseFloat(view.getComputedStyle(element).outlineWidth);
+      });
+      expect(outlineWidth).toBeGreaterThanOrEqual(3);
+      await page.keyboard.press("Shift+Tab");
+      await expect(cancel).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(password).toBeFocused();
+      const accessibility = await new AxeBuilder({ page }).analyze();
+      expect(accessibility.violations).toEqual([]);
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: true,
+        path: path.resolve(
+          import.meta.dirname,
+          `../../../../evidence/issue-38/after/step-up-${locale}-${theme}.png`,
+        ),
+      });
+      await cancel.focus();
+      await page.keyboard.press("Enter");
+      await expect(dialog).toHaveCount(0);
+      await expect(addUser).toBeFocused();
+    }
+  }
+
+  await setPreferences(page, initialLocale, initialTheme);
+}
+
+async function setPreferences(
+  page: Page,
+  locale: "ar" | "en",
+  theme: "dark" | "light",
+): Promise<void> {
+  const currentLocale = await page.locator("html").getAttribute("lang");
+  if (currentLocale !== locale) {
+    await page
+      .getByRole("button", {
+        name:
+          currentLocale === "ar"
+            ? "التبديل إلى الإنجليزية"
+            : "Switch to Arabic",
+      })
+      .click();
+  }
+  const currentTheme = await page.locator("html").getAttribute("data-theme");
+  if (currentTheme !== theme) {
+    await page
+      .getByRole("button", {
+        name:
+          locale === "ar"
+            ? theme === "dark"
+              ? "استخدام الوضع الداكن"
+              : "استخدام الوضع الفاتح"
+            : theme === "dark"
+              ? "Use dark theme"
+              : "Use light theme",
+      })
+      .click();
+  }
+}
+
 function modeForState(
   state:
     | "connecting"
@@ -510,7 +1061,10 @@ async function expectBrowserStorageToContainPreferencesOnly(
   });
 }
 
-async function startRendererServer(apiOrigin: string): Promise<RendererServer> {
+async function startRendererServer(
+  apiOrigin: string,
+  credentials: MainDeviceCredentials,
+): Promise<RendererServer> {
   const rendererRoot = path.resolve(import.meta.dirname, "../../out/renderer");
   let mode: BackendMode = "pass";
   const server = createServer(async (request, response) => {
@@ -566,6 +1120,37 @@ async function startRendererServer(apiOrigin: string): Promise<RendererServer> {
         return;
       }
 
+      if (
+        request.url?.startsWith("/identity/") ||
+        request.url === "/pharmacy/settings" ||
+        request.url === "/attendance/events" ||
+        request.url === localProofMutationContract.path
+      ) {
+        const body = await readRequestBody(request);
+        const upstream = await fetch(`${apiOrigin}${request.url}`, {
+          ...(body.length === 0 ? {} : { body }),
+          headers: {
+            Accept: "application/json",
+            Authorization: `Breev-Device ${credentials.deviceSecret}`,
+            ...(body.length === 0
+              ? {}
+              : { "Content-Type": "application/json" }),
+            [BREEV_CSRF_HEADER]: BREEV_CSRF_VALUE,
+            [LOCAL_DEVICE_ID_HEADER]: credentials.deviceId,
+            [LOCAL_DEVICE_SESSION_HEADER]: credentials.sessionToken,
+            Origin: "breev://app",
+          },
+          method: request.method ?? "GET",
+        });
+        response.writeHead(upstream.status, {
+          "cache-control": "no-store",
+          "content-type":
+            upstream.headers.get("content-type") ?? "application/json",
+        });
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+        return;
+      }
+
       const pathname = request.url === "/" ? "/index.html" : request.url;
       if (pathname === undefined || pathname.includes("..")) {
         response.writeHead(403).end();
@@ -594,6 +1179,16 @@ async function startRendererServer(apiOrigin: string): Promise<RendererServer> {
       mode = nextMode;
     },
   };
+}
+
+async function readRequestBody(
+  request: import("node:http").IncomingMessage,
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 function spawnLocalApi(

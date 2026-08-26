@@ -4,6 +4,7 @@ packages:
   - "packages/contracts"
 
 allowBuilds:
+  argon2: true
   cpu-features: false
   electron: true
   electron-winstaller: false

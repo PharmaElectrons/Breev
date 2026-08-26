@@ -9,11 +9,16 @@ import {
 import { Body, Controller, Get, HttpCode, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
 
+import { IdentityAccessService } from "../identity-access/identity-access.service.js";
+import { translateIdentityDenial } from "../identity-access/identity-access.controller.js";
 import { MainDeviceSecurityService } from "./main-device-security.service.js";
 
 @Controller()
 export class MainDeviceProofController {
-  public constructor(private readonly security: MainDeviceSecurityService) {}
+  public constructor(
+    private readonly security: MainDeviceSecurityService,
+    private readonly identity: IdentityAccessService,
+  ) {}
 
   @Post(localProofMutationContract.path)
   @HttpCode(LOCAL_PROOF_MUTATION_SUCCESS_STATUS)
@@ -30,7 +35,10 @@ export class MainDeviceProofController {
         this.security.verifiedDeviceId(request),
       );
     }
-    return await this.security.mutate();
+    return await translateIdentityDenial(async () => {
+      await this.identity.requireIdentityAfterBootstrap(request);
+      return await this.security.mutate();
+    });
   }
 
   @Get(localProofEvidenceContract.path)

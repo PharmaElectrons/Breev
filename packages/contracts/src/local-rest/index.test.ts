@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  attendanceEventRequestSchema,
+  identityCreateUserRequestSchema,
+  identityStepUpApproveRequestSchema,
+  identityStepUpCreateRequestSchema,
+  identityUpdateRolePermissionsRequestSchema,
+  identityUpdateUserRequestSchema,
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
   LOCAL_API_VERSION,
@@ -16,7 +22,77 @@ import {
   parseLocalProofEvidenceResponse,
   parseLocalProofMutationResponse,
   parseLocalHealthResponse,
+  pharmacySettingsUpdateRequestSchema,
 } from "./index.js";
+
+const COMMAND_ID = "0198e7ce-7685-7000-8000-000000000001";
+
+describe("identity mutation contracts", () => {
+  it.each([
+    [
+      identityStepUpCreateRequestSchema,
+      { action: "identity.user.create", idempotencyKey: COMMAND_ID },
+    ],
+    [
+      identityStepUpApproveRequestSchema,
+      { idempotencyKey: COMMAND_ID, password: "current password" },
+    ],
+    [
+      identityCreateUserRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        displayName: "New User",
+        idempotencyKey: COMMAND_ID,
+        password: "a sufficiently long private password",
+        role: "pharmacist",
+        username: "new.user",
+      },
+    ],
+    [
+      identityUpdateUserRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        status: "locked",
+      },
+    ],
+    [
+      identityUpdateRolePermissionsRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        permissions: ["attendance.record"],
+      },
+    ],
+    [
+      pharmacySettingsUpdateRequestSchema,
+      {
+        attendanceEnabled: true,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+      },
+    ],
+    [
+      attendanceEventRequestSchema,
+      {
+        expectedVersion: "1",
+        idempotencyKey: COMMAND_ID,
+        kind: "check-in",
+      },
+    ],
+  ])(
+    "requires idempotency and current versions for command %s",
+    (schema, body) => {
+      expect(schema.safeParse(body).success).toBe(true);
+      const withoutIdempotency = Object.fromEntries(
+        Object.entries(body).filter(([key]) => key !== "idempotencyKey"),
+      );
+      expect(schema.safeParse(withoutIdempotency).success).toBe(false);
+    },
+  );
+});
 
 describe("local REST health contract", () => {
   it("accepts the healthy handshake", () => {
@@ -112,7 +188,7 @@ describe("local REST health contract", () => {
 
   it.each([
     ["1", LOCAL_SCHEMA_VERSION],
-    [LOCAL_API_VERSION, "2"],
+    [LOCAL_API_VERSION, "1"],
   ])(
     "reports API version %s and schema version %s as incompatible",
     (apiVersion, schemaVersion) => {
@@ -156,6 +232,20 @@ describe("local REST Main device proof contract", () => {
         mutationCount: "1",
       }),
     ).toEqual({ status: "committed", mutationCount: "1" });
+  });
+
+  it("accepts the post-bootstrap user-authentication denial", () => {
+    expect(
+      parseLocalProofMutationResponse(401, {
+        status: "denied",
+        code: "session-missing",
+        requestId: "0198dcbb-d7e3-7000-8000-000000000001",
+      }),
+    ).toEqual({
+      status: "denied",
+      code: "session-missing",
+      requestId: "0198dcbb-d7e3-7000-8000-000000000001",
+    });
   });
 
   it.each([400, 401, 403, 413, 415, 421, 429])(
