@@ -480,7 +480,10 @@ test.describe.serial("bilingual desktop shell", () => {
     ).toBeVisible();
 
     await expectStepUpStateMatrix(page);
-    await page.getByRole("button", { name: "Add user" }).focus();
+    const addUser = page.getByRole("button", { name: "Add user" });
+    await expect(addUser).toBeVisible();
+    await expect(addUser).toBeEnabled();
+    await addUser.focus();
     await page.keyboard.press("Enter");
     const stepUpPassword = page.getByRole("dialog").getByLabel("Password");
     await expect(stepUpPassword).toBeFocused();
@@ -900,9 +903,17 @@ async function expectStepUpStateMatrix(page: Page): Promise<void> {
   for (const locale of ["en", "ar"] as const) {
     for (const theme of ["light", "dark"] as const) {
       await setPreferences(page, locale, theme);
+      await expect(page.locator("html")).toHaveAttribute("lang", locale);
+      await expect(page.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "ar" ? "rtl" : "ltr",
+      );
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       const addUser = page.getByRole("button", {
         name: locale === "ar" ? "إضافة مستخدم" : "Add user",
       });
+      await expect(addUser).toBeVisible();
+      await expect(addUser).toBeEnabled();
       await addUser.focus();
       await page.keyboard.press("Enter");
 
@@ -965,6 +976,7 @@ async function setPreferences(
             : "Switch to Arabic",
       })
       .click();
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
   }
   const currentTheme = await page.locator("html").getAttribute("data-theme");
   if (currentTheme !== theme) {
@@ -980,6 +992,7 @@ async function setPreferences(
               : "Use light theme",
       })
       .click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
   }
 }
 
