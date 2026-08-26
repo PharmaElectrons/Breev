@@ -880,7 +880,7 @@ function spawnLocalApi(
         BREEV_MAIN_DEVICE_SECRET: credentials.deviceSecret,
         BREEV_MAIN_DEVICE_SESSION: credentials.sessionToken,
         BREEV_PROOF_RATE_LIMIT: "3",
-        BREEV_PROOF_RATE_WINDOW_SECONDS: "10",
+        BREEV_PROOF_RATE_WINDOW_SECONDS: "2",
         DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
         DATABASE_URL: databaseRoles.applicationUrl,
       },
@@ -952,7 +952,7 @@ async function delay(milliseconds: number): Promise<void> {
 }
 
 async function waitForRateWindow(): Promise<void> {
-  const windowMilliseconds = 10_000;
+  const windowMilliseconds = 2_000;
   const untilNextWindow =
     windowMilliseconds - (Date.now() % windowMilliseconds) + 100;
   await delay(untilNextWindow);
