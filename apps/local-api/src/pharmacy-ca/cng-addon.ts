@@ -266,6 +266,7 @@ export function deletePersistedKey(opts: OpenKeyOptions): void {
 function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
   const keyBits = opts.keyBits || 2048;
   const psScript = `
+    $ErrorActionPreference = 'Stop'
     $params = New-Object System.Security.Cryptography.CngKeyCreationParameters
     $params.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
     $params.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey
@@ -302,6 +303,12 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
   const expBase64 = lines[1] ?? "";
   const serviceAccountSid = lines[2] ?? "";
 
+  if (!modBase64 || !expBase64 || !serviceAccountSid) {
+    throw new Error(
+      `Failed to obtain CNG key parameters for ${opts.keyName} on provider ${opts.providerName}`,
+    );
+  }
+
   const pubKey = createPublicKey({
     key: {
       kty: "RSA",
@@ -327,6 +334,7 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
 
 function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
   const psScript = `
+    $ErrorActionPreference = 'Stop'
     $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
     $key = [System.Security.Cryptography.CngKey]::Open('${opts.keyName}', [System.Security.Cryptography.CngProvider]::new('${opts.providerName}'), $openOpt)
     $rsa = New-Object System.Security.Cryptography.RSACng($key)
@@ -352,6 +360,12 @@ function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
   const modBase64 = lines[0] ?? "";
   const expBase64 = lines[1] ?? "";
   const serviceAccountSid = lines[2] ?? "";
+
+  if (!modBase64 || !expBase64 || !serviceAccountSid) {
+    throw new Error(
+      `Failed to open CNG key parameters for ${opts.keyName} on provider ${opts.providerName}`,
+    );
+  }
 
   const pubKey = createPublicKey({
     key: {
@@ -385,6 +399,7 @@ function signDataWithWindowsCng(
   const hashAlg = opts.algorithm;
 
   const psScript = `
+    $ErrorActionPreference = 'Stop'
     $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
     $key = [System.Security.Cryptography.CngKey]::Open('${keyHandle.keyName}', [System.Security.Cryptography.CngProvider]::new('${keyHandle.providerName}'), $openOpt)
     $rsa = New-Object System.Security.Cryptography.RSACng($key)
@@ -400,6 +415,12 @@ function signDataWithWindowsCng(
     ["-NoProfile", "-NonInteractive", "-Command", psScript],
     { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
   ).trim();
+
+  if (!sigBase64) {
+    throw new Error(
+      `Failed to obtain CNG signature for ${keyHandle.keyName} on provider ${keyHandle.providerName}`,
+    );
+  }
 
   return Buffer.from(sigBase64, "base64");
 }
@@ -431,17 +452,18 @@ function assertValidKeyOptions(opts: CreateKeyOptions): void {
 
 function buildProviderProbeScript(keyName: string): string {
   return `
+    $ErrorActionPreference = 'Stop'
     $key = $null
     try {
       $params = New-Object System.Security.Cryptography.CngKeyCreationParameters
       $params.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
       $params.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey
-      $params.Provider = [System.Security.Cryptography.CngProvider]::MicrosoftPlatformCryptoProvider
+      $params.Provider = [System.Security.Cryptography.CngProvider]::new('${PLATFORM_CRYPTO_PROVIDER}')
       $key = [System.Security.Cryptography.CngKey]::Create([System.Security.Cryptography.CngAlgorithm]::Rsa, '${keyName}', $params)
       $key.Dispose()
       $key = $null
       $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
-      $key = [System.Security.Cryptography.CngKey]::Open('${keyName}', [System.Security.Cryptography.CngProvider]::MicrosoftPlatformCryptoProvider, $openOpt)
+      $key = [System.Security.Cryptography.CngKey]::Open('${keyName}', [System.Security.Cryptography.CngProvider]::new('${PLATFORM_CRYPTO_PROVIDER}'), $openOpt)
       Write-Output 'AVAILABLE'
     } finally {
       if ($null -ne $key) {

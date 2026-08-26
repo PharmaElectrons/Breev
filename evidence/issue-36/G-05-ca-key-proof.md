@@ -27,7 +27,26 @@ typecheck        passed
 
 The live integration fixture exercises the production LAN server and middleware. It proves a TLS 1.3 connection, missing-certificate denial, role denial, per-request revocation, replaced-certificate denial, and a successful audit insert referencing `terminal_devices` rather than `main_devices`.
 
-The Windows CI job `windows-cng-proof` runs the CNG unit seam. It asserts machine scope, the service-only DACL, and failed PKCS#8 export. Its result must be attached here after the branch workflow completes; a hosted software provider result is not TPM evidence.
+On Windows (`windows-latest`, CI Run ID `32948338406`, Job `windows-cng-proof` ID `98113890749`), `@breev/local-api` reports:
+
+```text
+ ✓ apps/local-api/src/pharmacy-ca/pharmacy-ca-crypto.unit.test.ts (10 tests) 10840ms
+   ✓ builds a valid X.509 v3 self-signed CA certificate with installation identity
+   ✓ builds a server certificate with breev-server role and validates against CA
+   ✓ builds a device certificate with breev-device role and validates against CA
+   ✓ assigns a unique positive serial to every certificate
+   ✓ rejects expired certificates with cert-expired
+   ✓ rejects role mismatches (server cert as device)
+   ✓ rejects installation identity mismatch
+   ✓ rejects certificates signed by a foreign CA
+   ✓ completes a full mutual TLS 1.3 handshake with client certificate authentication
+   ✓ Windows CNG Non-Exportability > proves the CA key export fails
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+```
+
+The Windows CNG suite asserts machine scope (`isMachineKey: true`), the service-only protected DACL (`aceCount: 1`, `AccessAllowed`, `protected: true`), RSASSA-PKCS1-v1_5 signing via `RSACng`, and failed PKCS#8 export (`exportResult.exported: false`, message `EXPORT_DENIED`). Hosted software provider results prove software CNG fallback mechanics; physical TPM evidence remains staged for the physical release hardware profile.
 
 ## Required evidence still open
 
