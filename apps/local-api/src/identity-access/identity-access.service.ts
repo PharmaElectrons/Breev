@@ -1,5 +1,6 @@
 import {
   attendanceEventSchema,
+  identityRoleSchema,
   identityStateSchema,
   identityStepUpChallengeSchema,
   identityUserSchema,
@@ -26,7 +27,7 @@ import {
 } from "@breev/contracts/local-rest";
 import { Injectable } from "@nestjs/common";
 import type { Request } from "express";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { PoolClient, QueryResult } from "pg";
 
 import { LocalDatabaseService } from "../local-database.service.js";
@@ -49,6 +50,16 @@ import { hashPassword, verifyPassword } from "./password.js";
 type UserView = IdentityUser;
 
 const SESSION_LIFETIME_HOURS = 8;
+const AUTH_RATE_LIMIT = readPositiveInteger(
+  process.env.BREEV_AUTH_RATE_LIMIT,
+  5,
+  "BREEV_AUTH_RATE_LIMIT",
+);
+const AUTH_RATE_WINDOW_SECONDS = readPositiveInteger(
+  process.env.BREEV_AUTH_RATE_WINDOW_SECONDS,
+  60,
+  "BREEV_AUTH_RATE_WINDOW_SECONDS",
+);
 const PHARMACY_ROLE_KEYS = [
   "owner",
   "manager",
@@ -113,6 +124,15 @@ interface ChallengeRow {
   readonly expires_at: Date;
   readonly status: "approved" | "denied" | "pending";
   readonly consumed_at: Date | null;
+}
+
+interface IdentityCommandInput {
+  readonly idempotencyKey: string;
+  readonly password?: string;
+}
+
+interface PayloadParser<T> {
+  parse(payload: unknown): T;
 }
 
 export interface IdentityExecutionContext {
@@ -213,6 +233,7 @@ export class IdentityAccessService {
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
+      await client.query("select pg_advisory_xact_lock(165308860)");
       const pharmacy = await client.query<{ id: string }>(
         `insert into pharmacies (id, name)
          values (uuidv7(), $1)
@@ -356,6 +377,17 @@ export class IdentityAccessService {
       throw this.denied(409, "bootstrap-required", requestId);
     }
 
+    const usernameKey = normalizeUsername(input.username);
+    if (!(await this.consumeAuthAttempt(device.deviceId, "login", usernameKey))) {
+      const requestId = await this.writeAudit(pool, {
+        action: "identity.login",
+        deviceId: device.deviceId,
+        outcome: "rate-limit-exceeded",
+        pharmacyId,
+      });
+      throw this.denied(429, "rate-limit-exceeded", requestId);
+    }
+
     const result = await pool.query<UserRow>(
       `select identity_user.id,
               identity_user.pharmacy_id,
@@ -371,7 +403,7 @@ export class IdentityAccessService {
        join pharmacy_roles role on role.id = identity_user.role_id
        where identity_user.pharmacy_id = $1
          and identity_user.username_key = $2`,
-      [pharmacyId, normalizeUsername(input.username)],
+      [pharmacyId, usernameKey],
     );
     const user = result.rows[0];
     const storedHash = user?.password_hash ?? (await this.dummyPassword).hash;
@@ -448,6 +480,12 @@ export class IdentityAccessService {
         pharmacyId,
         userId: user.id,
       });
+      await this.clearAuthAttempts(
+        client,
+        device.deviceId,
+        "login",
+        usernameKey,
+      );
       await this.writeAudit(client, {
         action: "identity.login",
         actorUserId: user.id,
@@ -499,6 +537,26 @@ export class IdentityAccessService {
     }
   }
 
+  public async requireIdentityAfterBootstrap(request: Request): Promise<void> {
+    const client = await this.localDatabase.requirePool().connect();
+    let bootstrapped = false;
+    try {
+      await client.query("begin");
+      await client.query("select pg_advisory_xact_lock(165308860)");
+      const pharmacy = await client.query("select 1 from pharmacies");
+      bootstrapped = pharmacy.rowCount === 1;
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (bootstrapped) {
+      await this.requireExecutionContext(request);
+    }
+  }
+
   public async users(request: Request): Promise<{ users: UserView[] }> {
     const context = await this.requirePermission(
       request,
@@ -526,6 +584,17 @@ export class IdentityAccessService {
     try {
       await client.query("begin");
       await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.user.create",
+        input,
+        identityUserSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
       await this.consumeStepUp(client, context, input.challengeId, {
         action: "identity.user.create",
         subjectId: context.actorId,
@@ -597,8 +666,16 @@ export class IdentityAccessService {
         context.pharmacyId,
         userId,
       );
+      const response = userView(selected);
+      await this.recordCommandResult(
+        client,
+        context,
+        "identity.user.create",
+        input,
+        response,
+      );
       await client.query("commit");
-      return userView(selected);
+      return response;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       throw error;
@@ -623,16 +700,35 @@ export class IdentityAccessService {
     try {
       await client.query("begin");
       await this.lockIdentity(client, context.pharmacyId);
-      await this.consumeStepUp(client, context, input.challengeId, {
-        action: "identity.user.update",
-        subjectId: userId,
-      });
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.user.update",
+        input,
+        identityUserSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
       const before = await this.selectUser(
         client,
         context.pharmacyId,
         userId,
         true,
       );
+      if (before.auth_revision !== input.expectedRevision) {
+        return await this.rejectVersionConflict(
+          client,
+          context,
+          "identity.user.update",
+          userId,
+        );
+      }
+      await this.consumeStepUp(client, context, input.challengeId, {
+        action: "identity.user.update",
+        subjectId: userId,
+      });
       const nextRole = input.role ?? before.role_key;
       const nextStatus = input.status ?? before.status;
       if (
@@ -700,8 +796,16 @@ export class IdentityAccessService {
         pharmacyId: context.pharmacyId,
         targetId: userId,
       });
+      const response = userView(after);
+      await this.recordCommandResult(
+        client,
+        context,
+        "identity.user.update",
+        input,
+        response,
+      );
       await client.query("commit");
-      return userView(after);
+      return response;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       throw error;
@@ -744,6 +848,17 @@ export class IdentityAccessService {
     try {
       await client.query("begin");
       await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.step_up.create",
+        input,
+        identityStepUpChallengeSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
       const fresh = await this.currentContext(client, context);
       if (!hasPermission(fresh.permissions, requiredPermission)) {
         const requestId = await this.writeAudit(client, {
@@ -811,13 +926,21 @@ export class IdentityAccessService {
         pharmacyId: fresh.pharmacyId,
         targetId: subject.id,
       });
-      await client.query("commit");
-      return identityStepUpChallengeSchema.parse({
+      const response = identityStepUpChallengeSchema.parse({
         action: input.action,
         expiresAt: created.expires_at.toISOString(),
         id: created.id,
         status: "pending",
       });
+      await this.recordCommandResult(
+        client,
+        fresh,
+        "identity.step_up.create",
+        input,
+        response,
+      );
+      await client.query("commit");
+      return response;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       throw error;
@@ -876,14 +999,55 @@ export class IdentityAccessService {
       );
       throw this.denied(403, "step-up-context-mismatch", requestId);
     }
-    const passwordMatches = (
-      await verifyPassword(input.password, candidate.password_hash)
-    ).matches;
+    let passwordMatches = false;
+    if (candidate.status === "pending") {
+      if (
+        !(await this.consumeAuthAttempt(
+          context.deviceId,
+          "step-up",
+          context.actorId,
+        ))
+      ) {
+        const requestId = await this.writeAudit(
+          this.localDatabase.requirePool(),
+          {
+            action: candidate.action_name,
+            actorUserId: context.actorId,
+            deviceId: context.deviceId,
+            identitySessionId: context.sessionId,
+            outcome: "rate-limit-exceeded",
+            pharmacyId: context.pharmacyId,
+            targetId: candidate.subject_id,
+          },
+        );
+        throw this.denied(429, "rate-limit-exceeded", requestId);
+      }
+      passwordMatches = (
+        await verifyPassword(input.password, candidate.password_hash)
+      ).matches;
+    }
 
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
       await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.step_up.approve",
+        input,
+        identityStepUpChallengeSchema,
+      );
+      if (replay !== undefined) {
+        await this.clearAuthAttempts(
+          client,
+          context.deviceId,
+          "step-up",
+          context.actorId,
+        );
+        await client.query("commit");
+        return replay;
+      }
       const locked = await this.selectChallenge(client, challengeId, true);
       if (locked === undefined) {
         throw new Error("The Step-Up challenge disappeared");
@@ -902,7 +1066,6 @@ export class IdentityAccessService {
         throw this.denied(409, "step-up-reused", requestId);
       }
       if (!passwordMatches) {
-        await this.denyChallenge(client, locked.id, "step-up-wrong-password");
         const requestId = await this.writeAudit(client, {
           action: locked.action_name,
           actorUserId: context.actorId,
@@ -976,6 +1139,12 @@ export class IdentityAccessService {
          where id = $1`,
         [locked.id],
       );
+      await this.clearAuthAttempts(
+        client,
+        context.deviceId,
+        "step-up",
+        context.actorId,
+      );
       await this.writeAudit(client, {
         action,
         actorUserId: context.actorId,
@@ -986,13 +1155,21 @@ export class IdentityAccessService {
         pharmacyId: context.pharmacyId,
         targetId: locked.subject_id,
       });
-      await client.query("commit");
-      return identityStepUpChallengeSchema.parse({
+      const response = identityStepUpChallengeSchema.parse({
         action,
         expiresAt: locked.expires_at.toISOString(),
         id: locked.id,
         status: "approved",
       });
+      await this.recordCommandResult(
+        client,
+        context,
+        "identity.step_up.approve",
+        input,
+        response,
+      );
+      await client.query("commit");
+      return response;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       throw error;
@@ -1018,10 +1195,17 @@ export class IdentityAccessService {
     try {
       await client.query("begin");
       await this.lockIdentity(client, context.pharmacyId);
-      await this.consumeStepUp(client, context, input.challengeId, {
-        action: "identity.role.permissions.update",
-        subjectId: roleId,
-      });
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.role.permissions.update",
+        input,
+        identityRoleSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
       const role = await this.selectRole(
         client,
         context.pharmacyId,
@@ -1040,6 +1224,18 @@ export class IdentityAccessService {
         await client.query("commit");
         throw this.denied(404, "identity-resource-not-found", requestId);
       }
+      if (role.revision !== input.expectedRevision) {
+        return await this.rejectVersionConflict(
+          client,
+          context,
+          "identity.role.permissions.update",
+          roleId,
+        );
+      }
+      await this.consumeStepUp(client, context, input.challengeId, {
+        action: "identity.role.permissions.update",
+        subjectId: roleId,
+      });
       const before = await this.rolePermissions(client, roleId);
       await client.query(
         "delete from role_permission_grants where role_id = $1",
@@ -1073,13 +1269,21 @@ export class IdentityAccessService {
         pharmacyId: context.pharmacyId,
         targetId: roleId,
       });
-      await client.query("commit");
-      return {
+      const response = identityRoleSchema.parse({
         grants: permissions,
         id: roleId,
         key: role.key,
         revision: updated.rows[0]?.revision ?? "",
-      };
+      });
+      await this.recordCommandResult(
+        client,
+        context,
+        "identity.role.permissions.update",
+        input,
+        response,
+      );
+      await client.query("commit");
+      return response;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       throw error;
@@ -1100,11 +1304,42 @@ export class IdentityAccessService {
     try {
       await client.query("begin");
       await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "pharmacy.settings.update",
+        input,
+        pharmacySettingsSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
       await this.requirePermissionInTransaction(
         client,
         context,
         "pharmacy.settings.manage",
       );
+      const before = await client.query<{
+        attendance_enabled: boolean;
+        revision: string;
+      }>(
+        `select attendance_enabled, revision::text
+         from pharmacy_settings where pharmacy_id = $1 for update`,
+        [context.pharmacyId],
+      );
+      const previousSettings = before.rows[0];
+      if (
+        previousSettings === undefined ||
+        previousSettings.revision !== input.expectedRevision
+      ) {
+        return await this.rejectVersionConflict(
+          client,
+          context,
+          "pharmacy.settings.update",
+          context.pharmacyId,
+        );
+      }
       const result = await client.query<{
         attendance_enabled: boolean;
         revision: string;
@@ -1126,17 +1361,28 @@ export class IdentityAccessService {
         action: "pharmacy.settings.update",
         actorUserId: context.actorId,
         afterState: { attendanceEnabled: settings.attendance_enabled },
+        beforeState: {
+          attendanceEnabled: previousSettings.attendance_enabled,
+        },
         deviceId: context.deviceId,
         identitySessionId: context.sessionId,
         outcome: "succeeded",
         pharmacyId: context.pharmacyId,
         targetId: context.pharmacyId,
       });
-      await client.query("commit");
-      return pharmacySettingsSchema.parse({
+      const response = pharmacySettingsSchema.parse({
         attendanceEnabled: settings.attendance_enabled,
         revision: settings.revision,
       });
+      await this.recordCommandResult(
+        client,
+        context,
+        "pharmacy.settings.update",
+        input,
+        response,
+      );
+      await client.query("commit");
+      return response;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       throw error;
@@ -1154,6 +1400,17 @@ export class IdentityAccessService {
     try {
       await client.query("begin");
       await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "attendance.record",
+        input,
+        attendanceEventSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
       await this.requirePermissionInTransaction(
         client,
         context,
@@ -1178,14 +1435,55 @@ export class IdentityAccessService {
       }
       const expected = input.kind === "check-in" ? "checked-out" : "checked-in";
       const next = input.kind === "check-in" ? "checked-in" : "checked-out";
+      const currentPresence = await client.query<{
+        status: "checked-in" | "checked-out";
+        version: string;
+      }>(
+        `select status, version::text
+         from attendance_presence
+         where pharmacy_id = $1 and user_id = $2
+         for update`,
+        [context.pharmacyId, context.actorId],
+      );
+      const current = currentPresence.rows[0];
+      if (current === undefined || current.version !== input.expectedVersion) {
+        return await this.rejectVersionConflict(
+          client,
+          context,
+          "attendance.record",
+          context.actorId,
+        );
+      }
+      if (current.status !== expected) {
+        const code =
+          input.kind === "check-in"
+            ? "attendance-already-checked-in"
+            : "attendance-already-checked-out";
+        const requestId = await this.writeAudit(client, {
+          action: "attendance.record",
+          actorUserId: context.actorId,
+          deviceId: context.deviceId,
+          identitySessionId: context.sessionId,
+          outcome: code,
+          pharmacyId: context.pharmacyId,
+        });
+        await client.query("commit");
+        throw this.denied(409, code, requestId);
+      }
       const presence = await client.query<{ version: string }>(
         `update attendance_presence
          set status = $3,
              version = version + 1,
              updated_at = statement_timestamp()
-         where pharmacy_id = $1 and user_id = $2 and status = $4
+         where pharmacy_id = $1 and user_id = $2 and status = $4 and version = $5
          returning version::text`,
-        [context.pharmacyId, context.actorId, next, expected],
+        [
+          context.pharmacyId,
+          context.actorId,
+          next,
+          expected,
+          input.expectedVersion,
+        ],
       );
       const version = presence.rows[0]?.version;
       if (version === undefined) {
@@ -1233,14 +1531,22 @@ export class IdentityAccessService {
         pharmacyId: context.pharmacyId,
         targetId: created.id,
       });
-      await client.query("commit");
-      return attendanceEventSchema.parse({
+      const response = attendanceEventSchema.parse({
         id: created.id,
         kind: input.kind,
         occurredAt: created.occurred_at.toISOString(),
         status: next,
         version,
       });
+      await this.recordCommandResult(
+        client,
+        context,
+        "attendance.record",
+        input,
+        response,
+      );
+      await client.query("commit");
+      return response;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       throw error;
@@ -1867,6 +2173,147 @@ export class IdentityAccessService {
     });
   }
 
+  private async beginIdempotentCommand<T>(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    commandName: string,
+    input: IdentityCommandInput,
+    parser: PayloadParser<T>,
+  ): Promise<T | undefined> {
+    await client.query("select pg_advisory_xact_lock(hashtextextended($1, 38))", [
+      `${context.pharmacyId}:${context.actorId}:${input.idempotencyKey}`,
+    ]);
+    const fingerprint = commandFingerprint(commandName, input);
+    const result = await client.query<{
+      command_name: string;
+      request_fingerprint: Buffer;
+      response_body: unknown;
+    }>(
+      `select command_name, request_fingerprint, response_body
+       from identity_command_results
+       where pharmacy_id = $1 and actor_user_id = $2 and idempotency_key = $3`,
+      [context.pharmacyId, context.actorId, input.idempotencyKey],
+    );
+    const stored = result.rows[0];
+    if (stored === undefined) {
+      return undefined;
+    }
+    if (
+      stored.command_name !== commandName ||
+      !stored.request_fingerprint.equals(fingerprint)
+    ) {
+      const requestId = await this.writeAudit(client, {
+        action: commandName,
+        actorUserId: context.actorId,
+        deviceId: context.deviceId,
+        identitySessionId: context.sessionId,
+        outcome: "idempotency-conflict",
+        pharmacyId: context.pharmacyId,
+      });
+      await client.query("commit");
+      throw this.denied(409, "idempotency-conflict", requestId);
+    }
+    return parser.parse(stored.response_body);
+  }
+
+  private async recordCommandResult(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    commandName: string,
+    input: IdentityCommandInput,
+    response: unknown,
+  ): Promise<void> {
+    await client.query(
+      `insert into identity_command_results (
+         pharmacy_id, actor_user_id, identity_session_id, device_id,
+         idempotency_key, command_name, request_fingerprint, response_body
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+      [
+        context.pharmacyId,
+        context.actorId,
+        context.sessionId,
+        context.deviceId,
+        input.idempotencyKey,
+        commandName,
+        commandFingerprint(commandName, input),
+        JSON.stringify(response),
+      ],
+    );
+  }
+
+  private async rejectVersionConflict(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    action: string,
+    targetId: string,
+  ): Promise<never> {
+    const requestId = await this.writeAudit(client, {
+      action,
+      actorUserId: context.actorId,
+      deviceId: context.deviceId,
+      identitySessionId: context.sessionId,
+      outcome: "version-conflict",
+      pharmacyId: context.pharmacyId,
+      targetId,
+    });
+    await client.query("commit");
+    throw this.denied(409, "version-conflict", requestId);
+  }
+
+  private async consumeAuthAttempt(
+    deviceId: string,
+    action: "login" | "step-up",
+    subject: string,
+  ): Promise<boolean> {
+    const [deviceKey, subjectKey] = authRateKeys(action, subject);
+    const result = await this.localDatabase.requirePool().query<{
+      allowed: boolean;
+    }>(
+      `with clock as (
+         select floor(extract(epoch from statement_timestamp()) / $5)::bigint
+           as window_number
+       ), pruned as (
+         delete from identity_auth_rate_windows
+         where device_id = $1 and action = $2
+           and window_number < (select window_number from clock)
+       ), counted as (
+         insert into identity_auth_rate_windows (
+           device_id, action, subject_key, window_number, request_count
+         )
+         select $1, $2, subject_key, (select window_number from clock), 1
+         from unnest(array[$3::bytea, $4::bytea]) as keys(subject_key)
+         on conflict (device_id, action, subject_key, window_number) do update
+         set request_count = identity_auth_rate_windows.request_count + 1
+         returning request_count
+       )
+       select bool_and(request_count <= $6) as allowed from counted`,
+      [
+        deviceId,
+        action,
+        deviceKey,
+        subjectKey,
+        AUTH_RATE_WINDOW_SECONDS,
+        AUTH_RATE_LIMIT,
+      ],
+    );
+    return result.rows[0]?.allowed === true;
+  }
+
+  private async clearAuthAttempts(
+    queryable: Queryable,
+    deviceId: string,
+    action: "login" | "step-up",
+    subject: string,
+  ): Promise<void> {
+    const [deviceKey, subjectKey] = authRateKeys(action, subject);
+    await queryable.query(
+      `delete from identity_auth_rate_windows
+       where device_id = $1 and action = $2
+         and subject_key = any(array[$3::bytea, $4::bytea])`,
+      [deviceId, action, deviceKey, subjectKey],
+    );
+  }
+
   private async writeAudit(
     queryable: Queryable,
     input: {
@@ -1974,6 +2421,45 @@ function userAuditState(
 
 function normalizeUsername(username: string): string {
   return username.trim().normalize("NFKC").toLocaleLowerCase("en-US");
+}
+
+function authRateKeys(
+  action: "login" | "step-up",
+  subject: string,
+): readonly [Buffer, Buffer] {
+  return [
+    createHash("sha256").update(`device:${action}`).digest(),
+    createHash("sha256").update(`subject:${action}:${subject}`).digest(),
+  ];
+}
+
+function commandFingerprint(
+  commandName: string,
+  input: IdentityCommandInput,
+): Buffer {
+  const safeInput = Object.fromEntries(
+    Object.entries(input)
+      .filter(([key]) => key !== "password")
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+  return createHash("sha256")
+    .update(JSON.stringify({ commandName, input: safeInput }))
+    .digest();
+}
+
+function readPositiveInteger(
+  value: string | undefined,
+  defaultValue: number,
+  name: string,
+): number {
+  if (value === undefined) {
+    return defaultValue;
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 3600) {
+    throw new Error(`${name} must be an integer between 1 and 3600`);
+  }
+  return parsed;
 }
 
 export { normalizeUsername };

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  attendanceEventRequestSchema,
+  identityCreateUserRequestSchema,
+  identityStepUpApproveRequestSchema,
+  identityStepUpCreateRequestSchema,
+  identityUpdateRolePermissionsRequestSchema,
+  identityUpdateUserRequestSchema,
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
   LOCAL_API_VERSION,
@@ -16,7 +22,73 @@ import {
   parseLocalProofEvidenceResponse,
   parseLocalProofMutationResponse,
   parseLocalHealthResponse,
+  pharmacySettingsUpdateRequestSchema,
 } from "./index.js";
+
+const COMMAND_ID = "0198e7ce-7685-7000-8000-000000000001";
+
+describe("identity mutation contracts", () => {
+  it.each([
+    [
+      identityStepUpCreateRequestSchema,
+      { action: "identity.user.create", idempotencyKey: COMMAND_ID },
+    ],
+    [
+      identityStepUpApproveRequestSchema,
+      { idempotencyKey: COMMAND_ID, password: "current password" },
+    ],
+    [
+      identityCreateUserRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        displayName: "New User",
+        idempotencyKey: COMMAND_ID,
+        password: "a sufficiently long private password",
+        role: "pharmacist",
+        username: "new.user",
+      },
+    ],
+    [
+      identityUpdateUserRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        status: "locked",
+      },
+    ],
+    [
+      identityUpdateRolePermissionsRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        permissions: ["attendance.record"],
+      },
+    ],
+    [
+      pharmacySettingsUpdateRequestSchema,
+      {
+        attendanceEnabled: true,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+      },
+    ],
+    [
+      attendanceEventRequestSchema,
+      {
+        expectedVersion: "1",
+        idempotencyKey: COMMAND_ID,
+        kind: "check-in",
+      },
+    ],
+  ])("requires idempotency and current versions for command %s", (schema, body) => {
+    expect(schema.safeParse(body).success).toBe(true);
+    const withoutIdempotency = { ...body };
+    delete withoutIdempotency.idempotencyKey;
+    expect(schema.safeParse(withoutIdempotency).success).toBe(false);
+  });
+});
 
 describe("local REST health contract", () => {
   it("accepts the healthy handshake", () => {

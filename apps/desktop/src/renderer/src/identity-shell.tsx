@@ -114,7 +114,9 @@ export function IdentityShell({
             const next = await run(() => bootstrapIdentity(baseUrl, input));
             if (next !== undefined) {
               setState(next);
+              return true;
             }
+            return false;
           }}
         />
       ) : state.state === "authenticated" ? (
@@ -135,7 +137,9 @@ export function IdentityShell({
             const next = await run(() => loginIdentity(baseUrl, input));
             if (next !== undefined) {
               setState(next);
+              return true;
             }
+            return false;
           }}
         />
       )}
@@ -153,7 +157,7 @@ function BootstrapForm({
   readonly onSubmit: (input: {
     owner: { displayName: string; password: string; username: string };
     pharmacyName: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 }): React.JSX.Element {
   return (
     <article className="identity-card auth-card">
@@ -179,7 +183,16 @@ function BootstrapForm({
               username: requiredValue(data, "username"),
             },
             pharmacyName: requiredValue(data, "pharmacyName"),
-          }).then(() => form.reset());
+          }).then((succeeded) => {
+            if (succeeded) {
+              form.reset();
+              return;
+            }
+            const pharmacyName = form.elements.namedItem("pharmacyName");
+            if (pharmacyName instanceof HTMLElement) {
+              pharmacyName.focus();
+            }
+          });
         }}
       >
         <LabeledInput
@@ -227,7 +240,7 @@ function LoginForm({
   readonly onSubmit: (input: {
     password: string;
     username: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   readonly state: "session-expired" | "session-revoked" | "unauthenticated";
 }): React.JSX.Element {
   const ended = state !== "unauthenticated";
@@ -265,7 +278,16 @@ function LoginForm({
           void onSubmit({
             password: requiredValue(data, "password", false),
             username: requiredValue(data, "username"),
-          }).then(() => form.reset());
+          }).then((succeeded) => {
+            if (succeeded) {
+              form.reset();
+              return;
+            }
+            const password = form.elements.namedItem("password");
+            if (password instanceof HTMLElement) {
+              password.focus();
+            }
+          });
         }}
       >
         <LabeledInput
@@ -367,6 +389,7 @@ function AuthenticatedWorkspace({
       const challenge = await run(() =>
         createStepUpChallenge(baseUrl, {
           action,
+          idempotencyKey: newIdempotencyKey(),
           ...(subjectId === undefined ? {} : { subjectId }),
         }),
       );
@@ -383,7 +406,11 @@ function AuthenticatedWorkspace({
   };
 
   return (
-    <div className="workspace-stack">
+    <>
+      <div
+        className="workspace-stack"
+        inert={pendingStepUp === null ? undefined : true}
+      >
       <article className="identity-card workspace-summary">
         <div>
           <p className="identity-eyebrow">{state.pharmacy.name}</p>
@@ -439,6 +466,8 @@ function AuthenticatedWorkspace({
             onClick={() =>
               void run(() =>
                 createAttendanceEvent(baseUrl, {
+                  expectedVersion: state.attendance?.version ?? "1",
+                  idempotencyKey: newIdempotencyKey(),
                   kind:
                     state.attendance?.status === "checked-in"
                       ? "check-out"
@@ -476,7 +505,11 @@ function AuthenticatedWorkspace({
                 new FormData(event.currentTarget).get("attendanceEnabled") ===
                 "on";
               void run(() =>
-                updatePharmacySettings(baseUrl, { attendanceEnabled: enabled }),
+                updatePharmacySettings(baseUrl, {
+                  attendanceEnabled: enabled,
+                  expectedRevision: state.settings.revision,
+                  idempotencyKey: newIdempotencyKey(),
+                }),
               ).then(() => void refreshState());
             }}
           >
@@ -530,15 +563,21 @@ function AuthenticatedWorkspace({
                   createIdentityUser(baseUrl, {
                     challengeId: userChallenge,
                     displayName: requiredValue(data, "displayName"),
+                    idempotencyKey: newIdempotencyKey(),
                     password: requiredValue(data, "password", false),
                     role: requiredValue(data, "role") as PharmacyRoleKey,
                     username: requiredValue(data, "username"),
                   }),
                 ).then(async (created) => {
-                  form.reset();
-                  setUserChallenge(null);
                   if (created !== undefined) {
+                    form.reset();
+                    setUserChallenge(null);
                     await loadAdministration();
+                    return;
+                  }
+                  const password = form.elements.namedItem("password");
+                  if (password instanceof HTMLElement) {
+                    password.focus();
                   }
                 });
               }}
@@ -620,6 +659,8 @@ function AuthenticatedWorkspace({
                           await run(() =>
                             updateIdentityUser(baseUrl, user.id, {
                               challengeId,
+                              expectedRevision: user.revision,
+                              idempotencyKey: newIdempotencyKey(),
                               status:
                                 user.status === "active" ? "locked" : "active",
                             }),
@@ -677,6 +718,8 @@ function AuthenticatedWorkspace({
                         await run(() =>
                           updateIdentityRolePermissions(baseUrl, role.id, {
                             challengeId,
+                            expectedRevision: role.revision,
+                            idempotencyKey: newIdempotencyKey(),
                             permissions: roleDrafts[role.id] ?? [],
                           }),
                         );
@@ -694,6 +737,7 @@ function AuthenticatedWorkspace({
         </article>
       ) : null}
 
+      </div>
       {pendingStepUp === null ? null : (
         <StepUpDialog
           busy={busy}
@@ -702,20 +746,21 @@ function AuthenticatedWorkspace({
           onSubmit={async (password) => {
             const approval = await run(() =>
               approveStepUpChallenge(baseUrl, pendingStepUp.challengeId, {
+                idempotencyKey: newIdempotencyKey(),
                 password,
               }),
             );
             if (approval === undefined) {
-              closeStepUp();
-              return;
+              return false;
             }
             const completed = pendingStepUp;
             closeStepUp();
             await completed.afterApproval(completed.challengeId);
+            return true;
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -728,23 +773,44 @@ function StepUpDialog({
   readonly busy: boolean;
   readonly copy: IdentityCopy;
   readonly onCancel: () => void;
-  readonly onSubmit: (password: string) => Promise<void>;
+  readonly onSubmit: (password: string) => Promise<boolean>;
 }): React.JSX.Element {
+  const dialog = useRef<HTMLDivElement>(null);
   return (
     <div
       aria-labelledby="step-up-title"
+      aria-describedby="step-up-description"
       aria-modal="true"
       className="dialog-backdrop"
+      ref={dialog}
       role="dialog"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           onCancel();
+          return;
+        }
+        if (event.key === "Tab") {
+          const focusable = dialog.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          );
+          if (focusable === undefined || focusable.length === 0) {
+            return;
+          }
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first?.focus();
+          }
         }
       }}
     >
       <div className="identity-card step-up-dialog">
-        <h3 id="step-up-title">{copy.reauthenticate}</h3>
-        <p>{copy.reauthenticationDescription}</p>
+        <h2 id="step-up-title">{copy.reauthenticate}</h2>
+        <p id="step-up-description">{copy.reauthenticationDescription}</p>
         <form
           className="identity-form"
           onSubmit={(event) => {
@@ -755,8 +821,14 @@ function StepUpDialog({
               "password",
               false,
             );
-            form.reset();
-            void onSubmit(password);
+            void onSubmit(password).then((succeeded) => {
+              if (!succeeded) {
+                const passwordInput = form.elements.namedItem("password");
+                if (passwordInput instanceof HTMLInputElement) {
+                  passwordInput.focus();
+                }
+              }
+            });
           }}
         >
           <LabeledInput
@@ -834,4 +906,8 @@ function requiredValue(data: FormData, key: string, trim = true): string {
     throw new Error(`Missing form field: ${key}`);
   }
   return trim ? value.trim() : value;
+}
+
+function newIdempotencyKey(): string {
+  return crypto.randomUUID();
 }

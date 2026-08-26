@@ -42,8 +42,10 @@ export const IDENTITY_DENIAL_CODES = [
   "bootstrap-required",
   "invalid-credentials",
   "identity-resource-not-found",
+  "idempotency-conflict",
   "last-owner-required",
   "permission-denied",
+  "rate-limit-exceeded",
   "session-expired",
   "session-missing",
   "session-revoked",
@@ -55,6 +57,7 @@ export const IDENTITY_DENIAL_CODES = [
   "step-up-stale",
   "step-up-wrong-password",
   "username-taken",
+  "version-conflict",
 ] as const;
 export const identityDenialCodeSchema = z.enum(IDENTITY_DENIAL_CODES);
 export const identityDenialSchema = z.strictObject({
@@ -76,6 +79,9 @@ const displayNameSchema = z
   .refine((value) => value === value.trim());
 const passwordSchema = z.string().min(15).max(128);
 const decimalRevisionSchema = z.string().regex(/^[1-9]\d*$/u);
+const identityCommandFields = {
+  idempotencyKey: z.uuid(),
+} as const;
 export const identityResourceIdSchema = z.uuidv7();
 
 export const identityUserSchema = z.strictObject({
@@ -132,10 +138,12 @@ export const identityLoginRequestSchema = z.strictObject({
 });
 export const identityLogoutRequestSchema = z.strictObject({});
 export const identityStepUpCreateRequestSchema = z.strictObject({
+  ...identityCommandFields,
   action: stepUpActionSchema,
   subjectId: z.uuidv7().optional(),
 });
 export const identityStepUpApproveRequestSchema = z.strictObject({
+  ...identityCommandFields,
   password: z.string().min(1).max(128),
 });
 export const identityStepUpChallengeSchema = z.strictObject({
@@ -145,6 +153,7 @@ export const identityStepUpChallengeSchema = z.strictObject({
   status: z.enum(["approved", "pending"]),
 });
 export const identityCreateUserRequestSchema = z.strictObject({
+  ...identityCommandFields,
   challengeId: z.uuidv7(),
   displayName: displayNameSchema,
   username: usernameSchema,
@@ -152,7 +161,9 @@ export const identityCreateUserRequestSchema = z.strictObject({
   role: pharmacyRoleKeySchema,
 });
 export const identityUpdateUserRequestSchema = z.strictObject({
+  ...identityCommandFields,
   challengeId: z.uuidv7(),
+  expectedRevision: decimalRevisionSchema,
   role: pharmacyRoleKeySchema.optional(),
   status: z.enum(["active", "locked"]).optional(),
 });
@@ -167,13 +178,19 @@ export const identityRolesSchema = z.strictObject({
   permissions: z.array(permissionNameSchema),
 });
 export const identityUpdateRolePermissionsRequestSchema = z.strictObject({
+  ...identityCommandFields,
   challengeId: z.uuidv7(),
+  expectedRevision: decimalRevisionSchema,
   permissions: z.array(permissionNameSchema).max(128),
 });
 export const pharmacySettingsUpdateRequestSchema = z.strictObject({
+  ...identityCommandFields,
   attendanceEnabled: z.boolean(),
+  expectedRevision: decimalRevisionSchema,
 });
 export const attendanceEventRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  expectedVersion: decimalRevisionSchema,
   kind: z.enum(["check-in", "check-out"]),
 });
 export const attendanceEventSchema = z.strictObject({
@@ -208,6 +225,7 @@ export const identityLoginContract = {
     400: identityDenialSchema,
     401: identityDenialSchema,
     409: identityDenialSchema,
+    429: identityDenialSchema,
   },
 } as const;
 export const identityLogoutContract = {
@@ -271,6 +289,7 @@ export const identityStepUpCreateContract = {
     401: identityDenialSchema,
     403: identityDenialSchema,
     404: identityDenialSchema,
+    409: identityDenialSchema,
   },
 } as const;
 export const identityStepUpApprovePath = (challengeId: string): string =>
@@ -286,6 +305,7 @@ export const identityStepUpApproveContract = {
     403: identityDenialSchema,
     404: identityDenialSchema,
     409: identityDenialSchema,
+    429: identityDenialSchema,
   },
 } as const;
 export const identityRolePermissionsPath = (roleId: string): string =>
@@ -312,6 +332,7 @@ export const pharmacySettingsContract = {
     400: identityDenialSchema,
     401: identityDenialSchema,
     403: identityDenialSchema,
+    409: identityDenialSchema,
   },
 } as const;
 export const attendanceEventContract = {
