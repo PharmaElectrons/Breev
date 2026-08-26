@@ -14,6 +14,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { terminalDevices } from "../pharmacy-ca/pharmacy-ca-schema.js";
+
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => "bytea",
 });
@@ -120,9 +122,16 @@ export const mainDeviceRecentDenials = pgTable(
     requestClass: mainDeviceRequestClass("request_class").notNull(),
     deviceContext: mainDeviceContext("device_context").notNull(),
     deviceId: uuid("device_id").references(() => mainDevices.id),
+    terminalDeviceId: uuid("terminal_device_id").references(
+      () => terminalDevices.id,
+    ),
   },
   (table) => [
     check("main_device_recent_denials_id_uuidv7", uuidV7Check(table.id)),
+    check(
+      "main_device_recent_denials_one_device_kind",
+      sql`num_nonnulls(${table.deviceId}, ${table.terminalDeviceId}) <= 1`,
+    ),
   ],
 );
 

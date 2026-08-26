@@ -14,6 +14,32 @@ permissions:
   contents: read
 
 jobs:
+  windows-cng-proof:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.0.10
+        with:
+          run_install: false
+          version: 11.23.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          cache: pnpm
+          node-version-file: .node-version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prove Windows CNG software fallback
+        run: pnpm --filter @breev/local-api test:unit
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
