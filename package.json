@@ -28,6 +28,8 @@
     "format:check": "prettier --check .",
     "lint": "eslint . && pnpm check:boundaries",
     "package:desktop": "pnpm --filter @breev/desktop package",
+    "package:windows": "pnpm build && pnpm package:windows:payload && pnpm --filter @breev/desktop package:windows",
+    "package:windows:payload": "node apps/local-api/windows/prepare-payload.mjs",
     "test": "pnpm test:unit && pnpm test:integration && pnpm test:browser && pnpm test:smoke",
     "test:boundaries": "node tooling/boundaries/prove.mjs",
     "test:browser": "pnpm build && pnpm --filter @breev/desktop test:browser",

@@ -108,7 +108,9 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
       await db.transaction(async (tx) => {
         await tx
           .update(mainDeviceProofState)
-          .set({ mutationCount: sql`${mainDeviceProofState.mutationCount} + 1` })
+          .set({
+            mutationCount: sql`${mainDeviceProofState.mutationCount} + 1`,
+          })
           .where(eq(mainDeviceProofState.singleton, true));
 
         const jobId = await durableJobs.sendInTransaction(
@@ -142,7 +144,9 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
         db.transaction(async (tx) => {
           await tx
             .update(mainDeviceProofState)
-            .set({ mutationCount: sql`${mainDeviceProofState.mutationCount} + 100` })
+            .set({
+              mutationCount: sql`${mainDeviceProofState.mutationCount} + 100`,
+            })
             .where(eq(mainDeviceProofState.singleton, true));
 
           await durableJobs.sendInTransaction(tx, queueName, payload);
@@ -350,9 +354,9 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
         return deadLetterJobs.some((j) => j.id === jobId);
       }, 20_000);
 
-      const deadLetterJobs = await durableJobs.getDeadLetterJobs<{ failureId: string }>(
-        queueName,
-      );
+      const deadLetterJobs = await durableJobs.getDeadLetterJobs<{
+        failureId: string;
+      }>(queueName);
       const failedJob = deadLetterJobs.find((j) => j.id === jobId);
 
       expect(failedJob).toBeDefined();

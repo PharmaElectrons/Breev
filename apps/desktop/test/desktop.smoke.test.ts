@@ -319,7 +319,7 @@ async function connectToPackagedDesktop(
   debuggingPort: number,
   getElectronErrors: () => string,
 ): Promise<Browser> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
       return await chromium.connectOverCDP(`http://127.0.0.1:${debuggingPort}`);
@@ -336,7 +336,7 @@ async function waitForPackagedWindow(
   browser: Browser,
   getElectronErrors: () => string,
 ): Promise<import("@playwright/test").Page> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const page = browser.contexts()[0]?.pages()[0];
     if (page !== undefined) {

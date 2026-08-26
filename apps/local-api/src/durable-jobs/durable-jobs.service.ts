@@ -35,9 +35,7 @@ export interface QueueConfigOptions {
 }
 
 @Injectable()
-export class DurableJobsService
-  implements OnModuleInit, OnApplicationShutdown
-{
+export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
   private boss: PgBoss | undefined;
   private readonly knownQueues = new Set<string>();
 
@@ -147,10 +145,7 @@ export class DurableJobsService
     };
 
     if ("execute" in txOrClient && typeof txOrClient.execute === "function") {
-      const db = fromDrizzle(
-        txOrClient,
-        sql as unknown as DrizzleSqlTagLike,
-      );
+      const db = fromDrizzle(txOrClient, sql as unknown as DrizzleSqlTagLike);
       return await boss.send(name, (data ?? null) as object | null, {
         ...mergedOptions,
         db,
@@ -183,19 +178,15 @@ export class DurableJobsService
   ): Promise<string> {
     await this.ensureQueue(name);
     const boss = this.requireBoss();
-    return await boss.work(
-      name,
-      options ?? {},
-      async (jobs: Array<Job<T>>) => {
-        for (const job of jobs) {
-          await handler({
-            data: job.data,
-            id: job.id,
-            name: job.name,
-          });
-        }
-      },
-    );
+    return await boss.work(name, options ?? {}, async (jobs: Array<Job<T>>) => {
+      for (const job of jobs) {
+        await handler({
+          data: job.data,
+          id: job.id,
+          name: job.name,
+        });
+      }
+    });
   }
 
   public async getJob<T = unknown>(
