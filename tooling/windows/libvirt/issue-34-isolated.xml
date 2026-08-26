@@ -1,0 +1,10 @@
+<network>
+  <name>breev-issue-34-isolated</name>
+  <bridge name="virbr34" stp="on" delay="0"/>
+  <domain name="issue34.breev.test" localOnly="yes"/>
+  <ip address="192.168.134.1" netmask="255.255.255.0">
+    <dhcp>
+      <range start="192.168.134.100" end="192.168.134.199"/>
+    </dhcp>
+  </ip>
+</network>

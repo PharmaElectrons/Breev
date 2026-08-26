@@ -584,11 +584,11 @@ function signatureAlgorithm(): AlgorithmIdentifier {
 }
 
 function createCertificateSerial(): Buffer {
-  const serial = randomBytes(16);
-  serial[0] = (serial[0] ?? 0) & 0x7f;
-  if (serial.every((byte) => byte === 0)) {
-    serial[serial.length - 1] = 1;
-  }
+  let serial: Buffer;
+  do {
+    serial = randomBytes(16);
+    serial[0] = (serial[0] ?? 0) & 0x7f;
+  } while (serial[0] === 0);
   return serial;
 }
 
