@@ -1,4 +1,5 @@
 import type {
+  IdentityDenial,
   LocalHealthResponse,
   LocalProofMutationSuccess,
   LocalSecurityDenial,
@@ -31,7 +32,7 @@ export async function requestMainDeviceProofMutation(
   baseUrl: string,
   fetcher: typeof fetch = fetch,
   signal: AbortSignal = AbortSignal.timeout(3_000),
-): Promise<LocalProofMutationSuccess | LocalSecurityDenial> {
+): Promise<LocalProofMutationSuccess | LocalSecurityDenial | IdentityDenial> {
   const response = await fetcher(
     new URL(localProofMutationContract.path, baseUrl),
     {

@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+import { IdentityShell } from "./identity-shell";
 import { messages } from "./messages";
 import { formatDateTime } from "./preferences";
 import { usePreferences } from "./preferences-provider";
@@ -21,6 +22,7 @@ export function App(): React.JSX.Element {
     deviceProof,
     handshake,
     lastCheckedAt,
+    localApiOrigin,
     runDeviceProof,
     state,
   } = useStartupConnection();
@@ -142,6 +144,10 @@ export function App(): React.JSX.Element {
           </CardContent>
         </Card>
       </section>
+
+      {state === "ready" && localApiOrigin !== null ? (
+        <IdentityShell baseUrl={localApiOrigin} />
+      ) : null}
 
       <footer className="shell-footer">Breev</footer>
     </main>
