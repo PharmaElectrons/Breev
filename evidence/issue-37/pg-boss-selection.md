@@ -34,7 +34,7 @@ Breev requires durable background job processing on offline Main devices without
 Breev enforces a strict role boundary:
 1. **Migration Connection (`breev_schema_owner`)**:
    - Short-lived connection opened only during `LocalDatabaseService.onModuleInit()`.
-   - Runs under PostgreSQL advisory lock (`MIGRATION_LOCK_ID = 482_910_442`).
+   - Runs under PostgreSQL advisory lock (`MIGRATION_LOCK_ID = 165_308_855`).
    - Executes Drizzle schema migrations and installs/updates `pgboss` schema.
    - Explicitly grants only DML permissions (`USAGE` on schema, `SELECT, INSERT, UPDATE, DELETE` on tables, `USAGE, SELECT, UPDATE` on sequences, and `EXECUTE` on functions) to `breev_app`.
    - Closes and discards connection and memory credentials immediately after migration.
