@@ -99,7 +99,7 @@ export function IdentityShell({
 
   return (
     <section className="identity-region" aria-label={copy.loginTitle}>
-      {denial === null ? null : (
+      {denial === null || state.state === "authenticated" ? null : (
         <DenialAlert
           copy={copy}
           denial={denial}
@@ -124,6 +124,8 @@ export function IdentityShell({
           baseUrl={baseUrl}
           busy={busy}
           copy={copy}
+          denial={denial}
+          onDismissDenial={() => setDenial(null)}
           onState={setState}
           run={run}
           state={state}
@@ -317,6 +319,8 @@ function AuthenticatedWorkspace({
   baseUrl,
   busy,
   copy,
+  denial,
+  onDismissDenial,
   onState,
   run,
   state,
@@ -324,6 +328,8 @@ function AuthenticatedWorkspace({
   readonly baseUrl: string;
   readonly busy: boolean;
   readonly copy: IdentityCopy;
+  readonly denial: IdentityDenial | null;
+  readonly onDismissDenial: () => void;
   readonly onState: (state: IdentityState) => void;
   readonly run: <T>(work: () => Promise<T>) => Promise<T | undefined>;
   readonly state: IdentityAuthenticatedState;
@@ -411,258 +417,332 @@ function AuthenticatedWorkspace({
         className="workspace-stack"
         inert={pendingStepUp === null ? undefined : true}
       >
-      <article className="identity-card workspace-summary">
-        <div>
-          <p className="identity-eyebrow">{state.pharmacy.name}</p>
-          <h2>
-            {copy.welcome}, {state.user.displayName}
-          </h2>
-          <p>
-            {copy.roles[state.user.role]} · {state.user.username}
-          </p>
-        </div>
-        <div className="workspace-actions">
-          <span className="state-chip" data-status="active">
-            <span aria-hidden="true">✓</span> {copy.ready}
-          </span>
-          <button
-            className="quiet-button"
-            disabled={busy}
-            type="button"
-            onClick={() =>
-              void run(async () => {
-                await logoutIdentity(baseUrl);
-                return true;
-              }).then((result) => {
-                if (result !== undefined) {
-                  onState({ state: "unauthenticated" });
-                }
-              })
-            }
-          >
-            {copy.logout}
-          </button>
-        </div>
-      </article>
-
-      {state.attendance === null ? null : (
-        <article
-          className="identity-card compact-card"
-          aria-labelledby="attendance-title"
-        >
+        {denial === null || pendingStepUp !== null ? null : (
+          <DenialAlert
+            copy={copy}
+            denial={denial}
+            onDismiss={onDismissDenial}
+          />
+        )}
+        <article className="identity-card workspace-summary">
           <div>
-            <h3 id="attendance-title">{copy.attendance}</h3>
-            <p className="state-line">
-              <span aria-hidden="true">●</span>{" "}
-              {state.attendance.status === "checked-in"
-                ? copy.checkIn
-                : copy.checkOut}
+            <p className="identity-eyebrow">{state.pharmacy.name}</p>
+            <h2>
+              {copy.welcome}, {state.user.displayName}
+            </h2>
+            <p>
+              {copy.roles[state.user.role]} · {state.user.username}
             </p>
           </div>
-          <button
-            className="primary-button"
-            disabled={busy}
-            type="button"
-            onClick={() =>
-              void run(() =>
-                createAttendanceEvent(baseUrl, {
-                  expectedVersion: state.attendance?.version ?? "1",
-                  idempotencyKey: newIdempotencyKey(),
-                  kind:
-                    state.attendance?.status === "checked-in"
-                      ? "check-out"
-                      : "check-in",
-                }),
-              ).then(() => void refreshState())
-            }
-          >
-            {state.attendance.status === "checked-in"
-              ? copy.checkOut
-              : copy.checkIn}
-          </button>
-        </article>
-      )}
-
-      <article className="identity-card compact-card permission-summary">
-        <div>
-          <h3>{copy.permissions}</h3>
-          <p>
-            {state.allowedPermissions.length === 0
-              ? copy.denials["permission-denied"]
-              : state.allowedPermissions.join(" · ")}
-          </p>
-        </div>
-      </article>
-
-      {canManageSettings ? (
-        <article className="identity-card admin-card">
-          <h3>{copy.settings}</h3>
-          <form
-            className="inline-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const enabled =
-                new FormData(event.currentTarget).get("attendanceEnabled") ===
-                "on";
-              void run(() =>
-                updatePharmacySettings(baseUrl, {
-                  attendanceEnabled: enabled,
-                  expectedRevision: state.settings.revision,
-                  idempotencyKey: newIdempotencyKey(),
-                }),
-              ).then(() => void refreshState());
-            }}
-          >
-            <label className="check-row">
-              <input
-                defaultChecked={state.settings.attendanceEnabled}
-                name="attendanceEnabled"
-                type="checkbox"
-              />
-              <span>{copy.enableAttendance}</span>
-            </label>
-            <button className="quiet-button" disabled={busy} type="submit">
-              {copy.save}
+          <div className="workspace-actions">
+            <span className="state-chip" data-status="active">
+              <span aria-hidden="true">✓</span> {copy.ready}
+            </span>
+            <button
+              className="quiet-button"
+              disabled={busy}
+              type="button"
+              onClick={() =>
+                void run(async () => {
+                  await logoutIdentity(baseUrl);
+                  return true;
+                }).then((result) => {
+                  if (result !== undefined) {
+                    onState({ state: "unauthenticated" });
+                  }
+                })
+              }
+            >
+              {copy.logout}
             </button>
-          </form>
-        </article>
-      ) : null}
-
-      {canManageUsers ? (
-        <article className="identity-card admin-card">
-          <div className="admin-heading">
-            <h3>{copy.userManagement}</h3>
-            {userChallenge === null ? (
-              <button
-                className="primary-button"
-                disabled={busy}
-                type="button"
-                onClick={() =>
-                  void beginStepUp(
-                    "identity.user.create",
-                    undefined,
-                    async (challengeId) => {
-                      setUserChallenge(challengeId);
-                      await Promise.resolve();
-                    },
-                  )
-                }
-              >
-                {copy.addUser}
-              </button>
-            ) : null}
           </div>
-          {userChallenge === null ? null : (
+        </article>
+
+        {state.attendance === null ? null : (
+          <article
+            className="identity-card compact-card"
+            aria-labelledby="attendance-title"
+          >
+            <div>
+              <h3 id="attendance-title">{copy.attendance}</h3>
+              <p className="state-line">
+                <span aria-hidden="true">●</span>{" "}
+                {state.attendance.status === "checked-in"
+                  ? copy.checkIn
+                  : copy.checkOut}
+              </p>
+            </div>
+            <button
+              className="primary-button"
+              disabled={busy}
+              type="button"
+              onClick={() =>
+                void run(() =>
+                  createAttendanceEvent(baseUrl, {
+                    expectedVersion: state.attendance?.version ?? "1",
+                    idempotencyKey: newIdempotencyKey(),
+                    kind:
+                      state.attendance?.status === "checked-in"
+                        ? "check-out"
+                        : "check-in",
+                  }),
+                ).then(() => void refreshState())
+              }
+            >
+              {state.attendance.status === "checked-in"
+                ? copy.checkOut
+                : copy.checkIn}
+            </button>
+          </article>
+        )}
+
+        <article className="identity-card compact-card permission-summary">
+          <div>
+            <h3>{copy.permissions}</h3>
+            <p>
+              {state.allowedPermissions.length === 0
+                ? copy.denials["permission-denied"]
+                : state.allowedPermissions.join(" · ")}
+            </p>
+          </div>
+        </article>
+
+        {canManageSettings ? (
+          <article className="identity-card admin-card">
+            <h3>{copy.settings}</h3>
             <form
-              className="identity-form user-form"
+              className="inline-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
+                const enabled =
+                  new FormData(event.currentTarget).get("attendanceEnabled") ===
+                  "on";
                 void run(() =>
-                  createIdentityUser(baseUrl, {
-                    challengeId: userChallenge,
-                    displayName: requiredValue(data, "displayName"),
+                  updatePharmacySettings(baseUrl, {
+                    attendanceEnabled: enabled,
+                    expectedRevision: state.settings.revision,
                     idempotencyKey: newIdempotencyKey(),
-                    password: requiredValue(data, "password", false),
-                    role: requiredValue(data, "role") as PharmacyRoleKey,
-                    username: requiredValue(data, "username"),
                   }),
-                ).then(async (created) => {
-                  if (created !== undefined) {
-                    form.reset();
-                    setUserChallenge(null);
-                    await loadAdministration();
-                    return;
-                  }
-                  const password = form.elements.namedItem("password");
-                  if (password instanceof HTMLElement) {
-                    password.focus();
-                  }
-                });
+                ).then(() => void refreshState());
               }}
             >
-              <LabeledInput
-                autoFocus
-                label={copy.displayName}
-                name="displayName"
-                maxLength={96}
-              />
-              <LabeledInput
-                autoComplete="off"
-                label={copy.username}
-                name="username"
-                minLength={3}
-                maxLength={64}
-              />
-              <LabeledInput
-                autoComplete="new-password"
-                label={copy.password}
-                name="password"
-                type="password"
-                minLength={15}
-                maxLength={128}
-              />
-              <label className="field-label">
-                <span>{copy.role}</span>
-                <select name="role" required>
-                  {Object.entries(copy.roles).map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+              <label className="check-row">
+                <input
+                  defaultChecked={state.settings.attendanceEnabled}
+                  name="attendanceEnabled"
+                  type="checkbox"
+                />
+                <span>{copy.enableAttendance}</span>
               </label>
-              <div className="form-actions">
+              <button className="quiet-button" disabled={busy} type="submit">
+                {copy.save}
+              </button>
+            </form>
+          </article>
+        ) : null}
+
+        {canManageUsers ? (
+          <article className="identity-card admin-card">
+            <div className="admin-heading">
+              <h3>{copy.userManagement}</h3>
+              {userChallenge === null ? (
                 <button
                   className="primary-button"
                   disabled={busy}
-                  type="submit"
-                >
-                  {copy.createUser}
-                </button>
-                <button
-                  className="quiet-button"
                   type="button"
-                  onClick={() => setUserChallenge(null)}
+                  onClick={() =>
+                    void beginStepUp(
+                      "identity.user.create",
+                      undefined,
+                      async (challengeId) => {
+                        setUserChallenge(challengeId);
+                        await Promise.resolve();
+                      },
+                    )
+                  }
                 >
-                  {copy.cancel}
+                  {copy.addUser}
                 </button>
-              </div>
-            </form>
-          )}
-          <ul className="user-list">
-            {users.map((user) => (
-              <li key={user.id}>
-                <div>
-                  <strong>{user.displayName}</strong>
-                  <span>
-                    {user.username} · {copy.roles[user.role]}
-                  </span>
+              ) : null}
+            </div>
+            {userChallenge === null ? null : (
+              <form
+                className="identity-form user-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = event.currentTarget;
+                  const data = new FormData(form);
+                  void run(() =>
+                    createIdentityUser(baseUrl, {
+                      challengeId: userChallenge,
+                      displayName: requiredValue(data, "displayName"),
+                      idempotencyKey: newIdempotencyKey(),
+                      password: requiredValue(data, "password", false),
+                      role: requiredValue(data, "role") as PharmacyRoleKey,
+                      username: requiredValue(data, "username"),
+                    }),
+                  ).then(async (created) => {
+                    if (created !== undefined) {
+                      form.reset();
+                      setUserChallenge(null);
+                      await loadAdministration();
+                      return;
+                    }
+                    const password = form.elements.namedItem("password");
+                    if (password instanceof HTMLElement) {
+                      password.focus();
+                    }
+                  });
+                }}
+              >
+                <LabeledInput
+                  autoFocus
+                  label={copy.displayName}
+                  name="displayName"
+                  maxLength={96}
+                />
+                <LabeledInput
+                  autoComplete="off"
+                  label={copy.username}
+                  name="username"
+                  minLength={3}
+                  maxLength={64}
+                />
+                <LabeledInput
+                  autoComplete="new-password"
+                  label={copy.password}
+                  name="password"
+                  type="password"
+                  minLength={15}
+                  maxLength={128}
+                />
+                <label className="field-label">
+                  <span>{copy.role}</span>
+                  <select name="role" required>
+                    {Object.entries(copy.roles).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="form-actions">
+                  <button
+                    className="primary-button"
+                    disabled={busy}
+                    type="submit"
+                  >
+                    {copy.createUser}
+                  </button>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    onClick={() => setUserChallenge(null)}
+                  >
+                    {copy.cancel}
+                  </button>
                 </div>
-                <div className="user-actions">
-                  <span className="state-chip" data-status={user.status}>
-                    <span aria-hidden="true">
-                      {user.status === "active" ? "✓" : "!"}
+              </form>
+            )}
+            <ul className="user-list">
+              {users.map((user) => (
+                <li key={user.id}>
+                  <div>
+                    <strong>{user.displayName}</strong>
+                    <span>
+                      {user.username} · {copy.roles[user.role]}
                     </span>
-                    {user.status === "active" ? copy.ready : copy.locked}
-                  </span>
+                  </div>
+                  <div className="user-actions">
+                    <span className="state-chip" data-status={user.status}>
+                      <span aria-hidden="true">
+                        {user.status === "active" ? "✓" : "!"}
+                      </span>
+                      {user.status === "active" ? copy.ready : copy.locked}
+                    </span>
+                    <button
+                      className="quiet-button"
+                      disabled={busy}
+                      type="button"
+                      onClick={() =>
+                        void beginStepUp(
+                          "identity.user.update",
+                          user.id,
+                          async (challengeId) => {
+                            await run(() =>
+                              updateIdentityUser(baseUrl, user.id, {
+                                challengeId,
+                                expectedRevision: user.revision,
+                                idempotencyKey: newIdempotencyKey(),
+                                status:
+                                  user.status === "active"
+                                    ? "locked"
+                                    : "active",
+                              }),
+                            );
+                            await loadAdministration();
+                            await refreshState();
+                          },
+                        )
+                      }
+                    >
+                      {user.status === "active"
+                        ? copy.lockUser
+                        : copy.unlockUser}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </article>
+        ) : null}
+
+        {canManageRoles ? (
+          <article className="identity-card admin-card">
+            <h3>{copy.permissionConfiguration}</h3>
+            <div className="role-grid">
+              {roles.map((role) => (
+                <fieldset key={role.id}>
+                  <legend>{copy.roles[role.key]}</legend>
+                  {permissionNames.map((permission) => (
+                    <label
+                      className="check-row permission-row"
+                      key={permission}
+                    >
+                      <input
+                        checked={(roleDrafts[role.id] ?? []).includes(
+                          permission,
+                        )}
+                        type="checkbox"
+                        onChange={(event) =>
+                          setRoleDrafts((current) => ({
+                            ...current,
+                            [role.id]: event.target.checked
+                              ? [...(current[role.id] ?? []), permission].sort()
+                              : (current[role.id] ?? []).filter(
+                                  (item) => item !== permission,
+                                ),
+                          }))
+                        }
+                      />
+                      <span>{permission}</span>
+                    </label>
+                  ))}
                   <button
                     className="quiet-button"
                     disabled={busy}
                     type="button"
                     onClick={() =>
                       void beginStepUp(
-                        "identity.user.update",
-                        user.id,
+                        "identity.role.permissions.update",
+                        role.id,
                         async (challengeId) => {
                           await run(() =>
-                            updateIdentityUser(baseUrl, user.id, {
+                            updateIdentityRolePermissions(baseUrl, role.id, {
                               challengeId,
-                              expectedRevision: user.revision,
+                              expectedRevision: role.revision,
                               idempotencyKey: newIdempotencyKey(),
-                              status:
-                                user.status === "active" ? "locked" : "active",
+                              permissions: roleDrafts[role.id] ?? [],
                             }),
                           );
                           await loadAdministration();
@@ -671,78 +751,21 @@ function AuthenticatedWorkspace({
                       )
                     }
                   >
-                    {user.status === "active" ? copy.lockUser : copy.unlockUser}
+                    {copy.save}
                   </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </article>
-      ) : null}
-
-      {canManageRoles ? (
-        <article className="identity-card admin-card">
-          <h3>{copy.permissionConfiguration}</h3>
-          <div className="role-grid">
-            {roles.map((role) => (
-              <fieldset key={role.id}>
-                <legend>{copy.roles[role.key]}</legend>
-                {permissionNames.map((permission) => (
-                  <label className="check-row permission-row" key={permission}>
-                    <input
-                      checked={(roleDrafts[role.id] ?? []).includes(permission)}
-                      type="checkbox"
-                      onChange={(event) =>
-                        setRoleDrafts((current) => ({
-                          ...current,
-                          [role.id]: event.target.checked
-                            ? [...(current[role.id] ?? []), permission].sort()
-                            : (current[role.id] ?? []).filter(
-                                (item) => item !== permission,
-                              ),
-                        }))
-                      }
-                    />
-                    <span>{permission}</span>
-                  </label>
-                ))}
-                <button
-                  className="quiet-button"
-                  disabled={busy}
-                  type="button"
-                  onClick={() =>
-                    void beginStepUp(
-                      "identity.role.permissions.update",
-                      role.id,
-                      async (challengeId) => {
-                        await run(() =>
-                          updateIdentityRolePermissions(baseUrl, role.id, {
-                            challengeId,
-                            expectedRevision: role.revision,
-                            idempotencyKey: newIdempotencyKey(),
-                            permissions: roleDrafts[role.id] ?? [],
-                          }),
-                        );
-                        await loadAdministration();
-                        await refreshState();
-                      },
-                    )
-                  }
-                >
-                  {copy.save}
-                </button>
-              </fieldset>
-            ))}
-          </div>
-        </article>
-      ) : null}
-
+                </fieldset>
+              ))}
+            </div>
+          </article>
+        ) : null}
       </div>
       {pendingStepUp === null ? null : (
         <StepUpDialog
           busy={busy}
           copy={copy}
+          denial={denial}
           onCancel={closeStepUp}
+          onDismissDenial={onDismissDenial}
           onSubmit={async (password) => {
             const approval = await run(() =>
               approveStepUpChallenge(baseUrl, pendingStepUp.challengeId, {
@@ -767,12 +790,16 @@ function AuthenticatedWorkspace({
 function StepUpDialog({
   busy,
   copy,
+  denial,
   onCancel,
+  onDismissDenial,
   onSubmit,
 }: {
   readonly busy: boolean;
   readonly copy: IdentityCopy;
+  readonly denial: IdentityDenial | null;
   readonly onCancel: () => void;
+  readonly onDismissDenial: () => void;
   readonly onSubmit: (password: string) => Promise<boolean>;
 }): React.JSX.Element {
   const dialog = useRef<HTMLDivElement>(null);
@@ -811,6 +838,13 @@ function StepUpDialog({
       <div className="identity-card step-up-dialog">
         <h2 id="step-up-title">{copy.reauthenticate}</h2>
         <p id="step-up-description">{copy.reauthenticationDescription}</p>
+        {denial === null ? null : (
+          <DenialAlert
+            copy={copy}
+            denial={denial}
+            onDismiss={onDismissDenial}
+          />
+        )}
         <form
           className="identity-form"
           onSubmit={(event) => {

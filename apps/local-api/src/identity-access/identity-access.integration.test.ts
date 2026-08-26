@@ -181,24 +181,18 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       body: { code: "session-missing", status: "denied" },
     });
     expect(
-      await request(
-        credentials,
-        "POST",
-        "/security/device-session-proof",
-        { increment: 1 },
-      ),
+      await request(credentials, "POST", "/security/device-session-proof", {
+        increment: 1,
+      }),
     ).toMatchObject({
       status: 401,
       body: { code: "session-missing", status: "denied" },
     });
     await login(ownerUsername, ownerPassword);
     expect(
-      await request(
-        credentials,
-        "POST",
-        "/security/device-session-proof",
-        { increment: 1 },
-      ),
+      await request(credentials, "POST", "/security/device-session-proof", {
+        increment: 1,
+      }),
     ).toMatchObject({ status: 201, body: { status: "committed" } });
   });
 
@@ -399,7 +393,10 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       ownerPassword,
       approvalKey,
     );
-    expect(approval).toMatchObject({ status: 200, body: { status: "approved" } });
+    expect(approval).toMatchObject({
+      status: 200,
+      body: { status: "approved" },
+    });
     expect(
       await approveChallenge(challenge, ownerPassword, approvalKey),
     ).toEqual(approval);
@@ -617,8 +614,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     await login(ownerUsername, ownerPassword);
     const roles = await request(credentials, "GET", "/identity/roles");
     const roleRows = roles.body?.roles as
-      | { id: string; key: string; revision: string }[]
-      | undefined;
+      { id: string; key: string; revision: string }[] | undefined;
     const accountantRoleId =
       roleRows?.find((role) => role.key === "accountant")?.id ?? "";
     const permissionNames = roles.body?.permissions as string[];
@@ -645,7 +641,9 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         body: { grants: [permission] },
       });
       await login("role.accountant", ACCOUNTANT_PASSWORD);
-      expect(await request(credentials, "GET", "/identity/state")).toMatchObject({
+      expect(
+        await request(credentials, "GET", "/identity/state"),
+      ).toMatchObject({
         status: 200,
         body: { allowedPermissions: [permission] },
       });
@@ -1001,9 +999,10 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       ),
     ).rejects.toMatchObject({ code: "55000" });
     await expect(
-      administrator.query("delete from identity_command_results where id = $1", [
-        commandResult.rows[0]?.id,
-      ]),
+      administrator.query(
+        "delete from identity_command_results where id = $1",
+        [commandResult.rows[0]?.id],
+      ),
     ).rejects.toMatchObject({ code: "55000" });
   });
 
