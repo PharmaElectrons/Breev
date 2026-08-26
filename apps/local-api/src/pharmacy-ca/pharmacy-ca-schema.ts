@@ -1,4 +1,3 @@
-import { LOCAL_SECURITY_DENIAL_CODES } from "@breev/contracts/local-rest";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -17,16 +16,6 @@ export const pharmacyCaAssuranceLevel = pgEnum("pharmacy_ca_assurance_level", [
   "platform-tpm",
   "software-cng-fallback",
 ]);
-
-/**
- * Extend the existing main_device_denial_code enum with CA/mTLS denial codes.
- * The enum is defined in the first migration; we ADD the new values in migration
- * 0001. We re-declare it here so Drizzle can reference it in the new tables.
- */
-export const mainDeviceDenialCode = pgEnum(
-  "main_device_denial_code",
-  LOCAL_SECURITY_DENIAL_CODES,
-);
 
 // ─── Pharmacy CA ──────────────────────────────────────────────────────────────
 
