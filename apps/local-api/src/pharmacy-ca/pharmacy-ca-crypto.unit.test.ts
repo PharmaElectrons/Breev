@@ -150,6 +150,31 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     expect(first.serialHex).not.toBe(second.serialHex);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "encodes repeated positive 128-bit serials canonically",
+    () => {
+      const { publicKey } = generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+      });
+      const devicePublicKeyDer = publicKey.export({
+        format: "der",
+        type: "spki",
+      });
+
+      for (let index = 0; index < 4_096; index += 1) {
+        const issued = buildDeviceCertificate({
+          caKeyHandle: caKeyResult.keyHandle,
+          caCertPem: caCert.certPem,
+          deviceId: createUuidV7(),
+          installationId,
+          devicePublicKeyDer,
+          validityDays: 365,
+        });
+        expect(issued.serialHex).toHaveLength(32);
+      }
+    },
+  );
+
   // ─── 4. Validation Rejection Scenarios ────────────────────────────────────
 
   it("rejects expired certificates with cert-expired", () => {

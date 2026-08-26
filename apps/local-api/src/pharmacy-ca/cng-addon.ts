@@ -21,6 +21,7 @@ import {
 } from "node:crypto";
 
 const WINDOWS_CNG_TIMEOUT_MS = 60_000;
+const WINDOWS_CNG_PROVIDER_PROBE_TIMEOUT_MS = 10_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ export function selectKeyStorageProvider(): {
         "-Command",
         buildProviderProbeScript(probeName),
       ],
-      { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
+      { encoding: "utf8", timeout: WINDOWS_CNG_PROVIDER_PROBE_TIMEOUT_MS },
     ).trim();
 
     if (output === "AVAILABLE") {

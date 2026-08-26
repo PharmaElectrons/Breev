@@ -17,6 +17,7 @@ export default tseslint.config(
       "**/playwright-report/**",
       "**/test-results/**",
       "tooling/boundaries/fixtures/**",
+      "tooling/windows/forge-comparison/.vite/**",
     ],
   },
   {
