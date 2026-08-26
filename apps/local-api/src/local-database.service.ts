@@ -33,6 +33,7 @@ export class LocalDatabaseService
   private migrationUrl: string | undefined;
   private readonly pool: Pool | undefined;
   private readonly provisioning: MainDeviceProvisioning | undefined;
+  private readyPromise: Promise<void> | undefined;
 
   public constructor() {
     const configuration = readDatabaseConfiguration(process.env);
@@ -47,7 +48,18 @@ export class LocalDatabaseService
     this.pool = createPool(configuration.applicationUrl);
   }
 
+  public async ensureReady(): Promise<void> {
+    if (this.readyPromise === undefined) {
+      this.readyPromise = this.initialize();
+    }
+    return this.readyPromise;
+  }
+
   public async onModuleInit(): Promise<void> {
+    await this.ensureReady();
+  }
+
+  private async initialize(): Promise<void> {
     if (this.pool === undefined) {
       return;
     }
@@ -136,35 +148,26 @@ async function migratePgBoss(
   migrationUrl: string,
   migrationClient: PoolClient,
 ): Promise<void> {
-  const versionCheck = await migrationClient.query<{ exists: boolean }>(
-    `select exists(
-       select 1 from information_schema.tables
-       where table_schema = 'pgboss' and table_name = 'version'
-     ) as exists`,
-  );
+  const boss = new PgBoss({
+    connectionString: migrationUrl,
+    createSchema: true,
+    migrate: true,
+    schedule: false,
+    schema: "pgboss",
+    supervise: false,
+  });
+  await boss.start();
+  await boss.stop({ graceful: false });
 
-  if (!versionCheck.rows[0]?.exists) {
-    const boss = new PgBoss({
-      connectionString: migrationUrl,
-      createSchema: true,
-      migrate: true,
-      schedule: false,
-      schema: "pgboss",
-      supervise: false,
-    });
-    await boss.start();
-    await boss.stop({ graceful: false });
-
-    await migrationClient.query(`
-      grant usage on schema pgboss to breev_app;
-      grant select, insert, update, delete on all tables in schema pgboss to breev_app;
-      grant usage, select, update on all sequences in schema pgboss to breev_app;
-      grant execute on all functions in schema pgboss to breev_app;
-      alter default privileges in schema pgboss grant select, insert, update, delete on tables to breev_app;
-      alter default privileges in schema pgboss grant usage, select, update on sequences to breev_app;
-      alter default privileges in schema pgboss grant execute on functions to breev_app;
-    `);
-  }
+  await migrationClient.query(`
+    grant usage on schema pgboss to breev_app;
+    grant select, insert, update, delete on all tables in schema pgboss to breev_app;
+    grant usage, select, update on all sequences in schema pgboss to breev_app;
+    grant execute on all functions in schema pgboss to breev_app;
+    alter default privileges in schema pgboss grant select, insert, update, delete on tables to breev_app;
+    alter default privileges in schema pgboss grant usage, select, update on sequences to breev_app;
+    alter default privileges in schema pgboss grant execute on functions to breev_app;
+  `);
 }
 
 async function assertSeparatedDatabaseRoles(
