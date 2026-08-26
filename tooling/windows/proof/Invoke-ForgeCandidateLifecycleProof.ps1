@@ -337,17 +337,24 @@ function Invoke-ChildCrashRecovery {
   throw "$ServiceName did not recover its child process"
 }
 
-function Get-ProcessTreeIds {
+function Get-ProcessTreeRecords {
   param([int] $RootProcessId)
 
   $allProcesses = @(Get-CimInstance Win32_Process)
-  $found = [Collections.Generic.List[int]]::new()
+  $found = [Collections.Generic.List[object]]::new()
+  $foundIds = [Collections.Generic.HashSet[int]]::new()
   $pending = [Collections.Generic.Queue[int]]::new()
   $pending.Enqueue($RootProcessId)
   while ($pending.Count -gt 0) {
     $processId = $pending.Dequeue()
-    if (-not $found.Contains($processId)) {
-      $found.Add($processId)
+    if ($foundIds.Add($processId)) {
+      $process = $allProcesses | Where-Object { $_.ProcessId -eq $processId } | Select-Object -First 1
+      if ($null -eq $process) { continue }
+      $found.Add([ordered]@{
+        processId = [int] $process.ProcessId
+        createdAtUtcTicks = $process.CreationDate.ToUniversalTime().Ticks
+        executablePath = $process.ExecutablePath
+      })
       $allProcesses | Where-Object { $_.ParentProcessId -eq $processId } | ForEach-Object {
         $pending.Enqueue([int] $_.ProcessId)
       }
@@ -357,11 +364,17 @@ function Get-ProcessTreeIds {
 }
 
 function Wait-ProcessTreeExit {
-  param([int[]] $ProcessIds, [int] $TimeoutSeconds = 30)
+  param([object[]] $Processes, [int] $TimeoutSeconds = 30)
 
   $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
   while ([DateTime]::UtcNow -lt $deadline) {
-    if (@(Get-Process -Id $ProcessIds -ErrorAction SilentlyContinue).Count -eq 0) { return $true }
+    $current = @(Get-CimInstance Win32_Process)
+    $sameProcesses = @($Processes | Where-Object {
+      $expected = $_
+      $actual = $current | Where-Object { $_.ProcessId -eq $expected.processId } | Select-Object -First 1
+      $null -ne $actual -and $actual.CreationDate.ToUniversalTime().Ticks -eq $expected.createdAtUtcTicks
+    })
+    if ($sameProcesses.Count -eq 0) { return $true }
     Start-Sleep -Milliseconds 200
   }
   return $false
@@ -375,7 +388,7 @@ function Invoke-WrapperCrashRecovery {
   )
 
   $before = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
-  $oldTree = Get-ProcessTreeIds -RootProcessId $before.ProcessId
+  $oldTree = Get-ProcessTreeRecords -RootProcessId $before.ProcessId
   Stop-Process -Id $before.ProcessId -Force
   $deadline = [DateTime]::UtcNow.AddSeconds(90)
   do {
@@ -385,7 +398,7 @@ function Invoke-WrapperCrashRecovery {
         $_.ParentProcessId -eq $after.ProcessId -and $_.ExecutablePath -eq $ExecutablePath
       } | Select-Object -First 1
       if ($null -ne $child) {
-        $oldTreeExited = Wait-ProcessTreeExit -ProcessIds $oldTree
+        $oldTreeExited = Wait-ProcessTreeExit -Processes $oldTree
         Wait-Healthy | Out-Null
         return [ordered]@{
           service = $ServiceName
@@ -601,9 +614,10 @@ try {
     (Test-Witness -PayloadRoot $payloadRoot -WitnessId $witnessId)
 
   $preUpdateServiceEvidence = @($result.serviceLifecycle.afterFailedUpdate)
-  $preUpdateProcessIds = @($preUpdateServiceEvidence | ForEach-Object {
-    Get-ProcessTreeIds -RootProcessId $_.processId
-  } | Sort-Object -Unique)
+  $preUpdateProcesses = @($preUpdateServiceEvidence | ForEach-Object {
+    Get-ProcessTreeRecords -RootProcessId $_.processId
+  } | Sort-Object -Property processId -Unique)
+  $preUpdateProcessIds = @($preUpdateProcesses | ForEach-Object { $_.processId })
   $result.operations["updateExitCode"] = Invoke-MsiExec -Arguments @("/i", $quotedUpdateInstallerPath, "/qn", "/norestart")
   Wait-Healthy | Out-Null
   $updated = @(Get-InstalledProduct)
@@ -617,9 +631,10 @@ try {
   if ($result.application.afterUpdate.version -ne $UpdateInstallerVersion) { throw "The installed Forge application has the wrong update version" }
   $payloadRoot = $result.payload.afterUpdate.root
   $result.serviceLifecycle["afterUpdate"] = Get-ServiceEvidence -PayloadRoot $payloadRoot
-  $updateTreesExited = Wait-ProcessTreeExit -ProcessIds $preUpdateProcessIds
+  $updateTreesExited = Wait-ProcessTreeExit -Processes $preUpdateProcesses
   $result.serviceLifecycle["updateTransition"] = [ordered]@{
     before = $preUpdateServiceEvidence
+    previousProcesses = $preUpdateProcesses
     previousProcessIds = $preUpdateProcessIds
     previousTreesExited = $updateTreesExited
     after = $result.serviceLifecycle.afterUpdate
