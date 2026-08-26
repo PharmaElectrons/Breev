@@ -292,7 +292,7 @@ function Initialize-Database {
   $stagedPostgresqlRoot = Join-Path $stagingRoot "postgresql"
   New-Item -ItemType Directory -Force -Path $stagedConfigRoot | Out-Null
   $bootstrapPassword = New-RandomSecret
-  $runtimePassword = New-RandomSecret
+  $appPassword = New-RandomSecret
   $schemaOwnerPassword = New-RandomSecret
   $passwordPath = Join-Path $stagingRoot "initdb-password"
   Set-Content -LiteralPath $passwordPath -Value $bootstrapPassword -NoNewline -Encoding ASCII
@@ -328,7 +328,7 @@ function Initialize-Database {
   )
 
   $bootstrapSqlTemplate = Get-Content -LiteralPath (Join-Path $PayloadRoot "bootstrap.sql") -Raw
-  $bootstrapSql = $bootstrapSqlTemplate.Replace("__RUNTIME_PASSWORD__", $runtimePassword).Replace("__SCHEMA_OWNER_PASSWORD__", $schemaOwnerPassword)
+  $bootstrapSql = $bootstrapSqlTemplate.Replace("__APP_PASSWORD__", $appPassword).Replace("__RUNTIME_PASSWORD__", $appPassword).Replace("__SCHEMA_OWNER_PASSWORD__", $schemaOwnerPassword)
   $bootstrapSqlPath = Join-Path $stagingRoot "bootstrap.generated.sql"
   [IO.File]::WriteAllText($bootstrapSqlPath, $bootstrapSql, [Text.UTF8Encoding]::new($false))
   $pgpassPath = Join-Path $stagingRoot "pgpass"
@@ -366,7 +366,7 @@ function Initialize-Database {
     if ($null -ne $stopFailure) { throw $stopFailure }
   }
 
-  Set-Content -LiteralPath (Join-Path $stagedConfigRoot "database-url") -Value "postgresql://breev_runtime:$runtimePassword@127.0.0.1:$postgresqlPort/breev" -NoNewline -Encoding ASCII
+  Set-Content -LiteralPath (Join-Path $stagedConfigRoot "database-url") -Value "postgresql://breev_app:$appPassword@127.0.0.1:$postgresqlPort/breev" -NoNewline -Encoding ASCII
   Set-Content -LiteralPath (Join-Path $stagedConfigRoot "schema-owner-url") -Value "postgresql://breev_schema_owner:$schemaOwnerPassword@127.0.0.1:$postgresqlPort/breev" -NoNewline -Encoding ASCII
   [ordered]@{
     schemaVersion = 1
@@ -481,6 +481,27 @@ function Wait-PostgresqlReady {
   throw "The PostgreSQL Windows service did not become ready"
 }
 
+function Invoke-DatabaseMigrations {
+  $nodePath = Join-Path $PayloadRoot "node\node.exe"
+  $apiRoot = Join-Path $PayloadRoot "local-api"
+  $migrateEntry = Join-Path $apiRoot "dist\migrate.js"
+  $runtimeUrlPath = Join-Path $DataRoot "config\database-url"
+  $schemaOwnerUrlPath = Join-Path $DataRoot "config\schema-owner-url"
+
+  if (Test-Path -LiteralPath $migrateEntry -PathType Leaf) {
+    $previousDatabaseUrlFile = $env:DATABASE_URL_FILE
+    $previousMigrationUrlFile = $env:DATABASE_MIGRATION_URL_FILE
+    try {
+      $env:DATABASE_URL_FILE = $runtimeUrlPath
+      $env:DATABASE_MIGRATION_URL_FILE = $schemaOwnerUrlPath
+      Invoke-CheckedCommand -FilePath $nodePath -Arguments @($migrateEntry) -FailureMessage "Privileged database migrations failed"
+    } finally {
+      $env:DATABASE_URL_FILE = $previousDatabaseUrlFile
+      $env:DATABASE_MIGRATION_URL_FILE = $previousMigrationUrlFile
+    }
+  }
+}
+
 function Wait-ApiReady {
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
   while ([DateTime]::UtcNow -lt $deadline) {
@@ -553,6 +574,7 @@ try {
 
   Start-Service -Name $postgresqlServiceName
   Wait-PostgresqlReady
+  Invoke-DatabaseMigrations
   Start-Service -Name $apiServiceName
   Invoke-FailurePoint -Name "BeforeReadiness"
   Wait-ApiReady
