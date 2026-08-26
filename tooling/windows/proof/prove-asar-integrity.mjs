@@ -104,10 +104,23 @@ try {
 } catch (error) {
   result.error = error instanceof Error ? error.message : String(error);
 } finally {
+  try {
+    await rm(temporaryRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 250,
+    });
+  } catch (error) {
+    const cleanupError = error instanceof Error ? error.message : String(error);
+    result.error = result.error
+      ? `${result.error}; temporary application cleanup failed: ${cleanupError}`
+      : `Temporary application cleanup failed: ${cleanupError}`;
+    result.passed = false;
+  }
   result.completedAtUtc = new Date().toISOString();
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
-  await rm(temporaryRoot, { recursive: true, force: true });
 }
 
 if (!result.passed) {
