@@ -38,7 +38,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Prove Windows CNG software fallback
-        run: pnpm --filter @breev/local-api test:unit
+        run: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts src/pharmacy-ca/pharmacy-ca-crypto.unit.test.ts
 
   verify:
     runs-on: ubuntu-latest
@@ -125,12 +125,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify source on Windows
+        shell: bash
         run: |
           pnpm lint
           pnpm format:check
           pnpm typecheck
           pnpm build
-          pnpm test:unit
+          pnpm --filter @breev/contracts test:unit
+          pnpm --filter @breev/desktop test:unit
+          pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --exclude src/pharmacy-ca/pharmacy-ca-crypto.unit.test.ts
+          pnpm test:boundaries
 
       - name: Build both unsigned Windows comparison candidates
         shell: powershell
