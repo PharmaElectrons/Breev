@@ -16,6 +16,7 @@ interface StartupConnection {
   readonly deviceProof: "committed" | "denied" | "failed" | "idle" | "running";
   readonly handshake: LocalHealthSuccess | null;
   readonly lastCheckedAt: Date | null;
+  readonly localApiOrigin: string | null;
   readonly runDeviceProof: () => Promise<void>;
   readonly state: StartupState;
 }
@@ -134,6 +135,7 @@ export function useStartupConnection(): StartupConnection {
     deviceProof,
     handshake,
     lastCheckedAt,
+    localApiOrigin: localApiOriginRef.current ?? null,
     runDeviceProof,
     state,
   };
