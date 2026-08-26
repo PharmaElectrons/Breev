@@ -15,6 +15,7 @@ import { execFileSync } from "node:child_process";
 import {
   createPublicKey,
   generateKeyPairSync,
+  randomUUID,
   sign,
   type KeyObject,
 } from "node:crypto";
@@ -25,6 +26,7 @@ export interface CngKeyHandle {
   readonly keyName: string;
   readonly providerName: string;
   readonly isMachineKey: boolean;
+  readonly serviceAccountSid?: string;
   readonly softwareFallbackKey?: KeyObject;
 }
 
@@ -49,12 +51,6 @@ export interface KeyResult {
 
 export interface SignOptions {
   readonly algorithm: "SHA256" | "SHA384" | "SHA512";
-}
-
-export interface KeyProperties {
-  readonly exportPolicy: number;
-  readonly keyUsage: number;
-  readonly keyBits: number;
 }
 
 export interface TryExportResult {
@@ -84,18 +80,19 @@ export function selectKeyStorageProvider(): {
   }
 
   try {
+    const probeName = `breev-cng-probe-${randomUUID()}`;
     const output = execFileSync(
       "powershell",
       [
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "[System.Security.Cryptography.CngProvider]::MicrosoftPlatformCryptoProvider.Provider",
+        buildProviderProbeScript(probeName),
       ],
       { encoding: "utf8", timeout: 5000 },
     ).trim();
 
-    if (output.includes(PLATFORM_CRYPTO_PROVIDER)) {
+    if (output === "AVAILABLE") {
       return {
         providerName: PLATFORM_CRYPTO_PROVIDER,
         assuranceLevel: "platform-tpm",
@@ -114,6 +111,7 @@ export function selectKeyStorageProvider(): {
 // ─── Key Management ───────────────────────────────────────────────────────────
 
 export function createPersistedKeyPair(opts: CreateKeyOptions): KeyResult {
+  assertValidKeyOptions(opts);
   if (process.platform === "win32") {
     return createWindowsCngKey(opts);
   }
@@ -121,6 +119,7 @@ export function createPersistedKeyPair(opts: CreateKeyOptions): KeyResult {
 }
 
 export function openPersistedKey(opts: OpenKeyOptions): KeyResult {
+  assertValidKeyIdentity(opts);
   if (process.platform === "win32") {
     return openWindowsCngKey(opts);
   }
@@ -139,7 +138,11 @@ export function signData(
   opts: SignOptions,
 ): Buffer {
   if (keyHandle.softwareFallbackKey) {
-    return sign("sha256", dataBuffer, keyHandle.softwareFallbackKey);
+    return sign(
+      opts.algorithm.toLowerCase(),
+      dataBuffer,
+      keyHandle.softwareFallbackKey,
+    );
   }
 
   if (process.platform === "win32") {
@@ -149,18 +152,11 @@ export function signData(
   throw new Error("CNG signing is only supported on Windows");
 }
 
-export function signHash(
-  keyHandle: CngKeyHandle,
-  dataBuffer: Buffer,
-  opts: SignOptions,
-): Buffer {
-  return signData(keyHandle, dataBuffer, opts);
-}
-
 export function tryExportPrivateKey(keyHandle: CngKeyHandle): TryExportResult {
+  assertValidKeyIdentity(keyHandle);
   if (process.platform === "win32" && !keyHandle.softwareFallbackKey) {
     const psScript = `
-      $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::None
+      $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
       $key = [System.Security.Cryptography.CngKey]::Open('${keyHandle.keyName}', [System.Security.Cryptography.CngProvider]::new('${keyHandle.providerName}'), $openOpt)
       try {
         $exported = $key.Export([System.Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
@@ -188,17 +184,40 @@ export function tryExportPrivateKey(keyHandle: CngKeyHandle): TryExportResult {
     };
   }
 
-  return {
-    exported: false,
-    message: "Non-exportable software key",
-  };
+  throw new Error(
+    "Private-key non-exportability can only be proved against Windows CNG",
+  );
+}
+
+export function readPersistedKeyAcl(keyHandle: CngKeyHandle): string {
+  assertValidKeyIdentity(keyHandle);
+  if (process.platform !== "win32" || keyHandle.softwareFallbackKey) {
+    throw new Error("CNG key ACLs can only be inspected on Windows");
+  }
+  const psScript = `
+    $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
+    $key = [System.Security.Cryptography.CngKey]::Open('${keyHandle.keyName}', [System.Security.Cryptography.CngProvider]::new('${keyHandle.providerName}'), $openOpt)
+    try {
+      $property = $key.GetProperty('Security Descr', [System.Security.Cryptography.CngPropertyOptions]4)
+      $descriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor($property.GetValue(), 0)
+      Write-Output $descriptor.GetSddlForm([System.Security.AccessControl.AccessControlSections]::Access)
+    } finally {
+      $key.Dispose()
+    }
+  `;
+  return execFileSync(
+    "powershell",
+    ["-NoProfile", "-NonInteractive", "-Command", psScript],
+    { encoding: "utf8", timeout: 5000 },
+  ).trim();
 }
 
 export function deletePersistedKey(opts: OpenKeyOptions): void {
+  assertValidKeyIdentity(opts);
   if (process.platform === "win32") {
     const psScript = `
       try {
-        $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::None
+        $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
         $key = [System.Security.Cryptography.CngKey]::Open('${opts.keyName}', [System.Security.Cryptography.CngProvider]::new('${opts.providerName}'), $openOpt)
         $key.Delete()
       } catch {}
@@ -224,10 +243,16 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
   const psScript = `
     $params = New-Object System.Security.Cryptography.CngKeyCreationParameters
     $params.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
-    $params.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::OverwriteExistingKey
+    $params.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey
     $params.Provider = [System.Security.Cryptography.CngProvider]::new('${opts.providerName}')
     $prop = New-Object System.Security.Cryptography.CngProperty('Length', [BitConverter]::GetBytes([int]${keyBits}), [System.Security.Cryptography.CngPropertyOptions]::None)
     $params.Parameters.Add($prop)
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $descriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor("D:P(A;;GA;;;" + $sid + ")")
+    $descriptorBytes = New-Object byte[] $descriptor.BinaryLength
+    $descriptor.GetBinaryForm($descriptorBytes, 0)
+    $securityProperty = New-Object System.Security.Cryptography.CngProperty('Security Descr', $descriptorBytes, [System.Security.Cryptography.CngPropertyOptions]4)
+    $params.Parameters.Add($securityProperty)
     $key = [System.Security.Cryptography.CngKey]::Create([System.Security.Cryptography.CngAlgorithm]::Rsa, '${opts.keyName}', $params)
     $rsa = New-Object System.Security.Cryptography.RSACng($key)
     $p = $rsa.ExportParameters($false)
@@ -235,7 +260,7 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
     $exp = [Convert]::ToBase64String($p.Exponent)
     $rsa.Dispose()
     $key.Dispose()
-    Write-Output "$mod\`n$exp"
+    Write-Output "$mod\`n$exp\`n$sid"
   `;
 
   const output = execFileSync(
@@ -250,6 +275,7 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
     .filter(Boolean);
   const modBase64 = lines[0] ?? "";
   const expBase64 = lines[1] ?? "";
+  const serviceAccountSid = lines[2] ?? "";
 
   const pubKey = createPublicKey({
     key: {
@@ -266,7 +292,8 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
     keyHandle: {
       keyName: opts.keyName,
       providerName: opts.providerName,
-      isMachineKey: false,
+      isMachineKey: true,
+      serviceAccountSid,
     },
     publicKeyDer,
     providerName: opts.providerName,
@@ -275,15 +302,16 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
 
 function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
   const psScript = `
-    $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::None
+    $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
     $key = [System.Security.Cryptography.CngKey]::Open('${opts.keyName}', [System.Security.Cryptography.CngProvider]::new('${opts.providerName}'), $openOpt)
     $rsa = New-Object System.Security.Cryptography.RSACng($key)
     $p = $rsa.ExportParameters($false)
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $mod = [Convert]::ToBase64String($p.Modulus)
     $exp = [Convert]::ToBase64String($p.Exponent)
     $rsa.Dispose()
     $key.Dispose()
-    Write-Output "$mod\`n$exp"
+    Write-Output "$mod\`n$exp\`n$sid"
   `;
 
   const output = execFileSync(
@@ -298,6 +326,7 @@ function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
     .filter(Boolean);
   const modBase64 = lines[0] ?? "";
   const expBase64 = lines[1] ?? "";
+  const serviceAccountSid = lines[2] ?? "";
 
   const pubKey = createPublicKey({
     key: {
@@ -314,7 +343,8 @@ function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
     keyHandle: {
       keyName: opts.keyName,
       providerName: opts.providerName,
-      isMachineKey: false,
+      isMachineKey: true,
+      serviceAccountSid,
     },
     publicKeyDer,
     providerName: opts.providerName,
@@ -330,7 +360,7 @@ function signDataWithWindowsCng(
   const hashAlg = opts.algorithm;
 
   const psScript = `
-    $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::None
+    $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
     $key = [System.Security.Cryptography.CngKey]::Open('${keyHandle.keyName}', [System.Security.Cryptography.CngProvider]::new('${keyHandle.providerName}'), $openOpt)
     $rsa = New-Object System.Security.Cryptography.RSACng($key)
     $dataBytes = [Convert]::FromBase64String('${dataBase64}')
@@ -350,6 +380,52 @@ function signDataWithWindowsCng(
 }
 
 const softwareKeyStore = new Map<string, KeyResult>();
+
+function assertValidKeyIdentity(opts: OpenKeyOptions): void {
+  if (!/^[A-Za-z0-9-]{1,200}$/.test(opts.keyName)) {
+    throw new Error("CNG key name contains unsupported characters");
+  }
+  if (
+    opts.providerName !== PLATFORM_CRYPTO_PROVIDER &&
+    opts.providerName !== SOFTWARE_KEY_STORAGE_PROVIDER &&
+    opts.providerName !== "breev-software-test-provider"
+  ) {
+    throw new Error("Unsupported CNG provider");
+  }
+}
+
+function assertValidKeyOptions(opts: CreateKeyOptions): void {
+  assertValidKeyIdentity(opts);
+  if (opts.algorithm !== "RSA") {
+    throw new Error("Only RSA CNG keys are supported");
+  }
+  if (!Number.isInteger(opts.keyBits) || opts.keyBits < 2048) {
+    throw new Error("CNG RSA keys must be at least 2048 bits");
+  }
+}
+
+function buildProviderProbeScript(keyName: string): string {
+  return `
+    $key = $null
+    try {
+      $params = New-Object System.Security.Cryptography.CngKeyCreationParameters
+      $params.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
+      $params.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey
+      $params.Provider = [System.Security.Cryptography.CngProvider]::MicrosoftPlatformCryptoProvider
+      $key = [System.Security.Cryptography.CngKey]::Create([System.Security.Cryptography.CngAlgorithm]::Rsa, '${keyName}', $params)
+      $key.Dispose()
+      $key = $null
+      $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
+      $key = [System.Security.Cryptography.CngKey]::Open('${keyName}', [System.Security.Cryptography.CngProvider]::MicrosoftPlatformCryptoProvider, $openOpt)
+      Write-Output 'AVAILABLE'
+    } finally {
+      if ($null -ne $key) {
+        $key.Delete()
+        $key.Dispose()
+      }
+    }
+  `;
+}
 
 function createSoftwareFallbackKey(opts: CreateKeyOptions): KeyResult {
   const { publicKey, privateKey } = generateKeyPairSync("rsa", {
