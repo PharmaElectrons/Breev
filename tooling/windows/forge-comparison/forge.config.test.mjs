@@ -27,6 +27,13 @@ test("adds one complete machine lifecycle sequence to the pinned WiX template", 
     creator.wixTemplate,
     /<MajorUpgrade [^>]*Schedule="afterInstallInitialize"\/>/,
   );
+  assert.equal(
+    count(
+      creator.wixTemplate,
+      '<Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />',
+    ),
+    1,
+  );
   for (const action of [
     "BreevStopForRepair",
     "BreevRollbackStop",

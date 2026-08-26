@@ -31,9 +31,13 @@ export function addBreevLifecycleActions(creator) {
   const applicationRoot = `[APPLICATIONROOTDIRECTORY]app-${buildVersion}`;
   const script = `&quot;${applicationRoot}\\resources\\payload\\lifecycle.ps1&quot;`;
   const common = `-InstallRoot &quot;${applicationRoot}&quot; -PayloadRoot &quot;${applicationRoot}\\resources\\payload&quot;`;
+  // Breev's deferred lifecycle actions stop and recover both services. Letting
+  // Restart Manager inspect the live 250 MB service payload crashes msiserver
+  // before those actions run on the supported Windows 11 proof environment.
   creator.wixTemplate = creator.wixTemplate.replace(
     productEnd,
-    `    <Property Id="BREEVFORGEINJECTFAILURE" Secure="yes" />
+    `    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
+    <Property Id="BREEVFORGEINJECTFAILURE" Secure="yes" />
     <CustomAction Id="BreevStopForRepair" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Uninstall&quot; ${common}" Execute="deferred" Impersonate="no" Return="check" />
     <CustomAction Id="BreevRollbackStop" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Uninstall&quot; ${common} -SkipStateWrite" Execute="rollback" Impersonate="no" Return="ignore" />
     <CustomAction Id="BreevRollbackRepair" Directory="APPLICATIONROOTDIRECTORY" ExeCommand="${powerShell} -File ${script} -Action &quot;Repair&quot; ${common}" Execute="rollback" Impersonate="no" Return="ignore" />
