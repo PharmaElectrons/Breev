@@ -14,6 +14,32 @@ permissions:
   contents: read
 
 jobs:
+  windows-cng-proof:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.0.10
+        with:
+          run_install: false
+          version: 11.23.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          cache: pnpm
+          node-version-file: .node-version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prove Windows CNG software fallback
+        run: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts src/pharmacy-ca/pharmacy-ca-crypto.unit.test.ts
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -72,3 +98,67 @@ jobs:
           if-no-files-found: ignore
           name: desktop-smoke-evidence
           path: test-results/desktop
+
+  windows-candidates:
+    runs-on: windows-2025
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.0.10
+        with:
+          run_install: false
+          version: 11.23.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          cache: pnpm
+          node-version-file: .node-version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify source on Windows
+        shell: bash
+        run: |
+          pnpm lint
+          pnpm format:check
+          pnpm typecheck
+          pnpm build
+          pnpm --filter @breev/contracts test:unit
+          pnpm --filter @breev/desktop test:unit
+          pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --exclude src/pharmacy-ca/pharmacy-ca-crypto.unit.test.ts
+          pnpm test:boundaries
+
+      - name: Build both unsigned Windows comparison candidates
+        shell: powershell
+        run: |
+          $runId = [Guid]::NewGuid()
+          ./tooling/windows/Build-WindowsCandidates.ps1 `
+            -RunId $runId `
+            -SnapshotId "github-${{ github.run_id }}-${{ github.run_attempt }}"
+
+      - name: Record Windows CI evidence
+        shell: powershell
+        run: |
+          ./tooling/windows/Write-WindowsCiEvidence.ps1 `
+            -PackagingRoot artifacts/windows/candidates `
+            -SourceCommit (git rev-parse HEAD).Trim() `
+            -OutputPath artifacts/windows/ci/windows-ci.json
+
+      - name: Upload Windows build evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: error
+          name: windows-candidate-evidence
+          path: |
+            artifacts/windows/ci/windows-ci.json
+            artifacts/windows/candidates/packaging-results.json
+            artifacts/windows/candidates/**/fuses.json

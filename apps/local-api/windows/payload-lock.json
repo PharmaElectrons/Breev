@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "architecture": "x64",
+  "components": [
+    {
+      "name": "node",
+      "version": "24.19.0",
+      "archive": "node-v24.19.0-win-x64.zip",
+      "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip",
+      "sha256": "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73",
+      "executableHashes": {
+        "node.exe": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237"
+      }
+    },
+    {
+      "name": "postgresql",
+      "version": "18.6-1",
+      "archive": "postgresql-18.6-1-windows-x64-binaries.zip",
+      "url": "https://get.enterprisedb.com/postgresql/postgresql-18.6-1-windows-x64-binaries.zip",
+      "sha256": "fbe23da234ee31547bf8a36d29dfd81e82b849df2d2b78d2eecb43d360252f8c",
+      "executableHashes": {
+        "bin/initdb.exe": "68195f0c6f22694660ba86d914ae8c74bcd38e71eb342f98e065b1962311142e",
+        "bin/pg_isready.exe": "2eb622a9f68f239ff9555c4c47291527a6c01c1d22bf912fb0a3228879e2814e",
+        "bin/postgres.exe": "af5b897cb69c9ce692a4a15ecd022b540db85db1add0f66d2b9f0697be2451a0",
+        "bin/psql.exe": "1e23b7f9ac7649b4717ada9b1f4e1b5b66c343937b6a91583f63528b96a61503"
+      }
+    },
+    {
+      "name": "shawl",
+      "version": "1.9.0",
+      "archive": "shawl-v1.9.0-win64.zip",
+      "url": "https://github.com/mtkennerly/shawl/releases/download/v1.9.0/shawl-v1.9.0-win64.zip",
+      "sha256": "f883c5d09c9beae2efaeabd8513e7d3f57cd1d0864cec3df4f4a7b6ee904351c",
+      "executableHashes": {
+        "shawl.exe": "0985555b71e7f943b8f3fc639952a9890aa62e66617942a2d0996985fe8e7c6d"
+      }
+    }
+  ]
+}
