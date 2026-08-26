@@ -24,6 +24,8 @@ create type attendance_presence_status as enum ('checked-in', 'checked-out');
 --> statement-breakpoint
 create type attendance_event_kind as enum ('check-in', 'check-out');
 --> statement-breakpoint
+create type identity_auth_action as enum ('login', 'step-up');
+--> statement-breakpoint
 create table pharmacies (
   singleton boolean primary key default true,
   id uuid not null unique,
@@ -147,6 +149,44 @@ create unique index identity_sessions_one_active_device_session
   on identity_sessions (device_session_hash)
   where revoked_at is null;
 --> statement-breakpoint
+create table identity_auth_rate_windows (
+  device_id uuid not null references main_devices(id),
+  action identity_auth_action not null,
+  subject_key bytea not null,
+  window_number bigint not null,
+  request_count integer not null,
+  primary key (device_id, action, subject_key, window_number),
+  constraint identity_auth_rate_subject_key_length check (octet_length(subject_key) = 32),
+  constraint identity_auth_rate_window_nonnegative check (window_number >= 0),
+  constraint identity_auth_rate_count_positive check (request_count > 0)
+);
+--> statement-breakpoint
+create table identity_command_results (
+  id uuid primary key default uuidv7(),
+  pharmacy_id uuid not null references pharmacies(id),
+  actor_user_id uuid not null,
+  identity_session_id uuid not null references identity_sessions(id),
+  device_id uuid not null references main_devices(id),
+  idempotency_key uuid not null,
+  command_name text not null,
+  request_fingerprint bytea not null,
+  response_body jsonb not null,
+  created_at timestamptz not null default now(),
+  foreign key (actor_user_id, pharmacy_id)
+    references identity_users(id, pharmacy_id),
+  unique (pharmacy_id, actor_user_id, idempotency_key),
+  constraint identity_command_results_id_uuidv7 check (
+    id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  ),
+  constraint identity_command_results_name check (
+    command_name ~ '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'
+    and char_length(command_name) <= 96
+  ),
+  constraint identity_command_results_fingerprint_length check (
+    octet_length(request_fingerprint) = 32
+  )
+);
+--> statement-breakpoint
 create table step_up_action_definitions (
   name text primary key,
   required_permission text not null references permission_definitions(name),
@@ -261,6 +301,10 @@ create trigger attendance_events_immutable
   before update or delete on attendance_events
   for each row execute function reject_identity_fact_mutation();
 --> statement-breakpoint
+create trigger identity_command_results_immutable
+  before update or delete on identity_command_results
+  for each row execute function reject_identity_fact_mutation();
+--> statement-breakpoint
 revoke all on table
   pharmacies,
   pharmacy_roles,
@@ -269,6 +313,8 @@ revoke all on table
   role_permission_grants,
   pharmacy_settings,
   identity_sessions,
+  identity_auth_rate_windows,
+  identity_command_results,
   step_up_action_definitions,
   step_up_challenges,
   attendance_presence,
@@ -284,4 +330,6 @@ grant select, insert, update on table identity_users, pharmacy_settings, identit
 --> statement-breakpoint
 grant select, insert, delete on table role_permission_grants to breev_app;
 --> statement-breakpoint
-grant select, insert on table attendance_events, identity_audit_records to breev_app;
+grant select, insert, update, delete on table identity_auth_rate_windows to breev_app;
+--> statement-breakpoint
+grant select, insert on table attendance_events, identity_audit_records, identity_command_results to breev_app;

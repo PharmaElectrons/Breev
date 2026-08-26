@@ -26,6 +26,7 @@ const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_PASSWORD = "correct horse battery staple";
 const SECOND_OWNER_PASSWORD = "another correct horse battery staple";
 const MANAGER_PASSWORD = "manager password stays only in this test";
+const ACCOUNTANT_PASSWORD = "test password for accountant user";
 
 interface MainDeviceCredentials {
   readonly deviceId: string;
@@ -173,13 +174,90 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       credentials,
       "PATCH",
       "/pharmacy/settings",
-      { attendanceEnabled: true },
+      command({ attendanceEnabled: true, expectedRevision: "1" }),
     );
     expect(unauthenticatedMutation).toMatchObject({
       status: 401,
       body: { code: "session-missing", status: "denied" },
     });
+    expect(
+      await request(
+        credentials,
+        "POST",
+        "/security/device-session-proof",
+        { increment: 1 },
+      ),
+    ).toMatchObject({
+      status: 401,
+      body: { code: "session-missing", status: "denied" },
+    });
     await login(ownerUsername, ownerPassword);
+    expect(
+      await request(
+        credentials,
+        "POST",
+        "/security/device-session-proof",
+        { increment: 1 },
+      ),
+    ).toMatchObject({ status: 201, body: { status: "committed" } });
+  });
+
+  it("rate-limits password guessing per verified device", async () => {
+    const loginDevice = await registerDevice();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(
+        await request(loginDevice, "POST", "/identity/login", {
+          password: "wrong password",
+          username: ownerUsername,
+        }),
+      ).toMatchObject({ status: 401, body: { code: "invalid-credentials" } });
+    }
+    expect(
+      await request(loginDevice, "POST", "/identity/login", {
+        password: "wrong password",
+        username: ownerUsername,
+      }),
+    ).toMatchObject({ status: 429, body: { code: "rate-limit-exceeded" } });
+
+    const stepUpDevice = await registerDevice();
+    expect(
+      await request(stepUpDevice, "POST", "/identity/login", {
+        password: ownerPassword,
+        username: ownerUsername,
+      }),
+    ).toMatchObject({ status: 200 });
+    const challenge = await request(
+      stepUpDevice,
+      "POST",
+      "/identity/step-up-challenges",
+      command({ action: "identity.user.create" }),
+    );
+    const challengeId = String(challenge.body?.id ?? "");
+    expect(challenge.status).toBe(201);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(
+        await request(
+          stepUpDevice,
+          "POST",
+          `/identity/step-up-challenges/${challengeId}/approve`,
+          command({ password: "wrong password" }),
+        ),
+      ).toMatchObject({
+        status: 401,
+        body: { code: "step-up-wrong-password" },
+      });
+    }
+    expect(
+      await request(
+        stepUpDevice,
+        "POST",
+        `/identity/step-up-challenges/${challengeId}/approve`,
+        command({ password: ownerPassword }),
+      ),
+    ).toMatchObject({ status: 429, body: { code: "rate-limit-exceeded" } });
+    expect(
+      await request(stepUpDevice, "POST", "/identity/logout", {}),
+    ).toMatchObject({ status: 204 });
   });
 
   it("binds Step-Up to permission, password, lifetime, subject, and one use", async () => {
@@ -195,8 +273,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       body: { code: "step-up-wrong-password" },
     });
     expect(await approveChallenge(pending, ownerPassword)).toMatchObject({
-      status: 409,
-      body: { code: "step-up-reused" },
+      status: 200,
+      body: { status: "approved" },
     });
 
     const expired = await createChallenge("identity.user.create");
@@ -265,6 +343,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(
       await request(credentials, "PATCH", `/identity/users/${ownerId}`, {
         challengeId: ownerUpdate,
+        expectedRevision: await currentUserRevision(ownerId),
+        idempotencyKey: createUuidV7(),
         status: "locked",
       }),
     ).toMatchObject({
@@ -310,6 +390,135 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ).toBe(true);
   });
 
+  it("replays committed commands and rejects stale versions or changed reuse", async () => {
+    await login(ownerUsername, ownerPassword);
+    const challenge = await createChallenge("identity.user.create");
+    const approvalKey = createUuidV7();
+    const approval = await approveChallenge(
+      challenge,
+      ownerPassword,
+      approvalKey,
+    );
+    expect(approval).toMatchObject({ status: 200, body: { status: "approved" } });
+    expect(
+      await approveChallenge(challenge, ownerPassword, approvalKey),
+    ).toEqual(approval);
+
+    const createKey = createUuidV7();
+    const createBody = {
+      challengeId: challenge,
+      displayName: "Idempotent User",
+      idempotencyKey: createKey,
+      password: "idempotent user password stays private",
+      role: "support",
+      username: "idempotent.user",
+    };
+    const created = await request(
+      credentials,
+      "POST",
+      "/identity/users",
+      createBody,
+    );
+    expect(created.status).toBe(201);
+    expect(
+      await request(credentials, "POST", "/identity/users", createBody),
+    ).toEqual(created);
+    expect(
+      await request(credentials, "POST", "/identity/users", {
+        ...createBody,
+        username: "changed.idempotent.user",
+      }),
+    ).toMatchObject({
+      status: 409,
+      body: { code: "idempotency-conflict" },
+    });
+    const userCount = await administrator.query<{ count: string }>(
+      "select count(*)::text as count from identity_users where username_key = 'idempotent.user'",
+    );
+    expect(userCount.rows[0]?.count).toBe("1");
+
+    const expectedRevision = await currentSettingsRevision();
+    const settingsKey = createUuidV7();
+    const settingsBody = {
+      attendanceEnabled: false,
+      expectedRevision,
+      idempotencyKey: settingsKey,
+    };
+    const updated = await request(
+      credentials,
+      "PATCH",
+      "/pharmacy/settings",
+      settingsBody,
+    );
+    expect(updated.status).toBe(200);
+    expect(
+      await request(credentials, "PATCH", "/pharmacy/settings", settingsBody),
+    ).toEqual(updated);
+    expect(
+      await request(
+        credentials,
+        "PATCH",
+        "/pharmacy/settings",
+        command({ attendanceEnabled: true, expectedRevision }),
+      ),
+    ).toMatchObject({ status: 409, body: { code: "version-conflict" } });
+  });
+
+  it("enforces user, role, and permission constraints in PostgreSQL", async () => {
+    await expect(
+      administrator.query(
+        "insert into permission_definitions (name) values ('Invalid Permission')",
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+    await expect(
+      administrator.query(
+        `insert into pharmacy_roles (pharmacy_id, role_key)
+         select id, 'owner' from pharmacies`,
+      ),
+    ).rejects.toMatchObject({ code: "23505" });
+    await expect(
+      administrator.query(
+        `insert into identity_users (
+           pharmacy_id, username, username_key, display_name, role_id,
+           password_hash, password_algorithm, password_version,
+           password_memory_kib, password_iterations, password_parallelism
+         )
+         select pharmacy_id, 'invalid.algorithm', 'invalid.algorithm',
+                'Invalid Algorithm', role_id, password_hash, 'bcrypt',
+                password_version, password_memory_kib, password_iterations,
+                password_parallelism
+         from identity_users limit 1`,
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+    await expect(
+      administrator.query(
+        `insert into identity_users (
+           pharmacy_id, username, username_key, display_name, role_id,
+           password_hash, password_algorithm, password_version,
+           password_memory_kib, password_iterations, password_parallelism
+         )
+         select $1, 'cross.context', 'cross.context', 'Cross Context', role_id,
+                password_hash, password_algorithm, password_version,
+                password_memory_kib, password_iterations, password_parallelism
+         from identity_users limit 1`,
+        [createUuidV7()],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      administrator.query(
+        `insert into role_permission_grants (
+           pharmacy_id, role_id, permission_name, granted_by
+         )
+         select $1, role.id, 'attendance.record', identity_user.id
+         from pharmacy_roles role
+         cross join lateral (select id from identity_users limit 1) identity_user
+         where role.role_key = 'support'
+         limit 1`,
+        [createUuidV7()],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+  });
+
   it("denies every protected API operation for a role without explicit grants", async () => {
     const ownerChallenge = await createChallenge("identity.user.create");
     await login("pharmacy.manager", MANAGER_PASSWORD);
@@ -327,28 +536,40 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       request(credentials, "GET", "/identity/users"),
       request(credentials, "POST", "/identity/step-up-challenges", {
         action: "identity.user.create",
+        idempotencyKey: createUuidV7(),
       }),
       request(credentials, "POST", "/identity/users", {
         challengeId: arbitraryChallenge,
         displayName: "Denied User",
+        idempotencyKey: createUuidV7(),
         password: "denied password is never stored",
         role: "pharmacist",
         username: "denied.user",
       }),
       request(credentials, "PATCH", `/identity/users/${managerId}`, {
         challengeId: arbitraryChallenge,
+        expectedRevision: "1",
+        idempotencyKey: createUuidV7(),
         status: "locked",
       }),
       request(
         credentials,
         "PUT",
         `/identity/roles/${managerRoleId}/permissions`,
-        { challengeId: arbitraryChallenge, permissions: [] },
+        command({
+          challengeId: arbitraryChallenge,
+          expectedRevision: "1",
+          permissions: [],
+        }),
       ),
       request(credentials, "PATCH", "/pharmacy/settings", {
         attendanceEnabled: true,
+        expectedRevision: "1",
+        idempotencyKey: createUuidV7(),
       }),
       request(credentials, "POST", "/attendance/events", {
+        expectedVersion: "1",
+        idempotencyKey: createUuidV7(),
         kind: "check-in",
       }),
     ]);
@@ -376,6 +597,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       {
         actorId: ownerId,
         attendanceEnabled: true,
+        expectedRevision: "1",
+        idempotencyKey: createUuidV7(),
         permissions: ["pharmacy.settings.manage"],
         role: "owner",
       },
@@ -388,6 +611,46 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       attendance_enabled: boolean;
     }>("select attendance_enabled from pharmacy_settings");
     expect(settings.rows[0]?.attendance_enabled).toBe(false);
+  });
+
+  it("derives every named permission from explicit PostgreSQL grants", async () => {
+    await login(ownerUsername, ownerPassword);
+    const roles = await request(credentials, "GET", "/identity/roles");
+    const roleRows = roles.body?.roles as
+      | { id: string; key: string; revision: string }[]
+      | undefined;
+    const accountantRoleId =
+      roleRows?.find((role) => role.key === "accountant")?.id ?? "";
+    const permissionNames = roles.body?.permissions as string[];
+    expect(permissionNames).toHaveLength(10);
+
+    for (const permission of permissionNames) {
+      const challenge = await approvedChallenge(
+        "identity.role.permissions.update",
+        accountantRoleId,
+        ownerPassword,
+      );
+      const update = await request(
+        credentials,
+        "PUT",
+        `/identity/roles/${accountantRoleId}/permissions`,
+        command({
+          challengeId: challenge,
+          expectedRevision: await currentRoleRevision(accountantRoleId),
+          permissions: [permission],
+        }),
+      );
+      expect(update).toMatchObject({
+        status: 200,
+        body: { grants: [permission] },
+      });
+      await login("role.accountant", ACCOUNTANT_PASSWORD);
+      expect(await request(credentials, "GET", "/identity/state")).toMatchObject({
+        status: 200,
+        body: { allowedPermissions: [permission] },
+      });
+      await login(ownerUsername, ownerPassword);
+    }
   });
 
   it("applies explicit role grants and typed attendance settings end to end", async () => {
@@ -407,7 +670,11 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       credentials,
       "PUT",
       `/identity/roles/${managerRoleId}/permissions`,
-      { challengeId: grantChallenge, permissions: grants },
+      command({
+        challengeId: grantChallenge,
+        expectedRevision: await currentRoleRevision(managerRoleId),
+        permissions: grants,
+      }),
     );
     expect(updatedRole).toMatchObject({
       status: 200,
@@ -427,6 +694,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     });
     expect(
       await request(credentials, "POST", "/attendance/events", {
+        expectedVersion: await currentAttendanceVersion(),
+        idempotencyKey: createUuidV7(),
         kind: "check-in",
       }),
     ).toMatchObject({
@@ -437,6 +706,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(
       await request(credentials, "PATCH", "/pharmacy/settings", {
         attendanceEnabled: true,
+        expectedRevision: await currentSettingsRevision(),
+        idempotencyKey: createUuidV7(),
       }),
     ).toMatchObject({
       status: 200,
@@ -448,6 +719,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     });
     expect(
       await request(credentials, "POST", "/attendance/events", {
+        expectedVersion: await currentAttendanceVersion(),
+        idempotencyKey: createUuidV7(),
         kind: "check-in",
       }),
     ).toMatchObject({
@@ -456,6 +729,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     });
     expect(
       await request(credentials, "POST", "/attendance/events", {
+        expectedVersion: await currentAttendanceVersion(),
+        idempotencyKey: createUuidV7(),
         kind: "check-in",
       }),
     ).toMatchObject({
@@ -464,6 +739,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     });
     expect(
       await request(credentials, "POST", "/attendance/events", {
+        expectedVersion: await currentAttendanceVersion(),
+        idempotencyKey: createUuidV7(),
         kind: "check-out",
       }),
     ).toMatchObject({
@@ -486,7 +763,11 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         credentials,
         "PUT",
         `/identity/roles/${pharmacistRoleId}/permissions`,
-        { challengeId: roleChallenge, permissions: ["sales.return.post"] },
+        command({
+          challengeId: roleChallenge,
+          expectedRevision: await currentRoleRevision(pharmacistRoleId ?? ""),
+          permissions: ["sales.return.post"],
+        }),
       ),
     ).toMatchObject({
       status: 200,
@@ -515,6 +796,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(
       await request(credentials, "PATCH", `/identity/users/${pharmacistId}`, {
         challengeId: lockChallenge,
+        expectedRevision: await currentUserRevision(pharmacistId),
+        idempotencyKey: createUuidV7(),
         status: "locked",
       }),
     ).toMatchObject({
@@ -534,6 +817,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(
       await request(credentials, "PATCH", "/pharmacy/settings", {
         attendanceEnabled: false,
+        expectedRevision: await currentSettingsRevision(),
+        idempotencyKey: createUuidV7(),
       }),
     ).toMatchObject({ status: 200 });
     expect(await request(credentials, "GET", "/identity/state")).toMatchObject({
@@ -616,6 +901,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(
       await request(secondDevice, "PATCH", "/pharmacy/settings", {
         attendanceEnabled: true,
+        expectedRevision: "1",
+        idempotencyKey: createUuidV7(),
       }),
     ).toMatchObject({
       status: 401,
@@ -697,6 +984,27 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         attendanceId.rows[0]?.id,
       ]),
     ).rejects.toMatchObject({ code: "55000" });
+    const commandResult = await administrator.query<{
+      id: string;
+      response_body: string;
+    }>(
+      `select id, response_body::text
+       from identity_command_results order by created_at limit 1`,
+    );
+    expect(commandResult.rows[0]?.response_body.toLowerCase()).not.toContain(
+      "password",
+    );
+    await expect(
+      administrator.query(
+        "update identity_command_results set command_name = 'identity.changed' where id = $1",
+        [commandResult.rows[0]?.id],
+      ),
+    ).rejects.toMatchObject({ code: "55000" });
+    await expect(
+      administrator.query("delete from identity_command_results where id = $1", [
+        commandResult.rows[0]?.id,
+      ]),
+    ).rejects.toMatchObject({ code: "55000" });
   });
 
   function startApi(): ChildProcessWithoutNullStreams {
@@ -727,6 +1035,20 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     apiOutput += chunk.toString();
   }
 
+  async function registerDevice(): Promise<MainDeviceCredentials> {
+    const device = createMainDeviceCredentials();
+    await administrator.query(
+      "insert into main_devices (id, credential_hash) values ($1, $2)",
+      [device.deviceId, hashMainDeviceSecret(device.deviceSecret)],
+    );
+    await administrator.query(
+      `insert into main_device_sessions (device_id, token_hash)
+       values ($1, $2)`,
+      [device.deviceId, hashMainDeviceSecret(device.sessionToken)],
+    );
+    return device;
+  }
+
   async function login(username: string, password: string): Promise<void> {
     const response = await request(credentials, "POST", "/identity/login", {
       password,
@@ -743,7 +1065,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       credentials,
       "POST",
       "/identity/step-up-challenges",
-      { action, ...(subjectId === undefined ? {} : { subjectId }) },
+      command({ action, ...(subjectId === undefined ? {} : { subjectId }) }),
     );
     expect(response.status, failureContext([response])).toBe(201);
     return String(response.body?.id ?? "");
@@ -752,12 +1074,13 @@ describe.sequential("identity/access PostgreSQL seam", () => {
   async function approveChallenge(
     challengeId: string,
     password: string,
+    idempotencyKey = createUuidV7(),
   ): Promise<ApiResponse> {
     return await request(
       credentials,
       "POST",
       `/identity/step-up-challenges/${challengeId}/approve`,
-      { password },
+      { idempotencyKey, password },
     );
   }
 
@@ -785,10 +1108,49 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     return await request(credentials, "POST", "/identity/users", {
       challengeId,
       displayName,
+      idempotencyKey: createUuidV7(),
       password,
       role,
       username,
     });
+  }
+
+  async function currentSettingsRevision(): Promise<string> {
+    const state = await request(credentials, "GET", "/identity/state");
+    return String(
+      (state.body?.settings as { revision?: string } | undefined)?.revision ??
+        "",
+    );
+  }
+
+  async function currentAttendanceVersion(): Promise<string> {
+    const state = await request(credentials, "GET", "/identity/state");
+    return String(
+      (state.body?.attendance as { version?: string } | null | undefined)
+        ?.version ?? "1",
+    );
+  }
+
+  async function currentRoleRevision(roleId: string): Promise<string> {
+    const roles = await request(credentials, "GET", "/identity/roles");
+    const role = (roles.body?.roles as { id: string; revision: string }[]).find(
+      (candidate) => candidate.id === roleId,
+    );
+    return role?.revision ?? "";
+  }
+
+  async function currentUserRevision(userId: string): Promise<string> {
+    const users = await request(credentials, "GET", "/identity/users");
+    const user = (users.body?.users as { id: string; revision: string }[]).find(
+      (candidate) => candidate.id === userId,
+    );
+    return user?.revision ?? "";
+  }
+
+  function command<T extends Record<string, unknown>>(
+    body: T,
+  ): T & { idempotencyKey: string } {
+    return { ...body, idempotencyKey: createUuidV7() };
   }
 
   function failureContext(responses: readonly ApiResponse[]): string {

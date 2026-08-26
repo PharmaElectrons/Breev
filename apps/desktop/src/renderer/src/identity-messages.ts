@@ -97,9 +97,11 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "bootstrap-already-complete": "تم إعداد هذه الصيدلية بالفعل.",
       "bootstrap-required": "يلزم إعداد الصيدلية أولاً.",
       "identity-resource-not-found": "لم يعد السجل المطلوب متاحاً.",
+      "idempotency-conflict": "أُعيد استخدام مرجع الطلب لإجراء مختلف.",
       "invalid-credentials": "اسم المستخدم أو كلمة المرور غير صحيحة.",
       "last-owner-required": "يجب أن يبقى مالك نشط واحد على الأقل.",
       "permission-denied": "لا يملك حسابك الإذن المطلوب.",
+      "rate-limit-exceeded": "محاولات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.",
       "session-expired": "انتهت الجلسة. سجل الدخول مرة أخرى.",
       "session-missing": "يلزم تسجيل الدخول للمتابعة.",
       "session-revoked": "تم إنهاء الجلسة. سجل الدخول مرة أخرى.",
@@ -111,6 +113,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "step-up-stale": "تغيرت الصلاحيات أو البيانات. ابدأ التحقق من جديد.",
       "step-up-wrong-password": "كلمة المرور غير صحيحة.",
       "username-taken": "اسم المستخدم مستخدم بالفعل.",
+      "version-conflict": "تغيرت البيانات. راجع أحدث حالة ثم حاول مرة أخرى.",
     },
     displayName: "الاسم المعروض",
     enableAttendance: "تفعيل تسجيل الحضور والانصراف اليدوي",
@@ -168,10 +171,14 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "bootstrap-required": "Set up the pharmacy first.",
       "identity-resource-not-found":
         "The requested record is no longer available.",
+      "idempotency-conflict":
+        "That request reference was already used for another command.",
       "invalid-credentials": "The username or password is incorrect.",
       "last-owner-required": "At least one active owner must remain.",
       "permission-denied":
         "Your account does not have the required permission.",
+      "rate-limit-exceeded":
+        "Too many attempts. Wait briefly before trying again.",
       "session-expired": "Your session expired. Sign in again.",
       "session-missing": "Sign in to continue.",
       "session-revoked": "Your session ended. Sign in again.",
@@ -185,6 +192,8 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "step-up-stale": "Permissions or data changed. Start verification again.",
       "step-up-wrong-password": "The password is incorrect.",
       "username-taken": "That username is already in use.",
+      "version-conflict":
+        "The data changed. Review the latest state and try again.",
     },
     displayName: "Display name",
     enableAttendance: "Enable manual check-in and check-out",
