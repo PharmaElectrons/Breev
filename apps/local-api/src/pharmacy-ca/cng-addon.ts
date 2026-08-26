@@ -20,6 +20,8 @@ import {
   type KeyObject,
 } from "node:crypto";
 
+const WINDOWS_CNG_TIMEOUT_MS = 60_000;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CngKeyHandle {
@@ -89,7 +91,7 @@ export function selectKeyStorageProvider(): {
         "-Command",
         buildProviderProbeScript(probeName),
       ],
-      { encoding: "utf8", timeout: 5000 },
+      { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
     ).trim();
 
     if (output === "AVAILABLE") {
@@ -171,7 +173,7 @@ export function tryExportPrivateKey(keyHandle: CngKeyHandle): TryExportResult {
     const result = execFileSync(
       "powershell",
       ["-NoProfile", "-NonInteractive", "-Command", psScript],
-      { encoding: "utf8", timeout: 5000 },
+      { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
     ).trim();
 
     if (result.includes("ERROR_EXPORT_SUCCEEDED")) {
@@ -208,7 +210,7 @@ export function readPersistedKeyAcl(keyHandle: CngKeyHandle): string {
   return execFileSync(
     "powershell",
     ["-NoProfile", "-NonInteractive", "-Command", psScript],
-    { encoding: "utf8", timeout: 5000 },
+    { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
   ).trim();
 }
 
@@ -226,7 +228,7 @@ export function deletePersistedKey(opts: OpenKeyOptions): void {
       execFileSync(
         "powershell",
         ["-NoProfile", "-NonInteractive", "-Command", psScript],
-        { encoding: "utf8", timeout: 5000 },
+        { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
       );
     } catch {
       // Best-effort cleanup
@@ -266,7 +268,7 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
   const output = execFileSync(
     "powershell",
     ["-NoProfile", "-NonInteractive", "-Command", psScript],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
   ).trim();
 
   const lines = output
@@ -317,7 +319,7 @@ function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
   const output = execFileSync(
     "powershell",
     ["-NoProfile", "-NonInteractive", "-Command", psScript],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
   ).trim();
 
   const lines = output
@@ -373,7 +375,7 @@ function signDataWithWindowsCng(
   const sigBase64 = execFileSync(
     "powershell",
     ["-NoProfile", "-NonInteractive", "-Command", psScript],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
   ).trim();
 
   return Buffer.from(sigBase64, "base64");
