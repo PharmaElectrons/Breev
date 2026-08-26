@@ -60,6 +60,13 @@ export interface TryExportResult {
   readonly message: string;
 }
 
+export interface PersistedKeyAcl {
+  readonly aceCount: number;
+  readonly aceType: string;
+  readonly allowedSid: string;
+  readonly protected: boolean;
+}
+
 // ─── Provider Name Constants ──────────────────────────────────────────────────
 
 export const PLATFORM_CRYPTO_PROVIDER =
@@ -191,7 +198,7 @@ export function tryExportPrivateKey(keyHandle: CngKeyHandle): TryExportResult {
   );
 }
 
-export function readPersistedKeyAcl(keyHandle: CngKeyHandle): string {
+export function readPersistedKeyAcl(keyHandle: CngKeyHandle): PersistedKeyAcl {
   assertValidKeyIdentity(keyHandle);
   if (process.platform !== "win32" || keyHandle.softwareFallbackKey) {
     throw new Error("CNG key ACLs can only be inspected on Windows");
@@ -202,16 +209,32 @@ export function readPersistedKeyAcl(keyHandle: CngKeyHandle): string {
     try {
       $property = $key.GetProperty('Security Descr', [System.Security.Cryptography.CngPropertyOptions]4)
       $descriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor($property.GetValue(), 0)
-      Write-Output $descriptor.GetSddlForm([System.Security.AccessControl.AccessControlSections]::Access)
+      $ace = $descriptor.DiscretionaryAcl[0]
+      [pscustomobject]@{
+        aceCount = $descriptor.DiscretionaryAcl.Count
+        aceType = $ace.AceType.ToString()
+        allowedSid = $ace.SecurityIdentifier.Value
+        protected = (($descriptor.ControlFlags -band [System.Security.AccessControl.ControlFlags]::DiscretionaryAclProtected) -ne 0)
+      } | ConvertTo-Json -Compress
     } finally {
       $key.Dispose()
     }
   `;
-  return execFileSync(
+  const output = execFileSync(
     "powershell",
     ["-NoProfile", "-NonInteractive", "-Command", psScript],
     { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
   ).trim();
+  const acl = JSON.parse(output) as Partial<PersistedKeyAcl>;
+  if (
+    !Number.isInteger(acl.aceCount) ||
+    typeof acl.aceType !== "string" ||
+    typeof acl.allowedSid !== "string" ||
+    typeof acl.protected !== "boolean"
+  ) {
+    throw new Error("Windows returned an invalid CNG key ACL description");
+  }
+  return acl as PersistedKeyAcl;
 }
 
 export function deletePersistedKey(opts: OpenKeyOptions): void {
