@@ -4,7 +4,9 @@ import { observeTrustedTime } from "./trusted-time.js";
 
 describe("observeTrustedTime", () => {
   it("persists the first observation", () => {
-    expect(observeTrustedTime({ now: date("2026-01-01T00:00:00.000Z") })).toEqual({
+    expect(
+      observeTrustedTime({ now: date("2026-01-01T00:00:00.000Z") }),
+    ).toEqual({
       rollbackDetected: false,
       trustedNow: date("2026-01-01T00:00:00.000Z"),
       nextHighWater: date("2026-01-01T00:00:00.000Z"),

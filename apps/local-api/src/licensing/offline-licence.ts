@@ -218,13 +218,14 @@ function isCapabilitySet(value: unknown): value is PaidCapability[] {
 function isIsoInstant(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+  return (
+    Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value
+  );
 }
 
 function isKeyId(value: unknown): value is string {
   return (
-    typeof value === "string" &&
-    /^[a-z0-9][a-z0-9._-]{0,63}$/u.test(value)
+    typeof value === "string" && /^[a-z0-9][a-z0-9._-]{0,63}$/u.test(value)
   );
 }
 

@@ -3,6 +3,7 @@ import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
 import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
+  FREE_CORE_CAPABILITY_NAMES,
   LOCAL_API_VERSION,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
@@ -464,6 +465,157 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
     await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
+  test("hides unlicensed paid functions while Free Core survives expiry in both locales and themes", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    for (const capability of ["Local sales", "Backup", "Licence renewal"]) {
+      await expect(
+        page.getByRole("button", { name: capability }),
+      ).toBeVisible();
+    }
+    await expect(
+      page.getByRole("button", { name: "One-way cloud sync" }),
+    ).toHaveCount(0);
+    const directDenial = (await page.evaluate(async () => {
+      const response = await fetch("/licensing/capability-proof", {
+        body: JSON.stringify({ capability: "one-way-cloud-sync" }),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Breev-CSRF": "1",
+        },
+        method: "POST",
+      });
+      return {
+        body: (await response.json()) as { code?: string },
+        status: response.status,
+      };
+    })) as { body: { code?: string }; status: number };
+    expect(directDenial).toEqual({
+      body: expect.objectContaining({ code: "entitlement-denied" }),
+      status: 403,
+    });
+
+    const authenticated = (await page.evaluate(
+      async () => await (await fetch("/identity/state")).json(),
+    )) as Record<string, unknown>;
+    const licensedState = {
+      ...authenticated,
+      entitlement: {
+        capabilities: [
+          ...FREE_CORE_CAPABILITY_NAMES,
+          "one-way-cloud-sync",
+          "purchase-invoice-ocr",
+        ],
+        licence: {
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          features: ["one-way-cloud-sync"],
+          formatVersion: 1,
+          founderOverrideGrants: ["purchase-invoice-ocr"],
+          graceEndsAt: "2099-01-08T00:00:00.000Z",
+          issuedAt: "2026-01-01T00:00:00.000Z",
+          keyId: "browser-test",
+          licenceId: "019b0000-0000-7000-8000-000000000201",
+          mainDeviceId: credentials.deviceId,
+          permittedDeviceCount: 3,
+          pharmacyId: (authenticated.pharmacy as { id: string }).id,
+          plan: "professional",
+        },
+        status: "licensed",
+      },
+    };
+    await page.route("**/identity/state", async (route) => {
+      await route.fulfill({ json: licensedState, status: 200 });
+    });
+    await page.reload();
+    const cloudSync = page.getByRole("button", { name: "One-way cloud sync" });
+    await expect(cloudSync).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Purchase-invoice OCR" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "AI services" })).toHaveCount(
+      0,
+    );
+    await cloudSync.focus();
+    await expect(cloudSync).toBeFocused();
+    expect(
+      await cloudSync.evaluate((element) => {
+        const view = element.ownerDocument.defaultView;
+        return view === null
+          ? 0
+          : Number.parseFloat(view.getComputedStyle(element).outlineWidth);
+      }),
+    ).toBeGreaterThanOrEqual(3);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.resolve(
+        import.meta.dirname,
+        "../../../../evidence/issue-39/after/licensed-en-light.png",
+      ),
+    });
+
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
+    await expect(
+      page.getByRole("button", { name: "المزامنة السحابية أحادية الاتجاه" }),
+    ).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.resolve(
+        import.meta.dirname,
+        "../../../../evidence/issue-39/after/licensed-ar-dark.png",
+      ),
+    });
+
+    await page.unroute("**/identity/state");
+    await page.route("**/identity/state", async (route) => {
+      await route.fulfill({
+        json: {
+          ...licensedState,
+          entitlement: {
+            capabilities: [...FREE_CORE_CAPABILITY_NAMES],
+            licence: null,
+            status: "expired",
+          },
+        },
+        status: 200,
+      });
+    });
+    await page.reload();
+    await expect(
+      page.getByText("انتهى الترخيص — الوظائف المجانية فقط"),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "المزامنة السحابية أحادية الاتجاه" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "المبيعات المحلية" }),
+    ).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.resolve(
+        import.meta.dirname,
+        "../../../../evidence/issue-39/after/expired-ar-dark.png",
+      ),
+    });
+    await page.unroute("**/identity/state");
   });
 
   test("requires Step-Up to create a default-deny user and enforces denial through the API", async ({
@@ -1135,6 +1287,7 @@ async function startRendererServer(
 
       if (
         request.url?.startsWith("/identity/") ||
+        request.url?.startsWith("/licensing/") ||
         request.url === "/pharmacy/settings" ||
         request.url === "/attendance/events" ||
         request.url === localProofMutationContract.path

@@ -38,7 +38,7 @@ create table trusted_breev_time_marks (
   main_device_id uuid not null references main_devices(id),
   lower_bound timestamptz not null,
   recorded_at timestamptz not null default statement_timestamp(),
-  unique (pharmacy_id, lower_bound),
+  unique (pharmacy_id, main_device_id, lower_bound),
   constraint trusted_breev_time_marks_id_uuidv7 check (
     id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
   )
@@ -52,11 +52,14 @@ as $$
 declare
   current_lower_bound timestamptz;
 begin
-  perform pg_advisory_xact_lock(hashtextextended(new.pharmacy_id::text, 0));
+  perform pg_advisory_xact_lock(
+    hashtextextended(new.pharmacy_id::text || ':' || new.main_device_id::text, 0)
+  );
   select max(mark.lower_bound)
     into current_lower_bound
     from public.trusted_breev_time_marks mark
-   where mark.pharmacy_id = new.pharmacy_id;
+   where mark.pharmacy_id = new.pharmacy_id
+     and mark.main_device_id = new.main_device_id;
   if current_lower_bound is not null and new.lower_bound <= current_lower_bound then
     raise exception 'Trusted Breev Time marks must only advance'
       using errcode = '23514';

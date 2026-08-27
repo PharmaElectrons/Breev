@@ -15,8 +15,7 @@ export type FreeCoreCapability = (typeof FREE_CORE_CAPABILITIES)[number];
 export type Capability = CapabilityName;
 
 export type StoredLicenceVerification =
-  | OfflineLicenceVerification
-  | { readonly status: "missing" };
+  OfflineLicenceVerification | { readonly status: "missing" };
 
 export type EntitlementContext = ContractEntitlementContext;
 
@@ -40,18 +39,22 @@ export function deriveEntitlement(input: {
     ...input.licence.claims.features,
     ...input.licence.claims.founderOverrideGrants,
   ]);
-  const paid = PAID_CAPABILITIES.filter((capability) => granted.has(capability));
+  const paid = PAID_CAPABILITIES.filter((capability) =>
+    granted.has(capability),
+  );
   return {
     status: "licensed",
     capabilities: [...FREE_CORE_CAPABILITIES, ...paid],
-    licence: input.licence.claims,
+    licence: {
+      ...input.licence.claims,
+      features: [...input.licence.claims.features],
+      founderOverrideGrants: [...input.licence.claims.founderOverrideGrants],
+    },
   };
 }
 
 export type CapabilityAuthorization =
-  | "allowed"
-  | "permission-denied"
-  | "entitlement-denied";
+  "allowed" | "permission-denied" | "entitlement-denied";
 
 export function authorizeCapability(input: {
   readonly hasPermission: boolean;
