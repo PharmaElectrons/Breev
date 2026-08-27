@@ -165,7 +165,7 @@ export class RecoveryCoordinatorService {
       const encryptedSizeBytes = statSync(recoveryFilePath).size;
 
       // 6. Terminal Atomic transition to 'verified'
-      const updateRes = await pool.query<RecoveryPointRecord>(
+      const updateRes = await pool.query<RawRecoveryPointRow>(
         `update recovery_points
          set completed_at = now(),
              status = 'verified',
@@ -190,10 +190,12 @@ export class RecoveryCoordinatorService {
       // Clean staging
       rmSync(stagingDir, { force: true, recursive: true });
 
-      const record = updateRes.rows[0];
-      if (!record) {
+      const rawRecord = updateRes.rows[0];
+      if (!rawRecord) {
         throw new Error("Failed to retrieve updated verified recovery point");
       }
+
+      const record = mapRecoveryPointRow(rawRecord);
 
       this.logger.log(
         `Successfully created verified recovery point ${recoveryId} (${encryptedSizeBytes} bytes)`,
@@ -412,4 +414,46 @@ function createUuidV7(): string {
   const restRand = random.subarray(4, 10).toString("hex");
 
   return `${timeHex.slice(0, 8)}-${timeHex.slice(8, 12)}-${versionAndRand}-${variantAndRand}-${restRand}`;
+}
+
+interface RawRecoveryPointRow {
+  readonly archive_format: string;
+  readonly backup_type: "hourly_recovery_point" | "daily_snapshot";
+  readonly completed_at: Date | null;
+  readonly created_at: Date;
+  readonly encrypted_size_bytes: string | number | null;
+  readonly encryption_metadata: unknown;
+  readonly failure_reason: string | null;
+  readonly id: string;
+  readonly manifest_checksum: string | null;
+  readonly manifest_verified_at: Date | null;
+  readonly quarantine_required: boolean;
+  readonly started_at: Date;
+  readonly status: "in_progress" | "verified" | "failed" | "corrupted";
+  readonly wal_end_lsn: string | null;
+  readonly wal_start_lsn: string | null;
+}
+
+function mapRecoveryPointRow(row: RawRecoveryPointRow): RecoveryPointRecord {
+  return {
+    archiveFormat: row.archive_format,
+    backupType: row.backup_type,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    encryptedSizeBytes:
+      row.encrypted_size_bytes != null
+        ? Number(row.encrypted_size_bytes)
+        : null,
+    encryptionMetadata:
+      row.encryption_metadata as RecoveryPointRecord["encryptionMetadata"],
+    failureReason: row.failure_reason,
+    id: row.id,
+    manifestChecksum: row.manifest_checksum,
+    manifestVerifiedAt: row.manifest_verified_at,
+    quarantineRequired: row.quarantine_required,
+    startedAt: row.started_at,
+    status: row.status,
+    walEndLsn: row.wal_end_lsn,
+    walStartLsn: row.wal_start_lsn,
+  };
 }
