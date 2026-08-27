@@ -122,16 +122,33 @@ export function selectKeyStorageProvider(): {
 
 export function createPersistedKeyPair(opts: CreateKeyOptions): KeyResult {
   assertValidKeyOptions(opts);
-  if (process.platform === "win32") {
-    return createWindowsCngKey(opts);
+  if (
+    process.platform === "win32" &&
+    !process.env.BREEV_FORCE_SOFTWARE_KEY_STORAGE
+  ) {
+    try {
+      return createWindowsCngKey(opts);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes("Access denied")) {
+        return createSoftwareFallbackKey(opts);
+      }
+      throw err;
+    }
   }
   return createSoftwareFallbackKey(opts);
 }
 
 export function openPersistedKey(opts: OpenKeyOptions): KeyResult {
   assertValidKeyIdentity(opts);
-  if (process.platform === "win32") {
-    return openWindowsCngKey(opts);
+  if (
+    process.platform === "win32" &&
+    !process.env.BREEV_FORCE_SOFTWARE_KEY_STORAGE
+  ) {
+    try {
+      return openWindowsCngKey(opts);
+    } catch {
+      // Fall through to software key store
+    }
   }
   const found = softwareKeyStore.get(opts.keyName);
   if (found) {

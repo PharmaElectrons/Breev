@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const LOCAL_API_VERSION = "3" as const;
-export const LOCAL_SCHEMA_VERSION = "2" as const;
+export const LOCAL_SCHEMA_VERSION = "3" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -636,6 +636,68 @@ export function parseLocalProofEvidenceResponse(
       statusCode,
       payload,
       localSecurityDenialSchema,
+    );
+  }
+  throw new LocalRestPayloadError(statusCode);
+}
+
+export const recoveryPointStatusSchema = z.enum([
+  "in_progress",
+  "verified",
+  "failed",
+  "corrupted",
+]);
+
+export const recoveryBackupTypeSchema = z.enum([
+  "hourly_recovery_point",
+  "daily_snapshot",
+]);
+
+export const recoveryPointRecordSchema = z.object({
+  backup_type: recoveryBackupTypeSchema,
+  completed_at: z.string().nullable(),
+  encrypted_size_bytes: z.number().nullable(),
+  id: z.string().uuid(),
+  manifest_verified_at: z.string().nullable(),
+  started_at: z.string(),
+  status: recoveryPointStatusSchema,
+  wal_end_lsn: z.string().nullable(),
+  wal_start_lsn: z.string().nullable(),
+});
+
+export const systemQuarantineStateSchema = z.object({
+  clearedAt: z.string().nullable(),
+  clearedBy: z.string().nullable(),
+  isQuarantined: z.boolean(),
+  quarantineReason: z.string().nullable(),
+  quarantinedAt: z.string().nullable(),
+  verificationReport: z.unknown().nullable(),
+});
+
+export const recoveryStatusResponseSchema = z.object({
+  latestRecoveryPoint: recoveryPointRecordSchema.nullable(),
+  quarantine: systemQuarantineStateSchema,
+});
+
+export type RecoveryPointStatus = z.infer<typeof recoveryPointStatusSchema>;
+export type RecoveryBackupType = z.infer<typeof recoveryBackupTypeSchema>;
+export type RecoveryPointRecordDto = z.infer<typeof recoveryPointRecordSchema>;
+export type SystemQuarantineStateDto = z.infer<
+  typeof systemQuarantineStateSchema
+>;
+export type RecoveryStatusResponse = z.infer<
+  typeof recoveryStatusResponseSchema
+>;
+
+export function parseLocalRecoveryStatusResponse(
+  statusCode: number,
+  payload: unknown,
+): RecoveryStatusResponse {
+  if (statusCode === 200) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      recoveryStatusResponseSchema,
     );
   }
   throw new LocalRestPayloadError(statusCode);
