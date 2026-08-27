@@ -373,6 +373,11 @@ function AuthenticatedWorkspace({
   );
   const canManageLicensing =
     state.allowedPermissions.includes("licensing.manage");
+  const visibleSelectedCapability = state.entitlement.capabilities.includes(
+    selectedCapability,
+  )
+    ? selectedCapability
+    : (state.entitlement.capabilities[0] ?? "renewal");
 
   useEffect(() => {
     if (!state.entitlement.capabilities.includes(selectedCapability)) {
@@ -584,7 +589,9 @@ function AuthenticatedWorkspace({
                 <li key={capability}>
                   <button
                     aria-current={
-                      selectedCapability === capability ? "page" : undefined
+                      visibleSelectedCapability === capability
+                        ? "page"
+                        : undefined
                     }
                     type="button"
                     onClick={() => setSelectedCapability(capability)}
@@ -595,7 +602,7 @@ function AuthenticatedWorkspace({
               ))}
             </ul>
             <p className="capability-selection" aria-live="polite">
-              {licensingCopy.capabilities[selectedCapability]}
+              {licensingCopy.capabilities[visibleSelectedCapability]}
             </p>
           </nav>
         </section>
