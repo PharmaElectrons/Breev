@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Pool, PoolClient } from "pg";
 
 import type { SystemQuarantineVerificationReport } from "./recovery-schema.js";
@@ -15,9 +15,21 @@ export interface QuarantineVerificationHook {
 }
 
 @Injectable()
-export class RestoreQuarantineService {
+export class RestoreQuarantineService implements OnModuleInit {
   private readonly logger = new Logger(RestoreQuarantineService.name);
   private readonly hooks = new Map<string, QuarantineVerificationHook>();
+
+  public onModuleInit(): void {
+    if (this.hooks.size === 0) {
+      this.registerDefaultHooks();
+    }
+  }
+
+  public registerDefaultHooks(): void {
+    this.registerHook(new MainDeviceSecurityVerificationHook());
+    this.registerHook(new DeviceIdentityVerificationHook());
+    this.registerHook(new LicenceTimeVerificationHook());
+  }
 
   public registerHook(hook: QuarantineVerificationHook): void {
     this.hooks.set(hook.hookName, hook);

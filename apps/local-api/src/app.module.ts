@@ -1,4 +1,4 @@
-import { Module, type OnModuleInit } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 
 import { DatabaseHealthService } from "./database-health.service.js";
 import { DurableJobsService } from "./durable-jobs/durable-jobs.service.js";
@@ -12,12 +12,7 @@ import { PharmacyCaService } from "./pharmacy-ca/pharmacy-ca.service.js";
 import { RecoveryCoordinatorService } from "./recovery/recovery-coordinator.service.js";
 import { RecoveryJobService } from "./recovery/recovery-job.service.js";
 import { RecoveryController } from "./recovery/recovery.controller.js";
-import {
-  DeviceIdentityVerificationHook,
-  LicenceTimeVerificationHook,
-  MainDeviceSecurityVerificationHook,
-  RestoreQuarantineService,
-} from "./recovery/restore-quarantine.service.js";
+import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.js";
 
 @Module({
   controllers: [
@@ -38,16 +33,4 @@ import {
     RecoveryJobService,
   ],
 })
-export class AppModule implements OnModuleInit {
-  public constructor(
-    private readonly quarantineService: RestoreQuarantineService,
-  ) {}
-
-  public onModuleInit(): void {
-    this.quarantineService.registerHook(
-      new MainDeviceSecurityVerificationHook(),
-    );
-    this.quarantineService.registerHook(new DeviceIdentityVerificationHook());
-    this.quarantineService.registerHook(new LicenceTimeVerificationHook());
-  }
-}
+export class AppModule {}
