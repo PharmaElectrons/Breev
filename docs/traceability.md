@@ -35,6 +35,8 @@ Every business-requirement area of the governing scope maps to one owning docume
 | §16–§17 deferred and excluded | Phase Two list, AI roadmap as non-binding direction, price exclusions | `product.md` (scope boundaries) |
 | §19 open decisions | Client approvals before final implementation | `open-decisions.md` (client-decision table) |
 
+The root `README.md` and `running-locally.md` describe the code that is currently runnable and the checks that exercise it. They do not own product requirements. The coverage map above remains the authority for required behavior that has not been implemented yet.
+
 ## Governing reconciliations
 
 Where sources conflict or the engineering baseline deliberately differs, this table records the governing result.
