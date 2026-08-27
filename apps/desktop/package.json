@@ -15,6 +15,7 @@
     "package": "node scripts/package.mjs",
     "package:windows": "electron-builder --config electron-builder.config.mjs --win nsis --x64",
     "postinstall": "install-electron",
+    "start": "node --env-file-if-exists=../../.env --env-file-if-exists=.env ./node_modules/electron/cli.js .",
     "test:browser": "playwright test --config playwright.browser.config.ts",
     "test:smoke": "pnpm package && playwright test --config playwright.config.ts",
     "test:unit": "vitest run --config vitest.config.ts",
