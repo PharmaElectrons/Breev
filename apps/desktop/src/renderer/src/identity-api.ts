@@ -23,6 +23,7 @@ import {
   identityUserSchema,
   identityUsersContract,
   entitlementContextSchema,
+  licenceDeactivateContract,
   licenceInstallContract,
   licensingDenialSchema,
   pharmacySettingsContract,
@@ -44,6 +45,7 @@ import {
   type IdentityUpdateUserRequest,
   type IdentityUser,
   type EntitlementContext,
+  type LicenceDeactivateRequest,
   type LicenceInstallRequest,
   type LicensingDenial,
   type PharmacySettings,
@@ -258,6 +260,20 @@ export async function installOfflineLicence(
     baseUrl,
     licenceInstallContract.path,
     licenceInstallContract.method,
+    201,
+    entitlementContextSchema,
+    body,
+  );
+}
+
+export async function deactivateOfflineLicence(
+  baseUrl: string,
+  body: LicenceDeactivateRequest,
+): Promise<EntitlementContext> {
+  return await requestJson(
+    baseUrl,
+    licenceDeactivateContract.path,
+    licenceDeactivateContract.method,
     201,
     entitlementContextSchema,
     body,

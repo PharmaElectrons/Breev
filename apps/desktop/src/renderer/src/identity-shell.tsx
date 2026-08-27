@@ -17,6 +17,7 @@ import {
   createAttendanceEvent,
   createIdentityUser,
   createStepUpChallenge,
+  deactivateOfflineLicence,
   IdentityApiDenied,
   installOfflineLicence,
   loginIdentity,
@@ -502,6 +503,9 @@ function AuthenticatedWorkspace({
                 <p
                   className="state-line"
                   data-entitlement-status={state.entitlement.status}
+                  aria-atomic="true"
+                  aria-live="polite"
+                  role="status"
                 >
                   <span aria-hidden="true">●</span>{" "}
                   {licensingCopy.statuses[state.entitlement.status]}
@@ -576,6 +580,35 @@ function AuthenticatedWorkspace({
                   {licensingCopy.install}
                 </button>
               </form>
+            ) : null}
+            {canManageLicensing && state.entitlement.licence !== null ? (
+              <div className="licence-deactivation">
+                <p>{licensingCopy.deactivateDescription}</p>
+                <button
+                  className="quiet-button"
+                  disabled={busy}
+                  type="button"
+                  onClick={() =>
+                    void beginStepUp(
+                      "licensing.licence.deactivate",
+                      state.pharmacy.id,
+                      async (challengeId) => {
+                        const entitlement = await run(() =>
+                          deactivateOfflineLicence(baseUrl, {
+                            challengeId,
+                            idempotencyKey: newIdempotencyKey(),
+                          }),
+                        );
+                        if (entitlement !== undefined) {
+                          onState({ ...state, entitlement });
+                        }
+                      },
+                    )
+                  }
+                >
+                  {licensingCopy.deactivate}
+                </button>
+              </div>
             ) : null}
           </article>
 

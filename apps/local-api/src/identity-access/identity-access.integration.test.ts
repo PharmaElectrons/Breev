@@ -148,7 +148,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     });
   });
 
-  it("independently denies unlicensed API use and requires Step-Up for licence installation", async () => {
+  it("denies unlicensed API use and makes licence administration recoverable", async () => {
     expect(
       await request(credentials, "POST", "/licensing/capability-proof", {
         capability: "one-way-cloud-sync",
@@ -165,8 +165,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         idempotencyKey: createUuidV7(),
       }),
     ).toMatchObject({
-      status: 404,
-      body: { code: "identity-resource-not-found", status: "denied" },
+      status: 403,
+      body: { code: "licence-invalid", status: "denied" },
     });
 
     const challengeId = await approvedChallenge(
@@ -184,10 +184,74 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       status: 403,
       body: { code: "licence-invalid", status: "denied" },
     });
+    const unusedChallenge = await administrator.query<{
+      consumed_at: Date | null;
+    }>("select consumed_at from step_up_challenges where id = $1", [
+      challengeId,
+    ]);
+    expect(unusedChallenge.rows[0]?.consumed_at).toBeNull();
+
+    expect(
+      await request(credentials, "POST", "/licensing/licence-deactivations", {
+        challengeId: createUuidV7(),
+        idempotencyKey: createUuidV7(),
+      }),
+    ).toMatchObject({
+      status: 404,
+      body: { code: "identity-resource-not-found", status: "denied" },
+    });
+    const deactivationChallengeId = await approvedChallenge(
+      "licensing.licence.deactivate",
+      undefined,
+      ownerPassword,
+    );
+    const deactivationBody = {
+      challengeId: deactivationChallengeId,
+      idempotencyKey: createUuidV7(),
+    };
+    const deactivated = await request(
+      credentials,
+      "POST",
+      "/licensing/licence-deactivations",
+      deactivationBody,
+    );
+    expect(deactivated).toMatchObject({
+      status: 201,
+      body: { licence: null, status: "free-core" },
+    });
+    expect(
+      await request(
+        credentials,
+        "POST",
+        "/licensing/licence-deactivations",
+        deactivationBody,
+      ),
+    ).toEqual(deactivated);
+    const deactivationFacts = await administrator.query<{
+      commands: string;
+      events: string;
+    }>(
+      `select
+         (select count(*)::text from licensing_command_results
+          where command_name = 'licence.deactivate') as commands,
+         (select count(*)::text from licence_state_events
+          where event_kind = 'deactivated') as events`,
+    );
+    expect(deactivationFacts.rows[0]).toEqual({ commands: "1", events: "1" });
     const state = await request(credentials, "GET", "/identity/state");
     expect(state.body?.entitlement).toMatchObject({
       licence: null,
       status: "free-core",
+    });
+    expect(state.body?.user).toMatchObject({ id: ownerId, status: "active" });
+    expect(state.body?.settings).toMatchObject({ attendanceEnabled: false });
+    expect(await request(credentials, "GET", "/identity/users")).toMatchObject({
+      status: 200,
+      body: {
+        users: expect.arrayContaining([
+          expect.objectContaining({ id: ownerId }),
+        ]),
+      },
     });
   });
 

@@ -58,6 +58,7 @@ export const stepUpActionSchema = z.enum([
   "identity.role.permissions.update",
   "identity.user.create",
   "identity.user.update",
+  "licensing.licence.deactivate",
   "licensing.licence.install",
 ]);
 
@@ -258,6 +259,7 @@ export const attendanceEventSchema = z.strictObject({
 export const LICENSING_DENIAL_CODES = [
   "clock-rollback",
   "entitlement-denied",
+  "idempotency-conflict",
   "licence-invalid",
 ] as const;
 export const licensingDenialCodeSchema = z.enum(LICENSING_DENIAL_CODES);
@@ -270,6 +272,10 @@ export const licensingDenialSchema = z.strictObject({
 export const licenceInstallRequestSchema = z.strictObject({
   challengeId: z.uuidv7(),
   encodedLicence: z.string().min(1).max(6_000),
+  idempotencyKey: z.uuid(),
+});
+export const licenceDeactivateRequestSchema = z.strictObject({
+  challengeId: z.uuidv7(),
   idempotencyKey: z.uuid(),
 });
 export const capabilityProofRequestSchema = z.strictObject({
@@ -436,7 +442,20 @@ export const licenceInstallContract = {
     401: identityDenialSchema,
     403: z.union([identityDenialSchema, licensingDenialSchema]),
     404: identityDenialSchema,
-    409: identityDenialSchema,
+    409: z.union([identityDenialSchema, licensingDenialSchema]),
+  },
+} as const;
+export const licenceDeactivateContract = {
+  method: "POST",
+  path: "/licensing/licence-deactivations",
+  request: { body: licenceDeactivateRequestSchema },
+  responses: {
+    201: entitlementContextSchema,
+    400: z.union([identityDenialSchema, licensingDenialSchema]),
+    401: identityDenialSchema,
+    403: z.union([identityDenialSchema, licensingDenialSchema]),
+    404: identityDenialSchema,
+    409: z.union([identityDenialSchema, licensingDenialSchema]),
   },
 } as const;
 export const capabilityProofContract = {
@@ -613,6 +632,9 @@ export type PaidCapabilityName = z.infer<typeof paidCapabilityNameSchema>;
 export type EntitlementContext = z.infer<typeof entitlementContextSchema>;
 export type LicensingDenial = z.infer<typeof licensingDenialSchema>;
 export type LicenceInstallRequest = z.infer<typeof licenceInstallRequestSchema>;
+export type LicenceDeactivateRequest = z.infer<
+  typeof licenceDeactivateRequestSchema
+>;
 export type CapabilityProofRequest = z.infer<
   typeof capabilityProofRequestSchema
 >;

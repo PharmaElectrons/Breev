@@ -5,9 +5,14 @@ import type { Locale } from "./preferences";
 export interface LicensingCopy {
   readonly availableCapabilities: string;
   readonly capabilities: Record<CapabilityName, string>;
+  readonly deactivate: string;
+  readonly deactivateDescription: string;
   readonly deviceAllowance: string;
   readonly denials: Record<
-    "clock-rollback" | "entitlement-denied" | "licence-invalid",
+    | "clock-rollback"
+    | "entitlement-denied"
+    | "idempotency-conflict"
+    | "licence-invalid",
     string
   >;
   readonly expires: string;
@@ -44,10 +49,15 @@ export const licensingMessages: Record<Locale, LicensingCopy> = {
       backup: "النسخ الاحتياطي",
       "whatsapp-messaging": "رسائل واتساب",
     },
+    deactivate: "إزالة الترخيص",
+    deactivateDescription:
+      "العودة إلى الوظائف المجانية مع الاحتفاظ بجميع بيانات الصيدلية وسجل الترخيص.",
     deviceAllowance: "عدد الأجهزة المسموح",
     denials: {
       "clock-rollback": "تعذر تثبيت الترخيص بعد رصد رجوع الساعة.",
       "entitlement-denied": "الترخيص الحالي لا يتيح هذه الوظيفة.",
+      "idempotency-conflict":
+        "أُعيد استخدام معرّف الطلب لمستند ترخيص مختلف. أعد المحاولة.",
       "licence-invalid":
         "تعذر التحقق من صحة الترخيص أو ارتباطه بهذه الصيدلية والجهاز الرئيسي.",
     },
@@ -87,12 +97,17 @@ export const licensingMessages: Record<Locale, LicensingCopy> = {
       backup: "Backup",
       "whatsapp-messaging": "WhatsApp messaging",
     },
+    deactivate: "Remove licence",
+    deactivateDescription:
+      "Return to Free Core while retaining all pharmacy data and licence history.",
     deviceAllowance: "Permitted devices",
     denials: {
       "clock-rollback":
         "The licence cannot be installed after a clock rollback was detected.",
       "entitlement-denied":
         "The current licence does not include this function.",
+      "idempotency-conflict":
+        "The request identifier was reused for a different licence document. Try again.",
       "licence-invalid":
         "The licence signature or its pharmacy/Main-device binding is invalid.",
     },

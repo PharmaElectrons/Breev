@@ -18,10 +18,14 @@ import {
   TEST_PHARMACY_ID,
   TEST_RENEWED_LICENCE,
 } from "./licence-fixtures.test.js";
-import { LicensingService } from "./licensing.service.js";
+import {
+  LicensingCommandConflict,
+  LicensingService,
+} from "./licensing.service.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const ACTOR_ID = "019b0000-0000-7000-8000-000000000107";
+const OWNER_ROLE_ID = "019b0000-0000-7000-8000-000000000108";
 
 describe.sequential("licensing PostgreSQL seam", () => {
   let administrator: Pool;
@@ -49,6 +53,20 @@ describe.sequential("licensing PostgreSQL seam", () => {
         "insert into pharmacies (id, name) values ($1, 'Breev Licence Test Pharmacy')",
         [TEST_PHARMACY_ID],
       );
+    await database.requirePool().query(
+      `insert into pharmacy_roles (id, pharmacy_id, role_key)
+       values ($1, $2, 'owner')`,
+      [OWNER_ROLE_ID, TEST_PHARMACY_ID],
+    );
+    await database.requirePool().query(
+      `insert into identity_users (
+         id, pharmacy_id, username, username_key, display_name, role_id,
+         password_hash, password_algorithm, password_version,
+         password_memory_kib, password_iterations, password_parallelism
+       ) values ($1, $2, 'licence.actor', 'licence.actor',
+                 'Licence Actor', $3, $4, 'argon2id', 19, 19456, 2, 1)`,
+      [ACTOR_ID, TEST_PHARMACY_ID, OWNER_ROLE_ID, Buffer.alloc(64)],
+    );
     licensing = new LicensingService(database);
   }, 60_000);
 
@@ -101,6 +119,27 @@ describe.sequential("licensing PostgreSQL seam", () => {
     expect(renewed.status).toBe("licensed");
     expect(renewed.capabilities).toContain("crm-advanced-reports");
 
+    const pharmacyDataBefore = await pharmacyOwnedData();
+    const deactivated = await deactivateAt("2027-01-01T00:00:01.000Z");
+    expect(deactivated).toEqual({
+      status: "free-core",
+      capabilities: FREE_CORE_CAPABILITIES,
+      licence: null,
+    });
+    expect(await currentAt("2027-01-01T00:00:01.000Z")).toEqual(deactivated);
+    expect(await pharmacyOwnedData()).toEqual(pharmacyDataBefore);
+
+    await licensing.install({
+      actorId: ACTOR_ID,
+      encodedLicence: TEST_RENEWED_LICENCE,
+      mainDeviceId: TEST_MAIN_DEVICE_ID,
+      now: new Date("2027-01-01T00:00:02.000Z"),
+      pharmacyId: TEST_PHARMACY_ID,
+    });
+    expect(
+      (await currentAt("2027-01-01T00:00:02.000Z")).capabilities,
+    ).toContain("crm-advanced-reports");
+
     const rollback = await currentAt("2026-12-31T23:59:59.999Z");
     expect(rollback.status).toBe("clock-rollback");
     expect(rollback.capabilities).toEqual(FREE_CORE_CAPABILITIES);
@@ -139,6 +178,9 @@ describe.sequential("licensing PostgreSQL seam", () => {
       administrator.query("delete from trusted_breev_time_marks"),
     ).rejects.toMatchObject({ code: "55000" });
     await expect(
+      administrator.query("delete from licence_state_events"),
+    ).rejects.toMatchObject({ code: "55000" });
+    await expect(
       administrator.query(
         "update licensing_audit_records set outcome = 'denied'",
       ),
@@ -148,9 +190,50 @@ describe.sequential("licensing PostgreSQL seam", () => {
     ).rejects.toMatchObject({ code: "42501" });
   });
 
+  it("replays one persisted command result and rejects key reuse", async () => {
+    const response = await currentAt("2027-01-01T00:30:00.000Z");
+    const idempotencyKey = "019b0000-0000-7000-8000-000000000109";
+    const fingerprint = licensing.fingerprint(
+      "licence.install",
+      TEST_RENEWED_LICENCE,
+    );
+    await licensing.recordCommandResult(database.requirePool(), {
+      actorId: ACTOR_ID,
+      command: "licence.install",
+      fingerprint,
+      idempotencyKey,
+      mainDeviceId: TEST_MAIN_DEVICE_ID,
+      now: new Date("2027-01-01T00:30:00.000Z"),
+      pharmacyId: TEST_PHARMACY_ID,
+      response,
+    });
+    await expect(
+      licensing.replayCommand(database.requirePool(), {
+        command: "licence.install",
+        fingerprint,
+        idempotencyKey,
+        pharmacyId: TEST_PHARMACY_ID,
+      }),
+    ).resolves.toEqual(response);
+    await expect(
+      licensing.replayCommand(database.requirePool(), {
+        command: "licence.install",
+        fingerprint: licensing.fingerprint("licence.install", "different"),
+        idempotencyKey,
+        pharmacyId: TEST_PHARMACY_ID,
+      }),
+    ).rejects.toBeInstanceOf(LicensingCommandConflict);
+    await expect(
+      administrator.query(
+        "update licensing_command_results set response_body = '{}'::jsonb",
+      ),
+    ).rejects.toMatchObject({ code: "55000" });
+  });
+
   it("serializes concurrent high-water advances across service instances", async () => {
     const first = new LicensingService(database);
     const second = new LicensingService(database);
+    const rollbackAuditsBefore = await rollbackAuditCount();
     const results = await Promise.all([
       first.current({
         mainDeviceId: TEST_MAIN_DEVICE_ID,
@@ -159,16 +242,18 @@ describe.sequential("licensing PostgreSQL seam", () => {
       }),
       second.current({
         mainDeviceId: TEST_MAIN_DEVICE_ID,
-        now: new Date("2028-01-01T00:00:00.000Z"),
+        now: new Date("2028-01-01T00:00:00.001Z"),
         pharmacyId: TEST_PHARMACY_ID,
       }),
     ]);
     expect(results.every((result) => result.status === "licensed")).toBe(true);
     const marks = await administrator.query<{ count: string }>(
       `select count(*)::text as count from trusted_breev_time_marks
-       where lower_bound = '2028-01-01T00:00:00.000Z'`,
+       where lower_bound >= '2028-01-01T00:00:00.000Z'
+         and lower_bound < '2028-01-01T01:00:00.000Z'`,
     );
     expect(marks.rows[0]?.count).toBe("1");
+    expect(await rollbackAuditCount()).toBe(rollbackAuditsBefore);
   });
 
   async function currentAt(value: string) {
@@ -178,5 +263,54 @@ describe.sequential("licensing PostgreSQL seam", () => {
       now: new Date(value),
       pharmacyId: TEST_PHARMACY_ID,
     });
+  }
+
+  async function deactivateAt(value: string) {
+    const client = await database.requirePool().connect();
+    try {
+      await client.query("begin");
+      const result = await licensing.deactivate(client, {
+        actorId: ACTOR_ID,
+        mainDeviceId: TEST_MAIN_DEVICE_ID,
+        now: new Date(value),
+        pharmacyId: TEST_PHARMACY_ID,
+      });
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function rollbackAuditCount(): Promise<string | undefined> {
+    const result = await administrator.query<{ count: string }>(
+      `select count(*)::text as count from licensing_audit_records
+       where action = 'trusted-time.rollback'`,
+    );
+    return result.rows[0]?.count;
+  }
+
+  async function pharmacyOwnedData() {
+    const result = await database.requirePool().query<{
+      licence_count: string;
+      name: string;
+      role_count: string;
+      user_count: string;
+    }>(
+      `select pharmacy.name,
+              (select count(*)::text from pharmacy_roles role
+               where role.pharmacy_id = pharmacy.id) as role_count,
+              (select count(*)::text from identity_users identity_user
+               where identity_user.pharmacy_id = pharmacy.id) as user_count,
+              (select count(*)::text from licence_installations installation
+               where installation.pharmacy_id = pharmacy.id) as licence_count
+       from pharmacies pharmacy
+       where pharmacy.id = $1`,
+      [TEST_PHARMACY_ID],
+    );
+    return result.rows;
   }
 });

@@ -3,7 +3,8 @@ values ('licensing.manage')
 on conflict (name) do nothing;
 --> statement-breakpoint
 insert into step_up_action_definitions (name, required_permission)
-values ('licensing.licence.install', 'licensing.manage')
+values ('licensing.licence.install', 'licensing.manage'),
+       ('licensing.licence.deactivate', 'licensing.manage')
 on conflict (name) do update
 set required_permission = excluded.required_permission;
 --> statement-breakpoint
@@ -55,6 +56,9 @@ create table licence_installations (
   encoded_licence text not null,
   installed_at timestamptz not null default statement_timestamp(),
   installed_by uuid not null,
+  unique (licence_id, pharmacy_id, main_device_id),
+  foreign key (installed_by, pharmacy_id)
+    references identity_users(id, pharmacy_id),
   constraint licence_installations_key_id check (
     key_id ~ '^[a-z0-9][a-z0-9._-]{0,63}$'
   ),
@@ -70,6 +74,54 @@ create table licence_installations (
   ),
   constraint licence_installations_encoded_size check (
     octet_length(encoded_licence) between 1 and 65536
+  )
+);
+--> statement-breakpoint
+create table licence_state_events (
+  id uuid primary key default uuidv7(),
+  pharmacy_id uuid not null references pharmacies(id),
+  main_device_id uuid not null references main_devices(id),
+  event_kind text not null,
+  licence_id uuid,
+  actor_user_id uuid not null,
+  identity_session_id uuid,
+  recorded_at timestamptz not null default statement_timestamp(),
+  foreign key (licence_id, pharmacy_id, main_device_id)
+    references licence_installations(licence_id, pharmacy_id, main_device_id),
+  foreign key (actor_user_id, pharmacy_id)
+    references identity_users(id, pharmacy_id),
+  foreign key (identity_session_id) references identity_sessions(id),
+  constraint licence_state_events_id_uuidv7 check (
+    id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  ),
+  constraint licence_state_events_kind check (
+    event_kind in ('installed', 'deactivated')
+  ),
+  constraint licence_state_events_licence check (
+    (event_kind = 'installed' and licence_id is not null)
+    or (event_kind = 'deactivated' and licence_id is null)
+  )
+);
+--> statement-breakpoint
+create table licensing_command_results (
+  pharmacy_id uuid not null references pharmacies(id),
+  command_name text not null,
+  idempotency_key uuid not null,
+  actor_user_id uuid not null,
+  identity_session_id uuid,
+  main_device_id uuid not null references main_devices(id),
+  request_fingerprint bytea not null,
+  response_body jsonb not null,
+  recorded_at timestamptz not null default statement_timestamp(),
+  primary key (pharmacy_id, command_name, idempotency_key),
+  foreign key (actor_user_id, pharmacy_id)
+    references identity_users(id, pharmacy_id),
+  foreign key (identity_session_id) references identity_sessions(id),
+  constraint licensing_command_results_name check (
+    command_name in ('licence.install', 'licence.deactivate')
+  ),
+  constraint licensing_command_results_fingerprint check (
+    octet_length(request_fingerprint) = 32
   )
 );
 --> statement-breakpoint
@@ -101,8 +153,9 @@ begin
     from public.trusted_breev_time_marks mark
    where mark.pharmacy_id = new.pharmacy_id
      and mark.main_device_id = new.main_device_id;
-  if current_lower_bound is not null and new.lower_bound <= current_lower_bound then
-    raise exception 'Trusted Breev Time marks must only advance'
+  if current_lower_bound is not null
+     and new.lower_bound < current_lower_bound + interval '1 hour' then
+    raise exception 'Trusted Breev Time marks must advance by the persistence cadence'
       using errcode = '23514';
   end if;
   return new;
@@ -125,16 +178,32 @@ create table licensing_audit_records (
   observed_at timestamptz not null,
   details jsonb,
   recorded_at timestamptz not null default statement_timestamp(),
+  foreign key (actor_user_id, pharmacy_id)
+    references identity_users(id, pharmacy_id),
+  foreign key (identity_session_id) references identity_sessions(id),
   constraint licensing_audit_records_id_uuidv7 check (
     id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
   ),
   constraint licensing_audit_records_action check (
-    action in ('capability.authorization', 'licence.install', 'trusted-time.rollback')
+    action in (
+      'capability.authorization',
+      'licence.deactivate',
+      'licence.install',
+      'trusted-time.rollback'
+    )
   ),
   constraint licensing_audit_records_outcome check (
-    outcome in ('allowed', 'denied', 'detected', 'installed')
+    outcome in ('allowed', 'deactivated', 'denied', 'detected', 'installed')
   )
 );
+--> statement-breakpoint
+create unique index licensing_audit_rollback_incident
+  on licensing_audit_records (
+    pharmacy_id,
+    main_device_id,
+    (details ->> 'trustedLowerBound')
+  )
+  where action = 'trusted-time.rollback';
 --> statement-breakpoint
 create function reject_licensing_fact_mutation()
 returns trigger
@@ -150,6 +219,14 @@ create trigger licence_installations_immutable
 before update or delete on licence_installations
 for each row execute function reject_licensing_fact_mutation();
 --> statement-breakpoint
+create trigger licence_state_events_immutable
+before update or delete on licence_state_events
+for each row execute function reject_licensing_fact_mutation();
+--> statement-breakpoint
+create trigger licensing_command_results_immutable
+before update or delete on licensing_command_results
+for each row execute function reject_licensing_fact_mutation();
+--> statement-breakpoint
 create trigger trusted_breev_time_marks_immutable
 before update or delete on trusted_breev_time_marks
 for each row execute function reject_licensing_fact_mutation();
@@ -160,6 +237,8 @@ for each row execute function reject_licensing_fact_mutation();
 --> statement-breakpoint
 revoke all on table
   licence_installations,
+  licence_state_events,
+  licensing_command_results,
   trusted_breev_time_marks,
   licensing_audit_records
 from public;
@@ -170,6 +249,8 @@ revoke all on function reject_licensing_fact_mutation() from public;
 --> statement-breakpoint
 grant select, insert on table
   licence_installations,
+  licence_state_events,
+  licensing_command_results,
   trusted_breev_time_marks,
   licensing_audit_records
 to breev_app;
