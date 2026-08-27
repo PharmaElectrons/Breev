@@ -265,14 +265,17 @@ export class IdentityAccessService {
 
       await client.query(
         `insert into permission_definitions (name)
-         select name from unnest($1::text[]) as names(name)`,
+         select name from unnest($1::text[]) as names(name)
+         on conflict (name) do nothing`,
         [PERMISSION_NAMES],
       );
       await client.query(
         `insert into step_up_action_definitions (name, required_permission)
          select action_name, required_permission
          from unnest($1::text[], $2::text[])
-           as actions(action_name, required_permission)`,
+           as actions(action_name, required_permission)
+         on conflict (name) do update
+         set required_permission = excluded.required_permission`,
         [Object.keys(STEP_UP_ACTIONS), Object.values(STEP_UP_ACTIONS)],
       );
       await client.query(

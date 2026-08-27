@@ -1,3 +1,44 @@
+insert into permission_definitions (name)
+values ('licensing.manage')
+on conflict (name) do nothing;
+--> statement-breakpoint
+insert into step_up_action_definitions (name, required_permission)
+values ('licensing.licence.install', 'licensing.manage')
+on conflict (name) do update
+set required_permission = excluded.required_permission;
+--> statement-breakpoint
+with inserted_grants as (
+  insert into role_permission_grants (
+    pharmacy_id, role_id, permission_name, granted_by
+  )
+  select owner_role.pharmacy_id,
+         owner_role.id,
+         'licensing.manage',
+         owner_user.id
+  from pharmacy_roles owner_role
+  join lateral (
+    select identity_user.id
+    from identity_users identity_user
+    where identity_user.pharmacy_id = owner_role.pharmacy_id
+      and identity_user.role_id = owner_role.id
+      and identity_user.status = 'active'
+    order by identity_user.created_at, identity_user.id
+    limit 1
+  ) owner_user on true
+  where owner_role.role_key = 'owner'
+  on conflict (role_id, permission_name) do nothing
+  returning pharmacy_id, role_id
+), advanced_roles as (
+  update pharmacy_roles pharmacy_role
+  set revision = pharmacy_role.revision + 1
+  from inserted_grants grant_row
+  where pharmacy_role.id = grant_row.role_id
+  returning pharmacy_role.pharmacy_id
+)
+update pharmacies pharmacy_row
+set identity_revision = pharmacy_row.identity_revision + 1
+where pharmacy_row.id in (select pharmacy_id from advanced_roles);
+--> statement-breakpoint
 create table licence_installations (
   licence_id uuid primary key,
   pharmacy_id uuid not null references pharmacies(id),
@@ -74,7 +115,7 @@ for each row execute function enforce_trusted_breev_time_monotonic();
 --> statement-breakpoint
 create table licensing_audit_records (
   id uuid primary key default uuidv7(),
-  pharmacy_id uuid references pharmacies(id),
+  pharmacy_id uuid not null references pharmacies(id),
   actor_user_id uuid,
   identity_session_id uuid,
   main_device_id uuid not null references main_devices(id),

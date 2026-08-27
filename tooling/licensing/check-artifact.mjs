@@ -47,6 +47,7 @@ const invokedPath =
 if (invokedPath === fileURLToPath(import.meta.url)) {
   const repositoryRoot = path.resolve(import.meta.dirname, "../..");
   const count = await inspectLicenceArtifacts([
+    path.join(repositoryRoot, "apps/desktop/out"),
     path.join(repositoryRoot, "apps/local-api/dist"),
     path.join(repositoryRoot, "packages/contracts/dist"),
   ]);
