@@ -1674,32 +1674,28 @@ export class IdentityAccessService {
     return context;
   }
 
-  public async authorizeLicenceInstallation(
-    request: Request,
-    challengeId: string,
+  public async revalidateLicenceAdministration(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
   ): Promise<IdentityExecutionContext> {
-    const context = await this.requirePermission(request, "licensing.manage");
-    const client = await this.localDatabase.requirePool().connect();
-    try {
-      await client.query("begin");
-      await this.lockIdentity(client, context.pharmacyId);
-      const fresh = await this.requirePermissionInTransaction(
-        client,
-        context,
-        "licensing.manage",
-      );
-      await this.consumeStepUp(client, fresh, challengeId, {
-        action: "licensing.licence.install",
-        subjectId: fresh.pharmacyId,
-      });
-      await client.query("commit");
-      return fresh;
-    } catch (error) {
-      await client.query("rollback").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "licensing.manage",
+    );
+  }
+
+  public async consumeLicenceAdministrationStepUp(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    challengeId: string,
+    action: "licensing.licence.deactivate" | "licensing.licence.install",
+  ): Promise<void> {
+    await this.consumeStepUp(client, context, challengeId, {
+      action,
+      subjectId: context.pharmacyId,
+    });
   }
 
   private async authenticatedState(
@@ -1868,13 +1864,16 @@ export class IdentityAccessService {
     ) {
       throw await this.contextDenial(expected, 401, "session-revoked");
     }
-    const entitlement = await this.licensing.current({
-      actorId: row.user_id,
-      identitySessionId: row.session_id,
-      mainDeviceId: row.device_id,
-      now: new Date(),
-      pharmacyId: row.pharmacy_id,
-    });
+    const entitlement = await this.licensing.current(
+      {
+        actorId: row.user_id,
+        identitySessionId: row.session_id,
+        mainDeviceId: row.device_id,
+        now: new Date(),
+        pharmacyId: row.pharmacy_id,
+      },
+      client,
+    );
     return {
       actorId: row.user_id,
       authRevision: BigInt(row.auth_revision),

@@ -18,6 +18,7 @@ export const STEP_UP_ACTIONS = {
   "identity.role.permissions.update": "identity.roles.manage",
   "identity.user.create": "identity.users.manage",
   "identity.user.update": "identity.users.manage",
+  "licensing.licence.deactivate": "licensing.manage",
   "licensing.licence.install": "licensing.manage",
 } as const satisfies Readonly<Record<string, PermissionName>>;
 

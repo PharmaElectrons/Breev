@@ -6,13 +6,14 @@ import {
   LOCAL_SCHEMA_VERSION,
   type IdentityAuthenticatedState,
 } from "@breev/contracts/local-rest";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 
 const PHARMACY_ID = "019b0000-0000-7000-8000-000000000301";
 const DEVICE_ID = "019b0000-0000-7000-8000-000000000302";
+const CHALLENGE_ID = "019b0000-0000-7000-8000-000000000306";
 
 interface LicensingRenderer {
   readonly origin: string;
@@ -76,7 +77,7 @@ test.describe("offline licence feature hiding", () => {
     await expect(page.getByRole("button", { name: "AI services" })).toHaveCount(
       0,
     );
-    await paid.focus();
+    await focusWithKeyboard(page, paid);
     await expect(paid).toBeFocused();
     expect(
       await paid.evaluate((element) => {
@@ -93,8 +94,64 @@ test.describe("offline licence feature hiding", () => {
       path: evidencePath("licensed-en-light.png"),
     });
 
+    const removeLicence = page.getByRole("button", {
+      name: "Remove licence",
+    });
+    await focusWithKeyboard(page, removeLicence);
+    await page.keyboard.press("Enter");
+    const stepUp = page.getByRole("dialog");
+    await stepUp.getByLabel("Password").fill("browser test password");
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("button", { name: "One-way cloud sync" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Local sales" }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Licence status" })
+        .getByText("Free Core"),
+    ).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    await page.getByRole("button", { name: "Use dark theme" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(
+      page.getByRole("button", { name: "One-way cloud sync" }),
+    ).toHaveCount(0);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
-    await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expect(
+      page.getByRole("button", { name: "المبيعات المحلية" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", {
+        name: "المزامنة السحابية أحادية الاتجاه",
+      }),
+    ).toHaveCount(0);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.getByRole("button", { name: "استخدام الوضع الفاتح" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page
+      .getByRole("button", { name: "التبديل إلى الإنجليزية" })
+      .click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+    renderer.setState(licensedState());
+    await page.reload();
+
+    await page.getByRole("button", { name: "Use dark theme" }).click();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("licensed-en-dark.png"),
+    });
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await expect(
       page.getByRole("button", {
         name: "المزامنة السحابية أحادية الاتجاه",
@@ -106,6 +163,15 @@ test.describe("offline licence feature hiding", () => {
       fullPage: true,
       path: evidencePath("licensed-ar-dark.png"),
     });
+
+    await page.getByRole("button", { name: "استخدام الوضع الفاتح" }).click();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("licensed-ar-light.png"),
+    });
+    await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
 
     renderer.setState(expiredState());
     await page.reload();
@@ -218,6 +284,45 @@ async function startLicensingRenderer(
       response.end(JSON.stringify(state));
       return;
     }
+    if (
+      request.method === "POST" &&
+      request.url === "/identity/step-up-challenges"
+    ) {
+      response.writeHead(201, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          action: "licensing.licence.deactivate",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          id: CHALLENGE_ID,
+          status: "pending",
+        }),
+      );
+      return;
+    }
+    if (
+      request.method === "POST" &&
+      request.url === `/identity/step-up-challenges/${CHALLENGE_ID}/approve`
+    ) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          action: "licensing.licence.deactivate",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          id: CHALLENGE_ID,
+          status: "approved",
+        }),
+      );
+      return;
+    }
+    if (
+      request.method === "POST" &&
+      request.url === "/licensing/licence-deactivations"
+    ) {
+      state = freeCoreState();
+      response.writeHead(201, { "content-type": "application/json" });
+      response.end(JSON.stringify(state.entitlement));
+      return;
+    }
     if (request.url === "/favicon.ico") {
       response.writeHead(204).end();
       return;
@@ -261,4 +366,18 @@ function evidencePath(name: string): string {
     import.meta.dirname,
     `../../../../evidence/issue-39/after/${name}`,
   );
+}
+
+async function focusWithKeyboard(page: Page, target: Locator): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    await page.keyboard.press("Tab");
+    if (
+      await target.evaluate(
+        (element) => element === element.ownerDocument.activeElement,
+      )
+    ) {
+      return;
+    }
+  }
+  throw new Error("Keyboard traversal did not reach the requested control");
 }

@@ -129,6 +129,70 @@ describe("verifyOfflineLicence", () => {
     });
   });
 
+  it.each([
+    ["an invalid plan", { plan: "Professional" }],
+    ["an unknown feature", { features: ["future-feature"] }],
+    [
+      "duplicate founder grants",
+      {
+        founderOverrideGrants: ["purchase-invoice-ocr", "purchase-invoice-ocr"],
+      },
+    ],
+    ["a zero device allowance", { permittedDeviceCount: 0 }],
+    ["an expiry before issue", { expiresAt: "2025-12-31T23:59:59.999Z" }],
+    ["grace before expiry", { graceEndsAt: "2027-12-31T23:59:59.999Z" }],
+    ["a non-canonical issue instant", { issuedAt: "2026-01-01T00:00:00Z" }],
+  ] as const)("rejects signed claims with %s", (_label, change) => {
+    const keys = generateKeyPairSync("ed25519");
+    expect(
+      verify(
+        encodeLicence(
+          { ...defaultClaims(), ...change } as OfflineLicenceClaims,
+          keys.privateKey,
+        ),
+        keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+      ),
+    ).toEqual({ status: "invalid", reason: "malformed" });
+  });
+
+  it("binds the signed key identifier to the verification envelope", () => {
+    const keys = generateKeyPairSync("ed25519");
+    const envelope = JSON.parse(
+      encodeLicence(defaultClaims(), keys.privateKey),
+    ) as Record<string, string>;
+    envelope.keyId = "rotated";
+    expect(
+      verifyOfflineLicence({
+        encodedLicence: JSON.stringify(envelope),
+        expectedPharmacyId: PHARMACY_ID,
+        expectedMainDeviceId: MAIN_DEVICE_ID,
+        now: new Date("2027-01-01T00:00:00.000Z"),
+        publicKeys: {
+          rotated: keys.publicKey
+            .export({ type: "spki", format: "pem" })
+            .toString(),
+        },
+      }),
+    ).toEqual({ status: "invalid", reason: "malformed" });
+  });
+
+  it("rejects a licence before its signed issue instant", () => {
+    const keys = generateKeyPairSync("ed25519");
+    expect(
+      verifyOfflineLicence({
+        encodedLicence: encodeLicence(defaultClaims(), keys.privateKey),
+        expectedPharmacyId: PHARMACY_ID,
+        expectedMainDeviceId: MAIN_DEVICE_ID,
+        now: new Date("2025-12-31T23:59:59.999Z"),
+        publicKeys: {
+          test: keys.publicKey
+            .export({ type: "spki", format: "pem" })
+            .toString(),
+        },
+      }),
+    ).toEqual({ status: "invalid", reason: "not-yet-valid" });
+  });
+
   it("treats the exact expiry instant as expired and does not apply grace", () => {
     const keys = generateKeyPairSync("ed25519");
     const encodedLicence = encodeLicence(defaultClaims(), keys.privateKey);
