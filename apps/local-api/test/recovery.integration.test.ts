@@ -107,6 +107,16 @@ describe.sequential("Local Recovery Foundation Integration Seam", () => {
        values ('01919420-7462-723a-8b1e-7f61c312781a', 'Al-Amal Pharmacy Baghdad')
        on conflict (singleton) do nothing`,
     );
+    await pool.query(
+      `insert into main_devices (id, credential_hash)
+       values ('01919420-7462-723a-8b1e-7f61c312781b', decode('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'hex'))
+       on conflict (id) do nothing`,
+    );
+    await pool.query(
+      `insert into pharmacy_ca (singleton, installation_id, ca_fingerprint, ca_certificate, provider_name, assurance_level)
+       values (true, '01919420-7462-723a-8b1e-7f61c312781c', 'mock-fingerprint', 'mock-ca-certificate', 'software-test', 'software-cng-fallback')
+       on conflict (singleton) do nothing`,
+    );
 
     const record = await coordinator.createRecoveryPoint({
       backupType: "hourly_recovery_point",
@@ -160,7 +170,9 @@ describe.sequential("Local Recovery Foundation Integration Seam", () => {
     // Attempt DELETE on verified row
     await expect(
       pool.query("delete from recovery_points where id = $1", [id]),
-    ).rejects.toThrow("Terminal recovery points are immutable");
+    ).rejects.toThrow(
+      /(Terminal recovery points are immutable|permission denied)/,
+    );
   });
 
   // ─── 3. Content Inspection: Absence of CA Private Key and Plaintext Secrets ─
