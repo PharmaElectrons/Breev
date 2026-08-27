@@ -9,6 +9,11 @@
       "cache": false,
       "persistent": true
     },
+    "start": {
+      "cache": false,
+      "dependsOn": ["build", "^build"],
+      "persistent": true
+    },
     "test:integration": {
       "cache": false,
       "dependsOn": ["build", "^build"]
