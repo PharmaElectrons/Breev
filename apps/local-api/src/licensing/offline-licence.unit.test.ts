@@ -21,7 +21,11 @@ describe("verifyOfflineLicence", () => {
         expectedPharmacyId: PHARMACY_ID,
         expectedMainDeviceId: MAIN_DEVICE_ID,
         now: new Date("2027-01-01T00:00:00.000Z"),
-        publicKeys: { test: keys.publicKey.export({ type: "spki", format: "pem" }).toString() },
+        publicKeys: {
+          test: keys.publicKey
+            .export({ type: "spki", format: "pem" })
+            .toString(),
+        },
       }),
     ).toEqual({ status: "valid", claims: defaultClaims() });
   });
@@ -35,12 +39,44 @@ describe("verifyOfflineLicence", () => {
       ...defaultClaims(),
       founderOverrideGrants: ["purchase-invoice-ocr"],
     };
-    original.payload = Buffer.from(JSON.stringify(tamperedClaims)).toString("base64url");
+    original.payload = Buffer.from(JSON.stringify(tamperedClaims)).toString(
+      "base64url",
+    );
 
-    expect(verify(original, keys.publicKey.export({ type: "spki", format: "pem" }).toString())).toEqual({
+    expect(
+      verify(
+        original,
+        keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+      ),
+    ).toEqual({
       status: "invalid",
       reason: "signature-invalid",
     });
+  });
+
+  it("rejects a forged signature made with another Ed25519 key", () => {
+    const trusted = generateKeyPairSync("ed25519");
+    const attacker = generateKeyPairSync("ed25519");
+    expect(
+      verify(
+        encodeLicence(defaultClaims(), attacker.privateKey),
+        trusted.publicKey.export({ type: "spki", format: "pem" }).toString(),
+      ),
+    ).toEqual({ status: "invalid", reason: "signature-invalid" });
+  });
+
+  it("rejects algorithms outside the versioned Ed25519 envelope", () => {
+    const keys = generateKeyPairSync("ed25519");
+    const envelope = JSON.parse(
+      encodeLicence(defaultClaims(), keys.privateKey),
+    ) as Record<string, string>;
+    envelope.algorithm = "HMAC-SHA256";
+    expect(
+      verify(
+        envelope,
+        keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+      ),
+    ).toEqual({ status: "invalid", reason: "unsupported-algorithm" });
   });
 
   it.each([
@@ -52,7 +88,12 @@ describe("verifyOfflineLicence", () => {
       { ...defaultClaims(), ...change },
       keys.privateKey,
     );
-    expect(verify(encodedLicence, keys.publicKey.export({ type: "spki", format: "pem" }).toString())).toEqual({
+    expect(
+      verify(
+        encodedLicence,
+        keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+      ),
+    ).toEqual({
       status: "invalid",
       reason: "binding-mismatch",
     });
@@ -77,7 +118,12 @@ describe("verifyOfflineLicence", () => {
       { ...defaultClaims(), formatVersion: 2 } as never,
       keys.privateKey,
     );
-    expect(verify(encodedLicence, keys.publicKey.export({ type: "spki", format: "pem" }).toString())).toEqual({
+    expect(
+      verify(
+        encodedLicence,
+        keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+      ),
+    ).toEqual({
       status: "invalid",
       reason: "unsupported-format",
     });
@@ -92,7 +138,11 @@ describe("verifyOfflineLicence", () => {
         expectedPharmacyId: PHARMACY_ID,
         expectedMainDeviceId: MAIN_DEVICE_ID,
         now: new Date(defaultClaims().expiresAt),
-        publicKeys: { test: keys.publicKey.export({ type: "spki", format: "pem" }).toString() },
+        publicKeys: {
+          test: keys.publicKey
+            .export({ type: "spki", format: "pem" })
+            .toString(),
+        },
       }),
     ).toEqual({ status: "invalid", reason: "expired" });
   });
@@ -115,7 +165,10 @@ function defaultClaims(): OfflineLicenceClaims {
   };
 }
 
-function encodeLicence(claims: OfflineLicenceClaims, privateKey: Parameters<typeof sign>[2]): string {
+function encodeLicence(
+  claims: OfflineLicenceClaims,
+  privateKey: Parameters<typeof sign>[2],
+): string {
   const payload = Buffer.from(JSON.stringify(claims));
   return JSON.stringify({
     algorithm: "Ed25519",
@@ -125,9 +178,15 @@ function encodeLicence(claims: OfflineLicenceClaims, privateKey: Parameters<type
   });
 }
 
-function verify(encodedLicence: string | Record<string, string>, publicKey: string) {
+function verify(
+  encodedLicence: string | Record<string, string>,
+  publicKey: string,
+) {
   return verifyOfflineLicence({
-    encodedLicence: typeof encodedLicence === "string" ? encodedLicence : JSON.stringify(encodedLicence),
+    encodedLicence:
+      typeof encodedLicence === "string"
+        ? encodedLicence
+        : JSON.stringify(encodedLicence),
     expectedPharmacyId: PHARMACY_ID,
     expectedMainDeviceId: MAIN_DEVICE_ID,
     now: new Date("2027-01-01T00:00:00.000Z"),

@@ -98,6 +98,11 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ).toEqual([201, 409]);
     const success = attempts.find((attempt) => attempt.status === 201);
     expect(success?.body).toMatchObject({
+      entitlement: {
+        capabilities: expect.arrayContaining(["local-sales", "renewal"]),
+        licence: null,
+        status: "free-core",
+      },
       state: "authenticated",
       user: { role: "owner" },
     });
@@ -108,7 +113,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ownerUsername = user?.username ?? "";
     ownerPassword =
       ownerUsername === "first.owner" ? OWNER_PASSWORD : SECOND_OWNER_PASSWORD;
-    expect(success?.body?.allowedPermissions).toHaveLength(10);
+    expect(success?.body?.allowedPermissions).toHaveLength(11);
 
     const roles = await request(credentials, "GET", "/identity/roles");
     expect(roles.status, failureContext([roles])).toBe(200);
@@ -140,6 +145,49 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(retry).toMatchObject({
       status: 409,
       body: { code: "bootstrap-already-complete", status: "denied" },
+    });
+  });
+
+  it("independently denies unlicensed API use and requires Step-Up for licence installation", async () => {
+    expect(
+      await request(credentials, "POST", "/licensing/capability-proof", {
+        capability: "one-way-cloud-sync",
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { code: "entitlement-denied", status: "denied" },
+    });
+
+    expect(
+      await request(credentials, "POST", "/licensing/licences", {
+        challengeId: createUuidV7(),
+        encodedLicence: "{}",
+        idempotencyKey: createUuidV7(),
+      }),
+    ).toMatchObject({
+      status: 404,
+      body: { code: "identity-resource-not-found", status: "denied" },
+    });
+
+    const challengeId = await approvedChallenge(
+      "licensing.licence.install",
+      undefined,
+      ownerPassword,
+    );
+    expect(
+      await request(credentials, "POST", "/licensing/licences", {
+        challengeId,
+        encodedLicence: "{}",
+        idempotencyKey: createUuidV7(),
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { code: "licence-invalid", status: "denied" },
+    });
+    const state = await request(credentials, "GET", "/identity/state");
+    expect(state.body?.entitlement).toMatchObject({
+      licence: null,
+      status: "free-core",
     });
   });
 

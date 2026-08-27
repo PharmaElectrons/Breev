@@ -38,7 +38,8 @@ export class LicensingController {
     return await translateLicensingDenial(() =>
       translateIdentityDenial(async () => {
         const input = licenceInstallRequestSchema.safeParse(body);
-        if (!input.success) return await this.identity.rejectInvalidBody(request);
+        if (!input.success)
+          return await this.identity.rejectInvalidBody(request);
         const context = await this.identity.authorizeLicenceInstallation(
           request,
           input.data.challengeId,
@@ -66,7 +67,8 @@ export class LicensingController {
     return await translateLicensingDenial(() =>
       translateIdentityDenial(async () => {
         const input = capabilityProofRequestSchema.safeParse(body);
-        if (!input.success) return await this.identity.rejectInvalidBody(request);
+        if (!input.success)
+          return await this.identity.rejectInvalidBody(request);
         const context = await this.identity.requirePermission(
           request,
           "pharmacy.settings.manage",

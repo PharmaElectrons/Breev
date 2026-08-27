@@ -36,9 +36,7 @@ interface LicenceRow {
 }
 
 export class LicensingDenied extends Error {
-  public constructor(
-    public readonly denial: LicensingDenial,
-  ) {
+  public constructor(public readonly denial: LicensingDenial) {
     super(denial.code);
     this.name = "LicensingDenied";
   }
@@ -50,14 +48,18 @@ export class LicensingService {
 
   public constructor(private readonly localDatabase: LocalDatabaseService) {}
 
-  public async current(input: LicensingContextInput): Promise<EntitlementContext> {
+  public async current(
+    input: LicensingContextInput,
+  ): Promise<EntitlementContext> {
     const clock = await this.observeClock(input);
     const licence = await this.latestLicence(input, clock.trustedNow);
     if (clock.rollbackDetected) {
       await writeAudit(this.localDatabase.requirePool(), {
         action: "trusted-time.rollback",
-        actorId: input.actorId,
-        identitySessionId: input.identitySessionId,
+        ...(input.actorId === undefined ? {} : { actorId: input.actorId }),
+        ...(input.identitySessionId === undefined
+          ? {}
+          : { identitySessionId: input.identitySessionId }),
         mainDeviceId: input.mainDeviceId,
         observedAt: input.now,
         outcome: "detected",
@@ -71,13 +73,17 @@ export class LicensingService {
     });
   }
 
-  public async install(input: InstallLicenceInput): Promise<EntitlementContext> {
+  public async install(
+    input: InstallLicenceInput,
+  ): Promise<EntitlementContext> {
     const clock = await this.observeClock(input);
     if (clock.rollbackDetected) {
       const requestId = await writeAudit(this.localDatabase.requirePool(), {
         action: "licence.install",
         actorId: input.actorId,
-        identitySessionId: input.identitySessionId,
+        ...(input.identitySessionId === undefined
+          ? {}
+          : { identitySessionId: input.identitySessionId }),
         mainDeviceId: input.mainDeviceId,
         observedAt: input.now,
         outcome: "denied",
@@ -102,7 +108,9 @@ export class LicensingService {
       const requestId = await writeAudit(this.localDatabase.requirePool(), {
         action: "licence.install",
         actorId: input.actorId,
-        identitySessionId: input.identitySessionId,
+        ...(input.identitySessionId === undefined
+          ? {}
+          : { identitySessionId: input.identitySessionId }),
         mainDeviceId: input.mainDeviceId,
         observedAt: input.now,
         outcome: "denied",
@@ -127,9 +135,11 @@ export class LicensingService {
     const allowed = entitlement.capabilities.includes(input.capability);
     const requestId = await writeAudit(this.localDatabase.requirePool(), {
       action: "capability.authorization",
-      actorId: input.actorId,
+      ...(input.actorId === undefined ? {} : { actorId: input.actorId }),
       capability: input.capability,
-      identitySessionId: input.identitySessionId,
+      ...(input.identitySessionId === undefined
+        ? {}
+        : { identitySessionId: input.identitySessionId }),
       mainDeviceId: input.mainDeviceId,
       observedAt: input.now,
       outcome: allowed ? "allowed" : "denied",
@@ -153,9 +163,10 @@ export class LicensingService {
     const pool = this.localDatabase.requirePool();
     const binding = `${input.pharmacyId}:${input.mainDeviceId}`;
     let persistedLowerBound = await latestLowerBound(pool, input);
+    const inMemoryHighWater = this.highWaterByBinding.get(binding);
     let observation = observeTrustedTime({
       now: input.now,
-      inMemoryHighWater: this.highWaterByBinding.get(binding),
+      ...(inMemoryHighWater === undefined ? {} : { inMemoryHighWater }),
       ...(persistedLowerBound === undefined ? {} : { persistedLowerBound }),
     });
     if (observation.persistLowerBound !== undefined) {
@@ -169,9 +180,12 @@ export class LicensingService {
       } catch (error) {
         if (!isConcurrentTimeAdvance(error)) throw error;
         persistedLowerBound = await latestLowerBound(pool, input);
+        const currentHighWater = this.highWaterByBinding.get(binding);
         observation = observeTrustedTime({
           now: input.now,
-          inMemoryHighWater: this.highWaterByBinding.get(binding),
+          ...(currentHighWater === undefined
+            ? {}
+            : { inMemoryHighWater: currentHighWater }),
           ...(persistedLowerBound === undefined ? {} : { persistedLowerBound }),
         });
       }
@@ -253,7 +267,9 @@ export class LicensingService {
       await writeAudit(client, {
         action: "licence.install",
         actorId: input.actorId,
-        identitySessionId: input.identitySessionId,
+        ...(input.identitySessionId === undefined
+          ? {}
+          : { identitySessionId: input.identitySessionId }),
         mainDeviceId: input.mainDeviceId,
         observedAt: input.now,
         outcome: "installed",
@@ -292,9 +308,7 @@ function isConcurrentTimeAdvance(error: unknown): boolean {
 
 interface AuditInput {
   readonly action:
-    | "capability.authorization"
-    | "licence.install"
-    | "trusted-time.rollback";
+    "capability.authorization" | "licence.install" | "trusted-time.rollback";
   readonly actorId?: string;
   readonly capability?: string;
   readonly details?: Readonly<Record<string, unknown>>;
@@ -312,7 +326,10 @@ interface Queryable {
   ): Promise<QueryResult<R>>;
 }
 
-async function writeAudit(queryable: Queryable, input: AuditInput): Promise<string> {
+async function writeAudit(
+  queryable: Queryable,
+  input: AuditInput,
+): Promise<string> {
   const result = await queryable.query<{ id: string }>(
     `insert into licensing_audit_records (
        pharmacy_id, actor_user_id, identity_session_id, main_device_id,
@@ -332,6 +349,7 @@ async function writeAudit(queryable: Queryable, input: AuditInput): Promise<stri
     ],
   );
   const id = result.rows[0]?.id;
-  if (id === undefined) throw new Error("The licensing audit record was not created");
+  if (id === undefined)
+    throw new Error("The licensing audit record was not created");
   return id;
 }

@@ -8,7 +8,12 @@ import {
 
 describe("deriveEntitlement", () => {
   it("keeps the explicit Free Core available when no licence exists", () => {
-    expect(deriveEntitlement({ licence: { status: "missing" }, clockRollbackDetected: false })).toEqual({
+    expect(
+      deriveEntitlement({
+        licence: { status: "missing" },
+        clockRollbackDetected: false,
+      }),
+    ).toEqual({
       status: "free-core",
       capabilities: FREE_CORE_CAPABILITIES,
       licence: null,
@@ -67,7 +72,9 @@ describe("authorizeCapability", () => {
   ] as const)(
     "keeps permission=%s and entitlement=%s orthogonal",
     (hasPermission, hasEntitlement, outcome) => {
-      expect(authorizeCapability({ hasPermission, hasEntitlement })).toBe(outcome);
+      expect(authorizeCapability({ hasPermission, hasEntitlement })).toBe(
+        outcome,
+      );
     },
   );
 });

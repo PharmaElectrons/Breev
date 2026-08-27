@@ -36,15 +36,19 @@ describe.sequential("licensing PostgreSQL seam", () => {
     process.env.DATABASE_URL = databaseRoles.applicationUrl;
     process.env.DATABASE_MIGRATION_URL = databaseRoles.migrationUrl;
     process.env.BREEV_MAIN_DEVICE_ID = TEST_MAIN_DEVICE_ID;
-    process.env.BREEV_MAIN_DEVICE_SECRET = randomBytes(32).toString("base64url");
-    process.env.BREEV_MAIN_DEVICE_SESSION = randomBytes(32).toString("base64url");
+    process.env.BREEV_MAIN_DEVICE_SECRET =
+      randomBytes(32).toString("base64url");
+    process.env.BREEV_MAIN_DEVICE_SESSION =
+      randomBytes(32).toString("base64url");
     database = new LocalDatabaseService();
     await database.ensureReady();
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
-    await database.requirePool().query(
-      "insert into pharmacies (id, name) values ($1, 'Breev Licence Test Pharmacy')",
-      [TEST_PHARMACY_ID],
-    );
+    await database
+      .requirePool()
+      .query(
+        "insert into pharmacies (id, name) values ($1, 'Breev Licence Test Pharmacy')",
+        [TEST_PHARMACY_ID],
+      );
     licensing = new LicensingService(database);
   }, 60_000);
 
@@ -135,7 +139,9 @@ describe.sequential("licensing PostgreSQL seam", () => {
       administrator.query("delete from trusted_breev_time_marks"),
     ).rejects.toMatchObject({ code: "55000" });
     await expect(
-      administrator.query("update licensing_audit_records set outcome = 'denied'"),
+      administrator.query(
+        "update licensing_audit_records set outcome = 'denied'",
+      ),
     ).rejects.toMatchObject({ code: "55000" });
     await expect(
       database.requirePool().query("delete from licence_installations"),

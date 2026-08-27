@@ -269,7 +269,7 @@ export const licensingDenialSchema = z.strictObject({
 });
 export const licenceInstallRequestSchema = z.strictObject({
   challengeId: z.uuidv7(),
-  encodedLicence: z.string().min(1).max(65_536),
+  encodedLicence: z.string().min(1).max(6_000),
   idempotencyKey: z.uuid(),
 });
 export const capabilityProofRequestSchema = z.strictObject({
@@ -613,8 +613,12 @@ export type PaidCapabilityName = z.infer<typeof paidCapabilityNameSchema>;
 export type EntitlementContext = z.infer<typeof entitlementContextSchema>;
 export type LicensingDenial = z.infer<typeof licensingDenialSchema>;
 export type LicenceInstallRequest = z.infer<typeof licenceInstallRequestSchema>;
-export type CapabilityProofRequest = z.infer<typeof capabilityProofRequestSchema>;
-export type CapabilityProofSuccess = z.infer<typeof capabilityProofSuccessSchema>;
+export type CapabilityProofRequest = z.infer<
+  typeof capabilityProofRequestSchema
+>;
+export type CapabilityProofSuccess = z.infer<
+  typeof capabilityProofSuccessSchema
+>;
 export type StepUpAction = z.infer<typeof stepUpActionSchema>;
 export type IdentityDenialCode = z.infer<typeof identityDenialCodeSchema>;
 export type IdentityDenial = z.infer<typeof identityDenialSchema>;

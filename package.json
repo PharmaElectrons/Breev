@@ -22,6 +22,7 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "check:licence-artifact": "node tooling/licensing/check-artifact.mjs",
     "check:boundaries": "node tooling/boundaries/check.mjs",
     "dev": "turbo run dev",
     "format": "prettier --write .",
@@ -37,7 +38,7 @@
     "test:smoke": "pnpm build && pnpm --filter @breev/desktop test:smoke",
     "test:unit": "turbo run test:unit && pnpm test:boundaries",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test:unit && pnpm test:integration && pnpm test:browser && pnpm test:smoke"
+    "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm check:licence-artifact && pnpm test:unit && pnpm test:integration && pnpm test:browser && pnpm test:smoke"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
