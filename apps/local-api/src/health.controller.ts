@@ -10,6 +10,7 @@ import { Controller, Get, Res } from "@nestjs/common";
 import type { Response } from "express";
 
 import { DatabaseHealthService } from "./database-health.service.js";
+import { DurableJobsService } from "./durable-jobs/durable-jobs.service.js";
 
 @Controller()
 export class HealthController {
@@ -17,7 +18,10 @@ export class HealthController {
     process.env.BREEV_INSTALLATION_STATE,
   );
 
-  public constructor(private readonly databaseHealth: DatabaseHealthService) {}
+  public constructor(
+    private readonly databaseHealth: DatabaseHealthService,
+    private readonly durableJobs: DurableJobsService,
+  ) {}
 
   @Get(localHealthContract.path)
   public async getHealth(
@@ -33,7 +37,14 @@ export class HealthController {
       };
     }
 
-    if (await this.databaseHealth.isAvailable()) {
+    // Healthy requires the durable-job runtime too: a reachable database with
+    // a dead job runtime cannot serve settings postings or backups, and an
+    // unmigrated database fails the runtime's schema check, so this also keeps
+    // /health honest between installation and migration.
+    if (
+      (await this.databaseHealth.isAvailable()) &&
+      this.durableJobs.isAvailable()
+    ) {
       response.status(LOCAL_HEALTH_SUCCESS_STATUS);
       return {
         apiVersion: LOCAL_API_VERSION,
