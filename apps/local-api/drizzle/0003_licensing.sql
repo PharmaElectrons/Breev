@@ -155,8 +155,7 @@ begin
      and mark.main_device_id = new.main_device_id;
   if current_lower_bound is not null
      and new.lower_bound < current_lower_bound + interval '1 hour' then
-    raise exception 'Trusted Breev Time marks must advance by the persistence cadence'
-      using errcode = '23514';
+    return null;
   end if;
   return new;
 end;

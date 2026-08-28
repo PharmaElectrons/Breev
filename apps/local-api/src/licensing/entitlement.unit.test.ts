@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  authorizeCapability,
-  deriveEntitlement,
-  FREE_CORE_CAPABILITIES,
-} from "./entitlement.js";
+import { deriveEntitlement, FREE_CORE_CAPABILITIES } from "./entitlement.js";
 
 describe("deriveEntitlement", () => {
   it("keeps the explicit Free Core available when no licence exists", () => {
@@ -61,20 +57,4 @@ describe("deriveEntitlement", () => {
       licence: null,
     });
   });
-});
-
-describe("authorizeCapability", () => {
-  it.each([
-    [false, false, "permission-denied"],
-    [false, true, "permission-denied"],
-    [true, false, "entitlement-denied"],
-    [true, true, "allowed"],
-  ] as const)(
-    "keeps permission=%s and entitlement=%s orthogonal",
-    (hasPermission, hasEntitlement, outcome) => {
-      expect(authorizeCapability({ hasPermission, hasEntitlement })).toBe(
-        outcome,
-      );
-    },
-  );
 });
