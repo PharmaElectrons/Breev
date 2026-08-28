@@ -3,7 +3,12 @@ import {
   BREEV_CSRF_VALUE,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  LOCAL_RECOVERY_STATUS_SUCCESS_STATUS,
+  LOCAL_RESTORE_QUARANTINE_STATUS,
+  localHealthContract,
   localProofEvidenceContract,
+  localRecoveryStatusContract,
+  parseLocalRecoveryStatusResponse,
   localProofMutationContract,
   parseLocalProofEvidenceResponse,
   parseLocalProofMutationResponse,
@@ -155,7 +160,7 @@ describe.sequential("Main device security persistence seam", () => {
          where p.schemaname = 'public' and p.tablename = 'main_devices'`,
       );
       expect(migration.rows[0]).toEqual({
-        migration_count: "4",
+        migration_count: "5",
         tableowner: "breev_schema_owner",
       });
 
@@ -618,6 +623,84 @@ describe.sequential("Main device security persistence seam", () => {
     expect(denialCount(after, "origin-not-allowed")).toBe(
       denialCount(before, "origin-not-allowed") + 260,
     );
+  });
+
+  it("refuses normal use while the dataset is in Restore Quarantine", async () => {
+    await waitForRateWindow();
+    const pool = new Pool({ connectionString: databaseRoles.applicationUrl });
+    try {
+      await pool.query(
+        `update system_quarantine_state
+         set is_quarantined = true,
+             quarantine_reason = 'Restored from recovery point',
+             quarantined_at = now(),
+             cleared_at = null,
+             cleared_by = null
+         where singleton = true`,
+      );
+
+      const denied = await fetch(
+        `${apiOrigin}${localProofEvidenceContract.path}`,
+        { headers: trustedHeaders(credentials), method: "GET" },
+      );
+      expect(denied.status).toBe(LOCAL_RESTORE_QUARANTINE_STATUS);
+      expect(await denied.json()).toEqual({
+        code: "restore-quarantine",
+        quarantinedAt: expect.any(String),
+        reason: "Restored from recovery point",
+      });
+
+      const mutation = await fetch(
+        `${apiOrigin}${localProofMutationContract.path}`,
+        {
+          body: JSON.stringify({ increment: 1 }),
+          headers: mutationHeaders(credentials),
+          method: localProofMutationContract.method,
+        },
+      );
+      expect(mutation.status).toBe(LOCAL_RESTORE_QUARANTINE_STATUS);
+
+      // The handshake and the recovery status stay reachable so the quarantine
+      // can be explained and its reason read.
+      const health = await fetch(`${apiOrigin}${localHealthContract.path}`);
+      expect(health.status).toBe(200);
+
+      const status = await fetch(
+        `${apiOrigin}${localRecoveryStatusContract.path}`,
+        { headers: trustedHeaders(credentials), method: "GET" },
+      );
+      expect(status.status).toBe(LOCAL_RECOVERY_STATUS_SUCCESS_STATUS);
+      expect(
+        parseLocalRecoveryStatusResponse(status.status, await status.json()),
+      ).toEqual({
+        latestRecoveryPoint: null,
+        quarantine: {
+          clearedAt: null,
+          isQuarantined: true,
+          quarantineReason: "Restored from recovery point",
+          quarantinedAt: expect.any(String),
+        },
+      });
+
+      // The recorded mutation count proves the quarantined request never
+      // reached the handler.
+      const mutations = await pool.query<{ mutation_count: string }>(
+        "select mutation_count from main_device_proof_state where singleton = true",
+      );
+      await pool.query(
+        `update system_quarantine_state
+         set is_quarantined = false, cleared_at = now(), cleared_by = 'test'
+         where singleton = true`,
+      );
+      const evidence = await getProofEvidence(apiOrigin, credentials);
+      expect(evidence.mutationCount).toBe(mutations.rows[0]?.mutation_count);
+    } finally {
+      await pool.query(
+        `update system_quarantine_state
+         set is_quarantined = false where singleton = true`,
+      );
+      await pool.end();
+    }
   });
 
   function collectApiOutput(chunk: Buffer): void {

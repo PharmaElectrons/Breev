@@ -6,6 +6,7 @@ import type { Server } from "node:https";
 import { isIP } from "node:net";
 
 import { AppModule } from "./app.module.js";
+import { LocalDatabaseService } from "./local-database.service.js";
 import {
   createMainRequestBodyErrorMiddleware,
   createMainRequestSecurityMiddleware,
@@ -13,6 +14,8 @@ import {
 } from "./main-device/main-device-security.service.js";
 import { createLanMtlsServer } from "./pharmacy-ca/lan-mtls-server.js";
 import { PharmacyCaService } from "./pharmacy-ca/pharmacy-ca.service.js";
+import { createRestoreQuarantineMiddleware } from "./recovery/quarantine.middleware.js";
+import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.js";
 
 const DEFAULT_API_PORT = 31_310;
 
@@ -41,6 +44,18 @@ async function bootstrap(): Promise<void> {
   );
   app.use(json({ limit: 8 * 1024, strict: true, type: "application/json" }));
   app.use(createMainRequestBodyErrorMiddleware(mainDeviceSecurity));
+  app.use(
+    createRestoreQuarantineMiddleware({
+      getPool: () => {
+        try {
+          return app.get(LocalDatabaseService).requirePool();
+        } catch {
+          return undefined;
+        }
+      },
+      quarantineService: app.get(RestoreQuarantineService),
+    }),
+  );
 
   let lanServer: Server | undefined;
   try {
