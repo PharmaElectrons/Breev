@@ -295,13 +295,44 @@ function New-MainDeviceId {
   return "{0}-{1}-{2}-{3}-{4}" -f $hex.Substring(0, 8), $hex.Substring(8, 4), $hex.Substring(12, 4), $hex.Substring(16, 4), $hex.Substring(20)
 }
 
+function Test-MainDeviceFile {
+  param([string] $Path)
+
+  $binding = $null
+  try {
+    $binding = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+  } catch {
+    throw "The Main device binding file is unreadable and requires a reviewed repair"
+  }
+  $readProperty = {
+    param($subject, [string] $name)
+    $property = $subject.PSObject.Properties[$name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+  }
+  $deviceId = & $readProperty $binding "deviceId"
+  $deviceSecret = & $readProperty $binding "deviceSecret"
+  $sessionToken = & $readProperty $binding "sessionToken"
+  $secretPattern = "^[A-Za-z0-9_-]{43}$"
+  if ($deviceId -notmatch "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" -or
+      $deviceSecret -notmatch $secretPattern -or
+      $sessionToken -notmatch $secretPattern) {
+    throw "The Main device binding file is invalid and requires a reviewed repair"
+  }
+  foreach ($secretValue in @($deviceSecret, $sessionToken)) {
+    [void] $script:sensitiveValues.Add($secretValue)
+  }
+}
+
 function Write-MainDeviceFile {
   param([string] $Path)
 
   # The Main device binding authenticates the desktop app to the local API.
   # It is generated once per installation: the database binds the device ID
-  # to its first credential, so an existing file must never be overwritten.
+  # to its first credential, so an existing file is validated, never
+  # overwritten.
   if (Test-Path -LiteralPath $Path -PathType Leaf) {
+    Test-MainDeviceFile -Path $Path
     return
   }
   $deviceSecret = New-RandomSecret
@@ -310,11 +341,64 @@ function Write-MainDeviceFile {
     [void] $script:sensitiveValues.Add($secretValue)
   }
   # ASCII keeps the file free of a byte-order mark, which JSON.parse rejects.
+  # The write goes through a sibling temp file so a crash cannot leave a
+  # half-written binding behind.
+  $temporaryPath = "$Path.tmp"
   [ordered]@{
     deviceId = New-MainDeviceId
     deviceSecret = $deviceSecret
     sessionToken = $sessionToken
-  } | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding ASCII
+  } | ConvertTo-Json | Set-Content -LiteralPath $temporaryPath -Encoding ASCII
+  Move-Item -LiteralPath $temporaryPath -Destination $Path -Force
+}
+
+function Set-MainDeviceFileAcl {
+  param([string] $Path)
+
+  # The desktop app runs as the interactive user and authenticates with this
+  # binding, so local users may read it. Documented assumption pending G-05:
+  # every local account on the pharmacy machine is trusted population.
+  # Database credentials stay administrator-only.
+  Set-FileAcl -Path $Path -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read },
+    [ordered]@{ identity = "S-1-5-32-545"; rights = [Security.AccessControl.FileSystemRights]::Read }
+  )
+}
+
+function Initialize-MainDeviceBinding {
+  $configRoot = Join-Path $DataRoot "config"
+  $mainDevicePath = Join-Path $configRoot "main-device.json"
+  if (Test-Path -LiteralPath $mainDevicePath -PathType Leaf) {
+    Test-MainDeviceFile -Path $mainDevicePath
+    Set-MainDeviceFileAcl -Path $mainDevicePath
+    return
+  }
+
+  # Backfilling a binding is safe only while the database holds no Main
+  # device state: a fresh triple against existing rows would either fail the
+  # API boot or mint a second standing authority. A lost binding with
+  # existing rows cannot be regenerated because the database stores only
+  # credential hashes.
+  $runtimeUrl = (Get-Content -LiteralPath (Join-Path $configRoot "database-url") -Raw).Trim()
+  $runtimeUri = [Uri]$runtimeUrl
+  $userInfoParts = $runtimeUri.UserInfo.Split(":", 2)
+  $psqlPath = Join-Path $PayloadRoot "postgresql\bin\psql.exe"
+  $previousPgPassword = $env:PGPASSWORD
+  $env:PGPASSWORD = $userInfoParts[1]
+  try {
+    $bindingRows = & $psqlPath "--host=127.0.0.1" "--port=$postgresqlPort" "--username=$($userInfoParts[0])" "--dbname=breev" "--no-password" "--tuples-only" "--no-align" "--command=select (select count(*) from main_devices) + (select count(*) from main_device_sessions)"
+    if ($LASTEXITCODE -ne 0) {
+      throw "Could not inspect the Main device binding state"
+    }
+  } finally {
+    $env:PGPASSWORD = $previousPgPassword
+  }
+  $bindingCount = [int](@($bindingRows) | Where-Object { $_ } | Select-Object -First 1).ToString().Trim()
+  if ($bindingCount -ne 0) {
+    throw "The Main device binding file is missing while the database already binds a Main device; this requires a reviewed repair"
+  }
+  Write-MainDeviceFile -Path $mainDevicePath
+  Set-MainDeviceFileAcl -Path $mainDevicePath
 }
 
 function Test-Payload {
@@ -419,10 +503,6 @@ function Initialize-Database {
     if ($majorVersion -ne "18") {
       throw "The existing PostgreSQL data directory requires a reviewed upgrade path"
     }
-    # Installations that predate the Main device binding get one backfilled.
-    # A fresh ID triple is safe against an existing database: provisioning
-    # inserts a new device row and never rebinds an existing one.
-    Write-MainDeviceFile -Path (Join-Path $configRoot "main-device.json")
     return
   }
   if ($hasConfig -or $hasDatabase) {
@@ -615,13 +695,9 @@ function Set-ServiceAcls {
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read }
   )
   Set-FileAcl -Path (Join-Path $configRoot "schema-owner-url") -AdditionalGrants @()
-  # The desktop app runs as the interactive user and authenticates with this
-  # binding, so local users may read it. The machine is the Main device per
-  # ADR 0002; database credentials stay administrator-only above.
-  Set-FileAcl -Path (Join-Path $configRoot "main-device.json") -AdditionalGrants @(
-    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read },
-    [ordered]@{ identity = "S-1-5-32-545"; rights = [Security.AccessControl.FileSystemRights]::Read }
-  )
+  if (Test-Path -LiteralPath (Join-Path $configRoot "main-device.json") -PathType Leaf) {
+    Set-MainDeviceFileAcl -Path (Join-Path $configRoot "main-device.json")
+  }
   Set-FileAcl -Path (Join-Path $configRoot "installation.json") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read }
   )
@@ -796,6 +872,7 @@ try {
   Start-Service -Name $postgresqlServiceName
   Wait-PostgresqlReady
   Invoke-DatabaseMigrations
+  Initialize-MainDeviceBinding
   Start-Service -Name $apiServiceName
   Invoke-FailurePoint -Name "BeforeReadiness"
   Wait-ApiReady

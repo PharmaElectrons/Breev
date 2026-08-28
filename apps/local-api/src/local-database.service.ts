@@ -116,6 +116,22 @@ async function provisionMainDevice(
   const credentialHash = hashMainDeviceSecret(provisioning.deviceSecret);
   const sessionHash = hashMainDeviceSecret(provisioning.sessionToken);
 
+  // A configuration naming an unknown device while another Main device is
+  // provisioned would silently mint a second standing authority, so it is
+  // rejected instead: recovering from a lost credential is a repair decision,
+  // never an incidental boot operation. A device the database already knows
+  // reprovisions normally regardless of what else exists.
+  const deviceState = await client.query<{ known: boolean; others: boolean }>(
+    `select exists(select 1 from main_devices where id = $1) as known,
+            exists(select 1 from main_devices where id <> $1) as others`,
+    [provisioning.deviceId],
+  );
+  if (deviceState.rows[0]?.known === false && deviceState.rows[0].others) {
+    throw new Error(
+      "Another Main device is already provisioned for this database",
+    );
+  }
+
   await client.query(
     `insert into main_devices (id, credential_hash)
      values ($1, $2)
