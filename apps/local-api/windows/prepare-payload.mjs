@@ -131,6 +131,8 @@ try {
 }
 
 for (const developmentPath of [
+  ".env",
+  ".env.example",
   ".turbo",
   "windows",
   "src",
@@ -187,6 +189,16 @@ for (const requiredPath of [
   "local-api/drizzle/meta/_journal.json",
 ]) {
   await assertFile(path.join(outputRoot, requiredPath));
+}
+
+// Developer secrets must never ship: the payload is distributed verbatim to
+// every installation. Windows filesystems are case-insensitive, so the match
+// is too, and the scan covers the whole payload recursively.
+for (const entry of await readdir(outputRoot, { recursive: true })) {
+  const baseName = path.basename(entry).toLowerCase();
+  if (baseName === ".env" || baseName.startsWith(".env.")) {
+    throw new Error(`The Windows payload must not contain ${entry}`);
+  }
 }
 
 process.stdout.write(`${outputRoot}\n`);
