@@ -2032,7 +2032,10 @@ export class IdentityAccessService {
     action: StepUpAction,
     subjectId?: string,
   ): Promise<{ readonly id: string; readonly revision: bigint }> {
-    if (action === "licensing.licence.install") {
+    if (
+      action === "licensing.licence.install" ||
+      action === "licensing.licence.deactivate"
+    ) {
       if (subjectId !== undefined && subjectId !== context.pharmacyId) {
         throw await this.contextDenial(context, 400, "body-invalid");
       }
