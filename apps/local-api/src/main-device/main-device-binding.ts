@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 export interface MainDeviceProvisioning {
   readonly deviceId: string;
@@ -40,13 +41,58 @@ export function readMainDeviceProvisioning(
     (value) => value !== undefined,
   ).length;
   if (presentCount === 0) {
-    return undefined;
+    // Installed systems distribute the binding through a file the installer
+    // generates, because a Windows service and a desktop shortcut share no
+    // environment. Direct variables win so development setups are unchanged.
+    const filePath = environment.BREEV_MAIN_DEVICE_FILE;
+    if (filePath === undefined || filePath.trim().length === 0) {
+      return undefined;
+    }
+    return readMainDeviceProvisioningFile(filePath);
   }
   if (presentCount !== 3) {
     throw new Error(
       "Main device provisioning requires an ID, credential, and session",
     );
   }
+  return validateMainDeviceProvisioning(values);
+}
+
+function readMainDeviceProvisioningFile(
+  filePath: string,
+): MainDeviceProvisioning {
+  // A configured file that cannot be read or fails validation throws instead
+  // of degrading: the installer verifies API health, so a misconfiguration
+  // must surface during installation rather than as a silently unprovisioned
+  // Main device.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `The Main device provisioning file is unreadable: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(
+      "The Main device provisioning file must contain a JSON object",
+    );
+  }
+  const record = parsed as Record<string, unknown>;
+  return validateMainDeviceProvisioning({
+    deviceId: asOptionalString(record.deviceId),
+    deviceSecret: asOptionalString(record.deviceSecret),
+    sessionToken: asOptionalString(record.sessionToken),
+  });
+}
+
+function validateMainDeviceProvisioning(values: {
+  deviceId: string | undefined;
+  deviceSecret: string | undefined;
+  sessionToken: string | undefined;
+}): MainDeviceProvisioning {
   if (!isUuidV7(values.deviceId)) {
     throw new Error("BREEV_MAIN_DEVICE_ID must be a UUIDv7");
   }
@@ -66,4 +112,8 @@ export function readMainDeviceProvisioning(
     deviceSecret: values.deviceSecret,
     sessionToken: values.sessionToken,
   };
+}
+
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }

@@ -719,13 +719,21 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
       await app.close();
     });
 
-    it("fails startup visibly when database connection or migrations fail", async () => {
+    it("degrades instead of aborting startup when the database is unreachable", async () => {
+      // A rejected initialization hook would abort the whole API bootstrap,
+      // and the Windows service manager then restarts the process forever
+      // without the port ever binding. The runtime must come up degraded and
+      // report unavailability instead.
       const invalidDb = new LocalDatabaseService();
       (invalidDb as unknown as { applicationUrl: string }).applicationUrl =
         "postgresql://breev_app:invalid@127.0.0.1:54321/nonexistent";
       const brokenJobs = new DurableJobsService(invalidDb);
 
-      await expect(brokenJobs.onModuleInit()).rejects.toThrow();
+      await expect(brokenJobs.onModuleInit()).resolves.toBeUndefined();
+      expect(brokenJobs.isAvailable()).toBe(false);
+      expect(() => brokenJobs.requireBoss()).toThrow(
+        "The Breev durable job service is unavailable",
+      );
     });
 
     it("does not cache queue name in knownQueues when creation fails", async () => {

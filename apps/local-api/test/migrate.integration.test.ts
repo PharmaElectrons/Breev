@@ -136,7 +136,9 @@ describe.sequential("standalone privileged database migrations", () => {
     });
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toBe("Privileged database migrations failed.\n");
+    expect(result.stderr).toMatch(
+      /^Privileged database migrations failed \([0-9A-Za-z_]+\)\.\n$/,
+    );
     expect(result.stderr).not.toContain(
       new URL(databaseRoles.applicationUrl).password,
     );

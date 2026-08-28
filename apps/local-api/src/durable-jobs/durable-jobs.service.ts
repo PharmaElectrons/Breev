@@ -64,32 +64,60 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
   }
 
   private async start(): Promise<void> {
-    if (this.localDatabase !== undefined) {
-      await this.localDatabase.ensureReady();
+    // A start failure degrades the runtime instead of rejecting, because a
+    // rejected initialization hook would abort the whole API bootstrap and
+    // leave the Windows service crash-looping whenever PostgreSQL is not yet
+    // accepting connections. The bounded retry covers the boot race where the
+    // PostgreSQL service is registered as started before it accepts
+    // connections; a database that stays down past the deadline degrades the
+    // runtime, and /health reports that state.
+    try {
+      if (this.localDatabase !== undefined) {
+        await this.localDatabase.ensureReady();
+      }
+
+      const applicationUrl = this.localDatabase?.getApplicationUrl();
+      if (applicationUrl === undefined) {
+        return;
+      }
+
+      const deadline = Date.now() + 15_000;
+      for (;;) {
+        const boss = new PgBoss({
+          connectionString: applicationUrl,
+          createSchema: false,
+          migrate: false,
+          monitorIntervalSeconds: 1,
+          persistQueueStats: false,
+          persistWarnings: false,
+          schedule: false,
+          schema: "pgboss",
+          supervise: true,
+          superviseIntervalSeconds: 1,
+        });
+
+        boss.on("error", (error) => {
+          this.logger.error("Durable jobs background error", error);
+        });
+        try {
+          await boss.start();
+          this.boss = boss;
+          return;
+        } catch (error) {
+          await boss.stop({ graceful: false }).catch(() => undefined);
+          if (Date.now() >= deadline) {
+            throw error;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+        }
+      }
+    } catch (error) {
+      this.boss = undefined;
+      this.logger.error(
+        "The durable job runtime could not start, so durable jobs are unavailable until the next service restart",
+        error instanceof Error ? error.message : String(error),
+      );
     }
-
-    const applicationUrl = this.localDatabase?.getApplicationUrl();
-    if (applicationUrl === undefined) {
-      return;
-    }
-
-    this.boss = new PgBoss({
-      connectionString: applicationUrl,
-      createSchema: false,
-      migrate: false,
-      monitorIntervalSeconds: 1,
-      persistQueueStats: false,
-      persistWarnings: false,
-      schedule: false,
-      schema: "pgboss",
-      supervise: true,
-      superviseIntervalSeconds: 1,
-    });
-
-    this.boss.on("error", (error) => {
-      this.logger.error("Durable jobs background error", error);
-    });
-    await this.boss.start();
   }
 
   public isAvailable(): boolean {

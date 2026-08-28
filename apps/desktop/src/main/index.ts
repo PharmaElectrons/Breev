@@ -2,7 +2,15 @@ import {
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   desktopStartupConfigResponseSchema,
 } from "@breev/contracts/desktop-preload";
-import { app, BrowserWindow, ipcMain, net, protocol, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  net,
+  protocol,
+  session,
+} from "electron";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -69,7 +77,9 @@ function registerMainDeviceHeaderInjection(
   window: BrowserWindow,
   localApiOrigin: string,
 ): void {
-  const binding = readMainDeviceBinding(process.env);
+  const binding = readMainDeviceBinding(process.env, {
+    allowDefaultFile: app.isPackaged,
+  });
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: [`${localApiOrigin}/*`] },
     (details, callback) => {
@@ -169,7 +179,18 @@ void app.whenReady().then(async () => {
     (_webContents, _permission, callback) => callback(false),
   );
 
-  createWindow();
+  try {
+    createWindow();
+  } catch (error) {
+    // A packaged build without a valid Main device binding cannot reach the
+    // local API. Surfacing the defect beats an unauthenticated spinner.
+    dialog.showErrorBox(
+      "Breev cannot start",
+      error instanceof Error ? error.message : String(error),
+    );
+    app.quit();
+    return;
+  }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

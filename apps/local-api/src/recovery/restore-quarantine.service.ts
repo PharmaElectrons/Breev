@@ -49,19 +49,30 @@ export class RestoreQuarantineService implements OnModuleInit {
    * pass, so every start re-runs them while the dataset is quarantined.
    */
   public async onModuleInit(): Promise<void> {
-    await this.localDatabase.ensureReady();
-    let pool: Pool;
+    // A failure here must not abort the API bootstrap: quarantine enforcement
+    // fails closed per request in the middleware, so skipping the startup
+    // verification leaves a quarantined dataset quarantined while the service
+    // still binds its port and reports its real state through /health.
     try {
-      pool = this.localDatabase.requirePool();
-    } catch {
-      return;
-    }
+      await this.localDatabase.ensureReady();
+      let pool: Pool;
+      try {
+        pool = this.localDatabase.requirePool();
+      } catch {
+        return;
+      }
 
-    const state = await this.getQuarantineState(pool);
-    if (!state.isQuarantined) {
-      return;
+      const state = await this.getQuarantineState(pool);
+      if (!state.isQuarantined) {
+        return;
+      }
+      await this.verifyAndClearQuarantine(pool, "system_recovery_startup");
+    } catch (error) {
+      this.logger.error(
+        "Startup quarantine verification could not run, so any quarantine stays in place",
+        error instanceof Error ? error.message : String(error),
+      );
     }
-    await this.verifyAndClearQuarantine(pool, "system_recovery_startup");
   }
 
   /**

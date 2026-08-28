@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { BrowserWindowConstructorOptions } from "electron";
 import {
@@ -221,6 +222,7 @@ interface MainDeviceRequestOptions {
 
 export function readMainDeviceBinding(
   environment: Readonly<Record<string, string | undefined>>,
+  options?: { readonly allowDefaultFile?: boolean },
 ): MainDeviceBinding | undefined {
   const binding = {
     deviceId: environment.BREEV_MAIN_DEVICE_ID,
@@ -231,7 +233,26 @@ export function readMainDeviceBinding(
     (value) => value !== undefined,
   ).length;
   if (presentCount === 0) {
-    return undefined;
+    // Installed systems have no environment to configure: the desktop app is
+    // launched from a shortcut, so the binding the installer generated is
+    // read from a file instead. Direct variables win for development. The
+    // default path applies only to packaged Windows builds, so a development
+    // desktop can never silently consume an installation's credential.
+    const configuredPath = environment.BREEV_MAIN_DEVICE_FILE;
+    if (configuredPath !== undefined) {
+      return readMainDeviceBindingFile(configuredPath);
+    }
+    if (options?.allowDefaultFile !== true) {
+      return undefined;
+    }
+    const defaultPath = defaultMainDeviceFilePath();
+    if (defaultPath === undefined) {
+      return undefined;
+    }
+    // On an installed system a missing or unreadable binding is an
+    // installation defect: failing loudly here beats an eternal
+    // unauthenticated spinner in the renderer.
+    return readMainDeviceBindingFile(defaultPath);
   }
   if (
     presentCount !== 3 ||
@@ -246,6 +267,54 @@ export function readMainDeviceBinding(
     deviceSecret: binding.deviceSecret,
     sessionToken: binding.sessionToken,
   };
+}
+
+function defaultMainDeviceFilePath(): string | undefined {
+  if (process.platform !== "win32") {
+    return undefined;
+  }
+  const programData = process.env.ProgramData;
+  if (programData === undefined || programData.length === 0) {
+    return undefined;
+  }
+  return path.join(programData, "Breev", "config", "main-device.json");
+}
+
+function readMainDeviceBindingFile(filePath: string): MainDeviceBinding {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, "utf8"));
+  } catch {
+    throw new Error(
+      `The Main device binding file is missing or unreadable: ${filePath}. ` +
+        "Repair the Breev installation to restore it.",
+    );
+  }
+  const record =
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : {};
+  const binding = {
+    deviceId: asBindingString(record.deviceId),
+    deviceSecret: asBindingString(record.deviceSecret),
+    sessionToken: asBindingString(record.sessionToken),
+  };
+  if (
+    !isUuidV7(binding.deviceId) ||
+    !isHighEntropySecret(binding.deviceSecret) ||
+    !isHighEntropySecret(binding.sessionToken)
+  ) {
+    throw new Error("The Main device binding configuration is invalid");
+  }
+  return {
+    deviceId: binding.deviceId,
+    deviceSecret: binding.deviceSecret,
+    sessionToken: binding.sessionToken,
+  };
+}
+
+function asBindingString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 export function addMainDeviceRequestHeaders(

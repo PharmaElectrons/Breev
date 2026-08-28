@@ -212,6 +212,32 @@ describe("Main device request binding", () => {
     ).toThrow();
   });
 
+  it("reads the binding from the file named by BREEV_MAIN_DEVICE_FILE", async () => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const configRoot = await mkdtemp(join(tmpdir(), "breev-binding-"));
+    const filePath = join(configRoot, "main-device.json");
+    await writeFile(filePath, JSON.stringify(binding), "utf8");
+
+    expect(readMainDeviceBinding({ BREEV_MAIN_DEVICE_FILE: filePath })).toEqual(
+      binding,
+    );
+
+    await writeFile(filePath, JSON.stringify({ deviceId: binding.deviceId }));
+    expect(() =>
+      readMainDeviceBinding({ BREEV_MAIN_DEVICE_FILE: filePath }),
+    ).toThrow();
+
+    // A configured path that does not resolve is an installation defect and
+    // must fail loudly rather than silently starting without a binding.
+    expect(() =>
+      readMainDeviceBinding({
+        BREEV_MAIN_DEVICE_FILE: join(configRoot, "missing.json"),
+      }),
+    ).toThrow("missing or unreadable");
+  });
+
   it("injects binding headers only into the trusted window's exact API origin", () => {
     expect(
       addMainDeviceRequestHeaders(

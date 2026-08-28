@@ -34,7 +34,18 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch(() => {
-  process.stderr.write("Privileged database migrations failed.\n");
+void main().catch((error: unknown) => {
+  // Only the machine-readable code is emitted: PostgreSQL codes (42501,
+  // 42P01, ...) and Node network codes (ECONNREFUSED, ...) never carry
+  // credentials, while error messages can echo connection strings.
+  const rawCode =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : "unknown";
+  const code = /^[0-9A-Za-z_]{1,64}$/.test(rawCode) ? rawCode : "unknown";
+  process.stderr.write(`Privileged database migrations failed (${code}).\n`);
   process.exitCode = 1;
 });
