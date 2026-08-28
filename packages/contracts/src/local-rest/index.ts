@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "3" as const;
-export const LOCAL_SCHEMA_VERSION = "3" as const;
+export const LOCAL_API_VERSION = "4" as const;
+export const LOCAL_SCHEMA_VERSION = "4" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -24,6 +24,33 @@ export const PHARMACY_ROLE_KEYS = [
   "accountant",
   "support",
 ] as const;
+export const FREE_CORE_CAPABILITY_NAMES = [
+  "local-sales",
+  "local-purchases",
+  "local-inventory",
+  "basic-accounting",
+  "named-patient-table",
+  "reports",
+  "printing",
+  "backup",
+  "complete-export",
+  "supported-restore",
+  "renewal",
+] as const;
+export const PAID_CAPABILITY_NAMES = [
+  "additional-device-pos",
+  "ai-services",
+  "crm-advanced-reports",
+  "one-way-cloud-sync",
+  "purchase-invoice-ocr",
+  "whatsapp-messaging",
+] as const;
+export const CAPABILITY_NAMES = [
+  ...FREE_CORE_CAPABILITY_NAMES,
+  ...PAID_CAPABILITY_NAMES,
+] as const;
+export const capabilityNameSchema = z.enum(CAPABILITY_NAMES);
+export const paidCapabilityNameSchema = z.enum(PAID_CAPABILITY_NAMES);
 export const pharmacyRoleKeySchema = z.enum(PHARMACY_ROLE_KEYS);
 export const permissionNameSchema = z
   .string()
@@ -33,6 +60,8 @@ export const stepUpActionSchema = z.enum([
   "identity.role.permissions.update",
   "identity.user.create",
   "identity.user.update",
+  "licensing.licence.deactivate",
+  "licensing.licence.install",
 ]);
 
 export const IDENTITY_DENIAL_CODES = [
@@ -102,6 +131,31 @@ const attendanceStateSchema = z.strictObject({
   status: z.enum(["checked-in", "checked-out"]),
   version: decimalRevisionSchema,
 });
+export const licenceSummarySchema = z.strictObject({
+  formatVersion: z.literal(1),
+  keyId: z.string().min(1).max(64),
+  licenceId: z.uuidv7(),
+  pharmacyId: z.uuidv7(),
+  mainDeviceId: z.uuidv7(),
+  plan: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/u),
+  features: z.array(paidCapabilityNameSchema),
+  founderOverrideGrants: z.array(paidCapabilityNameSchema),
+  permittedDeviceCount: z.number().int().min(1).max(10_000),
+  issuedAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime(),
+  graceEndsAt: z.iso.datetime(),
+});
+export const entitlementContextSchema = z.strictObject({
+  status: z.enum([
+    "licensed",
+    "free-core",
+    "invalid-licence",
+    "expired",
+    "clock-rollback",
+  ]),
+  capabilities: z.array(capabilityNameSchema),
+  licence: licenceSummarySchema.nullable(),
+});
 const authenticatedStateSchema = z.strictObject({
   state: z.literal("authenticated"),
   pharmacy: z.strictObject({
@@ -111,6 +165,7 @@ const authenticatedStateSchema = z.strictObject({
   user: identityUserSchema,
   session: z.strictObject({ id: z.uuidv7(), expiresAt: z.iso.datetime() }),
   allowedPermissions: z.array(permissionNameSchema),
+  entitlement: entitlementContextSchema,
   settings: pharmacySettingsSchema,
   attendance: attendanceStateSchema.nullable(),
 });
@@ -201,6 +256,36 @@ export const attendanceEventSchema = z.strictObject({
   occurredAt: z.iso.datetime(),
   status: z.enum(["checked-in", "checked-out"]),
   version: decimalRevisionSchema,
+});
+
+export const LICENSING_DENIAL_CODES = [
+  "clock-rollback",
+  "entitlement-denied",
+  "idempotency-conflict",
+  "licence-invalid",
+] as const;
+export const licensingDenialCodeSchema = z.enum(LICENSING_DENIAL_CODES);
+export const licensingDenialSchema = z.strictObject({
+  status: z.literal("denied"),
+  code: licensingDenialCodeSchema,
+  requestId: z.uuidv7(),
+  requiredCapability: paidCapabilityNameSchema.optional(),
+});
+export const licenceInstallRequestSchema = z.strictObject({
+  challengeId: z.uuidv7(),
+  encodedLicence: z.string().min(1).max(6_000),
+  idempotencyKey: z.uuid(),
+});
+export const licenceDeactivateRequestSchema = z.strictObject({
+  challengeId: z.uuidv7(),
+  idempotencyKey: z.uuid(),
+});
+export const capabilityProofRequestSchema = z.strictObject({
+  capability: paidCapabilityNameSchema,
+});
+export const capabilityProofSuccessSchema = z.strictObject({
+  status: z.literal("allowed"),
+  capability: paidCapabilityNameSchema,
 });
 
 export const identityStateContract = {
@@ -347,6 +432,43 @@ export const attendanceEventContract = {
     401: identityDenialSchema,
     403: identityDenialSchema,
     409: identityDenialSchema,
+  },
+} as const;
+export const licenceInstallContract = {
+  method: "POST",
+  path: "/licensing/licences",
+  request: { body: licenceInstallRequestSchema },
+  responses: {
+    201: entitlementContextSchema,
+    400: z.union([identityDenialSchema, licensingDenialSchema]),
+    401: identityDenialSchema,
+    403: z.union([identityDenialSchema, licensingDenialSchema]),
+    404: identityDenialSchema,
+    409: z.union([identityDenialSchema, licensingDenialSchema]),
+  },
+} as const;
+export const licenceDeactivateContract = {
+  method: "POST",
+  path: "/licensing/licence-deactivations",
+  request: { body: licenceDeactivateRequestSchema },
+  responses: {
+    201: entitlementContextSchema,
+    400: z.union([identityDenialSchema, licensingDenialSchema]),
+    401: identityDenialSchema,
+    403: z.union([identityDenialSchema, licensingDenialSchema]),
+    404: identityDenialSchema,
+    409: z.union([identityDenialSchema, licensingDenialSchema]),
+  },
+} as const;
+export const capabilityProofContract = {
+  method: "POST",
+  path: "/licensing/capability-proof",
+  request: { body: capabilityProofRequestSchema },
+  responses: {
+    200: capabilityProofSuccessSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: z.union([identityDenialSchema, licensingDenialSchema]),
   },
 } as const;
 
@@ -562,6 +684,20 @@ export type LocalProofEvidenceSuccess = z.infer<
   typeof localProofEvidenceSuccessSchema
 >;
 export type PharmacyRoleKey = z.infer<typeof pharmacyRoleKeySchema>;
+export type CapabilityName = z.infer<typeof capabilityNameSchema>;
+export type PaidCapabilityName = z.infer<typeof paidCapabilityNameSchema>;
+export type EntitlementContext = z.infer<typeof entitlementContextSchema>;
+export type LicensingDenial = z.infer<typeof licensingDenialSchema>;
+export type LicenceInstallRequest = z.infer<typeof licenceInstallRequestSchema>;
+export type LicenceDeactivateRequest = z.infer<
+  typeof licenceDeactivateRequestSchema
+>;
+export type CapabilityProofRequest = z.infer<
+  typeof capabilityProofRequestSchema
+>;
+export type CapabilityProofSuccess = z.infer<
+  typeof capabilityProofSuccessSchema
+>;
 export type StepUpAction = z.infer<typeof stepUpActionSchema>;
 export type IdentityDenialCode = z.infer<typeof identityDenialCodeSchema>;
 export type IdentityDenial = z.infer<typeof identityDenialSchema>;

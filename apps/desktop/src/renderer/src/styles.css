@@ -99,7 +99,8 @@ button:not(:disabled) {
 
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
@@ -526,7 +527,8 @@ select:focus-visible {
 }
 
 .field-label input,
-.field-label select {
+.field-label select,
+.field-label textarea {
   inline-size: 100%;
   min-block-size: 2.8rem;
   border: 1px solid var(--border);
@@ -536,6 +538,12 @@ select:focus-visible {
   color: var(--foreground);
   font: inherit;
   font-weight: 500;
+}
+
+.field-label textarea {
+  min-block-size: 7rem;
+  padding: 0.75rem 0.8rem;
+  resize: block;
 }
 
 .session-banner {
@@ -783,6 +791,87 @@ select:focus-visible {
   margin-block-start: 1.25rem;
 }
 
+.licensing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(15rem, 0.75fr);
+  gap: 1rem;
+}
+
+.licensing-card,
+.capability-navigation {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  text-align: start;
+}
+
+.licence-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0;
+}
+
+.licence-facts div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.licence-facts dt {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.licence-facts dd {
+  margin: 0;
+  font-weight: 800;
+}
+
+.licence-form {
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 1rem;
+}
+
+.licence-deactivation {
+  border-block-start: 1px solid var(--border);
+  display: grid;
+  gap: 0.75rem;
+  padding-block-start: 1rem;
+}
+
+.capability-navigation ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.capability-navigation button {
+  inline-size: 100%;
+  min-block-size: 2.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding-inline: 0.8rem;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 700;
+  text-align: start;
+}
+
+.capability-navigation button[aria-current="page"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--background));
+  color: var(--primary);
+}
+
+.capability-selection {
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+
 @keyframes status-spin {
   to {
     transform: rotate(1turn);
@@ -844,7 +933,8 @@ select:focus-visible {
   }
 
   .user-form,
-  .role-grid {
+  .role-grid,
+  .licensing-grid {
     grid-template-columns: 1fr;
   }
 
