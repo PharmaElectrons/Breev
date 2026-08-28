@@ -3,9 +3,12 @@ import {
   BREEV_CSRF_VALUE,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  LOCAL_RECOVERY_STATUS_SUCCESS_STATUS,
   LOCAL_RESTORE_QUARANTINE_STATUS,
   localHealthContract,
   localProofEvidenceContract,
+  localRecoveryStatusContract,
+  parseLocalRecoveryStatusResponse,
   localProofMutationContract,
   parseLocalProofEvidenceResponse,
   parseLocalProofMutationResponse,
@@ -657,9 +660,27 @@ describe.sequential("Main device security persistence seam", () => {
       );
       expect(mutation.status).toBe(LOCAL_RESTORE_QUARANTINE_STATUS);
 
-      // The handshake stays reachable so the desktop can explain the state.
+      // The handshake and the recovery status stay reachable so the quarantine
+      // can be explained and its reason read.
       const health = await fetch(`${apiOrigin}${localHealthContract.path}`);
       expect(health.status).toBe(200);
+
+      const status = await fetch(
+        `${apiOrigin}${localRecoveryStatusContract.path}`,
+        { headers: trustedHeaders(credentials), method: "GET" },
+      );
+      expect(status.status).toBe(LOCAL_RECOVERY_STATUS_SUCCESS_STATUS);
+      expect(
+        parseLocalRecoveryStatusResponse(status.status, await status.json()),
+      ).toEqual({
+        latestRecoveryPoint: null,
+        quarantine: {
+          clearedAt: null,
+          isQuarantined: true,
+          quarantineReason: "Restored from recovery point",
+          quarantinedAt: expect.any(String),
+        },
+      });
 
       // The recorded mutation count proves the quarantined request never
       // reached the handler.
