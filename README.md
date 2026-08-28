@@ -12,10 +12,11 @@ The current application implements the first local identity and security slice:
 - Eight pharmacy roles with configurable permissions
 - User creation, locking, and reactivation behind password step-up
 - Optional manual attendance with check-in and check-out
+- Signed offline licence verification with Trusted Breev Time, entitlement-based feature hiding, and an always-available Free Core
 - Arabic RTL and English LTR layouts
 - Light and dark themes
 
-Inventory, purchasing, sales, accounting, patients, licensing, and cloud features are still planned. The files under [`docs/`](docs/README.md) define those requirements, but they are not testable screens yet.
+Inventory, purchasing, sales, accounting, patients, and cloud features are still planned. The files under [`docs/`](docs/README.md) define those requirements, but they are not testable screens yet.
 
 ## Run Breev
 

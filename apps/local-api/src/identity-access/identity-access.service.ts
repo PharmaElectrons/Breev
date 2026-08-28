@@ -22,6 +22,7 @@ import {
   type IdentityUpdateRolePermissionsRequest,
   type IdentityUpdateUserRequest,
   type IdentityUser,
+  type EntitlementContext,
   type PharmacySettingsUpdateRequest,
   type PharmacyRoleKey,
 } from "@breev/contracts/local-rest";
@@ -31,6 +32,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { PoolClient, QueryResult } from "pg";
 
 import { LocalDatabaseService } from "../local-database.service.js";
+import { LicensingService } from "../licensing/licensing.service.js";
 import {
   MainDeviceSecurityService,
   type VerifiedMainDeviceContext,
@@ -73,6 +75,7 @@ const PHARMACY_ROLE_KEYS = [
 
 interface SessionRow {
   readonly session_id: string;
+  readonly device_id: string;
   readonly pharmacy_id: string;
   readonly pharmacy_name: string;
   readonly pharmacy_identity_revision: string;
@@ -140,6 +143,7 @@ export interface IdentityExecutionContext {
   readonly authRevision: bigint;
   readonly deviceId: string;
   readonly deviceSessionHash: Buffer;
+  readonly entitlement: EntitlementContext;
   readonly permissions: readonly PermissionName[];
   readonly pharmacyId: string;
   readonly pharmacyIdentityRevision: bigint;
@@ -169,6 +173,7 @@ export class IdentityAccessService {
   public constructor(
     private readonly localDatabase: LocalDatabaseService,
     private readonly deviceSecurity: MainDeviceSecurityService,
+    private readonly licensing: LicensingService,
   ) {}
 
   public verifiedDevice(request: Request): VerifiedMainDeviceContext {
@@ -260,15 +265,17 @@ export class IdentityAccessService {
 
       await client.query(
         `insert into permission_definitions (name)
-         select name from unnest($1::text[]) as names(name)`,
+         select name from unnest($1::text[]) as names(name)
+         on conflict (name) do nothing`,
         [PERMISSION_NAMES],
       );
       await client.query(
         `insert into step_up_action_definitions (name, required_permission)
-         values
-           ('identity.role.permissions.update', 'identity.roles.manage'),
-           ('identity.user.create', 'identity.users.manage'),
-           ('identity.user.update', 'identity.users.manage')`,
+         select action_name, required_permission
+         from unnest($1::text[], $2::text[])
+           as actions(action_name, required_permission)
+         on conflict (name) do nothing`,
+        [Object.keys(STEP_UP_ACTIONS), Object.values(STEP_UP_ACTIONS)],
       );
       await client.query(
         `insert into pharmacy_roles (pharmacy_id, role_key)
@@ -1618,11 +1625,19 @@ export class IdentityAccessService {
       throw await this.auditDenial(device, 401, "session-expired", row);
     }
     const permissions = await this.permissions(row.role_id);
+    const entitlement = await this.licensing.current({
+      actorId: row.user_id,
+      identitySessionId: row.session_id,
+      mainDeviceId: row.device_id,
+      now: new Date(),
+      pharmacyId: row.pharmacy_id,
+    });
     const context: IdentityExecutionContext = {
       actorId: row.user_id,
       authRevision: BigInt(row.auth_revision),
       deviceId: device.deviceId,
       deviceSessionHash: device.deviceSessionHash,
+      entitlement,
       permissions,
       pharmacyId: row.pharmacy_id,
       pharmacyIdentityRevision: BigInt(row.pharmacy_identity_revision),
@@ -1658,12 +1673,44 @@ export class IdentityAccessService {
     return context;
   }
 
+  public async revalidateLicenceAdministration(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "licensing.manage",
+    );
+  }
+
+  public async consumeLicenceAdministrationStepUp(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    challengeId: string,
+    action: "licensing.licence.deactivate" | "licensing.licence.install",
+  ): Promise<void> {
+    await this.consumeStepUp(client, context, challengeId, {
+      action,
+      subjectId: context.pharmacyId,
+    });
+  }
+
   private async authenticatedState(
     row: SessionRow,
   ): Promise<IdentityAuthenticatedState> {
     const permissions = await this.permissions(row.role_id);
+    const entitlement = await this.licensing.current({
+      actorId: row.user_id,
+      identitySessionId: row.session_id,
+      mainDeviceId: row.device_id,
+      now: new Date(),
+      pharmacyId: row.pharmacy_id,
+    });
     return identityStateSchema.parse({
       allowedPermissions: permissions,
+      entitlement,
       attendance:
         row.attendance_enabled &&
         hasPermission(permissions, "attendance.record")
@@ -1816,11 +1863,22 @@ export class IdentityAccessService {
     ) {
       throw await this.contextDenial(expected, 401, "session-revoked");
     }
+    const entitlement = await this.licensing.current(
+      {
+        actorId: row.user_id,
+        identitySessionId: row.session_id,
+        mainDeviceId: row.device_id,
+        now: new Date(),
+        pharmacyId: row.pharmacy_id,
+      },
+      client,
+    );
     return {
       actorId: row.user_id,
       authRevision: BigInt(row.auth_revision),
       deviceId: expected.deviceId,
       deviceSessionHash: expected.deviceSessionHash,
+      entitlement,
       permissions: await this.rolePermissions(client, row.role_id),
       pharmacyId: row.pharmacy_id,
       pharmacyIdentityRevision: BigInt(row.pharmacy_identity_revision),
@@ -1974,6 +2032,18 @@ export class IdentityAccessService {
     action: StepUpAction,
     subjectId?: string,
   ): Promise<{ readonly id: string; readonly revision: bigint }> {
+    if (
+      action === "licensing.licence.install" ||
+      action === "licensing.licence.deactivate"
+    ) {
+      if (subjectId !== undefined && subjectId !== context.pharmacyId) {
+        throw await this.contextDenial(context, 400, "body-invalid");
+      }
+      return {
+        id: context.pharmacyId,
+        revision: context.pharmacyIdentityRevision,
+      };
+    }
     if (action === "identity.user.create") {
       if (subjectId !== undefined && subjectId !== context.actorId) {
         throw await this.contextDenial(context, 400, "body-invalid");
@@ -2365,6 +2435,7 @@ interface Queryable {
 }
 
 const SESSION_SELECT = `select session.id as session_id,
+       session.device_id,
        session.pharmacy_id,
        pharmacy.name as pharmacy_name,
        pharmacy.identity_revision::text as pharmacy_identity_revision,
