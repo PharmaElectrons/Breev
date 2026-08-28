@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { BrowserWindowConstructorOptions } from "electron";
 import {
@@ -222,6 +222,7 @@ interface MainDeviceRequestOptions {
 
 export function readMainDeviceBinding(
   environment: Readonly<Record<string, string | undefined>>,
+  options?: { readonly allowDefaultFile?: boolean },
 ): MainDeviceBinding | undefined {
   const binding = {
     deviceId: environment.BREEV_MAIN_DEVICE_ID,
@@ -234,13 +235,24 @@ export function readMainDeviceBinding(
   if (presentCount === 0) {
     // Installed systems have no environment to configure: the desktop app is
     // launched from a shortcut, so the binding the installer generated is
-    // read from a file instead. Direct variables win for development.
-    const filePath =
-      environment.BREEV_MAIN_DEVICE_FILE ?? defaultMainDeviceFilePath();
-    if (filePath === undefined || !existsSync(filePath)) {
+    // read from a file instead. Direct variables win for development. The
+    // default path applies only to packaged Windows builds, so a development
+    // desktop can never silently consume an installation's credential.
+    const configuredPath = environment.BREEV_MAIN_DEVICE_FILE;
+    if (configuredPath !== undefined) {
+      return readMainDeviceBindingFile(configuredPath);
+    }
+    if (options?.allowDefaultFile !== true) {
       return undefined;
     }
-    return readMainDeviceBindingFile(filePath);
+    const defaultPath = defaultMainDeviceFilePath();
+    if (defaultPath === undefined) {
+      return undefined;
+    }
+    // On an installed system a missing or unreadable binding is an
+    // installation defect: failing loudly here beats an eternal
+    // unauthenticated spinner in the renderer.
+    return readMainDeviceBindingFile(defaultPath);
   }
   if (
     presentCount !== 3 ||
@@ -273,7 +285,10 @@ function readMainDeviceBindingFile(filePath: string): MainDeviceBinding {
   try {
     parsed = JSON.parse(readFileSync(filePath, "utf8"));
   } catch {
-    throw new Error("The Main device binding file is unreadable");
+    throw new Error(
+      `The Main device binding file is missing or unreadable: ${filePath}. ` +
+        "Repair the Breev installation to restore it.",
+    );
   }
   const record =
     typeof parsed === "object" && parsed !== null

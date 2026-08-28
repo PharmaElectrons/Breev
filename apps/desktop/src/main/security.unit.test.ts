@@ -229,11 +229,13 @@ describe("Main device request binding", () => {
       readMainDeviceBinding({ BREEV_MAIN_DEVICE_FILE: filePath }),
     ).toThrow();
 
-    expect(
+    // A configured path that does not resolve is an installation defect and
+    // must fail loudly rather than silently starting without a binding.
+    expect(() =>
       readMainDeviceBinding({
         BREEV_MAIN_DEVICE_FILE: join(configRoot, "missing.json"),
       }),
-    ).toBeUndefined();
+    ).toThrow("missing or unreadable");
   });
 
   it("injects binding headers only into the trusted window's exact API origin", () => {
