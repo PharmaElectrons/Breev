@@ -243,6 +243,12 @@ const MACHINE_KEY_SCRIPT = `
     foreach ($rule in @($acl.Access)) { $acl.RemoveAccessRule($rule) | Out-Null }
     $acl.SetOwner($sid)
     $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', 'Allow')))
+    # SYSTEM and Administrators keep access so the installer's protected ACL
+    # reset can still process this file during repair. They already control
+    # every other secret under ProgramData; the grant keeps non-admin local
+    # users away from the sealed key, which is the real boundary here.
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule([System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'), 'FullControl', 'Allow')))
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule([System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'), 'FullControl', 'Allow')))
     Set-Acl -LiteralPath $keyFile -AclObject $acl
     $rawKey = New-Object byte[] 32
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rawKey)

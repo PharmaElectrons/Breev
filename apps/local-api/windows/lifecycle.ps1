@@ -638,6 +638,13 @@ function Set-ServiceAcls {
   Set-DirectoryAcl -Path (Join-Path $DataRoot "backups") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Modify }
   ) -ResetDescendants
+  # The recovery key store: the API service creates and re-protects
+  # breev-recovery-kek.dat here, which needs WRITE_DAC and WRITE_OWNER, so
+  # the grant is FullControl. No descendant reset: the key file's own
+  # hardening must survive a repair.
+  Set-DirectoryAcl -Path (Join-Path $DataRoot "Recovery") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::FullControl }
+  )
 
   Set-DirectoryAcl -Path (Join-Path $PayloadRoot "service-wrapper") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute },
