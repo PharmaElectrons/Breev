@@ -134,6 +134,62 @@ function Stop-And-DeleteService {
   Wait-ServiceAbsent -Name $Name
 }
 
+function Stop-BreevProcesses {
+  param(
+    [string[]] $PathPrefixes,
+    [int] $TimeoutSeconds = 15
+  )
+
+  # A previous run can orphan postgres.exe on the staging directory or leave
+  # service processes alive after the SCM reports them stopped. Both hold file
+  # locks that wedge every later install, so they are reaped by location, not
+  # by name alone, to avoid touching unrelated PostgreSQL or Node installs.
+  $normalizedPrefixes = @($PathPrefixes | Where-Object { $_ } | ForEach-Object {
+    [IO.Path]::GetFullPath($_).TrimEnd("\") + "\"
+  } | Where-Object {
+    # A volume root or single-level prefix would match unrelated processes
+    # across the whole machine; only application-specific paths are eligible.
+    ($_ -split "\\" | Where-Object { $_ }).Count -ge 3
+  })
+  if ($normalizedPrefixes.Count -eq 0) {
+    return
+  }
+
+  $findProcesses = {
+    Get-CimInstance -ClassName Win32_Process -Filter "Name = 'postgres.exe' OR Name = 'node.exe' OR Name = 'shawl.exe' OR Name = 'pg_ctl.exe'" -ErrorAction SilentlyContinue |
+      Where-Object {
+        $candidate = $_
+        $haystacks = @($candidate.ExecutablePath, $candidate.CommandLine) | Where-Object { $_ }
+        $matched = $false
+        foreach ($prefix in $normalizedPrefixes) {
+          foreach ($haystack in $haystacks) {
+            if ($haystack.IndexOf($prefix, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+              $matched = $true
+            }
+          }
+        }
+        $matched
+      }
+  }
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if (@(& $findProcesses).Count -eq 0) {
+      return
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  foreach ($process in @(& $findProcesses)) {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+  Start-Sleep -Milliseconds 500
+  $survivors = @(& $findProcesses)
+  if ($survivors.Count -gt 0) {
+    $survivorList = ($survivors | ForEach-Object { "$($_.Name):$($_.ProcessId)" }) -join ", "
+    throw "Processes still hold Breev files after forced termination: $survivorList"
+  }
+}
+
 function Set-ProtectedAcl {
   param(
     [string] $Path,
@@ -309,6 +365,9 @@ function Initialize-Database {
   $schemaOwnerUrlPath = Join-Path $configRoot "schema-owner-url"
   $stagingRoot = Join-Path $DataRoot ".installing"
 
+  # An interrupted earlier run can leave a staged postgres.exe holding locks
+  # inside .installing, which would fail every Remove-Item below forever.
+  Stop-BreevProcesses -PathPrefixes @($stagingRoot) -TimeoutSeconds 0
   Complete-StagedInitialization -StagingRoot $stagingRoot -FinalConfigRoot $configRoot -FinalPostgresqlRoot $postgresqlDataRoot
   $hasConfig = (Test-Path -LiteralPath $runtimeUrlPath -PathType Leaf) -and (Test-Path -LiteralPath $schemaOwnerUrlPath -PathType Leaf)
   $hasDatabase = Test-Path -LiteralPath (Join-Path $postgresqlDataRoot "PG_VERSION") -PathType Leaf
@@ -639,6 +698,11 @@ try {
     } catch {
       [void] $cleanupErrors.Add($_.Exception.Message)
     }
+  }
+  try {
+    Stop-BreevProcesses -PathPrefixes @($PayloadRoot, (Join-Path $DataRoot ".installing")) -TimeoutSeconds 10
+  } catch {
+    [void] $cleanupErrors.Add($_.Exception.Message)
   }
   $failureMessage = $lifecycleFailure.Exception.Message
   if ($cleanupErrors.Count -gt 0) {
