@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import {
   createServer as createTcpServer,
@@ -52,12 +52,11 @@ test("the packaged desktop enforces its outer security and health seams", async 
     await access(executablePath);
     await expectRequiredFuses(executablePath);
 
-    const debuggingPort = await reservePort();
     desktop = spawn(
       executablePath,
       [
         "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
-        `--remote-debugging-port=${debuggingPort}`,
+        "--remote-debugging-port=0",
         `--user-data-dir=${userDataDirectory}`,
       ],
       {
@@ -76,7 +75,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
       electronErrors += chunk.toString();
     });
     browser = await connectToPackagedDesktop(
-      debuggingPort,
+      userDataDirectory,
       () => electronErrors,
     );
     const window = await waitForPackagedWindow(browser, () => electronErrors);
@@ -195,12 +194,11 @@ test("the packaged desktop commits through its bound Main session offline and af
     await waitForHealth(apiOrigin, "healthy");
     const executablePath = packagedExecutablePath();
     await access(executablePath);
-    const debuggingPort = await reservePort();
     desktop = spawn(
       executablePath,
       [
         "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
-        `--remote-debugging-port=${debuggingPort}`,
+        "--remote-debugging-port=0",
         `--user-data-dir=${userDataDirectory}`,
       ],
       {
@@ -218,7 +216,7 @@ test("the packaged desktop commits through its bound Main session offline and af
       electronErrors += chunk.toString();
     });
     browser = await connectToPackagedDesktop(
-      debuggingPort,
+      userDataDirectory,
       () => electronErrors,
     );
     const window = await waitForPackagedWindow(browser, () => electronErrors);
@@ -316,13 +314,19 @@ test("the packaged desktop commits through its bound Main session offline and af
 });
 
 async function connectToPackagedDesktop(
-  debuggingPort: number,
+  userDataDirectory: string,
   getElectronErrors: () => string,
 ): Promise<Browser> {
+  const activePortFile = path.join(userDataDirectory, "DevToolsActivePort");
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
-      return await chromium.connectOverCDP(`http://127.0.0.1:${debuggingPort}`);
+      const content = await readFile(activePortFile, "utf8");
+      const [portString] = content.trim().split("\n");
+      const port = Number.parseInt(portString ?? "", 10);
+      if (Number.isInteger(port) && port > 0) {
+        return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      }
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }

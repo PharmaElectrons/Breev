@@ -22,6 +22,10 @@ import {
   identityUserPath,
   identityUserSchema,
   identityUsersContract,
+  entitlementContextSchema,
+  licenceDeactivateContract,
+  licenceInstallContract,
+  licensingDenialSchema,
   pharmacySettingsContract,
   pharmacySettingsSchema,
   type AttendanceEvent,
@@ -40,6 +44,10 @@ import {
   type IdentityUpdateRolePermissionsRequest,
   type IdentityUpdateUserRequest,
   type IdentityUser,
+  type EntitlementContext,
+  type LicenceDeactivateRequest,
+  type LicenceInstallRequest,
+  type LicensingDenial,
   type PharmacySettings,
   type PharmacySettingsUpdateRequest,
 } from "@breev/contracts/local-rest";
@@ -55,6 +63,16 @@ export class IdentityApiDenied extends Error {
   ) {
     super(denial.code);
     this.name = "IdentityApiDenied";
+  }
+}
+
+export class LicensingApiDenied extends Error {
+  public constructor(
+    public readonly statusCode: number,
+    public readonly denial: LicensingDenial,
+  ) {
+    super(denial.code);
+    this.name = "LicensingApiDenied";
   }
 }
 
@@ -234,6 +252,34 @@ export async function createAttendanceEvent(
   );
 }
 
+export async function installOfflineLicence(
+  baseUrl: string,
+  body: LicenceInstallRequest,
+): Promise<EntitlementContext> {
+  return await requestJson(
+    baseUrl,
+    licenceInstallContract.path,
+    licenceInstallContract.method,
+    201,
+    entitlementContextSchema,
+    body,
+  );
+}
+
+export async function deactivateOfflineLicence(
+  baseUrl: string,
+  body: LicenceDeactivateRequest,
+): Promise<EntitlementContext> {
+  return await requestJson(
+    baseUrl,
+    licenceDeactivateContract.path,
+    licenceDeactivateContract.method,
+    201,
+    entitlementContextSchema,
+    body,
+  );
+}
+
 async function requestJson<T>(
   baseUrl: string,
   path: string,
@@ -274,8 +320,13 @@ function mutationInit(method: string, body: unknown): RequestInit {
 }
 
 async function denialFromResponse(response: Response): Promise<Error> {
-  const parsed = identityDenialSchema.safeParse(await response.json());
-  return parsed.success
-    ? new IdentityApiDenied(response.status, parsed.data)
-    : new Error(`Identity API returned ${response.status}`);
+  const payload = await response.json();
+  const identity = identityDenialSchema.safeParse(payload);
+  if (identity.success) {
+    return new IdentityApiDenied(response.status, identity.data);
+  }
+  const licensing = licensingDenialSchema.safeParse(payload);
+  return licensing.success
+    ? new LicensingApiDenied(response.status, licensing.data)
+    : new Error(`Local API returned ${response.status}`);
 }
