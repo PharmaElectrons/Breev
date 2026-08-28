@@ -1171,10 +1171,16 @@ async function installDesktopFake(
   await page.addInitScript(
     ({ configDelayMs, locale, origin, theme }) => {
       try {
-        if (locale !== undefined) {
+        if (
+          locale !== undefined &&
+          localStorage.getItem("breev.locale") === null
+        ) {
           localStorage.setItem("breev.locale", locale);
         }
-        if (theme !== undefined) {
+        if (
+          theme !== undefined &&
+          localStorage.getItem("breev.theme") === null
+        ) {
           localStorage.setItem("breev.theme", theme);
         }
       } catch {
