@@ -10,6 +10,9 @@ import {
   identityStepUpCreateContract,
   identityUpdateRolePermissionsContract,
   identityUpdateUserContract,
+  capabilityProofContract,
+  licenceDeactivateContract,
+  licenceInstallContract,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   localProofEvidenceSuccessSchema,
@@ -584,6 +587,12 @@ const CORS_MUTATION_ROUTES = [
   ),
   exactMutation(pharmacySettingsContract.method, pharmacySettingsContract.path),
   exactMutation(attendanceEventContract.method, attendanceEventContract.path),
+  exactMutation(capabilityProofContract.method, capabilityProofContract.path),
+  exactMutation(
+    licenceDeactivateContract.method,
+    licenceDeactivateContract.path,
+  ),
+  exactMutation(licenceInstallContract.method, licenceInstallContract.path),
 ] as const;
 
 function exactMutation(method: string, path: string): MutationRoute {

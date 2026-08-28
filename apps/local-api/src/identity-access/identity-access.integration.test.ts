@@ -98,6 +98,11 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ).toEqual([201, 409]);
     const success = attempts.find((attempt) => attempt.status === 201);
     expect(success?.body).toMatchObject({
+      entitlement: {
+        capabilities: expect.arrayContaining(["local-sales", "renewal"]),
+        licence: null,
+        status: "free-core",
+      },
       state: "authenticated",
       user: { role: "owner" },
     });
@@ -108,7 +113,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ownerUsername = user?.username ?? "";
     ownerPassword =
       ownerUsername === "first.owner" ? OWNER_PASSWORD : SECOND_OWNER_PASSWORD;
-    expect(success?.body?.allowedPermissions).toHaveLength(10);
+    expect(success?.body?.allowedPermissions).toHaveLength(11);
 
     const roles = await request(credentials, "GET", "/identity/roles");
     expect(roles.status, failureContext([roles])).toBe(200);
@@ -140,6 +145,113 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(retry).toMatchObject({
       status: 409,
       body: { code: "bootstrap-already-complete", status: "denied" },
+    });
+  });
+
+  it("denies unlicensed API use and makes licence administration recoverable", async () => {
+    expect(
+      await request(credentials, "POST", "/licensing/capability-proof", {
+        capability: "one-way-cloud-sync",
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { code: "entitlement-denied", status: "denied" },
+    });
+
+    expect(
+      await request(credentials, "POST", "/licensing/licences", {
+        challengeId: createUuidV7(),
+        encodedLicence: "{}",
+        idempotencyKey: createUuidV7(),
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { code: "licence-invalid", status: "denied" },
+    });
+
+    const challengeId = await approvedChallenge(
+      "licensing.licence.install",
+      undefined,
+      ownerPassword,
+    );
+    expect(
+      await request(credentials, "POST", "/licensing/licences", {
+        challengeId,
+        encodedLicence: "{}",
+        idempotencyKey: createUuidV7(),
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { code: "licence-invalid", status: "denied" },
+    });
+    const unusedChallenge = await administrator.query<{
+      consumed_at: Date | null;
+    }>("select consumed_at from step_up_challenges where id = $1", [
+      challengeId,
+    ]);
+    expect(unusedChallenge.rows[0]?.consumed_at).toBeNull();
+
+    expect(
+      await request(credentials, "POST", "/licensing/licence-deactivations", {
+        challengeId: createUuidV7(),
+        idempotencyKey: createUuidV7(),
+      }),
+    ).toMatchObject({
+      status: 404,
+      body: { code: "identity-resource-not-found", status: "denied" },
+    });
+    const deactivationChallengeId = await approvedChallenge(
+      "licensing.licence.deactivate",
+      undefined,
+      ownerPassword,
+    );
+    const deactivationBody = {
+      challengeId: deactivationChallengeId,
+      idempotencyKey: createUuidV7(),
+    };
+    const deactivated = await request(
+      credentials,
+      "POST",
+      "/licensing/licence-deactivations",
+      deactivationBody,
+    );
+    expect(deactivated).toMatchObject({
+      status: 201,
+      body: { licence: null, status: "free-core" },
+    });
+    expect(
+      await request(
+        credentials,
+        "POST",
+        "/licensing/licence-deactivations",
+        deactivationBody,
+      ),
+    ).toEqual(deactivated);
+    const deactivationFacts = await administrator.query<{
+      commands: string;
+      events: string;
+    }>(
+      `select
+         (select count(*)::text from licensing_command_results
+          where command_name = 'licence.deactivate') as commands,
+         (select count(*)::text from licence_state_events
+          where event_kind = 'deactivated') as events`,
+    );
+    expect(deactivationFacts.rows[0]).toEqual({ commands: "1", events: "1" });
+    const state = await request(credentials, "GET", "/identity/state");
+    expect(state.body?.entitlement).toMatchObject({
+      licence: null,
+      status: "free-core",
+    });
+    expect(state.body?.user).toMatchObject({ id: ownerId, status: "active" });
+    expect(state.body?.settings).toMatchObject({ attendanceEnabled: false });
+    expect(await request(credentials, "GET", "/identity/users")).toMatchObject({
+      status: 200,
+      body: {
+        users: expect.arrayContaining([
+          expect.objectContaining({ id: ownerId }),
+        ]),
+      },
     });
   });
 
@@ -569,6 +681,18 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         idempotencyKey: createUuidV7(),
         kind: "check-in",
       }),
+      request(credentials, "POST", "/licensing/capability-proof", {
+        capability: "one-way-cloud-sync",
+      }),
+      request(credentials, "POST", "/licensing/licences", {
+        challengeId: arbitraryChallenge,
+        encodedLicence: "{}",
+        idempotencyKey: createUuidV7(),
+      }),
+      request(credentials, "POST", "/licensing/licence-deactivations", {
+        challengeId: arbitraryChallenge,
+        idempotencyKey: createUuidV7(),
+      }),
     ]);
     expect(
       deniedRequests.map(({ body, status }) => ({
@@ -580,6 +704,9 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "step-up-missing-permission", status: 403 },
+      { code: "permission-denied", status: 403 },
+      { code: "permission-denied", status: 403 },
+      { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
@@ -618,7 +745,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     const accountantRoleId =
       roleRows?.find((role) => role.key === "accountant")?.id ?? "";
     const permissionNames = roles.body?.permissions as string[];
-    expect(permissionNames).toHaveLength(10);
+    expect(permissionNames).toHaveLength(11);
 
     for (const permission of permissionNames) {
       const challenge = await approvedChallenge(

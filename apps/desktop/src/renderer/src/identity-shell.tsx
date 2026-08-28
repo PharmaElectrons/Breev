@@ -1,9 +1,11 @@
 import type {
+  CapabilityName,
   IdentityAuthenticatedState,
   IdentityDenial,
   IdentityRole,
   IdentityState,
   IdentityUser,
+  LicensingDenial,
   PharmacyRoleKey,
   StepUpAction,
 } from "@breev/contracts/local-rest";
@@ -15,8 +17,11 @@ import {
   createAttendanceEvent,
   createIdentityUser,
   createStepUpChallenge,
+  deactivateOfflineLicence,
   IdentityApiDenied,
+  installOfflineLicence,
   loginIdentity,
+  LicensingApiDenied,
   logoutIdentity,
   requestIdentityRoles,
   requestIdentityState,
@@ -26,6 +31,7 @@ import {
   updatePharmacySettings,
 } from "./identity-api";
 import { identityMessages, type IdentityCopy } from "./identity-messages";
+import { licensingMessages, type LicensingCopy } from "./licensing-messages";
 import { usePreferences } from "./preferences-provider";
 
 const IDENTITY_POLL_INTERVAL_MS = 5_000;
@@ -35,6 +41,8 @@ interface PendingStepUp {
   readonly challengeId: string;
 }
 
+type AccessDenial = IdentityDenial | LicensingDenial;
+
 export function IdentityShell({
   baseUrl,
 }: {
@@ -42,8 +50,9 @@ export function IdentityShell({
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = identityMessages[locale];
+  const licensingCopy = licensingMessages[locale];
   const [state, setState] = useState<IdentityState | null>(null);
-  const [denial, setDenial] = useState<IdentityDenial | null>(null);
+  const [denial, setDenial] = useState<AccessDenial | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -68,7 +77,10 @@ export function IdentityShell({
       try {
         return await work();
       } catch (error) {
-        if (error instanceof IdentityApiDenied) {
+        if (
+          error instanceof IdentityApiDenied ||
+          error instanceof LicensingApiDenied
+        ) {
           setDenial(error.denial);
           if (
             error.denial.code === "session-expired" ||
@@ -103,6 +115,7 @@ export function IdentityShell({
         <DenialAlert
           copy={copy}
           denial={denial}
+          licensingCopy={licensingCopy}
           onDismiss={() => setDenial(null)}
         />
       )}
@@ -125,6 +138,7 @@ export function IdentityShell({
           busy={busy}
           copy={copy}
           denial={denial}
+          licensingCopy={licensingCopy}
           onDismissDenial={() => setDenial(null)}
           onState={setState}
           run={run}
@@ -320,6 +334,7 @@ function AuthenticatedWorkspace({
   busy,
   copy,
   denial,
+  licensingCopy,
   onDismissDenial,
   onState,
   run,
@@ -328,12 +343,14 @@ function AuthenticatedWorkspace({
   readonly baseUrl: string;
   readonly busy: boolean;
   readonly copy: IdentityCopy;
-  readonly denial: IdentityDenial | null;
+  readonly denial: AccessDenial | null;
+  readonly licensingCopy: LicensingCopy;
   readonly onDismissDenial: () => void;
   readonly onState: (state: IdentityState) => void;
   readonly run: <T>(work: () => Promise<T>) => Promise<T | undefined>;
   readonly state: IdentityAuthenticatedState;
 }): React.JSX.Element {
+  const { locale } = usePreferences();
   const [users, setUsers] = useState<IdentityUser[]>([]);
   const [roles, setRoles] = useState<IdentityRole[]>([]);
   const [permissionNames, setPermissionNames] = useState<string[]>([]);
@@ -341,6 +358,9 @@ function AuthenticatedWorkspace({
   const [userChallenge, setUserChallenge] = useState<string | null>(null);
   const [pendingStepUp, setPendingStepUp] = useState<PendingStepUp | null>(
     null,
+  );
+  const [selectedCapability, setSelectedCapability] = useState<CapabilityName>(
+    state.entitlement.capabilities[0] ?? "renewal",
   );
   const previousFocus = useRef<HTMLElement | null>(null);
   const canManageUsers = state.allowedPermissions.includes(
@@ -352,6 +372,19 @@ function AuthenticatedWorkspace({
   const canManageSettings = state.allowedPermissions.includes(
     "pharmacy.settings.manage",
   );
+  const canManageLicensing =
+    state.allowedPermissions.includes("licensing.manage");
+  const visibleSelectedCapability = state.entitlement.capabilities.includes(
+    selectedCapability,
+  )
+    ? selectedCapability
+    : (state.entitlement.capabilities[0] ?? "renewal");
+
+  useEffect(() => {
+    if (!state.entitlement.capabilities.includes(selectedCapability)) {
+      setSelectedCapability(state.entitlement.capabilities[0] ?? "renewal");
+    }
+  }, [selectedCapability, state.entitlement.capabilities]);
 
   const loadAdministration = useCallback(async (): Promise<void> => {
     if (canManageUsers) {
@@ -421,6 +454,7 @@ function AuthenticatedWorkspace({
           <DenialAlert
             copy={copy}
             denial={denial}
+            licensingCopy={licensingCopy}
             onDismiss={onDismissDenial}
           />
         )}
@@ -457,6 +491,154 @@ function AuthenticatedWorkspace({
             </button>
           </div>
         </article>
+
+        <section
+          className="licensing-grid"
+          aria-label={licensingCopy.licenceStatus}
+        >
+          <article className="identity-card licensing-card">
+            <div className="admin-heading">
+              <div>
+                <h3>{licensingCopy.licenceStatus}</h3>
+                <p
+                  className="state-line"
+                  data-entitlement-status={state.entitlement.status}
+                  aria-atomic="true"
+                  aria-live="polite"
+                  role="status"
+                >
+                  <span aria-hidden="true">●</span>{" "}
+                  {licensingCopy.statuses[state.entitlement.status]}
+                </p>
+              </div>
+              {state.entitlement.licence === null ? null : (
+                <dl className="licence-facts">
+                  <div>
+                    <dt>{licensingCopy.plan}</dt>
+                    <dd>{state.entitlement.licence.plan}</dd>
+                  </div>
+                  <div>
+                    <dt>{licensingCopy.expires}</dt>
+                    <dd>
+                      {new Date(
+                        state.entitlement.licence.expiresAt,
+                      ).toLocaleDateString(locale === "ar" ? "ar-IQ" : "en-IQ")}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{licensingCopy.deviceAllowance}</dt>
+                    <dd>{state.entitlement.licence.permittedDeviceCount}</dd>
+                  </div>
+                </dl>
+              )}
+            </div>
+
+            {canManageLicensing ? (
+              <form
+                className="identity-form licence-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = event.currentTarget;
+                  const encodedLicence = requiredValue(
+                    new FormData(form),
+                    "encodedLicence",
+                  );
+                  void beginStepUp(
+                    "licensing.licence.install",
+                    state.pharmacy.id,
+                    async (challengeId) => {
+                      const entitlement = await run(() =>
+                        installOfflineLicence(baseUrl, {
+                          challengeId,
+                          encodedLicence,
+                          idempotencyKey: newIdempotencyKey(),
+                        }),
+                      );
+                      if (entitlement !== undefined) {
+                        form.reset();
+                        onState({ ...state, entitlement });
+                      }
+                    },
+                  );
+                }}
+              >
+                <p>{licensingCopy.installDescription}</p>
+                <label className="field-label">
+                  <span>{licensingCopy.licenceDocument}</span>
+                  <textarea
+                    maxLength={6_000}
+                    name="encodedLicence"
+                    required
+                    rows={4}
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  disabled={busy}
+                  type="submit"
+                >
+                  {licensingCopy.install}
+                </button>
+              </form>
+            ) : null}
+            {canManageLicensing && state.entitlement.licence !== null ? (
+              <div className="licence-deactivation">
+                <p>{licensingCopy.deactivateDescription}</p>
+                <button
+                  className="quiet-button"
+                  disabled={busy}
+                  type="button"
+                  onClick={() =>
+                    void beginStepUp(
+                      "licensing.licence.deactivate",
+                      state.pharmacy.id,
+                      async (challengeId) => {
+                        const entitlement = await run(() =>
+                          deactivateOfflineLicence(baseUrl, {
+                            challengeId,
+                            idempotencyKey: newIdempotencyKey(),
+                          }),
+                        );
+                        if (entitlement !== undefined) {
+                          onState({ ...state, entitlement });
+                        }
+                      },
+                    )
+                  }
+                >
+                  {licensingCopy.deactivate}
+                </button>
+              </div>
+            ) : null}
+          </article>
+
+          <nav
+            className="identity-card capability-navigation"
+            aria-label={licensingCopy.availableCapabilities}
+          >
+            <h3>{licensingCopy.availableCapabilities}</h3>
+            <ul>
+              {state.entitlement.capabilities.map((capability) => (
+                <li key={capability}>
+                  <button
+                    aria-current={
+                      visibleSelectedCapability === capability
+                        ? "page"
+                        : undefined
+                    }
+                    type="button"
+                    onClick={() => setSelectedCapability(capability)}
+                  >
+                    {licensingCopy.capabilities[capability]}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="capability-selection" aria-live="polite">
+              {licensingCopy.capabilities[visibleSelectedCapability]}
+            </p>
+          </nav>
+        </section>
 
         {state.attendance === null ? null : (
           <article
@@ -764,6 +946,7 @@ function AuthenticatedWorkspace({
           busy={busy}
           copy={copy}
           denial={denial}
+          licensingCopy={licensingCopy}
           onCancel={closeStepUp}
           onDismissDenial={onDismissDenial}
           onSubmit={async (password) => {
@@ -791,13 +974,15 @@ function StepUpDialog({
   busy,
   copy,
   denial,
+  licensingCopy,
   onCancel,
   onDismissDenial,
   onSubmit,
 }: {
   readonly busy: boolean;
   readonly copy: IdentityCopy;
-  readonly denial: IdentityDenial | null;
+  readonly denial: AccessDenial | null;
+  readonly licensingCopy: LicensingCopy;
   readonly onCancel: () => void;
   readonly onDismissDenial: () => void;
   readonly onSubmit: (password: string) => Promise<boolean>;
@@ -842,6 +1027,7 @@ function StepUpDialog({
           <DenialAlert
             copy={copy}
             denial={denial}
+            licensingCopy={licensingCopy}
             onDismiss={onDismissDenial}
           />
         )}
@@ -890,10 +1076,12 @@ function StepUpDialog({
 function DenialAlert({
   copy,
   denial,
+  licensingCopy,
   onDismiss,
 }: {
   readonly copy: IdentityCopy;
-  readonly denial: IdentityDenial;
+  readonly denial: AccessDenial;
+  readonly licensingCopy: LicensingCopy;
   readonly onDismiss: () => void;
 }): React.JSX.Element {
   return (
@@ -903,7 +1091,13 @@ function DenialAlert({
       </span>
       <div>
         <strong>{copy.denial}</strong>
-        <p>{copy.denials[denial.code]}</p>
+        <p>
+          {denial.code in licensingCopy.denials
+            ? licensingCopy.denials[
+                denial.code as keyof LicensingCopy["denials"]
+              ]
+            : copy.denials[denial.code as IdentityDenial["code"]]}
+        </p>
         <small>
           {copy.requestReference}: {denial.requestId}
         </small>

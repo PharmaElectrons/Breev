@@ -4,6 +4,7 @@ export const PERMISSION_NAMES = [
   "draft.price.override",
   "identity.roles.manage",
   "identity.users.manage",
+  "licensing.manage",
   "pharmacy.settings.manage",
   "pricing.below_cost",
   "sales.invoice.reverse",
@@ -17,6 +18,8 @@ export const STEP_UP_ACTIONS = {
   "identity.role.permissions.update": "identity.roles.manage",
   "identity.user.create": "identity.users.manage",
   "identity.user.update": "identity.users.manage",
+  "licensing.licence.deactivate": "licensing.manage",
+  "licensing.licence.install": "licensing.manage",
 } as const satisfies Readonly<Record<string, PermissionName>>;
 
 export type StepUpAction = keyof typeof STEP_UP_ACTIONS;

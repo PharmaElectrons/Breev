@@ -47,6 +47,7 @@ describe("identity authorization", () => {
       "draft.price.override",
       "identity.roles.manage",
       "identity.users.manage",
+      "licensing.manage",
       "pharmacy.settings.manage",
       "pricing.below_cost",
       "sales.invoice.reverse",
