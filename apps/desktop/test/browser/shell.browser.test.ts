@@ -61,7 +61,6 @@ interface MainDeviceCredentials {
 interface IdentityStateMatrix {
   readonly arabicHeading: string;
   readonly englishHeading: string;
-  readonly evidenceName: string;
   readonly focusLabel: { readonly ar: string; readonly en: string };
 }
 
@@ -230,10 +229,6 @@ test.describe.serial("bilingual desktop shell", () => {
           expect(focusOutlineWidth).toBeGreaterThanOrEqual(3);
           await page.screenshot({
             animations: "disabled",
-            path: path.resolve(
-              import.meta.dirname,
-              `../../../../evidence/issue-33/after/${locale}-${theme}-${state}.png`,
-            ),
           });
           await context.close();
         }
@@ -345,7 +340,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectIdentityStateMatrix(page, {
       arabicHeading: "إعداد الصيدلية",
       englishHeading: "Set up this pharmacy",
-      evidenceName: "bootstrap",
       focusLabel: { ar: "اسم الصيدلية", en: "Pharmacy name" },
     });
     await expect(page.getByRole("heading", { name: "Attendance" })).toHaveCount(
@@ -391,10 +385,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-light-owner.png",
-      ),
     });
   });
 
@@ -417,7 +407,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectIdentityStateMatrix(page, {
       arabicHeading: "تسجيل الدخول إلى بريف",
       englishHeading: "Sign in to Breev",
-      evidenceName: "login",
       focusLabel: { ar: "اسم المستخدم", en: "Username" },
     });
 
@@ -433,7 +422,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectIdentityStateMatrix(page, {
       arabicHeading: "تسجيل الدخول إلى بريف",
       englishHeading: "Sign in to Breev",
-      evidenceName: "wrong-password",
       focusLabel: { ar: "كلمة المرور", en: "Password" },
     });
     await page.locator(".denial-alert .dismiss-button").click();
@@ -457,10 +445,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/ar-dark-owner.png",
-      ),
     });
 
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
@@ -561,10 +545,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/licensed-en-light.png",
-      ),
     });
 
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
@@ -576,10 +556,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/licensed-ar-dark.png",
-      ),
     });
 
     await page.unroute("**/identity/state");
@@ -610,10 +586,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/expired-ar-dark.png",
-      ),
     });
     await page.unroute("**/identity/state");
   });
@@ -701,10 +673,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-light-default-deny.png",
-      ),
     });
 
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -754,7 +722,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectIdentityStateMatrix(page, {
       arabicHeading: "مرحباً, Browser Owner",
       englishHeading: "Welcome, Browser Owner",
-      evidenceName: "attendance-enabled",
       focusLabel: {
         ar: "تفعيل تسجيل الحضور والانصراف اليدوي",
         en: "Enable manual check-in and check-out",
@@ -789,7 +756,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectIdentityStateMatrix(page, {
       arabicHeading: "تسجيل الدخول إلى بريف",
       englishHeading: "Sign in to Breev",
-      evidenceName: "locked-user",
       focusLabel: { ar: "كلمة المرور", en: "Password" },
     });
   });
@@ -821,17 +787,12 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectIdentityStateMatrix(page, {
       arabicHeading: "انتهت الجلسة",
       englishHeading: "Session expired",
-      evidenceName: "session-expired",
       focusLabel: { ar: "اسم المستخدم", en: "Username" },
     });
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-dark-session-expired.png",
-      ),
     });
 
     await page.getByLabel("Username").fill("browser.owner");
@@ -851,7 +812,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectIdentityStateMatrix(page, {
       arabicHeading: "تم إنهاء الجلسة",
       englishHeading: "Session ended",
-      evidenceName: "session-revoked",
       focusLabel: { ar: "اسم المستخدم", en: "Username" },
     });
     await page.getByLabel("Username").fill("browser.owner");
@@ -868,7 +828,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectIdentityStateMatrix(page, {
       arabicHeading: "مرحباً, Browser Owner",
       englishHeading: "Welcome, Browser Owner",
-      evidenceName: "attendance-disabled",
       focusLabel: {
         ar: "تفعيل تسجيل الحضور والانصراف اليدوي",
         en: "Enable manual check-in and check-out",
@@ -1034,10 +993,6 @@ async function expectIdentityStateMatrix(
       await page.screenshot({
         animations: "disabled",
         fullPage: true,
-        path: path.resolve(
-          import.meta.dirname,
-          `../../../../evidence/issue-38/after/${state.evidenceName}-${locale}-${theme}.png`,
-        ),
       });
     }
   }
@@ -1098,10 +1053,6 @@ async function expectStepUpStateMatrix(page: Page): Promise<void> {
       await page.screenshot({
         animations: "disabled",
         fullPage: true,
-        path: path.resolve(
-          import.meta.dirname,
-          `../../../../evidence/issue-38/after/step-up-${locale}-${theme}.png`,
-        ),
       });
       await cancel.focus();
       await page.keyboard.press("Enter");

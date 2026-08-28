@@ -7,7 +7,7 @@ import {
   type IdentityAuthenticatedState,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { mkdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 
@@ -26,10 +26,6 @@ test.describe("offline licence feature hiding", () => {
 
   test.beforeAll(async () => {
     renderer = await startLicensingRenderer(freeCoreState());
-    await mkdir(
-      path.resolve(import.meta.dirname, "../../../../evidence/issue-39/after"),
-      { recursive: true },
-    );
   });
 
   test.afterAll(async () => {
@@ -91,7 +87,6 @@ test.describe("offline licence feature hiding", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: evidencePath("licensed-en-light.png"),
     });
 
     const removeLicence = page.getByRole("button", {
@@ -147,7 +142,6 @@ test.describe("offline licence feature hiding", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: evidencePath("licensed-en-dark.png"),
     });
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await expect(
@@ -159,7 +153,6 @@ test.describe("offline licence feature hiding", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: evidencePath("licensed-ar-dark.png"),
     });
 
     await page.getByRole("button", { name: "استخدام الوضع الفاتح" }).click();
@@ -167,7 +160,6 @@ test.describe("offline licence feature hiding", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: evidencePath("licensed-ar-light.png"),
     });
     await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
 
@@ -188,7 +180,6 @@ test.describe("offline licence feature hiding", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: evidencePath("expired-ar-dark.png"),
     });
   });
 });
@@ -357,13 +348,6 @@ async function startLicensingRenderer(
       state = next;
     },
   };
-}
-
-function evidencePath(name: string): string {
-  return path.resolve(
-    import.meta.dirname,
-    `../../../../evidence/issue-39/after/${name}`,
-  );
 }
 
 async function focusWithKeyboard(page: Page, target: Locator): Promise<void> {

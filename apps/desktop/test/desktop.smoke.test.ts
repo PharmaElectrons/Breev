@@ -283,15 +283,9 @@ test("the packaged desktop commits through its bound Main session offline and af
       `127.0.0.1:${apiPort}`,
     );
 
-    const screenshotPath = path.resolve(
-      import.meta.dirname,
-      "../../../evidence/issue-35/after/en-light-device-binding.png",
-    );
-    await mkdir(path.dirname(screenshotPath), { recursive: true });
     await window.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: screenshotPath,
     });
 
     await stopProcess(api);
