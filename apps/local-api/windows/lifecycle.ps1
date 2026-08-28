@@ -274,6 +274,49 @@ function New-RandomSecret {
   return [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
 }
 
+function New-MainDeviceId {
+  # UUIDv7: 48-bit millisecond timestamp, version and variant nibbles, random
+  # tail. Both the API and the desktop validate this exact shape.
+  $bytes = [byte[]]::new(16)
+  $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try {
+    $generator.GetBytes($bytes)
+  } finally {
+    $generator.Dispose()
+  }
+  $milliseconds = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  for ($i = 5; $i -ge 0; $i--) {
+    $bytes[$i] = [byte]($milliseconds -band 0xFF)
+    $milliseconds = $milliseconds -shr 8
+  }
+  $bytes[6] = [byte](($bytes[6] -band 0x0F) -bor 0x70)
+  $bytes[8] = [byte](($bytes[8] -band 0x3F) -bor 0x80)
+  $hex = -join ($bytes | ForEach-Object { $_.ToString("x2") })
+  return "{0}-{1}-{2}-{3}-{4}" -f $hex.Substring(0, 8), $hex.Substring(8, 4), $hex.Substring(12, 4), $hex.Substring(16, 4), $hex.Substring(20)
+}
+
+function Write-MainDeviceFile {
+  param([string] $Path)
+
+  # The Main device binding authenticates the desktop app to the local API.
+  # It is generated once per installation: the database binds the device ID
+  # to its first credential, so an existing file must never be overwritten.
+  if (Test-Path -LiteralPath $Path -PathType Leaf) {
+    return
+  }
+  $deviceSecret = New-RandomSecret
+  $sessionToken = New-RandomSecret
+  foreach ($secretValue in @($deviceSecret, $sessionToken)) {
+    [void] $script:sensitiveValues.Add($secretValue)
+  }
+  # ASCII keeps the file free of a byte-order mark, which JSON.parse rejects.
+  [ordered]@{
+    deviceId = New-MainDeviceId
+    deviceSecret = $deviceSecret
+    sessionToken = $sessionToken
+  } | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding ASCII
+}
+
 function Test-Payload {
   $manifestPath = Join-Path $PayloadRoot "payload-manifest.json"
   Assert-FileExists $manifestPath
@@ -376,6 +419,10 @@ function Initialize-Database {
     if ($majorVersion -ne "18") {
       throw "The existing PostgreSQL data directory requires a reviewed upgrade path"
     }
+    # Installations that predate the Main device binding get one backfilled.
+    # A fresh ID triple is safe against an existing database: provisioning
+    # inserts a new device row and never rebinds an existing one.
+    Write-MainDeviceFile -Path (Join-Path $configRoot "main-device.json")
     return
   }
   if ($hasConfig -or $hasDatabase) {
@@ -488,6 +535,7 @@ function Initialize-Database {
 
   Set-Content -LiteralPath (Join-Path $stagedConfigRoot "database-url") -Value "postgresql://breev_app:$appPassword@127.0.0.1:$postgresqlPort/breev" -NoNewline -Encoding ASCII
   Set-Content -LiteralPath (Join-Path $stagedConfigRoot "schema-owner-url") -Value "postgresql://breev_schema_owner:$schemaOwnerPassword@127.0.0.1:$postgresqlPort/breev" -NoNewline -Encoding ASCII
+  Write-MainDeviceFile -Path (Join-Path $stagedConfigRoot "main-device.json")
   [ordered]@{
     schemaVersion = 1
     installationId = [Guid]::NewGuid().ToString()
@@ -546,6 +594,7 @@ function Register-ApiService {
     "--cwd", $apiRoot,
     "--env", "API_HOST=127.0.0.1", "--env", "API_PORT=$apiPort", "--env", "DATABASE_URL_FILE=$runtimeUrlPath",
     "--env", "BREEV_BACKUP_DIRECTORY=$backupRoot",
+    "--env", "BREEV_MAIN_DEVICE_FILE=$(Join-Path $DataRoot 'config\main-device.json')",
     "--", $nodePath, $apiEntry
   ) -FailureMessage "Could not register the local API Windows service"
   Configure-Service -Name $apiServiceName -Description "Breev local API service"
@@ -566,6 +615,13 @@ function Set-ServiceAcls {
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read }
   )
   Set-FileAcl -Path (Join-Path $configRoot "schema-owner-url") -AdditionalGrants @()
+  # The desktop app runs as the interactive user and authenticates with this
+  # binding, so local users may read it. The machine is the Main device per
+  # ADR 0002; database credentials stay administrator-only above.
+  Set-FileAcl -Path (Join-Path $configRoot "main-device.json") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read },
+    [ordered]@{ identity = "S-1-5-32-545"; rights = [Security.AccessControl.FileSystemRights]::Read }
+  )
   Set-FileAcl -Path (Join-Path $configRoot "installation.json") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read }
   )
