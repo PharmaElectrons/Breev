@@ -42,6 +42,7 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(DurableJobsService.name);
   private boss: PgBoss | undefined;
   private readonly knownQueues = new Set<string>();
+  private startPromise: Promise<void> | undefined;
 
   public constructor(
     @Inject(LocalDatabaseService)
@@ -49,6 +50,20 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   public async onModuleInit(): Promise<void> {
+    await this.ensureStarted();
+  }
+
+  /**
+   * Starts the job runtime once. Nest runs module initialization hooks
+   * concurrently, so any service that registers a queue during startup must
+   * await this rather than assume the runtime is already available.
+   */
+  public async ensureStarted(): Promise<void> {
+    this.startPromise ??= this.start();
+    return await this.startPromise;
+  }
+
+  private async start(): Promise<void> {
     if (this.localDatabase !== undefined) {
       await this.localDatabase.ensureReady();
     }
@@ -278,6 +293,7 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
       await this.boss.stop(options);
       this.boss = undefined;
     }
+    this.startPromise = undefined;
   }
 
   public async onApplicationShutdown(): Promise<void> {
