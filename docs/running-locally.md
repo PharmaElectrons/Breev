@@ -175,7 +175,7 @@ Vite HMR injects CSS through inline `<style>` elements. Breev's strict Content S
 
 ## Test the current features by hand
 
-The current user-facing slice covers identity and access. Inventory, purchasing, sales, accounting, patients, licensing, and cloud screens are not implemented yet.
+The current user-facing slice covers identity, access, and the licence status and capability surface. Inventory, purchasing, sales, accounting, patients, and cloud screens are not implemented yet.
 
 On a new database:
 
@@ -189,6 +189,7 @@ On a new database:
 8. Add a user. The app must ask for the current owner's password before it opens the form.
 9. Lock and reactivate that user. Each change must require a new step-up check.
 10. Change a role's permissions. Log in as a user with that role and confirm hidden administration sections and permission denials match the grants.
+11. Confirm the licence status card reads `Free Core` and that `Available functions` lists only Free Core functions. Paid functions must be absent, never shown as disabled buttons. Signed test licences live in the licensing tests; there is no issuer yet, so pasting an unsigned document must be refused as an invalid licence without disturbing any Free Core screen or data.
 
 Use disposable local data for destructive checks. The one-time setup and user actions persist in PostgreSQL across app restarts.
 
@@ -202,8 +203,9 @@ pnpm test:smoke
 ```
 
 - Unit tests cover domain helpers, security policies, contracts, and static module boundaries.
-- Integration tests start PostgreSQL with Testcontainers and exercise migrations, database role separation, security, jobs, PKI, and identity flows.
-- Browser tests cover the Arabic and English UI, themes, accessibility, startup states, identity administration, and attendance.
+- Integration tests start PostgreSQL with Testcontainers and exercise migrations, database role separation, security, jobs, PKI, identity, and licensing flows.
+- Browser tests cover the Arabic and English UI, themes, accessibility, startup states, identity administration, attendance, and entitlement feature hiding.
+- `pnpm check:licence-artifact` inspects the built artifacts and fails if any private or shared licence-signing material reaches them. `pnpm verify` runs it after the build.
 - Smoke tests package Electron and exercise the real protocol, preload boundary, CSP, navigation blocks, device proof, API, and PostgreSQL.
 
 Run the complete repository gate with:

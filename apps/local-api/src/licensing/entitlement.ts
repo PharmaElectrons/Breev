@@ -53,18 +53,6 @@ export function deriveEntitlement(input: {
   };
 }
 
-export type CapabilityAuthorization =
-  "allowed" | "permission-denied" | "entitlement-denied";
-
-export function authorizeCapability(input: {
-  readonly hasPermission: boolean;
-  readonly hasEntitlement: boolean;
-}): CapabilityAuthorization {
-  if (!input.hasPermission) return "permission-denied";
-  if (!input.hasEntitlement) return "entitlement-denied";
-  return "allowed";
-}
-
 function freeCore(
   status: Exclude<EntitlementContext["status"], "licensed">,
 ): EntitlementContext {

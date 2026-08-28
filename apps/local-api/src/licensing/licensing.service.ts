@@ -352,15 +352,17 @@ export class LicensingService {
       ...(persistedLowerBound === undefined ? {} : { persistedLowerBound }),
     });
     if (observation.persistLowerBound !== undefined) {
-      try {
-        await queryable.query(
-          `insert into trusted_breev_time_marks (
-             pharmacy_id, main_device_id, lower_bound
-           ) values ($1, $2, $3)`,
-          [input.pharmacyId, input.mainDeviceId, observation.persistLowerBound],
-        );
-      } catch (error) {
-        if (!isConcurrentTimeAdvance(error)) throw error;
+      // The mark trigger skips any bound that does not advance the stored
+      // high-water mark, so a concurrent advance never fails this statement
+      // and never aborts a caller's open transaction.
+      const persisted = await queryable.query(
+        `insert into trusted_breev_time_marks (
+           pharmacy_id, main_device_id, lower_bound
+         ) values ($1, $2, $3)
+         on conflict do nothing`,
+        [input.pharmacyId, input.mainDeviceId, observation.persistLowerBound],
+      );
+      if (persisted.rowCount === 0) {
         persistedLowerBound = await latestLowerBound(queryable, input);
         const currentHighWater = this.highWaterByBinding.get(binding);
         const concurrentHighWater = laterDate(
@@ -526,13 +528,6 @@ function laterDate(left?: Date, right?: Date): Date | undefined {
     return right === undefined ? undefined : new Date(right);
   if (right === undefined) return new Date(left);
   return new Date(Math.max(left.getTime(), right.getTime()));
-}
-
-function isConcurrentTimeAdvance(error: unknown): boolean {
-  if (error === null || typeof error !== "object" || !("code" in error)) {
-    return false;
-  }
-  return error.code === "23505" || error.code === "23514";
 }
 
 interface AuditInput {

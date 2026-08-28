@@ -681,6 +681,18 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         idempotencyKey: createUuidV7(),
         kind: "check-in",
       }),
+      request(credentials, "POST", "/licensing/capability-proof", {
+        capability: "one-way-cloud-sync",
+      }),
+      request(credentials, "POST", "/licensing/licences", {
+        challengeId: arbitraryChallenge,
+        encodedLicence: "{}",
+        idempotencyKey: createUuidV7(),
+      }),
+      request(credentials, "POST", "/licensing/licence-deactivations", {
+        challengeId: arbitraryChallenge,
+        idempotencyKey: createUuidV7(),
+      }),
     ]);
     expect(
       deniedRequests.map(({ body, status }) => ({
@@ -692,6 +704,9 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "step-up-missing-permission", status: 403 },
+      { code: "permission-denied", status: 403 },
+      { code: "permission-denied", status: 403 },
+      { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },

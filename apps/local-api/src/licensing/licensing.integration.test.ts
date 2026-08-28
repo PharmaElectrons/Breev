@@ -20,6 +20,7 @@ import {
 } from "./licence-fixtures.test.js";
 import {
   LicensingCommandConflict,
+  LicensingDenied,
   LicensingService,
 } from "./licensing.service.js";
 
@@ -230,6 +231,51 @@ describe.sequential("licensing PostgreSQL seam", () => {
     ).rejects.toMatchObject({ code: "55000" });
   });
 
+  it("allows only signed capabilities and audits both outcomes", async () => {
+    const now = new Date("2027-01-01T00:31:00.000Z");
+    await expect(
+      licensing.requireCapability({
+        actorId: ACTOR_ID,
+        capability: "one-way-cloud-sync",
+        mainDeviceId: TEST_MAIN_DEVICE_ID,
+        now,
+        pharmacyId: TEST_PHARMACY_ID,
+      }),
+    ).resolves.toBeUndefined();
+    const denied = await licensing
+      .requireCapability({
+        actorId: ACTOR_ID,
+        capability: "purchase-invoice-ocr",
+        mainDeviceId: TEST_MAIN_DEVICE_ID,
+        now,
+        pharmacyId: TEST_PHARMACY_ID,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(denied).toBeInstanceOf(LicensingDenied);
+    expect(denied).toMatchObject({
+      denial: {
+        code: "entitlement-denied",
+        requiredCapability: "purchase-invoice-ocr",
+        status: "denied",
+      },
+    });
+    const decisions = await administrator.query<{
+      capability: string;
+      outcome: string;
+    }>(
+      `select capability, outcome from licensing_audit_records
+       where action = 'capability.authorization'
+       order by recorded_at, id`,
+    );
+    expect(decisions.rows).toEqual([
+      { capability: "one-way-cloud-sync", outcome: "allowed" },
+      { capability: "purchase-invoice-ocr", outcome: "denied" },
+    ]);
+  });
+
   it("serializes concurrent high-water advances across service instances", async () => {
     const first = new LicensingService(database);
     const second = new LicensingService(database);
@@ -255,6 +301,63 @@ describe.sequential("licensing PostgreSQL seam", () => {
     expect(marks.rows[0]?.count).toBe("1");
     expect(await rollbackAuditCount()).toBe(rollbackAuditsBefore);
   });
+
+  it("leaves a caller transaction usable when a concurrent advance wins", async () => {
+    const blocker = await administrator.connect();
+    const caller = await database.requirePool().connect();
+    try {
+      await blocker.query("begin");
+      await blocker.query(
+        "select pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`${TEST_PHARMACY_ID}:${TEST_MAIN_DEVICE_ID}`],
+      );
+      await caller.query("begin");
+      const pending = licensing.current(
+        {
+          actorId: ACTOR_ID,
+          mainDeviceId: TEST_MAIN_DEVICE_ID,
+          now: new Date("2029-01-01T00:00:00.000Z"),
+          pharmacyId: TEST_PHARMACY_ID,
+        },
+        caller,
+      );
+      await waitForBlockedAdvance();
+      await blocker.query(
+        `insert into trusted_breev_time_marks (
+           pharmacy_id, main_device_id, lower_bound
+         ) values ($1, $2, '2029-01-01T00:00:00.000Z')`,
+        [TEST_PHARMACY_ID, TEST_MAIN_DEVICE_ID],
+      );
+      await blocker.query("commit");
+      expect((await pending).status).toBe("licensed");
+      await expect(caller.query("select 1 as ok")).resolves.toMatchObject({
+        rowCount: 1,
+      });
+      await caller.query("commit");
+    } finally {
+      await caller.query("rollback").catch(() => undefined);
+      caller.release();
+      await blocker.query("rollback").catch(() => undefined);
+      blocker.release();
+    }
+    const marks = await administrator.query<{ count: string }>(
+      `select count(*)::text as count from trusted_breev_time_marks
+       where lower_bound >= '2029-01-01T00:00:00.000Z'`,
+    );
+    expect(marks.rows[0]?.count).toBe("1");
+  });
+
+  async function waitForBlockedAdvance(): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const waiting = await administrator.query<{ count: string }>(
+        `select count(*)::text as count from pg_locks
+         where locktype = 'advisory' and not granted`,
+      );
+      if (waiting.rows[0]?.count !== "0") return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("The concurrent trusted-time advance never blocked");
+  }
 
   async function currentAt(value: string) {
     return await licensing.current({
