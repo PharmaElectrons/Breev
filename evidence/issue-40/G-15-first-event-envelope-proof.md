@@ -162,7 +162,36 @@ The crash helper files are named `*.test.ts` but neither `*.unit.test.ts` nor `*
 
 ## Full worktree validation
 
-Pending driver verification: the full `pnpm verify` transcript and the detached clean-checkout transcript are appended here by the final review before the pull request opens.
+Both runs below were executed by the orchestrating reviewer on 28 August 2026 with pnpm 11.23.0, Node 24.19.0, Docker-provisioned PostgreSQL 18.6 containers, and no external database.
+
+```text
+$ corepack pnpm verify
+lint: eslint clean; boundary check passed (123 source files)
+format check: all matched files use Prettier code style
+strict typecheck: 4 tasks successful
+production build: 3 tasks successful
+licence artifact scan: 58 artifact files inspected, no forbidden string
+unit: contracts 41 passed; desktop 48 passed; local-api 343 passed, 1 documented skip;
+      deliberate boundary violations failed as expected
+integration: 131 passed, 1 documented skip across 10 files against real PostgreSQL 18.6,
+      including the 18-test posting infrastructure seam, the 8-test settings posting
+      pipeline over spawned dist/main.js HTTP, and the 6-test crash battery
+browser: 14 passed in Chromium (bilingual shell, licensing, device-binding defenses)
+packaged Electron smoke: 2 passed
+```
+
+```text
+$ bash clean-checkout-verify (git archive HEAD -> scratch dir)
+corepack pnpm install --frozen-lockfile: 684 packages, lockfile up to date
+corepack pnpm verify: identical stage results —
+  lint + 123-file boundary check, format check, 4-task typecheck, 3-task build,
+  58-file licence-artifact scan: passed
+  unit: contracts 41; desktop 48; local-api 343 + 1 skip
+  integration: 131 passed, 1 skip (10 files, real PostgreSQL 18.6)
+  browser: 14 passed; packaged Electron smoke: 2 passed
+```
+
+One environmental note for the record: a single flake was observed once in an earlier clean-checkout run and never again — `identity-access.integration.test.ts` › `survives restart and rejects expired, revoked, and wrong-device sessions` answered `unauthenticated` instead of `session-expired` after two same-millisecond concurrent logins. The test and the behavior it exercises predate this change (#38) and are untouched here; the passing run above is the recorded result, and the observation is noted so a future reader of that suite knows the tie-break between two sessions created in the same millisecond is the suspect, not the posting pipeline.
 
 ## Open before G-15 closes
 
