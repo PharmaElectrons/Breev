@@ -142,7 +142,8 @@ function Get-InstalledPayloadRecord {
   $payloadRoot = $lockFiles[0].Directory.FullName
   $requiredPaths = @(
     "payload-manifest.json", "payload-lock.json", "lifecycle.ps1", "bootstrap.sql",
-    "node/node.exe", "postgresql/bin/postgres.exe", "service-wrapper/shawl.exe", "local-api/dist/main.js"
+    "node/node.exe", "postgresql/bin/postgres.exe", "service-wrapper/shawl.exe", "local-api/dist/main.js",
+    "local-api/dist/migrate.js", "local-api/drizzle/meta/_journal.json"
   )
   $files = foreach ($relativePath in $requiredPaths) {
     $path = Join-Path $payloadRoot $relativePath
@@ -736,12 +737,12 @@ try {
     $result.signing.afterUpdate.files.Count -gt 0 -and
     $result.signing.afterReinstall.files.Count -gt 0 -and
     $result.signing.installedGapObserved -and
-    $result.payload.afterInstall.files.Count -eq 8 -and
-    $result.payload.afterRepair.files.Count -eq 8 -and
-    $result.payload.afterFailedRepair.files.Count -eq 8 -and
-    $result.payload.afterFailedUpdate.files.Count -eq 8 -and
-    $result.payload.afterUpdate.files.Count -eq 8 -and
-    $result.payload.afterReinstall.files.Count -eq 8 -and
+    $result.payload.afterInstall.files.Count -eq 10 -and
+    $result.payload.afterRepair.files.Count -eq 10 -and
+    $result.payload.afterFailedRepair.files.Count -eq 10 -and
+    $result.payload.afterFailedUpdate.files.Count -eq 10 -and
+    $result.payload.afterUpdate.files.Count -eq 10 -and
+    $result.payload.afterReinstall.files.Count -eq 10 -and
     $result.dataPreservation.afterInstall -and
     $result.dataPreservation.afterRepair -and
     $result.dataPreservation.afterFailedRepair -and

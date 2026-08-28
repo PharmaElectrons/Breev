@@ -190,6 +190,8 @@ function Test-Payload {
   Assert-FileExists $postgresPath
   Assert-FileExists $shawlPath
   Assert-FileExists (Join-Path $PayloadRoot "local-api\dist\main.js")
+  Assert-FileExists (Join-Path $PayloadRoot "local-api\dist\migrate.js")
+  Assert-FileExists (Join-Path $PayloadRoot "local-api\drizzle\meta\_journal.json")
   Assert-FileExists (Join-Path $PayloadRoot "bootstrap.sql")
 
   $componentRoots = @{
@@ -488,17 +490,19 @@ function Invoke-DatabaseMigrations {
   $runtimeUrlPath = Join-Path $DataRoot "config\database-url"
   $schemaOwnerUrlPath = Join-Path $DataRoot "config\schema-owner-url"
 
-  if (Test-Path -LiteralPath $migrateEntry -PathType Leaf) {
-    $previousDatabaseUrlFile = $env:DATABASE_URL_FILE
-    $previousMigrationUrlFile = $env:DATABASE_MIGRATION_URL_FILE
-    try {
-      $env:DATABASE_URL_FILE = $runtimeUrlPath
-      $env:DATABASE_MIGRATION_URL_FILE = $schemaOwnerUrlPath
-      Invoke-CheckedCommand -FilePath $nodePath -Arguments @($migrateEntry) -FailureMessage "Privileged database migrations failed"
-    } finally {
-      $env:DATABASE_URL_FILE = $previousDatabaseUrlFile
-      $env:DATABASE_MIGRATION_URL_FILE = $previousMigrationUrlFile
-    }
+  if (-not (Test-Path -LiteralPath $migrateEntry -PathType Leaf)) {
+    throw "The Windows payload is missing local-api\dist\migrate.js"
+  }
+
+  $previousDatabaseUrlFile = $env:DATABASE_URL_FILE
+  $previousMigrationUrlFile = $env:DATABASE_MIGRATION_URL_FILE
+  try {
+    $env:DATABASE_URL_FILE = $runtimeUrlPath
+    $env:DATABASE_MIGRATION_URL_FILE = $schemaOwnerUrlPath
+    Invoke-CheckedCommand -FilePath $nodePath -Arguments @($migrateEntry) -FailureMessage "Privileged database migrations failed"
+  } finally {
+    $env:DATABASE_URL_FILE = $previousDatabaseUrlFile
+    $env:DATABASE_MIGRATION_URL_FILE = $previousMigrationUrlFile
   }
 }
 

@@ -183,6 +183,8 @@ for (const requiredPath of [
   "postgresql/bin/initdb.exe",
   "service-wrapper/shawl.exe",
   "local-api/dist/main.js",
+  "local-api/dist/migrate.js",
+  "local-api/drizzle/meta/_journal.json",
 ]) {
   await assertFile(path.join(outputRoot, requiredPath));
 }
