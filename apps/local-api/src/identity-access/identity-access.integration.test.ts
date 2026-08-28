@@ -571,6 +571,23 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         command({ attendanceEnabled: true, expectedRevision }),
       ),
     ).toMatchObject({ status: 409, body: { code: "version-conflict" } });
+
+    // Settings is a posting command now: its idempotency lives in the posting
+    // store, scoped to the pharmacy and the command kind rather than to the
+    // actor, and the identity-scoped store it used to share with the other
+    // identity commands no longer sees it at all.
+    const settingsStores = await administrator.query<{
+      identity: string;
+      posting: string;
+    }>(
+      `select
+         (select count(*)::text from identity_command_results
+          where command_name = 'pharmacy.settings.update') as identity,
+         (select count(*)::text from posting_command_results
+          where idempotency_key = $1 and response_status = 200) as posting`,
+      [settingsKey],
+    );
+    expect(settingsStores.rows[0]).toEqual({ identity: "0", posting: "1" });
   });
 
   it("enforces user, role, and permission constraints in PostgreSQL", async () => {

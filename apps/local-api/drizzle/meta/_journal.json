@@ -36,6 +36,13 @@
       "when": 1787932800000,
       "tag": "0004_local_recovery_and_quarantine",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788019200000,
+      "tag": "0005_posting_infrastructure",
+      "breakpoints": true
     }
   ]
 }
