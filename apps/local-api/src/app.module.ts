@@ -5,6 +5,7 @@ import { DurableJobsService } from "./durable-jobs/durable-jobs.service.js";
 import { HealthController } from "./health.controller.js";
 import { IdentityAccessController } from "./identity-access/identity-access.controller.js";
 import { IdentityAccessService } from "./identity-access/identity-access.service.js";
+import { SettingsPostCommitService } from "./identity-access/settings-post-commit.service.js";
 import { LocalDatabaseService } from "./local-database.service.js";
 import { LicensingController } from "./licensing/licensing.controller.js";
 import { LicensingAdministrationService } from "./licensing/licensing-administration.service.js";
@@ -40,6 +41,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     RecoveryCoordinatorService,
     RestoreQuarantineService,
     RecoveryJobService,
+    SettingsPostCommitService,
   ],
 })
 export class AppModule {}

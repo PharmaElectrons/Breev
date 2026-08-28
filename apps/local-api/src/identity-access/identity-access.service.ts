@@ -1,5 +1,6 @@
 import {
   attendanceEventSchema,
+  identityDenialSchema,
   identityRoleSchema,
   identityStateSchema,
   identityStepUpChallengeSchema,
@@ -23,6 +24,7 @@ import {
   type IdentityUpdateUserRequest,
   type IdentityUser,
   type EntitlementContext,
+  type PharmacySettings,
   type PharmacySettingsUpdateRequest,
   type PharmacyRoleKey,
 } from "@breev/contracts/local-rest";
@@ -31,12 +33,27 @@ import type { Request } from "express";
 import { createHash, randomBytes } from "node:crypto";
 import type { PoolClient, QueryResult } from "pg";
 
+import { DurableJobsService } from "../durable-jobs/durable-jobs.service.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { LicensingService } from "../licensing/licensing.service.js";
 import {
   MainDeviceSecurityService,
   type VerifiedMainDeviceContext,
 } from "../main-device/main-device-security.service.js";
+import { writePostingAudit } from "../posting/audit-writer.js";
+import { canonicalRequestHash } from "../posting/canonical-hash.js";
+import { runWholeCommandWithRetry } from "../posting/command-retry.js";
+import {
+  PostingIdempotencyConflict,
+  beginPostingIdempotency,
+  recordPostingResult,
+  type PostingCommandReplay,
+} from "../posting/idempotency.js";
+import {
+  CURRENT_ENVELOPE_VERSIONS,
+  POSTING_EVENT_TYPES,
+  appendOutboxEntry,
+} from "../posting/outbox.js";
 import {
   PERMISSION_NAMES,
   STEP_UP_ACTIONS,
@@ -48,6 +65,10 @@ import {
   type StepUpAction,
 } from "./authorization.js";
 import { hashPassword, verifyPassword } from "./password.js";
+import {
+  SETTINGS_POST_COMMIT_QUEUE,
+  type SettingsPostCommitPayload,
+} from "./settings-post-commit.service.js";
 
 type UserView = IdentityUser;
 
@@ -62,6 +83,13 @@ const AUTH_RATE_WINDOW_SECONDS = readPositiveInteger(
   60,
   "BREEV_AUTH_RATE_WINDOW_SECONDS",
 );
+/**
+ * The posting command name of `PATCH /pharmacy/settings`. It is part of the
+ * idempotency identity of every settings request, so it is never renamed: a
+ * different name would make every in-flight retry look like a new command.
+ */
+const SETTINGS_COMMAND_NAME = "pharmacy.settings.update";
+
 const PHARMACY_ROLE_KEYS = [
   "owner",
   "manager",
@@ -174,6 +202,7 @@ export class IdentityAccessService {
     private readonly localDatabase: LocalDatabaseService,
     private readonly deviceSecurity: MainDeviceSecurityService,
     private readonly licensing: LicensingService,
+    private readonly durableJobs: DurableJobsService,
   ) {}
 
   public verifiedDevice(request: Request): VerifiedMainDeviceContext {
@@ -1301,54 +1330,134 @@ export class IdentityAccessService {
     }
   }
 
+  /**
+   * The first posting command: it changes the pharmacy settings, records why,
+   * announces the change, and remembers its own outcome inside one PostgreSQL
+   * transaction, so a client that retries can never post twice.
+   *
+   * Permission is checked before the transaction opens, because a caller
+   * without it must never take a lock. Everything else happens inside the
+   * transaction, and a serialization or deadlock abort reruns the whole
+   * command — connection included — under the same idempotency key.
+   */
   public async updateSettings(
     request: Request,
     input: PharmacySettingsUpdateRequest,
-  ): Promise<{ attendanceEnabled: boolean; revision: string }> {
+  ): Promise<PharmacySettings> {
     const context = await this.requirePermission(
       request,
       "pharmacy.settings.manage",
     );
+    // The whole validated body is hashed, including its idempotency key: a
+    // retry that reuses a key while changing any field is a different request
+    // and must be refused rather than replayed. Nothing is excluded, so a field
+    // added to the contract is covered without touching this line.
+    const requestHash = canonicalRequestHash(SETTINGS_COMMAND_NAME, input);
+    return await runWholeCommandWithRetry(
+      async () => await this.postSettingsUpdate(context, input, requestHash),
+    );
+  }
+
+  /**
+   * One attempt at the settings command. The attempt owns its connection from
+   * the first statement to the last, so a rerun after a transient abort shares
+   * nothing with the attempt it replaces.
+   *
+   * Two paths deliberately commit and then throw: the idempotency conflict and
+   * the version conflict. Both are decisions, not faults, and the evidence of
+   * the decision has to survive the response. Neither carries a PostgreSQL
+   * error code, so the retry wrapper returns them to the caller untouched
+   * rather than replaying a decision that has already been recorded.
+   */
+  private async postSettingsUpdate(
+    context: IdentityExecutionContext,
+    input: PharmacySettingsUpdateRequest,
+    requestHash: Buffer,
+  ): Promise<PharmacySettings> {
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
       await this.lockIdentity(client, context.pharmacyId);
-      const replay = await this.beginIdempotentCommand(
-        client,
-        context,
-        "pharmacy.settings.update",
-        input,
-        pharmacySettingsSchema,
-      );
+
+      let replay: PostingCommandReplay | undefined;
+      try {
+        replay = await beginPostingIdempotency(client, {
+          commandName: SETTINGS_COMMAND_NAME,
+          idempotencyKey: input.idempotencyKey,
+          pharmacyId: context.pharmacyId,
+          requestHash,
+        });
+      } catch (error) {
+        if (!(error instanceof PostingIdempotencyConflict)) {
+          throw error;
+        }
+        // The conflict leaves the transaction usable so this denial fact
+        // commits. The recorded result slot keeps the original outcome: what
+        // was actually posted is evidence, and a later request never overwrites
+        // it.
+        const requestId = await writePostingAudit(client, {
+          action: SETTINGS_COMMAND_NAME,
+          actorUserId: context.actorId,
+          correlationId: input.idempotencyKey,
+          deviceId: context.deviceId,
+          identitySessionId: context.sessionId,
+          outcome: "idempotency-conflict",
+          pharmacyId: context.pharmacyId,
+          targetId: context.pharmacyId,
+        });
+        await client.query("commit");
+        throw this.denied(409, "idempotency-conflict", requestId);
+      }
+
       if (replay !== undefined) {
         await client.query("commit");
-        return replay;
+        return replaySettingsOutcome(replay);
       }
-      await this.requirePermissionInTransaction(
+
+      // The in-transaction context is the authority for the write: the session,
+      // the actor, the role grants, and the entitlement are all re-read under
+      // the lock, so a revocation that landed between the request and this
+      // point wins.
+      const authority = await this.requirePermissionInTransaction(
         client,
         context,
         "pharmacy.settings.manage",
       );
+
       const before = await client.query<{
         attendance_enabled: boolean;
         revision: string;
       }>(
         `select attendance_enabled, revision::text
          from pharmacy_settings where pharmacy_id = $1 for update`,
-        [context.pharmacyId],
+        [authority.pharmacyId],
       );
       const previousSettings = before.rows[0];
       if (
         previousSettings === undefined ||
         previousSettings.revision !== input.expectedRevision
       ) {
-        return await this.rejectVersionConflict(
-          client,
-          context,
-          "pharmacy.settings.update",
-          context.pharmacyId,
-        );
+        const requestId = await writePostingAudit(client, {
+          action: SETTINGS_COMMAND_NAME,
+          actorUserId: authority.actorId,
+          correlationId: input.idempotencyKey,
+          deviceId: authority.deviceId,
+          identitySessionId: authority.sessionId,
+          outcome: "version-conflict",
+          pharmacyId: authority.pharmacyId,
+          targetId: authority.pharmacyId,
+        });
+        const conflict = this.denied(409, "version-conflict", requestId);
+        await this.recordSettingsResult(client, authority, {
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          responseBody: conflict.denial,
+          responseStatus: 409,
+        });
+        await client.query("commit");
+        throw conflict;
       }
+
       const result = await client.query<{
         attendance_enabled: boolean;
         revision: string;
@@ -1360,36 +1469,62 @@ export class IdentityAccessService {
              updated_by = $3
          where pharmacy_id = $1
          returning attendance_enabled, revision::text`,
-        [context.pharmacyId, input.attendanceEnabled, context.actorId],
+        [authority.pharmacyId, input.attendanceEnabled, authority.actorId],
       );
       const settings = result.rows[0];
       if (settings === undefined) {
         throw new Error("The pharmacy settings are missing");
       }
-      await this.writeAudit(client, {
-        action: "pharmacy.settings.update",
-        actorUserId: context.actorId,
+
+      await writePostingAudit(client, {
+        action: SETTINGS_COMMAND_NAME,
+        actorUserId: authority.actorId,
         afterState: { attendanceEnabled: settings.attendance_enabled },
         beforeState: {
           attendanceEnabled: previousSettings.attendance_enabled,
         },
-        deviceId: context.deviceId,
-        identitySessionId: context.sessionId,
+        correlationId: input.idempotencyKey,
+        deviceId: authority.deviceId,
+        identitySessionId: authority.sessionId,
         outcome: "succeeded",
-        pharmacyId: context.pharmacyId,
-        targetId: context.pharmacyId,
+        pharmacyId: authority.pharmacyId,
+        targetId: authority.pharmacyId,
       });
+
       const response = pharmacySettingsSchema.parse({
         attendanceEnabled: settings.attendance_enabled,
         revision: settings.revision,
       });
-      await this.recordCommandResult(
+
+      const outboxEntry = await appendOutboxEntry(client, {
+        correlationId: input.idempotencyKey,
+        envelopeVersion:
+          CURRENT_ENVELOPE_VERSIONS[
+            POSTING_EVENT_TYPES.pharmacySettingsChanged
+          ],
+        eventType: POSTING_EVENT_TYPES.pharmacySettingsChanged,
+        payload: {
+          attendanceEnabled: settings.attendance_enabled,
+          revision: settings.revision,
+        },
+        pharmacyId: authority.pharmacyId,
+      });
+
+      await this.recordSettingsResult(client, authority, {
+        idempotencyKey: input.idempotencyKey,
+        requestHash,
+        responseBody: response,
+        responseStatus: 200,
+      });
+
+      // The job is enqueued through this transaction's connection, so it
+      // becomes visible to a worker only when the change it describes commits.
+      await this.durableJobs.sendInTransaction<SettingsPostCommitPayload>(
         client,
-        context,
-        "pharmacy.settings.update",
-        input,
-        response,
+        SETTINGS_POST_COMMIT_QUEUE,
+        { outboxEntryId: outboxEntry.id, pharmacyId: authority.pharmacyId },
       );
+
       await client.query("commit");
       return response;
     } catch (error) {
@@ -1398,6 +1533,29 @@ export class IdentityAccessService {
     } finally {
       client.release();
     }
+  }
+
+  private async recordSettingsResult(
+    client: PoolClient,
+    authority: IdentityExecutionContext,
+    outcome: {
+      readonly idempotencyKey: string;
+      readonly requestHash: Buffer;
+      readonly responseBody: unknown;
+      readonly responseStatus: number;
+    },
+  ): Promise<void> {
+    await recordPostingResult(client, {
+      actorUserId: authority.actorId,
+      commandName: SETTINGS_COMMAND_NAME,
+      idempotencyKey: outcome.idempotencyKey,
+      identitySessionId: authority.sessionId,
+      mainDeviceId: authority.deviceId,
+      pharmacyId: authority.pharmacyId,
+      requestHash: outcome.requestHash,
+      responseBody: outcome.responseBody,
+      responseStatus: outcome.responseStatus,
+    });
   }
 
   public async recordAttendance(
@@ -2475,6 +2633,23 @@ const USER_SELECT = `select identity_user.id,
        role.revision::text as role_revision
 from identity_users identity_user
 join pharmacy_roles role on role.id = identity_user.role_id`;
+
+/**
+ * Replays a recorded settings outcome exactly as it was first returned. A
+ * stored success returns its stored body; a stored terminal rejection — today
+ * only the version conflict — is raised again with its stored status and
+ * denial, so a client that retries a request Breev already refused gets the
+ * same refusal instead of a second decision.
+ */
+function replaySettingsOutcome(replay: PostingCommandReplay): PharmacySettings {
+  if (replay.responseStatus === 200) {
+    return pharmacySettingsSchema.parse(replay.responseBody);
+  }
+  throw new IdentityAccessDenied(
+    replay.responseStatus,
+    identityDenialSchema.parse(replay.responseBody),
+  );
+}
 
 function userView(row: UserRow): UserView {
   return identityUserSchema.parse({
