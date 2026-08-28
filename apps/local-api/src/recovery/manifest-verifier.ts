@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+
+export const BACKUP_MANIFEST_FILE_NAME = "backup_manifest";
 
 export interface ManifestFileEntry {
   readonly checksum: string;
@@ -54,10 +56,15 @@ export function computeSha256Checksum(data: Buffer): string {
  */
 export function verifyBackupManifest(
   backupDirectory: string,
+  options?: { readonly ignoredPaths?: readonly string[] },
 ): ManifestVerificationResult {
   const violations: string[] = [];
+  const ignoredPaths = new Set([
+    BACKUP_MANIFEST_FILE_NAME,
+    ...(options?.ignoredPaths ?? []),
+  ]);
   const resolvedDir = path.resolve(backupDirectory);
-  const manifestPath = path.join(resolvedDir, "backup_manifest");
+  const manifestPath = path.join(resolvedDir, BACKUP_MANIFEST_FILE_NAME);
 
   if (!existsSync(manifestPath)) {
     return {
@@ -102,10 +109,16 @@ export function verifyBackupManifest(
   );
   let totalSizeBytes = 0;
   let fileCount = 0;
+  const manifestPaths = new Set<string>();
+
+  if ((manifest.Files ?? []).length === 0) {
+    violations.push("The backup manifest records no files");
+  }
 
   for (const entry of manifest.Files ?? []) {
     fileCount += 1;
     const expectedRelPath = entry.Path;
+    manifestPaths.add(normalizeRelativePath(expectedRelPath));
     const expectedSize = entry.Size;
     const expectedChecksum = (
       entry.Checksum ?? entry["Encoded-Checksum"]
@@ -140,6 +153,14 @@ export function verifyBackupManifest(
     }
   }
 
+  for (const presentPath of listBackupFiles(resolvedDir, ignoredPaths)) {
+    if (!manifestPaths.has(presentPath)) {
+      violations.push(
+        `Extra file present in the backup but absent from the manifest: "${presentPath}"`,
+      );
+    }
+  }
+
   const walRanges = manifest["WAL-Ranges"];
   const walStartLsn = walRanges?.[0]?.["Start-LSN"];
   const walEndLsn = walRanges?.[walRanges.length - 1]?.["End-LSN"];
@@ -162,7 +183,8 @@ export function verifyBackupManifest(
  */
 export function createBackupManifest(options: {
   files: Array<{ data: Buffer; relativePath: string }>;
-  systemIdentifier?: string | undefined;
+  systemIdentifier: string;
+  timeline?: number | undefined;
   walEndLsn?: string | undefined;
   walStartLsn?: string | undefined;
 }): { manifestJson: string; manifestChecksum: string } {
@@ -176,14 +198,14 @@ export function createBackupManifest(options: {
   const manifest: BackupManifest = {
     "Backup-Manifest-Version": 1,
     Files: fileEntries,
-    "System-Identifier": options.systemIdentifier ?? "7400000000000000000",
+    "System-Identifier": options.systemIdentifier,
     ...(options.walStartLsn && options.walEndLsn
       ? {
           "WAL-Ranges": [
             {
               "End-LSN": options.walEndLsn,
               "Start-LSN": options.walStartLsn,
-              Timeline: 1,
+              Timeline: options.timeline ?? 1,
             },
           ],
         }
@@ -195,4 +217,35 @@ export function createBackupManifest(options: {
     Buffer.from(manifestJson, "utf8"),
   );
   return { manifestJson, manifestChecksum };
+}
+
+function normalizeRelativePath(relativePath: string): string {
+  return relativePath.split(path.sep).join("/");
+}
+
+/**
+ * Lists every file in the backup directory apart from the ignored control
+ * files, so verification can report files that the manifest does not account
+ * for the way `pg_verifybackup` reports extra files.
+ */
+function listBackupFiles(
+  directory: string,
+  ignoredPaths: ReadonlySet<string>,
+): string[] {
+  const found: string[] = [];
+  const walk = (current: string): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      const relative = normalizeRelativePath(path.relative(directory, full));
+      if (!ignoredPaths.has(relative)) {
+        found.push(relative);
+      }
+    }
+  };
+  walk(directory);
+  return found;
 }
