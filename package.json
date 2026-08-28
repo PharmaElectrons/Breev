@@ -12,7 +12,7 @@
     "runtime": {
       "name": "node",
       "version": "24.19.0",
-      "onFail": "error"
+      "onFail": "download"
     },
     "packageManager": {
       "name": "pnpm",
