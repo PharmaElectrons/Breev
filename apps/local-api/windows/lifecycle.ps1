@@ -660,10 +660,32 @@ $PayloadRoot = [IO.Path]::GetFullPath($PayloadRoot)
 $DataRoot = [IO.Path]::GetFullPath($DataRoot)
 
 if ($Action -eq "Uninstall") {
-  Stop-And-DeleteService -Name $apiServiceName
-  Stop-And-DeleteService -Name $postgresqlServiceName
+  # Every statement here is best-effort and the action always exits 0: the
+  # NSIS uninstaller treats any nonzero exit as "the app cannot be closed"
+  # and traps the user in a retry loop that blocks reinstalling forever.
+  $uninstallErrors = [Collections.Generic.List[string]]::new()
+  foreach ($serviceName in @($apiServiceName, $postgresqlServiceName)) {
+    try {
+      Stop-And-DeleteService -Name $serviceName
+    } catch {
+      [void] $uninstallErrors.Add($_.Exception.Message)
+    }
+  }
+  try {
+    Stop-BreevProcesses -PathPrefixes @($PayloadRoot, $InstallRoot, $DataRoot) -TimeoutSeconds 15
+  } catch {
+    [void] $uninstallErrors.Add($_.Exception.Message)
+  }
   if (-not $SkipStateWrite) {
-    Write-LifecycleState -Status "data-preserved"
+    try {
+      if ($uninstallErrors.Count -gt 0) {
+        Write-LifecycleState -Status "data-preserved" -ErrorMessage ($uninstallErrors -join "; ")
+      } else {
+        Write-LifecycleState -Status "data-preserved"
+      }
+    } catch {
+      # State recording must never block an uninstall.
+    }
   }
   exit 0
 }
