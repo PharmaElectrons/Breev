@@ -29,6 +29,7 @@ $postgresqlServiceName = "BreevPostgreSQL"
 $apiPort = 31310
 $postgresqlPort = 31311
 $createdServices = [Collections.Generic.List[string]]::new()
+$sensitiveValues = [Collections.Generic.List[string]]::new()
 
 function Assert-Administrator {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -52,9 +53,52 @@ function Invoke-CheckedCommand {
     [string] $FailureMessage
   )
 
-  & $FilePath @Arguments
-  if ($LASTEXITCODE -ne 0) {
-    throw $FailureMessage
+  # Output is captured through files, never through PowerShell stream
+  # redirection: under Windows PowerShell 5.1 a `2>&1` pipe capture both turns
+  # native stderr into terminating errors while $ErrorActionPreference is
+  # Stop, and hangs forever on launchers like `pg_ctl start` whose daemon
+  # children inherit the pipe's write end so EOF never arrives. WaitForExit()
+  # waits only on the direct child, and inherited file handles block nothing.
+  $captureId = [Guid]::NewGuid().ToString("N")
+  $stdoutPath = Join-Path $env:TEMP "breev-cmd-$captureId.out"
+  $stderrPath = Join-Path $env:TEMP "breev-cmd-$captureId.err"
+  try {
+    $quotedArguments = @($Arguments | ForEach-Object {
+      if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
+    })
+    $startParameters = @{
+      FilePath = $FilePath
+      NoNewWindow = $true
+      PassThru = $true
+      RedirectStandardOutput = $stdoutPath
+      RedirectStandardError = $stderrPath
+    }
+    if ($quotedArguments.Count -gt 0) {
+      $startParameters.ArgumentList = ($quotedArguments -join " ")
+    }
+    $process = Start-Process @startParameters
+    # The handle must be cached while the process is guaranteed alive: without
+    # it, WaitForExit succeeds on a synchronize-only handle but ExitCode reads
+    # $null for an already-exited process, which would fail successful
+    # commands.
+    $null = $process.Handle
+    $process.WaitForExit()
+    if ($null -eq $process.ExitCode -or $process.ExitCode -ne 0) {
+      $detail = ((Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue) + "`n" +
+                 (Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue)).Trim()
+      foreach ($sensitiveValue in $script:sensitiveValues) {
+        $detail = $detail.Replace($sensitiveValue, "<REDACTED>")
+      }
+      if ($detail.Length -gt 4000) {
+        $detail = $detail.Substring($detail.Length - 4000)
+      }
+      if ($detail.Length -gt 0) {
+        throw "$($FailureMessage): $detail"
+      }
+      throw $FailureMessage
+    }
+  } finally {
+    Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
   }
 }
 
@@ -296,6 +340,9 @@ function Initialize-Database {
   $bootstrapPassword = New-RandomSecret
   $appPassword = New-RandomSecret
   $schemaOwnerPassword = New-RandomSecret
+  foreach ($secretValue in @($bootstrapPassword, $appPassword, $schemaOwnerPassword)) {
+    [void] $script:sensitiveValues.Add($secretValue)
+  }
   $passwordPath = Join-Path $stagingRoot "initdb-password"
   Set-Content -LiteralPath $passwordPath -Value $bootstrapPassword -NoNewline -Encoding ASCII
 
