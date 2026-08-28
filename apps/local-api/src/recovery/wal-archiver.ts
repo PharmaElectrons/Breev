@@ -1,7 +1,9 @@
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
-import { copyFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { copyFile, link, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
+
+import { syncDirectory, syncFile } from "./durable-file.js";
 
 export interface ArchiveWalSegmentOptions {
   readonly destinationDir: string;
@@ -10,14 +12,18 @@ export interface ArchiveWalSegmentOptions {
 }
 
 export interface ArchiveWalResult {
+  readonly alreadyArchived: boolean;
   readonly destinationPath: string;
   readonly sizeBytes: number;
   readonly walFileName: string;
 }
 
 /**
- * Validates a PostgreSQL WAL segment filename (24 hex characters, e.g. 000000010000000000000001,
- * or timeline history files, e.g. 00000001.history).
+ * Validates a PostgreSQL WAL segment filename (24 hex characters, e.g.
+ * 000000010000000000000001), a timeline history file (00000001.history), or a
+ * backup label file (000000010000000000000001.00000028.backup). Partial
+ * segments (`.partial`) are never valid archive input: archiving one as if it
+ * were complete would silently break WAL continuity.
  */
 export function isValidWalFileName(fileName: string): boolean {
   return (
@@ -28,12 +34,16 @@ export function isValidWalFileName(fileName: string): boolean {
 }
 
 /**
- * Copies a WAL segment to destination safely:
- * 1. Validates filename and source existence.
- * 2. Writes to `<dest>/<walFileName>.<uuid>.tmp`.
- * 3. Atomically renames temporary file to final target `<dest>/<walFileName>`.
+ * Archives one WAL file for use as PostgreSQL's `archive_command`.
  *
- * If target file already exists and is identical (idempotent archive retry), returns success.
+ * The contract PostgreSQL requires of an archive command is strict: report
+ * success only after the file is durably stored, never overwrite an existing
+ * archived file, and fail when a different file already occupies the name.
+ * This implementation therefore copies into a unique temporary file, flushes
+ * that file and the archive directory to disk, and publishes the result with a
+ * hard link, which fails rather than clobbers when the name is taken. A retry
+ * of an already-archived segment succeeds only when the stored bytes are
+ * identical.
  */
 export async function archiveWalSegment(
   options: ArchiveWalSegmentOptions,
@@ -55,58 +65,82 @@ export async function archiveWalSegment(
   }
 
   const finalTargetPath = path.join(resolvedDestDir, walFileName);
-
-  // If already exists with valid size, it's an idempotent PostgreSQL archiver retry
   if (existsSync(finalTargetPath)) {
-    const sourceStat = statSync(resolvedSource);
-    const destStat = statSync(finalTargetPath);
-    if (sourceStat.size === destStat.size && sourceStat.size > 0) {
-      return {
-        destinationPath: finalTargetPath,
-        sizeBytes: destStat.size,
-        walFileName,
-      };
-    }
+    return await assertIdenticalArchivedSegment(
+      resolvedSource,
+      finalTargetPath,
+      walFileName,
+    );
   }
 
-  const tempFileName = `${walFileName}.${randomUUID()}.tmp`;
-  const tempTargetPath = path.join(resolvedDestDir, tempFileName);
+  const tempTargetPath = path.join(
+    resolvedDestDir,
+    `${walFileName}.${randomUUID()}.tmp`,
+  );
 
   try {
     await copyFile(resolvedSource, tempTargetPath);
-    renameSync(tempTargetPath, finalTargetPath);
-  } catch (error) {
-    if (existsSync(tempTargetPath)) {
-      try {
-        const { unlinkSync } = await import("node:fs");
-        unlinkSync(tempTargetPath);
-      } catch {
-        // ignore temp cleanup error
+    syncFile(tempTargetPath);
+    try {
+      await link(tempTargetPath, finalTargetPath);
+    } catch (error) {
+      if (isFileExistsError(error)) {
+        await unlink(tempTargetPath);
+        return await assertIdenticalArchivedSegment(
+          resolvedSource,
+          finalTargetPath,
+          walFileName,
+        );
       }
+      throw error;
     }
-    throw error;
+    syncDirectory(resolvedDestDir);
+  } finally {
+    await unlink(tempTargetPath).catch(() => undefined);
   }
 
-  const stat = statSync(finalTargetPath);
   return {
+    alreadyArchived: false,
     destinationPath: finalTargetPath,
-    sizeBytes: stat.size,
+    sizeBytes: statSync(finalTargetPath).size,
     walFileName,
   };
 }
 
-/**
- * Builds the PostgreSQL archive_command string for postgresql.conf.
- * Uses node to invoke Breev's atomic archiver.
- */
-export function buildArchiveCommand(
-  nodeExecutable: string,
-  archiverScriptPath: string,
-  walArchiveDir: string,
-): string {
-  const escapedNode = `"${nodeExecutable.replace(/"/g, "")}"`;
-  const escapedScript = `"${archiverScriptPath.replace(/"/g, "")}"`;
-  const escapedArchiveDir = `"${walArchiveDir.replace(/"/g, "")}"`;
+async function assertIdenticalArchivedSegment(
+  sourcePath: string,
+  archivedPath: string,
+  walFileName: string,
+): Promise<ArchiveWalResult> {
+  const [sourceDigest, archivedDigest] = await Promise.all([
+    sha256File(sourcePath),
+    sha256File(archivedPath),
+  ]);
 
-  return `${escapedNode} ${escapedScript} "%p" "%f" ${escapedArchiveDir}`;
+  if (sourceDigest !== archivedDigest) {
+    throw new Error(
+      `WAL segment "${walFileName}" is already archived with different content. Refusing to overwrite an archived segment.`,
+    );
+  }
+
+  return {
+    alreadyArchived: true,
+    destinationPath: archivedPath,
+    sizeBytes: statSync(archivedPath).size,
+    walFileName,
+  };
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  return createHash("sha256")
+    .update(await readFile(filePath))
+    .digest("hex");
+}
+
+function isFileExistsError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as NodeJS.ErrnoException).code === "EEXIST"
+  );
 }

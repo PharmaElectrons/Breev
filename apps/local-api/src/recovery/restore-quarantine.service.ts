@@ -1,7 +1,14 @@
-import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Pool, PoolClient } from "pg";
 
+import { LocalDatabaseService } from "../local-database.service.js";
 import type { SystemQuarantineVerificationReport } from "./recovery-schema.js";
+
+/**
+ * Marker written into a restored data directory before any restored byte
+ * lands, so restored data is never present without its quarantine state.
+ */
+export const RESTORE_QUARANTINE_MARKER_FILE_NAME = "RESTORE_QUARANTINE.flag";
 
 export interface QuarantineCheckResult {
   readonly details?: string | undefined;
@@ -14,38 +21,57 @@ export interface QuarantineVerificationHook {
   verify(client: PoolClient | Pool): Promise<QuarantineCheckResult>;
 }
 
+export interface QuarantineState {
+  readonly clearedAt: Date | null;
+  readonly clearedBy: string | null;
+  readonly isQuarantined: boolean;
+  readonly quarantineReason: string | null;
+  readonly quarantinedAt: Date | null;
+  readonly verificationReport: SystemQuarantineVerificationReport | null;
+}
+
 @Injectable()
 export class RestoreQuarantineService implements OnModuleInit {
   private readonly logger = new Logger(RestoreQuarantineService.name);
-  private readonly hooks = new Map<string, QuarantineVerificationHook>();
+  private readonly hooks: readonly QuarantineVerificationHook[] = [
+    new MainDeviceSecurityVerificationHook(),
+    new DeviceIdentityVerificationHook(),
+    new LicenceTimeVerificationHook(),
+  ];
 
-  public onModuleInit(): void {
-    if (this.hooks.size === 0) {
-      this.registerDefaultHooks();
+  public constructor(
+    @Inject(LocalDatabaseService)
+    private readonly localDatabase: LocalDatabaseService,
+  ) {}
+
+  /**
+   * A restored dataset stays out of normal use until the verification hooks
+   * pass, so every start re-runs them while the dataset is quarantined.
+   */
+  public async onModuleInit(): Promise<void> {
+    await this.localDatabase.ensureReady();
+    let pool: Pool;
+    try {
+      pool = this.localDatabase.requirePool();
+    } catch {
+      return;
     }
-  }
 
-  public registerDefaultHooks(): void {
-    this.registerHook(new MainDeviceSecurityVerificationHook());
-    this.registerHook(new DeviceIdentityVerificationHook());
-    this.registerHook(new LicenceTimeVerificationHook());
-  }
-
-  public registerHook(hook: QuarantineVerificationHook): void {
-    this.hooks.set(hook.hookName, hook);
+    const state = await this.getQuarantineState(pool);
+    if (!state.isQuarantined) {
+      return;
+    }
+    await this.verifyAndClearQuarantine(pool, "system_recovery_startup");
   }
 
   /**
-   * Reads current quarantine state from database.
+   * Reads the persisted quarantine state. A missing singleton row means the
+   * quarantine record itself is gone, which is treated as quarantined rather
+   * than as permission to serve normal traffic.
    */
-  public async getQuarantineState(client: PoolClient | Pool): Promise<{
-    isQuarantined: boolean;
-    quarantineReason: string | null;
-    quarantinedAt: Date | null;
-    clearedAt: Date | null;
-    clearedBy: string | null;
-    verificationReport: SystemQuarantineVerificationReport | null;
-  }> {
+  public async getQuarantineState(
+    client: PoolClient | Pool,
+  ): Promise<QuarantineState> {
     const result = await client.query<{
       cleared_at: Date | null;
       cleared_by: string | null;
@@ -65,12 +91,12 @@ export class RestoreQuarantineService implements OnModuleInit {
     );
 
     const row = result.rows[0];
-    if (!row) {
+    if (row === undefined) {
       return {
         clearedAt: null,
         clearedBy: null,
-        isQuarantined: false,
-        quarantineReason: null,
+        isQuarantined: true,
+        quarantineReason: "The restore quarantine record is missing",
         quarantinedAt: null,
         verificationReport: null,
       };
@@ -86,22 +112,15 @@ export class RestoreQuarantineService implements OnModuleInit {
     };
   }
 
-  /**
-   * Places the dataset into Restore Quarantine.
-   */
+  /** Places the dataset into Restore Quarantine. */
   public async enterQuarantine(
     client: PoolClient | Pool,
-    reason = "Database restored from recovery point",
+    reason: string,
   ): Promise<void> {
     await client.query(
       `insert into system_quarantine_state (
-         singleton,
-         is_quarantined,
-         quarantine_reason,
-         quarantined_at,
-         cleared_at,
-         cleared_by,
-         verification_report
+         singleton, is_quarantined, quarantine_reason, quarantined_at,
+         cleared_at, cleared_by, verification_report
        )
        values (true, true, $1, now(), null, null, null)
        on conflict (singleton) do update
@@ -117,69 +136,61 @@ export class RestoreQuarantineService implements OnModuleInit {
   }
 
   /**
-   * Executes all registered verification hooks.
-   * If all pass, clears the quarantine flag.
+   * Runs every verification hook and clears the quarantine only when all of
+   * them pass. A hook that throws counts as a failed check, so an unavailable
+   * check keeps the dataset quarantined.
    */
   public async verifyAndClearQuarantine(
     client: PoolClient | Pool,
-    clearedBy = "system_recovery_runner",
+    clearedBy: string,
   ): Promise<SystemQuarantineVerificationReport> {
     const checks: QuarantineCheckResult[] = [];
-    let overallPassed = true;
-
-    for (const [name, hook] of this.hooks) {
+    for (const hook of this.hooks) {
       try {
-        const result = await hook.verify(client);
-        checks.push(result);
-        if (!result.passed) {
-          overallPassed = false;
-        }
+        checks.push(await hook.verify(client));
       } catch (error) {
         checks.push({
           details: error instanceof Error ? error.message : String(error),
-          name,
+          name: hook.hookName,
           passed: false,
         });
-        overallPassed = false;
       }
     }
 
     const report: SystemQuarantineVerificationReport = {
       checks,
       completedAt: new Date().toISOString(),
-      overallPassed,
+      overallPassed: checks.every((check) => check.passed),
     };
 
-    if (overallPassed) {
-      await client.query(
-        `update system_quarantine_state
-         set is_quarantined = false,
-             cleared_at = now(),
-             cleared_by = $1,
-             verification_report = $2
-         where singleton = true`,
-        [clearedBy, JSON.stringify(report)],
+    const cleared = await client.query(
+      `update system_quarantine_state
+       set is_quarantined = not $1,
+           cleared_at = case when $1 then now() else cleared_at end,
+           cleared_by = case when $1 then $2 else cleared_by end,
+           verification_report = $3
+       where singleton = true and is_quarantined = true`,
+      [report.overallPassed, clearedBy, JSON.stringify(report)],
+    );
+
+    if (report.overallPassed && cleared.rowCount === 1) {
+      this.logger.log("Restore Quarantine verified and cleared");
+    } else if (!report.overallPassed) {
+      this.logger.error(
+        `Restore Quarantine verification failed: ${checks
+          .filter((check) => !check.passed)
+          .map((check) => `${check.name}: ${check.details ?? "failed"}`)
+          .join("; ")}`,
       );
-      this.logger.log("Restore Quarantine successfully verified and cleared");
-    } else {
-      await client.query(
-        `update system_quarantine_state
-         set verification_report = $1
-         where singleton = true`,
-        [JSON.stringify(report)],
-      );
-      this.logger.error("Restore Quarantine verification checks failed");
     }
 
     return report;
   }
 }
 
-// ─── Milestone 1 Verification Hooks ──────────────────────────────────────────
+// ─── Milestone 1 verification hooks ──────────────────────────────────────────
 
-/**
- * Hook 1: Verifies Main Device Security records and session integrity.
- */
+/** Verifies that the restored dataset still carries its Main device records. */
 export class MainDeviceSecurityVerificationHook implements QuarantineVerificationHook {
   public readonly hookName = "main_device_security_verification";
 
@@ -189,18 +200,18 @@ export class MainDeviceSecurityVerificationHook implements QuarantineVerificatio
     const devices = await client.query<{ count: string }>(
       "select count(*)::text as count from main_devices",
     );
-    const count = parseInt(devices.rows[0]?.count ?? "0", 10);
+    const count = Number.parseInt(devices.rows[0]?.count ?? "0", 10);
     if (count === 0) {
       return {
         details:
-          "No Main Device provisioning records found in restored database",
+          "No Main device provisioning records found in the restored dataset",
         name: this.hookName,
         passed: false,
       };
     }
 
     return {
-      details: `Verified ${count} Main device record(s)`,
+      details: `Verified ${String(count)} Main device record(s)`,
       name: this.hookName,
       passed: true,
     };
@@ -208,7 +219,9 @@ export class MainDeviceSecurityVerificationHook implements QuarantineVerificatio
 }
 
 /**
- * Hook 2: Verifies Terminal Device records and ensures revoked devices remain revoked.
+ * Verifies that terminal device revocations survived the restore intact: every
+ * revoked device must still carry both its revocation instant and its reason,
+ * so a restore can never quietly resurrect a revoked terminal.
  */
 export class DeviceIdentityVerificationHook implements QuarantineVerificationHook {
   public readonly hookName = "device_identity_verification";
@@ -216,20 +229,37 @@ export class DeviceIdentityVerificationHook implements QuarantineVerificationHoo
   public async verify(
     client: PoolClient | Pool,
   ): Promise<QuarantineCheckResult> {
-    const res = await client.query<{
+    const result = await client.query<{
       active_count: string;
+      inconsistent_count: string;
       revoked_count: string;
     }>(
       `select count(*) filter (where revoked_at is null)::text as active_count,
-              count(*) filter (where revoked_at is not null)::text as revoked_count
+              count(*) filter (where revoked_at is not null)::text as revoked_count,
+              count(*) filter (
+                where (revoked_at is null) <> (revocation_reason is null)
+              )::text as inconsistent_count
        from terminal_devices`,
     );
 
-    const activeCount = parseInt(res.rows[0]?.active_count ?? "0", 10);
-    const revokedCount = parseInt(res.rows[0]?.revoked_count ?? "0", 10);
+    const row = result.rows[0];
+    const activeCount = Number.parseInt(row?.active_count ?? "0", 10);
+    const revokedCount = Number.parseInt(row?.revoked_count ?? "0", 10);
+    const inconsistentCount = Number.parseInt(
+      row?.inconsistent_count ?? "0",
+      10,
+    );
+
+    if (inconsistentCount > 0) {
+      return {
+        details: `${String(inconsistentCount)} terminal device record(s) lost their revocation evidence in the restore`,
+        name: this.hookName,
+        passed: false,
+      };
+    }
 
     return {
-      details: `Verified ${activeCount} active and ${revokedCount} revoked terminal devices`,
+      details: `Verified ${String(activeCount)} active and ${String(revokedCount)} revoked terminal devices`,
       name: this.hookName,
       passed: true,
     };
@@ -237,7 +267,9 @@ export class DeviceIdentityVerificationHook implements QuarantineVerificationHoo
 }
 
 /**
- * Hook 3: Verifies Licence & Trusted Breev Time state (ensures high-water time consistency).
+ * Verifies the pharmacy CA identity and the Trusted Breev Time high-water
+ * mark: a restored dataset whose newest record is ahead of the current clock
+ * indicates a rollback and keeps the dataset quarantined.
  */
 export class LicenceTimeVerificationHook implements QuarantineVerificationHook {
   public readonly hookName = "licence_time_verification";
@@ -245,36 +277,36 @@ export class LicenceTimeVerificationHook implements QuarantineVerificationHook {
   public async verify(
     client: PoolClient | Pool,
   ): Promise<QuarantineCheckResult> {
-    const res = await client.query<{
+    const result = await client.query<{
       ca_count: string;
       max_created: Date | null;
     }>(
-      `select count(*)::text as ca_count,
-              max(created_at) as max_created
+      `select count(*)::text as ca_count, max(created_at) as max_created
        from pharmacy_ca`,
     );
 
-    const caCount = parseInt(res.rows[0]?.ca_count ?? "0", 10);
+    const caCount = Number.parseInt(result.rows[0]?.ca_count ?? "0", 10);
     if (caCount === 0) {
       return {
-        details: "Pharmacy CA identity is missing from restored database",
+        details:
+          "The pharmacy CA identity is missing from the restored dataset",
         name: this.hookName,
         passed: false,
       };
     }
 
     const now = new Date();
-    const maxCreated = res.rows[0]?.max_created;
+    const maxCreated = result.rows[0]?.max_created;
     if (maxCreated && maxCreated.getTime() > now.getTime() + 60_000) {
       return {
-        details: `Clock rollback detected: Restored record timestamp (${maxCreated.toISOString()}) is ahead of current time (${now.toISOString()})`,
+        details: `Clock rollback detected: the newest restored record (${maxCreated.toISOString()}) is ahead of the current time (${now.toISOString()})`,
         name: this.hookName,
         passed: false,
       };
     }
 
     return {
-      details: "Licence and high-water time integrity verified",
+      details: "Pharmacy CA identity and high-water time verified",
       name: this.hookName,
       passed: true,
     };

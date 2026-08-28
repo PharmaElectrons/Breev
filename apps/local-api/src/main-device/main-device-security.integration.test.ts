@@ -3,6 +3,8 @@ import {
   BREEV_CSRF_VALUE,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  LOCAL_RESTORE_QUARANTINE_STATUS,
+  localHealthContract,
   localProofEvidenceContract,
   localProofMutationContract,
   parseLocalProofEvidenceResponse,
@@ -618,6 +620,66 @@ describe.sequential("Main device security persistence seam", () => {
     expect(denialCount(after, "origin-not-allowed")).toBe(
       denialCount(before, "origin-not-allowed") + 260,
     );
+  });
+
+  it("refuses normal use while the dataset is in Restore Quarantine", async () => {
+    await waitForRateWindow();
+    const pool = new Pool({ connectionString: databaseRoles.applicationUrl });
+    try {
+      await pool.query(
+        `update system_quarantine_state
+         set is_quarantined = true,
+             quarantine_reason = 'Restored from recovery point',
+             quarantined_at = now(),
+             cleared_at = null,
+             cleared_by = null
+         where singleton = true`,
+      );
+
+      const denied = await fetch(
+        `${apiOrigin}${localProofEvidenceContract.path}`,
+        { headers: trustedHeaders(credentials), method: "GET" },
+      );
+      expect(denied.status).toBe(LOCAL_RESTORE_QUARANTINE_STATUS);
+      expect(await denied.json()).toEqual({
+        code: "restore-quarantine",
+        quarantinedAt: expect.any(String),
+        reason: "Restored from recovery point",
+      });
+
+      const mutation = await fetch(
+        `${apiOrigin}${localProofMutationContract.path}`,
+        {
+          body: JSON.stringify({ increment: 1 }),
+          headers: mutationHeaders(credentials),
+          method: localProofMutationContract.method,
+        },
+      );
+      expect(mutation.status).toBe(LOCAL_RESTORE_QUARANTINE_STATUS);
+
+      // The handshake stays reachable so the desktop can explain the state.
+      const health = await fetch(`${apiOrigin}${localHealthContract.path}`);
+      expect(health.status).toBe(200);
+
+      // The recorded mutation count proves the quarantined request never
+      // reached the handler.
+      const mutations = await pool.query<{ mutation_count: string }>(
+        "select mutation_count from main_device_proof_state where singleton = true",
+      );
+      await pool.query(
+        `update system_quarantine_state
+         set is_quarantined = false, cleared_at = now(), cleared_by = 'test'
+         where singleton = true`,
+      );
+      const evidence = await getProofEvidence(apiOrigin, credentials);
+      expect(evidence.mutationCount).toBe(mutations.rows[0]?.mutation_count);
+    } finally {
+      await pool.query(
+        `update system_quarantine_state
+         set is_quarantined = false where singleton = true`,
+      );
+      await pool.end();
+    }
   });
 
   function collectApiOutput(chunk: Buffer): void {

@@ -47,20 +47,22 @@ create table recovery_points (
   )
 );
 --> statement-breakpoint
-create or replace function prevent_terminal_recovery_point_mutation()
-returns trigger as $$
+create function reject_terminal_recovery_point_mutation() returns trigger
+language plpgsql as $$
 begin
   if old.status in ('verified', 'failed', 'corrupted') then
-    raise exception 'Terminal recovery points are immutable';
+    raise exception 'terminal recovery point outcomes are immutable' using errcode = '55000';
+  end if;
+  if tg_op = 'DELETE' then
+    return old;
   end if;
   return new;
 end;
-$$ language plpgsql;
+$$;
 --> statement-breakpoint
-create trigger recovery_points_prevent_mutation
-before update or delete on recovery_points
-for each row
-execute function prevent_terminal_recovery_point_mutation();
+create trigger recovery_points_terminal_outcome_immutable
+  before update or delete on recovery_points
+  for each row execute function reject_terminal_recovery_point_mutation();
 --> statement-breakpoint
 create table system_quarantine_state (
   singleton boolean primary key default true,
@@ -88,3 +90,7 @@ from public;
 grant select, insert, update on table recovery_points to breev_app;
 --> statement-breakpoint
 grant select, insert, update on table system_quarantine_state to breev_app;
+--> statement-breakpoint
+create index recovery_points_verified_completed_at
+  on recovery_points (completed_at desc)
+  where status = 'verified';

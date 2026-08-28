@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { randomBytes } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -10,52 +9,75 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 import { LocalDatabaseService } from "../local-database.service.js";
+import { syncFile, writeFileDurably } from "./durable-file.js";
 import {
+  BACKUP_MANIFEST_FILE_NAME,
   createBackupManifest,
   verifyBackupManifest,
   type ManifestVerificationResult,
 } from "./manifest-verifier.js";
 import {
   decryptRecoveryPayload,
+  DEFAULT_RECOVERY_KEY_IDENTIFIER,
   encryptRecoveryPayload,
+  type RecoveryKeyProvider,
 } from "./recovery-crypto.js";
+import { RECOVERY_KEY_PROVIDER } from "./recovery-key-provider.js";
 import {
   type RecoveryEncryptionMetadata,
   type RecoveryPointRecord,
 } from "./recovery-schema.js";
-import { assertStrictRestoreIsolation } from "./restore-isolation.js";
-import { RestoreQuarantineService } from "./restore-quarantine.service.js";
+import {
+  assertStrictRestoreIsolation,
+  type LiveClusterIdentity,
+} from "./restore-isolation.js";
+import { RESTORE_QUARANTINE_MARKER_FILE_NAME } from "./restore-quarantine.service.js";
 
 export interface CreateRecoveryPointOptions {
   readonly backupType?: "hourly_recovery_point" | "daily_snapshot" | undefined;
-  readonly outputDirectory: string;
-  readonly walArchiveDirectory?: string | undefined;
   readonly keyIdentifier?: string | undefined;
+  readonly outputDirectory: string;
+  /**
+   * Identity of the recovery point being produced. A durable job passes a
+   * stable value so a retried or duplicated run resumes the same recovery
+   * point instead of creating a second one.
+   */
+  readonly recoveryPointId?: string | undefined;
 }
 
 export interface RestoreRecoveryPointOptions {
   readonly encryptedPayloadPath: string;
+  readonly isolatedPort: number;
   readonly isolatedTargetDir: string;
-  readonly isolatedPort?: number | undefined;
-  readonly customKekProvider?:
-    ((keyIdentifier: string) => Buffer | null) | undefined;
-  readonly liveValidation?:
-    | {
-        liveDataDir?: string | undefined;
-        livePort?: number | undefined;
-      }
-    | undefined;
+  readonly live: LiveClusterIdentity;
 }
 
 export interface RestoreResult {
   readonly isolatedDataDir: string;
   readonly manifestVerification: ManifestVerificationResult;
   readonly quarantineActive: boolean;
+  readonly recoveryPointId: string;
   readonly restoredFilesCount: number;
 }
+
+interface RecoveryArchive {
+  readonly files: Record<string, string>;
+}
+
+/** File names inside a recovery point that verification does not account for. */
+const UNMANIFESTED_RESTORE_FILES = [RESTORE_QUARANTINE_MARKER_FILE_NAME];
+
+const PEM_PRIVATE_KEY_MARKERS = [
+  "BEGIN PRIVATE KEY",
+  "BEGIN RSA PRIVATE KEY",
+  "BEGIN EC PRIVATE KEY",
+  "BEGIN DSA PRIVATE KEY",
+  "BEGIN OPENSSH PRIVATE KEY",
+  "BEGIN ENCRYPTED PRIVATE KEY",
+];
 
 @Injectable()
 export class RecoveryCoordinatorService {
@@ -64,108 +86,100 @@ export class RecoveryCoordinatorService {
   public constructor(
     @Inject(LocalDatabaseService)
     private readonly localDatabase: LocalDatabaseService,
-    @Inject(RestoreQuarantineService)
-    public readonly quarantineService: RestoreQuarantineService,
+    @Inject(RECOVERY_KEY_PROVIDER)
+    private readonly readRecoveryKey: RecoveryKeyProvider,
   ) {}
 
   /**
-   * Creates a verified, encrypted local recovery point from PostgreSQL base backup + WAL.
+   * Produces one encrypted, verified recovery point.
+   *
+   * The recovery point only reaches `verified` after the encrypted file that
+   * was actually written to disk has been read back, decrypted, and verified
+   * against its manifest, and after those bytes are durable. A process killed
+   * at any earlier point leaves the recovery point in `in_progress`, which the
+   * next start reports as a failed run.
    */
   public async createRecoveryPoint(
     options: CreateRecoveryPointOptions,
   ): Promise<RecoveryPointRecord> {
     const pool = this.localDatabase.requirePool();
-    const recoveryId = createUuidV7();
     const {
       backupType = "hourly_recovery_point",
+      keyIdentifier = DEFAULT_RECOVERY_KEY_IDENTIFIER,
       outputDirectory,
-      keyIdentifier = "default-breev-recovery-kek",
     } = options;
 
     const resolvedOutputDir = path.resolve(outputDirectory);
-    if (!existsSync(resolvedOutputDir)) {
-      mkdirSync(resolvedOutputDir, { recursive: true });
+    mkdirSync(resolvedOutputDir, { recursive: true });
+
+    const claim = await this.claimRecoveryPoint(
+      pool,
+      options.recoveryPointId,
+      backupType,
+    );
+    if (claim.alreadyVerified !== undefined) {
+      return claim.alreadyVerified;
     }
-
-    const stagingDir = path.join(resolvedOutputDir, `staging_${recoveryId}`);
-    mkdirSync(stagingDir, { recursive: true });
-
-    // 1. Insert in_progress recovery point
-    await pool.query(
-      `insert into recovery_points (
-         id,
-         started_at,
-         status,
-         backup_type,
-         quarantine_required
-       )
-       values ($1, now(), 'in_progress', $2, true)`,
-      [recoveryId, backupType],
+    const recoveryPointId = claim.recoveryPointId;
+    const stagingDir = path.join(
+      resolvedOutputDir,
+      `staging_${recoveryPointId}`,
     );
 
     let client: PoolClient | undefined;
     try {
+      rmSync(stagingDir, { force: true, recursive: true });
+      mkdirSync(stagingDir, { recursive: true });
       client = await pool.connect();
 
-      // 2. Perform base backup snapshot / collect database state
-      const lsnStartRes = await client.query<{ lsn: string }>(
-        "select pg_current_wal_lsn()::text as lsn",
-      );
-      const walStartLsn = lsnStartRes.rows[0]?.lsn ?? "0/0";
+      const key = this.readRecoveryKey(keyIdentifier);
+      const cluster = await readClusterState(client);
+      const walStartLsn = cluster.currentLsn;
 
-      // Export physical data files or database snapshot into staging directory
-      await this.exportDatabaseBackupData(client, stagingDir);
+      await this.exportDatabaseBackupData(client, stagingDir, {
+        systemIdentifier: cluster.systemIdentifier,
+        timeline: cluster.timeline,
+        walStartLsn,
+      });
 
-      // 3. Switch WAL to ensure current segment is archived and continuous
-      let walEndLsn = walStartLsn;
-      try {
-        const switchRes = await client.query<{
-          current_lsn: string;
-          wal_file: string;
-        }>(
-          `select pg_walfile_name(pg_switch_wal()) as wal_file,
-                  pg_current_wal_lsn()::text as current_lsn`,
-        );
-        walEndLsn = switchRes.rows[0]?.current_lsn ?? walStartLsn;
-      } catch {
-        // In environments where pg_switch_wal is restricted or simulated
-        const lsnEndRes = await client.query<{ lsn: string }>(
-          "select pg_current_wal_lsn()::text as lsn",
-        );
-        walEndLsn = lsnEndRes.rows[0]?.lsn ?? walStartLsn;
-      }
+      const walEndLsn = (await readClusterState(client)).currentLsn;
 
-      // 4. Generate & Verify backup manifest (pg_verifybackup class)
-      const manifestCheck = verifyBackupManifest(stagingDir);
-      if (!manifestCheck.isValid) {
+      const stagedManifest = verifyBackupManifest(stagingDir);
+      if (!stagedManifest.isValid) {
         throw new Error(
-          `MANIFEST_VERIFICATION_FAILED: ${manifestCheck.violations.join("; ")}`,
+          `MANIFEST_VERIFICATION_FAILED: ${stagedManifest.violations.join("; ")}`,
         );
       }
 
-      // 5. Package and Encrypt with AES-256-GCM envelope encryption
-      const archiveTarBuffer = this.packDirectoryToBuffer(stagingDir);
+      const archiveBuffer = this.packDirectoryToBuffer(stagingDir);
+      assertNoPlaintextKeyMaterial(archiveBuffer);
 
-      // Verify exclusions: ensure CA private keys and plaintext secrets are absent
-      this.assertExclusionsInArchive(archiveTarBuffer);
-
-      const encrypted = encryptRecoveryPayload(archiveTarBuffer, keyIdentifier);
-
-      const recoveryFileName = `recovery_${recoveryId}.breev`;
-      const recoveryFilePath = path.join(resolvedOutputDir, recoveryFileName);
-      writeFileSync(
+      const encrypted = encryptRecoveryPayload(
+        archiveBuffer,
+        keyIdentifier,
+        key,
+      );
+      const recoveryFilePath = path.join(
+        resolvedOutputDir,
+        `recovery_${recoveryPointId}.breev`,
+      );
+      writeFileDurably(
         recoveryFilePath,
         JSON.stringify({
           ciphertextHex: encrypted.ciphertext.toString("hex"),
           metadata: encrypted.metadata,
-          recoveryId,
+          recoveryId: recoveryPointId,
         }),
+        recoveryPointId,
       );
 
-      const encryptedSizeBytes = statSync(recoveryFilePath).size;
+      const storedManifest = this.verifyStoredRecoveryPoint(
+        recoveryFilePath,
+        stagedManifest.manifestChecksum,
+        keyIdentifier,
+      );
 
-      // 6. Terminal Atomic transition to 'verified'
-      const updateRes = await pool.query<RawRecoveryPointRow>(
+      const updated = await pool.query<RawRecoveryPointRow>(
         `update recovery_points
          set completed_at = now(),
              status = 'verified',
@@ -175,55 +189,33 @@ export class RecoveryCoordinatorService {
              wal_start_lsn = $3,
              wal_end_lsn = $4,
              encryption_metadata = $5
-         where id = $6
+         where id = $6 and status = 'in_progress'
          returning *`,
         [
-          encryptedSizeBytes,
-          manifestCheck.manifestChecksum,
+          statSync(recoveryFilePath).size,
+          storedManifest.manifestChecksum,
           walStartLsn,
           walEndLsn,
           JSON.stringify(encrypted.metadata),
-          recoveryId,
+          recoveryPointId,
         ],
       );
 
-      // Clean staging
+      const rawRecord = updated.rows[0];
+      if (rawRecord === undefined) {
+        throw new Error(
+          `Recovery point ${recoveryPointId} left the in-progress state before verification completed`,
+        );
+      }
+
       rmSync(stagingDir, { force: true, recursive: true });
-
-      const rawRecord = updateRes.rows[0];
-      if (!rawRecord) {
-        throw new Error("Failed to retrieve updated verified recovery point");
-      }
-
-      const record = mapRecoveryPointRow(rawRecord);
-
       this.logger.log(
-        `Successfully created verified recovery point ${recoveryId} (${encryptedSizeBytes} bytes)`,
+        `Verified recovery point ${recoveryPointId} (${String(rawRecord.encrypted_size_bytes)} bytes)`,
       );
-      return record;
+      return mapRecoveryPointRow(rawRecord);
     } catch (error) {
-      // Mark as failed/corrupted
-      const failureReason =
-        error instanceof Error ? error.message : String(error);
-      const isCorrupted = failureReason.includes(
-        "MANIFEST_VERIFICATION_FAILED",
-      );
-      const finalStatus = isCorrupted ? "corrupted" : "failed";
-
-      await pool.query(
-        `update recovery_points
-         set completed_at = now(),
-             status = $1,
-             failure_reason = $2
-         where id = $3 and status = 'in_progress'`,
-        [finalStatus, failureReason, recoveryId],
-      );
-
-      // Clean staging
-      if (existsSync(stagingDir)) {
-        rmSync(stagingDir, { force: true, recursive: true });
-      }
-
+      await this.recordFailure(pool, recoveryPointId, error);
+      rmSync(stagingDir, { force: true, recursive: true });
       throw error;
     } finally {
       client?.release();
@@ -231,24 +223,22 @@ export class RecoveryCoordinatorService {
   }
 
   /**
-   * Restores an encrypted recovery point into an isolated PostgreSQL instance
-   * and enforces Restore Quarantine.
+   * Restores a verified recovery point into an isolated directory that is
+   * structurally separated from the live pharmacy cluster, and marks the
+   * restored dataset as quarantined before any restored byte lands.
+   *
+   * The quarantine marker belongs to the restored dataset. The live pharmacy
+   * dataset is never touched: restoring a recovery point must not take the
+   * running pharmacy out of normal use.
    */
   public async restoreToIsolatedInstance(
     options: RestoreRecoveryPointOptions,
   ): Promise<RestoreResult> {
-    const {
-      encryptedPayloadPath,
-      isolatedTargetDir,
-      isolatedPort,
-      customKekProvider,
-      liveValidation,
-    } = options;
+    const { encryptedPayloadPath, isolatedPort, isolatedTargetDir, live } =
+      options;
 
-    // 1. Hard safety check against targeting live database cluster
     assertStrictRestoreIsolation({
-      liveDataDir: liveValidation?.liveDataDir,
-      livePort: liveValidation?.livePort,
+      live,
       targetDataDir: isolatedTargetDir,
       targetPort: isolatedPort,
     });
@@ -258,141 +248,291 @@ export class RecoveryCoordinatorService {
       throw new Error(`Recovery point file not found at "${resolvedPayload}"`);
     }
 
-    const rawPayload = JSON.parse(readFileSync(resolvedPayload, "utf8")) as {
-      ciphertextHex: string;
-      metadata: RecoveryEncryptionMetadata;
-      recoveryId: string;
-    };
+    const payload = readEncryptedPayloadFile(resolvedPayload);
+    const recorded = await this.requireVerifiedRecoveryPoint(
+      payload.recoveryId,
+    );
 
-    // 2. Decrypt payload (throws explicit error if key unavailable or tampered)
-    const decryptedBuffer = decryptRecoveryPayload({
-      ciphertext: Buffer.from(rawPayload.ciphertextHex, "hex"),
-      customKekProvider,
-      metadata: rawPayload.metadata,
+    const key = this.readRecoveryKey(payload.metadata.keyIdentifier);
+    const archiveBuffer = decryptRecoveryPayload({
+      ciphertext: payload.ciphertext,
+      key,
+      metadata: payload.metadata,
     });
 
-    // 3. Unpack into isolated directory
     const resolvedTarget = path.resolve(isolatedTargetDir);
-    if (!existsSync(resolvedTarget)) {
-      mkdirSync(resolvedTarget, { recursive: true });
-    }
+    mkdirSync(resolvedTarget, { recursive: true });
 
-    const unpackedCount = this.unpackBufferToDirectory(
-      decryptedBuffer,
-      resolvedTarget,
-    );
-
-    // 4. Verify manifest of restored files
-    const manifestCheck = verifyBackupManifest(resolvedTarget);
-    if (!manifestCheck.isValid) {
-      throw new Error(
-        `RESTORE_VERIFICATION_FAILED: Restored directory failed manifest verification: ${manifestCheck.violations.join("; ")}`,
-      );
-    }
-
-    // 5. Restore Quarantine: Write quarantine flag directly into restored directory
-    const quarantineFlagFile = path.join(
-      resolvedTarget,
-      "RESTORE_QUARANTINE.flag",
-    );
-    writeFileSync(
-      quarantineFlagFile,
+    // The quarantine marker is written and flushed before any restored data so
+    // that a crash during the restore can never leave restored data behind
+    // without its quarantine state.
+    writeFileDurably(
+      path.join(resolvedTarget, RESTORE_QUARANTINE_MARKER_FILE_NAME),
       JSON.stringify({
         quarantined: true,
         quarantinedAt: new Date().toISOString(),
-        recoveryId: rawPayload.recoveryId,
+        recoveryId: payload.recoveryId,
       }),
+      payload.recoveryId,
     );
+
+    const restoredFilesCount = this.unpackBufferToDirectory(
+      archiveBuffer,
+      resolvedTarget,
+    );
+
+    const manifestVerification = verifyBackupManifest(resolvedTarget, {
+      ignoredPaths: UNMANIFESTED_RESTORE_FILES,
+    });
+    if (!manifestVerification.isValid) {
+      throw new Error(
+        `RESTORE_VERIFICATION_FAILED: ${manifestVerification.violations.join("; ")}`,
+      );
+    }
+    if (manifestVerification.manifestChecksum !== recorded.manifestChecksum) {
+      throw new Error(
+        `RESTORE_VERIFICATION_FAILED: Restored manifest checksum ${manifestVerification.manifestChecksum} does not match the recorded checksum for recovery point ${payload.recoveryId}`,
+      );
+    }
 
     return {
       isolatedDataDir: resolvedTarget,
-      manifestVerification: manifestCheck,
+      manifestVerification,
       quarantineActive: true,
-      restoredFilesCount: unpackedCount,
+      recoveryPointId: payload.recoveryId,
+      restoredFilesCount,
     };
   }
 
   /**
-   * Inspects archive content to ensure no CA private key or plaintext secrets appear.
+   * Inserts the in-progress record for a recovery point. A durable job that
+   * runs twice with the same identity finds the existing record: an already
+   * verified recovery point is returned unchanged, and a terminal failure is
+   * never silently retried under the same identity.
    */
-  private assertExclusionsInArchive(archiveBuffer: Buffer): void {
-    const content = archiveBuffer.toString("utf8");
-    if (
-      content.includes("BEGIN RSA PRIVATE KEY") ||
-      content.includes("BEGIN PRIVATE KEY") ||
-      content.includes("BEGIN EC PRIVATE KEY")
-    ) {
+  private async claimRecoveryPoint(
+    pool: Pool,
+    requestedId: string | undefined,
+    backupType: "hourly_recovery_point" | "daily_snapshot",
+  ): Promise<{
+    alreadyVerified?: RecoveryPointRecord;
+    recoveryPointId: string;
+  }> {
+    const inserted = await pool.query<RawRecoveryPointRow>(
+      `insert into recovery_points (id, started_at, status, backup_type, quarantine_required)
+       values (coalesce($1::uuid, uuidv7()), now(), 'in_progress', $2, true)
+       on conflict (id) do nothing
+       returning *`,
+      [requestedId ?? null, backupType],
+    );
+    const claimed = inserted.rows[0];
+    if (claimed !== undefined) {
+      return { recoveryPointId: claimed.id };
+    }
+
+    const existing = await pool.query<RawRecoveryPointRow>(
+      "select * from recovery_points where id = $1",
+      [requestedId],
+    );
+    const row = existing.rows[0];
+    if (row === undefined) {
       throw new Error(
-        "SECURITY_VIOLATION: CA private key detected in backup payload!",
+        `Recovery point ${String(requestedId)} could not be claimed or read`,
+      );
+    }
+    if (row.status === "verified") {
+      this.logger.log(
+        `Recovery point ${row.id} is already verified; skipping the duplicate run`,
+      );
+      return {
+        alreadyVerified: mapRecoveryPointRow(row),
+        recoveryPointId: row.id,
+      };
+    }
+    throw new Error(
+      `Recovery point ${row.id} already exists with status "${row.status}"`,
+    );
+  }
+
+  private async requireVerifiedRecoveryPoint(
+    recoveryPointId: string,
+  ): Promise<{ manifestChecksum: string }> {
+    const pool = this.localDatabase.requirePool();
+    const result = await pool.query<{
+      manifest_checksum: string | null;
+      status: RawRecoveryPointRow["status"];
+    }>("select status, manifest_checksum from recovery_points where id = $1", [
+      recoveryPointId,
+    ]);
+
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new Error(
+        `RESTORE_VERIFICATION_FAILED: Recovery point ${recoveryPointId} has no recorded outcome`,
+      );
+    }
+    if (row.status !== "verified" || row.manifest_checksum === null) {
+      throw new Error(
+        `RESTORE_VERIFICATION_FAILED: Recovery point ${recoveryPointId} is recorded as "${row.status}" and can never be restored as verified`,
+      );
+    }
+    return { manifestChecksum: row.manifest_checksum };
+  }
+
+  private async recordFailure(
+    pool: Pool,
+    recoveryPointId: string,
+    error: unknown,
+  ): Promise<void> {
+    const failureReason =
+      error instanceof Error ? error.message : String(error);
+    const status = failureReason.includes("MANIFEST_VERIFICATION_FAILED")
+      ? "corrupted"
+      : "failed";
+    try {
+      await pool.query(
+        `update recovery_points
+         set completed_at = now(), status = $1, failure_reason = $2
+         where id = $3 and status = 'in_progress'`,
+        [status, failureReason, recoveryPointId],
+      );
+    } catch (recordingError) {
+      this.logger.error(
+        `Could not record the failed outcome of recovery point ${recoveryPointId}`,
+        recordingError,
       );
     }
   }
 
   /**
-   * Helper that collects database tables and creates manifest in staging dir.
+   * Reads the encrypted recovery point back from disk, decrypts it, and
+   * verifies its manifest. Verification of the file that was actually stored
+   * is the only evidence that permits the transition to `verified`.
+   */
+  private verifyStoredRecoveryPoint(
+    recoveryFilePath: string,
+    expectedManifestChecksum: string,
+    keyIdentifier: string,
+  ): ManifestVerificationResult {
+    const payload = readEncryptedPayloadFile(recoveryFilePath);
+    const key = this.readRecoveryKey(keyIdentifier);
+    const archiveBuffer = decryptRecoveryPayload({
+      ciphertext: payload.ciphertext,
+      key,
+      metadata: payload.metadata,
+    });
+
+    const verifyDir = `${recoveryFilePath}.verify`;
+    try {
+      rmSync(verifyDir, { force: true, recursive: true });
+      mkdirSync(verifyDir, { recursive: true });
+      this.unpackBufferToDirectory(archiveBuffer, verifyDir);
+      const result = verifyBackupManifest(verifyDir);
+      if (!result.isValid) {
+        throw new Error(
+          `MANIFEST_VERIFICATION_FAILED: The stored recovery point failed verification: ${result.violations.join("; ")}`,
+        );
+      }
+      if (result.manifestChecksum !== expectedManifestChecksum) {
+        throw new Error(
+          "MANIFEST_VERIFICATION_FAILED: The stored recovery point does not carry the manifest that was verified",
+        );
+      }
+      return result;
+    } finally {
+      rmSync(verifyDir, { force: true, recursive: true });
+    }
+  }
+
+  /**
+   * Copies the application tables into the staging directory and records them
+   * in the backup manifest. A table that cannot be read fails the whole
+   * recovery point: a backup that silently omits pharmacy data must never be
+   * recorded as verified.
    */
   private async exportDatabaseBackupData(
     client: PoolClient,
     stagingDir: string,
+    cluster: {
+      systemIdentifier: string;
+      timeline: number;
+      walStartLsn: string;
+    },
   ): Promise<void> {
-    const tables = [
-      "main_devices",
-      "main_device_sessions",
-      "pharmacy_ca",
-      "terminal_devices",
-      "pharmacies",
-      "pharmacy_roles",
-      "permission_definitions",
-      "role_permissions",
-      "identity_users",
-    ];
+    const tables = await client.query<{ table_name: string }>(
+      `select c.relname as table_name
+       from pg_catalog.pg_class c
+       join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and c.relkind = 'r'
+       order by c.relname`,
+    );
 
     const files: Array<{ data: Buffer; relativePath: string }> = [];
-
-    for (const table of tables) {
-      try {
-        const rows = await client.query(`select * from ${table}`);
-        const data = Buffer.from(JSON.stringify(rows.rows, null, 2), "utf8");
-        const relPath = `tables/${table}.json`;
-        const fullPath = path.join(stagingDir, relPath);
-        mkdirSync(path.dirname(fullPath), { recursive: true });
-        writeFileSync(fullPath, data);
-        files.push({ data, relativePath: relPath });
-      } catch {
-        // Table might not exist in early migration phases
+    for (const { table_name: tableName } of tables.rows) {
+      if (!/^[a-z_][a-z0-9_]*$/u.test(tableName)) {
+        throw new Error(
+          `Refusing to back up a table with an unsupported name: "${tableName}"`,
+        );
       }
+      const rows = await client.query(`select * from "${tableName}"`);
+      const data = Buffer.from(JSON.stringify(rows.rows, null, 2), "utf8");
+      const relativePath = `tables/${tableName}.json`;
+      const fullPath = path.join(stagingDir, relativePath);
+      mkdirSync(path.dirname(fullPath), { recursive: true });
+      writeFileSync(fullPath, data);
+      syncFile(fullPath);
+      files.push({ data, relativePath });
     }
 
-    const { manifestJson } = createBackupManifest({ files });
-    writeFileSync(
-      path.join(stagingDir, "backup_manifest"),
-      manifestJson,
-      "utf8",
-    );
+    if (files.length === 0) {
+      throw new Error("The backup found no application tables to record");
+    }
+
+    const { manifestJson } = createBackupManifest({
+      files,
+      systemIdentifier: cluster.systemIdentifier,
+      timeline: cluster.timeline,
+      walEndLsn: cluster.walStartLsn,
+      walStartLsn: cluster.walStartLsn,
+    });
+    const manifestPath = path.join(stagingDir, BACKUP_MANIFEST_FILE_NAME);
+    writeFileSync(manifestPath, manifestJson, "utf8");
+    syncFile(manifestPath);
   }
 
   private packDirectoryToBuffer(dir: string): Buffer {
     const files: Record<string, string> = {};
-    const walk = (currentDir: string, baseDir: string) => {
+    const walk = (currentDir: string): void => {
       for (const entry of readdirSync(currentDir, { withFileTypes: true })) {
         const full = path.join(currentDir, entry.name);
         if (entry.isDirectory()) {
-          walk(full, baseDir);
+          walk(full);
         } else if (entry.isFile()) {
-          const rel = path.relative(baseDir, full).replace(/\\/g, "/");
-          files[rel] = readFileSync(full, "base64");
+          const relative = path.relative(dir, full).split(path.sep).join("/");
+          files[relative] = readFileSync(full, "base64");
         }
       }
     };
-    walk(dir, dir);
-    return Buffer.from(JSON.stringify(files), "utf8");
+    walk(dir);
+    return Buffer.from(JSON.stringify({ files } satisfies RecoveryArchive));
   }
 
   private unpackBufferToDirectory(buffer: Buffer, targetDir: string): number {
-    const files = JSON.parse(buffer.toString("utf8")) as Record<string, string>;
+    const archive = JSON.parse(buffer.toString("utf8")) as RecoveryArchive;
+    const resolvedTarget = path.resolve(targetDir);
     let count = 0;
-    for (const [relPath, base64Data] of Object.entries(files)) {
-      const fullPath = path.join(targetDir, relPath);
+
+    for (const [relativePath, base64Data] of Object.entries(archive.files)) {
+      const fullPath = path.resolve(resolvedTarget, relativePath);
+      const relativeToTarget = path.relative(resolvedTarget, fullPath);
+      if (
+        relativeToTarget.startsWith("..") ||
+        path.isAbsolute(relativeToTarget)
+      ) {
+        throw new Error(
+          `RESTORE_VERIFICATION_FAILED: The recovery point contains a path outside the restore directory: "${relativePath}"`,
+        );
+      }
       mkdirSync(path.dirname(fullPath), { recursive: true });
       writeFileSync(fullPath, Buffer.from(base64Data, "base64"));
       count += 1;
@@ -401,19 +541,76 @@ export class RecoveryCoordinatorService {
   }
 }
 
-function createUuidV7(): string {
-  const timestamp = Date.now();
-  const timeHex = timestamp.toString(16).padStart(12, "0");
-  const random = randomBytes(10);
-  const versionAndRand = (0x7000 | (random.readUInt16BE(0) & 0x0fff))
-    .toString(16)
-    .padStart(4, "0");
-  const variantAndRand = (0x8000 | (random.readUInt16BE(2) & 0x3fff))
-    .toString(16)
-    .padStart(4, "0");
-  const restRand = random.subarray(4, 10).toString("hex");
+/**
+ * Rejects a recovery point whose content carries private key material. The
+ * archive stores each file base64 encoded, so the check must run over the
+ * decoded bytes; scanning the encoded archive would never match anything.
+ */
+function assertNoPlaintextKeyMaterial(archiveBuffer: Buffer): void {
+  const archive = JSON.parse(archiveBuffer.toString("utf8")) as RecoveryArchive;
+  for (const [relativePath, base64Data] of Object.entries(archive.files)) {
+    const decoded = Buffer.from(base64Data, "base64").toString("latin1");
+    for (const marker of PEM_PRIVATE_KEY_MARKERS) {
+      if (decoded.includes(marker)) {
+        throw new Error(
+          `SECURITY_VIOLATION: Private key material found in recovery point content at "${relativePath}"`,
+        );
+      }
+    }
+  }
+}
 
-  return `${timeHex.slice(0, 8)}-${timeHex.slice(8, 12)}-${versionAndRand}-${variantAndRand}-${restRand}`;
+function readEncryptedPayloadFile(filePath: string): {
+  ciphertext: Buffer;
+  metadata: RecoveryEncryptionMetadata;
+  recoveryId: string;
+} {
+  const raw = JSON.parse(readFileSync(filePath, "utf8")) as {
+    ciphertextHex?: unknown;
+    metadata?: unknown;
+    recoveryId?: unknown;
+  };
+  if (
+    typeof raw.ciphertextHex !== "string" ||
+    typeof raw.recoveryId !== "string" ||
+    typeof raw.metadata !== "object" ||
+    raw.metadata === null
+  ) {
+    throw new Error(
+      `RESTORE_VERIFICATION_FAILED: "${filePath}" is not a Breev recovery point`,
+    );
+  }
+  return {
+    ciphertext: Buffer.from(raw.ciphertextHex, "hex"),
+    metadata: raw.metadata as RecoveryEncryptionMetadata,
+    recoveryId: raw.recoveryId,
+  };
+}
+
+async function readClusterState(client: PoolClient): Promise<{
+  currentLsn: string;
+  systemIdentifier: string;
+  timeline: number;
+}> {
+  const result = await client.query<{
+    current_lsn: string;
+    system_identifier: string;
+    timeline: number;
+  }>(
+    `select pg_current_wal_lsn()::text as current_lsn,
+            (select system_identifier::text from pg_control_system()) as system_identifier,
+            (select timeline_id from pg_control_checkpoint()) as timeline`,
+  );
+
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new Error("PostgreSQL did not report its write-ahead log state");
+  }
+  return {
+    currentLsn: row.current_lsn,
+    systemIdentifier: row.system_identifier,
+    timeline: Number(row.timeline),
+  };
 }
 
 interface RawRecoveryPointRow {

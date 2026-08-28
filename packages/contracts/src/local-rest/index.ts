@@ -6,6 +6,8 @@ export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
 export const LOCAL_PROOF_MUTATION_SUCCESS_STATUS = 201 as const;
+export const LOCAL_RECOVERY_STATUS_SUCCESS_STATUS = 200 as const;
+export const LOCAL_RESTORE_QUARANTINE_STATUS = 503 as const;
 
 export const BREEV_CSRF_HEADER = "X-Breev-CSRF" as const;
 export const BREEV_CSRF_VALUE = "1" as const;
@@ -479,6 +481,61 @@ export const localProofEvidenceContract = {
   },
 } as const;
 
+export const recoveryPointStatusSchema = z.enum([
+  "in_progress",
+  "verified",
+  "failed",
+  "corrupted",
+]);
+export const recoveryBackupTypeSchema = z.enum([
+  "hourly_recovery_point",
+  "daily_snapshot",
+]);
+
+/** Privacy-safe recovery point metadata: no paths, hosts, or key material. */
+export const recoveryPointSummarySchema = z.strictObject({
+  backupType: recoveryBackupTypeSchema,
+  completedAt: z.iso.datetime().nullable(),
+  encryptedSizeBytes: z.number().int().nonnegative().nullable(),
+  id: z.uuid(),
+  manifestVerifiedAt: z.iso.datetime().nullable(),
+  startedAt: z.iso.datetime(),
+  status: recoveryPointStatusSchema,
+  walEndLsn: z.string().nullable(),
+  walStartLsn: z.string().nullable(),
+});
+
+export const restoreQuarantineStateSchema = z.strictObject({
+  clearedAt: z.iso.datetime().nullable(),
+  isQuarantined: z.boolean(),
+  quarantineReason: z.string().nullable(),
+  quarantinedAt: z.iso.datetime().nullable(),
+});
+
+export const localRecoveryStatusSuccessSchema = z.strictObject({
+  latestRecoveryPoint: recoveryPointSummarySchema.nullable(),
+  quarantine: restoreQuarantineStateSchema,
+});
+
+/**
+ * Every normal-use route answers with this body while the dataset is in
+ * Restore Quarantine.
+ */
+export const localRestoreQuarantineDenialSchema = z.strictObject({
+  code: z.literal("restore-quarantine"),
+  quarantinedAt: z.iso.datetime().nullable(),
+  reason: z.string().nullable(),
+});
+
+export const localRecoveryStatusContract = {
+  method: "GET",
+  path: "/recovery/status",
+  responses: {
+    [LOCAL_RECOVERY_STATUS_SUCCESS_STATUS]: localRecoveryStatusSuccessSchema,
+    ...localSecurityDenialResponses,
+  },
+} as const;
+
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
 export type LocalHealthDatabaseUnavailable = z.infer<
   typeof localHealthDatabaseUnavailableSchema
@@ -545,6 +602,18 @@ export type AttendanceEventRequest = z.infer<
   typeof attendanceEventRequestSchema
 >;
 export type AttendanceEvent = z.infer<typeof attendanceEventSchema>;
+export type RecoveryPointStatus = z.infer<typeof recoveryPointStatusSchema>;
+export type RecoveryBackupType = z.infer<typeof recoveryBackupTypeSchema>;
+export type RecoveryPointSummary = z.infer<typeof recoveryPointSummarySchema>;
+export type RestoreQuarantineState = z.infer<
+  typeof restoreQuarantineStateSchema
+>;
+export type LocalRecoveryStatusSuccess = z.infer<
+  typeof localRecoveryStatusSuccessSchema
+>;
+export type LocalRestoreQuarantineDenial = z.infer<
+  typeof localRestoreQuarantineDenialSchema
+>;
 
 export class LocalRestVersionMismatchError extends Error {
   public constructor(
@@ -641,63 +710,22 @@ export function parseLocalProofEvidenceResponse(
   throw new LocalRestPayloadError(statusCode);
 }
 
-export const recoveryPointStatusSchema = z.enum([
-  "in_progress",
-  "verified",
-  "failed",
-  "corrupted",
-]);
-
-export const recoveryBackupTypeSchema = z.enum([
-  "hourly_recovery_point",
-  "daily_snapshot",
-]);
-
-export const recoveryPointRecordSchema = z.object({
-  backup_type: recoveryBackupTypeSchema,
-  completed_at: z.string().nullable(),
-  encrypted_size_bytes: z.number().nullable(),
-  id: z.string().uuid(),
-  manifest_verified_at: z.string().nullable(),
-  started_at: z.string(),
-  status: recoveryPointStatusSchema,
-  wal_end_lsn: z.string().nullable(),
-  wal_start_lsn: z.string().nullable(),
-});
-
-export const systemQuarantineStateSchema = z.object({
-  clearedAt: z.string().nullable(),
-  clearedBy: z.string().nullable(),
-  isQuarantined: z.boolean(),
-  quarantineReason: z.string().nullable(),
-  quarantinedAt: z.string().nullable(),
-  verificationReport: z.unknown().nullable(),
-});
-
-export const recoveryStatusResponseSchema = z.object({
-  latestRecoveryPoint: recoveryPointRecordSchema.nullable(),
-  quarantine: systemQuarantineStateSchema,
-});
-
-export type RecoveryPointStatus = z.infer<typeof recoveryPointStatusSchema>;
-export type RecoveryBackupType = z.infer<typeof recoveryBackupTypeSchema>;
-export type RecoveryPointRecordDto = z.infer<typeof recoveryPointRecordSchema>;
-export type SystemQuarantineStateDto = z.infer<
-  typeof systemQuarantineStateSchema
->;
-export type RecoveryStatusResponse = z.infer<
-  typeof recoveryStatusResponseSchema
->;
-
 export function parseLocalRecoveryStatusResponse(
   statusCode: number,
   payload: unknown,
-): RecoveryStatusResponse {
-  if (statusCode === 200) {
+): LocalRecoveryStatusSuccess | LocalSecurityDenial {
+  if (statusCode === LOCAL_RECOVERY_STATUS_SUCCESS_STATUS) {
     return parseContractResponse(
       statusCode,
       payload,
-      recoveryStatusResponseSchema,
+      localRecoveryStatusSuccessSchema,
+    );
+  }
+  if (isSecurityDenialStatus(statusCode)) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      localSecurityDenialSchema,
     );
   }
   throw new LocalRestPayloadError(statusCode);

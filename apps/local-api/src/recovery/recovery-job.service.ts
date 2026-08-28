@@ -1,28 +1,38 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnApplicationShutdown,
-  type OnModuleInit,
-} from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 
 import { DurableJobsService } from "../durable-jobs/durable-jobs.service.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { RecoveryCoordinatorService } from "./recovery-coordinator.service.js";
 
-export const RECOVERY_BACKUP_JOB_NAME = "breev:recovery:create-recovery-point";
-export const HOURLY_BACKUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+/**
+ * pg-boss queue names accept only word characters, hyphens, periods, and
+ * forward slashes.
+ */
+export const RECOVERY_BACKUP_JOB_NAME = "recovery.create-recovery-point";
+
+/**
+ * How stale the newest verified recovery point may be before a start reports a
+ * missed run. Automating the recurring cadence itself belongs to the retention
+ * work, not to this foundation.
+ */
+export const RECOVERY_POINT_MAX_AGE_MS = 60 * 60 * 1000;
+
+const RECOVERY_JOB_EXPIRE_SECONDS = 900;
 
 export interface RecoveryJobPayload {
-  readonly backupType?: "hourly_recovery_point" | "daily_snapshot";
-  readonly outputDirectory: string;
-  readonly walArchiveDirectory: string;
+  readonly backupType: "hourly_recovery_point" | "daily_snapshot";
+  /**
+   * Identity of the recovery point this job produces. It travels with the job
+   * so a retry or a duplicate delivery resumes the same recovery point instead
+   * of creating a second one.
+   */
+  readonly recoveryPointId: string;
 }
 
 @Injectable()
-export class RecoveryJobService implements OnModuleInit, OnApplicationShutdown {
+export class RecoveryJobService implements OnModuleInit {
   private readonly logger = new Logger(RecoveryJobService.name);
-  private timer: NodeJS.Timeout | undefined;
+  private readonly backupDirectory = process.env.BREEV_BACKUP_DIRECTORY?.trim();
 
   public constructor(
     @Inject(LocalDatabaseService)
@@ -34,13 +44,26 @@ export class RecoveryJobService implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   public async onModuleInit(): Promise<void> {
+    if (
+      this.backupDirectory === undefined ||
+      this.backupDirectory.length === 0
+    ) {
+      this.logger.warn(
+        "BREEV_BACKUP_DIRECTORY is not configured, so no recovery points will be produced",
+      );
+      return;
+    }
+
+    // Nest runs module initialization hooks concurrently, so the job runtime
+    // must be awaited rather than probed: probing it here would silently skip
+    // the recovery queue on every start.
+    await this.durableJobs.ensureStarted();
     if (!this.durableJobs.isAvailable()) {
       return;
     }
 
-    // Register queue and worker for recovery backups
     await this.durableJobs.ensureQueue(RECOVERY_BACKUP_JOB_NAME, {
-      expireInSeconds: 300, // 5 min
+      expireInSeconds: RECOVERY_JOB_EXPIRE_SECONDS,
       retryBackoff: true,
       retryDelay: 10,
       retryLimit: 3,
@@ -49,85 +72,105 @@ export class RecoveryJobService implements OnModuleInit, OnApplicationShutdown {
     await this.durableJobs.work<RecoveryJobPayload>(
       RECOVERY_BACKUP_JOB_NAME,
       async (job) => {
-        this.logger.log(`Processing recovery backup job: ${job.id}`);
         await this.coordinator.createRecoveryPoint({
-          backupType: job.data.backupType ?? "hourly_recovery_point",
-          outputDirectory: job.data.outputDirectory,
-          walArchiveDirectory: job.data.walArchiveDirectory,
+          backupType: job.data.backupType,
+          outputDirectory: this.requireBackupDirectory(),
+          recoveryPointId: job.data.recoveryPointId,
         });
       },
     );
 
-    // Startup check: Detect missed scheduled runs and catch up
+    await this.failInterruptedRuns();
     await this.checkAndScheduleMissedRun();
   }
 
   /**
-   * Checks the timestamp of the last completed verified backup.
-   * If older than 1 hour (or none exists), triggers an immediate catch-up backup job.
+   * Records recovery points that a killed process left in progress as failed
+   * runs. The database can only reach this state through a crash, because
+   * every other path completes the record before returning.
    */
-  public async checkAndScheduleMissedRun(
-    defaultOutputDir = "C:/ProgramData/Breev/Backups",
-    defaultWalDir = "C:/ProgramData/Breev/WalArchive",
-  ): Promise<{ missedRunDetected: boolean; lastBackupAt: Date | null }> {
+  public async failInterruptedRuns(): Promise<number> {
     const pool = this.localDatabase.requirePool();
-    const result = await pool.query<{
-      completed_at: Date | null;
-      id: string;
-    }>(
-      `select id, completed_at
+    const result = await pool.query(
+      `update recovery_points
+       set status = 'failed',
+           completed_at = now(),
+           failure_reason = 'The service stopped before this recovery point was verified'
+       where status = 'in_progress'`,
+    );
+
+    const interrupted = result.rowCount ?? 0;
+    if (interrupted > 0) {
+      this.logger.warn(
+        `Recorded ${String(interrupted)} interrupted recovery point run(s) as failed`,
+      );
+    }
+    return interrupted;
+  }
+
+  /**
+   * Reports whether the newest verified recovery point is too old and enqueues
+   * exactly one catch-up run when it is. The singleton key makes a restart
+   * loop or a duplicate start converge on one queued run.
+   */
+  public async checkAndScheduleMissedRun(): Promise<{
+    lastBackupAt: Date | null;
+    missedRunDetected: boolean;
+  }> {
+    const pool = this.localDatabase.requirePool();
+    const result = await pool.query<{ completed_at: Date | null }>(
+      `select completed_at
        from recovery_points
        where status = 'verified'
        order by completed_at desc
        limit 1`,
     );
 
-    const lastBackup = result.rows[0];
-    const now = new Date();
-    let missedRunDetected = false;
+    const lastBackupAt = result.rows[0]?.completed_at ?? null;
+    const missedRunDetected =
+      lastBackupAt === null ||
+      Date.now() - lastBackupAt.getTime() > RECOVERY_POINT_MAX_AGE_MS;
 
-    if (!lastBackup || !lastBackup.completed_at) {
-      missedRunDetected = true;
-      this.logger.warn(
-        "Missed backup run detected: No verified recovery point exists. Scheduling catch-up run.",
-      );
-    } else {
-      const elapsedMs =
-        now.getTime() - new Date(lastBackup.completed_at).getTime();
-      if (elapsedMs > HOURLY_BACKUP_INTERVAL_MS) {
-        missedRunDetected = true;
-        this.logger.warn(
-          `Missed backup run detected: Last verified backup was ${Math.round(elapsedMs / 60000)} minutes ago. Scheduling catch-up run.`,
-        );
-      }
+    if (!missedRunDetected) {
+      return { lastBackupAt, missedRunDetected };
     }
 
-    if (missedRunDetected) {
-      await this.durableJobs.send<RecoveryJobPayload>(
-        RECOVERY_BACKUP_JOB_NAME,
-        {
-          backupType: "hourly_recovery_point",
-          outputDirectory: defaultOutputDir,
-          walArchiveDirectory: defaultWalDir,
-        },
-        {
-          singletonKey: "hourly_recovery_catchup",
-          singletonSeconds: 300,
-        },
-      );
+    this.logger.warn(
+      lastBackupAt === null
+        ? "Missed backup run: no verified recovery point exists. Scheduling a catch-up run."
+        : `Missed backup run: the newest verified recovery point is ${String(Math.round((Date.now() - lastBackupAt.getTime()) / 60_000))} minutes old. Scheduling a catch-up run.`,
+    );
+
+    const identity = await pool.query<{ id: string }>(
+      "select uuidv7()::text as id",
+    );
+    const recoveryPointId = identity.rows[0]?.id;
+    if (recoveryPointId === undefined) {
+      throw new Error("PostgreSQL did not issue a recovery point identifier");
     }
 
-    return {
-      lastBackupAt: lastBackup?.completed_at
-        ? new Date(lastBackup.completed_at)
-        : null,
-      missedRunDetected,
-    };
+    await this.durableJobs.send<RecoveryJobPayload>(
+      RECOVERY_BACKUP_JOB_NAME,
+      { backupType: "hourly_recovery_point", recoveryPointId },
+      {
+        expireInSeconds: RECOVERY_JOB_EXPIRE_SECONDS,
+        singletonKey: "recovery_point_catchup",
+        singletonSeconds: RECOVERY_JOB_EXPIRE_SECONDS,
+      },
+    );
+
+    return { lastBackupAt, missedRunDetected };
   }
 
-  public async onApplicationShutdown(): Promise<void> {
-    if (this.timer) {
-      clearInterval(this.timer);
+  private requireBackupDirectory(): string {
+    if (
+      this.backupDirectory === undefined ||
+      this.backupDirectory.length === 0
+    ) {
+      throw new Error(
+        "BREEV_BACKUP_DIRECTORY must name the directory that holds encrypted recovery points",
+      );
     }
+    return this.backupDirectory;
   }
 }

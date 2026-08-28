@@ -6,122 +6,185 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { DurableJobsService } from "../src/durable-jobs/durable-jobs.service.js";
 import { LocalDatabaseService } from "../src/local-database.service.js";
 import { RecoveryCoordinatorService } from "../src/recovery/recovery-coordinator.service.js";
-import { RecoveryJobService } from "../src/recovery/recovery-job.service.js";
 import {
-  DeviceIdentityVerificationHook,
-  LicenceTimeVerificationHook,
-  MainDeviceSecurityVerificationHook,
-  RestoreQuarantineService,
-} from "../src/recovery/restore-quarantine.service.js";
+  decryptRecoveryPayload,
+  type RecoveryKeyMaterial,
+  type RecoveryKeyProvider,
+} from "../src/recovery/recovery-crypto.js";
+import {
+  RECOVERY_BACKUP_JOB_NAME,
+  RecoveryJobService,
+} from "../src/recovery/recovery-job.service.js";
+import { RestoreQuarantineService } from "../src/recovery/restore-quarantine.service.js";
 import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "./database-roles.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
+const PHARMACY_NAME = "Al-Amal Pharmacy Baghdad";
+const CA_PRIVATE_KEY_PEM =
+  "-----BEGIN PRIVATE KEY-----\nMIIBVQIBADANBgkqhkiG9w0BAQ\n-----END PRIVATE KEY-----\n";
 
-describe.sequential("Local Recovery Foundation Integration Seam", () => {
-  let postgres: StartedPostgreSqlContainer | undefined;
-  let databaseRoles: SeparatedDatabaseRoles | undefined;
-  let localDatabase: LocalDatabaseService | undefined;
-  let durableJobs: DurableJobsService | undefined;
-  let coordinator: RecoveryCoordinatorService | undefined;
-  let quarantineService: RestoreQuarantineService | undefined;
-  let jobService: RecoveryJobService | undefined;
+/**
+ * The recovery key encryption key lives in Windows machine key storage, which
+ * has no Linux equivalent. The seam that a test may replace is exactly the key
+ * provider; every other step runs the production code path.
+ */
+const testKey: RecoveryKeyMaterial = {
+  kek: randomBytes(32),
+  protectionLevel: "software-test",
+};
+const testKeyProvider: RecoveryKeyProvider = () => testKey;
+
+describe.sequential("Local recovery persistence seam", () => {
+  let postgres: StartedPostgreSqlContainer;
+  let databaseRoles: SeparatedDatabaseRoles;
+  let localDatabase: LocalDatabaseService;
+  let durableJobs: DurableJobsService;
+  let quarantineService: RestoreQuarantineService;
+  let coordinator: RecoveryCoordinatorService;
+  let jobService: RecoveryJobService;
   let testTempDir: string;
   let backupOutputDir: string;
-  let walArchiveDir: string;
-  let postgresAvailable = false;
 
   beforeAll(async () => {
     testTempDir = mkdtempSync(path.join(tmpdir(), "breev-recovery-test-"));
     backupOutputDir = path.join(testTempDir, "backups");
-    walArchiveDir = path.join(testTempDir, "wal_archive");
     mkdirSync(backupOutputDir, { recursive: true });
-    mkdirSync(walArchiveDir, { recursive: true });
 
-    try {
-      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+    databaseRoles = await createSeparatedDatabaseRoles(postgres);
 
-      process.env.DATABASE_URL = databaseRoles.applicationUrl;
-      process.env.DATABASE_MIGRATION_URL = databaseRoles.migrationUrl;
+    process.env.DATABASE_URL = databaseRoles.applicationUrl;
+    process.env.DATABASE_MIGRATION_URL = databaseRoles.migrationUrl;
+    process.env.BREEV_BACKUP_DIRECTORY = backupOutputDir;
 
-      localDatabase = new LocalDatabaseService();
-      await localDatabase.onModuleInit();
+    localDatabase = new LocalDatabaseService();
+    await localDatabase.onModuleInit();
 
-      durableJobs = new DurableJobsService(localDatabase);
-      await durableJobs.onModuleInit();
+    durableJobs = new DurableJobsService(localDatabase);
+    await durableJobs.onModuleInit();
 
-      quarantineService = new RestoreQuarantineService();
-      quarantineService.registerHook(new MainDeviceSecurityVerificationHook());
-      quarantineService.registerHook(new DeviceIdentityVerificationHook());
-      quarantineService.registerHook(new LicenceTimeVerificationHook());
+    quarantineService = new RestoreQuarantineService(localDatabase);
+    coordinator = new RecoveryCoordinatorService(
+      localDatabase,
+      testKeyProvider,
+    );
+    jobService = new RecoveryJobService(
+      localDatabase,
+      durableJobs,
+      coordinator,
+    );
 
-      coordinator = new RecoveryCoordinatorService(
-        localDatabase,
-        quarantineService,
-      );
-
-      jobService = new RecoveryJobService(
-        localDatabase,
-        durableJobs,
-        coordinator,
-      );
-      postgresAvailable = true;
-    } catch {
-      postgresAvailable = false;
-    }
-  }, 120_000);
-
-  afterAll(async () => {
-    await jobService?.onApplicationShutdown().catch(() => undefined);
-    await durableJobs?.onApplicationShutdown().catch(() => undefined);
-    await localDatabase?.onApplicationShutdown().catch(() => undefined);
-    if (postgres !== undefined) {
-      await postgres.stop().catch(() => undefined);
-    }
-    if (existsSync(testTempDir)) {
-      rmSync(testTempDir, { force: true, recursive: true });
-    }
-  });
-
-  // ─── 1. End-to-End Recovery Point Creation & Verification ──────────────────
-  it("creates an encrypted recovery point with WAL continuity and atomic verified state transition", async () => {
-    if (!postgresAvailable || !localDatabase || !coordinator) return;
     const pool = localDatabase.requirePool();
-
-    // Populate initial operational records
     await pool.query(
       `insert into pharmacies (id, name)
-       values ('01919420-7462-723a-8b1e-7f61c312781a', 'Al-Amal Pharmacy Baghdad')
+       values ('01919420-7462-723a-8b1e-7f61c312781a', $1)
        on conflict (singleton) do nothing`,
+      [PHARMACY_NAME],
     );
     await pool.query(
       `insert into main_devices (id, credential_hash)
-       values ('01919420-7462-723a-8b1e-7f61c312781b', decode('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'hex'))
+       values ('01919420-7462-723a-8b1e-7f61c312781b',
+               decode('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'hex'))
        on conflict (id) do nothing`,
     );
     await pool.query(
       `insert into pharmacy_ca (singleton, installation_id, ca_fingerprint, ca_certificate, provider_name, assurance_level)
-       values (true, '01919420-7462-723a-8b1e-7f61c312781c', 'mock-fingerprint', 'mock-ca-certificate', 'software-test', 'software-cng-fallback')
+       values (true, '01919420-7462-723a-8b1e-7f61c312781c', 'ca-fingerprint',
+               '-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n',
+               'Microsoft Platform Crypto Provider', 'platform-tpm')
        on conflict (singleton) do nothing`,
     );
+    await pool.query(
+      `insert into terminal_devices (id, installation_id, revoked_at, revocation_reason)
+       values ('01919420-7462-723a-8b1e-7f61c312781d',
+               '01919420-7462-723a-8b1e-7f61c312781c', now(), 'lost device')
+       on conflict (id) do nothing`,
+    );
+  }, 180_000);
 
+  afterAll(async () => {
+    await durableJobs?.onApplicationShutdown().catch(() => undefined);
+    await localDatabase?.onApplicationShutdown().catch(() => undefined);
+    await postgres?.stop().catch(() => undefined);
+    if (testTempDir !== undefined && existsSync(testTempDir)) {
+      rmSync(testTempDir, { force: true, recursive: true });
+    }
+    delete process.env.BREEV_BACKUP_DIRECTORY;
+  });
+
+  it("registers the recovery queue on startup even though init hooks run concurrently", async () => {
+    const pool = localDatabase.requirePool();
+    const jobRuntime = new DurableJobsService(localDatabase);
+    const startingService = new RecoveryJobService(
+      localDatabase,
+      jobRuntime,
+      coordinator,
+    );
+
+    try {
+      // The job runtime has not been started yet, exactly as when Nest runs
+      // both initialization hooks at the same time.
+      expect(jobRuntime.isAvailable()).toBe(false);
+      await startingService.onModuleInit();
+
+      const queues = await pool.query<{ name: string }>(
+        "select name from pgboss.queue where name = $1",
+        [RECOVERY_BACKUP_JOB_NAME],
+      );
+      expect(queues.rows).toHaveLength(1);
+    } finally {
+      await jobRuntime.onApplicationShutdown();
+      await pool.query("delete from pgboss.job where name = $1", [
+        RECOVERY_BACKUP_JOB_NAME,
+      ]);
+    }
+  });
+
+  it("observes a missed backup run and enqueues exactly one catch-up", async () => {
+    const pool = localDatabase.requirePool();
+    expect(
+      (
+        await pool.query<{ count: string }>(
+          "select count(*)::text as count from recovery_points where status = 'verified'",
+        )
+      ).rows[0]?.count,
+    ).toBe("0");
+
+    const first = await jobService.checkAndScheduleMissedRun();
+    expect(first.missedRunDetected).toBe(true);
+    expect(first.lastBackupAt).toBeNull();
+
+    // A restart loop must not queue a second catch-up run.
+    await jobService.checkAndScheduleMissedRun();
+    const queued = await pool.query<{ count: string }>(
+      `select count(*)::text as count from pgboss.job
+       where name = $1 and state in ('created', 'retry', 'active')`,
+      [RECOVERY_BACKUP_JOB_NAME],
+    );
+    expect(queued.rows[0]?.count).toBe("1");
+  });
+
+  it("records a verified recovery point only after the stored file verifies", async () => {
     const record = await coordinator.createRecoveryPoint({
       backupType: "hourly_recovery_point",
       outputDirectory: backupOutputDir,
-      walArchiveDirectory: walArchiveDir,
     });
 
     expect(record.status).toBe("verified");
@@ -132,148 +195,378 @@ describe.sequential("Local Recovery Foundation Integration Seam", () => {
     expect(record.walEndLsn).toBeTruthy();
     expect(record.encryptedSizeBytes).toBeGreaterThan(0);
     expect(record.quarantineRequired).toBe(true);
+    expect(record.encryptionMetadata?.algorithm).toBe("aes-256-gcm");
 
-    // Verify recovery file exists on disk
-    const expectedFile = path.join(
-      backupOutputDir,
-      `recovery_${record.id}.breev`,
-    );
-    expect(existsSync(expectedFile)).toBe(true);
-
-    // Verify metadata row in PostgreSQL
-    const dbRow = await pool.query(
-      "select * from recovery_points where id = $1",
-      [record.id],
-    );
-    expect(dbRow.rows[0]?.status).toBe("verified");
-    expect(dbRow.rows[0]?.manifest_checksum).toBe(record.manifestChecksum);
+    expect(
+      existsSync(path.join(backupOutputDir, `recovery_${record.id}.breev`)),
+    ).toBe(true);
+    // The staging directory and every temporary write are gone once the
+    // recovery point is verified.
+    expect(
+      readdirSync(backupOutputDir).filter(
+        (entry) => entry.startsWith("staging_") || entry.endsWith(".tmp"),
+      ),
+    ).toEqual([]);
   });
 
-  // ─── 2. Terminal Metadata Immutability ──────────────────────────────────────
-  it("enforces immutability: terminal recovery point records reject updates and deletes", async () => {
-    if (!postgresAvailable || !localDatabase) return;
+  it("captures every application table and no partial backup reaches verified", async () => {
+    const pool = localDatabase.requirePool();
+    const tables = await pool.query<{ table_name: string }>(
+      `select c.relname as table_name
+       from pg_catalog.pg_class c
+       join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and c.relkind = 'r'
+       order by c.relname`,
+    );
+
+    const archive = decryptLatestRecoveryPoint();
+    const backedUpTables = Object.keys(archive.files)
+      .filter((file) => file.startsWith("tables/"))
+      .map((file) => file.slice("tables/".length, -".json".length))
+      .sort();
+
+    expect(backedUpTables).toEqual(
+      tables.rows.map((row) => row.table_name).sort(),
+    );
+    expect(
+      readTableRows(archive, "pharmacies").some(
+        (row) => row["name"] === PHARMACY_NAME,
+      ),
+    ).toBe(true);
+  });
+
+  it("excludes the pharmacy CA private key and refuses a recovery point that would carry one", async () => {
+    const archive = decryptLatestRecoveryPoint();
+    const decoded = Object.values(archive.files)
+      .map((base64) => Buffer.from(base64, "base64").toString("utf8"))
+      .join("\n");
+
+    expect(decoded).toContain(PHARMACY_NAME);
+    expect(decoded).not.toContain("BEGIN PRIVATE KEY");
+    expect(decoded).not.toContain("BEGIN RSA PRIVATE KEY");
+    expect(decoded).not.toContain("BEGIN EC PRIVATE KEY");
+
+    // The exclusion is enforced, not merely observed: planting private key
+    // material in a backed-up table fails the run instead of encrypting it.
+    const pool = localDatabase.requirePool();
+    await withSchemaOwner(async (owner) => {
+      await owner.query(
+        "update pharmacy_ca set ca_certificate = $1 where singleton = true",
+        [CA_PRIVATE_KEY_PEM],
+      );
+      try {
+        await expect(
+          coordinator.createRecoveryPoint({ outputDirectory: backupOutputDir }),
+        ).rejects.toThrow("SECURITY_VIOLATION");
+
+        const failed = await pool.query<{
+          failure_reason: string;
+          status: string;
+        }>(
+          `select status, failure_reason from recovery_points
+           order by started_at desc limit 1`,
+        );
+        expect(failed.rows[0]?.status).toBe("failed");
+        expect(failed.rows[0]?.failure_reason).toContain("SECURITY_VIOLATION");
+      } finally {
+        await owner.query(
+          "update pharmacy_ca set ca_certificate = $1 where singleton = true",
+          ["-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"],
+        );
+      }
+    });
+  });
+
+  it("keeps terminal recovery point outcomes immutable", async () => {
     const pool = localDatabase.requirePool();
     const verified = await pool.query<{ id: string }>(
       "select id from recovery_points where status = 'verified' limit 1",
     );
     const id = verified.rows[0]?.id;
-    if (!id) return;
+    expect(id).toBeTruthy();
 
-    // Attempt UPDATE on verified row
     await expect(
       pool.query(
         "update recovery_points set failure_reason = 'tampered' where id = $1",
         [id],
       ),
-    ).rejects.toThrow("Terminal recovery points are immutable");
+    ).rejects.toThrow("terminal recovery point outcomes are immutable");
 
-    // Attempt DELETE on verified row
+    // The schema owner is subject to the same trigger, so no maintenance path
+    // can quietly delete a recorded outcome. A non-terminal row still deletes,
+    // which proves the trigger returns the deleted row rather than silently
+    // cancelling every delete.
+    await withSchemaOwner(async (owner) => {
+      await expect(
+        owner.query("delete from recovery_points where id = $1", [id]),
+      ).rejects.toThrow("terminal recovery point outcomes are immutable");
+
+      const inProgress = await owner.query<{ id: string }>(
+        `insert into recovery_points (id, status, backup_type)
+         values (uuidv7(), 'in_progress', 'hourly_recovery_point')
+         returning id`,
+      );
+      const deleted = await owner.query(
+        "delete from recovery_points where id = $1",
+        [inProgress.rows[0]?.id],
+      );
+      expect(deleted.rowCount).toBe(1);
+    });
+  });
+
+  it("refuses to restore a recovery point that is not recorded as verified", async () => {
+    const pool = localDatabase.requirePool();
+    const verified = await pool.query<{ id: string }>(
+      "select id from recovery_points where status = 'verified' limit 1",
+    );
+    const sourceId = verified.rows[0]?.id ?? "";
+    const sourcePath = path.join(backupOutputDir, `recovery_${sourceId}.breev`);
+
+    const corruptedId = (
+      await pool.query<{ id: string }>(
+        `insert into recovery_points (id, status, backup_type, completed_at, failure_reason)
+         values (uuidv7(), 'corrupted', 'hourly_recovery_point', now(), 'deliberately corrupted')
+         returning id`,
+      )
+    ).rows[0]!.id;
+
+    const corruptedPath = path.join(
+      backupOutputDir,
+      `recovery_${corruptedId}.breev`,
+    );
+    const payload = JSON.parse(readFileSync(sourcePath, "utf8")) as {
+      recoveryId: string;
+    };
+    writeFileSync(
+      corruptedPath,
+      JSON.stringify({ ...payload, recoveryId: corruptedId }),
+    );
+
     await expect(
-      pool.query("delete from recovery_points where id = $1", [id]),
-    ).rejects.toThrow(
-      /(Terminal recovery points are immutable|permission denied)/,
-    );
+      coordinator.restoreToIsolatedInstance({
+        encryptedPayloadPath: corruptedPath,
+        isolatedPort: postgres.getPort() + 1,
+        isolatedTargetDir: path.join(testTempDir, "corrupted_restore"),
+        live: {
+          dataDirectory: path.join(testTempDir, "live"),
+          port: postgres.getPort(),
+        },
+      }),
+    ).rejects.toThrow("can never be restored as verified");
   });
 
-  // ─── 3. Content Inspection: Absence of CA Private Key and Plaintext Secrets ─
-  it("proves by inspection that backup payload excludes CA private keys and plaintext secrets", async () => {
-    if (!postgresAvailable || !localDatabase) return;
+  it("restores a verified recovery point into an isolated directory under quarantine", async () => {
     const pool = localDatabase.requirePool();
     const verified = await pool.query<{ id: string }>(
       "select id from recovery_points where status = 'verified' limit 1",
     );
-    const id = verified.rows[0]?.id;
-    if (!id) return;
-    const backupFile = path.join(backupOutputDir, `recovery_${id}.breev`);
-
-    const raw = JSON.parse(readFileSync(backupFile, "utf8"));
-    const ciphertext = Buffer.from(raw.ciphertextHex, "hex");
-
-    // Assert ciphertext does not contain plaintext string markers
-    const ciphertextString = ciphertext.toString("utf8");
-    expect(ciphertextString).not.toContain("Al-Amal Pharmacy");
-    expect(ciphertextString).not.toContain("BEGIN RSA PRIVATE KEY");
-    expect(ciphertextString).not.toContain("BEGIN PRIVATE KEY");
-  });
-
-  // ─── 4. Restore into Isolated Instance & Restore Quarantine ────────────────
-  it("restores encrypted recovery point into isolated directory and enters Restore Quarantine", async () => {
-    if (!postgresAvailable || !localDatabase || !coordinator || !postgres)
-      return;
-    const pool = localDatabase.requirePool();
-    const verified = await pool.query<{ id: string }>(
-      "select id from recovery_points where status = 'verified' limit 1",
-    );
-    const id = verified.rows[0]?.id;
-    if (!id) return;
-    const backupFile = path.join(backupOutputDir, `recovery_${id}.breev`);
-
+    const id = verified.rows[0]!.id;
     const isolatedRestoreDir = path.join(testTempDir, "isolated_instance_data");
 
-    const restoreResult = await coordinator.restoreToIsolatedInstance({
-      encryptedPayloadPath: backupFile,
-      isolatedPort: 5433,
+    const result = await coordinator.restoreToIsolatedInstance({
+      encryptedPayloadPath: path.join(backupOutputDir, `recovery_${id}.breev`),
+      isolatedPort: postgres.getPort() + 1,
       isolatedTargetDir: isolatedRestoreDir,
-      liveValidation: {
-        liveDataDir: "/var/lib/postgresql/data",
-        livePort: postgres.getPort(),
+      live: {
+        dataDirectory: path.join(testTempDir, "live"),
+        port: postgres.getPort(),
       },
     });
 
-    expect(restoreResult.quarantineActive).toBe(true);
-    expect(restoreResult.manifestVerification.isValid).toBe(true);
-    expect(restoreResult.restoredFilesCount).toBeGreaterThan(0);
-    expect(existsSync(isolatedRestoreDir)).toBe(true);
+    expect(result.quarantineActive).toBe(true);
+    expect(result.manifestVerification.isValid).toBe(true);
+    expect(result.restoredFilesCount).toBeGreaterThan(0);
 
-    // Verify RESTORE_QUARANTINE.flag exists in restored directory
-    const flagPath = path.join(isolatedRestoreDir, "RESTORE_QUARANTINE.flag");
-    expect(existsSync(flagPath)).toBe(true);
-    const flag = JSON.parse(readFileSync(flagPath, "utf8"));
-    expect(flag.quarantined).toBe(true);
+    const marker = JSON.parse(
+      readFileSync(
+        path.join(isolatedRestoreDir, "RESTORE_QUARANTINE.flag"),
+        "utf8",
+      ),
+    ) as { quarantined: boolean; recoveryId: string };
+    expect(marker.quarantined).toBe(true);
+    expect(marker.recoveryId).toBe(id);
+
+    // Restoring a recovery point must never take the running pharmacy out of
+    // normal use: the quarantine belongs to the restored dataset.
+    expect(
+      (await quarantineService.getQuarantineState(pool)).isQuarantined,
+    ).toBe(false);
   });
 
-  // ─── 5. Restore Quarantine Verification and Clearance ──────────────────────
-  it("executes registered quarantine verification hooks and safely clears quarantine", async () => {
-    if (!postgresAvailable || !localDatabase || !quarantineService) return;
+  it("persists the quarantine state of a dataset across a service restart", async () => {
     const pool = localDatabase.requirePool();
-
-    // Place into quarantine
     await quarantineService.enterQuarantine(
       pool,
-      "Simulated post-restore quarantine state",
+      "Restored from recovery point",
     );
 
-    let state = await quarantineService.getQuarantineState(pool);
+    const restarted = new RestoreQuarantineService(localDatabase);
+    const state = await restarted.getQuarantineState(pool);
     expect(state.isQuarantined).toBe(true);
-    expect(state.quarantineReason).toBe(
-      "Simulated post-restore quarantine state",
-    );
+    expect(state.quarantineReason).toBe("Restored from recovery point");
+  });
 
-    // Execute verification hooks
+  it("refuses a restore that targets the live pharmacy cluster", async () => {
+    const pool = localDatabase.requirePool();
+    const id = (
+      await pool.query<{ id: string }>(
+        "select id from recovery_points where status = 'verified' limit 1",
+      )
+    ).rows[0]!.id;
+
+    await expect(
+      coordinator.restoreToIsolatedInstance({
+        encryptedPayloadPath: path.join(
+          backupOutputDir,
+          `recovery_${id}.breev`,
+        ),
+        isolatedPort: postgres.getPort() + 1,
+        isolatedTargetDir: path.join(testTempDir, "live", "data"),
+        live: {
+          dataDirectory: path.join(testTempDir, "live"),
+          port: postgres.getPort(),
+        },
+      }),
+    ).rejects.toThrow("RESTORE_SAFETY_VIOLATION");
+  });
+
+  it("clears the quarantine only after the verification hooks pass", async () => {
+    const pool = localDatabase.requirePool();
+    expect(
+      (await quarantineService.getQuarantineState(pool)).isQuarantined,
+    ).toBe(true);
+
+    // A restored dataset that lost its Main device records stays quarantined.
+    await withSchemaOwner(async (owner) => {
+      const devices = await owner.query<{
+        credential_hash: Buffer;
+        id: string;
+      }>("select id, credential_hash from main_devices");
+      await owner.query("delete from main_device_sessions");
+      await owner.query("delete from main_devices");
+
+      const blocked = await quarantineService.verifyAndClearQuarantine(
+        pool,
+        "test_operator",
+      );
+      expect(blocked.overallPassed).toBe(false);
+      expect(
+        (await quarantineService.getQuarantineState(pool)).isQuarantined,
+      ).toBe(true);
+
+      for (const device of devices.rows) {
+        await owner.query(
+          "insert into main_devices (id, credential_hash) values ($1, $2)",
+          [device.id, device.credential_hash],
+        );
+      }
+    });
+
     const report = await quarantineService.verifyAndClearQuarantine(
       pool,
       "test_operator",
     );
-
     expect(report.overallPassed).toBe(true);
-    expect(report.checks.length).toBeGreaterThanOrEqual(3);
+    expect(report.checks).toHaveLength(3);
 
-    state = await quarantineService.getQuarantineState(pool);
+    const state = await quarantineService.getQuarantineState(pool);
     expect(state.isQuarantined).toBe(false);
-    expect(state.clearedAt).not.toBeNull();
     expect(state.clearedBy).toBe("test_operator");
+    expect(state.clearedAt).not.toBeNull();
   });
 
-  // ─── 6. Missed Run Detection and Catch-up Scheduling ───────────────────────
-  it("observes missed scheduled backup runs and schedules catch-up on service startup", async () => {
-    if (!postgresAvailable || !jobService) return;
-    const checkResult = await jobService.checkAndScheduleMissedRun(
-      backupOutputDir,
-      walArchiveDir,
+  it("records a run interrupted by a killed process as failed, never verified", async () => {
+    const pool = localDatabase.requirePool();
+    const interrupted = (
+      await pool.query<{ id: string }>(
+        `insert into recovery_points (id, status, backup_type)
+         values (uuidv7(), 'in_progress', 'hourly_recovery_point')
+         returning id`,
+      )
+    ).rows[0]!.id;
+
+    expect(await jobService.failInterruptedRuns()).toBeGreaterThanOrEqual(1);
+    const recorded = await pool.query<{
+      failure_reason: string;
+      status: string;
+    }>("select status, failure_reason from recovery_points where id = $1", [
+      interrupted,
+    ]);
+    expect(recorded.rows[0]?.status).toBe("failed");
+    expect(recorded.rows[0]?.failure_reason).toContain(
+      "stopped before this recovery point was verified",
     );
 
-    // Since a verified backup exists recently (<1h), missed run is false
-    expect(checkResult.missedRunDetected).toBe(false);
-    expect(checkResult.lastBackupAt).not.toBeNull();
+    // A recent verified recovery point means no catch-up run is needed.
+    expect(
+      (await jobService.checkAndScheduleMissedRun()).missedRunDetected,
+    ).toBe(false);
   });
+
+  it("returns the existing recovery point when a duplicate job run repeats an identity", async () => {
+    const pool = localDatabase.requirePool();
+    const original = await coordinator.createRecoveryPoint({
+      outputDirectory: backupOutputDir,
+    });
+
+    const duplicate = await coordinator.createRecoveryPoint({
+      outputDirectory: backupOutputDir,
+      recoveryPointId: original.id,
+    });
+
+    expect(duplicate.id).toBe(original.id);
+    expect(duplicate.completedAt?.toISOString()).toBe(
+      original.completedAt?.toISOString(),
+    );
+    const count = await pool.query<{ count: string }>(
+      "select count(*)::text as count from recovery_points where id = $1",
+      [original.id],
+    );
+    expect(count.rows[0]?.count).toBe("1");
+  });
+
+  /**
+   * The application role is deliberately unable to rewrite CA rows or delete
+   * device records, so state the application must never reach is arranged
+   * through the schema owner instead of by weakening a grant.
+   */
+  async function withSchemaOwner<T>(
+    run: (owner: Pool) => Promise<T>,
+  ): Promise<T> {
+    const owner = new Pool({ connectionString: databaseRoles.migrationUrl });
+    try {
+      return await run(owner);
+    } finally {
+      await owner.end();
+    }
+  }
+
+  function decryptLatestRecoveryPoint(): { files: Record<string, string> } {
+    const latest = readdirSync(backupOutputDir)
+      .filter((entry) => entry.endsWith(".breev"))
+      .sort()
+      .at(-1);
+    const raw = JSON.parse(
+      readFileSync(path.join(backupOutputDir, latest ?? ""), "utf8"),
+    ) as { ciphertextHex: string; metadata: never };
+
+    return JSON.parse(
+      decryptRecoveryPayload({
+        ciphertext: Buffer.from(raw.ciphertextHex, "hex"),
+        key: testKey,
+        metadata: raw.metadata,
+      }).toString("utf8"),
+    ) as { files: Record<string, string> };
+  }
+
+  function readTableRows(
+    archive: { files: Record<string, string> },
+    table: string,
+  ): Array<Record<string, unknown>> {
+    const encoded = archive.files[`tables/${table}.json`];
+    expect(encoded).toBeTruthy();
+    return JSON.parse(
+      Buffer.from(encoded ?? "", "base64").toString("utf8"),
+    ) as Array<Record<string, unknown>>;
+  }
 });

@@ -26,8 +26,7 @@ export interface RecoveryEncryptionMetadata {
   readonly authTagHex: string;
   readonly ivHex: string;
   readonly keyIdentifier: string;
-  readonly keyProtectionLevel:
-    "platform-tpm" | "software-cng" | "software-test";
+  readonly keyProtectionLevel: "machine-dpapi" | "software-test";
   readonly wrappedKeyHex: string;
 }
 
