@@ -136,9 +136,7 @@ test.describe("offline licence feature hiding", () => {
     await page.getByRole("button", { name: "استخدام الوضع الفاتح" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-    await page
-      .getByRole("button", { name: "التبديل إلى الإنجليزية" })
-      .click();
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
 
     renderer.setState(licensedState());
