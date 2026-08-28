@@ -274,8 +274,7 @@ export class IdentityAccessService {
          select action_name, required_permission
          from unnest($1::text[], $2::text[])
            as actions(action_name, required_permission)
-         on conflict (name) do update
-         set required_permission = excluded.required_permission`,
+         on conflict (name) do nothing`,
         [Object.keys(STEP_UP_ACTIONS), Object.values(STEP_UP_ACTIONS)],
       );
       await client.query(
