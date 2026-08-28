@@ -1,6 +1,7 @@
 .agents/
 .claude/
 .scratch/
+.unlazy/
 node_modules
 dist
 out
