@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { BrowserWindowConstructorOptions } from "electron";
 import {
@@ -231,7 +232,15 @@ export function readMainDeviceBinding(
     (value) => value !== undefined,
   ).length;
   if (presentCount === 0) {
-    return undefined;
+    // Installed systems have no environment to configure: the desktop app is
+    // launched from a shortcut, so the binding the installer generated is
+    // read from a file instead. Direct variables win for development.
+    const filePath =
+      environment.BREEV_MAIN_DEVICE_FILE ?? defaultMainDeviceFilePath();
+    if (filePath === undefined || !existsSync(filePath)) {
+      return undefined;
+    }
+    return readMainDeviceBindingFile(filePath);
   }
   if (
     presentCount !== 3 ||
@@ -246,6 +255,51 @@ export function readMainDeviceBinding(
     deviceSecret: binding.deviceSecret,
     sessionToken: binding.sessionToken,
   };
+}
+
+function defaultMainDeviceFilePath(): string | undefined {
+  if (process.platform !== "win32") {
+    return undefined;
+  }
+  const programData = process.env.ProgramData;
+  if (programData === undefined || programData.length === 0) {
+    return undefined;
+  }
+  return path.join(programData, "Breev", "config", "main-device.json");
+}
+
+function readMainDeviceBindingFile(filePath: string): MainDeviceBinding {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, "utf8"));
+  } catch {
+    throw new Error("The Main device binding file is unreadable");
+  }
+  const record =
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : {};
+  const binding = {
+    deviceId: asBindingString(record.deviceId),
+    deviceSecret: asBindingString(record.deviceSecret),
+    sessionToken: asBindingString(record.sessionToken),
+  };
+  if (
+    !isUuidV7(binding.deviceId) ||
+    !isHighEntropySecret(binding.deviceSecret) ||
+    !isHighEntropySecret(binding.sessionToken)
+  ) {
+    throw new Error("The Main device binding configuration is invalid");
+  }
+  return {
+    deviceId: binding.deviceId,
+    deviceSecret: binding.deviceSecret,
+    sessionToken: binding.sessionToken,
+  };
+}
+
+function asBindingString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 export function addMainDeviceRequestHeaders(
