@@ -1,11 +1,13 @@
 import { z } from "zod";
 
 export const LOCAL_API_VERSION = "4" as const;
-export const LOCAL_SCHEMA_VERSION = "3" as const;
+export const LOCAL_SCHEMA_VERSION = "4" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
 export const LOCAL_PROOF_MUTATION_SUCCESS_STATUS = 201 as const;
+export const LOCAL_RECOVERY_STATUS_SUCCESS_STATUS = 200 as const;
+export const LOCAL_RESTORE_QUARANTINE_STATUS = 503 as const;
 
 export const BREEV_CSRF_HEADER = "X-Breev-CSRF" as const;
 export const BREEV_CSRF_VALUE = "1" as const;
@@ -601,6 +603,61 @@ export const localProofEvidenceContract = {
   },
 } as const;
 
+export const recoveryPointStatusSchema = z.enum([
+  "in_progress",
+  "verified",
+  "failed",
+  "corrupted",
+]);
+export const recoveryBackupTypeSchema = z.enum([
+  "hourly_recovery_point",
+  "daily_snapshot",
+]);
+
+/** Privacy-safe recovery point metadata: no paths, hosts, or key material. */
+export const recoveryPointSummarySchema = z.strictObject({
+  backupType: recoveryBackupTypeSchema,
+  completedAt: z.iso.datetime().nullable(),
+  encryptedSizeBytes: z.number().int().nonnegative().nullable(),
+  id: z.uuid(),
+  manifestVerifiedAt: z.iso.datetime().nullable(),
+  startedAt: z.iso.datetime(),
+  status: recoveryPointStatusSchema,
+  walEndLsn: z.string().nullable(),
+  walStartLsn: z.string().nullable(),
+});
+
+export const restoreQuarantineStateSchema = z.strictObject({
+  clearedAt: z.iso.datetime().nullable(),
+  isQuarantined: z.boolean(),
+  quarantineReason: z.string().nullable(),
+  quarantinedAt: z.iso.datetime().nullable(),
+});
+
+export const localRecoveryStatusSuccessSchema = z.strictObject({
+  latestRecoveryPoint: recoveryPointSummarySchema.nullable(),
+  quarantine: restoreQuarantineStateSchema,
+});
+
+/**
+ * Every normal-use route answers with this body while the dataset is in
+ * Restore Quarantine.
+ */
+export const localRestoreQuarantineDenialSchema = z.strictObject({
+  code: z.literal("restore-quarantine"),
+  quarantinedAt: z.iso.datetime().nullable(),
+  reason: z.string().nullable(),
+});
+
+export const localRecoveryStatusContract = {
+  method: "GET",
+  path: "/recovery/status",
+  responses: {
+    [LOCAL_RECOVERY_STATUS_SUCCESS_STATUS]: localRecoveryStatusSuccessSchema,
+    ...localSecurityDenialResponses,
+  },
+} as const;
+
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
 export type LocalHealthDatabaseUnavailable = z.infer<
   typeof localHealthDatabaseUnavailableSchema
@@ -681,6 +738,18 @@ export type AttendanceEventRequest = z.infer<
   typeof attendanceEventRequestSchema
 >;
 export type AttendanceEvent = z.infer<typeof attendanceEventSchema>;
+export type RecoveryPointStatus = z.infer<typeof recoveryPointStatusSchema>;
+export type RecoveryBackupType = z.infer<typeof recoveryBackupTypeSchema>;
+export type RecoveryPointSummary = z.infer<typeof recoveryPointSummarySchema>;
+export type RestoreQuarantineState = z.infer<
+  typeof restoreQuarantineStateSchema
+>;
+export type LocalRecoveryStatusSuccess = z.infer<
+  typeof localRecoveryStatusSuccessSchema
+>;
+export type LocalRestoreQuarantineDenial = z.infer<
+  typeof localRestoreQuarantineDenialSchema
+>;
 
 export class LocalRestVersionMismatchError extends Error {
   public constructor(
@@ -765,6 +834,27 @@ export function parseLocalProofEvidenceResponse(
       statusCode,
       payload,
       localProofEvidenceSuccessSchema,
+    );
+  }
+  if (isSecurityDenialStatus(statusCode)) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      localSecurityDenialSchema,
+    );
+  }
+  throw new LocalRestPayloadError(statusCode);
+}
+
+export function parseLocalRecoveryStatusResponse(
+  statusCode: number,
+  payload: unknown,
+): LocalRecoveryStatusSuccess | LocalSecurityDenial {
+  if (statusCode === LOCAL_RECOVERY_STATUS_SUCCESS_STATUS) {
+    return parseContractResponse(
+      statusCode,
+      payload,
+      localRecoveryStatusSuccessSchema,
     );
   }
   if (isSecurityDenialStatus(statusCode)) {

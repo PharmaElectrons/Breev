@@ -29,6 +29,13 @@
       "when": 1787846400000,
       "tag": "0003_licensing",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787932800000,
+      "tag": "0004_local_recovery_and_quarantine",
+      "breakpoints": true
     }
   ]
 }
