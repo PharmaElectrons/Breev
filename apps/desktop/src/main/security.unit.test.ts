@@ -220,9 +220,9 @@ describe("Main device request binding", () => {
     const filePath = join(configRoot, "main-device.json");
     await writeFile(filePath, JSON.stringify(binding), "utf8");
 
-    expect(
-      readMainDeviceBinding({ BREEV_MAIN_DEVICE_FILE: filePath }),
-    ).toEqual(binding);
+    expect(readMainDeviceBinding({ BREEV_MAIN_DEVICE_FILE: filePath })).toEqual(
+      binding,
+    );
 
     await writeFile(filePath, JSON.stringify({ deviceId: binding.deviceId }));
     expect(() =>
