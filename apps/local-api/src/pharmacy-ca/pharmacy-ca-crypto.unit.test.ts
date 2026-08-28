@@ -494,9 +494,6 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     "Windows CNG Non-Exportability",
     () => {
       it("proves the CA key export fails", () => {
-        if (!caKeyResult.keyHandle.isMachineKey) {
-          return;
-        }
         expect(caKeyResult.keyHandle.isMachineKey).toBe(true);
         expect(caKeyResult.keyHandle.serviceAccountSid).toMatch(/^S-1-/);
         expect(readPersistedKeyAcl(caKeyResult.keyHandle)).toEqual({

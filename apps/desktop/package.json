@@ -10,7 +10,7 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "build": "node scripts/build.mjs",
+    "build": "electron-vite build",
     "dev": "electron-vite dev",
     "package": "node scripts/package.mjs",
     "package:windows": "electron-builder --config electron-builder.config.mjs --win nsis --x64",
