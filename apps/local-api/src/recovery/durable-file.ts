@@ -11,9 +11,13 @@ import path from "node:path";
  * Flushes a file's contents to stable storage. A recovery point that only
  * exists in the page cache is not a recovery point: the database row that
  * records it must never become durable before the bytes it describes.
+ *
+ * The handle is opened for writing because Windows fails the flush with EPERM
+ * on a handle that only holds read access, which would abort every archive and
+ * manifest write on the platform Breev ships on.
  */
 export function syncFile(filePath: string): void {
-  const descriptor = openSync(filePath, "r");
+  const descriptor = openSync(filePath, "r+");
   try {
     fsyncSync(descriptor);
   } finally {
