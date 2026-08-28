@@ -451,14 +451,20 @@ function Initialize-Database {
   $previousPgpassFile = $env:PGPASSFILE
   $env:PGPASSFILE = $pgpassPath
   $started = $false
+  $bootstrapSucceeded = $false
   try {
     Invoke-CheckedCommand -FilePath $pgCtlPath -Arguments @("start", "--pgdata=$stagedPostgresqlRoot", "--log=$bootstrapLogPath", "--wait", "--timeout=60") -FailureMessage "The staged PostgreSQL server did not start"
     $started = $true
     Invoke-CheckedCommand -FilePath $psqlPath -Arguments @("--no-password", "--host=127.0.0.1", "--port=$postgresqlPort", "--username=breev_bootstrap", "--dbname=postgres", "--file=$bootstrapSqlPath") -FailureMessage "Could not create the separated database roles"
+    $bootstrapSucceeded = $true
   } finally {
     $stopFailure = $null
     try {
-      if ($started) {
+      # pg_ctl start can fail its own wait while the postmaster is already up,
+      # so the on-disk pid file decides whether a stop is owed. An orphaned
+      # staged postgres.exe otherwise locks .installing against every later
+      # install attempt.
+      if ($started -or (Test-Path -LiteralPath (Join-Path $stagedPostgresqlRoot "postmaster.pid") -PathType Leaf)) {
         Invoke-CheckedCommand -FilePath $pgCtlPath -Arguments @("stop", "--pgdata=$stagedPostgresqlRoot", "--mode=fast", "--wait", "--timeout=60") -FailureMessage "The staged PostgreSQL server did not stop cleanly"
       }
     } catch {
@@ -466,12 +472,18 @@ function Initialize-Database {
     } finally {
       $env:PGPASSFILE = $previousPgpassFile
       foreach ($secretPath in @($pgpassPath, $bootstrapSqlPath)) {
-        if (Test-Path -LiteralPath $secretPath) {
-          Remove-Item -LiteralPath $secretPath -Force
+        try {
+          if (Test-Path -LiteralPath $secretPath) {
+            Remove-Item -LiteralPath $secretPath -Force
+          }
+        } catch {
+          if ($null -eq $stopFailure) { $stopFailure = $_ }
         }
       }
     }
-    if ($null -ne $stopFailure) { throw $stopFailure }
+    # A throw here would replace an in-flight bootstrap failure, so stop or
+    # secret-cleanup failures only surface when the bootstrap itself succeeded.
+    if ($null -ne $stopFailure -and $bootstrapSucceeded) { throw $stopFailure }
   }
 
   Set-Content -LiteralPath (Join-Path $stagedConfigRoot "database-url") -Value "postgresql://breev_app:$appPassword@127.0.0.1:$postgresqlPort/breev" -NoNewline -Encoding ASCII
@@ -505,6 +517,9 @@ function Register-PostgresqlService {
   $postgresPath = Join-Path $postgresqlRoot "bin\postgres.exe"
   $postgresqlDataRoot = Join-Path $DataRoot "postgresql"
   $logRoot = Join-Path $DataRoot "logs\postgresql"
+  # Recorded before the registration call: shawl can create the service and
+  # still fail afterwards, and the rollback path only cleans recorded names.
+  [void] $createdServices.Add($postgresqlServiceName)
   Invoke-CheckedCommand -FilePath $shawlPath -Arguments @(
     "add", "--name", $postgresqlServiceName,
     "--restart", "--restart-delay", "5000", "--stop-timeout", "60000", "--kill-process-tree",
@@ -512,7 +527,6 @@ function Register-PostgresqlService {
     "--cwd", $postgresqlRoot,
     "--", $postgresPath, "-D", $postgresqlDataRoot
   ) -FailureMessage "Could not register the PostgreSQL Windows service"
-  [void] $createdServices.Add($postgresqlServiceName)
   Configure-Service -Name $postgresqlServiceName -Description "Breev private PostgreSQL 18.6 service"
 }
 
@@ -523,16 +537,21 @@ function Register-ApiService {
   $apiEntry = Join-Path $apiRoot "dist\main.js"
   $runtimeUrlPath = Join-Path $DataRoot "config\database-url"
   $logRoot = Join-Path $DataRoot "logs\local-api"
+  $backupRoot = Join-Path $DataRoot "backups"
+  [void] $createdServices.Add($apiServiceName)
   Invoke-CheckedCommand -FilePath $shawlPath -Arguments @(
     "add", "--name", $apiServiceName,
     "--restart", "--restart-delay", "2000", "--stop-timeout", "30000", "--kill-process-tree",
     "--log-dir", $logRoot, "--log-as", "wrapper", "--log-cmd-as", "local-api",
     "--cwd", $apiRoot,
     "--env", "API_HOST=127.0.0.1", "--env", "API_PORT=$apiPort", "--env", "DATABASE_URL_FILE=$runtimeUrlPath",
+    "--env", "BREEV_BACKUP_DIRECTORY=$backupRoot",
     "--", $nodePath, $apiEntry
   ) -FailureMessage "Could not register the local API Windows service"
-  [void] $createdServices.Add($apiServiceName)
   Configure-Service -Name $apiServiceName -Description "Breev local API service"
+  # The SCM must bring PostgreSQL up before the API on every boot, or the API
+  # starts against a database that is not accepting connections yet.
+  Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("config", $apiServiceName, "depend=", $postgresqlServiceName) -FailureMessage "Could not order the local API service after PostgreSQL"
 }
 
 function Set-ServiceAcls {
@@ -560,6 +579,9 @@ function Set-ServiceAcls {
     [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Modify }
   ) -ResetDescendants
   Set-DirectoryAcl -Path $stateRoot -AdditionalGrants @() -ResetDescendants
+  Set-DirectoryAcl -Path (Join-Path $DataRoot "backups") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Modify }
+  ) -ResetDescendants
 
   Set-DirectoryAcl -Path (Join-Path $PayloadRoot "service-wrapper") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute },
@@ -577,6 +599,9 @@ function Set-ServiceAcls {
 }
 
 function Wait-PostgresqlReady {
+  # Explicit stream redirection plus the script-wide Stop preference would turn
+  # a single pg_isready stderr line into a terminating error inside this poll.
+  $ErrorActionPreference = "Continue"
   $pgIsReadyPath = Join-Path $PayloadRoot "postgresql\bin\pg_isready.exe"
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
   while ([DateTime]::UtcNow -lt $deadline) {
@@ -622,8 +647,9 @@ function Wait-ApiReady {
         return
       }
     } catch {
-      Start-Sleep -Milliseconds 500
+      # A refused connection or non-200 response falls through to the sleep.
     }
+    Start-Sleep -Milliseconds 500
   }
   throw "The local API Windows service did not become healthy"
 }
@@ -714,7 +740,9 @@ try {
 } catch {
   $lifecycleFailure = $_
   $cleanupErrors = [Collections.Generic.List[string]]::new()
-  foreach ($serviceName in $createdServices) {
+  $servicesToClean = @($createdServices)
+  [array]::Reverse($servicesToClean)
+  foreach ($serviceName in $servicesToClean) {
     try {
       Stop-And-DeleteService -Name $serviceName
     } catch {
