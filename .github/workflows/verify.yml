@@ -5,6 +5,10 @@ on:
     branches: [dev]
   push:
     branches: [dev]
+  # The Windows jobs bill at 2x hosted-runner minutes and dominate the budget,
+  # so they run on demand. Trigger a full run, Windows jobs included, from the
+  # Actions tab (Run workflow) or `gh workflow run Verify --ref <branch>`.
+  workflow_dispatch:
 
 concurrency:
   group: verify-${{ github.ref }}
@@ -16,6 +20,7 @@ permissions:
 jobs:
   windows-cng-proof:
     runs-on: windows-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     timeout-minutes: 15
 
     steps:
@@ -101,6 +106,7 @@ jobs:
 
   windows-candidates:
     runs-on: windows-2025
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     timeout-minutes: 90
 
     steps:
