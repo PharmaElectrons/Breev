@@ -6,6 +6,8 @@ Issue: GitHub #36 (`05: Prove the pharmacy CA and terminal mTLS`)
 
 Status: **pending Windows and physical-profile evidence**. This record does not close G-05.
 
+29 August 2026: the stakeholder accepted the software-CNG fallback as the milestone-1 key-storage profile and this record's certificate and mTLS mechanics as the milestone-1 proof, per [`docs/open-decisions.md`](../../docs/open-decisions.md) G-05. The milestone-1 start gate for dependent work is satisfied. Every item under "Required evidence still open" is release-gated. The confirmed mTLS rule is unchanged, and nothing in this record triggers the pinned-server-TLS alternative described at the end of it.
+
 ## Implemented seams
 
 - Secure initialization serializes CA creation with PostgreSQL advisory lock `165308857`. An existing database identity must match the persisted key, CA certificate, fingerprint, and installation identity; missing or mismatched state fails closed.

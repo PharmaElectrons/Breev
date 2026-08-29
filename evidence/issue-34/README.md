@@ -1,6 +1,6 @@
 # Issue #34 evidence index
 
-**Current status:** Implementation and host preparation are in progress. No certification result is recorded here until every machine-readable check passes on an activated Windows 11 Pro x64 25H2 disposable guest.
+**Current status:** Implementation and host preparation are in progress. This sequence is the release path; milestone-1 acceptance follows the practical lifecycle proof in [`docs/open-decisions.md`](../../docs/open-decisions.md) G-07, recorded by the stakeholder decision of 29 August 2026. No certification result is recorded here until every machine-readable check passes on an activated Windows 11 Pro x64 25H2 disposable guest.
 
 ## Authority and safety
 
@@ -29,4 +29,6 @@ Capture PowerShell transcripts for the Windows commands and copy only sanitized 
 
 ## Completion rule
 
-The packaging recommendation in [`packaging-comparison.md`](packaging-comparison.md) remains provisional until the two-version signed Windows build, both lifecycle runs, ASAR tamper tests, service/database recovery, offline standard-user run, LAN refusal, no-login reboot, Windows CI, and physical-profile gate all produce passing results and the final evidence aggregator succeeds.
+The packaging recommendation in [`packaging-comparison.md`](packaging-comparison.md) remains provisional until the two-version signed Windows build, both lifecycle runs, ASAR tamper tests, service/database recovery, offline standard-user run, LAN refusal, no-login reboot, Windows CI, and physical-profile gate all produce passing results and the final evidence aggregator succeeds. That rule is the release path, and no step of the sequence above is removed.
+
+Milestone 1 does not wait for it. On 29 August 2026 the stakeholder confirmed electron-builder with the offline per-machine NSIS installer as the production path on a practical basis, and set milestone-1 acceptance to the practical lifecycle proof recorded in [`docs/open-decisions.md`](../../docs/open-decisions.md) G-07: a clean install reaches Ready; a machine restart returns to Ready; repair recovers without touching pharmacy data or the pharmacy CA; an injected failure rolls back and preserves any existing data directory; uninstall preserves data, and destructive removal happens only through its separate explicit authorization. That proof runs offline with development/test signing and may run on the unactivated `breev-issue-34-win11` guest. Certification completion in this file still requires the activated guest, the physical-profile gate, and `Confirm-Issue34Evidence.ps1`.

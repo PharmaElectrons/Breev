@@ -6,6 +6,8 @@ Issue: [#41](https://github.com/PharmaElectrons/PharmaElectrons/issues/41), `Cre
 
 Status: **incomplete**. The recovery point state machine, envelope encryption, manifest verification, restore isolation, and Restore Quarantine are implemented and proved against real PostgreSQL. The recovery mechanism itself is **not** the PostgreSQL base backup plus WAL that [`docs/architecture.md`](../../docs/architecture.md) §Durable work, backup, and cloud requires, and no step of this record has been executed on Windows. G-06 does not close on this record.
 
+29 August 2026: the stakeholder accepted this record as the milestone-1 recovery basis, per [`docs/open-decisions.md`](../../docs/open-decisions.md) G-06. The milestone-1 start gate for dependent work is satisfied. The mechanism gap under "Tool selection", the Windows execution of this record, and the rest of "Open before G-06 closes" are release-gated.
+
 ## What this record proves, and where
 
 Every claim below is backed by a test that runs against a real PostgreSQL 18.6 container. No claim in this record was produced on Windows.
