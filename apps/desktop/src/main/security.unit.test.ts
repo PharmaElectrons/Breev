@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
   APP_CONTENT_SECURITY_POLICY,
   addMainDeviceRequestHeaders,
+  addTerminalBridgeRequestHeaders,
+  createIpcGuard,
   createStartupConfigIpcGuard,
   createHardenedWindowOptions,
   resolveAppAssetPath,
@@ -279,4 +281,98 @@ describe("Main device request binding", () => {
       ).toEqual({});
     },
   );
+});
+
+describe("terminal bridge request token", () => {
+  const bridgeOrigin = "http://127.0.0.1:41999";
+  const token = "T".repeat(43);
+
+  it("attaches the boot token only to the trusted window's bridge origin", () => {
+    expect(
+      addTerminalBridgeRequestHeaders(
+        {
+          requestHeaders: { Accept: "application/json" },
+          url: `${bridgeOrigin}/health`,
+          webContentsId: 7,
+        },
+        { bridgeOrigin, token, trustedWebContentsId: 7 },
+      ),
+    ).toEqual({
+      Accept: "application/json",
+      "x-breev-bridge-token": token,
+    });
+  });
+
+  it.each([
+    ["http://127.0.0.1:41998/health", 7],
+    ["https://attacker.example/health", 7],
+    ["http://127.0.0.1:41999/health", 8],
+  ])(
+    "does not attach the token to %s from web contents %i",
+    (url, webContentsId) => {
+      expect(
+        addTerminalBridgeRequestHeaders(
+          { requestHeaders: {}, url, webContentsId },
+          { bridgeOrigin, token, trustedWebContentsId: 7 },
+        ),
+      ).toEqual({});
+    },
+  );
+
+  it("strips a token the renderer tried to supply itself", () => {
+    expect(
+      addTerminalBridgeRequestHeaders(
+        {
+          requestHeaders: { "X-Breev-Bridge-Token": "forged" },
+          url: "https://attacker.example/health",
+          webContentsId: 7,
+        },
+        { bridgeOrigin, token, trustedWebContentsId: 7 },
+      ),
+    ).toEqual({});
+  });
+});
+
+describe("shared IPC guard", () => {
+  const trusted = {
+    senderFrame: {
+      isMainFrame: true,
+      origin: "breev://app",
+      url: "breev://app/index.html",
+    },
+    senderId: 7,
+  };
+
+  function guardFor(maximumPayloadBytes = 64) {
+    return createIpcGuard({
+      maximumCalls: 2,
+      maximumPayloadBytes,
+      name: "pairing invitation",
+      now: () => 1_000,
+      parse: (payload: unknown) => payload as { invitation?: string },
+      trustedSenderId: 7,
+    });
+  }
+
+  it("names the channel it denied so the failure is traceable", () => {
+    expect(() => guardFor()({ ...trusted, senderId: 8 }, {})).toThrow(
+      /pairing invitation IPC from this frame/u,
+    );
+  });
+
+  it("bounds the payload of each channel separately", () => {
+    expect(() => guardFor(16)(trusted, { invitation: "x".repeat(64) })).toThrow(
+      /oversized pairing invitation/u,
+    );
+    expect(guardFor(4_096)(trusted, { invitation: "x".repeat(64) })).toEqual({
+      invitation: "x".repeat(64),
+    });
+  });
+
+  it("bounds the rate of each channel separately", () => {
+    const guard = guardFor();
+    expect(guard(trusted, {})).toEqual({});
+    expect(guard(trusted, {})).toEqual({});
+    expect(() => guard(trusted, {})).toThrow(/rate/iu);
+  });
 });
