@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "runId": "ba18d330-79ec-42bf-9c77-3727ff41effa",
+  "sourceCommit": "8254954134b76316c61139d429de1442ca66c7d9",
+  "phase": "signature-tamper",
+  "passed": true,
+  "startedUtc": "2026-08-29T16:59:03.318453092Z",
+  "finishedUtc": "2026-08-29T16:59:18.698693176Z",
+  "details": {
+    "method": "Set-AuthenticodeSignature with the development/test comparison certificate on a copy",
+    "signedStatus": "Valid",
+    "tamperedStatus": "HashMismatch",
+    "tamperedRejected": true
+  }
+}
