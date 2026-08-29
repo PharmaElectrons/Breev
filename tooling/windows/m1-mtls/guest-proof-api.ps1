@@ -18,18 +18,15 @@ param(
 $ErrorActionPreference = "Stop"
 $serviceName = "BreevLocalApi"
 $dataRoot = "C:\ProgramData\Breev"
-$payloadRoot = "C:\Program Files\Breev\resources\windows-payload"
+$payloadRoot = if (Test-Path -LiteralPath "C:\breev-m1\payload\local-api\dist\main.js") { "C:\breev-m1\payload" } else { "C:\Program Files\Breev\resources\windows-payload" }
 $apiRoot = Join-Path $payloadRoot "local-api"
-$apiReadableRoot = Join-Path $dataRoot "logs\local-api\m1-mtls-proof"
+$apiReadableRoot = Join-Path $apiRoot "m1-mtls-proof"
 $restorePath = Join-Path $ProofRoot "service-restore.json"
 
 function Invoke-ScConfig {
   param([string] $BinaryPath)
 
-  $output = & sc.exe config $serviceName "binPath=" $BinaryPath 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    throw "Could not configure the proof API service: $($output -join ' ')"
-  }
+  Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName" -Name "ImagePath" -Value $BinaryPath -ErrorAction Stop
 }
 
 function Wait-LoopbackHealth {
@@ -144,7 +141,7 @@ function Quote-CommandArgument {
 
 $shawl = Join-Path $payloadRoot "service-wrapper\shawl.exe"
 $node = Join-Path $payloadRoot "node\node.exe"
-$override = Join-Path $apiReadableRoot "licence-key-override.mjs"
+$override = ([System.Uri](Join-Path $apiReadableRoot "licence-key-override.mjs")).AbsoluteUri
 $publicKeys = Join-Path $apiReadableRoot "licence-public-keys.json"
 $arguments = @(
   (Quote-CommandArgument $shawl), "run", "--name", $serviceName,

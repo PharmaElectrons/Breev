@@ -87,7 +87,7 @@ mtls_cleanup() {
     guest_powershell_file "$mtls_guest_api_helper" -Action Stop -ProofRoot "$mtls_guest_root" >/dev/null 2>&1
   fi
   if [[ "$mtls_guest_staged" == true ]]; then
-    guest_powershell_command "Remove-Item -LiteralPath '${mtls_guest_root//\'/\'\'}' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath 'C:\ProgramData\Breev\logs\local-api\m1-mtls-proof' -Recurse -Force -ErrorAction SilentlyContinue" >/dev/null 2>&1
+    guest_powershell_command "Remove-Item -LiteralPath '${mtls_guest_root//\'/\'\'}' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath 'C:\Program Files\Breev\resources\windows-payload\local-api\m1-mtls-proof' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath 'C:\ProgramData\Breev\logs\local-api\m1-mtls-proof' -Recurse -Force -ErrorAction SilentlyContinue" >/dev/null 2>&1
   fi
   if [[ "$mtls_peer_staged" == true ]]; then
     ssh "${mtls_ssh_options[@]}" "root@$mtls_peer_address" rm -rf -- "$mtls_peer_root" >/dev/null 2>&1
@@ -133,8 +133,8 @@ scp "${mtls_ssh_options[@]}" \
   "$mtls_script_dir/peer-mtls-driver.mjs" \
   "root@$mtls_peer_address:$mtls_peer_root/" >/dev/null
 
-mtls_guest_node='C:\Program Files\Breev\resources\windows-payload\node\node.exe'
-mtls_guest_api_root='C:\Program Files\Breev\resources\windows-payload\local-api'
+mtls_guest_node='C:\breev-m1\payload\node\node.exe'
+mtls_guest_api_root='C:\breev-m1\payload\local-api'
 mtls_main_device_file='C:\ProgramData\Breev\config\main-device.json'
 mtls_schema_owner_url='C:\ProgramData\Breev\config\schema-owner-url'
 # The public half persists under the fixed synthetic fixture identity so a
@@ -154,7 +154,7 @@ guest_exec "$mtls_guest_node" "$mtls_guest_root\\seed-pairing-prereqs.mjs" \
   --pg-package-root "$mtls_guest_api_root" >/dev/null
 # Signing material exists only long enough to mint the synthetic disposable
 # licence. The API process receives the public registry, never this private key.
-guest_powershell_command "Remove-Item -LiteralPath '${mtls_guest_issuer//\'/\'\'}\\licence-signing-key.pem' -Force -ErrorAction SilentlyContinue"
+guest_powershell_command "\$ProgressPreference = 'SilentlyContinue'; Remove-Item -LiteralPath '${mtls_guest_issuer//\'/\'\'}\\licence-signing-key.pem' -Force -ErrorAction SilentlyContinue; exit 0"
 mtls_service_may_need_restore=true
 guest_powershell_file "$mtls_guest_api_helper" -Action Start -ProofRoot "$mtls_guest_root" \
   -IssuerDirectory "$mtls_guest_issuer" \
