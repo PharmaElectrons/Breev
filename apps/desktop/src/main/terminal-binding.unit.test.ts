@@ -171,10 +171,18 @@ describe("terminal device binding", () => {
       protector: protector(true),
     });
 
-    for (const file of [TERMINAL_BINDING_FILE, TERMINAL_KEY_FILE]) {
-      expect(statSync(path.join(directory, file)).mode & 0o077).toBe(0);
+    // POSIX permission bits are the enforcement mechanism only on POSIX
+    // platforms. On Windows, Node's chmod merely toggles the read-only
+    // attribute and st_mode keeps its group/other bits, so mode & 0o077 is
+    // non-zero there; the key's real protection on Windows is Electron
+    // safeStorage encryption (the key is stored as ciphertext) plus NTFS ACLs,
+    // not POSIX mode. Guard exactly these assertions rather than weaken them.
+    if (process.platform !== "win32") {
+      for (const file of [TERMINAL_BINDING_FILE, TERMINAL_KEY_FILE]) {
+        expect(statSync(path.join(directory, file)).mode & 0o077).toBe(0);
+      }
+      expect(statSync(directory).mode & 0o077).toBe(0);
     }
-    expect(statSync(directory).mode & 0o077).toBe(0);
   });
 
   it("fails loudly when the stored authority no longer matches its pin", () => {
