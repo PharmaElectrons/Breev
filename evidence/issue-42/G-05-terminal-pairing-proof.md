@@ -153,7 +153,18 @@ Clean checkout verification:
 
 ```text
 $ git clone … && pnpm install --frozen-lockfile && pnpm verify
-PLACEHOLDER-CLEANCO
+$ git clone --branch issue/11-pair-four-devices … && pnpm install --frozen-lockfile
+$ pnpm verify
+lint + boundaries        passed (181 source files)
+format:check             all matched files clean
+typecheck + build        4 workspaces clean
+licence artifact check   passed
+@breev/contracts         test:unit          71 passed (2 files)
+@breev/desktop           test:unit         301 passed (18 files)
+@breev/local-api         test:unit         425 passed, 1 skipped (19 files)
+@breev/local-api         test:integration  165 passed, 1 skipped (13 files)
+@breev/desktop           test:browser       27 passed
+@breev/desktop           test:smoke          2 passed
 ```
 
 ## Open before G-05 closes
