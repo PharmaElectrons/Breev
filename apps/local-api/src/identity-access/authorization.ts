@@ -15,6 +15,9 @@ export const PERMISSION_NAMES = [
 export type PermissionName = (typeof PERMISSION_NAMES)[number];
 
 export const STEP_UP_ACTIONS = {
+  "devices.pairing.start": "devices.pair",
+  "devices.revoke": "devices.pair",
+  "devices.seat.release.request": "devices.pair",
   "identity.role.permissions.update": "identity.roles.manage",
   "identity.user.create": "identity.users.manage",
   "identity.user.update": "identity.users.manage",

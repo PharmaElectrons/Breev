@@ -3,9 +3,15 @@ import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { json, type RequestHandler } from "express";
 import type { Server } from "node:https";
-import { isIP } from "node:net";
 
 import { AppModule } from "./app.module.js";
+import { DevicesService } from "./devices/devices.service.js";
+import {
+  publishDiscovery,
+  type DiscoveryPublisher,
+} from "./devices/discovery-publisher.js";
+import { readPairingEndpoint } from "./devices/pairing-endpoint.js";
+import { createPairingChannelHandler } from "./devices/pairing.routes.js";
 import { LocalDatabaseService } from "./local-database.service.js";
 import {
   createMainRequestBodyErrorMiddleware,
@@ -22,7 +28,7 @@ const DEFAULT_API_PORT = 31_310;
 async function bootstrap(): Promise<void> {
   const port = readPort(process.env.API_PORT);
   const host = process.env.API_HOST ?? "127.0.0.1";
-  const lanEndpoint = readLanEndpoint();
+  const lanEndpoint = readPairingEndpoint(process.env);
   if (host !== "127.0.0.1") {
     throw new Error("The Main local API proof must bind to 127.0.0.1");
   }
@@ -44,67 +50,69 @@ async function bootstrap(): Promise<void> {
   );
   app.use(json({ limit: 8 * 1024, strict: true, type: "application/json" }));
   app.use(createMainRequestBodyErrorMiddleware(mainDeviceSecurity));
-  app.use(
-    createRestoreQuarantineMiddleware({
-      getPool: () => {
-        try {
-          return app.get(LocalDatabaseService).requirePool();
-        } catch {
-          return undefined;
-        }
-      },
-      quarantineService: app.get(RestoreQuarantineService),
-    }),
-  );
+  // One handler, mounted twice: the loopback pipeline runs it inside Nest, and
+  // the LAN listener runs it ahead of the pairing channel so a quarantined
+  // dataset answers nothing there either.
+  const quarantineHandler = createRestoreQuarantineMiddleware({
+    getPool: () => {
+      try {
+        return app.get(LocalDatabaseService).requirePool();
+      } catch {
+        return undefined;
+      }
+    },
+    quarantineService: app.get(RestoreQuarantineService),
+  });
+  app.use(quarantineHandler);
 
   let lanServer: Server | undefined;
+  let discovery: DiscoveryPublisher | undefined;
   try {
     await app.listen(port, host);
     if (lanEndpoint !== undefined) {
-      lanServer = await createLanMtlsServer({
+      const devices = app.get(DevicesService);
+      const pharmacyCa = app.get(PharmacyCaService);
+      const lan = await createLanMtlsServer({
         apiHandler: app.getHttpAdapter().getInstance() as RequestHandler,
         host: lanEndpoint.host,
-        pharmacyCa: app.get(PharmacyCaService),
+        pairingHandler: createPairingChannelHandler(devices),
+        pharmacyCa,
+        quarantineHandler,
         security: mainDeviceSecurity,
       });
+      lanServer = lan.server;
+      // Revocation destroys a device's open connections through this registry,
+      // so the service only learns about it once the listener exists.
+      devices.useSocketRegistry(lan.registry);
       await listen(lanServer, lanEndpoint.port, lanEndpoint.host);
+      discovery = publishDiscovery({
+        endpoint: lanEndpoint,
+        installationId: pharmacyCa.installationId,
+      });
     }
   } catch (error) {
     lanServer?.close();
+    await discovery?.stop().catch(() => undefined);
     await app.close();
     throw error;
   }
-  app.getHttpServer().once("close", () => lanServer?.close());
+  app.getHttpServer().once("close", () => {
+    lanServer?.close();
+    void discovery?.stop().catch(() => undefined);
+  });
 }
 
-function readPort(value: string | undefined, name = "API_PORT"): number {
+function readPort(value: string | undefined): number {
   if (value === undefined) {
     return DEFAULT_API_PORT;
   }
 
   const port = Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error(`${name} must be an integer between 1 and 65535`);
+    throw new Error("API_PORT must be an integer between 1 and 65535");
   }
 
   return port;
-}
-
-function readLanEndpoint(): { host: string; port: number } | undefined {
-  const host = process.env.BREEV_LAN_API_HOST;
-  const port = process.env.BREEV_LAN_API_PORT;
-  if (host === undefined && port === undefined) {
-    return undefined;
-  }
-  if (host === undefined || port === undefined) {
-    throw new Error(
-      "BREEV_LAN_API_HOST and BREEV_LAN_API_PORT must be configured together",
-    );
-  }
-  if (isIP(host) === 0 || host === "0.0.0.0" || host === "::") {
-    throw new Error("BREEV_LAN_API_HOST must be a concrete IP address");
-  }
-  return { host, port: readPort(port, "BREEV_LAN_API_PORT") };
 }
 
 function listen(server: Server, port: number, host: string): Promise<void> {

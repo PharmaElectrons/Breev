@@ -44,8 +44,19 @@ test.describe("offline licence feature hiding", () => {
     page,
   }) => {
     await page.addInitScript((origin) => {
+      const unpairedState = {
+        candidates: [],
+        stage: "awaiting-invitation" as const,
+      };
       const desktopApi: BreevDesktopApi = Object.freeze({
-        getStartupConfig: async () => ({ localApiOrigin: origin }),
+        cancelTerminalPairing: async () => unpairedState,
+        getTerminalPairingState: async () => unpairedState,
+        submitManualEndpoint: async () => unpairedState,
+        submitPairingInvitation: async () => unpairedState,
+        getStartupConfig: async () => ({
+          localApiOrigin: origin,
+          role: "main" as const,
+        }),
       });
       Object.defineProperty(globalThis, "breevDesktop", {
         configurable: false,

@@ -46,6 +46,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 
+import { LicensingDenied } from "../licensing/licensing.service.js";
 import {
   IdentityAccessDenied,
   IdentityAccessService,
@@ -233,12 +234,28 @@ export class IdentityAccessController {
   }
 }
 
+/**
+ * Turns a decision into its HTTP response.
+ *
+ * Two families reach here. An identity denial carries its own status. A
+ * licensing denial reaches this path too, because establishing an Additional
+ * POS Terminal's execution context requires the entitlement that permits a
+ * terminal at all: a terminal whose licence no longer carries it is refused
+ * with `entitlement-denied`, and the Main Pharmacy Computer never is. Anything
+ * else is a fault and is left alone rather than dressed up as a decision.
+ */
 async function translateIdentityDenial<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } catch (error) {
     if (error instanceof IdentityAccessDenied) {
       throw new HttpException(error.denial, error.statusCode);
+    }
+    if (error instanceof LicensingDenied) {
+      throw new HttpException(
+        error.denial,
+        error.denial.code === "idempotency-conflict" ? 409 : 403,
+      );
     }
     throw error;
   }

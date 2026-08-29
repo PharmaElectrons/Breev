@@ -2,7 +2,7 @@ import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import express from "express";
 import https from "node:https";
 import type { AddressInfo } from "node:net";
@@ -14,6 +14,15 @@ import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
+import {
+  issueFixtureDeviceCertificate,
+  revokeFixtureDevice,
+  seedIdentitySession,
+  seedLicenceRow,
+  seedPairingSession,
+  seedPharmacy,
+  type SeededPharmacy,
+} from "../devices/test-helpers/devices-fixture.test.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { MainDeviceSecurityService } from "../main-device/main-device-security.service.js";
 import { tryExportPrivateKey } from "./cng-addon.js";
@@ -26,6 +35,7 @@ import {
 import { PharmacyCaService } from "./pharmacy-ca.service.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
+const MAIN_DEVICE_ID = "019b0000-0000-7000-8000-0000000005a1";
 
 describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
   let postgres: StartedPostgreSqlContainer;
@@ -34,6 +44,31 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
   let localDb: LocalDatabaseService;
   let security: MainDeviceSecurityService;
   let pharmacyCa: PharmacyCaService;
+  let pharmacy: SeededPharmacy;
+  let licenceId: string;
+  let identitySessionId: string;
+
+  /**
+   * A terminal device record only exists as the outcome of a pairing ceremony,
+   * so the mTLS seam builds the whole chain — pharmacy, owner, licence,
+   * confirmed session — before it can certify anything to talk to.
+   */
+  async function certifyTerminal(devicePublicKeyDer: Buffer) {
+    const pairingSessionId = await seedPairingSession(pool, {
+      identitySessionId,
+      installationId: pharmacyCa.installationId,
+      mainDeviceId: MAIN_DEVICE_ID,
+      ownerId: pharmacy.ownerId,
+      pharmacyId: pharmacy.pharmacyId,
+    });
+    return await issueFixtureDeviceCertificate(pool, pharmacyCa, {
+      devicePublicKeyDer,
+      licenceId,
+      ownerId: pharmacy.ownerId,
+      pairingSessionId,
+      pharmacyId: pharmacy.pharmacyId,
+    });
+  }
 
   beforeAll(async () => {
     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
@@ -41,12 +76,33 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
 
     process.env.DATABASE_URL = databaseRoles.applicationUrl;
     process.env.DATABASE_MIGRATION_URL = databaseRoles.migrationUrl;
+    process.env.BREEV_MAIN_DEVICE_ID = MAIN_DEVICE_ID;
+    process.env.BREEV_MAIN_DEVICE_SECRET =
+      randomBytes(32).toString("base64url");
+    const sessionToken = randomBytes(32).toString("base64url");
+    process.env.BREEV_MAIN_DEVICE_SESSION = sessionToken;
 
     localDb = new LocalDatabaseService();
     await localDb.onModuleInit();
     pool = localDb.requirePool();
     security = new MainDeviceSecurityService(localDb);
     pharmacyCa = new PharmacyCaService(localDb);
+    pharmacy = await seedPharmacy(pool, {
+      mainDeviceId: MAIN_DEVICE_ID,
+      name: "Breev mTLS Test Pharmacy",
+    });
+    licenceId = await seedLicenceRow(pool, {
+      mainDeviceId: MAIN_DEVICE_ID,
+      ownerId: pharmacy.ownerId,
+      permittedDeviceCount: 100,
+      pharmacyId: pharmacy.pharmacyId,
+    });
+    identitySessionId = await seedIdentitySession(pool, {
+      deviceSessionHash: createHash("sha256").update(sessionToken).digest(),
+      mainDeviceId: MAIN_DEVICE_ID,
+      ownerId: pharmacy.ownerId,
+      pharmacyId: pharmacy.pharmacyId,
+    });
   }, 120_000);
 
   afterAll(async () => {
@@ -154,8 +210,6 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
   // ─── Group B: Certificate Issuance ────────────────────────────────────────
 
   describe("Group B: Certificate Issuance", () => {
-    const testDeviceId = createUuidV7();
-
     it("issues a server certificate chaining to CA with breev-server role", async () => {
       const creds = await pharmacyCa.issueServerCertificate(["127.0.0.1"]);
       expect(creds.certPem).toContain("-----BEGIN CERTIFICATE-----");
@@ -189,17 +243,14 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-      const deviceCert = await pharmacyCa.issueDeviceCertificate({
-        deviceId: testDeviceId,
-        devicePublicKeyDer: deviceSpki,
-      });
+      const deviceCert = await certifyTerminal(deviceSpki);
 
       expect(deviceCert.certPem).toContain("-----BEGIN CERTIFICATE-----");
 
       // Verify in terminal_devices table
       const rows = await pool.query(
         "select id, installation_id, cert_fingerprint, revoked_at from terminal_devices where id = $1",
-        [testDeviceId],
+        [deviceCert.deviceId],
       );
       expect(rows.rowCount).toBe(1);
       expect(rows.rows[0]?.revoked_at).toBeNull();
@@ -213,9 +264,24 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       expect(validation).toEqual({
         valid: true,
         role: "device",
-        deviceId: testDeviceId,
+        deviceId: deviceCert.deviceId,
         fingerprint: expect.any(String),
       });
+    });
+
+    it("refuses to certify a device identifier the installation already knows", async () => {
+      const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const issued = await certifyTerminal(
+        publicKey.export({ format: "der", type: "spki" }),
+      );
+      const client = await pool.connect();
+      try {
+        await expect(
+          pharmacyCa.assertDeviceCertifiable(client, issued.deviceId),
+        ).rejects.toThrow(/issued once/u);
+      } finally {
+        client.release();
+      }
     });
   });
 
@@ -230,6 +296,8 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const expiredCert = buildDeviceCertificate({
         caKeyHandle: state.keyHandle,
         caCertPem: state.caCertPem,
+        licenceId,
+        pharmacyId: pharmacy.pharmacyId,
         deviceId: createUuidV7(),
         installationId: state.installationId,
         devicePublicKeyDer: deviceSpki,
@@ -262,14 +330,10 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     });
 
     it("rejects role mismatch (device presented as server)", async () => {
-      const deviceId = createUuidV7();
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-      const deviceCert = await pharmacyCa.issueDeviceCertificate({
-        deviceId,
-        devicePublicKeyDer: deviceSpki,
-      });
+      const deviceCert = await certifyTerminal(deviceSpki);
 
       const certDer = Buffer.from(
         deviceCert.certPem.replace(/-----[^-]+-----/g, "").replace(/\s/g, ""),
@@ -293,6 +357,8 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const mismatchedCert = buildDeviceCertificate({
         caKeyHandle: state.keyHandle,
         caCertPem: state.caCertPem,
+        licenceId,
+        pharmacyId: pharmacy.pharmacyId,
         deviceId: createUuidV7(),
         installationId: foreignInstallationId,
         devicePublicKeyDer: deviceSpki,
@@ -341,6 +407,8 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
           softwareFallbackKey: foreignKeys.privateKey,
         },
         caCertPem: foreignCa.certPem,
+        licenceId,
+        pharmacyId: pharmacy.pharmacyId,
         deviceId: createUuidV7(),
         installationId: pharmacyCa.installationId,
         devicePublicKeyDer: deviceSpki,
@@ -361,28 +429,27 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     });
 
     it("detects and enforces device revocation per request in PostgreSQL", async () => {
-      const deviceId = createUuidV7();
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-      const deviceSpki = publicKey.export({ format: "der", type: "spki" });
-
-      const certificate = await pharmacyCa.issueDeviceCertificate({
-        deviceId,
-        devicePublicKeyDer: deviceSpki,
-      });
+      const certificate = await certifyTerminal(
+        publicKey.export({ format: "der", type: "spki" }),
+      );
 
       // Initially active
       let check = await pharmacyCa.checkDeviceRevocation(
-        deviceId,
+        certificate.deviceId,
         certificate.fingerprint,
       );
       expect(check).toEqual({ revoked: false });
 
-      // Revoke the device
-      await pharmacyCa.revokeDevice(deviceId, "terminal replaced");
+      await revokeFixtureDevice(pool, {
+        actorId: pharmacy.ownerId,
+        deviceId: certificate.deviceId,
+        reason: "terminal replaced",
+      });
 
       // Now revoked
       check = await pharmacyCa.checkDeviceRevocation(
-        deviceId,
+        certificate.deviceId,
         certificate.fingerprint,
       );
       expect(check).toEqual({
@@ -391,33 +458,26 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       });
     });
 
-    it("rejects a replaced certificate while accepting the current certificate", async () => {
-      const deviceId = createUuidV7();
+    it("rejects a certificate fingerprint the device record does not name", async () => {
       const firstKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
-      const first = await pharmacyCa.issueDeviceCertificate({
-        deviceId,
-        devicePublicKeyDer: firstKey.publicKey.export({
-          format: "der",
-          type: "spki",
-        }),
-      });
+      const first = await certifyTerminal(
+        firstKey.publicKey.export({ format: "der", type: "spki" }),
+      );
       const secondKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
-      const second = await pharmacyCa.issueDeviceCertificate({
-        deviceId,
-        devicePublicKeyDer: secondKey.publicKey.export({
-          format: "der",
-          type: "spki",
-        }),
-      });
+      const second = await certifyTerminal(
+        secondKey.publicKey.export({ format: "der", type: "spki" }),
+      );
 
+      // Replacement creates a new device identity, so the current record of one
+      // device never accepts another device's fingerprint.
       await expect(
-        pharmacyCa.checkDeviceRevocation(deviceId, first.fingerprint),
+        pharmacyCa.checkDeviceRevocation(first.deviceId, second.fingerprint),
       ).resolves.toEqual({
         revoked: true,
         reason: "certificate replaced",
       });
       await expect(
-        pharmacyCa.checkDeviceRevocation(deviceId, second.fingerprint),
+        pharmacyCa.checkDeviceRevocation(second.deviceId, second.fingerprint),
       ).resolves.toEqual({ revoked: false });
     });
   });
@@ -449,12 +509,13 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
         });
       });
 
-      server = await createLanMtlsServer({
+      const lan = await createLanMtlsServer({
         apiHandler: lanApp,
         host: "127.0.0.1",
         pharmacyCa,
         security,
       });
+      server = lan.server;
 
       await new Promise<void>((resolve) => {
         server!.listen(0, "127.0.0.1", () => {
@@ -474,7 +535,6 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     });
 
     it("authenticates a terminal over mTLS with a valid device certificate", async () => {
-      const deviceId = createUuidV7();
       const { publicKey, privateKey } = generateKeyPairSync("rsa", {
         modulusLength: 2048,
       });
@@ -484,10 +544,8 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
         type: "pkcs8",
       }) as string;
 
-      const deviceCert = await pharmacyCa.issueDeviceCertificate({
-        deviceId,
-        devicePublicKeyDer: deviceSpki,
-      });
+      const deviceCert = await certifyTerminal(deviceSpki);
+      const deviceId = deviceCert.deviceId;
 
       const response = await sendMtlsRequest({
         port: serverPort,
@@ -519,7 +577,6 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     });
 
     it("rejects an mTLS request with a revoked device certificate", async () => {
-      const deviceId = createUuidV7();
       const { publicKey, privateKey } = generateKeyPairSync("rsa", {
         modulusLength: 2048,
       });
@@ -529,13 +586,14 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
         type: "pkcs8",
       }) as string;
 
-      const deviceCert = await pharmacyCa.issueDeviceCertificate({
-        deviceId,
-        devicePublicKeyDer: deviceSpki,
-      });
+      const deviceCert = await certifyTerminal(deviceSpki);
+      const deviceId = deviceCert.deviceId;
 
-      // Revoke the device
-      await pharmacyCa.revokeDevice(deviceId, "lost terminal");
+      await revokeFixtureDevice(pool, {
+        actorId: pharmacy.ownerId,
+        deviceId,
+        reason: "lost terminal",
+      });
 
       const response = await sendMtlsRequest({
         port: serverPort,

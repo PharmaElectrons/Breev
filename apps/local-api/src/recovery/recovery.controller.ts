@@ -2,8 +2,11 @@ import {
   localRecoveryStatusContract,
   type LocalRecoveryStatusSuccess,
 } from "@breev/contracts/local-rest";
-import { Controller, Get, Inject } from "@nestjs/common";
+import { Controller, Get, Inject, Req } from "@nestjs/common";
+import type { Request } from "express";
 
+import { IdentityAccessService } from "../identity-access/identity-access.service.js";
+import { translateIdentityDenial } from "../identity-access/identity-access.controller.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { RestoreQuarantineService } from "./restore-quarantine.service.js";
 
@@ -18,12 +21,27 @@ export class RecoveryController {
   public constructor(
     @Inject(LocalDatabaseService)
     private readonly localDatabase: LocalDatabaseService,
+    @Inject(IdentityAccessService)
+    private readonly identity: IdentityAccessService,
     @Inject(RestoreQuarantineService)
     private readonly quarantineService: RestoreQuarantineService,
   ) {}
 
   @Get(localRecoveryStatusContract.path)
-  public async getRecoveryStatus(): Promise<LocalRecoveryStatusSuccess> {
+  public async getRecoveryStatus(
+    @Req() request: Request,
+  ): Promise<LocalRecoveryStatusSuccess> {
+    return await translateIdentityDenial(async () => {
+      // Backup history and quarantine state describe the pharmacy's data, so
+      // reading them requires a signed-in user. A device binding alone — the
+      // Main headers, or an Additional POS Terminal's certificate — says which
+      // machine is asking, never that anyone is signed in on it.
+      await this.identity.requireIdentityAfterBootstrap(request);
+      return await this.readRecoveryStatus();
+    });
+  }
+
+  private async readRecoveryStatus(): Promise<LocalRecoveryStatusSuccess> {
     const pool = this.localDatabase.requirePool();
     const latest = await pool.query<{
       backup_type: "hourly_recovery_point" | "daily_snapshot";

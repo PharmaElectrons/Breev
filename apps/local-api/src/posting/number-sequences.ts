@@ -1,6 +1,9 @@
 import type { Pool, PoolClient, QueryResult } from "pg";
 
-import { writePostingAudit } from "./audit-writer.js";
+import {
+  writePostingAudit,
+  type AuditDeviceReference,
+} from "./audit-writer.js";
 
 /** The audit action recorded when phase one hands out a document number. */
 export const NUMBER_ALLOCATION_AUDIT_ACTION = "posting.number.allocate";
@@ -18,7 +21,7 @@ export interface DocumentNumberScope {
 export interface AllocateDocumentNumberInput extends DocumentNumberScope {
   readonly actorUserId: string;
   readonly correlationId: string;
-  readonly deviceId: string;
+  readonly device: AuditDeviceReference;
   readonly identitySessionId?: string;
 }
 
@@ -136,7 +139,7 @@ export async function allocateDocumentNumber(
         year: input.year,
       },
       correlationId: input.correlationId,
-      deviceId: input.deviceId,
+      device: input.device,
       ...(input.identitySessionId === undefined
         ? {}
         : { identitySessionId: input.identitySessionId }),

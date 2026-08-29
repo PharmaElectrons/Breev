@@ -123,7 +123,13 @@ test("the packaged desktop enforces its outer security and health seams", async 
       legacyRuntime: "undefined",
       nodeProcess: "undefined",
       nodeRequire: "undefined",
-      preloadKeys: ["getStartupConfig"],
+      preloadKeys: [
+        "cancelTerminalPairing",
+        "getStartupConfig",
+        "getTerminalPairingState",
+        "submitManualEndpoint",
+        "submitPairingInvitation",
+      ],
       rawIpc: "undefined",
       traversalStatus: 403,
     });

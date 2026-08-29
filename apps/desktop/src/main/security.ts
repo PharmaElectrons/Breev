@@ -10,6 +10,8 @@ import {
   LOCAL_DEVICE_SESSION_HEADER,
 } from "@breev/contracts/local-rest";
 
+import { BRIDGE_TOKEN_HEADER as TERMINAL_BRIDGE_TOKEN_HEADER } from "./terminal-bridge.js";
+
 export const PACKAGED_APP_ENTRY_URL = "breev://app/index.html";
 
 export const APP_CONTENT_SECURITY_POLICY = [
@@ -102,15 +104,28 @@ interface StartupConfigIpcGuardOptions {
   readonly trustedUrl?: string;
 }
 
-export function createStartupConfigIpcGuard({
+interface IpcGuardOptions<T> extends StartupConfigIpcGuardOptions {
+  readonly maximumCalls: number;
+  readonly maximumPayloadBytes: number;
+  readonly name: string;
+  readonly parse: (payload: unknown) => T;
+}
+
+/**
+ * Every preload channel carries the same checks: one trusted sender, one
+ * trusted main frame, a bounded payload, a schema, and a rate. Sharing the
+ * construction keeps a new channel from quietly skipping one of them.
+ */
+export function createIpcGuard<T>({
+  maximumCalls,
+  maximumPayloadBytes,
+  name,
   now,
+  parse,
   trustedSenderId,
   trustedOrigin = "breev://app",
   trustedUrl = "breev://app/index.html",
-}: StartupConfigIpcGuardOptions): (
-  invocation: IpcInvocation,
-  payload: unknown,
-) => DesktopStartupConfigRequest {
+}: IpcGuardOptions<T>): (invocation: IpcInvocation, payload: unknown) => T {
   let acceptedCallTimes: number[] = [];
 
   return (invocation, payload) => {
@@ -122,23 +137,21 @@ export function createStartupConfigIpcGuard({
       frame.origin !== trustedOrigin ||
       frame.url !== trustedUrl
     ) {
-      throw new Error("Breev denied startup configuration IPC from this frame");
+      throw new Error(`Breev denied ${name} IPC from this frame`);
     }
 
-    const serializedPayload = serializeIpcPayload(payload);
-    if (Buffer.byteLength(serializedPayload, "utf8") > 64) {
-      throw new Error(
-        "Breev denied an oversized startup configuration payload",
-      );
+    const serializedPayload = serializeIpcPayload(payload, name);
+    if (Buffer.byteLength(serializedPayload, "utf8") > maximumPayloadBytes) {
+      throw new Error(`Breev denied an oversized ${name} payload`);
     }
-    const request = desktopStartupConfigRequestSchema.parse(payload);
+    const request = parse(payload);
 
     const currentTime = now();
     acceptedCallTimes = acceptedCallTimes.filter(
       (callTime) => currentTime - callTime < 10_000,
     );
-    if (acceptedCallTimes.length >= 4) {
-      throw new Error("Breev denied the startup configuration IPC rate");
+    if (acceptedCallTimes.length >= maximumCalls) {
+      throw new Error(`Breev denied the ${name} IPC rate`);
     }
     acceptedCallTimes.push(currentTime);
 
@@ -146,7 +159,22 @@ export function createStartupConfigIpcGuard({
   };
 }
 
-function serializeIpcPayload(payload: unknown): string {
+export function createStartupConfigIpcGuard(
+  options: StartupConfigIpcGuardOptions,
+): (
+  invocation: IpcInvocation,
+  payload: unknown,
+) => DesktopStartupConfigRequest {
+  return createIpcGuard({
+    ...options,
+    maximumCalls: 4,
+    maximumPayloadBytes: 64,
+    name: "startup configuration",
+    parse: (payload) => desktopStartupConfigRequestSchema.parse(payload),
+  });
+}
+
+function serializeIpcPayload(payload: unknown, name: string): string {
   try {
     const serialized = JSON.stringify(payload);
     if (serialized === undefined) {
@@ -154,9 +182,7 @@ function serializeIpcPayload(payload: unknown): string {
     }
     return serialized;
   } catch {
-    throw new Error(
-      "Breev denied a non-serializable startup configuration payload",
-    );
+    throw new Error(`Breev denied a non-serializable ${name} payload`);
   }
 }
 
@@ -344,6 +370,36 @@ export function addMainDeviceRequestHeaders(
     [LOCAL_DEVICE_ID_HEADER]: options.binding.deviceId,
     [LOCAL_DEVICE_SESSION_HEADER]: options.binding.sessionToken,
   };
+}
+
+interface TerminalBridgeRequestOptions {
+  readonly bridgeOrigin: string;
+  readonly token: string;
+  readonly trustedWebContentsId: number;
+}
+
+/**
+ * A terminal renderer proves it is this window's renderer with a token the
+ * main process mints per boot. Injecting it here, scoped to the bridge origin
+ * and the trusted window, mirrors how the Main device credential is attached
+ * and keeps the secret out of renderer reach.
+ */
+export function addTerminalBridgeRequestHeaders(
+  details: MainDeviceRequestDetails,
+  options: TerminalBridgeRequestOptions,
+): Record<string, string> {
+  const requestHeaders = Object.fromEntries(
+    Object.entries(details.requestHeaders).filter(
+      ([name]) => name.toLowerCase() !== TERMINAL_BRIDGE_TOKEN_HEADER,
+    ),
+  );
+  if (
+    details.webContentsId !== options.trustedWebContentsId ||
+    new URL(details.url).origin !== options.bridgeOrigin
+  ) {
+    return requestHeaders;
+  }
+  return { ...requestHeaders, [TERMINAL_BRIDGE_TOKEN_HEADER]: options.token };
 }
 
 function isUuidV7(value: string | undefined): value is string {

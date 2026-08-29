@@ -231,16 +231,19 @@ textarea:focus-visible {
   padding-inline: 1rem;
 }
 
-.status-region:has(.status-card[data-state="ready"]) {
+.status-region:has(.status-card[data-state="ready"]),
+.status-region:has(.status-card[data-state="unpaired"]) {
   align-self: start;
   padding-block: 1.25rem;
 }
 
-.status-card[data-state="ready"] .status-header {
+.status-card[data-state="ready"] .status-header,
+.status-card[data-state="unpaired"] .status-header {
   padding-block: 1.25rem;
 }
 
-.status-card[data-state="ready"] .status-copy h1 {
+.status-card[data-state="ready"] .status-copy h1,
+.status-card[data-state="unpaired"] .status-copy h1 {
   font-size: 1.5rem;
 }
 
@@ -312,7 +315,8 @@ textarea:focus-visible {
   color: var(--danger);
 }
 
-.status-icon[data-icon-state="incompatible-version"] {
+.status-icon[data-icon-state="incompatible-version"],
+.status-icon[data-icon-state="unpaired"] {
   background: var(--warning-soft);
   color: var(--warning);
 }
@@ -872,6 +876,434 @@ textarea:focus-visible {
   font-size: 0.82rem;
 }
 
+/* Terminal pairing screen (renderer state 'unpaired') */
+
+.pairing-card {
+  display: grid;
+  gap: 1.25rem;
+  padding: clamp(1.25rem, 4vw, 2.25rem);
+  text-align: start;
+}
+
+.pairing-card h3,
+.pairing-card h4,
+.pairing-card h5 {
+  margin: 0;
+}
+
+.pairing-form {
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 1.25rem;
+}
+
+.pairing-form .primary-button,
+.pairing-form .quiet-button {
+  justify-self: start;
+}
+
+.pairing-hint,
+.pairing-empty,
+.pairing-installation {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.pairing-validation {
+  margin: 0;
+  min-block-size: 1.4rem;
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.pairing-discovery {
+  display: grid;
+  gap: 0.75rem;
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 1.25rem;
+}
+
+.pairing-candidates {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pairing-candidates li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-block-start: 1px solid var(--border);
+  padding-block: 0.75rem;
+}
+
+.pairing-candidates li > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.pairing-endpoint {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.82rem;
+}
+
+.pairing-endpoint-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(6rem, 1fr);
+  gap: 1rem;
+}
+
+.pairing-progress {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  background: var(--muted);
+}
+
+.pairing-progress ol {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pairing-progress li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted-foreground);
+}
+
+.pairing-progress li[data-step-state="current"] {
+  color: var(--info);
+  font-weight: 750;
+}
+
+.pairing-progress li[data-step-state="done"] {
+  color: var(--ready);
+}
+
+.pairing-step-marker {
+  display: grid;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--card);
+}
+
+.pairing-step-state {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.pairing-progress-live {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+
+.pairing-fingerprint,
+.pairing-done {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  background: var(--info-soft);
+  color: var(--card-foreground);
+}
+
+.pairing-done {
+  background: var(--ready-soft);
+}
+
+.pairing-fingerprint p,
+.pairing-done p {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.pairing-failure {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+/* A failure no retry can clear spends the button's column on the message. */
+.pairing-failure[data-retryable="false"] {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.fingerprint-digits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.fingerprint-digits span {
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding-block: 0.35rem;
+  padding-inline: 0.75rem;
+  background: var(--card);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: clamp(1.35rem, 4vw, 1.9rem);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.fingerprint-invalid {
+  color: var(--danger);
+}
+
+.pairing-terminal-name,
+.seat-release-device {
+  margin: 0;
+}
+
+/* Main-side devices section */
+
+.devices-card {
+  gap: 1.25rem;
+}
+
+.devices-navigation ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.devices-navigation button {
+  min-block-size: 2.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding-inline: 1rem;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 700;
+}
+
+.devices-navigation button[aria-current="page"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--background));
+  color: var(--primary);
+}
+
+.seat-usage {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: end;
+}
+
+.seat-usage strong {
+  color: var(--foreground);
+  font-size: 1.35rem;
+  unicode-bidi: isolate;
+}
+
+.seat-usage strong.seat-usage-unlicensed {
+  color: var(--muted-foreground);
+  font-size: 0.95rem;
+  unicode-bidi: normal;
+}
+
+/* Stale polled data: the panel says so and its actions stay disabled. */
+.devices-stale {
+  margin: 0;
+  border-inline-start: 0.3rem solid var(--warning);
+  border-radius: 0.65rem;
+  padding: 0.75rem 1rem;
+  background: var(--warning-soft);
+  line-height: 1.65;
+}
+
+/*
+ * The stale card is marked at its edge rather than by fading its contents:
+ * dimming text is exactly what pushes the state chips below the contrast
+ * minimum, and unreadable is not the same as out of date.
+ */
+.devices-card[data-stale="true"] {
+  border-color: var(--warning);
+}
+
+.devices-empty {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.pairing-start,
+.pairing-outcome {
+  display: grid;
+  justify-items: start;
+  gap: 0.85rem;
+}
+
+.pairing-start p,
+.pairing-outcome p {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.pairing-outcome[data-outcome="confirmed"] {
+  border-inline-start: 0.3rem solid var(--ready);
+  border-radius: 0.65rem;
+  padding: 0.85rem 1rem;
+  background: var(--ready-soft);
+}
+
+.pairing-outcome[data-outcome="cancelled"],
+.pairing-outcome[data-outcome="expired"] {
+  border-inline-start: 0.3rem solid var(--warning);
+  border-radius: 0.65rem;
+  padding: 0.85rem 1rem;
+  background: var(--warning-soft);
+}
+
+.pairing-outcome[data-outcome="failed"] {
+  border-inline-start: 0.3rem solid var(--danger);
+  border-radius: 0.65rem;
+  padding: 0.85rem 1rem;
+  background: var(--danger-soft);
+}
+
+.pairing-invitation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 1.25rem;
+}
+
+.pairing-invitation-detail {
+  display: grid;
+  gap: 0.6rem;
+  min-inline-size: 0;
+}
+
+.pairing-invitation-detail .field-label {
+  margin: 0;
+}
+
+.pairing-confirmation {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.pairing-confirmation p,
+.pairing-confirmation h4 {
+  margin: 0;
+}
+
+.pairing-confirmation p {
+  line-height: 1.65;
+}
+
+.pairing-confirmation > [role="status"] {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pairing-qr {
+  display: grid;
+  inline-size: 13rem;
+  block-size: 13rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 0.5rem;
+  background: #ffffff;
+}
+
+.pairing-qr svg {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.pairing-qr-failed {
+  color: #000000;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.pairing-uri-label {
+  margin: 0;
+  color: var(--card-foreground);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.pairing-uri {
+  display: block;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--muted);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.78rem;
+  unicode-bidi: isolate;
+  user-select: all;
+}
+
+.pairing-countdown {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.pairing-countdown strong {
+  color: var(--foreground);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  unicode-bidi: isolate;
+}
+
+.device-list li {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.device-list li > div:first-child {
+  flex: 1 1 16rem;
+}
+
+.state-chip[data-status="released"] {
+  color: var(--muted-foreground);
+}
+
+.revoke-form {
+  flex-basis: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  background: var(--muted);
+}
+
+.revoke-form p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
 @keyframes status-spin {
   to {
     transform: rotate(1turn);
@@ -934,8 +1366,25 @@ textarea:focus-visible {
 
   .user-form,
   .role-grid,
-  .licensing-grid {
+  .licensing-grid,
+  .pairing-endpoint-fields,
+  .pairing-invitation {
     grid-template-columns: 1fr;
+  }
+
+  .pairing-candidates li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pairing-qr {
+    inline-size: 100%;
+    block-size: auto;
+    aspect-ratio: 1;
+  }
+
+  .seat-usage {
+    text-align: start;
   }
 
   .workspace-actions,

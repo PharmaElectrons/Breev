@@ -55,7 +55,7 @@ export class LicensingAdministrationService {
       actorId: context.actorId,
       encodedLicence: input.encodedLicence,
       identitySessionId: context.sessionId,
-      mainDeviceId: context.deviceId,
+      mainDeviceId: context.licensingDeviceId,
       now,
       pharmacyId: context.pharmacyId,
     });
@@ -74,7 +74,7 @@ export class LicensingAdministrationService {
             actorId: fresh.actorId,
             encodedLicence: input.encodedLicence,
             identitySessionId: fresh.sessionId,
-            mainDeviceId: fresh.deviceId,
+            mainDeviceId: fresh.licensingDeviceId,
             now,
             pharmacyId: fresh.pharmacyId,
           },
@@ -234,7 +234,7 @@ function actorInput(
   return {
     actorId: context.actorId,
     identitySessionId: context.sessionId,
-    mainDeviceId: context.deviceId,
+    mainDeviceId: context.licensingDeviceId,
     now,
     pharmacyId: context.pharmacyId,
   };

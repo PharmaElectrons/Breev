@@ -336,6 +336,47 @@ export class LicensingService {
     }
   }
 
+  /**
+   * The refusal an Additional POS Terminal meets when the installation is no
+   * longer entitled to run one.
+   *
+   * The entitlement has already been derived by the caller — a terminal reads
+   * it on every request and again under the write lock — so this only records
+   * the decision and shapes the denial. It is deliberately the denial only: an
+   * allowed terminal request must not append an audit row per request, while a
+   * refusal is rare, bounded, and exactly the fact an operator needs when a
+   * till stops working the morning a licence lapses.
+   */
+  public async denyTerminalCapability(
+    queryable: Queryable,
+    input: LicensingContextInput & {
+      readonly capability: PaidCapabilityName;
+      readonly entitlementStatus: EntitlementContext["status"];
+      readonly terminalDeviceId: string;
+    },
+  ): Promise<LicensingDenied> {
+    const requestId = await writeAudit(queryable, {
+      action: "capability.authorization",
+      ...(input.actorId === undefined ? {} : { actorId: input.actorId }),
+      capability: input.capability,
+      details: { entitlementStatus: input.entitlementStatus },
+      ...(input.identitySessionId === undefined
+        ? {}
+        : { identitySessionId: input.identitySessionId }),
+      mainDeviceId: input.mainDeviceId,
+      observedAt: input.now,
+      outcome: "denied",
+      pharmacyId: input.pharmacyId,
+      terminalDeviceId: input.terminalDeviceId,
+    });
+    return new LicensingDenied({
+      status: "denied",
+      code: "entitlement-denied",
+      requestId,
+      requiredCapability: input.capability,
+    });
+  }
+
   private async observeClock(
     input: LicensingContextInput,
     queryable: Queryable = this.localDatabase.requirePool(),
@@ -545,6 +586,13 @@ interface AuditInput {
   readonly outcome:
     "allowed" | "deactivated" | "denied" | "detected" | "installed";
   readonly pharmacyId: string;
+  /**
+   * Set only when the decision was made about an Additional POS Terminal. The
+   * licence itself is always keyed to the Main device, so `main_device_id`
+   * stays the licensing device and this column records which terminal the
+   * decision was about.
+   */
+  readonly terminalDeviceId?: string;
 }
 
 interface Queryable {
@@ -561,14 +609,15 @@ async function writeAudit(
   const result = await queryable.query<{ id: string }>(
     `insert into licensing_audit_records (
        pharmacy_id, actor_user_id, identity_session_id, main_device_id,
-       action, outcome, capability, observed_at, details
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       terminal_device_id, action, outcome, capability, observed_at, details
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      returning id`,
     [
       input.pharmacyId,
       input.actorId ?? null,
       input.identitySessionId ?? null,
       input.mainDeviceId,
+      input.terminalDeviceId ?? null,
       input.action,
       input.outcome,
       input.capability ?? null,
@@ -589,14 +638,15 @@ async function writeRollbackAudit(
   await queryable.query(
     `insert into licensing_audit_records (
        pharmacy_id, actor_user_id, identity_session_id, main_device_id,
-       action, outcome, capability, observed_at, details
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       terminal_device_id, action, outcome, capability, observed_at, details
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict do nothing`,
     [
       input.pharmacyId,
       input.actorId ?? null,
       input.identitySessionId ?? null,
       input.mainDeviceId,
+      input.terminalDeviceId ?? null,
       input.action,
       input.outcome,
       input.capability ?? null,

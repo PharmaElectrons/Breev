@@ -73,6 +73,11 @@ export const messages: Record<Locale, Messages> = {
         description:
           "أبلغت واجهة الخادم المحلي عن حالة تثبيت غير صالحة. لم ينشئ بريف مخزناً بديلاً للبيانات.",
       },
+      unpaired: {
+        title: "نقطة البيع غير مقترنة",
+        description:
+          "لا تملك نقطة البيع الإضافية هذه شهادة بريف بعد. أكمل الإقران مع الحاسبة الرئيسية للصيدلية للمتابعة.",
+      },
     },
     switchLanguage: "التبديل إلى الإنجليزية",
     switchToDarkTheme: "استخدام الوضع الداكن",
@@ -123,6 +128,11 @@ export const messages: Record<Locale, Messages> = {
         title: "Repair required",
         description:
           "The local API reported an invalid installation state. Breev did not create a fallback data store.",
+      },
+      unpaired: {
+        title: "Terminal not paired",
+        description:
+          "This additional POS terminal has no Breev certificate yet. Complete pairing with the Main Pharmacy Computer to continue.",
       },
     },
     switchLanguage: "Switch to Arabic",

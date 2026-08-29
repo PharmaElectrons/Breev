@@ -6,6 +6,11 @@
  * per-request revocation (even on resumed TLS sessions / keep-alive
  * connections, per domain.md §Identity L70).
  *
+ * A verified request leaves two marks: the socket is registered so revocation
+ * can end the connection, and the device context is handed to the request
+ * security boundary, which accepts it in place of the Main device headers that
+ * a terminal has no way to present.
+ *
  * Denial records follow the same pattern as main-device-security.service.ts:
  * typed code, UUIDv7 correlation ID, and incremented denial total.
  */
@@ -16,9 +21,11 @@ import type { TLSSocket } from "node:tls";
 
 import { MainDeviceSecurityService } from "../main-device/main-device-security.service.js";
 import type { PharmacyCaService } from "./pharmacy-ca.service.js";
+import type { TerminalSocketRegistry } from "./terminal-socket-registry.js";
 
 export function createMtlsVerificationMiddleware(params: {
   readonly pharmacyCa: PharmacyCaService;
+  readonly registry?: TerminalSocketRegistry | undefined;
   readonly security: MainDeviceSecurityService;
 }): RequestHandler {
   return (request, response, next) => {
@@ -32,10 +39,11 @@ async function verifyMtls(
   next: NextFunction,
   params: {
     pharmacyCa: PharmacyCaService;
+    registry?: TerminalSocketRegistry | undefined;
     security: MainDeviceSecurityService;
   },
 ): Promise<void> {
-  const { pharmacyCa, security } = params;
+  const { pharmacyCa, registry, security } = params;
 
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("X-Content-Type-Options", "nosniff");
@@ -96,8 +104,13 @@ async function verifyMtls(
     return;
   }
 
+  registry?.register(validation.deviceId, socket);
   (request as unknown as Record<string, unknown>)["breevMtlsDeviceId"] =
     validation.deviceId;
+  security.acceptTerminalDevice(request, {
+    certFingerprint: Buffer.from(validation.fingerprint, "hex"),
+    terminalDeviceId: validation.deviceId,
+  });
   next();
 }
 

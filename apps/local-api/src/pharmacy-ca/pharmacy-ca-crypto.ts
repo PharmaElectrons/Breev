@@ -41,6 +41,14 @@ const OID_COMMON_NAME = "2.5.4.3";
 const OID_ORGANIZATION = "2.5.4.10";
 const INSTALLATION_URI_PREFIX = "urn:breev:installation:";
 const DEVICE_URI_PREFIX = "urn:breev:device:";
+const LICENCE_URI_PREFIX = "urn:breev:licence:";
+const PHARMACY_URI_PREFIX = "urn:breev:pharmacy:";
+/**
+ * The only device type Breev certifies today. It is a full URI rather than a
+ * bare word so a future type can never be confused with a device identifier.
+ */
+const TERMINAL_DEVICE_TYPE_URI = "urn:breev:device-type:terminal";
+const DEVICE_SUBJECT_NAME_COUNT = 5;
 const UUID_V7_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -209,16 +217,27 @@ export function buildServerCertificate(params: {
   };
 }
 
+/**
+ * A terminal device certificate. Its subject names bind the five facts that
+ * make the certificate meaningful offline: which installation issued it, which
+ * device it is, which pharmacy it belongs to, that it is a terminal rather than
+ * anything else, and which licence paid for its seat. The random serial is the
+ * sixth. None of them come from the caller's certificate request.
+ */
 export function buildDeviceCertificate(params: {
   readonly caKeyHandle: CngKeyHandle;
   readonly caCertPem: string;
   readonly deviceId: string;
-  readonly installationId: string;
   readonly devicePublicKeyDer: Buffer;
+  readonly installationId: string;
+  readonly licenceId: string;
+  readonly pharmacyId: string;
   readonly validityDays: number;
 }): IssuedCertificate {
   assertUuidV7(params.deviceId, "deviceId");
   assertUuidV7(params.installationId, "installationId");
+  assertUuidV7(params.licenceId, "licenceId");
+  assertUuidV7(params.pharmacyId, "pharmacyId");
   const notBefore = new Date(Date.now() - 60_000);
   const notAfter = validityEnd(notBefore, params.validityDays);
   const serial = createCertificateSerial();
@@ -254,6 +273,15 @@ export function buildDeviceCertificate(params: {
           }),
           new GeneralName({
             uniformResourceIdentifier: deviceUri(params.deviceId),
+          }),
+          new GeneralName({
+            uniformResourceIdentifier: pharmacyUri(params.pharmacyId),
+          }),
+          new GeneralName({
+            uniformResourceIdentifier: TERMINAL_DEVICE_TYPE_URI,
+          }),
+          new GeneralName({
+            uniformResourceIdentifier: licenceUri(params.licenceId),
           }),
         ]),
       ),
@@ -329,21 +357,27 @@ export function validateCertificate(params: {
       return valid(role, undefined, cert);
     }
 
-    const deviceIds = names
-      .map((name) => name.uniformResourceIdentifier)
-      .filter(
-        (uri): uri is string =>
-          uri !== undefined && uri.startsWith(DEVICE_URI_PREFIX),
-      )
-      .map((uri) => uri.slice(DEVICE_URI_PREFIX.length));
+    // A device certificate carries exactly five subject names. Anything more,
+    // anything fewer, or anything shaped differently is refused rather than
+    // interpreted: the name set is the offline statement of who this device is.
+    const deviceIds = uriSuffixes(names, DEVICE_URI_PREFIX);
+    const pharmacyIds = uriSuffixes(names, PHARMACY_URI_PREFIX);
+    const licenceIds = uriSuffixes(names, LICENCE_URI_PREFIX);
+    const deviceId = deviceIds[0];
     if (
-      names.length !== 2 ||
+      names.length !== DEVICE_SUBJECT_NAME_COUNT ||
       deviceIds.length !== 1 ||
-      !UUID_V7_PATTERN.test(deviceIds[0] ?? "")
+      pharmacyIds.length !== 1 ||
+      licenceIds.length !== 1 ||
+      deviceId === undefined ||
+      !UUID_V7_PATTERN.test(deviceId) ||
+      !UUID_V7_PATTERN.test(pharmacyIds[0] ?? "") ||
+      !UUID_V7_PATTERN.test(licenceIds[0] ?? "") ||
+      !hasSingleUri(names, TERMINAL_DEVICE_TYPE_URI)
     ) {
       return invalid("mtls-cert-invalid");
     }
-    return valid(role, deviceIds[0], cert);
+    return valid(role, deviceId, cert);
   } catch {
     return invalid("mtls-cert-invalid");
   }
@@ -606,6 +640,21 @@ function installationUri(installationId: string): string {
 
 function deviceUri(deviceId: string): string {
   return `${DEVICE_URI_PREFIX}${deviceId}`;
+}
+
+function licenceUri(licenceId: string): string {
+  return `${LICENCE_URI_PREFIX}${licenceId}`;
+}
+
+function pharmacyUri(pharmacyId: string): string {
+  return `${PHARMACY_URI_PREFIX}${pharmacyId}`;
+}
+
+function uriSuffixes(names: SubjectAlternativeName, prefix: string): string[] {
+  return names
+    .map((name) => name.uniformResourceIdentifier)
+    .filter((uri): uri is string => uri !== undefined && uri.startsWith(prefix))
+    .map((uri) => uri.slice(prefix.length));
 }
 
 function assertUuidV7(value: string, name: string): void {

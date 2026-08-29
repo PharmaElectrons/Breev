@@ -23,13 +23,21 @@ const environments = Object.fromEntries(
   }),
 );
 
+// An Additional POS Terminal has no Main device credential and no loopback
+// API of its own: it reaches the Main installation through the bridge the
+// desktop main process opens once it holds a device certificate.
+const desktopRole = readDeviceRole("desktop");
+
 const requiredKeys = {
-  desktop: [
-    "BREEV_LOCAL_API_URL",
-    "BREEV_MAIN_DEVICE_ID",
-    "BREEV_MAIN_DEVICE_SECRET",
-    "BREEV_MAIN_DEVICE_SESSION",
-  ],
+  desktop:
+    desktopRole === "terminal"
+      ? ["BREEV_DEVICE_ROLE", "BREEV_TERMINAL_STATE_DIR"]
+      : [
+          "BREEV_LOCAL_API_URL",
+          "BREEV_MAIN_DEVICE_ID",
+          "BREEV_MAIN_DEVICE_SECRET",
+          "BREEV_MAIN_DEVICE_SESSION",
+        ],
   localApi: [
     "API_HOST",
     "API_PORT",
@@ -64,10 +72,11 @@ validateApi(environments.localApi, relative(files.localApi));
 validateDesktop(environments.root, relative(files.root));
 validateDesktop(environments.desktop, relative(files.desktop));
 validateBinding(environments.root, relative(files.root));
-validateBinding(environments.desktop, relative(files.desktop));
 validateBinding(environments.localApi, relative(files.localApi));
 validateDatabasePair(environments.root, relative(files.root));
 validateDatabasePair(environments.localApi, relative(files.localApi));
+validateTerminal(environments.desktop, relative(files.desktop));
+validateTerminal(environments.root, relative(files.root));
 
 compare("root", "localApi", [
   "API_HOST",
@@ -78,12 +87,17 @@ compare("root", "localApi", [
   "BREEV_MAIN_DEVICE_SECRET",
   "BREEV_MAIN_DEVICE_SESSION",
 ]);
-compare("root", "desktop", [
-  "BREEV_LOCAL_API_URL",
-  "BREEV_MAIN_DEVICE_ID",
-  "BREEV_MAIN_DEVICE_SECRET",
-  "BREEV_MAIN_DEVICE_SESSION",
-]);
+if (desktopRole === "terminal") {
+  validateTerminalDirectory(environments.desktop, relative(files.desktop));
+} else {
+  validateBinding(environments.desktop, relative(files.desktop));
+  compare("root", "desktop", [
+    "BREEV_LOCAL_API_URL",
+    "BREEV_MAIN_DEVICE_ID",
+    "BREEV_MAIN_DEVICE_SECRET",
+    "BREEV_MAIN_DEVICE_SESSION",
+  ]);
+}
 
 if (errors.length > 0) {
   console.error("Local environment check failed:");
@@ -132,6 +146,38 @@ function validateDesktop(environment, file) {
     }
   } catch {
     errors.push(`${file} has an invalid BREEV_LOCAL_API_URL`);
+  }
+}
+
+function readDeviceRole(name) {
+  const value = environments[name].BREEV_DEVICE_ROLE?.trim();
+  return value === undefined || value.length === 0 ? "main" : value;
+}
+
+function validateTerminal(environment, file) {
+  const role = environment.BREEV_DEVICE_ROLE?.trim();
+  if (
+    role !== undefined &&
+    role !== "" &&
+    role !== "main" &&
+    role !== "terminal"
+  ) {
+    errors.push(`${file} must set BREEV_DEVICE_ROLE to main or terminal`);
+  }
+  const directory = environment.BREEV_TERMINAL_STATE_DIR?.trim();
+  if (directory && !path.isAbsolute(directory)) {
+    errors.push(`${file} must set an absolute BREEV_TERMINAL_STATE_DIR`);
+  }
+}
+
+function validateTerminalDirectory(environment, file) {
+  if (
+    environment.BREEV_MAIN_DEVICE_SECRET ||
+    environment.BREEV_MAIN_DEVICE_SESSION
+  ) {
+    errors.push(
+      `${file} must not carry a Main device credential in the terminal role`,
+    );
   }
 }
 

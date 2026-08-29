@@ -38,8 +38,11 @@ export interface BeginPostingIdempotencyInput extends PostingCommandKey {
 
 export interface RecordPostingResultInput extends BeginPostingIdempotencyInput {
   readonly actorUserId: string;
+  readonly device: {
+    readonly deviceId: string | undefined;
+    readonly terminalDeviceId: string | undefined;
+  };
   readonly identitySessionId?: string;
-  readonly mainDeviceId: string;
   readonly responseBody: unknown;
   readonly responseStatus: number;
 }
@@ -127,16 +130,17 @@ export async function recordPostingResult(
   await client.query(
     `insert into posting_command_results (
        pharmacy_id, command_name, idempotency_key, actor_user_id,
-       identity_session_id, main_device_id, request_hash,
+       identity_session_id, main_device_id, terminal_device_id, request_hash,
        response_status, response_body
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
     [
       input.pharmacyId,
       input.commandName,
       input.idempotencyKey,
       input.actorUserId,
       input.identitySessionId ?? null,
-      input.mainDeviceId,
+      input.device.deviceId ?? null,
+      input.device.terminalDeviceId ?? null,
       input.requestHash,
       input.responseStatus,
       JSON.stringify(input.responseBody),

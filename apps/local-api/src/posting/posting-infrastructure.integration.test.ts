@@ -385,7 +385,7 @@ describe.sequential("posting infrastructure PostgreSQL seam", () => {
           action: "pharmacy.settings.update",
           actorUserId: ACTOR_ID,
           correlationId,
-          deviceId: DEVICE_ID,
+          device: { deviceId: DEVICE_ID, terminalDeviceId: undefined },
           outcome: "attempted",
           pharmacyId: PHARMACY_ID,
         });
@@ -929,7 +929,7 @@ describe.sequential("posting infrastructure PostgreSQL seam", () => {
         commandName: COMMAND,
         idempotencyKey: input.idempotencyKey,
         identitySessionId: SESSION_ID,
-        mainDeviceId: DEVICE_ID,
+        device: { deviceId: DEVICE_ID, terminalDeviceId: undefined },
         pharmacyId: PHARMACY_ID,
         requestHash,
         responseBody: input.responseBody,
@@ -973,7 +973,7 @@ describe.sequential("posting infrastructure PostgreSQL seam", () => {
     return await allocateDocumentNumber(application, {
       actorUserId: ACTOR_ID,
       correlationId: input.correlationId,
-      deviceId: DEVICE_ID,
+      device: { deviceId: DEVICE_ID, terminalDeviceId: undefined },
       documentType: input.documentType,
       identitySessionId: SESSION_ID,
       pharmacyId: PHARMACY_ID,

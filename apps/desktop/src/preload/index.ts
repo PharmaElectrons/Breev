@@ -1,14 +1,33 @@
 import {
   DESKTOP_API_GLOBAL,
+  DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
+  DESKTOP_MANUAL_ENDPOINT_CHANNEL,
+  DESKTOP_PAIRING_INVITATION_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
+  DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
 } from "@breev/contracts/desktop-preload";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { createBreevDesktopApi } from "./api.js";
 
+/**
+ * The renderer never names a channel. Only these five are reachable, and only
+ * through the method that owns each one.
+ */
+const CHANNELS: ReadonlySet<string> = new Set([
+  DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
+  DESKTOP_MANUAL_ENDPOINT_CHANNEL,
+  DESKTOP_PAIRING_INVITATION_CHANNEL,
+  DESKTOP_STARTUP_CONFIG_CHANNEL,
+  DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
+]);
+
 contextBridge.exposeInMainWorld(
   DESKTOP_API_GLOBAL,
-  createBreevDesktopApi(async (_channel, payload) =>
-    ipcRenderer.invoke(DESKTOP_STARTUP_CONFIG_CHANNEL, payload),
-  ),
+  createBreevDesktopApi(async (channel, payload) => {
+    if (!CHANNELS.has(channel)) {
+      throw new Error("Breev denied an unknown desktop channel");
+    }
+    return ipcRenderer.invoke(channel, payload);
+  }),
 );
