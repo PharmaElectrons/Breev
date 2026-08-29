@@ -1,5 +1,9 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
+import type {
+  BreevDesktopApi,
+  DesktopDeviceRole,
+  TerminalPairingState,
+} from "@breev/contracts/desktop-preload";
 import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
@@ -49,6 +53,8 @@ interface RendererServer {
 interface DesktopFakeOptions {
   readonly configDelayMs?: number;
   readonly locale?: "ar" | "en";
+  readonly pairing?: TerminalPairingState;
+  readonly role?: DesktopDeviceRole;
   readonly theme?: "dark" | "light";
 }
 
@@ -154,7 +160,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
   });
 
-  test("all six states pass the locale and theme matrix", async ({
+  test("all seven states pass the locale and theme matrix", async ({
     browser,
   }) => {
     const expectedTitles = {
@@ -165,6 +171,7 @@ test.describe.serial("bilingual desktop shell", () => {
         "main-unavailable": "الحاسبة الرئيسية غير متاحة",
         "incompatible-version": "الإصدار غير متوافق",
         "repair-required": "الإصلاح مطلوب",
+        unpaired: "نقطة البيع غير مقترنة",
       },
       en: {
         starting: "Starting",
@@ -173,6 +180,7 @@ test.describe.serial("bilingual desktop shell", () => {
         "main-unavailable": "Main unavailable",
         "incompatible-version": "Incompatible version",
         "repair-required": "Repair required",
+        unpaired: "Terminal not paired",
       },
     } as const;
     const states = Object.keys(expectedTitles.en) as Array<
@@ -190,6 +198,10 @@ test.describe.serial("bilingual desktop shell", () => {
           await installDesktopFake(page, renderer.origin, {
             configDelayMs: state === "starting" ? 1_500 : 0,
             locale,
+            // A terminal without a certificate never reaches the health
+            // handshake, so 'unpaired' is driven by the device role rather
+            // than by a backend mode.
+            ...(state === "unpaired" ? { role: "terminal" as const } : {}),
             theme,
           });
           await page.goto(renderer.origin);
@@ -228,13 +240,25 @@ test.describe.serial("bilingual desktop shell", () => {
                   );
             });
           expect(focusOutlineWidth).toBeGreaterThanOrEqual(3);
-          await page.screenshot({
-            animations: "disabled",
-            path: path.resolve(
-              import.meta.dirname,
-              `../../../../evidence/issue-33/after/${locale}-${theme}-${state}.png`,
-            ),
-          });
+          // The six connection states are issue #33's evidence and keep its
+          // naming and framing; the pairing state this issue adds is filed
+          // under #42 in that issue's <state>-<locale>-<theme> house style.
+          await (state === "unpaired"
+            ? page.screenshot({
+                animations: "disabled",
+                fullPage: true,
+                path: path.resolve(
+                  import.meta.dirname,
+                  `../../../../evidence/issue-42/after/unpaired-${locale}-${theme}.png`,
+                ),
+              })
+            : page.screenshot({
+                animations: "disabled",
+                path: path.resolve(
+                  import.meta.dirname,
+                  `../../../../evidence/issue-33/after/${locale}-${theme}-${state}.png`,
+                ),
+              }));
           await context.close();
         }
       }
@@ -1155,9 +1179,10 @@ function modeForState(
     | "main-unavailable"
     | "ready"
     | "repair-required"
-    | "starting",
+    | "starting"
+    | "unpaired",
 ): BackendMode {
-  if (state === "ready" || state === "starting") {
+  if (state === "ready" || state === "starting" || state === "unpaired") {
     return "pass";
   }
   return state;
@@ -1169,7 +1194,7 @@ async function installDesktopFake(
   options: DesktopFakeOptions = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({ configDelayMs, locale, origin, theme }) => {
+    ({ configDelayMs, locale, origin, pairing, role, theme }) => {
       try {
         if (
           locale !== undefined &&
@@ -1186,12 +1211,20 @@ async function installDesktopFake(
       } catch {
         // The real shell owns fallback behavior when storage is unavailable.
       }
+      const cancelled: TerminalPairingState = {
+        candidates: [],
+        stage: "awaiting-invitation",
+      };
       const desktopApi: BreevDesktopApi = Object.freeze({
+        cancelTerminalPairing: async () => cancelled,
+        getTerminalPairingState: async () => pairing,
+        submitManualEndpoint: async () => pairing,
+        submitPairingInvitation: async () => pairing,
         getStartupConfig: async () => {
           if (configDelayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, configDelayMs));
           }
-          return { localApiOrigin: origin };
+          return { localApiOrigin: origin, role };
         },
       });
       Object.defineProperty(globalThis, "breevDesktop", {
@@ -1204,6 +1237,11 @@ async function installDesktopFake(
       configDelayMs: options.configDelayMs ?? 0,
       locale: options.locale,
       origin: localApiOrigin,
+      pairing: options.pairing ?? {
+        candidates: [],
+        stage: "awaiting-invitation" as const,
+      },
+      role: options.role ?? ("main" as const),
       theme: options.theme,
     },
   );
@@ -1294,6 +1332,8 @@ async function startRendererServer(
       if (
         request.url?.startsWith("/identity/") ||
         request.url?.startsWith("/licensing/") ||
+        request.url === "/devices" ||
+        request.url?.startsWith("/devices/") ||
         request.url === "/pharmacy/settings" ||
         request.url === "/attendance/events" ||
         request.url === localProofMutationContract.path
@@ -1336,8 +1376,11 @@ async function startRendererServer(
           : extension === ".css"
             ? "text/css; charset=utf-8"
             : "text/javascript; charset=utf-8";
+      // Read before the head is written: a missing file must fall through to
+      // the 502 below rather than crash the server after a 200 is on the wire.
+      const file = await readFile(filePath);
       response.writeHead(200, { "content-type": contentType });
-      response.end(await readFile(filePath));
+      response.end(file);
     } catch {
       response.writeHead(502, { "content-type": "application/json" });
       response.end("{}");
