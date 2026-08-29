@@ -14,6 +14,14 @@
 
 Use Testcontainers or another direct, disposable fixture for the supported PostgreSQL version. Do not create a persistence abstraction just for tests. Keep configuration central. Keep helpers local until the extraction test in [`architecture.md`](architecture.md) passes. Evidence: [Testcontainers PostgreSQL](https://node.testcontainers.org/modules/postgresql/), [Playwright Electron](https://playwright.dev/docs/api/class-electron), [Vitest projects](https://vitest.dev/guide/projects).
 
+## Windows release seam by milestone
+
+The Windows release row lists the whole obligation. [`open-decisions.md`](open-decisions.md) G-05, G-06, and G-07 record which part of it milestone 1 proves, under the stakeholder decision of 29 August 2026.
+
+A milestone-1 change on this seam proves the installed lifecycle and the LAN security boundary. A clean install reaches Ready, a machine restart returns to Ready, repair recovers without touching pharmacy data or the pharmacy CA, an injected failure rolls back and preserves any existing data directory, and uninstall preserves data while destructive removal happens only through its separate explicit authorization. A terminal presenting a valid device certificate completes TLS 1.3 mTLS and reaches the API, and a client with no certificate or a foreign-CA certificate is refused. All of it runs offline with development/test signing, and it may run on the unactivated certification-candidate guest `breev-issue-34-win11`. Loopback-only PostgreSQL, the scoped firewall rule, ASAR and fuse hardening, and least-privilege database roles and ACLs hold at every milestone.
+
+The release gate proves what those three gates defer: production signing, the licensed activated candidate named in Supported-environment proof below, the physical-machine pass, the full sequence in [`evidence/issue-34/README.md`](../evidence/issue-34/README.md), the platform-TPM key proof with its rejection transcripts, and base backup plus WAL with the clean-machine restore drill.
+
 ## Mandatory invariant tests
 
 - Trigger every posting failure point. Prove that the document, stock and value, settlement, AP, AR, Cash Box, journal, audit, idempotency, and outbox all roll back together.
