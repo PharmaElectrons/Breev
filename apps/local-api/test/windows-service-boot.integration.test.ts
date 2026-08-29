@@ -49,7 +49,11 @@ describe.sequential("Windows service LAN listener seam", () => {
     });
     try {
       await waitForHealth(apiPort, api);
-      const caCertificate = await getPairingCaCertificate(lanPort);
+      // The loopback listener comes up before the LAN server, which then
+      // initializes the pharmacy CA and issues its certificate, so a healthy
+      // /health does not yet guarantee the LAN port is accepting. Poll it until
+      // it answers rather than racing a single request against that startup.
+      const caCertificate = await waitForPairingCaCertificate(lanPort, api);
       expect(caCertificate.status).toBe(200);
       expect(caCertificate.body).toMatch(/-----BEGIN CERTIFICATE-----/);
     } finally {
@@ -99,6 +103,33 @@ describe.sequential("Windows service LAN listener seam", () => {
     return api;
   }
 });
+
+async function waitForPairingCaCertificate(
+  lanPort: number,
+  api: ChildProcessWithoutNullStreams,
+): Promise<{ body: string; status: number }> {
+  const deadline = Date.now() + 60_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    if (api.exitCode !== null) {
+      throw new Error(`local API exited early with code ${api.exitCode}`);
+    }
+    try {
+      const response = await getPairingCaCertificate(lanPort);
+      if (response.status === 200) {
+        return response;
+      }
+      lastError = new Error(`unexpected status ${response.status}`);
+    } catch (error) {
+      // ECONNREFUSED while the LAN server is still binding: keep polling.
+      lastError = error;
+    }
+    await delay(250);
+  }
+  throw new Error(
+    `the LAN listener did not answer in time: ${String(lastError)}`,
+  );
+}
 
 async function getPairingCaCertificate(
   lanPort: number,
