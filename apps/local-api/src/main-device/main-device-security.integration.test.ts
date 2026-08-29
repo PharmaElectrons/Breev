@@ -36,6 +36,8 @@ import { hashMainDeviceSecret } from "./main-device-binding.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const PACKAGED_RENDERER_ORIGIN = "breev://app";
+const PROOF_RATE_LIMIT = "3";
+const PROOF_RATE_WINDOW_SECONDS = "3600";
 
 interface MainDeviceCredentials {
   readonly deviceId: string;
@@ -95,7 +97,7 @@ describe.sequential("Main device security persistence seam", () => {
   });
 
   it("commits concurrent proof mutations atomically in PostgreSQL", async () => {
-    await waitForRateWindow();
+    await expireRateWindow(databaseRoles, credentials);
     const before = await getProofEvidence(apiOrigin, credentials);
     const mutations = await Promise.all(
       Array.from(
@@ -398,7 +400,7 @@ describe.sequential("Main device security persistence seam", () => {
   });
 
   it("rejects and audits invalid or oversized mutation bodies", async () => {
-    await waitForRateWindow();
+    await expireRateWindow(databaseRoles, credentials);
     await expectDeniedWithoutMutation({
       apiOrigin,
       code: "body-invalid",
@@ -559,7 +561,7 @@ describe.sequential("Main device security persistence seam", () => {
   });
 
   it("keeps the binding, audit, mutation, and rate window across restart", async () => {
-    await waitForRateWindow();
+    await expireRateWindow(databaseRoles, credentials);
     const before = await getProofEvidence(apiOrigin, credentials);
     for (let accepted = 0; accepted < 3; accepted += 1) {
       const mutation = await requestProofMutation(apiOrigin, credentials);
@@ -595,14 +597,14 @@ describe.sequential("Main device security persistence seam", () => {
       status: 429,
     });
 
-    await waitForRateWindow();
+    await expireRateWindow(databaseRoles, credentials);
     const afterWindow = await requestProofMutation(apiOrigin, credentials);
     expect(afterWindow.response.status).toBe(201);
     expect(afterWindow.body).toMatchObject({ status: "committed" });
   });
 
   it("bounds recent denial rows while retaining every denial in totals", async () => {
-    await waitForRateWindow();
+    await expireRateWindow(databaseRoles, credentials);
     const before = await getProofEvidence(apiOrigin, credentials);
     const headers = mutationHeaders(credentials);
     headers.delete("Origin");
@@ -626,7 +628,7 @@ describe.sequential("Main device security persistence seam", () => {
   });
 
   it("refuses normal use while the dataset is in Restore Quarantine", async () => {
-    await waitForRateWindow();
+    await expireRateWindow(databaseRoles, credentials);
     const pool = new Pool({ connectionString: databaseRoles.applicationUrl });
     try {
       await pool.query(
@@ -962,8 +964,8 @@ function spawnLocalApi(
         BREEV_MAIN_DEVICE_ID: credentials.deviceId,
         BREEV_MAIN_DEVICE_SECRET: credentials.deviceSecret,
         BREEV_MAIN_DEVICE_SESSION: credentials.sessionToken,
-        BREEV_PROOF_RATE_LIMIT: "3",
-        BREEV_PROOF_RATE_WINDOW_SECONDS: "2",
+        BREEV_PROOF_RATE_LIMIT: PROOF_RATE_LIMIT,
+        BREEV_PROOF_RATE_WINDOW_SECONDS: PROOF_RATE_WINDOW_SECONDS,
         DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
         DATABASE_URL: databaseRoles.applicationUrl,
       },
@@ -1034,9 +1036,19 @@ async function delay(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function waitForRateWindow(): Promise<void> {
-  const windowMilliseconds = 2_000;
-  const untilNextWindow =
-    windowMilliseconds - (Date.now() % windowMilliseconds) + 100;
-  await delay(untilNextWindow);
+async function expireRateWindow(
+  databaseRoles: SeparatedDatabaseRoles,
+  credentials: MainDeviceCredentials,
+): Promise<void> {
+  const pool = new Pool({ connectionString: databaseRoles.applicationUrl });
+  try {
+    await pool.query(
+      `update main_device_rate_windows
+       set window_number = window_number - 1
+       where device_id = $1 and action = 'proof-mutation'`,
+      [credentials.deviceId],
+    );
+  } finally {
+    await pool.end();
+  }
 }
