@@ -32,6 +32,20 @@
 !macroend
 
 !macro customUnInstall
+  ; This uninstaller only ever runs the data-preserving Uninstall action. It
+  ; stops and removes the services and closes the LAN firewall rule, and leaves
+  ; the pharmacy data and the pharmacy CA in place.
+  ;
+  ; Destroying pharmacy data is a separate, separately authorized action that
+  ; no installer path reaches. An administrator runs it by hand from an
+  ; elevated PowerShell:
+  ;
+  ;   powershell.exe -NoProfile -ExecutionPolicy Bypass
+  ;     -File "$INSTDIR\resources\windows-payload\lifecycle.ps1"
+  ;     -Action DestructiveUninstall -InstallRoot "$INSTDIR"
+  ;     -PayloadRoot "$INSTDIR\resources\windows-payload"
+  ;     -DataDestructionAuthorized -DestructionConfirmation destroy-pharmacy-data
+  ;
   ; The uninstall lifecycle must never abort the uninstaller: any nonzero
   ; result here (including a PowerShell launch or parameter-binding failure
   ; the script itself cannot catch) would send electron-builder's
