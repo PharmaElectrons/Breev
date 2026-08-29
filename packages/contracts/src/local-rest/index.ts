@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "4" as const;
-export const LOCAL_SCHEMA_VERSION = "5" as const;
+export const LOCAL_API_VERSION = "5" as const;
+export const LOCAL_SCHEMA_VERSION = "6" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -57,6 +57,9 @@ export const permissionNameSchema = z
   .regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/u)
   .max(96);
 export const stepUpActionSchema = z.enum([
+  "devices.pairing.start",
+  "devices.revoke",
+  "devices.seat.release.request",
   "identity.role.permissions.update",
   "identity.user.create",
   "identity.user.update",
@@ -288,6 +291,21 @@ export const capabilityProofSuccessSchema = z.strictObject({
   capability: paidCapabilityNameSchema,
 });
 
+/**
+ * The two families that can refuse an authenticated request at 403.
+ *
+ * A permission decision is an identity fact. An Additional POS Terminal
+ * additionally has to be permitted to operate at all: every request it makes is
+ * checked against the currently installed licence, and one that no longer
+ * carries `additional-device-pos` is refused with `entitlement-denied` and the
+ * capability it lacked. The Main Pharmacy Computer never meets that refusal —
+ * it is the device Free Core is defined around.
+ */
+const identityOrEntitlementDenialSchema = z.union([
+  identityDenialSchema,
+  licensingDenialSchema,
+]);
+
 export const identityStateContract = {
   method: "GET",
   path: "/identity/state",
@@ -311,6 +329,7 @@ export const identityLoginContract = {
     200: authenticatedStateSchema,
     400: identityDenialSchema,
     401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
     409: identityDenialSchema,
     429: identityDenialSchema,
   },
@@ -319,7 +338,11 @@ export const identityLogoutContract = {
   method: "POST",
   path: "/identity/logout",
   request: { body: identityLogoutRequestSchema },
-  responses: { 204: z.undefined(), 401: identityDenialSchema },
+  responses: {
+    204: z.undefined(),
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+  },
 } as const;
 export const identityRolesContract = {
   method: "GET",
@@ -327,7 +350,7 @@ export const identityRolesContract = {
   responses: {
     200: identityRolesSchema,
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
   },
 } as const;
 export const identityUsersContract = {
@@ -336,7 +359,7 @@ export const identityUsersContract = {
   responses: {
     200: z.strictObject({ users: z.array(identityUserSchema) }),
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
   },
 } as const;
 export const identityCreateUserContract = {
@@ -347,7 +370,7 @@ export const identityCreateUserContract = {
     201: identityUserSchema,
     400: identityDenialSchema,
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
     409: identityDenialSchema,
   },
 } as const;
@@ -359,7 +382,7 @@ export const identityUpdateUserContract = {
     200: identityUserSchema,
     400: identityDenialSchema,
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
     404: identityDenialSchema,
     409: identityDenialSchema,
   },
@@ -374,7 +397,7 @@ export const identityStepUpCreateContract = {
     201: identityStepUpChallengeSchema,
     400: identityDenialSchema,
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
     404: identityDenialSchema,
     409: identityDenialSchema,
   },
@@ -389,7 +412,7 @@ export const identityStepUpApproveContract = {
     200: identityStepUpChallengeSchema,
     400: identityDenialSchema,
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
     404: identityDenialSchema,
     409: identityDenialSchema,
     429: identityDenialSchema,
@@ -405,7 +428,7 @@ export const identityUpdateRolePermissionsContract = {
     200: identityRoleSchema,
     400: identityDenialSchema,
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
     404: identityDenialSchema,
     409: identityDenialSchema,
   },
@@ -418,7 +441,7 @@ export const pharmacySettingsContract = {
     200: pharmacySettingsSchema,
     400: identityDenialSchema,
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
     409: identityDenialSchema,
   },
 } as const;
@@ -430,7 +453,7 @@ export const attendanceEventContract = {
     201: attendanceEventSchema,
     400: identityDenialSchema,
     401: identityDenialSchema,
-    403: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
     409: identityDenialSchema,
   },
 } as const;
@@ -471,6 +494,368 @@ export const capabilityProofContract = {
     403: z.union([identityDenialSchema, licensingDenialSchema]),
   },
 } as const;
+
+/**
+ * Terminal pairing, seat allocation, and revocation.
+ *
+ * Two transports carry this family. The Main-side routes run on the loopback
+ * listener behind the Main device binding and an authenticated identity
+ * session. The `/pairing/*` routes run only on the LAN listener, ahead of the
+ * mTLS boundary, because a terminal that has no certificate yet is exactly the
+ * caller they exist for.
+ */
+export const DEVICES_DENIAL_CODES = [
+  "body-invalid",
+  "device-not-found",
+  "device-not-revoked",
+  "pairing-attempts-exceeded",
+  "pairing-entitlement-missing",
+  "pairing-seat-unavailable",
+  "pairing-session-conflict",
+  "pairing-session-expired",
+  "pairing-session-missing",
+  "pairing-session-replayed",
+  "pairing-signature-invalid",
+  "rate-limit-exceeded",
+  "seat-release-approver-invalid",
+  "seat-release-request-invalid",
+] as const;
+export const devicesDenialCodeSchema = z.enum(DEVICES_DENIAL_CODES);
+export const devicesDenialSchema = z.strictObject({
+  status: z.literal("denied"),
+  code: devicesDenialCodeSchema,
+  requestId: z.uuidv7(),
+});
+
+export const PAIRING_INVITATION_PREFIX = "breev-pair://1/" as const;
+export const PAIRING_BINDING_PREFIX = "breev-pair://2/" as const;
+export const PAIRING_JOIN_SECRET_BYTES = 32 as const;
+export const PAIRING_SESSION_LIFETIME_SECONDS = 300 as const;
+export const PAIRING_MAX_JOIN_ATTEMPTS = 5 as const;
+export const PAIRING_FINGERPRINT_DIGITS = 12 as const;
+
+export const PAIRING_SESSION_STATES = [
+  "awaiting-confirmation",
+  "cancelled",
+  "confirmed",
+  "expired",
+  "failed",
+  "open",
+] as const;
+export const pairingSessionStateNameSchema = z.enum(PAIRING_SESSION_STATES);
+export const pairingCancellationReasonSchema = z.enum([
+  "fingerprint-mismatch",
+  "user-cancelled",
+]);
+export const pairingFailureReasonSchema = z.enum(["excess-attempts"]);
+
+const certificateFingerprintSchema = z.string().regex(/^[0-9a-f]{64}$/u);
+const certificatePemSchema = z.string().min(1).max(16_384);
+const base64UrlSchema = z.string().regex(/^[A-Za-z0-9_-]+$/u);
+/**
+ * Transcript signatures travel as standard base64. The join secret keeps the
+ * base64url form it has inside the QR, so neither value has to be re-encoded
+ * on its way through a URI or a JSON body.
+ */
+const base64Schema = z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/u);
+const deviceDisplayNameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine((value) => value === value.trim());
+const revocationReasonSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .refine((value) => value === value.trim());
+const pairingFingerprintDigitsSchema = z.string().regex(/^\d{12}$/u);
+const pairingInvitationUriSchema = z
+  .string()
+  .min(PAIRING_INVITATION_PREFIX.length + 1)
+  .max(2_048)
+  .startsWith(PAIRING_INVITATION_PREFIX);
+const pairingBindingUriSchema = z
+  .string()
+  .min(PAIRING_BINDING_PREFIX.length + 1)
+  .max(2_048)
+  .startsWith(PAIRING_BINDING_PREFIX);
+
+export const pairingSessionStartRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+  stepUpChallengeId: z.uuidv7(),
+});
+/**
+ * `qrUri` carries the one-use join secret, so it is the one field of this
+ * response that is never written down. A fresh start returns it, straight from
+ * the invitation the Main just minted. A replay of the same idempotency key
+ * answers from the recorded result, which was stored without it, so no
+ * recoverable invitation ever sits in the database. The Main screen falls back
+ * to `GET /devices/pairing-sessions/current`, which serves the invitation from
+ * this process's bounded memory for as long as the session is open.
+ */
+export const pairingSessionStartedSchema = z.strictObject({
+  caFingerprint: certificateFingerprintSchema,
+  expiresAt: z.iso.datetime(),
+  qrUri: pairingInvitationUriSchema.optional(),
+  sessionId: z.uuidv7(),
+});
+/**
+ * The Main screen renders exactly one of these. `awaiting-confirmation` is the
+ * only member that carries the twelve comparison digits and the binding QR,
+ * because they exist only once the terminal has proposed a key.
+ */
+export const pairingSessionViewSchema = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("none") }),
+  z.strictObject({
+    state: z.literal("open"),
+    caFingerprint: certificateFingerprintSchema,
+    expiresAt: z.iso.datetime(),
+    qrUri: pairingInvitationUriSchema,
+    sessionId: z.uuidv7(),
+  }),
+  z.strictObject({
+    state: z.literal("awaiting-confirmation"),
+    expiresAt: z.iso.datetime(),
+    fingerprintDigits: pairingFingerprintDigitsSchema,
+    qrV2Uri: pairingBindingUriSchema,
+    sessionId: z.uuidv7(),
+    terminalName: deviceDisplayNameSchema,
+  }),
+  z.strictObject({
+    state: z.literal("confirmed"),
+    deviceId: z.uuidv7(),
+    displayName: deviceDisplayNameSchema,
+    sessionId: z.uuidv7(),
+  }),
+  z.strictObject({
+    state: z.literal("cancelled"),
+    reason: pairingCancellationReasonSchema,
+    sessionId: z.uuidv7(),
+  }),
+  z.strictObject({ state: z.literal("expired"), sessionId: z.uuidv7() }),
+  z.strictObject({
+    state: z.literal("failed"),
+    reason: pairingFailureReasonSchema,
+    sessionId: z.uuidv7(),
+  }),
+]);
+export const pairingSessionConfirmRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+});
+export const pairingSessionConfirmedSchema = z.strictObject({
+  deviceId: z.uuidv7(),
+  displayName: deviceDisplayNameSchema,
+});
+export const pairingSessionCancelRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+  reason: pairingCancellationReasonSchema,
+});
+export const pairingSessionCancelledSchema = z.strictObject({
+  status: z.literal("cancelled"),
+});
+
+export const terminalDeviceSchema = z.strictObject({
+  certNotAfter: z.iso.datetime(),
+  connected: z.boolean(),
+  displayName: deviceDisplayNameSchema,
+  id: z.uuidv7(),
+  pairedAt: z.iso.datetime(),
+  revocationReason: revocationReasonSchema.nullable(),
+  revokedAt: z.iso.datetime().nullable(),
+  seatReleasedAt: z.iso.datetime().nullable(),
+});
+/**
+ * `permitted` is licence data, never a constant: it is the permitted device
+ * count of the currently installed licence, and a licence that raises it
+ * raises the limit without a code change.
+ */
+export const deviceSeatUsageSchema = z.strictObject({
+  permitted: z.number().int().min(1).max(10_000),
+  used: z.number().int().min(0),
+});
+/**
+ * `seatUsage` is `null` exactly when no valid licence is installed. There is no
+ * default device count anywhere in Breev: without licence data the permitted
+ * count is not a smaller number, it is unknown, and the Main screen says so
+ * rather than showing an invented limit.
+ */
+export const deviceInventorySchema = z.strictObject({
+  devices: z.array(terminalDeviceSchema).max(10_000),
+  seatUsage: z.union([deviceSeatUsageSchema, z.null()]),
+});
+
+export const deviceRevocationRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+  reason: revocationReasonSchema,
+  stepUpChallengeId: z.uuidv7(),
+});
+export const deviceRevocationSchema = z.strictObject({
+  revokedAt: z.iso.datetime(),
+});
+
+export const seatReleaseRequestCreateSchema = z.strictObject({
+  deviceId: z.uuidv7(),
+  idempotencyKey: z.uuid(),
+  stepUpChallengeId: z.uuidv7(),
+});
+export const seatReleaseRequestSchema = z.strictObject({
+  expiresAt: z.iso.datetime(),
+  requestId: z.uuidv7(),
+});
+/**
+ * The second user of the two-user seat release. The approver authenticates
+ * inside this request and must be a different active user who holds
+ * `devices.pair`; there is no emergency bypass.
+ */
+export const seatReleaseApprovalRequestSchema = z.strictObject({
+  approverPassword: z.string().min(1).max(128),
+  approverUsername: usernameSchema,
+  idempotencyKey: z.uuid(),
+});
+export const seatReleaseApprovalSchema = z.strictObject({
+  releasedAt: z.iso.datetime(),
+});
+
+export const pairingCaCertificateSchema = z.strictObject({
+  caCertificatePem: certificatePemSchema,
+  installationId: z.uuidv7(),
+});
+export const pairingJoinRequestSchema = z.strictObject({
+  csrPem: z.string().min(1).max(8_192),
+  deviceName: deviceDisplayNameSchema,
+  joinSecret: base64UrlSchema.length(43),
+  sessionId: z.uuidv7(),
+  transcriptSignature: base64Schema.max(1_024),
+});
+export const pairingJoinAcceptedSchema = z.strictObject({
+  status: z.literal("bound"),
+});
+export const pairingChannelStateSchema = z.strictObject({
+  state: pairingSessionStateNameSchema,
+});
+export const pairingCertificateRequestSchema = z.strictObject({
+  sessionId: z.uuidv7(),
+  signature: base64Schema.max(1_024),
+});
+export const pairingCertificateSchema = z.strictObject({
+  caCertificatePem: certificatePemSchema,
+  certificatePem: certificatePemSchema,
+  deviceId: z.uuidv7(),
+  installationId: z.uuidv7(),
+});
+
+const devicesDenialResponses = {
+  400: z.union([devicesDenialSchema, identityDenialSchema]),
+  401: identityDenialSchema,
+  403: z.union([
+    devicesDenialSchema,
+    identityDenialSchema,
+    licensingDenialSchema,
+  ]),
+  404: z.union([devicesDenialSchema, identityDenialSchema]),
+  409: z.union([devicesDenialSchema, identityDenialSchema]),
+} as const;
+
+export const pairingSessionStartContract = {
+  method: "POST",
+  path: "/devices/pairing-sessions",
+  request: { body: pairingSessionStartRequestSchema },
+  responses: { 201: pairingSessionStartedSchema, ...devicesDenialResponses },
+} as const;
+export const pairingSessionCurrentContract = {
+  method: "GET",
+  path: "/devices/pairing-sessions/current",
+  responses: { 200: pairingSessionViewSchema, ...devicesDenialResponses },
+} as const;
+export const pairingSessionConfirmContract = {
+  method: "POST",
+  path: "/devices/pairing-sessions/:sessionId/confirmation",
+  request: { body: pairingSessionConfirmRequestSchema },
+  responses: { 201: pairingSessionConfirmedSchema, ...devicesDenialResponses },
+} as const;
+export const pairingSessionConfirmPath = (sessionId: string): string =>
+  `/devices/pairing-sessions/${sessionId}/confirmation`;
+export const pairingSessionCancelContract = {
+  method: "POST",
+  path: "/devices/pairing-sessions/:sessionId/cancellation",
+  request: { body: pairingSessionCancelRequestSchema },
+  responses: { 201: pairingSessionCancelledSchema, ...devicesDenialResponses },
+} as const;
+export const pairingSessionCancelPath = (sessionId: string): string =>
+  `/devices/pairing-sessions/${sessionId}/cancellation`;
+export const deviceInventoryContract = {
+  method: "GET",
+  path: "/devices",
+  responses: { 200: deviceInventorySchema, ...devicesDenialResponses },
+} as const;
+export const deviceRevocationContract = {
+  method: "POST",
+  path: "/devices/:deviceId/revocations",
+  request: { body: deviceRevocationRequestSchema },
+  responses: { 201: deviceRevocationSchema, ...devicesDenialResponses },
+} as const;
+export const deviceRevocationPath = (deviceId: string): string =>
+  `/devices/${deviceId}/revocations`;
+export const seatReleaseRequestContract = {
+  method: "POST",
+  path: "/devices/seat-release-requests",
+  request: { body: seatReleaseRequestCreateSchema },
+  responses: { 201: seatReleaseRequestSchema, ...devicesDenialResponses },
+} as const;
+export const seatReleaseApprovalContract = {
+  method: "POST",
+  path: "/devices/seat-release-requests/:requestId/approvals",
+  request: { body: seatReleaseApprovalRequestSchema },
+  responses: { 201: seatReleaseApprovalSchema, ...devicesDenialResponses },
+} as const;
+export const seatReleaseApprovalPath = (requestId: string): string =>
+  `/devices/seat-release-requests/${requestId}/approvals`;
+
+export const pairingCaCertificateContract = {
+  method: "GET",
+  path: "/pairing/ca-certificate",
+  responses: { 200: pairingCaCertificateSchema, 400: devicesDenialSchema },
+} as const;
+export const pairingJoinContract = {
+  method: "POST",
+  path: "/pairing/joins",
+  request: { body: pairingJoinRequestSchema },
+  responses: {
+    200: pairingJoinAcceptedSchema,
+    400: devicesDenialSchema,
+    403: devicesDenialSchema,
+    404: devicesDenialSchema,
+    409: devicesDenialSchema,
+    429: devicesDenialSchema,
+  },
+} as const;
+export const pairingChannelStateContract = {
+  method: "GET",
+  path: "/pairing/sessions/:sessionId/state",
+  responses: {
+    200: pairingChannelStateSchema,
+    400: devicesDenialSchema,
+    404: devicesDenialSchema,
+    429: devicesDenialSchema,
+  },
+} as const;
+export const pairingChannelStatePath = (sessionId: string): string =>
+  `/pairing/sessions/${sessionId}/state`;
+export const pairingCertificateContract = {
+  method: "POST",
+  path: "/pairing/certificates",
+  request: { body: pairingCertificateRequestSchema },
+  responses: {
+    200: pairingCertificateSchema,
+    400: devicesDenialSchema,
+    403: devicesDenialSchema,
+    404: devicesDenialSchema,
+    409: devicesDenialSchema,
+    429: devicesDenialSchema,
+  },
+} as const;
+
+export const PAIRING_CHANNEL_PATH_PREFIX = "/pairing/" as const;
 
 export const localHealthQuerySchema = z.strictObject({});
 
@@ -594,12 +979,19 @@ export const localProofMutationContract = {
   },
 } as const;
 
+/**
+ * Reading the denial evidence is an authenticated operation. A device binding
+ * alone — the Main headers, or an Additional POS Terminal's certificate —
+ * proves which machine is asking, never that anyone is signed in on it, so this
+ * route answers the identity denial family too.
+ */
 export const localProofEvidenceContract = {
   method: "GET",
   path: localProofMutationContract.path,
   responses: {
     [LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS]: localProofEvidenceSuccessSchema,
     ...localSecurityDenialResponses,
+    401: z.union([localSecurityDenialSchema, identityDenialSchema]),
   },
 } as const;
 
@@ -649,12 +1041,24 @@ export const localRestoreQuarantineDenialSchema = z.strictObject({
   reason: z.string().nullable(),
 });
 
+/**
+ * Recovery metadata describes the pharmacy's backups and its quarantine state,
+ * so it is readable only by a signed-in user. A paired device with no user
+ * session — an Additional POS Terminal that has only presented its certificate
+ * — is refused with the identity denial family.
+ */
 export const localRecoveryStatusContract = {
   method: "GET",
   path: "/recovery/status",
   responses: {
     [LOCAL_RECOVERY_STATUS_SUCCESS_STATUS]: localRecoveryStatusSuccessSchema,
     ...localSecurityDenialResponses,
+    401: z.union([localSecurityDenialSchema, identityDenialSchema]),
+    403: z.union([
+      localSecurityDenialSchema,
+      identityDenialSchema,
+      licensingDenialSchema,
+    ]),
   },
 } as const;
 
@@ -750,6 +1154,56 @@ export type LocalRecoveryStatusSuccess = z.infer<
 export type LocalRestoreQuarantineDenial = z.infer<
   typeof localRestoreQuarantineDenialSchema
 >;
+
+export type DevicesDenialCode = z.infer<typeof devicesDenialCodeSchema>;
+export type DevicesDenial = z.infer<typeof devicesDenialSchema>;
+export type PairingSessionStateName = z.infer<
+  typeof pairingSessionStateNameSchema
+>;
+export type PairingCancellationReason = z.infer<
+  typeof pairingCancellationReasonSchema
+>;
+export type PairingFailureReason = z.infer<typeof pairingFailureReasonSchema>;
+export type PairingSessionStartRequest = z.infer<
+  typeof pairingSessionStartRequestSchema
+>;
+export type PairingSessionStarted = z.infer<typeof pairingSessionStartedSchema>;
+export type PairingSessionView = z.infer<typeof pairingSessionViewSchema>;
+export type PairingSessionConfirmRequest = z.infer<
+  typeof pairingSessionConfirmRequestSchema
+>;
+export type PairingSessionConfirmed = z.infer<
+  typeof pairingSessionConfirmedSchema
+>;
+export type PairingSessionCancelRequest = z.infer<
+  typeof pairingSessionCancelRequestSchema
+>;
+export type PairingSessionCancelled = z.infer<
+  typeof pairingSessionCancelledSchema
+>;
+export type TerminalDeviceSummary = z.infer<typeof terminalDeviceSchema>;
+export type DeviceSeatUsage = z.infer<typeof deviceSeatUsageSchema>;
+export type DeviceInventory = z.infer<typeof deviceInventorySchema>;
+export type DeviceRevocationRequest = z.infer<
+  typeof deviceRevocationRequestSchema
+>;
+export type DeviceRevocation = z.infer<typeof deviceRevocationSchema>;
+export type SeatReleaseRequestCreate = z.infer<
+  typeof seatReleaseRequestCreateSchema
+>;
+export type SeatReleaseRequest = z.infer<typeof seatReleaseRequestSchema>;
+export type SeatReleaseApprovalRequest = z.infer<
+  typeof seatReleaseApprovalRequestSchema
+>;
+export type SeatReleaseApproval = z.infer<typeof seatReleaseApprovalSchema>;
+export type PairingCaCertificate = z.infer<typeof pairingCaCertificateSchema>;
+export type PairingJoinRequest = z.infer<typeof pairingJoinRequestSchema>;
+export type PairingJoinAccepted = z.infer<typeof pairingJoinAcceptedSchema>;
+export type PairingChannelState = z.infer<typeof pairingChannelStateSchema>;
+export type PairingCertificateRequest = z.infer<
+  typeof pairingCertificateRequestSchema
+>;
+export type PairingCertificate = z.infer<typeof pairingCertificateSchema>;
 
 export class LocalRestVersionMismatchError extends Error {
   public constructor(

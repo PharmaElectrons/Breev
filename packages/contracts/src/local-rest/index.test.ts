@@ -7,8 +7,29 @@ import {
   identityStepUpCreateRequestSchema,
   identityUpdateRolePermissionsRequestSchema,
   identityUpdateUserRequestSchema,
+  deviceInventoryContract,
+  deviceInventorySchema,
+  deviceRevocationContract,
+  deviceRevocationPath,
+  deviceRevocationRequestSchema,
+  devicesDenialSchema,
+  pairingCertificateContract,
+  pairingChannelStatePath,
+  pairingJoinContract,
+  pairingJoinRequestSchema,
+  pairingSessionCancelRequestSchema,
+  pairingSessionConfirmPath,
+  pairingSessionConfirmRequestSchema,
+  pairingSessionStartContract,
+  pairingSessionStartRequestSchema,
+  pairingSessionStartedSchema,
+  pairingSessionViewSchema,
+  seatReleaseApprovalRequestSchema,
+  seatReleaseRequestCreateSchema,
+  stepUpActionSchema,
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
+  DEVICES_DENIAL_CODES,
   LOCAL_API_VERSION,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
@@ -82,6 +103,39 @@ describe("identity mutation contracts", () => {
         kind: "check-in",
       },
     ],
+    [
+      pairingSessionStartRequestSchema,
+      { idempotencyKey: COMMAND_ID, stepUpChallengeId: COMMAND_ID },
+    ],
+    [pairingSessionConfirmRequestSchema, { idempotencyKey: COMMAND_ID }],
+    [
+      pairingSessionCancelRequestSchema,
+      { idempotencyKey: COMMAND_ID, reason: "fingerprint-mismatch" },
+    ],
+    [
+      deviceRevocationRequestSchema,
+      {
+        idempotencyKey: COMMAND_ID,
+        reason: "terminal retired",
+        stepUpChallengeId: COMMAND_ID,
+      },
+    ],
+    [
+      seatReleaseRequestCreateSchema,
+      {
+        deviceId: COMMAND_ID,
+        idempotencyKey: COMMAND_ID,
+        stepUpChallengeId: COMMAND_ID,
+      },
+    ],
+    [
+      seatReleaseApprovalRequestSchema,
+      {
+        approverPassword: "a sufficiently long private password",
+        approverUsername: "second.owner",
+        idempotencyKey: COMMAND_ID,
+      },
+    ],
   ])(
     "requires idempotency and current versions for command %s",
     (schema, body) => {
@@ -96,8 +150,8 @@ describe("identity mutation contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("4");
-    expect(LOCAL_SCHEMA_VERSION).toBe("5");
+    expect(LOCAL_API_VERSION).toBe("5");
+    expect(LOCAL_SCHEMA_VERSION).toBe("6");
   });
 
   it("accepts the healthy handshake", () => {
@@ -308,5 +362,174 @@ describe("local REST Main device proof contract", () => {
         { code: "origin-not-allowed", count: "1" },
       ],
     });
+  });
+});
+
+describe("terminal pairing contracts", () => {
+  const SESSION_ID = "0198e7ce-7685-7000-8000-000000000042";
+
+  it("names the pairing Step-Up actions the server enforces", () => {
+    expect(stepUpActionSchema.options).toContain("devices.pairing.start");
+    expect(stepUpActionSchema.options).toContain("devices.revoke");
+    expect(stepUpActionSchema.options).toContain(
+      "devices.seat.release.request",
+    );
+  });
+
+  it("keeps every pairing denial reason distinct and privacy-safe", () => {
+    expect(new Set(DEVICES_DENIAL_CODES).size).toBe(
+      DEVICES_DENIAL_CODES.length,
+    );
+    expect(
+      devicesDenialSchema.parse({
+        status: "denied",
+        code: "pairing-session-replayed",
+        requestId: SESSION_ID,
+      }),
+    ).toEqual({
+      status: "denied",
+      code: "pairing-session-replayed",
+      requestId: SESSION_ID,
+    });
+    expect(() =>
+      devicesDenialSchema.parse({
+        status: "denied",
+        code: "pairing-session-replayed",
+        requestId: SESSION_ID,
+        joinSecret: "leaked",
+      }),
+    ).toThrow();
+  });
+
+  it("publishes the Main-side and pairing-channel paths", () => {
+    expect(pairingSessionStartContract.path).toBe("/devices/pairing-sessions");
+    expect(deviceInventoryContract.path).toBe("/devices");
+    expect(deviceRevocationContract.method).toBe("POST");
+    expect(deviceRevocationPath(SESSION_ID)).toBe(
+      `/devices/${SESSION_ID}/revocations`,
+    );
+    expect(pairingSessionConfirmPath(SESSION_ID)).toBe(
+      `/devices/pairing-sessions/${SESSION_ID}/confirmation`,
+    );
+    expect(pairingChannelStatePath(SESSION_ID)).toBe(
+      `/pairing/sessions/${SESSION_ID}/state`,
+    );
+    expect(pairingJoinContract.path).toBe("/pairing/joins");
+    expect(pairingCertificateContract.path).toBe("/pairing/certificates");
+  });
+
+  it("requires proof of possession alongside the one-use join secret", () => {
+    const join = {
+      csrPem:
+        "-----BEGIN CERTIFICATE REQUEST-----\nAA==\n-----END CERTIFICATE REQUEST-----\n",
+      deviceName: "Counter 2",
+      joinSecret: "A".repeat(43),
+      sessionId: SESSION_ID,
+      transcriptSignature: "Zm9v",
+    };
+    expect(pairingJoinRequestSchema.safeParse(join).success).toBe(true);
+    const withoutProof = Object.fromEntries(
+      Object.entries(join).filter(([key]) => key !== "transcriptSignature"),
+    );
+    expect(pairingJoinRequestSchema.safeParse(withoutProof).success).toBe(
+      false,
+    );
+    expect(
+      pairingJoinRequestSchema.safeParse({ ...join, joinSecret: "short" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("carries the invitation on a fresh start and omits it on a replay", () => {
+    const started = {
+      caFingerprint: "a".repeat(64),
+      expiresAt: "2026-01-01T00:00:00.000Z",
+      qrUri: "breev-pair://1/payload",
+      sessionId: SESSION_ID,
+    };
+    expect(pairingSessionStartedSchema.parse(started)).toEqual(started);
+
+    // The recorded idempotency result, and every replay answered from it. The
+    // invitation carries the one-use join secret, so it is never written down
+    // and the response is valid without it.
+    const { qrUri, ...replayed } = started;
+    expect(qrUri).toBe("breev-pair://1/payload");
+    expect(pairingSessionStartedSchema.parse(replayed)).toEqual(replayed);
+    expect(
+      pairingSessionStartedSchema.safeParse({ ...replayed, qrUri: null })
+        .success,
+    ).toBe(false);
+    expect(
+      pairingSessionStartedSchema.safeParse({
+        ...started,
+        joinSecret: "leaked",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("reports no seat usage at all when no licence is installed", () => {
+    const devices = [
+      {
+        certNotAfter: "2027-01-01T00:00:00.000Z",
+        connected: false,
+        displayName: "Counter 1",
+        id: SESSION_ID,
+        pairedAt: "2026-01-01T00:00:00.000Z",
+        revocationReason: null,
+        revokedAt: null,
+        seatReleasedAt: null,
+      },
+    ];
+    expect(
+      deviceInventorySchema.parse({ devices, seatUsage: null }).seatUsage,
+    ).toBeNull();
+    expect(
+      deviceInventorySchema.parse({
+        devices,
+        seatUsage: { permitted: 3, used: 2 },
+      }).seatUsage,
+    ).toEqual({ permitted: 3, used: 2 });
+    // Absent is not the same as unknown: the field is always present, and a
+    // permitted count of zero is not a thing a licence can say.
+    expect(deviceInventorySchema.safeParse({ devices }).success).toBe(false);
+    expect(
+      deviceInventorySchema.safeParse({
+        devices,
+        seatUsage: { permitted: 0, used: 0 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("exposes the comparison digits only while a terminal awaits confirmation", () => {
+    expect(
+      pairingSessionViewSchema.parse({
+        state: "awaiting-confirmation",
+        expiresAt: "2026-01-01T00:00:00.000Z",
+        fingerprintDigits: "012345678901",
+        qrV2Uri: "breev-pair://2/payload",
+        sessionId: SESSION_ID,
+        terminalName: "Counter 2",
+      }),
+    ).toMatchObject({ fingerprintDigits: "012345678901" });
+    expect(
+      pairingSessionViewSchema.safeParse({
+        state: "open",
+        caFingerprint: "a".repeat(64),
+        expiresAt: "2026-01-01T00:00:00.000Z",
+        qrUri: "breev-pair://1/payload",
+        sessionId: SESSION_ID,
+        fingerprintDigits: "012345678901",
+      }).success,
+    ).toBe(false);
+    expect(
+      pairingSessionViewSchema.safeParse({
+        state: "awaiting-confirmation",
+        expiresAt: "2026-01-01T00:00:00.000Z",
+        fingerprintDigits: "01234567890",
+        qrV2Uri: "breev-pair://2/payload",
+        sessionId: SESSION_ID,
+        terminalName: "Counter 2",
+      }).success,
+    ).toBe(false);
   });
 });
