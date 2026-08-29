@@ -848,7 +848,16 @@ function Set-ServiceAcls {
   $apiLogRoot = Join-Path $DataRoot "logs\local-api"
   $postgresqlLogRoot = Join-Path $DataRoot "logs\postgresql"
   $stateRoot = Join-Path $DataRoot "state"
-  Set-DirectoryAcl -Path $DataRoot -AdditionalGrants @() -ResetDescendants
+  # Only path lookup, not listing or content read: Node's fs.realpathSync/lstat
+  # on the log path lstats each parent (C:\ProgramData\Breev, ...\logs), which
+  # needs Traverse plus ReadAttributes and nothing more.
+  $pathLookupRights =
+    [Security.AccessControl.FileSystemRights]::Traverse -bor
+    [Security.AccessControl.FileSystemRights]::ReadAttributes
+  Set-DirectoryAcl -Path $DataRoot -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = $pathLookupRights },
+    [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = $pathLookupRights }
+  )
   Set-DirectoryAcl -Path $configRoot -AdditionalGrants @() -ResetDescendants
   Set-FileAcl -Path (Join-Path $configRoot "database-url") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read }
@@ -863,6 +872,10 @@ function Set-ServiceAcls {
   Set-DirectoryAcl -Path $postgresqlDataRoot -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = [Security.AccessControl.FileSystemRights]::FullControl }
   ) -ResetDescendants
+  Set-DirectoryAcl -Path (Join-Path $DataRoot "logs") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = $pathLookupRights },
+    [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = $pathLookupRights }
+  )
   Set-DirectoryAcl -Path $apiLogRoot -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Modify }
   ) -ResetDescendants
@@ -880,6 +893,21 @@ function Set-ServiceAcls {
   Set-DirectoryAcl -Path (Join-Path $DataRoot "Recovery") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::FullControl }
   )
+  # The CNG machine key store is a shared location that holds every machine
+  # software key, not a Breev namespace. Under the software-fallback provider
+  # (no TPM) the API service must create one key file here; it opens, signs, and
+  # deletes that key later through the key's own protected DACL, never through
+  # the directory. So the directory grant is create-file only, non-inheriting:
+  # (WD) FILE_ADD_FILE lets it drop its key, (RA)(X) let it look the path up.
+  # It carries no list, modify-existing, or delete-child right over a foreign
+  # key, and /grant:r replaces any broader ACE a prior run left behind.
+  $cngKeysPath = Join-Path $env:ProgramData "Microsoft\Crypto\Keys"
+  if (Test-Path -LiteralPath $cngKeysPath) {
+    Invoke-CheckedCommand `
+      -FilePath "icacls.exe" `
+      -Arguments @($cngKeysPath, "/grant:r", "NT SERVICE\${apiServiceName}:(WD,RA,X)") `
+      -FailureMessage "Could not configure permissions on the CNG machine keys directory"
+  }
 
   Set-DirectoryAcl -Path (Join-Path $PayloadRoot "service-wrapper") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute },
@@ -1092,6 +1120,7 @@ try {
 
   Stop-And-DeleteService -Name $apiServiceName
   Stop-And-DeleteService -Name $postgresqlServiceName
+  Stop-BreevProcesses -PathPrefixes @($PayloadRoot, $InstallRoot, $DataRoot) -TimeoutSeconds 15
   Register-PostgresqlService
   Invoke-FailurePoint -Name "AfterPostgreSqlService"
   Register-ApiService -LanHost $lanHost
