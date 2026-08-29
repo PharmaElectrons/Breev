@@ -1,3 +1,8 @@
+import type {
+  DesktopDeviceRole,
+  DesktopManualEndpointRequest,
+  TerminalPairingState,
+} from "@breev/contracts/desktop-preload";
 import type { LocalHealthSuccess } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -6,12 +11,21 @@ import { requestMainDeviceProofMutation } from "./local-api";
 import {
   stateFromHealth,
   stateFromStartupFailure,
+  stateFromTerminalPairing,
   type StartupState,
 } from "./startup-state";
 
 const HEALTH_POLL_INTERVAL_MS = 1_000;
 
+const PAIRING_FAILED_UNEXPECTED: TerminalPairingState = {
+  candidates: [],
+  endpoint: null,
+  reason: "unexpected",
+  stage: "failed",
+};
+
 interface StartupConnection {
+  readonly cancelTerminalPairing: () => Promise<void>;
   readonly checkNow: () => void;
   readonly deviceProof: "committed" | "denied" | "failed" | "idle" | "running";
   readonly handshake: LocalHealthSuccess | null;
@@ -19,6 +33,11 @@ interface StartupConnection {
   readonly localApiOrigin: string | null;
   readonly runDeviceProof: () => Promise<void>;
   readonly state: StartupState;
+  readonly submitManualEndpoint: (
+    endpoint: DesktopManualEndpointRequest,
+  ) => Promise<void>;
+  readonly submitPairingInvitation: (invitation: string) => Promise<void>;
+  readonly terminalPairing: TerminalPairingState | null;
 }
 
 export function useStartupConnection(): StartupConnection {
@@ -27,12 +46,15 @@ export function useStartupConnection(): StartupConnection {
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
   const [deviceProof, setDeviceProof] =
     useState<StartupConnection["deviceProof"]>("idle");
+  const [terminalPairing, setTerminalPairing] =
+    useState<TerminalPairingState | null>(null);
   const localApiOriginRef = useRef<string | undefined>(undefined);
   const checkNowRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let active = true;
     let checkInFlight = false;
+    let deviceRole: DesktopDeviceRole = "main";
     let localApiOrigin: string | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -41,6 +63,14 @@ export function useStartupConnection(): StartupConnection {
         timer = undefined;
         void check(false);
       }, HEALTH_POLL_INTERVAL_MS);
+    };
+
+    const readTerminalPairing = async (): Promise<TerminalPairingState> => {
+      try {
+        return await window.breevDesktop.getTerminalPairingState();
+      } catch {
+        return PAIRING_FAILED_UNEXPECTED;
+      }
     };
 
     const check = async (showConnecting: boolean): Promise<void> => {
@@ -53,6 +83,19 @@ export function useStartupConnection(): StartupConnection {
       }
 
       try {
+        if (deviceRole === "terminal") {
+          const pairing = await readTerminalPairing();
+          if (!active) {
+            return;
+          }
+          setTerminalPairing(pairing);
+          if (pairing.stage !== "paired") {
+            setState(stateFromTerminalPairing(pairing));
+            setHandshake(null);
+            return;
+          }
+        }
+
         const response = await requestLocalHealth(localApiOrigin);
         if (!active) {
           return;
@@ -81,6 +124,7 @@ export function useStartupConnection(): StartupConnection {
         if (!active) {
           return;
         }
+        deviceRole = config.role;
         localApiOrigin = config.localApiOrigin;
         localApiOriginRef.current = config.localApiOrigin;
         await check(true);
@@ -130,7 +174,45 @@ export function useStartupConnection(): StartupConnection {
       setDeviceProof("failed");
     }
   }, []);
+
+  const applyPairing = useCallback(
+    async (work: () => Promise<TerminalPairingState>): Promise<void> => {
+      let next: TerminalPairingState;
+      try {
+        next = await work();
+      } catch {
+        next = PAIRING_FAILED_UNEXPECTED;
+      }
+      setTerminalPairing(next);
+      setState(stateFromTerminalPairing(next));
+    },
+    [],
+  );
+
+  const submitPairingInvitation = useCallback(
+    async (invitation: string): Promise<void> => {
+      await applyPairing(() =>
+        window.breevDesktop.submitPairingInvitation({ invitation }),
+      );
+    },
+    [applyPairing],
+  );
+
+  const submitManualEndpoint = useCallback(
+    async (endpoint: DesktopManualEndpointRequest): Promise<void> => {
+      await applyPairing(() =>
+        window.breevDesktop.submitManualEndpoint(endpoint),
+      );
+    },
+    [applyPairing],
+  );
+
+  const cancelTerminalPairing = useCallback(async (): Promise<void> => {
+    await applyPairing(() => window.breevDesktop.cancelTerminalPairing());
+  }, [applyPairing]);
+
   return {
+    cancelTerminalPairing,
     checkNow,
     deviceProof,
     handshake,
@@ -138,5 +220,8 @@ export function useStartupConnection(): StartupConnection {
     localApiOrigin: localApiOriginRef.current ?? null,
     runDeviceProof,
     state,
+    submitManualEndpoint,
+    submitPairingInvitation,
+    terminalPairing,
   };
 }

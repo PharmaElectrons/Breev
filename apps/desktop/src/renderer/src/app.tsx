@@ -13,11 +13,13 @@ import { messages } from "./messages";
 import { formatDateTime } from "./preferences";
 import { usePreferences } from "./preferences-provider";
 import type { StartupState } from "./startup-state";
+import { TerminalPairingScreen } from "./terminal-pairing-screen";
 import { useStartupConnection } from "./use-startup-connection";
 
 export function App(): React.JSX.Element {
   const { locale, setLocale, setTheme, theme } = usePreferences();
   const {
+    cancelTerminalPairing,
     checkNow,
     deviceProof,
     handshake,
@@ -25,6 +27,9 @@ export function App(): React.JSX.Element {
     localApiOrigin,
     runDeviceProof,
     state,
+    submitManualEndpoint,
+    submitPairingInvitation,
+    terminalPairing,
   } = useStartupConnection();
   const checkButtonRef = useRef<HTMLButtonElement>(null);
   const copy = messages[locale];
@@ -145,6 +150,15 @@ export function App(): React.JSX.Element {
         </Card>
       </section>
 
+      {state === "unpaired" ? (
+        <TerminalPairingScreen
+          onCancel={cancelTerminalPairing}
+          onSubmitEndpoint={submitManualEndpoint}
+          onSubmitInvitation={submitPairingInvitation}
+          pairing={terminalPairing}
+        />
+      ) : null}
+
       {state === "ready" && localApiOrigin !== null ? (
         <IdentityShell baseUrl={localApiOrigin} />
       ) : null}
@@ -173,6 +187,13 @@ function StatusIcon({ state }: { state: StartupState }): React.JSX.Element {
       <>
         <path d="M6 8h12v8H6z" />
         <path d="m4 4 16 16" />
+      </>
+    ) : state === "unpaired" ? (
+      <>
+        <path d="M9 4v5" />
+        <path d="M15 4v5" />
+        <path d="M7 9h10v3a5 5 0 0 1-10 0Z" />
+        <path d="M12 17v3" />
       </>
     ) : (
       <>

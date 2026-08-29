@@ -11,6 +11,7 @@ import type {
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { DevicesPanel } from "./devices-panel";
 import {
   approveStepUpChallenge,
   bootstrapIdentity,
@@ -374,6 +375,7 @@ function AuthenticatedWorkspace({
   );
   const canManageLicensing =
     state.allowedPermissions.includes("licensing.manage");
+  const canPairDevices = state.allowedPermissions.includes("devices.pair");
   const visibleSelectedCapability = state.entitlement.capabilities.includes(
     selectedCapability,
   )
@@ -639,6 +641,15 @@ function AuthenticatedWorkspace({
             </p>
           </nav>
         </section>
+
+        {canPairDevices ? (
+          <DevicesPanel
+            baseUrl={baseUrl}
+            beginStepUp={beginStepUp}
+            identityCopy={copy}
+            licensingCopy={licensingCopy}
+          />
+        ) : null}
 
         {state.attendance === null ? null : (
           <article
