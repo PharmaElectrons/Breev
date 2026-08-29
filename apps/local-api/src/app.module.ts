@@ -1,6 +1,12 @@
 import { Module } from "@nestjs/common";
 
 import { DatabaseHealthService } from "./database-health.service.js";
+import { DevicesController } from "./devices/devices.controller.js";
+import { DevicesService } from "./devices/devices.service.js";
+import {
+  PAIRING_ENDPOINT,
+  readPairingEndpoint,
+} from "./devices/pairing-endpoint.js";
 import { DurableJobsService } from "./durable-jobs/durable-jobs.service.js";
 import { HealthController } from "./health.controller.js";
 import { IdentityAccessController } from "./identity-access/identity-access.controller.js";
@@ -22,6 +28,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
 
 @Module({
   controllers: [
+    DevicesController,
     HealthController,
     IdentityAccessController,
     LicensingController,
@@ -30,7 +37,12 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
   ],
   providers: [
     DatabaseHealthService,
+    DevicesService,
     DurableJobsService,
+    {
+      provide: PAIRING_ENDPOINT,
+      useFactory: () => readPairingEndpoint(process.env),
+    },
     IdentityAccessService,
     LocalDatabaseService,
     LicensingAdministrationService,

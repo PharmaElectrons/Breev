@@ -103,23 +103,48 @@ export const serverCertificates = pgTable(
  * Every LAN request checks this record even on resumed TLS sessions
  * (per domain.md §Identity L70).
  *
- * The device private key is generated non-exported on the terminal side
- * during pairing (later issue) and never stored here.
+ * A row here exists only as the outcome of a pairing ceremony, and nothing else
+ * may create one: it names the pharmacy, the licence whose seat it holds, the
+ * operator-chosen display name, the issued certificate, and who paired it. The
+ * device private key is generated on the terminal and never stored here.
+ *
+ * This declaration is typed documentation of the live table, not a source the
+ * migrations are generated from — Breev has no schema generator, and
+ * `drizzle/0006_devices_pairing.sql` is authoritative. Foreign keys, composite
+ * keys, and partial indexes are therefore declared there and not repeated here:
+ * the tables they reference (pharmacies, identity_users, licence_installations,
+ * pairing_sessions, seat_release_requests) are read through hand-written SQL and
+ * have no Drizzle declaration to point at.
  */
 export const terminalDevices = pgTable(
   "terminal_devices",
   {
     id: uuid().primaryKey(),
     installationId: uuid("installation_id").notNull(),
-    certFingerprint: text("cert_fingerprint"),
-    certSerial: text("cert_serial"),
-    certNotBefore: timestamp("cert_not_before", { withTimezone: true }),
-    certNotAfter: timestamp("cert_not_after", { withTimezone: true }),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    displayName: text("display_name").notNull(),
+    licenceId: uuid("licence_id").notNull(),
+    certFingerprint: text("cert_fingerprint").notNull(),
+    certSerial: text("cert_serial").notNull(),
+    certNotBefore: timestamp("cert_not_before", {
+      withTimezone: true,
+    }).notNull(),
+    certNotAfter: timestamp("cert_not_after", { withTimezone: true }).notNull(),
+    certPem: text("cert_pem").notNull(),
     pairedAt: timestamp("paired_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    pairedBy: uuid("paired_by").notNull(),
+    pairingSessionId: uuid("pairing_session_id").notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revocationReason: text("revocation_reason"),
+    revokedBy: uuid("revoked_by"),
+    seatAllocatedAt: timestamp("seat_allocated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    seatReleasedAt: timestamp("seat_released_at", { withTimezone: true }),
+    seatReleasedBy: uuid("seat_released_by"),
+    seatReleaseRequestId: uuid("seat_release_request_id"),
   },
   (table) => [
     check("terminal_devices_id_uuidv7", uuidV7Check(table.id)),
@@ -130,6 +155,38 @@ export const terminalDevices = pgTable(
     check(
       "terminal_devices_revocation_consistent",
       sql`(${table.revokedAt} IS NULL) = (${table.revocationReason} IS NULL)`,
+    ),
+    check(
+      "terminal_devices_display_name_length",
+      sql`char_length(${table.displayName}) BETWEEN 1 AND 64`,
+    ),
+    check(
+      "terminal_devices_reason_length",
+      sql`${table.revocationReason} IS NULL OR char_length(${table.revocationReason}) BETWEEN 1 AND 128`,
+    ),
+    check(
+      "terminal_devices_cert_pem_nonempty",
+      sql`char_length(${table.certPem}) BETWEEN 1 AND 16384`,
+    ),
+    check(
+      "terminal_devices_validity_window",
+      sql`${table.certNotBefore} < ${table.certNotAfter}`,
+    ),
+    check(
+      "terminal_devices_revoked_by_consistent",
+      sql`(${table.revokedAt} IS NULL) = (${table.revokedBy} IS NULL)`,
+    ),
+    check(
+      "terminal_devices_seat_release_consistent",
+      sql`(${table.seatReleasedAt} IS NULL) = (${table.seatReleasedBy} IS NULL)`,
+    ),
+    check(
+      "terminal_devices_seat_release_after_revocation",
+      sql`${table.seatReleasedAt} IS NULL OR ${table.revokedAt} IS NOT NULL`,
+    ),
+    check(
+      "terminal_devices_seat_release_request_consistent",
+      sql`(${table.seatReleasedAt} IS NULL) = (${table.seatReleaseRequestId} IS NULL)`,
     ),
   ],
 );

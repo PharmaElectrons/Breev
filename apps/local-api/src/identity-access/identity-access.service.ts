@@ -24,6 +24,7 @@ import {
   type IdentityUpdateUserRequest,
   type IdentityUser,
   type EntitlementContext,
+  type PaidCapabilityName,
   type PharmacySettings,
   type PharmacySettingsUpdateRequest,
   type PharmacyRoleKey,
@@ -36,10 +37,7 @@ import type { PoolClient, QueryResult } from "pg";
 import { DurableJobsService } from "../durable-jobs/durable-jobs.service.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { LicensingService } from "../licensing/licensing.service.js";
-import {
-  MainDeviceSecurityService,
-  type VerifiedMainDeviceContext,
-} from "../main-device/main-device-security.service.js";
+import { MainDeviceSecurityService } from "../main-device/main-device-security.service.js";
 import { writePostingAudit } from "../posting/audit-writer.js";
 import { canonicalRequestHash } from "../posting/canonical-hash.js";
 import { runWholeCommandWithRetry } from "../posting/command-retry.js";
@@ -90,6 +88,14 @@ const AUTH_RATE_WINDOW_SECONDS = readPositiveInteger(
  */
 const SETTINGS_COMMAND_NAME = "pharmacy.settings.update";
 
+/**
+ * The capability that permits an Additional POS Terminal to operate at all.
+ * Free Core permits exactly one device — the Main Pharmacy Computer — so a
+ * terminal is licensed equipment, and it stops being permitted the moment the
+ * licence that added it stops holding.
+ */
+const TERMINAL_CAPABILITY: PaidCapabilityName = "additional-device-pos";
+
 const PHARMACY_ROLE_KEYS = [
   "owner",
   "manager",
@@ -103,7 +109,8 @@ const PHARMACY_ROLE_KEYS = [
 
 interface SessionRow {
   readonly session_id: string;
-  readonly device_id: string;
+  readonly device_id: string | null;
+  readonly terminal_device_id: string | null;
   readonly pharmacy_id: string;
   readonly pharmacy_name: string;
   readonly pharmacy_identity_revision: string;
@@ -143,8 +150,9 @@ interface ChallengeRow {
   readonly pharmacy_id: string;
   readonly actor_user_id: string;
   readonly identity_session_id: string;
-  readonly device_id: string;
-  readonly device_session_hash: Buffer;
+  readonly device_id: string | null;
+  readonly device_session_hash: Buffer | null;
+  readonly terminal_device_id: string | null;
   readonly action_name: string;
   readonly required_permission: string;
   readonly subject_id: string;
@@ -157,7 +165,16 @@ interface ChallengeRow {
   readonly consumed_at: Date | null;
 }
 
+/**
+ * Every credential an idempotent command can carry names itself: `password`,
+ * `approverPassword`, and anything else a future command adds. The fingerprint
+ * filters on the name rather than on a list, so a new credential field cannot
+ * be hashed by omission.
+ */
+const CREDENTIAL_FIELD_PATTERN = /password/iu;
+
 interface IdentityCommandInput {
+  readonly approverPassword?: string;
   readonly idempotencyKey: string;
   readonly password?: string;
 }
@@ -166,12 +183,41 @@ interface PayloadParser<T> {
   parse(payload: unknown): T;
 }
 
+/**
+ * Which device carries a request.
+ *
+ * The Main Pharmacy Computer presents its provisioned binding through headers.
+ * An Additional POS Terminal presents a certificate the pharmacy CA issued,
+ * already verified by the mTLS boundary. Exactly one of the two is ever set, so
+ * a caller can never combine them, and every audit fact records which one it
+ * was.
+ */
+export type RequestDeviceBinding =
+  | {
+      readonly deviceId: string;
+      readonly deviceSessionHash: Buffer;
+      readonly terminalCertFingerprint: undefined;
+      readonly terminalDeviceId: undefined;
+    }
+  | {
+      readonly deviceId: undefined;
+      readonly deviceSessionHash: undefined;
+      readonly terminalCertFingerprint: Buffer;
+      readonly terminalDeviceId: string;
+    };
+
 export interface IdentityExecutionContext {
   readonly actorId: string;
   readonly authRevision: bigint;
-  readonly deviceId: string;
-  readonly deviceSessionHash: Buffer;
+  readonly deviceId: string | undefined;
+  readonly deviceSessionHash: Buffer | undefined;
   readonly entitlement: EntitlementContext;
+  /**
+   * The installation's Main device. Licence and entitlement facts are bound to
+   * it whatever device is asking, so a terminal reads the same entitlement the
+   * Main does rather than an entitlement of its own.
+   */
+  readonly licensingDeviceId: string;
   readonly permissions: readonly PermissionName[];
   readonly pharmacyId: string;
   readonly pharmacyIdentityRevision: bigint;
@@ -179,6 +225,25 @@ export interface IdentityExecutionContext {
   readonly roleKey: PharmacyRoleKey;
   readonly roleRevision: bigint;
   readonly sessionId: string;
+  readonly terminalCertFingerprint: Buffer | undefined;
+  readonly terminalDeviceId: string | undefined;
+}
+
+/** The device columns every audit fact carries: one set, one null. */
+export interface AuditDeviceColumns {
+  readonly deviceId: string | undefined;
+  readonly terminalDeviceId: string | undefined;
+}
+
+/**
+ * The device identity a Step-Up challenge is pinned to, as one comparable
+ * string. Prefixing the kind keeps a Main device id and a terminal device id
+ * from ever comparing equal.
+ */
+export function deviceBindingKey(binding: AuditDeviceColumns): string {
+  return binding.deviceId === undefined
+    ? `terminal:${binding.terminalDeviceId ?? ""}`
+    : `main:${binding.deviceId}`;
 }
 
 export class IdentityAccessDenied extends Error {
@@ -205,12 +270,56 @@ export class IdentityAccessService {
     private readonly durableJobs: DurableJobsService,
   ) {}
 
-  public verifiedDevice(request: Request): VerifiedMainDeviceContext {
+  /**
+   * The device the request boundary already verified — the Main binding on
+   * loopback, or the terminal certificate on the LAN listener. Reaching a
+   * handler without either is a programming fault, not a denial, so it throws.
+   */
+  public verifiedDevice(request: Request): RequestDeviceBinding {
+    const terminal = this.deviceSecurity.verifiedTerminalContext(request);
+    if (terminal !== undefined) {
+      return {
+        deviceId: undefined,
+        deviceSessionHash: undefined,
+        terminalCertFingerprint: terminal.certFingerprint,
+        terminalDeviceId: terminal.terminalDeviceId,
+      };
+    }
     const context = this.deviceSecurity.verifiedDeviceContext(request);
     if (context === undefined) {
       throw new Error("The device boundary did not verify this request");
     }
-    return context;
+    return {
+      deviceId: context.deviceId,
+      deviceSessionHash: context.deviceSessionHash,
+      terminalCertFingerprint: undefined,
+      terminalDeviceId: undefined,
+    };
+  }
+
+  /**
+   * The Main device a licence, an entitlement, and a Trusted Breev Time mark
+   * are keyed to.
+   *
+   * A request from the Main Pharmacy Computer answers with its own verified
+   * binding — that is the device the licence was installed from, and it is what
+   * every entitlement read has always used. A terminal has no Main binding of
+   * its own, so it resolves the installation's provisioned Main device: a
+   * terminal must read the same entitlement the Main reads, never one keyed to
+   * itself. Without a provisioned binding there is no answer, and the request
+   * fails rather than guessing at one.
+   */
+  private licensingDeviceId(deviceId: string | null | undefined): string {
+    if (deviceId !== null && deviceId !== undefined) {
+      return deviceId;
+    }
+    const provisioned = this.localDatabase.provisionedMainDeviceId();
+    if (provisioned === undefined) {
+      throw new Error(
+        "This installation has no provisioned Main device binding",
+      );
+    }
+    return provisioned;
   }
 
   public async state(request: Request): Promise<IdentityState> {
@@ -245,7 +354,7 @@ export class IdentityAccessService {
     const row = await this.latestSession(device);
     const requestId = await this.writeAudit(this.localDatabase.requirePool(), {
       action: "identity.request",
-      deviceId: device.deviceId,
+      device,
       outcome: "body-invalid",
       ...(row === undefined
         ? {}
@@ -282,7 +391,7 @@ export class IdentityAccessService {
         );
         const requestId = await this.writeAudit(client, {
           action: "identity.bootstrap",
-          deviceId: device.deviceId,
+          device,
           outcome: "denied-already-complete",
           ...(existing.rows[0] === undefined
             ? {}
@@ -373,7 +482,7 @@ export class IdentityAccessService {
         action: "identity.bootstrap",
         actorUserId: ownerId,
         afterState: { role: "owner" },
-        deviceId: device.deviceId,
+        device,
         identitySessionId: sessionId,
         outcome: "succeeded",
         pharmacyId,
@@ -407,19 +516,17 @@ export class IdentityAccessService {
     if (pharmacyId === undefined) {
       const requestId = await this.writeAudit(pool, {
         action: "identity.login",
-        deviceId: device.deviceId,
+        device,
         outcome: "bootstrap-required",
       });
       throw this.denied(409, "bootstrap-required", requestId);
     }
 
     const usernameKey = normalizeUsername(input.username);
-    if (
-      !(await this.consumeAuthAttempt(device.deviceId, "login", usernameKey))
-    ) {
+    if (!(await this.consumeAuthAttempt(device, "login", usernameKey))) {
       const requestId = await this.writeAudit(pool, {
         action: "identity.login",
-        deviceId: device.deviceId,
+        device,
         outcome: "rate-limit-exceeded",
         pharmacyId,
       });
@@ -454,7 +561,7 @@ export class IdentityAccessService {
       const requestId = await this.writeAudit(pool, {
         action: "identity.login",
         ...(user === undefined ? {} : { actorUserId: user.id }),
-        deviceId: device.deviceId,
+        device,
         outcome: "invalid-credentials",
         pharmacyId,
       });
@@ -485,7 +592,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action: "identity.login",
           actorUserId: user.id,
-          deviceId: device.deviceId,
+          device,
           outcome: "invalid-credentials",
           pharmacyId,
         });
@@ -513,21 +620,40 @@ export class IdentityAccessService {
           ],
         );
       }
+      // An Additional POS Terminal has to still be a device, and this
+      // installation has to still be permitted to run one, before it is given a
+      // session. Both are read inside this transaction, in that order, so a
+      // revocation or a licence change that commits alongside this login wins.
+      await this.requireLiveTerminalDevice(client, device);
+      if (device.terminalDeviceId !== undefined) {
+        const licensingDeviceId = this.licensingDeviceId(device.deviceId);
+        await this.requireTerminalEntitlement({
+          actorId: user.id,
+          client,
+          entitlement: await this.licensing.current(
+            {
+              actorId: user.id,
+              mainDeviceId: licensingDeviceId,
+              now: new Date(),
+              pharmacyId,
+            },
+            client,
+          ),
+          licensingDeviceId,
+          pharmacyId,
+          terminalDeviceId: device.terminalDeviceId,
+        });
+      }
       sessionId = await this.replaceSession(client, {
         device,
         pharmacyId,
         userId: user.id,
       });
-      await this.clearAuthAttempts(
-        client,
-        device.deviceId,
-        "login",
-        usernameKey,
-      );
+      await this.clearAuthAttempts(client, device, "login", usernameKey);
       await this.writeAudit(client, {
         action: "identity.login",
         actorUserId: user.id,
-        deviceId: device.deviceId,
+        device,
         identitySessionId: sessionId,
         outcome: "succeeded",
         pharmacyId,
@@ -561,7 +687,7 @@ export class IdentityAccessService {
       await this.writeAudit(client, {
         action: "identity.logout",
         actorUserId: context.actorId,
-        deviceId: context.deviceId,
+        device: context,
         identitySessionId: context.sessionId,
         outcome: "succeeded",
         pharmacyId: context.pharmacyId,
@@ -675,7 +801,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action: "identity.user.create",
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "username-taken",
           pharmacyId: context.pharmacyId,
@@ -693,7 +819,7 @@ export class IdentityAccessService {
         action: "identity.user.create",
         actorUserId: context.actorId,
         afterState: { role: input.role, status: "active" },
-        deviceId: context.deviceId,
+        device: context,
         identitySessionId: context.sessionId,
         outcome: "succeeded",
         pharmacyId: context.pharmacyId,
@@ -788,7 +914,7 @@ export class IdentityAccessService {
             action: "identity.user.update",
             actorUserId: context.actorId,
             beforeState: userAuditState(before),
-            deviceId: context.deviceId,
+            device: context,
             identitySessionId: context.sessionId,
             outcome: "last-owner-required",
             pharmacyId: context.pharmacyId,
@@ -828,7 +954,7 @@ export class IdentityAccessService {
         actorUserId: context.actorId,
         afterState: userAuditState(after),
         beforeState: userAuditState(before),
-        deviceId: context.deviceId,
+        device: context,
         identitySessionId: context.sessionId,
         outcome: "succeeded",
         pharmacyId: context.pharmacyId,
@@ -868,7 +994,7 @@ export class IdentityAccessService {
           action: input.action,
           actorUserId: context.actorId,
           afterState: { requiredPermission },
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "step-up-missing-permission",
           pharmacyId: context.pharmacyId,
@@ -903,7 +1029,7 @@ export class IdentityAccessService {
           action: input.action,
           actorUserId: context.actorId,
           afterState: { requiredPermission },
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "step-up-missing-permission",
           pharmacyId: context.pharmacyId,
@@ -928,19 +1054,21 @@ export class IdentityAccessService {
       }>(
         `insert into step_up_challenges (
            pharmacy_id, actor_user_id, identity_session_id, device_id,
-           device_session_hash, action_name, required_permission,
-           subject_id, subject_revision, pharmacy_identity_revision,
-           actor_auth_revision, role_revision, expires_at
+           device_session_hash, terminal_device_id, action_name,
+           required_permission, subject_id, subject_revision,
+           pharmacy_identity_revision, actor_auth_revision, role_revision,
+           expires_at
          ) values (
-           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
            statement_timestamp() + interval '5 minutes'
          ) returning id, expires_at`,
         [
           fresh.pharmacyId,
           fresh.actorId,
           fresh.sessionId,
-          fresh.deviceId,
-          fresh.deviceSessionHash,
+          fresh.deviceId ?? null,
+          fresh.deviceSessionHash ?? null,
+          fresh.terminalDeviceId ?? null,
           input.action,
           requiredPermission,
           subject.id,
@@ -958,7 +1086,7 @@ export class IdentityAccessService {
         action: input.action,
         actorUserId: fresh.actorId,
         afterState: { challengeStatus: "pending" },
-        deviceId: fresh.deviceId,
+        device: fresh,
         identitySessionId: fresh.sessionId,
         outcome: "step-up-created",
         pharmacyId: fresh.pharmacyId,
@@ -1009,7 +1137,7 @@ export class IdentityAccessService {
         {
           action: "identity.step-up.approve",
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "identity-resource-not-found",
           pharmacyId: context.pharmacyId,
@@ -1020,8 +1148,7 @@ export class IdentityAccessService {
     if (
       candidate.actor_user_id !== context.actorId ||
       candidate.pharmacy_id !== context.pharmacyId ||
-      candidate.device_id !== context.deviceId ||
-      !candidate.device_session_hash.equals(context.deviceSessionHash) ||
+      !challengeBindingMatches(candidate, context) ||
       candidate.identity_session_id !== context.sessionId
     ) {
       const requestId = await this.writeAudit(
@@ -1029,7 +1156,7 @@ export class IdentityAccessService {
         {
           action: "identity.step-up.approve",
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "step-up-context-mismatch",
           pharmacyId: context.pharmacyId,
@@ -1040,18 +1167,14 @@ export class IdentityAccessService {
     let passwordMatches = false;
     if (candidate.status === "pending") {
       if (
-        !(await this.consumeAuthAttempt(
-          context.deviceId,
-          "step-up",
-          context.actorId,
-        ))
+        !(await this.consumeAuthAttempt(context, "step-up", context.actorId))
       ) {
         const requestId = await this.writeAudit(
           this.localDatabase.requirePool(),
           {
             action: candidate.action_name,
             actorUserId: context.actorId,
-            deviceId: context.deviceId,
+            device: context,
             identitySessionId: context.sessionId,
             outcome: "rate-limit-exceeded",
             pharmacyId: context.pharmacyId,
@@ -1079,7 +1202,7 @@ export class IdentityAccessService {
       if (replay !== undefined) {
         await this.clearAuthAttempts(
           client,
-          context.deviceId,
+          context,
           "step-up",
           context.actorId,
         );
@@ -1094,7 +1217,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action: locked.action_name,
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "step-up-reused",
           pharmacyId: context.pharmacyId,
@@ -1107,7 +1230,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action: locked.action_name,
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "step-up-wrong-password",
           pharmacyId: context.pharmacyId,
@@ -1137,7 +1260,7 @@ export class IdentityAccessService {
           action,
           actorId: locked.actor_user_id,
           authRevision: BigInt(locked.actor_auth_revision),
-          deviceId: locked.device_id,
+          deviceId: challengeDeviceKey(locked),
           expiresAt: locked.expires_at,
           pharmacyIdentityRevision: BigInt(locked.pharmacy_identity_revision),
           requiredPermission,
@@ -1146,7 +1269,7 @@ export class IdentityAccessService {
           sessionId: locked.identity_session_id,
           subjectRevision: BigInt(locked.subject_revision),
         },
-        context: fresh,
+        context: stepUpContext(fresh),
         currentSubjectRevision: subject.revision,
         now: new Date(),
       });
@@ -1155,7 +1278,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action,
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: decision,
           pharmacyId: context.pharmacyId,
@@ -1177,17 +1300,12 @@ export class IdentityAccessService {
          where id = $1`,
         [locked.id],
       );
-      await this.clearAuthAttempts(
-        client,
-        context.deviceId,
-        "step-up",
-        context.actorId,
-      );
+      await this.clearAuthAttempts(client, context, "step-up", context.actorId);
       await this.writeAudit(client, {
         action,
         actorUserId: context.actorId,
         afterState: { challengeStatus: "approved" },
-        deviceId: context.deviceId,
+        device: context,
         identitySessionId: context.sessionId,
         outcome: "step-up-approved",
         pharmacyId: context.pharmacyId,
@@ -1254,7 +1372,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action: "identity.role.permissions.update",
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "identity-resource-not-found",
           pharmacyId: context.pharmacyId,
@@ -1301,7 +1419,7 @@ export class IdentityAccessService {
         actorUserId: context.actorId,
         afterState: { permissions },
         beforeState: { permissions: before },
-        deviceId: context.deviceId,
+        device: context,
         identitySessionId: context.sessionId,
         outcome: "succeeded",
         pharmacyId: context.pharmacyId,
@@ -1399,7 +1517,7 @@ export class IdentityAccessService {
           action: SETTINGS_COMMAND_NAME,
           actorUserId: context.actorId,
           correlationId: input.idempotencyKey,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "idempotency-conflict",
           pharmacyId: context.pharmacyId,
@@ -1441,7 +1559,7 @@ export class IdentityAccessService {
           action: SETTINGS_COMMAND_NAME,
           actorUserId: authority.actorId,
           correlationId: input.idempotencyKey,
-          deviceId: authority.deviceId,
+          device: authority,
           identitySessionId: authority.sessionId,
           outcome: "version-conflict",
           pharmacyId: authority.pharmacyId,
@@ -1484,7 +1602,7 @@ export class IdentityAccessService {
           attendanceEnabled: previousSettings.attendance_enabled,
         },
         correlationId: input.idempotencyKey,
-        deviceId: authority.deviceId,
+        device: authority,
         identitySessionId: authority.sessionId,
         outcome: "succeeded",
         pharmacyId: authority.pharmacyId,
@@ -1549,8 +1667,8 @@ export class IdentityAccessService {
       actorUserId: authority.actorId,
       commandName: SETTINGS_COMMAND_NAME,
       idempotencyKey: outcome.idempotencyKey,
+      device: authority,
       identitySessionId: authority.sessionId,
-      mainDeviceId: authority.deviceId,
       pharmacyId: authority.pharmacyId,
       requestHash: outcome.requestHash,
       responseBody: outcome.responseBody,
@@ -1592,7 +1710,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action: "attendance.record",
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "attendance-disabled",
           pharmacyId: context.pharmacyId,
@@ -1629,7 +1747,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action: "attendance.record",
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: code,
           pharmacyId: context.pharmacyId,
@@ -1661,7 +1779,7 @@ export class IdentityAccessService {
         const requestId = await this.writeAudit(client, {
           action: "attendance.record",
           actorUserId: context.actorId,
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: code,
           pharmacyId: context.pharmacyId,
@@ -1672,14 +1790,15 @@ export class IdentityAccessService {
       const event = await client.query<{ id: string; occurred_at: Date }>(
         `insert into attendance_events (
            pharmacy_id, user_id, identity_session_id, device_id,
-           kind, presence_version
-         ) values ($1, $2, $3, $4, $5, $6)
+           terminal_device_id, kind, presence_version
+         ) values ($1, $2, $3, $4, $5, $6, $7)
          returning id, occurred_at`,
         [
           context.pharmacyId,
           context.actorId,
           context.sessionId,
-          context.deviceId,
+          context.deviceId ?? null,
+          context.terminalDeviceId ?? null,
           input.kind,
           version,
         ],
@@ -1692,7 +1811,7 @@ export class IdentityAccessService {
         action: "attendance.record",
         actorUserId: context.actorId,
         afterState: { kind: input.kind, status: next, version },
-        deviceId: context.deviceId,
+        device: context,
         identitySessionId: context.sessionId,
         outcome: "succeeded",
         pharmacyId: context.pharmacyId,
@@ -1783,12 +1902,21 @@ export class IdentityAccessService {
       throw await this.auditDenial(device, 401, "session-expired", row);
     }
     const permissions = await this.permissions(row.role_id);
+    const licensingDeviceId = this.licensingDeviceId(device.deviceId);
     const entitlement = await this.licensing.current({
       actorId: row.user_id,
       identitySessionId: row.session_id,
-      mainDeviceId: row.device_id,
+      mainDeviceId: licensingDeviceId,
       now: new Date(),
       pharmacyId: row.pharmacy_id,
+    });
+    await this.requireTerminalEntitlement({
+      actorId: row.user_id,
+      entitlement,
+      identitySessionId: row.session_id,
+      licensingDeviceId,
+      pharmacyId: row.pharmacy_id,
+      terminalDeviceId: device.terminalDeviceId,
     });
     const context: IdentityExecutionContext = {
       actorId: row.user_id,
@@ -1796,6 +1924,7 @@ export class IdentityAccessService {
       deviceId: device.deviceId,
       deviceSessionHash: device.deviceSessionHash,
       entitlement,
+      licensingDeviceId,
       permissions,
       pharmacyId: row.pharmacy_id,
       pharmacyIdentityRevision: BigInt(row.pharmacy_identity_revision),
@@ -1803,6 +1932,8 @@ export class IdentityAccessService {
       roleKey: row.role_key,
       roleRevision: BigInt(row.role_revision),
       sessionId: row.session_id,
+      terminalCertFingerprint: device.terminalCertFingerprint,
+      terminalDeviceId: device.terminalDeviceId,
     };
     this.contexts.set(request, context);
     return context;
@@ -1820,7 +1951,7 @@ export class IdentityAccessService {
           action: "identity.authorization",
           actorUserId: context.actorId,
           afterState: { requiredPermission: permission },
-          deviceId: context.deviceId,
+          device: context,
           identitySessionId: context.sessionId,
           outcome: "denied",
           pharmacyId: context.pharmacyId,
@@ -1843,6 +1974,118 @@ export class IdentityAccessService {
     );
   }
 
+  /**
+   * The device-administration equivalent of the licence path: take the
+   * per-pharmacy write lock, then re-read the session, the grants, and the
+   * entitlement inside the transaction. Whatever the request believed on
+   * arrival, this is the authority the write runs under.
+   */
+  public async revalidateDeviceAdministration(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "devices.pair",
+    );
+  }
+
+  public async consumeDeviceStepUp(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    challengeId: string,
+    use: {
+      readonly action:
+        | "devices.pairing.start"
+        | "devices.revoke"
+        | "devices.seat.release.request";
+      readonly subjectId: string;
+    },
+  ): Promise<void> {
+    await this.consumeStepUp(client, context, challengeId, use);
+  }
+
+  public async beginDeviceCommand<T>(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    commandName: string,
+    input: IdentityCommandInput,
+    parser: PayloadParser<T>,
+  ): Promise<T | undefined> {
+    return await this.beginIdempotentCommand(
+      client,
+      context,
+      commandName,
+      input,
+      parser,
+    );
+  }
+
+  public async recordDeviceCommandResult(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    commandName: string,
+    input: IdentityCommandInput,
+    response: unknown,
+  ): Promise<void> {
+    await this.recordCommandResult(
+      client,
+      context,
+      commandName,
+      input,
+      response,
+    );
+  }
+
+  /**
+   * The second user of a Dual Control decision.
+   *
+   * The approver authenticates here and now — username, password, active
+   * status, and the required permission are all checked against current state,
+   * under the same rate limit as a login. It returns the approver's identity or
+   * nothing; the caller decides what a valid approver is allowed to approve,
+   * including that they are not the requester.
+   */
+  public async authenticateApprover(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    input: {
+      readonly password: string;
+      readonly permission: PermissionName;
+      readonly username: string;
+    },
+  ): Promise<{ readonly actorId: string } | undefined> {
+    const usernameKey = normalizeUsername(input.username);
+    if (!(await this.consumeAuthAttempt(context, "login", usernameKey))) {
+      throw await this.contextDenial(context, 429, "rate-limit-exceeded");
+    }
+    const result = await client.query<UserRow>(
+      `${USER_SELECT}
+       where identity_user.pharmacy_id = $1
+         and identity_user.username_key = $2`,
+      [context.pharmacyId, usernameKey],
+    );
+    const approver = result.rows[0];
+    const storedHash =
+      approver?.password_hash ?? (await this.dummyPassword).hash;
+    const verification = await verifyPassword(input.password, storedHash);
+    if (
+      approver === undefined ||
+      !verification.matches ||
+      approver.status !== "active"
+    ) {
+      return undefined;
+    }
+    const grants = await this.rolePermissions(client, approver.role_id);
+    if (!hasPermission(grants, input.permission)) {
+      return undefined;
+    }
+    await this.clearAuthAttempts(client, context, "login", usernameKey);
+    return { actorId: approver.id };
+  }
+
   public async consumeLicenceAdministrationStepUp(
     client: PoolClient,
     context: IdentityExecutionContext,
@@ -1862,7 +2105,7 @@ export class IdentityAccessService {
     const entitlement = await this.licensing.current({
       actorId: row.user_id,
       identitySessionId: row.session_id,
-      mainDeviceId: row.device_id,
+      mainDeviceId: this.licensingDeviceId(row.device_id),
       now: new Date(),
       pharmacyId: row.pharmacy_id,
     });
@@ -1899,14 +2142,14 @@ export class IdentityAccessService {
   }
 
   private async latestSession(
-    device: VerifiedMainDeviceContext,
+    device: RequestDeviceBinding,
   ): Promise<SessionRow | undefined> {
     const result = await this.localDatabase.requirePool().query<SessionRow>(
       `${SESSION_SELECT}
-       where session.device_id = $1 and session.device_session_hash = $2
+       ${SESSION_BINDING_FILTER}
        order by session.created_at desc, session.id desc
        limit 1`,
-      [device.deviceId, device.deviceSessionHash],
+      sessionBindingValues(device),
     );
     return result.rows[0];
   }
@@ -1926,38 +2169,55 @@ export class IdentityAccessService {
       .filter(isPermissionName);
   }
 
+  /**
+   * Establishes the one active session of a device binding, ending whatever it
+   * had before. Both device kinds enforce a single active session — the Main
+   * device session hash and the terminal device each carry a partial unique
+   * index — and the advisory lock serializes two logins racing on the same
+   * device.
+   */
   private async replaceSession(
     client: PoolClient,
     input: {
-      readonly device: VerifiedMainDeviceContext;
+      readonly device: RequestDeviceBinding;
       readonly pharmacyId: string;
       readonly userId: string;
     },
   ): Promise<string> {
     await client.query(
-      `select pg_advisory_xact_lock(
-         hashtextextended(encode($1::bytea, 'hex'), 165308858)
-       )`,
-      [input.device.deviceSessionHash],
+      "select pg_advisory_xact_lock(hashtextextended($1::text, 165308858))",
+      [deviceBindingKey(input.device)],
     );
-    await client.query(
-      `update identity_sessions
-       set revoked_at = statement_timestamp(), revocation_reason = 'replaced'
-       where device_session_hash = $1 and revoked_at is null`,
-      [input.device.deviceSessionHash],
-    );
+    if (input.device.terminalDeviceId === undefined) {
+      await client.query(
+        `update identity_sessions
+         set revoked_at = statement_timestamp(), revocation_reason = 'replaced'
+         where device_session_hash = $1 and revoked_at is null`,
+        [input.device.deviceSessionHash],
+      );
+    } else {
+      await client.query(
+        `update identity_sessions
+         set revoked_at = statement_timestamp(), revocation_reason = 'replaced'
+         where terminal_device_id = $1 and revoked_at is null`,
+        [input.device.terminalDeviceId],
+      );
+    }
     const session = await client.query<{ id: string }>(
       `insert into identity_sessions (
-         pharmacy_id, user_id, device_id, device_session_hash, expires_at
+         pharmacy_id, user_id, device_id, device_session_hash,
+         terminal_device_id, terminal_cert_fingerprint, expires_at
        ) values (
-         $1, $2, $3, $4,
-         statement_timestamp() + make_interval(hours => $5)
+         $1, $2, $3, $4, $5, $6,
+         statement_timestamp() + make_interval(hours => $7)
        ) returning id`,
       [
         input.pharmacyId,
         input.userId,
-        input.device.deviceId,
-        input.device.deviceSessionHash,
+        input.device.deviceId ?? null,
+        input.device.deviceSessionHash ?? null,
+        input.device.terminalDeviceId ?? null,
+        input.device.terminalCertFingerprint ?? null,
         SESSION_LIFETIME_HOURS,
       ],
     );
@@ -1968,16 +2228,100 @@ export class IdentityAccessService {
     return sessionId;
   }
 
+  /**
+   * The device record an Additional POS Terminal is acting under, held for the
+   * rest of the caller's transaction.
+   *
+   * The mTLS boundary checks revocation before the handler runs, which leaves a
+   * window: a request verified a moment before a revocation commits could
+   * otherwise still create a session after it. Revocation takes the matching
+   * exclusive lock on this row, so a caller either sees the revocation and
+   * refuses, or holds the row and the revocation waits for its commit.
+   */
+  private async requireLiveTerminalDevice(
+    client: PoolClient,
+    device: RequestDeviceBinding,
+  ): Promise<void> {
+    if (device.terminalDeviceId === undefined) {
+      return;
+    }
+    const live = await client.query(
+      `select 1 from terminal_devices
+       where id = $1 and revoked_at is null
+       for share`,
+      [device.terminalDeviceId],
+    );
+    if (live.rowCount !== 1) {
+      throw await this.auditDenial(device, 401, "session-revoked");
+    }
+  }
+
+  /**
+   * The entitlement an Additional POS Terminal must hold to do anything at all.
+   *
+   * A terminal exists only because a licence added `additional-device-pos`, so
+   * a licence that expires, is deactivated, is invalidated by a detected clock
+   * rollback, or simply loses the add-on takes the terminal's permission to
+   * operate away with it. That is checked here and now — at login, on every
+   * request, and again under the write lock — never from what the request
+   * believed on arrival, so a licence change fails the terminal closed
+   * immediately instead of at its next handshake. The Main Pharmacy Computer is
+   * never asked: it is the one device Free Core is defined around.
+   *
+   * The refusal is recorded, the success is not. An allowed terminal request
+   * must not append an audit row per request; a refusal is rare and is exactly
+   * the fact an operator needs when a till stops working.
+   */
+  private async requireTerminalEntitlement(input: {
+    readonly actorId: string;
+    readonly client?: PoolClient;
+    readonly entitlement: EntitlementContext;
+    readonly identitySessionId?: string;
+    readonly licensingDeviceId: string;
+    readonly pharmacyId: string;
+    readonly terminalDeviceId: string | undefined;
+  }): Promise<void> {
+    if (
+      input.terminalDeviceId === undefined ||
+      input.entitlement.capabilities.includes(TERMINAL_CAPABILITY)
+    ) {
+      return;
+    }
+    // Denial-then-commit. Inside a transaction the refusal is written on that
+    // transaction's own connection and committed before it is raised: a second
+    // connection writing an audit row that references the actor would have to
+    // wait for row locks this transaction is still holding. Nothing else has
+    // been written by the time an execution context is refused, so the commit
+    // carries the refusal and only the refusal.
+    const denial = await this.licensing.denyTerminalCapability(
+      input.client ?? this.localDatabase.requirePool(),
+      {
+        actorId: input.actorId,
+        capability: TERMINAL_CAPABILITY,
+        entitlementStatus: input.entitlement.status,
+        ...(input.identitySessionId === undefined
+          ? {}
+          : { identitySessionId: input.identitySessionId }),
+        mainDeviceId: input.licensingDeviceId,
+        now: new Date(),
+        pharmacyId: input.pharmacyId,
+        terminalDeviceId: input.terminalDeviceId,
+      },
+    );
+    if (input.client !== undefined) {
+      await input.client.query("commit");
+    }
+    throw denial;
+  }
+
   private async sessionState(
     sessionId: string,
-    device: VerifiedMainDeviceContext,
+    device: RequestDeviceBinding,
   ): Promise<IdentityState> {
     const result = await this.localDatabase.requirePool().query<SessionRow>(
       `${SESSION_SELECT}
-       where session.id = $1
-         and session.device_id = $2
-         and session.device_session_hash = $3`,
-      [sessionId, device.deviceId, device.deviceSessionHash],
+       ${SESSION_ID_BINDING_FILTER}`,
+      [sessionId, ...sessionBindingValues(device)],
     );
     const row = result.rows[0];
     if (
@@ -2001,16 +2345,33 @@ export class IdentityAccessService {
     );
   }
 
+  /**
+   * The in-transaction authority for a write.
+   *
+   * A terminal request additionally takes a share lock on its device record and
+   * requires it to be unrevoked. Revocation takes the matching exclusive lock,
+   * so the two can never interleave: once a revocation commits, no terminal
+   * transaction that started before it can still commit a change.
+   */
   private async currentContext(
     client: PoolClient,
     expected: IdentityExecutionContext,
   ): Promise<IdentityExecutionContext> {
+    if (expected.terminalDeviceId !== undefined) {
+      const live = await client.query(
+        `select 1 from terminal_devices
+         where id = $1 and revoked_at is null
+         for share`,
+        [expected.terminalDeviceId],
+      );
+      if (live.rowCount !== 1) {
+        throw await this.contextDenial(expected, 401, "session-revoked");
+      }
+    }
     const result = await client.query<SessionRow>(
       `${SESSION_SELECT}
-       where session.id = $1
-         and session.device_id = $2
-         and session.device_session_hash = $3`,
-      [expected.sessionId, expected.deviceId, expected.deviceSessionHash],
+       ${SESSION_ID_BINDING_FILTER}`,
+      [expected.sessionId, ...sessionBindingValues(bindingOf(expected))],
     );
     const row = result.rows[0];
     if (
@@ -2025,18 +2386,28 @@ export class IdentityAccessService {
       {
         actorId: row.user_id,
         identitySessionId: row.session_id,
-        mainDeviceId: row.device_id,
+        mainDeviceId: expected.licensingDeviceId,
         now: new Date(),
         pharmacyId: row.pharmacy_id,
       },
       client,
     );
+    await this.requireTerminalEntitlement({
+      actorId: row.user_id,
+      client,
+      entitlement,
+      identitySessionId: row.session_id,
+      licensingDeviceId: expected.licensingDeviceId,
+      pharmacyId: row.pharmacy_id,
+      terminalDeviceId: expected.terminalDeviceId,
+    });
     return {
       actorId: row.user_id,
       authRevision: BigInt(row.auth_revision),
       deviceId: expected.deviceId,
       deviceSessionHash: expected.deviceSessionHash,
       entitlement,
+      licensingDeviceId: expected.licensingDeviceId,
       permissions: await this.rolePermissions(client, row.role_id),
       pharmacyId: row.pharmacy_id,
       pharmacyIdentityRevision: BigInt(row.pharmacy_identity_revision),
@@ -2044,6 +2415,8 @@ export class IdentityAccessService {
       roleKey: row.role_key,
       roleRevision: BigInt(row.role_revision),
       sessionId: row.session_id,
+      terminalCertFingerprint: expected.terminalCertFingerprint,
+      terminalDeviceId: expected.terminalDeviceId,
     };
   }
 
@@ -2083,8 +2456,7 @@ export class IdentityAccessService {
       challenge.pharmacy_id !== expected.pharmacyId ||
       challenge.actor_user_id !== expected.actorId ||
       challenge.identity_session_id !== expected.sessionId ||
-      challenge.device_id !== expected.deviceId ||
-      !challenge.device_session_hash.equals(expected.deviceSessionHash) ||
+      !challengeBindingMatches(challenge, expected) ||
       challenge.action_name !== use.action ||
       challenge.required_permission !== requiredPermission ||
       challenge.subject_id !== use.subjectId
@@ -2141,7 +2513,7 @@ export class IdentityAccessService {
         action: use.action,
         actorId: challenge.actor_user_id,
         authRevision: BigInt(challenge.actor_auth_revision),
-        deviceId: challenge.device_id,
+        deviceId: challengeDeviceKey(challenge),
         expiresAt: challenge.expires_at,
         pharmacyIdentityRevision: BigInt(challenge.pharmacy_identity_revision),
         requiredPermission,
@@ -2150,7 +2522,7 @@ export class IdentityAccessService {
         sessionId: challenge.identity_session_id,
         subjectRevision: BigInt(challenge.subject_revision),
       },
-      context: fresh,
+      context: stepUpContext(fresh),
       currentSubjectRevision: subject.revision,
       now: new Date(),
     });
@@ -2202,17 +2574,54 @@ export class IdentityAccessService {
         revision: context.pharmacyIdentityRevision,
       };
     }
-    if (action === "identity.user.create") {
-      if (subjectId !== undefined && subjectId !== context.actorId) {
+    if (
+      action === "devices.pairing.start" ||
+      action === "identity.user.create"
+    ) {
+      const expectedSubject =
+        action === "devices.pairing.start"
+          ? context.pharmacyId
+          : context.actorId;
+      if (subjectId !== undefined && subjectId !== expectedSubject) {
         throw await this.contextDenial(context, 400, "body-invalid");
       }
       return {
-        id: context.actorId,
+        id: expectedSubject,
         revision: context.pharmacyIdentityRevision,
       };
     }
     if (subjectId === undefined) {
       throw await this.contextDenial(context, 400, "body-invalid");
+    }
+    if (
+      action === "devices.revoke" ||
+      action === "devices.seat.release.request"
+    ) {
+      // The subject revision advances as the device's trust state changes, so
+      // a challenge approved for a live device cannot be spent on the same
+      // device after someone else revoked it or released its seat.
+      const device = await client.query<{
+        released: number;
+        revoked: number;
+      }>(
+        `select (revoked_at is not null)::int as revoked,
+                (seat_released_at is not null)::int as released
+         from terminal_devices
+         where id = $1 and pharmacy_id = $2`,
+        [subjectId, context.pharmacyId],
+      );
+      const row = device.rows[0];
+      if (row === undefined) {
+        throw await this.contextDenial(
+          context,
+          404,
+          "identity-resource-not-found",
+        );
+      }
+      return {
+        id: subjectId,
+        revision: BigInt(1 + row.revoked + 2 * row.released),
+      };
     }
     if (action === "identity.user.update") {
       const user = await client.query<{ auth_revision: string }>(
@@ -2248,7 +2657,7 @@ export class IdentityAccessService {
   ): Promise<ChallengeRow | undefined> {
     const result = await client.query<ChallengeRow>(
       `select id, pharmacy_id, actor_user_id, identity_session_id,
-              device_id, device_session_hash, action_name,
+              device_id, device_session_hash, terminal_device_id, action_name,
               required_permission, subject_id, subject_revision::text,
               pharmacy_identity_revision::text, actor_auth_revision::text,
               role_revision::text, expires_at, status, consumed_at
@@ -2356,7 +2765,7 @@ export class IdentityAccessService {
     const requestId = await this.writeAudit(this.localDatabase.requirePool(), {
       action,
       actorUserId: context.actorId,
-      deviceId: context.deviceId,
+      device: context,
       identitySessionId: context.sessionId,
       outcome: code,
       pharmacyId: context.pharmacyId,
@@ -2369,14 +2778,14 @@ export class IdentityAccessService {
   }
 
   private async auditDenial(
-    device: VerifiedMainDeviceContext,
+    device: RequestDeviceBinding,
     statusCode: number,
     code: IdentityDenialCode,
     row?: SessionRow,
   ): Promise<IdentityAccessDenied> {
     const requestId = await this.writeAudit(this.localDatabase.requirePool(), {
       action: "identity.session",
-      deviceId: device.deviceId,
+      device,
       outcome: code,
       ...(row === undefined
         ? {}
@@ -2436,7 +2845,7 @@ export class IdentityAccessService {
       const requestId = await this.writeAudit(client, {
         action: commandName,
         actorUserId: context.actorId,
-        deviceId: context.deviceId,
+        device: context,
         identitySessionId: context.sessionId,
         outcome: "idempotency-conflict",
         pharmacyId: context.pharmacyId,
@@ -2457,13 +2866,15 @@ export class IdentityAccessService {
     await client.query(
       `insert into identity_command_results (
          pharmacy_id, actor_user_id, identity_session_id, device_id,
-         idempotency_key, command_name, request_fingerprint, response_body
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+         terminal_device_id, idempotency_key, command_name,
+         request_fingerprint, response_body
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
       [
         context.pharmacyId,
         context.actorId,
         context.sessionId,
-        context.deviceId,
+        context.deviceId ?? null,
+        context.terminalDeviceId ?? null,
         input.idempotencyKey,
         commandName,
         commandFingerprint(commandName, input),
@@ -2481,7 +2892,7 @@ export class IdentityAccessService {
     const requestId = await this.writeAudit(client, {
       action,
       actorUserId: context.actorId,
-      deviceId: context.deviceId,
+      device: context,
       identitySessionId: context.sessionId,
       outcome: "version-conflict",
       pharmacyId: context.pharmacyId,
@@ -2491,12 +2902,18 @@ export class IdentityAccessService {
     throw this.denied(409, "version-conflict", requestId);
   }
 
+  /**
+   * Each device kind counts its own attempts, in its own table: a terminal
+   * being brute-forced must never consume the Main Pharmacy Computer's budget
+   * and lock the pharmacy out of its own till.
+   */
   private async consumeAuthAttempt(
-    deviceId: string,
+    device: AuditDeviceColumns,
     action: "login" | "step-up",
     subject: string,
   ): Promise<boolean> {
     const [deviceKey, subjectKey] = authRateKeys(action, subject);
+    const table = authRateTable(device);
     const result = await this.localDatabase.requirePool().query<{
       allowed: boolean;
     }>(
@@ -2504,22 +2921,23 @@ export class IdentityAccessService {
          select floor(extract(epoch from statement_timestamp()) / $5)::bigint
            as window_number
        ), pruned as (
-         delete from identity_auth_rate_windows
-         where device_id = $1 and action = $2
+         delete from ${table.name}
+         where ${table.column} = $1 and action = $2
            and window_number < (select window_number from clock)
        ), counted as (
-         insert into identity_auth_rate_windows (
-           device_id, action, subject_key, window_number, request_count
+         insert into ${table.name} (
+           ${table.column}, action, subject_key, window_number, request_count
          )
          select $1, $2, subject_key, (select window_number from clock), 1
          from unnest(array[$3::bytea, $4::bytea]) as keys(subject_key)
-         on conflict (device_id, action, subject_key, window_number) do update
-         set request_count = identity_auth_rate_windows.request_count + 1
+         on conflict (${table.column}, action, subject_key, window_number)
+         do update
+         set request_count = ${table.name}.request_count + 1
          returning request_count
        )
        select bool_and(request_count <= $6) as allowed from counted`,
       [
-        deviceId,
+        table.deviceId,
         action,
         deviceKey,
         subjectKey,
@@ -2532,16 +2950,17 @@ export class IdentityAccessService {
 
   private async clearAuthAttempts(
     queryable: Queryable,
-    deviceId: string,
+    device: AuditDeviceColumns,
     action: "login" | "step-up",
     subject: string,
   ): Promise<void> {
     const [deviceKey, subjectKey] = authRateKeys(action, subject);
+    const table = authRateTable(device);
     await queryable.query(
-      `delete from identity_auth_rate_windows
-       where device_id = $1 and action = $2
+      `delete from ${table.name}
+       where ${table.column} = $1 and action = $2
          and subject_key = any(array[$3::bytea, $4::bytea])`,
-      [deviceId, action, deviceKey, subjectKey],
+      [table.deviceId, action, deviceKey, subjectKey],
     );
   }
 
@@ -2552,7 +2971,7 @@ export class IdentityAccessService {
       readonly actorUserId?: string;
       readonly afterState?: Record<string, unknown>;
       readonly beforeState?: Record<string, unknown>;
-      readonly deviceId: string;
+      readonly device: AuditDeviceColumns;
       readonly identitySessionId?: string;
       readonly outcome: string;
       readonly pharmacyId?: string;
@@ -2562,14 +2981,16 @@ export class IdentityAccessService {
     const result = await queryable.query<{ id: string }>(
       `insert into identity_audit_records (
          pharmacy_id, actor_user_id, identity_session_id, device_id,
-         action, outcome, target_id, before_state, after_state
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         terminal_device_id, action, outcome, target_id, before_state,
+         after_state
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        returning id`,
       [
         input.pharmacyId ?? null,
         input.actorUserId ?? null,
         input.identitySessionId ?? null,
-        input.deviceId,
+        input.device.deviceId ?? null,
+        input.device.terminalDeviceId ?? null,
         input.action,
         input.outcome,
         input.targetId ?? null,
@@ -2594,6 +3015,7 @@ interface Queryable {
 
 const SESSION_SELECT = `select session.id as session_id,
        session.device_id,
+       session.terminal_device_id,
        session.pharmacy_id,
        pharmacy.name as pharmacy_name,
        pharmacy.identity_revision::text as pharmacy_identity_revision,
@@ -2620,6 +3042,129 @@ join pharmacy_settings settings on settings.pharmacy_id = session.pharmacy_id
 join attendance_presence presence
   on presence.pharmacy_id = session.pharmacy_id
  and presence.user_id = session.user_id`;
+
+/**
+ * A session is found by its whole binding, never by a fragment of it: a
+ * terminal certificate must not be able to select a Main device session, and a
+ * Main device session hash must not be able to select a terminal's.
+ */
+const SESSION_BINDING_FILTER = `where session.device_id is not distinct from $1
+   and session.device_session_hash is not distinct from $2
+   and session.terminal_device_id is not distinct from $3
+   and session.terminal_cert_fingerprint is not distinct from $4`;
+
+const SESSION_ID_BINDING_FILTER = `where session.id = $1
+   and session.device_id is not distinct from $2
+   and session.device_session_hash is not distinct from $3
+   and session.terminal_device_id is not distinct from $4
+   and session.terminal_cert_fingerprint is not distinct from $5`;
+
+function sessionBindingValues(device: RequestDeviceBinding): unknown[] {
+  return [
+    device.deviceId ?? null,
+    device.deviceSessionHash ?? null,
+    device.terminalDeviceId ?? null,
+    device.terminalCertFingerprint ?? null,
+  ];
+}
+
+function bindingOf(context: IdentityExecutionContext): RequestDeviceBinding {
+  if (
+    context.deviceId !== undefined &&
+    context.deviceSessionHash !== undefined
+  ) {
+    return {
+      deviceId: context.deviceId,
+      deviceSessionHash: context.deviceSessionHash,
+      terminalCertFingerprint: undefined,
+      terminalDeviceId: undefined,
+    };
+  }
+  if (
+    context.terminalDeviceId !== undefined &&
+    context.terminalCertFingerprint !== undefined
+  ) {
+    return {
+      deviceId: undefined,
+      deviceSessionHash: undefined,
+      terminalCertFingerprint: context.terminalCertFingerprint,
+      terminalDeviceId: context.terminalDeviceId,
+    };
+  }
+  throw new Error("An execution context always carries one device binding");
+}
+
+/**
+ * A Step-Up challenge is pinned to the exact device that created it. A Main
+ * challenge additionally has to match the device session hash, so a new Main
+ * session cannot finish a challenge an older one started.
+ */
+function challengeBindingMatches(
+  challenge: ChallengeRow,
+  context: IdentityExecutionContext,
+): boolean {
+  if (context.deviceId !== undefined) {
+    return (
+      challenge.device_id === context.deviceId &&
+      challenge.device_session_hash !== null &&
+      context.deviceSessionHash !== undefined &&
+      challenge.device_session_hash.equals(context.deviceSessionHash)
+    );
+  }
+  return (
+    challenge.terminal_device_id !== null &&
+    challenge.terminal_device_id === context.terminalDeviceId
+  );
+}
+
+function challengeDeviceKey(challenge: ChallengeRow): string {
+  return deviceBindingKey({
+    deviceId: challenge.device_id ?? undefined,
+    terminalDeviceId: challenge.terminal_device_id ?? undefined,
+  });
+}
+
+function stepUpContext(context: IdentityExecutionContext): {
+  readonly actorId: string;
+  readonly authRevision: bigint;
+  readonly deviceId: string;
+  readonly permissions: readonly PermissionName[];
+  readonly pharmacyIdentityRevision: bigint;
+  readonly roleRevision: bigint;
+  readonly sessionId: string;
+} {
+  return {
+    actorId: context.actorId,
+    authRevision: context.authRevision,
+    deviceId: deviceBindingKey(context),
+    permissions: context.permissions,
+    pharmacyIdentityRevision: context.pharmacyIdentityRevision,
+    roleRevision: context.roleRevision,
+    sessionId: context.sessionId,
+  };
+}
+
+function authRateTable(device: AuditDeviceColumns): {
+  readonly column: string;
+  readonly deviceId: string;
+  readonly name: string;
+} {
+  if (device.deviceId !== undefined) {
+    return {
+      column: "device_id",
+      deviceId: device.deviceId,
+      name: "identity_auth_rate_windows",
+    };
+  }
+  if (device.terminalDeviceId === undefined) {
+    throw new Error("A rate-limited attempt always names its device");
+  }
+  return {
+    column: "terminal_device_id",
+    deviceId: device.terminalDeviceId,
+    name: "terminal_auth_rate_windows",
+  };
+}
 
 const USER_SELECT = `select identity_user.id,
        identity_user.pharmacy_id,
@@ -2682,13 +3227,24 @@ function authRateKeys(
   ];
 }
 
+/**
+ * The canonical identity of one idempotent command, with every credential
+ * removed.
+ *
+ * A recorded command result is an ordinary database row, and its fingerprint is
+ * a fast SHA-256 of the request. A credential inside it would therefore be a
+ * fast offline verifier for that credential — the command name, the actor, and
+ * the idempotency key sit in the same row — so no field whose name mentions a
+ * password is ever hashed. Excluding them costs nothing: a retry differs from a
+ * new command by what it asks for, never by the password used to authorize it.
+ */
 function commandFingerprint(
   commandName: string,
   input: IdentityCommandInput,
 ): Buffer {
   const safeInput = Object.fromEntries(
     Object.entries(input)
-      .filter(([key]) => key !== "password")
+      .filter(([key]) => !CREDENTIAL_FIELD_PATTERN.test(key))
       .sort(([left], [right]) => left.localeCompare(right)),
   );
   return createHash("sha256")

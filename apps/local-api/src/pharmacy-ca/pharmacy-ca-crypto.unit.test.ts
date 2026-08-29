@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, X509Certificate } from "node:crypto";
 import https from "node:https";
 import type { TLSSocket } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -22,6 +22,8 @@ import {
 
 describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   const installationId = createUuidV7();
+  const licenceId = createUuidV7();
+  const pharmacyId = createUuidV7();
   let providerName: string;
   let caKeyResult: KeyResult;
   let caCert: IssuedCertificate;
@@ -95,6 +97,37 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
 
   // ─── 3. Device Certificate Issuance & Validation ──────────────────────────
 
+  it("binds pharmacy, device, type, licence, and serial into the subject names", () => {
+    const deviceId = createUuidV7();
+    const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+
+    const deviceCert = buildDeviceCertificate({
+      caKeyHandle: caKeyResult.keyHandle,
+      caCertPem: caCert.certPem,
+      licenceId,
+      pharmacyId,
+      deviceId,
+      installationId,
+      devicePublicKeyDer: publicKey.export({ format: "der", type: "spki" }),
+      validityDays: 365,
+    });
+
+    const names = new X509Certificate(deviceCert.certPem)
+      .subjectAltName!.split(", ")
+      .map((entry) => entry.replace(/^URI:/u, ""))
+      .sort();
+    expect(names).toEqual(
+      [
+        `urn:breev:installation:${installationId}`,
+        `urn:breev:device:${deviceId}`,
+        `urn:breev:pharmacy:${pharmacyId}`,
+        "urn:breev:device-type:terminal",
+        `urn:breev:licence:${licenceId}`,
+      ].sort(),
+    );
+    expect(BigInt(`0x${deviceCert.serialHex}`)).toBeGreaterThan(0n);
+  });
+
   it("builds a device certificate with breev-device role and validates against CA", () => {
     const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -103,6 +136,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     const deviceCert = buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
+      licenceId,
+      pharmacyId,
       deviceId,
       installationId,
       devicePublicKeyDer: deviceSpki,
@@ -135,6 +170,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       return buildDeviceCertificate({
         caKeyHandle: caKeyResult.keyHandle,
         caCertPem: caCert.certPem,
+        licenceId,
+        pharmacyId,
         deviceId: createUuidV7(),
         installationId,
         devicePublicKeyDer: publicKey.export({ format: "der", type: "spki" }),
@@ -165,6 +202,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
         const issued = buildDeviceCertificate({
           caKeyHandle: caKeyResult.keyHandle,
           caCertPem: caCert.certPem,
+          licenceId,
+          pharmacyId,
           deviceId: createUuidV7(),
           installationId,
           devicePublicKeyDer,
@@ -185,6 +224,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     const expiredCert = buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
+      licenceId,
+      pharmacyId,
       deviceId,
       installationId,
       devicePublicKeyDer: deviceSpki,
@@ -245,6 +286,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     const deviceCert = buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
+      licenceId,
+      pharmacyId,
       deviceId,
       installationId: otherInstallationId,
       devicePublicKeyDer: deviceSpki,
@@ -296,6 +339,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
         softwareFallbackKey: foreignPriv,
       },
       caCertPem: foreignCa.certPem,
+      licenceId,
+      pharmacyId,
       deviceId,
       installationId,
       devicePublicKeyDer: deviceSpki,
@@ -346,6 +391,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     const deviceCert = buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
+      licenceId,
+      pharmacyId,
       deviceId,
       installationId,
       devicePublicKeyDer: deviceSpki,

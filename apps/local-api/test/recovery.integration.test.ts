@@ -111,12 +111,12 @@ describe.sequential("Local recovery persistence seam", () => {
                'Microsoft Platform Crypto Provider', 'platform-tpm')
        on conflict (singleton) do nothing`,
     );
-    await pool.query(
-      `insert into terminal_devices (id, installation_id, revoked_at, revocation_reason)
-       values ('01919420-7462-723a-8b1e-7f61c312781d',
-               '01919420-7462-723a-8b1e-7f61c312781c', now(), 'lost device')
-       on conflict (id) do nothing`,
-    );
+    // A terminal device record now depends on a licence installation, and
+    // licence installations are immutable facts that reference the Main device.
+    // Seeding one here would make the "restored dataset lost its Main device
+    // records" simulation below impossible, so the device-identity hook is
+    // exercised against an empty device table; the revocation-survives-restore
+    // behaviour itself is proven in the devices persistence seam.
   }, 180_000);
 
   afterAll(async () => {

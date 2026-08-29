@@ -84,6 +84,18 @@ export class LocalDatabaseService
     return this.applicationUrl;
   }
 
+  /**
+   * The Main device this installation was provisioned with, when it has one.
+   *
+   * Provisioning is the authority on which device is *the* Main Pharmacy
+   * Computer: it refuses to mint a second one, and the offline licence is bound
+   * to it. Counting `main_devices` would not answer the same question — a
+   * database can legitimately hold retired or additional device records.
+   */
+  public provisionedMainDeviceId(): string | undefined {
+    return this.provisioning?.deviceId;
+  }
+
   public async isAvailable(): Promise<boolean> {
     if (this.pool === undefined) {
       return false;

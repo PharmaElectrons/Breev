@@ -42,7 +42,15 @@ export class MainDeviceProofController {
   }
 
   @Get(localProofEvidenceContract.path)
-  public async evidence(): Promise<LocalProofEvidenceSuccess> {
-    return await this.security.evidence();
+  public async evidence(
+    @Req() request: Request,
+  ): Promise<LocalProofEvidenceSuccess> {
+    return await translateIdentityDenial(async () => {
+      // The denial evidence is operational data about this installation, so it
+      // is readable only by a signed-in user, exactly like the mutation it
+      // accompanies.
+      await this.identity.requireIdentityAfterBootstrap(request);
+      return await this.security.evidence();
+    });
   }
 }

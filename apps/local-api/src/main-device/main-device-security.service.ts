@@ -1,5 +1,6 @@
 import {
   attendanceEventContract,
+  deviceRevocationContract,
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
   identityBootstrapContract,
@@ -19,7 +20,12 @@ import {
   localProofMutationContract,
   localProofMutationSuccessSchema,
   localSecurityDenialSchema,
+  pairingSessionCancelContract,
+  pairingSessionConfirmContract,
+  pairingSessionStartContract,
   pharmacySettingsContract,
+  seatReleaseApprovalContract,
+  seatReleaseRequestContract,
   type LocalProofEvidenceSuccess,
   type LocalProofMutationSuccess,
   type LocalSecurityDenial,
@@ -65,11 +71,26 @@ export interface VerifiedMainDeviceContext {
   readonly deviceSessionHash: Buffer;
 }
 
+/**
+ * What a LAN request presents instead of the Main device headers: a client
+ * certificate the pharmacy CA issued, already verified against the current
+ * device record by the mTLS boundary. The certificate fingerprint travels with
+ * the device id because a terminal session is bound to both.
+ */
+export interface VerifiedTerminalDeviceContext {
+  readonly certFingerprint: Buffer;
+  readonly terminalDeviceId: string;
+}
+
 @Injectable()
 export class MainDeviceSecurityService {
   private readonly verifiedDevices = new WeakMap<
     Request,
     VerifiedMainDeviceContext
+  >();
+  private readonly verifiedTerminals = new WeakMap<
+    Request,
+    VerifiedTerminalDeviceContext
   >();
   private readonly rateLimit = readPositiveInteger(
     process.env.BREEV_PROOF_RATE_LIMIT,
@@ -147,6 +168,24 @@ export class MainDeviceSecurityService {
     request: Request,
   ): VerifiedMainDeviceContext | undefined {
     return this.verifiedDevices.get(request);
+  }
+
+  /**
+   * Records a terminal the mTLS boundary has already verified. Only that
+   * boundary calls this, and only after the chain, the role, the installation,
+   * the validity window, and the current device record have all passed.
+   */
+  public acceptTerminalDevice(
+    request: Request,
+    context: VerifiedTerminalDeviceContext,
+  ): void {
+    this.verifiedTerminals.set(request, context);
+  }
+
+  public verifiedTerminalContext(
+    request: Request,
+  ): VerifiedTerminalDeviceContext | undefined {
+    return this.verifiedTerminals.get(request);
   }
 
   public async consumeRate(deviceId: string): Promise<boolean> {
@@ -298,6 +337,21 @@ export class MainDeviceSecurityService {
   }
 }
 
+/**
+ * The requests that arrived on the LAN listener.
+ *
+ * Both listeners hand their requests to the same Nest pipeline, so the Host
+ * check has to know which door a request came through: the LAN authority is a
+ * legitimate Host for a terminal on the LAN and must never be one for a caller
+ * that reached the loopback listener. The LAN server marks its own requests
+ * before it delegates, and nothing a caller can send has any effect on this.
+ */
+const lanRequests = new WeakSet<Request>();
+
+export function markLanRequest(request: Request): void {
+  lanRequests.add(request);
+}
+
 export function createMainRequestSecurityMiddleware({
   additionalExpectedHosts = [],
   expectedHost,
@@ -312,7 +366,9 @@ export function createMainRequestSecurityMiddleware({
       request,
       response,
       next,
-      [expectedHost, ...additionalExpectedHosts],
+      lanRequests.has(request)
+        ? [expectedHost, ...additionalExpectedHosts]
+        : [expectedHost],
       security,
     ).catch(next);
   };
@@ -466,6 +522,32 @@ async function protectRequest(
     return;
   }
 
+  // A LAN request carries its device binding in the client certificate the
+  // mTLS boundary already verified. It has no Main device headers to present,
+  // and it must never be able to borrow them: the terminal context is accepted
+  // here instead of, never in addition to, the Main binding.
+  const terminal = security.verifiedTerminalContext(request);
+  if (terminal !== undefined) {
+    if (request.path === localProofMutationContract.path) {
+      // The Main device proof route exists to demonstrate the Main binding. A
+      // terminal has no Main binding, so it is refused rather than admitted
+      // through a rate limiter keyed on a device it is not.
+      await sendDenial(
+        response,
+        security,
+        401,
+        "binding-invalid",
+        requestClass,
+        "present",
+        undefined,
+        terminal.terminalDeviceId,
+      );
+      return;
+    }
+    next();
+    return;
+  }
+
   const binding = await security.verifyBinding(request);
   if (binding.status !== "verified") {
     await sendDenial(
@@ -506,12 +588,14 @@ async function sendDenial(
   requestClass: RequestClass,
   deviceContext: DeviceContext,
   deviceId?: string,
+  terminalDeviceId?: string,
 ): Promise<void> {
   const denial = await security.recordDenial(
     code,
     requestClass,
     deviceContext,
     deviceId,
+    terminalDeviceId,
   );
   response.status(statusCode).json(denial);
 }
@@ -593,6 +677,30 @@ const CORS_MUTATION_ROUTES = [
     licenceDeactivateContract.path,
   ),
   exactMutation(licenceInstallContract.method, licenceInstallContract.path),
+  exactMutation(
+    pairingSessionStartContract.method,
+    pairingSessionStartContract.path,
+  ),
+  dynamicMutation(
+    pairingSessionConfirmContract.method,
+    pairingSessionConfirmContract.path,
+  ),
+  dynamicMutation(
+    pairingSessionCancelContract.method,
+    pairingSessionCancelContract.path,
+  ),
+  dynamicMutation(
+    deviceRevocationContract.method,
+    deviceRevocationContract.path,
+  ),
+  exactMutation(
+    seatReleaseRequestContract.method,
+    seatReleaseRequestContract.path,
+  ),
+  dynamicMutation(
+    seatReleaseApprovalContract.method,
+    seatReleaseApprovalContract.path,
+  ),
 ] as const;
 
 function exactMutation(method: string, path: string): MutationRoute {

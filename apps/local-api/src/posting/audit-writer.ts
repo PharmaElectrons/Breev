@@ -8,13 +8,22 @@ import type { JsonObject } from "./canonical-hash.js";
  * idempotency key), the action, the time, the reason, the before and after
  * values, and the outcome. Nothing else belongs in an audit record.
  */
+/**
+ * Which device a posting fact came from: the Main binding or a terminal
+ * certificate, never both.
+ */
+export interface AuditDeviceReference {
+  readonly deviceId: string | undefined;
+  readonly terminalDeviceId: string | undefined;
+}
+
 export interface PostingAuditInput {
   readonly action: string;
   readonly actorUserId: string;
   readonly afterState?: JsonObject;
   readonly beforeState?: JsonObject;
   readonly correlationId?: string;
-  readonly deviceId: string;
+  readonly device: AuditDeviceReference;
   readonly identitySessionId?: string;
   readonly outcome: string;
   readonly pharmacyId: string;
@@ -37,15 +46,16 @@ export async function writePostingAudit(
   const result = await client.query<{ id: string }>(
     `insert into posting_audit_records (
        pharmacy_id, actor_user_id, identity_session_id, device_id,
-       correlation_id, action, outcome, target_id, reason,
+       terminal_device_id, correlation_id, action, outcome, target_id, reason,
        before_state, after_state
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb)
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb)
      returning id`,
     [
       input.pharmacyId,
       input.actorUserId,
       input.identitySessionId ?? null,
-      input.deviceId,
+      input.device.deviceId ?? null,
+      input.device.terminalDeviceId ?? null,
       input.correlationId ?? null,
       input.action,
       input.outcome,

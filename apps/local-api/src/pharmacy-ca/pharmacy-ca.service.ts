@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import type { PoolClient } from "pg";
 
 import { LocalDatabaseService } from "../local-database.service.js";
 import {
@@ -198,43 +199,53 @@ export class PharmacyCaService {
     };
   }
 
-  public async issueDeviceCertificate(params: {
+  /**
+   * Signs a terminal device certificate and returns it. Nothing is written:
+   * the device record, the seat, and the audit belong to the pairing
+   * confirmation transaction, which owns the connection and the locks. Signing
+   * is a local key operation with no network call, so it is safe to perform
+   * while that transaction is open.
+   */
+  public signDeviceCertificate(params: {
     readonly deviceId: string;
     readonly devicePublicKeyDer: Buffer;
-  }): Promise<IssuedCertificate> {
+    readonly licenceId: string;
+    readonly pharmacyId: string;
+  }): IssuedCertificate {
     const state = this.requireState();
-    const pool = this.localDatabase.requirePool();
-
-    const issued = buildDeviceCertificate({
-      caKeyHandle: state.keyHandle,
+    return buildDeviceCertificate({
       caCertPem: state.caCertPem,
+      caKeyHandle: state.keyHandle,
       deviceId: params.deviceId,
-      installationId: state.installationId,
       devicePublicKeyDer: params.devicePublicKeyDer,
+      installationId: state.installationId,
+      licenceId: params.licenceId,
+      pharmacyId: params.pharmacyId,
       validityDays: DEVICE_CERT_VALIDITY_DAYS,
     });
+  }
 
-    await pool.query(
-      `insert into terminal_devices
-         (id, installation_id, cert_fingerprint, cert_serial,
-          cert_not_before, cert_not_after)
-       values ($1, $2, $3, $4, $5, $6)
-       on conflict (id) do update
-         set cert_fingerprint = excluded.cert_fingerprint,
-             cert_serial      = excluded.cert_serial,
-             cert_not_before  = excluded.cert_not_before,
-             cert_not_after   = excluded.cert_not_after`,
-      [
-        params.deviceId,
-        state.installationId,
-        issued.fingerprint,
-        issued.serialHex,
-        issued.notBefore,
-        issued.notAfter,
-      ],
+  /**
+   * Refuses to certify a device identifier the installation already knows.
+   *
+   * A revoked terminal is never re-certified under its old identity, and a
+   * live terminal never receives a second certificate: replacement creates a
+   * new identity and a new key, and re-issuing here would silently restore
+   * trust that an operator deliberately withdrew.
+   */
+  public async assertDeviceCertifiable(
+    client: PoolClient,
+    deviceId: string,
+  ): Promise<void> {
+    const existing = await client.query(
+      "select 1 from terminal_devices where id = $1",
+      [deviceId],
     );
-
-    return issued;
+    if (existing.rowCount !== 0) {
+      throw new Error(
+        "A terminal device certificate is issued once; replacement requires a new identity",
+      );
+    }
   }
 
   public validateCertificate(
@@ -282,17 +293,6 @@ export class PharmacyCaService {
       return { revoked: true, reason: "certificate replaced" };
     }
     return { revoked: false };
-  }
-
-  public async revokeDevice(deviceId: string, reason: string): Promise<void> {
-    const pool = this.localDatabase.requirePool();
-    await pool.query(
-      `update terminal_devices
-       set revoked_at = statement_timestamp(),
-           revocation_reason = $2
-       where id = $1`,
-      [deviceId, reason],
-    );
   }
 
   public requireState(): PharmacyCaState {

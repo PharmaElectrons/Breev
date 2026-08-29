@@ -95,8 +95,8 @@ describe.sequential("local API health persistence seam", () => {
       const { response, body } = await waitForRepairRequired(repairBaseUrl);
       expect(response.status).toBe(503);
       expect(body).toEqual({
-        apiVersion: "4",
-        schemaVersion: "5",
+        apiVersion: "5",
+        schemaVersion: "6",
         status: "repair-required",
         repair: { code: "installation-state-invalid" },
       });

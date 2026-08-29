@@ -160,7 +160,7 @@ describe.sequential("Main device security persistence seam", () => {
          where p.schemaname = 'public' and p.tablename = 'main_devices'`,
       );
       expect(migration.rows[0]).toEqual({
-        migration_count: "6",
+        migration_count: "7",
         tableowner: "breev_schema_owner",
       });
 
