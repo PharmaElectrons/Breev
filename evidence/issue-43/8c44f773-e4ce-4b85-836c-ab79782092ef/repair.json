@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "repair",
+  "passed": true,
+  "startedUtc": "2026-08-29T18:20:43.242865284Z",
+  "finishedUtc": "2026-08-29T18:21:24.328326059Z",
+  "details": {
+    "preCaFingerprint": "01a04eab-69a2-7027-a7d6-23827b415a93|1dda9bcef4a9fce14bac08845a9ecebcb2082eb6765e07bee32c95236e6a79a8",
+    "postCaFingerprint": "01a04eab-69a2-7027-a7d6-23827b415a93|1dda9bcef4a9fce14bac08845a9ecebcb2082eb6765e07bee32c95236e6a79a8",
+    "caStatePreserved": true,
+    "pgVersion": "18",
+    "markerSurvived": true,
+    "damagedHealthUnreachable": true,
+    "postHealthStatus": "healthy",
+    "postHealthDatabase": "available",
+    "listeners": [
+      {
+        "LocalAddress": "::1",
+        "LocalPort": 31311,
+        "OwningProcess": 4420
+      },
+      {
+        "LocalAddress": "192.168.134.154",
+        "LocalPort": 31312,
+        "OwningProcess": 2052
+      },
+      {
+        "LocalAddress": "127.0.0.1",
+        "LocalPort": 31311,
+        "OwningProcess": 4420
+      },
+      {
+        "LocalAddress": "127.0.0.1",
+        "LocalPort": 31310,
+        "OwningProcess": 2052
+      }
+    ],
+    "passed": true
+  }
+}

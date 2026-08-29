@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "install-tightened-acl",
+  "passed": true,
+  "startedUtc": "2026-08-29T18:53:37.691443473Z",
+  "finishedUtc": "2026-08-29T18:53:37.691443473Z",
+  "details": {
+    "note": "Removed all prior Breev ACEs from the shared CNG key store and destructively cleared the install, then installed so a fresh pharmacy CA key had to be created under ONLY the tightened non-inheriting (WD,RA,X) grant. The LAN listener binding proves the software-CNG key was created and the CA initialized under that grant alone.",
+    "lanListenerBound": 1,
+    "cryptoKeysAce": "C:\\ProgramData\\Microsoft\\Crypto\\Keys NT SERVICE\\BreevLocalApi:(WD,X,RA)",
+    "onlyTightenedAcePresent": true
+  }
+}

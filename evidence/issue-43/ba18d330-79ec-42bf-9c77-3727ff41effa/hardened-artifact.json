@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "runId": "ba18d330-79ec-42bf-9c77-3727ff41effa",
+  "sourceCommit": "8254954134b76316c61139d429de1442ca66c7d9",
+  "phase": "hardened-artifact",
+  "passed": true,
+  "startedUtc": "2026-08-29T16:59:42.641838179Z",
+  "finishedUtc": "2026-08-29T16:59:43.633522571Z",
+  "details": {
+    "asarVersion": "0.0.0",
+    "asarReadable": true,
+    "artifactReaderAvailable": true,
+    "configProof": "proven in apps/desktop/electron-builder.config.unit.test.ts (all nine fuses, asar:true, disableAsarIntegrity:false), green under pnpm test:unit",
+    "fuseProof": "proven",
+    "asarTamperProof": "pending",
+    "asarTamperProofCommand": "node tooling/windows/proof/prove-asar-integrity.mjs on the guest with a desktop session and DesktopUiAutomation.ps1",
+    "fuseBinarySha256": "30edd0a963e3bdb574c99f5cf86b29f6b33519323be03a93d95464e2fc576f88",
+    "fuseRecord": "fuses.json"
+  }
+}

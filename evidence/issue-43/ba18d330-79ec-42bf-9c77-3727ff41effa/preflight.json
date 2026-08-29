@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "runId": "ba18d330-79ec-42bf-9c77-3727ff41effa",
+  "sourceCommit": "8254954134b76316c61139d429de1442ca66c7d9",
+  "phase": "preflight",
+  "passed": true,
+  "startedUtc": "2026-08-29T16:52:12.419942359Z",
+  "finishedUtc": "2026-08-29T16:52:13.573227382Z",
+  "details": {
+    "guest": {
+      "os": "Microsoft Windows 11 Pro",
+      "build": "26200",
+      "apiService": "Running",
+      "postgresqlService": "Running",
+      "installPresent": true,
+      "dataPresent": true,
+      "lifecycleState": {
+        "value": "{\r\n    \"schemaVersion\":  1,\r\n    \"action\":  \"Install\",\r\n    \"status\":  \"healthy\",\r\n    \"failurePoint\":  \"\",\r\n    \"error\":  \"\",\r\n    \"completedAtUtc\":  \"2026-08-28T19:22:23.0607708Z\"\r\n}\r\n",
+        "PSPath": "C:\\ProgramData\\Breev\\state\\lifecycle.json",
+        "PSParentPath": "C:\\ProgramData\\Breev\\state",
+        "PSChildName": "lifecycle.json",
+        "PSDrive": {
+          "CurrentLocation": "WINDOWS\\system32",
+          "Name": "C",
+          "Provider": "Microsoft.PowerShell.Core\\FileSystem",
+          "Root": "C:\\",
+          "Description": "",
+          "MaximumSize": null,
+          "Credential": "System.Management.Automation.PSCredential",
+          "DisplayRoot": null
+        },
+        "PSProvider": {
+          "ImplementingType": "Microsoft.PowerShell.Commands.FileSystemProvider",
+          "HelpFile": "System.Management.Automation.dll-Help.xml",
+          "Name": "FileSystem",
+          "PSSnapIn": "Microsoft.PowerShell.Core",
+          "ModuleName": "Microsoft.PowerShell.Core",
+          "Module": null,
+          "Description": "",
+          "Capabilities": 52,
+          "Home": "C:\\WINDOWS\\system32\\config\\systemprofile",
+          "Drives": "C"
+        },
+        "ReadCount": 1
+      }
+    }
+  }
+}

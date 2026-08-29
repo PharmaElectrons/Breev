@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "note": "The interface the milestone-1 harness assumes about the installed product. Reconciled against apps/local-api/windows/lifecycle.ps1 and apps/desktop/windows/installer.nsh at issue/12 head. The harness reads the real product version from the installed app.asar rather than pinning it here.",
+  "guest": {
+    "domain": "breev-issue-34-win11",
+    "interactiveUser": "mahmo",
+    "harnessRoot": "C:\\breev-m1",
+    "installRoot": "C:\\Program Files\\Breev",
+    "dataRoot": "C:\\ProgramData\\Breev"
+  },
+  "services": {
+    "api": "BreevLocalApi",
+    "postgresql": "BreevPostgreSQL"
+  },
+  "ports": {
+    "loopbackApi": 31310,
+    "postgresql": 31311,
+    "lanApi": 31312,
+    "forbiddenOnLan": [31310, 31311]
+  },
+  "firewall": {
+    "displayName": "Breev LAN API",
+    "group": "Breev",
+    "forbiddenPorts": [31310, 31311]
+  },
+  "lifecycle": {
+    "installRootArgument": "-InstallRoot",
+    "payloadRelativePath": "resources\\windows-payload",
+    "scriptRelativePath": "resources\\windows-payload\\lifecycle.ps1",
+    "actions": ["Install", "Repair", "Uninstall", "DestructiveUninstall"],
+    "injectFailurePoints": [
+      "AfterDataPrepared",
+      "AfterPostgreSqlService",
+      "AfterApiService",
+      "AfterFirewallConfigured",
+      "BeforeReadiness"
+    ],
+    "destructiveAction": "DestructiveUninstall",
+    "destructiveArguments": {
+      "switch": "-DataDestructionAuthorized",
+      "confirmationParameter": "-DestructionConfirmation",
+      "confirmationPhrase": "destroy-pharmacy-data"
+    }
+  },
+  "damage": {
+    "payloadRelativeFile": "local-api\\dist\\main.js",
+    "damagedSuffix": ".m1-damaged",
+    "expectedShellState": "main-unavailable",
+    "expectedShellTitle": "Main unavailable"
+  },
+  "shell": {
+    "readyTitle": "Ready",
+    "uiAutomationRelativePath": "apps\\desktop\\test\\windows\\DesktopUiAutomation.ps1"
+  },
+  "dataProof": {
+    "markerTable": "pharmacies",
+    "markerFileRelativePath": "backups\\m1-pharmacy-marker.json",
+    "mainDeviceRelativePath": "config\\main-device.json",
+    "recoveryKeyRelativePath": "Recovery\\breev-recovery-kek.dat",
+    "requiredDataFiles": [
+      "config\\database-url",
+      "config\\schema-owner-url",
+      "config\\installation.json",
+      "config\\main-device.json",
+      "state\\lifecycle.json",
+      "postgresql\\PG_VERSION"
+    ]
+  }
+}

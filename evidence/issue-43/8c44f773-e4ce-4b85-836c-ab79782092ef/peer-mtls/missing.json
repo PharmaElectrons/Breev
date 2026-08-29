@@ -1,0 +1,24 @@
+{
+  "assertion": "tls-handshake-or-mtls-cert-missing",
+  "case": "missing",
+  "expectation": "refused",
+  "identity": "no-client-certificate",
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "schemaVersion": 1,
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "startedUtc": "2026-08-29T18:31:30.644Z",
+  "details": {
+    "accepted": false,
+    "denialCode": "mtls-cert-missing",
+    "hostHeader": "192.168.134.154:31312",
+    "path": "/identity/state",
+    "peerCertificateAccepted": true,
+    "refusalAsserted": true,
+    "refusalKind": "mtls-middleware",
+    "statusCode": 401,
+    "tlsProtocol": "TLSv1.3"
+  },
+  "finishedUtc": "2026-08-29T18:31:30.679Z",
+  "outcome": "refused",
+  "passed": true
+}

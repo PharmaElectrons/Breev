@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "install",
+  "passed": true,
+  "startedUtc": "2026-08-29T18:18:29.023975087Z",
+  "finishedUtc": "2026-08-29T18:19:10.444811907Z",
+  "details": {
+    "installOutput": "",
+    "healthBody": {
+      "apiVersion": "5",
+      "schemaVersion": "6",
+      "status": "healthy",
+      "database": "available"
+    },
+    "healthStatusCode": 200,
+    "listeners": [
+      {
+        "LocalAddress": "::1",
+        "LocalPort": 31311,
+        "OwningProcess": 10412
+      },
+      {
+        "LocalAddress": "192.168.134.154",
+        "LocalPort": 31312,
+        "OwningProcess": 4400
+      },
+      {
+        "LocalAddress": "127.0.0.1",
+        "LocalPort": 31311,
+        "OwningProcess": 10412
+      },
+      {
+        "LocalAddress": "127.0.0.1",
+        "LocalPort": 31310,
+        "OwningProcess": 4400
+      }
+    ],
+    "firewallRules": [
+      {
+        "Name": "BreevLanApi",
+        "DisplayName": "Breev LAN API",
+        "Enabled": "True",
+        "Direction": "Inbound",
+        "Action": "Allow",
+        "Protocol": "TCP",
+        "LocalPort": "31312",
+        "LocalAddress": "192.168.134.154"
+      }
+    ],
+    "apiService": {
+      "Status": "Running",
+      "Name": "BreevLocalApi",
+      "StartType": "Automatic"
+    },
+    "postgresqlService": {
+      "Status": "Running",
+      "Name": "BreevPostgreSQL",
+      "StartType": "Automatic"
+    },
+    "lifecycleState": {
+      "schemaVersion": 2,
+      "action": "Install",
+      "status": "healthy",
+      "lanEndpoint": "192.168.134.154:31312",
+      "failurePoint": "",
+      "error": "",
+      "completedAtUtc": "2026-08-29T18:19:08.1945294Z"
+    },
+    "passed": true
+  }
+}

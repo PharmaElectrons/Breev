@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "uninstall",
+  "passed": true,
+  "startedUtc": "2026-08-29T18:32:14.519471172Z",
+  "finishedUtc": "2026-08-29T18:32:17.863010339Z",
+  "details": {
+    "apiServiceAbsent": true,
+    "pgServiceAbsent": true,
+    "firewallRulesCount": 0,
+    "dataRootExists": true,
+    "markerSurvived": true,
+    "pgVersionSurvived": true,
+    "lifecycleState": {
+      "schemaVersion": 2,
+      "action": "Uninstall",
+      "status": "data-preserved",
+      "lanEndpoint": "",
+      "failurePoint": "",
+      "error": "",
+      "completedAtUtc": "2026-08-29T18:32:16.6998342Z"
+    },
+    "listenersCount": 0,
+    "passed": true
+  }
+}

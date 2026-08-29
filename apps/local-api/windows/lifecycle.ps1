@@ -3,7 +3,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("Install", "Repair", "Uninstall")]
+  [ValidateSet("Install", "Repair", "Uninstall", "DestructiveUninstall")]
   [string] $Action,
 
   [Parameter(Mandatory = $true)]
@@ -14,8 +14,31 @@ param(
 
   [string] $DataRoot = (Join-Path $env:ProgramData "Breev"),
 
-  [ValidateSet("None", "AfterDataPrepared", "AfterPostgreSqlService", "AfterApiService", "BeforeReadiness")]
+  # The address the LAN mTLS listener binds and advertises to terminals.
+  # "auto" resolves the machine's own routable IPv4; an explicit address must
+  # already be assigned to this machine; "disabled" is the documented
+  # single-machine installation, which registers no LAN environment and opens
+  # no firewall port. There is no silent loopback fallback: a terminal cannot
+  # reach a loopback listener, so an unresolvable LAN address fails the install
+  # instead of producing an installation that looks healthy and pairs nothing.
+  [string] $LanApiHost = "auto",
+
+  # A port of its own, never the private database's 31311 or the loopback
+  # API's 31310: the one inbound rule Breev opens is identified by port, so a
+  # port shared with the database would make that rule admit the database the
+  # day anything widens its bind address.
+  [ValidateRange(1, 65535)]
+  [int] $LanApiPort = 31312,
+
+  [ValidateSet("None", "AfterDataPrepared", "AfterPostgreSqlService", "AfterApiService", "AfterFirewallConfigured", "BeforeReadiness")]
   [string] $InjectFailure = "None",
+
+  # Destructive removal is authorized twice, by a switch and by an exact
+  # phrase, and only ever from a manually typed elevated command. The
+  # uninstaller never passes either one.
+  [switch] $DataDestructionAuthorized,
+
+  [string] $DestructionConfirmation = "",
 
   [switch] $SkipStateWrite
 )
@@ -28,6 +51,13 @@ $apiServiceName = "BreevLocalApi"
 $postgresqlServiceName = "BreevPostgreSQL"
 $apiPort = 31310
 $postgresqlPort = 31311
+# Every firewall rule Breev creates carries this group, and the group is the
+# only key used to remove them. An uninstall therefore cannot leave a Breev
+# rule behind and cannot touch a rule Breev did not create.
+$firewallGroup = "Breev"
+$lanFirewallRuleName = "BreevLanApi"
+$lanFirewallDisplayName = "Breev LAN API"
+$destructionConfirmationPhrase = "destroy-pharmacy-data"
 $createdServices = [Collections.Generic.List[string]]::new()
 $sensitiveValues = [Collections.Generic.List[string]]::new()
 
@@ -639,6 +669,116 @@ function Configure-Service {
   Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("failureflag", $Name, "1") -FailureMessage "Could not enable non-crash recovery for $Name"
 }
 
+function Resolve-LanIPv4Address {
+  # A pharmacy machine usually holds several IPv4 addresses at once: Ethernet,
+  # Wi-Fi, and any hypervisor host adapter. The listener has to name one
+  # concrete address, so the choice is the address Windows itself would route
+  # from first. A real DHCP or manual address outranks a 169.254 self
+  # assignment, then the lower interface metric wins, then the interface index,
+  # so two runs on the same machine always agree.
+  $connectedMetrics = @{}
+  foreach ($interface in @(Get-NetIPInterface -AddressFamily IPv4 -ErrorAction SilentlyContinue)) {
+    if ($interface.ConnectionState -eq "Connected") {
+      $connectedMetrics[[string] $interface.InterfaceIndex] = [int] $interface.InterfaceMetric
+    }
+  }
+
+  $candidates = [Collections.Generic.List[object]]::new()
+  foreach ($address in @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue)) {
+    $interfaceKey = [string] $address.InterfaceIndex
+    if (($address.IPAddress -match "^127\.") -or (-not $connectedMetrics.ContainsKey($interfaceKey))) {
+      continue
+    }
+    $selfAssigned = 0
+    if ($address.IPAddress -match "^169\.254\.") {
+      $selfAssigned = 1
+    }
+    [void] $candidates.Add([PSCustomObject] @{
+      Address = [string] $address.IPAddress
+      SelfAssigned = $selfAssigned
+      Metric = $connectedMetrics[$interfaceKey]
+      InterfaceIndex = [int] $address.InterfaceIndex
+    })
+  }
+  if ($candidates.Count -eq 0) {
+    throw "Breev found no connected IPv4 address for the LAN listener. Connect this machine to the pharmacy network and run the repair, or install with -LanApiHost disabled for a single-machine installation."
+  }
+
+  $ordered = @($candidates | Sort-Object -Property SelfAssigned, Metric, InterfaceIndex)
+  return $ordered[0].Address
+}
+
+function Resolve-LanApiHost {
+  if ($LanApiPort -eq $postgresqlPort -or $LanApiPort -eq $apiPort) {
+    throw "-LanApiPort must differ from the private PostgreSQL port $postgresqlPort and the loopback API port $apiPort"
+  }
+  if ($LanApiHost -eq "disabled") {
+    return ""
+  }
+  if ($LanApiHost -eq "auto") {
+    return Resolve-LanIPv4Address
+  }
+
+  $parsedAddress = $null
+  if (-not [Net.IPAddress]::TryParse($LanApiHost, [ref] $parsedAddress)) {
+    throw "-LanApiHost must be auto, disabled, or an IP address assigned to this machine"
+  }
+  # A wildcard would put the listener on interfaces nobody chose, and a
+  # loopback address is unreachable from the terminals the listener exists for.
+  # Both are refused rather than installed as a listener that never pairs.
+  if ($parsedAddress.Equals([Net.IPAddress]::Any) -or $parsedAddress.Equals([Net.IPAddress]::IPv6Any)) {
+    throw "-LanApiHost must be a concrete address, not a wildcard"
+  }
+  if ([Net.IPAddress]::IsLoopback($parsedAddress)) {
+    throw "-LanApiHost must be a LAN address a terminal can reach. Use -LanApiHost disabled for a single-machine installation."
+  }
+  $resolvedAddress = $parsedAddress.IPAddressToString
+  if ($null -eq (Get-NetIPAddress -IPAddress $resolvedAddress -ErrorAction SilentlyContinue)) {
+    throw "-LanApiHost names an address that is not assigned to this machine"
+  }
+  return $resolvedAddress
+}
+
+function Set-LanFirewallRule {
+  param([string] $LanHost)
+
+  # Replacement, not editing: a rule left by an earlier install can carry a
+  # stale address or port, and editing one in place would silently keep
+  # whatever else had been configured on it. Removing the whole Breev group
+  # first also makes the call idempotent across repeated repairs.
+  Remove-BreevFirewallRules
+  if ($LanHost -eq "") {
+    return
+  }
+
+  # The narrowest rule that still admits terminals: inbound TCP, this one
+  # port, and only on the LAN address the listener actually binds. The private
+  # PostgreSQL service listens on loopback alone, so no packet this rule admits
+  # can reach it, and Breev never opens a port for the database.
+  New-NetFirewallRule `
+    -Name $lanFirewallRuleName `
+    -DisplayName $lanFirewallDisplayName `
+    -Group $firewallGroup `
+    -Description "Inbound TLS 1.3 mutual-TLS access for paired Breev terminals" `
+    -Direction Inbound `
+    -Action Allow `
+    -Enabled True `
+    -Profile Any `
+    -Protocol TCP `
+    -LocalAddress $LanHost `
+    -LocalPort $LanApiPort | Out-Null
+}
+
+function Remove-BreevFirewallRules {
+  # SilentlyContinue covers the ordinary case of there being no Breev rule to
+  # remove, which is not a failure on an uninstall or a rolled-back install.
+  Remove-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue
+  $survivors = @(Get-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue)
+  if ($survivors.Count -gt 0) {
+    throw "Breev could not remove its firewall rules: $(($survivors | ForEach-Object { $_.Name }) -join ', ')"
+  }
+}
+
 function Register-PostgresqlService {
   $shawlPath = Join-Path $PayloadRoot "service-wrapper\shawl.exe"
   $postgresqlRoot = Join-Path $PayloadRoot "postgresql"
@@ -659,6 +799,8 @@ function Register-PostgresqlService {
 }
 
 function Register-ApiService {
+  param([string] $LanHost)
+
   $shawlPath = Join-Path $PayloadRoot "service-wrapper\shawl.exe"
   $nodePath = Join-Path $PayloadRoot "node\node.exe"
   $apiRoot = Join-Path $PayloadRoot "local-api"
@@ -666,17 +808,34 @@ function Register-ApiService {
   $runtimeUrlPath = Join-Path $DataRoot "config\database-url"
   $logRoot = Join-Path $DataRoot "logs\local-api"
   $backupRoot = Join-Path $DataRoot "backups"
-  [void] $createdServices.Add($apiServiceName)
-  Invoke-CheckedCommand -FilePath $shawlPath -Arguments @(
+  $serviceArguments = [Collections.Generic.List[string]]::new()
+  foreach ($argument in @(
     "add", "--name", $apiServiceName,
     "--restart", "--restart-delay", "2000", "--stop-timeout", "30000", "--kill-process-tree",
     "--log-dir", $logRoot, "--log-as", "wrapper", "--log-cmd-as", "local-api",
     "--cwd", $apiRoot,
     "--env", "API_HOST=127.0.0.1", "--env", "API_PORT=$apiPort", "--env", "DATABASE_URL_FILE=$runtimeUrlPath",
     "--env", "BREEV_BACKUP_DIRECTORY=$backupRoot",
-    "--env", "BREEV_MAIN_DEVICE_FILE=$(Join-Path $DataRoot 'config\main-device.json')",
-    "--", $nodePath, $apiEntry
-  ) -FailureMessage "Could not register the local API Windows service"
+    "--env", "BREEV_MAIN_DEVICE_FILE=$(Join-Path $DataRoot 'config\main-device.json')"
+  )) {
+    [void] $serviceArguments.Add($argument)
+  }
+  # The API starts its LAN mutual-TLS listener only when both variables are
+  # present, so a single-machine installation registers neither and keeps the
+  # service on loopback.
+  if ($LanHost -ne "") {
+    foreach ($argument in @(
+      "--env", "BREEV_LAN_API_HOST=$LanHost",
+      "--env", "BREEV_LAN_API_PORT=$LanApiPort"
+    )) {
+      [void] $serviceArguments.Add($argument)
+    }
+  }
+  foreach ($argument in @("--", $nodePath, $apiEntry)) {
+    [void] $serviceArguments.Add($argument)
+  }
+  [void] $createdServices.Add($apiServiceName)
+  Invoke-CheckedCommand -FilePath $shawlPath -Arguments $serviceArguments.ToArray() -FailureMessage "Could not register the local API Windows service"
   Configure-Service -Name $apiServiceName -Description "Breev local API service"
   # The SCM must bring PostgreSQL up before the API on every boot, or the API
   # starts against a database that is not accepting connections yet.
@@ -689,7 +848,16 @@ function Set-ServiceAcls {
   $apiLogRoot = Join-Path $DataRoot "logs\local-api"
   $postgresqlLogRoot = Join-Path $DataRoot "logs\postgresql"
   $stateRoot = Join-Path $DataRoot "state"
-  Set-DirectoryAcl -Path $DataRoot -AdditionalGrants @() -ResetDescendants
+  # Only path lookup, not listing or content read: Node's fs.realpathSync/lstat
+  # on the log path lstats each parent (C:\ProgramData\Breev, ...\logs), which
+  # needs Traverse plus ReadAttributes and nothing more.
+  $pathLookupRights =
+    [Security.AccessControl.FileSystemRights]::Traverse -bor
+    [Security.AccessControl.FileSystemRights]::ReadAttributes
+  Set-DirectoryAcl -Path $DataRoot -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = $pathLookupRights },
+    [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = $pathLookupRights }
+  )
   Set-DirectoryAcl -Path $configRoot -AdditionalGrants @() -ResetDescendants
   Set-FileAcl -Path (Join-Path $configRoot "database-url") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Read }
@@ -704,6 +872,10 @@ function Set-ServiceAcls {
   Set-DirectoryAcl -Path $postgresqlDataRoot -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = [Security.AccessControl.FileSystemRights]::FullControl }
   ) -ResetDescendants
+  Set-DirectoryAcl -Path (Join-Path $DataRoot "logs") -AdditionalGrants @(
+    [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = $pathLookupRights },
+    [ordered]@{ identity = "NT SERVICE\${postgresqlServiceName}"; rights = $pathLookupRights }
+  )
   Set-DirectoryAcl -Path $apiLogRoot -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::Modify }
   ) -ResetDescendants
@@ -721,6 +893,21 @@ function Set-ServiceAcls {
   Set-DirectoryAcl -Path (Join-Path $DataRoot "Recovery") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::FullControl }
   )
+  # The CNG machine key store is a shared location that holds every machine
+  # software key, not a Breev namespace. Under the software-fallback provider
+  # (no TPM) the API service must create one key file here; it opens, signs, and
+  # deletes that key later through the key's own protected DACL, never through
+  # the directory. So the directory grant is create-file only, non-inheriting:
+  # (WD) FILE_ADD_FILE lets it drop its key, (RA)(X) let it look the path up.
+  # It carries no list, modify-existing, or delete-child right over a foreign
+  # key, and /grant:r replaces any broader ACE a prior run left behind.
+  $cngKeysPath = Join-Path $env:ProgramData "Microsoft\Crypto\Keys"
+  if (Test-Path -LiteralPath $cngKeysPath) {
+    Invoke-CheckedCommand `
+      -FilePath "icacls.exe" `
+      -Arguments @($cngKeysPath, "/grant:r", "NT SERVICE\${apiServiceName}:(WD,RA,X)") `
+      -FailureMessage "Could not configure permissions on the CNG machine keys directory"
+  }
 
   Set-DirectoryAcl -Path (Join-Path $PayloadRoot "service-wrapper") -AdditionalGrants @(
     [ordered]@{ identity = "NT SERVICE\${apiServiceName}"; rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute },
@@ -793,19 +980,41 @@ function Wait-ApiReady {
   throw "The local API Windows service did not become healthy"
 }
 
+function Wait-LanListener {
+  param([string] $LanHost)
+
+  # The loopback health poll proves the API bootstrapped; it cannot prove the
+  # LAN listener bound, because that listener is created after the loopback one
+  # and can fail on its own. No request is made here: reaching the listener
+  # would need a client certificate the installer must never hold, so the
+  # observable outcome is a socket in Listen on exactly the advertised address.
+  $deadline = [DateTime]::UtcNow.AddSeconds(60)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $LanApiPort -ErrorAction SilentlyContinue |
+      Where-Object { $_.LocalAddress -eq $LanHost })
+    if ($listeners.Count -gt 0) {
+      return
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  throw "The local API Windows service is not listening on the LAN endpoint ${LanHost}:$LanApiPort"
+}
+
 function Write-LifecycleState {
   param(
     [string] $Status,
     [string] $FailurePoint = "",
-    [string] $ErrorMessage = ""
+    [string] $ErrorMessage = "",
+    [string] $LanEndpoint = ""
   )
 
   $stateRoot = Join-Path $DataRoot "state"
   Set-DirectoryAcl -Path $stateRoot -AdditionalGrants @() -ResetDescendants
   [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     action = $Action
     status = $Status
+    lanEndpoint = $LanEndpoint
     failurePoint = $FailurePoint
     error = $ErrorMessage
     completedAtUtc = [DateTime]::UtcNow.ToString("o")
@@ -824,6 +1033,33 @@ $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 $PayloadRoot = [IO.Path]::GetFullPath($PayloadRoot)
 $DataRoot = [IO.Path]::GetFullPath($DataRoot)
 
+if ($Action -eq "DestructiveUninstall") {
+  # Both authorizations are checked before a single service is touched, so a
+  # mistyped command, a stale script, or an inherited command line stops here
+  # with the installation intact. -cne keeps the phrase case-sensitive.
+  if ((-not $DataDestructionAuthorized) -or ($DestructionConfirmation -cne $destructionConfirmationPhrase)) {
+    throw "Destructive removal requires -DataDestructionAuthorized and -DestructionConfirmation $destructionConfirmationPhrase"
+  }
+  # Unlike Uninstall, this action fails loudly. It is never run by the
+  # uninstaller, so nothing is trapped in a retry loop, and a partial
+  # destruction that reported success would be the worst possible outcome.
+  foreach ($serviceName in @($apiServiceName, $postgresqlServiceName)) {
+    Stop-And-DeleteService -Name $serviceName
+  }
+  Stop-BreevProcesses -PathPrefixes @($PayloadRoot, $InstallRoot, $DataRoot) -TimeoutSeconds 15
+  Remove-BreevFirewallRules
+  if (Test-Path -LiteralPath $DataRoot) {
+    Remove-Item -LiteralPath $DataRoot -Recurse -Force
+  }
+  if (-not $SkipStateWrite) {
+    # The record is written back into a data root that now holds nothing else.
+    # It is the only evidence that the destruction was authorized and completed,
+    # and it carries no pharmacy data.
+    Write-LifecycleState -Status "data-destroyed"
+  }
+  exit 0
+}
+
 if ($Action -eq "Uninstall") {
   # Every statement here is best-effort and the action always exits 0: the
   # NSIS uninstaller treats any nonzero exit as "the app cannot be closed"
@@ -841,6 +1077,13 @@ if ($Action -eq "Uninstall") {
   } catch {
     [void] $uninstallErrors.Add($_.Exception.Message)
   }
+  try {
+    # The LAN port closes with the listener that used it. The data root is
+    # untouched: an uninstall preserves pharmacy data and the pharmacy CA.
+    Remove-BreevFirewallRules
+  } catch {
+    [void] $uninstallErrors.Add($_.Exception.Message)
+  }
   if (-not $SkipStateWrite) {
     try {
       if ($uninstallErrors.Count -gt 0) {
@@ -855,7 +1098,21 @@ if ($Action -eq "Uninstall") {
   exit 0
 }
 
+$lanHost = ""
+# Empty until the endpoint is decided, so a run that failed before deciding
+# records no endpoint rather than claiming a single-machine installation.
+$lanEndpoint = ""
 try {
+  # Resolved before anything is created: an installation that cannot name a LAN
+  # address must fail while the machine is still untouched, not after it has
+  # registered services that no terminal could ever reach.
+  $lanHost = Resolve-LanApiHost
+  if ($lanHost -eq "") {
+    $lanEndpoint = "disabled"
+  } else {
+    $lanEndpoint = "${lanHost}:$LanApiPort"
+  }
+
   Test-Payload
   Set-DirectoryAcl -Path $DataRoot -AdditionalGrants @()
   Initialize-Database
@@ -863,10 +1120,13 @@ try {
 
   Stop-And-DeleteService -Name $apiServiceName
   Stop-And-DeleteService -Name $postgresqlServiceName
+  Stop-BreevProcesses -PathPrefixes @($PayloadRoot, $InstallRoot, $DataRoot) -TimeoutSeconds 15
   Register-PostgresqlService
   Invoke-FailurePoint -Name "AfterPostgreSqlService"
-  Register-ApiService
+  Register-ApiService -LanHost $lanHost
   Invoke-FailurePoint -Name "AfterApiService"
+  Set-LanFirewallRule -LanHost $lanHost
+  Invoke-FailurePoint -Name "AfterFirewallConfigured"
   Set-ServiceAcls
 
   Start-Service -Name $postgresqlServiceName
@@ -876,7 +1136,10 @@ try {
   Start-Service -Name $apiServiceName
   Invoke-FailurePoint -Name "BeforeReadiness"
   Wait-ApiReady
-  Write-LifecycleState -Status "healthy"
+  if ($lanHost -ne "") {
+    Wait-LanListener -LanHost $lanHost
+  }
+  Write-LifecycleState -Status "healthy" -LanEndpoint $lanEndpoint
 } catch {
   $lifecycleFailure = $_
   $cleanupErrors = [Collections.Generic.List[string]]::new()
@@ -894,12 +1157,19 @@ try {
   } catch {
     [void] $cleanupErrors.Add($_.Exception.Message)
   }
+  try {
+    # The rolled-back run leaves no listener behind, so its port must not stay
+    # open. This removes only Breev's own group, and never the data root.
+    Remove-BreevFirewallRules
+  } catch {
+    [void] $cleanupErrors.Add($_.Exception.Message)
+  }
   $failureMessage = $lifecycleFailure.Exception.Message
   if ($cleanupErrors.Count -gt 0) {
     $failureMessage += "; cleanup failed: $($cleanupErrors -join '; ')"
   }
   try {
-    Write-LifecycleState -Status "failed-data-preserved" -FailurePoint $InjectFailure -ErrorMessage $failureMessage
+    Write-LifecycleState -Status "failed-data-preserved" -FailurePoint $InjectFailure -ErrorMessage $failureMessage -LanEndpoint $lanEndpoint
   } catch {
     # Preserve the original lifecycle failure if even the state record cannot be written.
   }

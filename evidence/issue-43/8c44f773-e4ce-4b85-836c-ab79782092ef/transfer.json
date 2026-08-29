@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "transfer",
+  "passed": true,
+  "startedUtc": "2026-08-29T17:51:02.000000000Z",
+  "finishedUtc": "2026-08-29T17:51:24.719Z",
+  "details": {
+    "tgzBytesDownloaded": 103809024,
+    "payloadExtracted": true,
+    "allRequiredFilesExist": true,
+    "files": {
+      "payload-manifest.json": true,
+      "payload-lock.json": true,
+      "node\\node.exe": true,
+      "postgresql\\bin\\postgres.exe": true,
+      "service-wrapper\\shawl.exe": true,
+      "local-api\\dist\\main.js": true,
+      "local-api\\dist\\migrate.js": true,
+      "local-api\\drizzle\\meta\\_journal.json": true,
+      "bootstrap.sql": true,
+      "lifecycle.ps1": true
+    }
+  }
+}

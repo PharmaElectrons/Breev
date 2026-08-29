@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "baseline",
+  "passed": true,
+  "startedUtc": "2026-08-29T17:46:32.411718080Z",
+  "finishedUtc": "2026-08-29T17:46:33.733403922Z",
+  "details": {
+    "domstate": "running",
+    "domuuid": "ce79fef4-de00-4b4d-bb74-1dc3036b8737",
+    "guest": {
+      "lifecycleState": {
+        "schemaVersion": 1,
+        "action": "Install",
+        "status": "healthy",
+        "failurePoint": "",
+        "error": "",
+        "completedAtUtc": "2026-08-28T19:22:23.0607708Z"
+      },
+      "apiService": {
+        "Status": "Running",
+        "Name": "BreevLocalApi",
+        "StartType": "Automatic"
+      },
+      "postgresqlService": {
+        "Status": "Running",
+        "Name": "BreevPostgreSQL",
+        "StartType": "Automatic"
+      },
+      "listeners": [
+        {
+          "LocalAddress": "::1",
+          "LocalPort": 31311,
+          "OwningProcess": 1028
+        },
+        {
+          "LocalAddress": "127.0.0.1",
+          "LocalPort": 31311,
+          "OwningProcess": 1028
+        },
+        {
+          "LocalAddress": "127.0.0.1",
+          "LocalPort": 31310,
+          "OwningProcess": 8052
+        }
+      ],
+      "installPathExists": true,
+      "dataPathExists": true
+    }
+  }
+}

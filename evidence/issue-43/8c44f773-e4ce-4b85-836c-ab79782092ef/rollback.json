@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "rollback",
+  "passed": true,
+  "startedUtc": "2026-08-29T18:21:38.792545576Z",
+  "finishedUtc": "2026-08-29T18:22:03.005266806Z",
+  "details": {
+    "injectedFailed": true,
+    "injectedErrorMessage": "Injected lifecycle failure at BeforeReadiness",
+    "apiServiceRolledBack": true,
+    "pgServiceRolledBack": true,
+    "firewallRolledBack": true,
+    "markerSurvived": true,
+    "rollbackLifecycleState": {
+      "schemaVersion": 2,
+      "action": "Install",
+      "status": "failed-data-preserved",
+      "lanEndpoint": "192.168.134.154:31312",
+      "failurePoint": "BeforeReadiness",
+      "error": "Injected lifecycle failure at BeforeReadiness",
+      "completedAtUtc": "2026-08-29T18:21:51.3408845Z"
+    },
+    "restoredHealthy": true,
+    "hasLanListener": true,
+    "hasLoopbackApi": true,
+    "passed": true
+  }
+}

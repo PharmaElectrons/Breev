@@ -1,0 +1,81 @@
+{
+  "cases": {
+    "accepted": {
+      "assertion": "2xx-tls13-pinned-peer",
+      "case": "accepted",
+      "expectation": "accepted",
+      "identity": "paired-pharmacy-ca-terminal",
+      "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+      "schemaVersion": 1,
+      "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+      "startedUtc": "2026-08-29T18:31:25.853Z",
+      "details": {
+        "accepted": true,
+        "deviceId": "01a04eca-8199-7092-aeeb-ca15177384c2",
+        "hostHeader": "192.168.134.154:31312",
+        "installationId": "01a04eab-69a2-7027-a7d6-23827b415a93",
+        "path": "/identity/state",
+        "peerCertificateAccepted": true,
+        "refusalAsserted": false,
+        "statusCode": 200,
+        "tlsProtocol": "TLSv1.3"
+      },
+      "finishedUtc": "2026-08-29T18:31:30.032Z",
+      "outcome": "accepted",
+      "passed": true
+    },
+    "foreign": {
+      "assertion": "tls-handshake-or-401-403-mtls-refusal",
+      "case": "foreign",
+      "expectation": "refused",
+      "identity": "foreign-ca-terminal",
+      "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+      "schemaVersion": 1,
+      "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+      "startedUtc": "2026-08-29T18:31:30.357Z",
+      "details": {
+        "accepted": false,
+        "denialCode": "cert-chain-invalid",
+        "hostHeader": "192.168.134.154:31312",
+        "path": "/identity/state",
+        "peerCertificateAccepted": true,
+        "refusalAsserted": true,
+        "refusalKind": "mtls-middleware",
+        "statusCode": 403,
+        "tlsProtocol": "TLSv1.3"
+      },
+      "finishedUtc": "2026-08-29T18:31:30.516Z",
+      "outcome": "refused",
+      "passed": true
+    },
+    "missing": {
+      "assertion": "tls-handshake-or-mtls-cert-missing",
+      "case": "missing",
+      "expectation": "refused",
+      "identity": "no-client-certificate",
+      "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+      "schemaVersion": 1,
+      "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+      "startedUtc": "2026-08-29T18:31:30.644Z",
+      "details": {
+        "accepted": false,
+        "denialCode": "mtls-cert-missing",
+        "hostHeader": "192.168.134.154:31312",
+        "path": "/identity/state",
+        "peerCertificateAccepted": true,
+        "refusalAsserted": true,
+        "refusalKind": "mtls-middleware",
+        "statusCode": 401,
+        "tlsProtocol": "TLSv1.3"
+      },
+      "finishedUtc": "2026-08-29T18:31:30.679Z",
+      "outcome": "refused",
+      "passed": true
+    }
+  },
+  "finishedUtc": "2026-08-29T18:31:31.723Z",
+  "passed": true,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "schemaVersion": 1,
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5"
+}

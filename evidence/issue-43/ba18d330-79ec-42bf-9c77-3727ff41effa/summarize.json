@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "runId": "ba18d330-79ec-42bf-9c77-3727ff41effa",
+  "sourceCommit": "8254954134b76316c61139d429de1442ca66c7d9",
+  "phase": "summarize",
+  "startedUtc": "2026-08-29T17:03:10.695600996Z",
+  "finishedUtc": "2026-08-29T17:03:10.695600996Z",
+  "passed": true,
+  "details": {
+    "proven": [
+      {
+        "phase": "preflight",
+        "passed": true,
+        "note": "installed services present, install and data roots present"
+      },
+      {
+        "phase": "hardened-artifact",
+        "passed": true,
+        "note": "installed Breev.exe all nine Electron fuses correct (sha256 recorded); app.asar version read"
+      },
+      {
+        "phase": "signature-tamper",
+        "passed": true,
+        "note": "comparison-cert-signed copy Valid, byte-flip -> HashMismatch"
+      }
+    ],
+    "deferredToCertificationCandidate": [
+      {
+        "phase": "clean-install",
+        "reason": "install->Ready->restart->repair->rollback->uninstall runs via tooling/windows/proof/Invoke-InstalledRuntimeProof.ps1 against a built signed candidate; needs capture-disposable-baseline.sh because this guest uses pflash UEFI firmware that internal snapshots cannot protect"
+      },
+      {
+        "phase": "asar-tamper",
+        "reason": "prove-asar-integrity.mjs needs an interactive desktop session in the guest"
+      }
+    ]
+  }
+}
