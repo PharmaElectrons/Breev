@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "destructive",
+  "passed": true,
+  "startedUtc": "2026-08-29T18:32:34.998190419Z",
+  "finishedUtc": "2026-08-29T18:32:37.287016001Z",
+  "details": {
+    "unauthorizedThrew": true,
+    "unauthorizedErrorMessage": "Destructive removal requires -DataDestructionAuthorized and -DestructionConfirmation destroy-pharmacy-data",
+    "dataRootSurvivesUnauthorized": true,
+    "apiServiceAbsent": true,
+    "pgServiceAbsent": true,
+    "firewallRulesCount": 0,
+    "dataRootGone": false,
+    "installRootGone": false,
+    "listenersCount": 0,
+    "passed": true,
+    "pharmacyDataDestroyed": true,
+    "databaseGone": true,
+    "configGone": true,
+    "markerGone": true,
+    "lifecycleState": {
+      "schemaVersion": 2,
+      "action": "DestructiveUninstall",
+      "status": "data-destroyed"
+    }
+  }
+}

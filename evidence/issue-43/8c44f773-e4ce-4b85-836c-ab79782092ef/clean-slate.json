@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "clean-slate",
+  "passed": true,
+  "startedUtc": "2026-08-29T17:51:30.000000000Z",
+  "finishedUtc": "2026-08-29T17:51:38.561Z",
+  "details": {
+    "action": "DestructiveUninstall",
+    "apiServicePresent": false,
+    "postgresqlServicePresent": false,
+    "firewallRulesCount": 0,
+    "dataPostgresqlExists": false,
+    "lifecycleState": {
+      "schemaVersion": 2,
+      "action": "DestructiveUninstall",
+      "status": "data-destroyed",
+      "lanEndpoint": "",
+      "failurePoint": "",
+      "error": "",
+      "completedAtUtc": "2026-08-29T17:51:34.1423834Z"
+    }
+  }
+}

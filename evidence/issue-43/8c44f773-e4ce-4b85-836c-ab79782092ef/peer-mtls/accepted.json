@@ -1,0 +1,24 @@
+{
+  "assertion": "2xx-tls13-pinned-peer",
+  "case": "accepted",
+  "expectation": "accepted",
+  "identity": "paired-pharmacy-ca-terminal",
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "schemaVersion": 1,
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "startedUtc": "2026-08-29T18:31:25.853Z",
+  "details": {
+    "accepted": true,
+    "deviceId": "01a04eca-8199-7092-aeeb-ca15177384c2",
+    "hostHeader": "192.168.134.154:31312",
+    "installationId": "01a04eab-69a2-7027-a7d6-23827b415a93",
+    "path": "/identity/state",
+    "peerCertificateAccepted": true,
+    "refusalAsserted": false,
+    "statusCode": 200,
+    "tlsProtocol": "TLSv1.3"
+  },
+  "finishedUtc": "2026-08-29T18:31:30.032Z",
+  "outcome": "accepted",
+  "passed": true
+}

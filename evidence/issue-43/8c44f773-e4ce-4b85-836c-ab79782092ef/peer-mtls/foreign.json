@@ -1,0 +1,24 @@
+{
+  "assertion": "tls-handshake-or-401-403-mtls-refusal",
+  "case": "foreign",
+  "expectation": "refused",
+  "identity": "foreign-ca-terminal",
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "schemaVersion": 1,
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "startedUtc": "2026-08-29T18:31:30.357Z",
+  "details": {
+    "accepted": false,
+    "denialCode": "cert-chain-invalid",
+    "hostHeader": "192.168.134.154:31312",
+    "path": "/identity/state",
+    "peerCertificateAccepted": true,
+    "refusalAsserted": true,
+    "refusalKind": "mtls-middleware",
+    "statusCode": 403,
+    "tlsProtocol": "TLSv1.3"
+  },
+  "finishedUtc": "2026-08-29T18:31:30.516Z",
+  "outcome": "refused",
+  "passed": true
+}

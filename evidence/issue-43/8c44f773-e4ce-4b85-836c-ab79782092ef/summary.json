@@ -1,0 +1,357 @@
+{
+  "schemaVersion": 1,
+  "runId": "8c44f773-e4ce-4b85-836c-ab79782092ef",
+  "sourceCommit": "0b3f5a4e5e478abe3d3fcd20c7a1108eafe079f5",
+  "phase": "summary",
+  "passed": true,
+  "startedUtc": "2026-08-29T17:46:32.411718080Z",
+  "finishedUtc": "2026-08-29T18:33:12.511Z",
+  "details": {
+    "overallPassed": true,
+    "totalPhases": 10,
+    "passedCount": 10,
+    "failedCount": 0,
+    "phases": [
+      {
+        "phase": "baseline",
+        "passed": true,
+        "startedUtc": "2026-08-29T17:46:32.411718080Z",
+        "finishedUtc": "2026-08-29T17:46:33.733403922Z",
+        "details": {
+          "domstate": "running",
+          "domuuid": "ce79fef4-de00-4b4d-bb74-1dc3036b8737",
+          "guest": {
+            "lifecycleState": {
+              "schemaVersion": 1,
+              "action": "Install",
+              "status": "healthy",
+              "failurePoint": "",
+              "error": "",
+              "completedAtUtc": "2026-08-28T19:22:23.0607708Z"
+            },
+            "apiService": {
+              "Status": "Running",
+              "Name": "BreevLocalApi",
+              "StartType": "Automatic"
+            },
+            "postgresqlService": {
+              "Status": "Running",
+              "Name": "BreevPostgreSQL",
+              "StartType": "Automatic"
+            },
+            "listeners": [
+              {
+                "LocalAddress": "::1",
+                "LocalPort": 31311,
+                "OwningProcess": 1028
+              },
+              {
+                "LocalAddress": "127.0.0.1",
+                "LocalPort": 31311,
+                "OwningProcess": 1028
+              },
+              {
+                "LocalAddress": "127.0.0.1",
+                "LocalPort": 31310,
+                "OwningProcess": 8052
+              }
+            ],
+            "installPathExists": true,
+            "dataPathExists": true
+          }
+        }
+      },
+      {
+        "phase": "transfer",
+        "passed": true,
+        "startedUtc": "2026-08-29T17:51:02.000000000Z",
+        "finishedUtc": "2026-08-29T17:51:24.719Z",
+        "details": {
+          "tgzBytesDownloaded": 103809024,
+          "payloadExtracted": true,
+          "allRequiredFilesExist": true,
+          "files": {
+            "payload-manifest.json": true,
+            "payload-lock.json": true,
+            "node\\node.exe": true,
+            "postgresql\\bin\\postgres.exe": true,
+            "service-wrapper\\shawl.exe": true,
+            "local-api\\dist\\main.js": true,
+            "local-api\\dist\\migrate.js": true,
+            "local-api\\drizzle\\meta\\_journal.json": true,
+            "bootstrap.sql": true,
+            "lifecycle.ps1": true
+          }
+        }
+      },
+      {
+        "phase": "clean-slate",
+        "passed": true,
+        "startedUtc": "2026-08-29T17:51:30.000000000Z",
+        "finishedUtc": "2026-08-29T17:51:38.561Z",
+        "details": {
+          "action": "DestructiveUninstall",
+          "apiServicePresent": false,
+          "postgresqlServicePresent": false,
+          "firewallRulesCount": 0,
+          "dataPostgresqlExists": false,
+          "lifecycleState": {
+            "schemaVersion": 2,
+            "action": "DestructiveUninstall",
+            "status": "data-destroyed",
+            "lanEndpoint": "",
+            "failurePoint": "",
+            "error": "",
+            "completedAtUtc": "2026-08-29T17:51:34.1423834Z"
+          }
+        }
+      },
+      {
+        "phase": "install",
+        "passed": true,
+        "startedUtc": "2026-08-29T18:18:29.023975087Z",
+        "finishedUtc": "2026-08-29T18:19:10.444811907Z",
+        "details": {
+          "installOutput": "",
+          "healthBody": {
+            "apiVersion": "5",
+            "schemaVersion": "6",
+            "status": "healthy",
+            "database": "available"
+          },
+          "healthStatusCode": 200,
+          "listeners": [
+            {
+              "LocalAddress": "::1",
+              "LocalPort": 31311,
+              "OwningProcess": 10412
+            },
+            {
+              "LocalAddress": "192.168.134.154",
+              "LocalPort": 31312,
+              "OwningProcess": 4400
+            },
+            {
+              "LocalAddress": "127.0.0.1",
+              "LocalPort": 31311,
+              "OwningProcess": 10412
+            },
+            {
+              "LocalAddress": "127.0.0.1",
+              "LocalPort": 31310,
+              "OwningProcess": 4400
+            }
+          ],
+          "firewallRules": [
+            {
+              "Name": "BreevLanApi",
+              "DisplayName": "Breev LAN API",
+              "Enabled": "True",
+              "Direction": "Inbound",
+              "Action": "Allow",
+              "Protocol": "TCP",
+              "LocalPort": "31312",
+              "LocalAddress": "192.168.134.154"
+            }
+          ],
+          "apiService": {
+            "Status": "Running",
+            "Name": "BreevLocalApi",
+            "StartType": "Automatic"
+          },
+          "postgresqlService": {
+            "Status": "Running",
+            "Name": "BreevPostgreSQL",
+            "StartType": "Automatic"
+          },
+          "lifecycleState": {
+            "schemaVersion": 2,
+            "action": "Install",
+            "status": "healthy",
+            "lanEndpoint": "192.168.134.154:31312",
+            "failurePoint": "",
+            "error": "",
+            "completedAtUtc": "2026-08-29T18:19:08.1945294Z"
+          },
+          "passed": true
+        }
+      },
+      {
+        "phase": "restart",
+        "passed": true,
+        "startedUtc": "2026-08-29T18:19:53.738453191Z",
+        "finishedUtc": "2026-08-29T18:20:27.575060168Z",
+        "details": {
+          "healthStatusCode": 200,
+          "healthBody": {
+            "apiVersion": "5",
+            "schemaVersion": "6",
+            "status": "healthy",
+            "database": "available"
+          },
+          "listeners": [
+            {
+              "LocalAddress": "::1",
+              "LocalPort": 31311,
+              "OwningProcess": 4444
+            },
+            {
+              "LocalAddress": "192.168.134.154",
+              "LocalPort": 31312,
+              "OwningProcess": 4596
+            },
+            {
+              "LocalAddress": "127.0.0.1",
+              "LocalPort": 31311,
+              "OwningProcess": 4444
+            },
+            {
+              "LocalAddress": "127.0.0.1",
+              "LocalPort": 31310,
+              "OwningProcess": 4596
+            }
+          ],
+          "apiService": {
+            "Status": "Running",
+            "Name": "BreevLocalApi",
+            "StartType": "Automatic"
+          },
+          "postgresqlService": {
+            "Status": "Running",
+            "Name": "BreevPostgreSQL",
+            "StartType": "Automatic"
+          },
+          "hasLanListener": true,
+          "hasLoopbackApi": true,
+          "passed": true
+        }
+      },
+      {
+        "phase": "repair",
+        "passed": true,
+        "startedUtc": "2026-08-29T18:20:43.242865284Z",
+        "finishedUtc": "2026-08-29T18:21:24.328326059Z",
+        "details": {
+          "preCaFingerprint": "01a04eab-69a2-7027-a7d6-23827b415a93|1dda9bcef4a9fce14bac08845a9ecebcb2082eb6765e07bee32c95236e6a79a8",
+          "postCaFingerprint": "01a04eab-69a2-7027-a7d6-23827b415a93|1dda9bcef4a9fce14bac08845a9ecebcb2082eb6765e07bee32c95236e6a79a8",
+          "caStatePreserved": true,
+          "pgVersion": "18",
+          "markerSurvived": true,
+          "damagedHealthUnreachable": true,
+          "postHealthStatus": "healthy",
+          "postHealthDatabase": "available",
+          "listeners": [
+            {
+              "LocalAddress": "::1",
+              "LocalPort": 31311,
+              "OwningProcess": 4420
+            },
+            {
+              "LocalAddress": "192.168.134.154",
+              "LocalPort": 31312,
+              "OwningProcess": 2052
+            },
+            {
+              "LocalAddress": "127.0.0.1",
+              "LocalPort": 31311,
+              "OwningProcess": 4420
+            },
+            {
+              "LocalAddress": "127.0.0.1",
+              "LocalPort": 31310,
+              "OwningProcess": 2052
+            }
+          ],
+          "passed": true
+        }
+      },
+      {
+        "phase": "rollback",
+        "passed": true,
+        "startedUtc": "2026-08-29T18:21:38.792545576Z",
+        "finishedUtc": "2026-08-29T18:22:03.005266806Z",
+        "details": {
+          "injectedFailed": true,
+          "injectedErrorMessage": "Injected lifecycle failure at BeforeReadiness",
+          "apiServiceRolledBack": true,
+          "pgServiceRolledBack": true,
+          "firewallRolledBack": true,
+          "markerSurvived": true,
+          "rollbackLifecycleState": {
+            "schemaVersion": 2,
+            "action": "Install",
+            "status": "failed-data-preserved",
+            "lanEndpoint": "192.168.134.154:31312",
+            "failurePoint": "BeforeReadiness",
+            "error": "Injected lifecycle failure at BeforeReadiness",
+            "completedAtUtc": "2026-08-29T18:21:51.3408845Z"
+          },
+          "restoredHealthy": true,
+          "hasLanListener": true,
+          "hasLoopbackApi": true,
+          "passed": true
+        }
+      },
+      {
+        "phase": "peer-mtls",
+        "passed": true,
+        "finishedUtc": "2026-08-29T18:31:31.723Z",
+        "details": {
+          "aggregatePassed": true
+        }
+      },
+      {
+        "phase": "uninstall",
+        "passed": true,
+        "startedUtc": "2026-08-29T18:32:14.519471172Z",
+        "finishedUtc": "2026-08-29T18:32:17.863010339Z",
+        "details": {
+          "apiServiceAbsent": true,
+          "pgServiceAbsent": true,
+          "firewallRulesCount": 0,
+          "dataRootExists": true,
+          "markerSurvived": true,
+          "pgVersionSurvived": true,
+          "lifecycleState": {
+            "schemaVersion": 2,
+            "action": "Uninstall",
+            "status": "data-preserved",
+            "lanEndpoint": "",
+            "failurePoint": "",
+            "error": "",
+            "completedAtUtc": "2026-08-29T18:32:16.6998342Z"
+          },
+          "listenersCount": 0,
+          "passed": true
+        }
+      },
+      {
+        "phase": "destructive",
+        "passed": true,
+        "startedUtc": "2026-08-29T18:32:34.998190419Z",
+        "finishedUtc": "2026-08-29T18:32:37.287016001Z",
+        "details": {
+          "unauthorizedThrew": true,
+          "unauthorizedErrorMessage": "Destructive removal requires -DataDestructionAuthorized and -DestructionConfirmation destroy-pharmacy-data",
+          "dataRootSurvivesUnauthorized": true,
+          "apiServiceAbsent": true,
+          "pgServiceAbsent": true,
+          "firewallRulesCount": 0,
+          "dataRootGone": false,
+          "installRootGone": false,
+          "listenersCount": 0,
+          "passed": true,
+          "pharmacyDataDestroyed": true,
+          "databaseGone": true,
+          "configGone": true,
+          "markerGone": true,
+          "lifecycleState": {
+            "schemaVersion": 2,
+            "action": "DestructiveUninstall",
+            "status": "data-destroyed"
+          }
+        }
+      }
+    ]
+  }
+}
