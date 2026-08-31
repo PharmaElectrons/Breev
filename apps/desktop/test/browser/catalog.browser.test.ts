@@ -1,7 +1,10 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
 import {
+  CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
   FREE_CORE_CAPABILITY_NAMES,
+  PRODUCT_NAME_TEMPLATES,
+  composeDisplayName,
   LOCAL_API_VERSION,
   LOCAL_SCHEMA_VERSION,
   type IdentityAuthenticatedState,
@@ -19,43 +22,12 @@ const PHARMACY_ID = "019b0000-0000-7000-8000-000000000401";
 
 function composeTestDisplayName(
   mode: ProductDefinitionMode,
-  fields: {
-    readonly company?: string | null;
-    readonly dosageForm?: string | null;
-    readonly manufacturer?: string | null;
-    readonly property?: string | null;
-    readonly size?: string | null;
-    readonly strength?: string | null;
-    readonly subBrand?: string | null;
-    readonly targetAudience?: string | null;
-    readonly tradeName?: string | null;
-    readonly typeOfUse?: string | null;
-  },
+  fields: Readonly<Record<string, string | null | undefined>>,
 ): string {
-  const fieldOrder =
-    mode === "medication"
-      ? (["tradeName", "strength", "dosageForm", "manufacturer"] as const)
-      : ([
-          "company",
-          "subBrand",
-          "typeOfUse",
-          "property",
-          "targetAudience",
-          "size",
-        ] as const);
-
-  const parts: string[] = [];
-  for (const field of fieldOrder) {
-    const value = fields[field];
-    if (typeof value !== "string") {
-      continue;
-    }
-    const normalized = value.trim().replace(/\s+/gu, " ");
-    if (normalized.length > 0) {
-      parts.push(normalized);
-    }
-  }
-  return parts.join(" ");
+  return composeDisplayName(
+    PRODUCT_NAME_TEMPLATES[CURRENT_PRODUCT_NAME_TEMPLATE_VERSION][mode],
+    fields,
+  );
 }
 
 interface CatalogTestRenderer {
@@ -568,15 +540,13 @@ test.describe.serial("Product catalog screens", () => {
     await page.keyboard.press("Enter");
 
     // Record view reached
-    await expect(
-      page.getByTestId("product-display-name"),
-    ).toHaveText("Panadol Extra 500mg Tablet GSK");
-    await expect(
-      page.getByTestId("product-arabic-search-name"),
-    ).toHaveText("بنادول اكسترا");
-    await expect(
-      page.getByTestId("inventory-balance-readonly"),
-    ).toBeVisible();
+    await expect(page.getByTestId("product-display-name")).toHaveText(
+      "Panadol Extra 500mg Tablet GSK",
+    );
+    await expect(page.getByTestId("product-arabic-search-name")).toHaveText(
+      "بنادول اكسترا",
+    );
+    await expect(page.getByTestId("inventory-balance-readonly")).toBeVisible();
 
     // Save evidence screenshot of product form & record
     await page.screenshot({
@@ -762,7 +732,7 @@ test.describe.serial("Product catalog screens", () => {
 
     expect(displayBox).not.toBeNull();
     expect(arabicBox).not.toBeNull();
-    expect((arabicBox?.y ?? 0)).toBeGreaterThan(
+    expect(arabicBox?.y ?? 0).toBeGreaterThan(
       (displayBox?.y ?? 0) + (displayBox?.height ?? 0) - 5,
     );
   });
@@ -795,7 +765,9 @@ test.describe.serial("Product catalog screens", () => {
     await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
     await stubCatalogRoutes(page, { initialProducts: [initialProduct] });
 
-    await page.goto(`${renderer.origin}#/catalog/products/${initialProduct.id}`);
+    await page.goto(
+      `${renderer.origin}#/catalog/products/${initialProduct.id}`,
+    );
 
     const balanceRegion = page.getByRole("region", {
       name: "Read-only inventory balance. Stock cannot be directly modified through Catalog.",
@@ -839,7 +811,9 @@ test.describe.serial("Product catalog screens", () => {
       .click();
 
     await expect(page.getByTestId("product-status-chip")).toHaveText("Merged");
-    await expect(page.getByText("019b0000-0000-7000-8000-000000000999")).toBeVisible();
+    await expect(
+      page.getByText("019b0000-0000-7000-8000-000000000999"),
+    ).toBeVisible();
   });
 
   test("All screens pass Arabic/RTL + English/LTR in both light and dark themes (WCAG 2.2 AA)", async ({

@@ -1,5 +1,8 @@
 import {
+  CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
   PRODUCT_DEFINITION_MODES,
+  PRODUCT_NAME_TEMPLATES,
+  composeDisplayName,
   PRODUCT_FOOD_TIMINGS,
   PRODUCT_STATE_COLORS,
   type CatalogFieldError,
@@ -30,45 +33,21 @@ export interface ProductFormProps {
   readonly onSuccess?: (product: Product) => void;
 }
 
+/**
+ * The live preview the pharmacist watches assemble as they type.
+ *
+ * The field order is not restated here. It is read from the one approved
+ * template in the contract, so the name previewed on screen cannot drift away
+ * from the name the server stores.
+ */
 export function composeProductDisplayName(
   mode: ProductDefinitionMode,
-  fields: {
-    readonly company?: string | null;
-    readonly dosageForm?: string | null;
-    readonly manufacturer?: string | null;
-    readonly property?: string | null;
-    readonly size?: string | null;
-    readonly strength?: string | null;
-    readonly subBrand?: string | null;
-    readonly targetAudience?: string | null;
-    readonly tradeName?: string | null;
-    readonly typeOfUse?: string | null;
-  },
+  fields: Readonly<Record<string, string | null | undefined>>,
 ): string {
-  const fieldOrder =
-    mode === "medication"
-      ? (["tradeName", "strength", "dosageForm", "manufacturer"] as const)
-      : ([
-          "company",
-          "subBrand",
-          "typeOfUse",
-          "property",
-          "targetAudience",
-          "size",
-        ] as const);
-
-  const parts: string[] = [];
-  for (const field of fieldOrder) {
-    const value = fields[field];
-    if (typeof value !== "string") {
-      continue;
-    }
-    const normalized = value.trim().replace(/\s+/gu, " ");
-    if (normalized.length > 0) {
-      parts.push(normalized);
-    }
-  }
-  return parts.join(" ");
+  return composeDisplayName(
+    PRODUCT_NAME_TEMPLATES[CURRENT_PRODUCT_NAME_TEMPLATE_VERSION][mode],
+    fields,
+  );
 }
 
 export interface AbandonedField {

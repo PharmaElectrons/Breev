@@ -1571,6 +1571,126 @@ export type CatalogFieldError = z.infer<typeof catalogFieldErrorSchema>;
 export type CatalogDenialCode = z.infer<typeof catalogDenialCodeSchema>;
 export type CatalogDenial = z.infer<typeof catalogDenialSchema>;
 
+/**
+ * The approved product naming templates, and the total function that applies
+ * them.
+ *
+ * This is a pure policy, not a wire schema, but it lives beside the Product
+ * field schemas above because it is a total function of exactly those fields.
+ * Keeping it here is what makes the approved field order singular: the server
+ * that stores a name, the screen that previews one as the pharmacist types,
+ * and the tests that assert on either all import this one definition, so no
+ * copy of the template can drift away from the others.
+ *
+ * Two rules are structural here rather than merely documented:
+ *
+ * - The Arabic search name is not a parameter of any function below. It is a
+ *   sibling field on the Product, displayed on its own line beneath the English
+ *   name, and no code path can concatenate it into the English display because
+ *   no code path is ever given it.
+ * - The template version is an explicit argument, never an ambient constant. A
+ *   Product stores the version its name was generated under, so a later
+ *   template revision cannot silently rewrite a name that already exists.
+ */
+export type ProductNameFieldsByMode = {
+  readonly [TMode in ProductDefinitionMode]: Extract<
+    ProductDefinition,
+    { mode: TMode }
+  >["fields"];
+};
+
+export const CURRENT_PRODUCT_NAME_TEMPLATE_VERSION = 1 as const;
+
+type ProductNameTemplate = {
+  readonly [
+    TMode in ProductDefinitionMode
+  ]: readonly (keyof ProductNameFieldsByMode[TMode])[];
+};
+
+/**
+ * One approved template exists. A revision adds a version here instead of
+ * editing this entry, because Products already carry version 1 and must keep
+ * regenerating the exact string they were stored with.
+ */
+export const PRODUCT_NAME_TEMPLATES: Readonly<
+  Record<ProductNameTemplateVersion, ProductNameTemplate>
+> = {
+  1: {
+    "general-item": [
+      "company",
+      "subBrand",
+      "typeOfUse",
+      "property",
+      "targetAudience",
+      "size",
+    ],
+    medication: ["tradeName", "strength", "dosageForm", "manufacturer"],
+  },
+};
+
+const DISPLAY_NAME_PART_SEPARATOR = " ";
+const COLLAPSIBLE_WHITESPACE = /\s+/gu;
+
+/**
+ * Joins the parts a template names, in the template's order, skipping the ones
+ * that are not there.
+ *
+ * "Skips cleanly" is achieved by construction rather than by cleanup: an absent
+ * or blank part is never pushed, so the join can leave no doubled separator, no
+ * leading separator, and no trailing separator whatever combination of optional
+ * parts is missing. Each surviving part is trimmed and its internal runs of
+ * whitespace collapsed, so a value typed with stray spacing cannot smuggle a
+ * doubled separator into the middle of a name.
+ *
+ * The joiner reads only the keys the template lists. A field no template names
+ * — the Arabic search name above all — cannot reach the English display even
+ * when it rides along on the record the caller passes in.
+ */
+export function composeDisplayName(
+  fieldOrder: readonly string[],
+  fields: Readonly<Record<string, string | null | undefined>>,
+): string {
+  const parts: string[] = [];
+  for (const field of fieldOrder) {
+    const value = fields[field];
+    if (typeof value !== "string") {
+      continue;
+    }
+    const normalized = value.trim().replace(COLLAPSIBLE_WHITESPACE, " ");
+    if (normalized.length > 0) {
+      parts.push(normalized);
+    }
+  }
+  return parts.join(DISPLAY_NAME_PART_SEPARATOR);
+}
+
+/**
+ * The Product display name for one mode's fields under one approved template
+ * version.
+ *
+ * Deterministic and total: the same inputs always produce the same string, and
+ * no combination of absent optional parts throws. The result is not an
+ * identity — two legitimately distinct Products may generate the same string,
+ * and uniqueness belongs to the internal ID, SKU, barcode, and registration
+ * number instead.
+ */
+export function generateDisplayName<TMode extends ProductDefinitionMode>(
+  mode: TMode,
+  fields: ProductNameFieldsByMode[TMode],
+  templateVersion: ProductNameTemplateVersion,
+): string {
+  return composeDisplayName(
+    PRODUCT_NAME_TEMPLATES[templateVersion][mode],
+    fields,
+  );
+}
+
+export function isProductNameTemplateVersion(
+  value: number,
+): value is ProductNameTemplateVersion {
+  return (PRODUCT_NAME_TEMPLATE_VERSIONS as readonly number[]).includes(value);
+}
+
 export class LocalRestVersionMismatchError extends Error {
   public constructor(
     public readonly receivedApiVersion: string,

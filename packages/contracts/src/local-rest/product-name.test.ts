@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { PRODUCT_NAME_TEMPLATE_VERSIONS } from "@breev/contracts/local-rest";
-
 import {
   CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
+  PRODUCT_NAME_TEMPLATE_VERSIONS,
   PRODUCT_NAME_TEMPLATES,
   composeDisplayName,
   generateDisplayName,
   isProductNameTemplateVersion,
   type GeneralItemNameFields,
   type MedicationNameFields,
-} from "./product-name.js";
+} from "./index.js";
 
 const MEDICATION: MedicationNameFields = {
   tradeName: "Panadol Extra",

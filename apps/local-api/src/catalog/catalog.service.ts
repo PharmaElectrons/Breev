@@ -1,4 +1,7 @@
 import {
+  CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
+  generateDisplayName,
+  isProductNameTemplateVersion,
   catalogDenialSchema,
   productSchema,
   type CatalogDenial,
@@ -30,11 +33,6 @@ import {
   recordPostingResult,
   type PostingCommandReplay,
 } from "../posting/idempotency.js";
-import {
-  CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
-  generateDisplayName,
-  isProductNameTemplateVersion,
-} from "./product-name.js";
 
 const CATALOG_PERMISSION = "catalog.item.manage";
 const BARCODE_LOCK_NAMESPACE = 165_308_863;
