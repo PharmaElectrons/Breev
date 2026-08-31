@@ -131,10 +131,10 @@ function registerMainDeviceHeaderInjection(
           binding === undefined
             ? details.requestHeaders
             : addMainDeviceRequestHeaders(details, {
-                binding,
-                localApiOrigin,
-                trustedWebContentsId: window.webContents.id,
-              }),
+              binding,
+              localApiOrigin,
+              trustedWebContentsId: window.webContents.id,
+            }),
       });
     },
   );
@@ -276,10 +276,10 @@ function toIpcInvocation(event: Electron.IpcMainInvokeEvent): {
       frame === null
         ? null
         : {
-            isMainFrame: frame === event.sender.mainFrame,
-            origin: frame.origin,
-            url: frame.url,
-          },
+          isMainFrame: frame === event.sender.mainFrame,
+          origin: frame.origin,
+          url: frame.url,
+        },
     senderId: event.sender.id,
   };
 }

@@ -14,5 +14,8 @@ test-results
 *.log
 *.tsbuildinfo
 .env
-.env.local
+.env.*
+!.env.example
+!.env.*.example
+.terminal-state/
 skills-lock.json

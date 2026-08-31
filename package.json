@@ -25,6 +25,8 @@
     "check:licence-artifact": "node tooling/licensing/check-artifact.mjs",
     "check:boundaries": "node tooling/boundaries/check.mjs",
     "dev": "pnpm start:local",
+    "dev:main": "node tooling/dev.mjs main",
+    "dev:terminal": "node tooling/dev.mjs terminal",
     "env:check": "node tooling/check-local-env.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

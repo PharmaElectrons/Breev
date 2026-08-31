@@ -1,12 +1,40 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
 
 const root = path.resolve(import.meta.dirname, "..");
+const explicitRole =
+  process.argv.find((arg) => arg.startsWith("--role="))?.split("=")[1]?.trim()
+  ?? (process.argv.includes("--terminal") || process.argv.includes("terminal") ? "terminal" : undefined)
+  ?? (process.argv.includes("--main") || process.argv.includes("main") ? "main" : undefined)
+  ?? process.env.BREEV_DEVICE_ROLE?.trim();
+
+function resolveEnvFile(defaultRelative, roleRelative) {
+  const rolePath = roleRelative ? path.join(root, roleRelative) : undefined;
+  const defaultPath = path.join(root, defaultRelative);
+  if (explicitRole && rolePath && existsSync(rolePath)) {
+    return rolePath;
+  }
+  if (existsSync(defaultPath)) {
+    return defaultPath;
+  }
+  if (rolePath && existsSync(rolePath)) {
+    return rolePath;
+  }
+  return defaultPath;
+}
+
+const desktopRoleFile =
+  explicitRole === "terminal"
+    ? "apps/desktop/.env.terminal"
+    : explicitRole === "main"
+      ? "apps/desktop/.env.main"
+      : undefined;
+
 const files = {
-  desktop: path.join(root, "apps/desktop/.env"),
-  localApi: path.join(root, "apps/local-api/.env"),
-  root: path.join(root, ".env"),
+  desktop: resolveEnvFile("apps/desktop/.env", desktopRoleFile),
+  localApi: resolveEnvFile("apps/local-api/.env", undefined),
+  root: resolveEnvFile(".env", ".env.main"),
 };
 const errors = [];
 
@@ -150,7 +178,7 @@ function validateDesktop(environment, file) {
 }
 
 function readDeviceRole(name) {
-  const value = environments[name].BREEV_DEVICE_ROLE?.trim();
+  const value = explicitRole ?? environments[name].BREEV_DEVICE_ROLE?.trim();
   return value === undefined || value.length === 0 ? "main" : value;
 }
 
