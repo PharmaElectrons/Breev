@@ -170,8 +170,8 @@ describe("identity mutation contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("5");
-    expect(LOCAL_SCHEMA_VERSION).toBe("6");
+    expect(LOCAL_API_VERSION).toBe("6");
+    expect(LOCAL_SCHEMA_VERSION).toBe("7");
   });
 
   it("accepts the healthy handshake", () => {
