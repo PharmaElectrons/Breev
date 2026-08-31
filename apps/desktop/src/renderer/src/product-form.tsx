@@ -580,7 +580,6 @@ export function ProductForm({
             <h2>
               {isEditing ? copy.titles.editProduct : copy.titles.createProduct}
             </h2>
-            <p>{copy.sharing.description}</p>
           </div>
         </header>
 

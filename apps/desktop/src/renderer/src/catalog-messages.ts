@@ -223,10 +223,10 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       title: "رصيد المخزون",
     },
     list: {
-      empty: "لم يتم تعريف أي مواد في الفهرس بعد.",
-      loading: "جارٍ تحميل المواد...",
+      empty: "لم يتم تعريف أي منتجات في الفهرس بعد.",
+      loading: "جارٍ تحميل المنتجات...",
       newProduct: "تعريف منتج جديد",
-      title: "المواد المعرفة",
+      title: "المنتجات المعرّفة",
     },
     modeSwitchModal: {
       abandonedFieldsLead: "سيتم مسح وتفريغ القيم التالية:",
@@ -276,7 +276,7 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
     titles: {
       createProduct: "تعريف منتج جديد",
       editProduct: "تعديل بيانات المنتج",
-      productCatalog: "فهرس المواد",
+      productCatalog: "فهرس المنتجات",
     },
   },
   en: {

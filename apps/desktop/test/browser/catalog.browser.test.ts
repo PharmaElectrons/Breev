@@ -1,24 +1,46 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
 import {
+  BREEV_CSRF_HEADER,
+  BREEV_CSRF_VALUE,
   CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
-  FREE_CORE_CAPABILITY_NAMES,
+  LOCAL_DEVICE_ID_HEADER,
+  LOCAL_DEVICE_SESSION_HEADER,
   PRODUCT_NAME_TEMPLATES,
   composeDisplayName,
-  LOCAL_API_VERSION,
-  LOCAL_SCHEMA_VERSION,
-  type IdentityAuthenticatedState,
+  identityStateSchema,
+  localProofEvidenceContract,
+  parseLocalProofEvidenceResponse,
+  productSchema,
+  type LocalProofEvidenceSuccess,
   type Product,
   type ProductCreateRequest,
   type ProductDefinitionMode,
-  type ProductEditRequest,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Page } from "@playwright/test";
+import {
+  PostgreSqlContainer,
+  type StartedPostgreSqlContainer,
+} from "@testcontainers/postgresql";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
+import { Pool } from "pg";
 
-const PHARMACY_ID = "019b0000-0000-7000-8000-000000000401";
+import {
+  createSeparatedDatabaseRoles,
+  type SeparatedDatabaseRoles,
+} from "../database-roles.js";
+
+const POSTGRES_IMAGE = "postgres:18.6-bookworm";
+const OWNER_USERNAME = "catalog.browser.owner";
+const OWNER_PASSWORD = "catalog browser owner password stays in this test";
+const PHARMACIST_USERNAME = "catalog.browser.pharmacist";
+const PHARMACIST_PASSWORD =
+  "catalog browser pharmacist password stays in this test";
 
 function composeTestDisplayName(
   mode: ProductDefinitionMode,
@@ -30,212 +52,31 @@ function composeTestDisplayName(
   );
 }
 
-interface CatalogTestRenderer {
+interface RendererServer {
   readonly origin: string;
   readonly server: Server;
 }
 
-/**
- * Single network boundary interception helper for Catalog routes.
- *
- * All catalog REST routes are intercepted exclusively through this helper so
- * that when the parallel server lane lands, this interception can be removed
- * or pointed at the real local API without altering test logic.
- */
-export async function stubCatalogRoutes(
-  page: Page,
-  options?: {
-    readonly failValidationOnTradeName?: boolean;
-    readonly initialProducts?: Product[];
-  },
-): Promise<{ getProducts: () => Product[] }> {
-  const products: Product[] = [...(options?.initialProducts ?? [])];
-
-  await page.route("**/catalog/products**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    const method = request.method();
-    const pathname = url.pathname;
-
-    if (method === "GET" && pathname === "/catalog/products") {
-      await route.fulfill({
-        json: { products },
-        status: 200,
-      });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/catalog/products") {
-      const body = request.postDataJSON() as ProductCreateRequest;
-
-      if (
-        options?.failValidationOnTradeName &&
-        body.definition.mode === "medication" &&
-        body.definition.fields.tradeName.includes("INVALID")
-      ) {
-        await route.fulfill({
-          json: {
-            code: "body-invalid",
-            fieldErrors: [
-              {
-                code: "invalid",
-                path: ["definition", "fields", "tradeName"],
-              },
-            ],
-            requestId: "019b0000-0000-7000-8000-000000000099",
-            status: "denied",
-          },
-          status: 400,
-        });
-        return;
-      }
-
-      const displayName =
-        body.definition.mode === "medication"
-          ? composeTestDisplayName("medication", body.definition.fields)
-          : composeTestDisplayName("general-item", body.definition.fields);
-
-      const created: Product = {
-        arabicSearchName: body.arabicSearchName,
-        barcodes: body.barcodes,
-        category: body.category,
-        definition: body.definition,
-        displayName,
-        id: "019b0000-0000-7000-8000-000000000888",
-        instructions: body.instructions,
-        mergedIntoProductId: null,
-        nameTemplateVersion: 1,
-        revision: "1",
-        scientificName: body.scientificName,
-        sharing: body.sharing,
-        stateColours: body.stateColours,
-        status: "active",
-      };
-      products.push(created);
-
-      await route.fulfill({
-        json: created,
-        status: 201,
-      });
-      return;
-    }
-
-    const itemMatch = pathname.match(/^\/catalog\/products\/([^/]+)$/);
-    if (method === "GET" && itemMatch) {
-      const id = itemMatch[1];
-      const found = products.find((p) => p.id === id);
-      if (found) {
-        await route.fulfill({ json: found, status: 200 });
-      } else {
-        await route.fulfill({
-          json: {
-            code: "product-not-found",
-            fieldErrors: [],
-            requestId: "019b0000-0000-7000-8000-000000000098",
-            status: "denied",
-          },
-          status: 404,
-        });
-      }
-      return;
-    }
-
-    if (method === "PUT" && itemMatch) {
-      const id = itemMatch[1];
-      const body = request.postDataJSON() as ProductEditRequest;
-      const index = products.findIndex((p) => p.id === id);
-      const existing = products[index];
-      if (!existing) {
-        await route.fulfill({
-          json: {
-            code: "product-not-found",
-            fieldErrors: [],
-            requestId: "019b0000-0000-7000-8000-000000000097",
-            status: "denied",
-          },
-          status: 404,
-        });
-        return;
-      }
-
-      const displayName =
-        body.definition.mode === "medication"
-          ? composeTestDisplayName("medication", body.definition.fields)
-          : composeTestDisplayName("general-item", body.definition.fields);
-
-      const updated: Product = {
-        ...existing,
-        arabicSearchName: body.arabicSearchName,
-        barcodes: body.barcodes,
-        category: body.category,
-        definition: body.definition,
-        displayName,
-        instructions: body.instructions,
-        revision: String(Number(existing.revision) + 1),
-        scientificName: body.scientificName,
-        sharing: body.sharing,
-        stateColours: body.stateColours,
-      };
-      products[index] = updated;
-
-      await route.fulfill({ json: updated, status: 200 });
-      return;
-    }
-
-    const archiveMatch = pathname.match(
-      /^\/catalog\/products\/([^/]+)\/archivals$/,
-    );
-    if (method === "POST" && archiveMatch) {
-      const id = archiveMatch[1];
-      const index = products.findIndex((p) => p.id === id);
-      const existing = products[index];
-      if (existing) {
-        const updated: Product = {
-          ...existing,
-          revision: String(Number(existing.revision) + 1),
-          status: "archived",
-        };
-        products[index] = updated;
-        await route.fulfill({ json: updated, status: 201 });
-      } else {
-        await route.fulfill({ status: 404 });
-      }
-      return;
-    }
-
-    const mergeMatch = pathname.match(/^\/catalog\/products\/([^/]+)\/merges$/);
-    if (method === "POST" && mergeMatch) {
-      const id = mergeMatch[1];
-      const body = request.postDataJSON() as { survivorProductId: string };
-      const index = products.findIndex((p) => p.id === id);
-      const existing = products[index];
-      if (existing) {
-        const updated: Product = {
-          ...existing,
-          mergedIntoProductId: body.survivorProductId,
-          revision: String(Number(existing.revision) + 1),
-          status: "merged",
-        };
-        products[index] = updated;
-        await route.fulfill({ json: updated, status: 201 });
-      } else {
-        await route.fulfill({ status: 404 });
-      }
-      return;
-    }
-
-    await route.continue();
-  });
-
-  return {
-    getProducts: () => products,
-  };
+interface DesktopFakeOptions {
+  readonly locale?: "ar" | "en";
+  readonly theme?: "dark" | "light";
 }
 
-function sampleMedicationProduct(): Product {
+interface MainDeviceCredentials {
+  readonly deviceId: string;
+  readonly deviceSecret: string;
+  readonly sessionToken: string;
+}
+
+interface ApiResponse {
+  readonly body: unknown;
+  readonly status: number;
+}
+
+function sampleMedicationRequest(barcode: string): ProductCreateRequest {
   return {
     arabicSearchName: "بنادول اكسترا باراسيتامول وكافيين",
-    barcodes: ["5000167000001", "5000167000002"],
+    barcodes: [barcode],
     category: "Analgesic",
     definition: {
       fields: {
@@ -246,17 +87,13 @@ function sampleMedicationProduct(): Product {
       },
       mode: "medication",
     },
-    displayName: "Panadol Extra 500mg/65mg Film Coated Tablet GSK",
-    id: "019b0000-0000-7000-8000-000000000101",
+    idempotencyKey: randomUUID(),
     instructions: {
       foodTiming: "after-food",
       usesPerDay: 3,
       usesPerMonth: null,
       usesPerWeek: null,
     },
-    mergedIntoProductId: null,
-    nameTemplateVersion: 1,
-    revision: "1",
     scientificName: "Paracetamol + Caffeine",
     sharing: {
       aiSharingAllowed: true,
@@ -266,89 +103,62 @@ function sampleMedicationProduct(): Product {
       coldStorageRequired: false,
       manual: "blue",
     },
-    status: "active",
   };
 }
 
-function authenticatedIdentityState(): IdentityAuthenticatedState {
-  return {
-    allowedPermissions: [
-      "attendance.record",
-      "catalog.item.manage",
-      "devices.pair",
-      "identity.roles.manage",
-      "identity.users.manage",
-      "licensing.manage",
-      "pharmacy.settings.manage",
-    ],
-    attendance: null,
-    entitlement: {
-      capabilities: [...FREE_CORE_CAPABILITY_NAMES],
-      licence: null,
-      status: "free-core",
-    },
-    pharmacy: {
-      id: PHARMACY_ID,
-      name: "Breev Catalog Pharmacy",
-    },
-    session: {
-      expiresAt: "2099-01-01T00:00:00.000Z",
-      id: "019b0000-0000-7000-8000-000000000405",
-    },
-    settings: { attendanceEnabled: false, revision: "1" },
-    state: "authenticated",
-    user: {
-      displayName: "Pharmacist Manager",
-      id: "019b0000-0000-7000-8000-000000000403",
-      revision: "1",
-      role: "pharmacist",
-      status: "active",
-      username: "pharmacist.lead",
-    },
-  };
-}
-
-async function startCatalogRenderer(): Promise<CatalogTestRenderer> {
+async function startRendererServer(
+  apiOrigin: string,
+  credentials: MainDeviceCredentials,
+): Promise<RendererServer> {
   const rendererRoot = path.resolve(import.meta.dirname, "../../out/renderer");
-  const authState = authenticatedIdentityState();
 
   const server = createServer(async (request, response) => {
-    if (request.url === "/health") {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(
-        JSON.stringify({
-          apiVersion: LOCAL_API_VERSION,
-          database: "available",
-          schemaVersion: LOCAL_SCHEMA_VERSION,
-          status: "healthy",
-        }),
-      );
-      return;
-    }
-
-    if (request.url === "/identity/state") {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify(authState));
-      return;
-    }
-
-    if (request.url === "/favicon.ico") {
-      response.writeHead(204).end();
-      return;
-    }
-
-    const pathname = request.url === "/" ? "/index.html" : request.url;
-    if (pathname === undefined || pathname.includes("..")) {
-      response.writeHead(403).end();
-      return;
-    }
-
-    const cleanPath = pathname.split("?")[0];
-    const file = path.resolve(rendererRoot, `.${cleanPath}`);
-    const extension = path.extname(file);
-
     try {
-      const content = await readFile(file);
+      if (request.url === "/health") {
+        const upstream = await fetch(`${apiOrigin}/health`);
+        response.writeHead(upstream.status, {
+          "content-type":
+            upstream.headers.get("content-type") ?? "application/json",
+        });
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+        return;
+      }
+
+      if (
+        request.url?.startsWith("/identity/") ||
+        request.url === "/catalog/products" ||
+        request.url?.startsWith("/catalog/products/")
+      ) {
+        const body = await readRequestBody(request);
+        const upstream = await fetch(`${apiOrigin}${request.url}`, {
+          ...(body.length === 0 ? {} : { body }),
+          headers: requestHeaders(credentials, body.length > 0),
+          method: request.method ?? "GET",
+        });
+        response.writeHead(upstream.status, {
+          "cache-control": "no-store",
+          "content-type":
+            upstream.headers.get("content-type") ?? "application/json",
+        });
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+        return;
+      }
+
+      if (request.url === "/favicon.ico") {
+        response.writeHead(204).end();
+        return;
+      }
+
+      const pathname = request.url === "/" ? "/index.html" : request.url;
+      if (pathname === undefined || pathname.includes("..")) {
+        response.writeHead(403).end();
+        return;
+      }
+
+      const cleanPath = pathname.split("?")[0];
+      const filePath = path.resolve(rendererRoot, `.${cleanPath}`);
+      const extension = path.extname(filePath);
+      const content = await readFile(filePath);
       response.writeHead(200, {
         "content-type":
           extension === ".html"
@@ -359,33 +169,21 @@ async function startCatalogRenderer(): Promise<CatalogTestRenderer> {
       });
       response.end(content);
     } catch {
-      response.writeHead(404).end();
+      response.writeHead(502, { "content-type": "application/json" });
+      response.end("{}");
     }
   });
-
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => resolve());
-  });
-
-  const address = server.address();
-  if (address === null || typeof address === "string") {
-    throw new Error("Could not reserve a renderer port");
-  }
-
+  const port = await listen(server);
   return {
-    origin: `http://127.0.0.1:${address.port}`,
+    origin: `http://127.0.0.1:${port}`,
     server,
   };
 }
 
-async function setupPage(
+async function installDesktopFake(
   page: Page,
-  origin: string,
-  options?: {
-    readonly locale?: "ar" | "en";
-    readonly theme?: "dark" | "light";
-  },
+  localApiOrigin: string,
+  options: DesktopFakeOptions = {},
 ): Promise<void> {
   const locale = options?.locale ?? "en";
   const theme = options?.theme ?? "light";
@@ -417,12 +215,22 @@ async function setupPage(
         writable: false,
       });
     },
-    { apiOrigin: origin, initialLocale: locale, initialTheme: theme },
+    { apiOrigin: localApiOrigin, initialLocale: locale, initialTheme: theme },
   );
 }
 
 test.describe.serial("Product catalog screens", () => {
-  let renderer: CatalogTestRenderer;
+  let administrator: Pool;
+  let api: ChildProcessWithoutNullStreams | undefined;
+  let apiOrigin: string;
+  let credentials: MainDeviceCredentials;
+  let databaseRoles: SeparatedDatabaseRoles;
+  let inventoryProduct: Product;
+  let matrixProduct: Product;
+  let mergeProduct: Product;
+  let mergeSurvivor: Product;
+  let postgres: StartedPostgreSqlContainer;
+  let renderer: RendererServer;
   const evidenceDir = path.resolve(
     import.meta.dirname,
     "../../../../evidence/issue-45/after",
@@ -435,22 +243,138 @@ test.describe.serial("Product catalog screens", () => {
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
     await mkdir(testResultsDir, { recursive: true });
-    renderer = await startCatalogRenderer();
+    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    credentials = createMainDeviceCredentials();
+    const apiPort = await reservePort();
+    apiOrigin = `http://127.0.0.1:${apiPort}`;
+    api = spawnLocalApi(apiPort, databaseRoles, credentials);
+    await waitForHealth(apiOrigin);
+    administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
+
+    const bootstrapped = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/identity/bootstrap",
+      {
+        owner: {
+          displayName: "Catalog Browser Owner",
+          password: OWNER_PASSWORD,
+          username: OWNER_USERNAME,
+        },
+        pharmacyName: "Breev Catalog Browser Pharmacy",
+      },
+    );
+    expect(bootstrapped.status).toBe(201);
+    const ownerState = identityStateSchema.parse(bootstrapped.body);
+    expect(ownerState.state).toBe("authenticated");
+    if (ownerState.state !== "authenticated") {
+      throw new Error("Catalog browser owner was not authenticated");
+    }
+
+    const challenge = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/identity/step-up-challenges",
+      {
+        action: "identity.user.create",
+        idempotencyKey: randomUUID(),
+      },
+    );
+    expect(challenge.status).toBe(201);
+    const challengeId = String(
+      (challenge.body as { id?: string } | undefined)?.id ?? "",
+    );
+    expect(challengeId).not.toBe("");
+    const approved = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "POST",
+      `/identity/step-up-challenges/${challengeId}/approve`,
+      { idempotencyKey: randomUUID(), password: OWNER_PASSWORD },
+    );
+    expect(approved.status).toBe(200);
+    const pharmacist = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/identity/users",
+      {
+        challengeId,
+        displayName: "Catalog Browser Pharmacist",
+        idempotencyKey: randomUUID(),
+        password: PHARMACIST_PASSWORD,
+        role: "pharmacist",
+        username: PHARMACIST_USERNAME,
+      },
+    );
+    expect(pharmacist.status).toBe(201);
+    const pharmacistId = String(
+      (pharmacist.body as { id?: string } | undefined)?.id ?? "",
+    );
+    expect(pharmacistId).not.toBe("");
+
+    await grantCatalogPermission(
+      administrator,
+      ownerState.pharmacy.id,
+      pharmacistId,
+      ownerState.user.id,
+    );
+    const login = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/identity/login",
+      { password: PHARMACIST_PASSWORD, username: PHARMACIST_USERNAME },
+    );
+    expect(login.status).toBe(200);
+    const pharmacistState = identityStateSchema.parse(login.body);
+    expect(pharmacistState.state).toBe("authenticated");
+    if (pharmacistState.state !== "authenticated") {
+      throw new Error("Catalog browser pharmacist was not authenticated");
+    }
+    expect(pharmacistState.allowedPermissions).toContain("catalog.item.manage");
+    await getProofEvidence(apiOrigin, credentials);
+
+    inventoryProduct = await createCatalogProduct(
+      apiOrigin,
+      credentials,
+      sampleMedicationRequest("5000167000101"),
+    );
+    mergeProduct = await createCatalogProduct(
+      apiOrigin,
+      credentials,
+      sampleMedicationRequest("5000167000102"),
+    );
+    mergeSurvivor = await createCatalogProduct(
+      apiOrigin,
+      credentials,
+      sampleMedicationRequest("5000167000103"),
+    );
+    matrixProduct = await createCatalogProduct(
+      apiOrigin,
+      credentials,
+      sampleMedicationRequest("5000167000104"),
+    );
+    renderer = await startRendererServer(apiOrigin, credentials);
   });
 
   test.afterAll(async () => {
-    await new Promise<void>((resolve, reject) => {
-      renderer.server.close((error) =>
-        error === undefined ? resolve() : reject(error),
-      );
-    });
+    await closeServer(renderer?.server);
+    await stopProcess(api);
+    await administrator?.end().catch(() => undefined);
+    await postgres?.stop().catch(() => undefined);
   });
 
   test("Keyboard-only entry of a full medication, start to submit — no mouse", async ({
     page,
   }) => {
-    await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
-    await stubCatalogRoutes(page);
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
     await expect(
@@ -555,8 +479,10 @@ test.describe.serial("Product catalog screens", () => {
   });
 
   test("Keyboard-only entry of a full general item", async ({ page }) => {
-    await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
-    await stubCatalogRoutes(page);
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
     await expect(
@@ -625,13 +551,19 @@ test.describe.serial("Product catalog screens", () => {
   test("Validation failure keeps the entered value and keeps focus on the failing field", async ({
     page,
   }) => {
-    await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
-    await stubCatalogRoutes(page, { failValidationOnTradeName: true });
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
     const tradeNameInput = page.getByLabel("Trade name *");
-    await tradeNameInput.fill("INVALID_DRUG_NAME");
+    const invalidTradeName = "I".repeat(121);
+    await tradeNameInput.evaluate((element) =>
+      element.removeAttribute("maxlength"),
+    );
+    await tradeNameInput.fill(invalidTradeName);
     const strengthInput = page.getByLabel("Strength");
     await strengthInput.fill("500mg");
     const arabicInput = page.getByLabel("Arabic search name");
@@ -642,13 +574,15 @@ test.describe.serial("Product catalog screens", () => {
 
     // Verifies error alert is shown
     await expect(page.locator(".denial-alert")).toBeVisible();
-    await expect(page.getByText("Invalid value.")).toBeVisible();
+    await expect(
+      page.getByText("Value exceeds maximum allowed length."),
+    ).toBeVisible();
     await expect(
       page.getByText("The submitted product data is invalid."),
     ).toBeVisible();
 
     // Verifies entered values are RETAINED
-    await expect(tradeNameInput).toHaveValue("INVALID_DRUG_NAME");
+    await expect(tradeNameInput).toHaveValue(invalidTradeName);
     await expect(strengthInput).toHaveValue("500mg");
     await expect(arabicInput).toHaveValue("دواء تجريبي");
 
@@ -660,8 +594,10 @@ test.describe.serial("Product catalog screens", () => {
   test("Mode switching displays confirmation dialog with abandoned fields", async ({
     page,
   }) => {
-    await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
-    await stubCatalogRoutes(page);
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
@@ -711,8 +647,10 @@ test.describe.serial("Product catalog screens", () => {
   test("The Arabic search name appears below the English name and never inside it", async ({
     page,
   }) => {
-    await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
-    await stubCatalogRoutes(page);
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
@@ -740,8 +678,10 @@ test.describe.serial("Product catalog screens", () => {
   test("The display name is not reachable as an editable control by keyboard", async ({
     page,
   }) => {
-    await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
-    await stubCatalogRoutes(page);
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
@@ -761,12 +701,13 @@ test.describe.serial("Product catalog screens", () => {
   test("The inventory balance renders read-only and is announced as read-only to assistive technology", async ({
     page,
   }) => {
-    const initialProduct = sampleMedicationProduct();
-    await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
-    await stubCatalogRoutes(page, { initialProducts: [initialProduct] });
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
 
     await page.goto(
-      `${renderer.origin}#/catalog/products/${initialProduct.id}`,
+      `${renderer.origin}#/catalog/products/${inventoryProduct.id}`,
     );
 
     const balanceRegion = page.getByRole("region", {
@@ -787,11 +728,12 @@ test.describe.serial("Product catalog screens", () => {
   test("Archive and merge actions work on referenced products without delete", async ({
     page,
   }) => {
-    const product = sampleMedicationProduct();
-    await setupPage(page, renderer.origin, { locale: "en", theme: "light" });
-    await stubCatalogRoutes(page, { initialProducts: [product] });
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
 
-    await page.goto(`${renderer.origin}#/catalog/products/${product.id}`);
+    await page.goto(`${renderer.origin}#/catalog/products/${mergeProduct.id}`);
 
     // Verify NO delete button exists in the DOM
     await expect(
@@ -802,24 +744,19 @@ test.describe.serial("Product catalog screens", () => {
     await page.getByRole("button", { name: "Merge product" }).click();
     const mergeDialog = page.getByRole("dialog");
     await expect(mergeDialog).toBeVisible();
-    await page
-      .getByLabel("Survivor Product ID (UUID)")
-      .fill("019b0000-0000-7000-8000-000000000999");
+    await page.getByLabel("Survivor Product ID (UUID)").fill(mergeSurvivor.id);
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Confirm merge" })
       .click();
 
     await expect(page.getByTestId("product-status-chip")).toHaveText("Merged");
-    await expect(
-      page.getByText("019b0000-0000-7000-8000-000000000999"),
-    ).toBeVisible();
+    await expect(page.getByText(mergeSurvivor.id)).toBeVisible();
   });
 
   test("All screens pass Arabic/RTL + English/LTR in both light and dark themes (WCAG 2.2 AA)", async ({
     browser,
   }) => {
-    const medication = sampleMedicationProduct();
     const locales = ["en", "ar"] as const;
     const themes = ["light", "dark"] as const;
 
@@ -827,8 +764,7 @@ test.describe.serial("Product catalog screens", () => {
       for (const theme of themes) {
         const context = await browser.newContext();
         const page = await context.newPage();
-        await setupPage(page, renderer.origin, { locale, theme });
-        await stubCatalogRoutes(page, { initialProducts: [medication] });
+        await installDesktopFake(page, renderer.origin, { locale, theme });
 
         // 1. Product Form
         await page.goto(`${renderer.origin}#/catalog/products/new`);
@@ -865,7 +801,7 @@ test.describe.serial("Product catalog screens", () => {
 
         // 2. Product Record View
         await page.goto(
-          `${renderer.origin}#/catalog/products/${medication.id}`,
+          `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
         );
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
         await expect(page.locator("html")).toHaveAttribute(
@@ -892,3 +828,233 @@ test.describe.serial("Product catalog screens", () => {
     }
   });
 });
+
+async function readRequestBody(
+  request: import("node:http").IncomingMessage,
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+function spawnLocalApi(
+  port: number,
+  databaseRoles: SeparatedDatabaseRoles,
+  credentials: MainDeviceCredentials,
+): ChildProcessWithoutNullStreams {
+  return spawn(
+    process.execPath,
+    [path.resolve(import.meta.dirname, "../../../local-api/dist/main.js")],
+    {
+      env: {
+        ...process.env,
+        API_HOST: "127.0.0.1",
+        API_PORT: String(port),
+        BREEV_INSTALLATION_STATE: "ready",
+        BREEV_MAIN_DEVICE_ID: credentials.deviceId,
+        BREEV_MAIN_DEVICE_SECRET: credentials.deviceSecret,
+        BREEV_MAIN_DEVICE_SESSION: credentials.sessionToken,
+        DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+        DATABASE_URL: databaseRoles.applicationUrl,
+      },
+    },
+  );
+}
+
+function createMainDeviceCredentials(): MainDeviceCredentials {
+  return {
+    deviceId: createUuidV7(),
+    deviceSecret: randomBytes(32).toString("base64url"),
+    sessionToken: randomBytes(32).toString("base64url"),
+  };
+}
+
+function createUuidV7(): string {
+  const bytes = randomBytes(16);
+  bytes.writeUIntBE(Date.now(), 0, 6);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x70;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function requestHeaders(
+  credentials: MainDeviceCredentials,
+  json: boolean,
+): Record<string, string> {
+  return {
+    Accept: "application/json",
+    Authorization: `Breev-Device ${credentials.deviceSecret}`,
+    ...(json ? { "Content-Type": "application/json" } : {}),
+    [BREEV_CSRF_HEADER]: BREEV_CSRF_VALUE,
+    [LOCAL_DEVICE_ID_HEADER]: credentials.deviceId,
+    [LOCAL_DEVICE_SESSION_HEADER]: credentials.sessionToken,
+    Origin: "breev://app",
+  };
+}
+
+async function requestLocalApi(
+  apiOrigin: string,
+  credentials: MainDeviceCredentials,
+  method: "GET" | "POST",
+  route: string,
+  body?: unknown,
+): Promise<ApiResponse> {
+  const response = await fetch(`${apiOrigin}${route}`, {
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    headers: requestHeaders(credentials, body !== undefined),
+    method,
+  });
+  const text = await response.text();
+  return {
+    body: text.length === 0 ? undefined : (JSON.parse(text) as unknown),
+    status: response.status,
+  };
+}
+
+async function getProofEvidence(
+  apiOrigin: string,
+  credentials: MainDeviceCredentials,
+): Promise<LocalProofEvidenceSuccess> {
+  const response = await fetch(
+    new URL(localProofEvidenceContract.path, apiOrigin),
+    { headers: requestHeaders(credentials, false) },
+  );
+  const body = parseLocalProofEvidenceResponse(
+    response.status,
+    await response.json(),
+  );
+  if ("status" in body) {
+    throw new Error(`Proof evidence was denied: ${body.code}`);
+  }
+  return body;
+}
+
+async function createCatalogProduct(
+  apiOrigin: string,
+  credentials: MainDeviceCredentials,
+  request: ProductCreateRequest,
+): Promise<Product> {
+  const response = await requestLocalApi(
+    apiOrigin,
+    credentials,
+    "POST",
+    "/catalog/products",
+    request,
+  );
+  expect(response.status, JSON.stringify(response.body)).toBe(201);
+  const product = productSchema.parse(response.body);
+  expect(product.displayName).toBe(
+    composeTestDisplayName(product.definition.mode, product.definition.fields),
+  );
+  return product;
+}
+
+async function grantCatalogPermission(
+  administrator: Pool,
+  pharmacyId: string,
+  pharmacistId: string,
+  ownerId: string,
+): Promise<void> {
+  const role = await administrator.query<{ id: string }>(
+    "select role_id as id from identity_users where id = $1",
+    [pharmacistId],
+  );
+  const roleId = role.rows[0]?.id;
+  expect(roleId).toBeDefined();
+  await administrator.query(
+    `insert into role_permission_grants (
+       pharmacy_id, role_id, permission_name, granted_by
+     ) values ($1, $2, 'catalog.item.manage', $3)
+     on conflict (role_id, permission_name) do nothing`,
+    [pharmacyId, roleId, ownerId],
+  );
+  await administrator.query(
+    "update pharmacy_roles set revision = revision + 1 where id = $1",
+    [roleId],
+  );
+  await administrator.query(
+    "update pharmacies set identity_revision = identity_revision + 1 where id = $1",
+    [pharmacyId],
+  );
+}
+
+async function waitForHealth(baseUrl: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${baseUrl}/health`);
+      const body = (await response.json()) as { status?: string };
+      if (body.status === "healthy") {
+        return;
+      }
+    } catch {
+      await delay(100);
+    }
+  }
+  throw new Error(`The local API did not report healthy at ${baseUrl}`);
+}
+
+async function reservePort(): Promise<number> {
+  const server = createTcpServer();
+  const port = await new Promise<number>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error("Could not reserve a loopback port"));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error === undefined ? resolve() : reject(error)));
+  });
+  return port;
+}
+
+async function listen(server: Server): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error("Could not reserve a loopback port"));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+}
+
+async function closeServer(server: Server | undefined): Promise<void> {
+  if (server === undefined) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error === undefined ? resolve() : reject(error)));
+  });
+}
+
+async function stopProcess(
+  child: ChildProcessWithoutNullStreams | undefined,
+): Promise<void> {
+  if (child === undefined || child.exitCode !== null) {
+    return;
+  }
+  child.kill("SIGTERM");
+  await new Promise<void>((resolve) => {
+    child.once("exit", () => resolve());
+    setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve();
+    }, 5_000).unref();
+  });
+}
+
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}

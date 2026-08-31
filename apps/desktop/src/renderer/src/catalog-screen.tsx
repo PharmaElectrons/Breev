@@ -170,9 +170,6 @@ export function CatalogRouteView({
         <header className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4">
           <div>
             <h2 className="text-xl font-bold">{copy.list.title}</h2>
-            <p className="text-sm text-muted-foreground">
-              {copy.sharing.description}
-            </p>
           </div>
           <button
             className="primary-button"
