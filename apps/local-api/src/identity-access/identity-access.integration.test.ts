@@ -113,7 +113,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ownerUsername = user?.username ?? "";
     ownerPassword =
       ownerUsername === "first.owner" ? OWNER_PASSWORD : SECOND_OWNER_PASSWORD;
-    expect(success?.body?.allowedPermissions).toHaveLength(11);
+    expect(success?.body?.allowedPermissions).toHaveLength(12);
 
     const roles = await request(credentials, "GET", "/identity/roles");
     expect(roles.status, failureContext([roles])).toBe(200);
@@ -762,7 +762,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     const accountantRoleId =
       roleRows?.find((role) => role.key === "accountant")?.id ?? "";
     const permissionNames = roles.body?.permissions as string[];
-    expect(permissionNames).toHaveLength(11);
+    expect(permissionNames).toHaveLength(12);
 
     for (const permission of permissionNames) {
       const challenge = await approvedChallenge(
