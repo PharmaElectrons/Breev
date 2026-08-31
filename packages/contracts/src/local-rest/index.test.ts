@@ -2,6 +2,26 @@ import { describe, expect, it } from "vitest";
 
 import {
   attendanceEventRequestSchema,
+  catalogDenialCodeSchema,
+  catalogDenialSchema,
+  productArchiveContract,
+  productArchivePath,
+  productArchiveRequestSchema,
+  productCreateContract,
+  productCreateRequestSchema,
+  productDefinitionSchema,
+  productEditContract,
+  productEditRequestSchema,
+  productInstructionsSchema,
+  productMergeContract,
+  productMergePath,
+  productMergeRequestSchema,
+  productPath,
+  productReadContract,
+  productSchema,
+  productStateColoursSchema,
+  CATALOG_CONTRACTS,
+  CATALOG_DENIAL_CODES,
   identityCreateUserRequestSchema,
   identityStepUpApproveRequestSchema,
   identityStepUpCreateRequestSchema,
@@ -530,6 +550,371 @@ describe("terminal pairing contracts", () => {
         sessionId: SESSION_ID,
         terminalName: "Counter 2",
       }).success,
+    ).toBe(false);
+  });
+});
+
+const PRODUCT_ID = "0198e7ce-7685-7000-8000-0000000000c1";
+const SURVIVOR_PRODUCT_ID = "0198e7ce-7685-7000-8000-0000000000c2";
+
+const MEDICATION_DEFINITION = {
+  mode: "medication",
+  fields: {
+    tradeName: "Panadol Extra",
+    strength: "500 mg",
+    dosageForm: "Tablet",
+    manufacturer: "GSK",
+  },
+} as const;
+
+const GENERAL_ITEM_DEFINITION = {
+  mode: "general-item",
+  fields: {
+    company: "Nivea",
+    subBrand: "Sun Protect",
+    typeOfUse: "Sunscreen Lotion",
+    property: "SPF 50",
+    targetAudience: "Kids",
+    size: "200 ml",
+  },
+} as const;
+
+const PRODUCT_ATTRIBUTES = {
+  arabicSearchName: "بنادول إكسترا",
+  barcodes: ["6221033000101"],
+  category: "Analgesics",
+  definition: MEDICATION_DEFINITION,
+  instructions: {
+    usesPerDay: 3,
+    usesPerWeek: null,
+    usesPerMonth: null,
+    foodTiming: "after-food",
+  },
+  scientificName: "Paracetamol",
+  sharing: { externallyVisible: true, aiSharingAllowed: false },
+  stateColours: { manual: "red", coldStorageRequired: false },
+} as const;
+
+const PRODUCT = {
+  ...PRODUCT_ATTRIBUTES,
+  displayName: "Panadol Extra 500 mg Tablet GSK",
+  id: PRODUCT_ID,
+  mergedIntoProductId: null,
+  nameTemplateVersion: 1,
+  revision: "1",
+  status: "active",
+} as const;
+
+describe("catalog product contracts", () => {
+  it("accepts a create body in either definition mode", () => {
+    const create = { ...PRODUCT_ATTRIBUTES, idempotencyKey: COMMAND_ID };
+    expect(productCreateRequestSchema.parse(create)).toEqual(create);
+
+    const generalItem = { ...create, definition: GENERAL_ITEM_DEFINITION };
+    expect(productCreateRequestSchema.parse(generalItem)).toEqual(generalItem);
+  });
+
+  it("accepts an edit, an archive, and a merge command", () => {
+    const edit = {
+      ...PRODUCT_ATTRIBUTES,
+      expectedRevision: "4",
+      idempotencyKey: COMMAND_ID,
+    };
+    expect(productEditRequestSchema.parse(edit)).toEqual(edit);
+
+    const archive = { expectedRevision: "4", idempotencyKey: COMMAND_ID };
+    expect(productArchiveRequestSchema.parse(archive)).toEqual(archive);
+
+    const merge = { ...archive, survivorProductId: SURVIVOR_PRODUCT_ID };
+    expect(productMergeRequestSchema.parse(merge)).toEqual(merge);
+  });
+
+  it("makes free-text entry of the generated name impossible on every request", () => {
+    // Not refused by a validation rule that could be relaxed: the field simply
+    // is not part of any request shape, and the shapes are strict.
+    for (const [schema, body] of [
+      [
+        productCreateRequestSchema,
+        { ...PRODUCT_ATTRIBUTES, idempotencyKey: COMMAND_ID },
+      ],
+      [
+        productEditRequestSchema,
+        {
+          ...PRODUCT_ATTRIBUTES,
+          expectedRevision: "4",
+          idempotencyKey: COMMAND_ID,
+        },
+      ],
+    ] as const) {
+      expect(schema.safeParse(body).success).toBe(true);
+      expect(
+        schema.safeParse({ ...body, displayName: "Anything At All" }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({ ...body, nameTemplateVersion: 1 }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("owns no stock quantity, balance, or expiry anywhere in the family", () => {
+    // Catalog does not own them, so there is no field for a route to write and
+    // no field for a response to leak. Absence is the mechanism.
+    const create = { ...PRODUCT_ATTRIBUTES, idempotencyKey: COMMAND_ID };
+    for (const stockField of [
+      "quantity",
+      "stockBalance",
+      "onHand",
+      "inventoryBalance",
+      "expiryDate",
+      "expiresAt",
+    ]) {
+      expect(
+        productCreateRequestSchema.safeParse({ ...create, [stockField]: 10 })
+          .success,
+        stockField,
+      ).toBe(false);
+      expect(
+        productSchema.safeParse({ ...PRODUCT, [stockField]: 10 }).success,
+        stockField,
+      ).toBe(false);
+    }
+    expect(Object.keys(productSchema.shape)).not.toContain("quantity");
+    expect(Object.keys(productSchema.shape)).not.toContain("expiryDate");
+  });
+
+  it("carries only the active mode's fields, so a mode switch cannot hold two field sets at once", () => {
+    expect(
+      productDefinitionSchema.safeParse({
+        mode: "medication",
+        fields: { ...MEDICATION_DEFINITION.fields, company: "Nivea" },
+      }).success,
+    ).toBe(false);
+    expect(
+      productDefinitionSchema.safeParse({
+        mode: "general-item",
+        fields: GENERAL_ITEM_DEFINITION.fields,
+        medicationFields: MEDICATION_DEFINITION.fields,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires the mandatory naming field and keeps every optional one explicitly present", () => {
+    expect(
+      productDefinitionSchema.safeParse({
+        mode: "medication",
+        fields: { ...MEDICATION_DEFINITION.fields, tradeName: "" },
+      }).success,
+    ).toBe(false);
+    // Absent is not the same as unknown: an optional part is always sent, and
+    // null is how the pharmacist says they left it empty.
+    expect(
+      productDefinitionSchema.parse({
+        mode: "medication",
+        fields: {
+          tradeName: "Panadol Extra",
+          strength: null,
+          dosageForm: null,
+          manufacturer: null,
+        },
+      }),
+    ).toMatchObject({ fields: { strength: null } });
+    expect(
+      productDefinitionSchema.safeParse({
+        mode: "medication",
+        fields: { tradeName: "Panadol Extra" },
+      }).success,
+    ).toBe(false);
+    expect(
+      productDefinitionSchema.safeParse({
+        mode: "medication",
+        fields: { ...MEDICATION_DEFINITION.fields, strength: " 500 mg" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("reads a product back with its generated name, template version, and lifecycle", () => {
+    expect(productSchema.parse(PRODUCT)).toEqual(PRODUCT);
+    expect(
+      productSchema.parse({
+        ...PRODUCT,
+        status: "merged",
+        mergedIntoProductId: SURVIVOR_PRODUCT_ID,
+      }),
+    ).toMatchObject({ mergedIntoProductId: SURVIVOR_PRODUCT_ID });
+    expect(
+      productSchema.safeParse({ ...PRODUCT, nameTemplateVersion: 2 }).success,
+    ).toBe(false);
+  });
+
+  it("treats the generated name as a label rather than an identity", () => {
+    // Two legitimately distinct products may generate the same string.
+    // Uniqueness belongs to the internal id, SKU, barcode, and registration
+    // number, so nothing here refuses the duplicate.
+    expect(
+      productSchema.safeParse({ ...PRODUCT, id: SURVIVOR_PRODUCT_ID }).success,
+    ).toBe(true);
+  });
+
+  it("persists the sharing controls as metadata and never as an authority", () => {
+    const restricted = {
+      ...PRODUCT,
+      sharing: { externallyVisible: false, aiSharingAllowed: false },
+    };
+    expect(productSchema.parse(restricted).sharing).toEqual({
+      externallyVisible: false,
+      aiSharingAllowed: false,
+    });
+    // A permission or entitlement is what decides access, and neither is
+    // expressible in this object.
+    expect(Object.keys(productSchema.shape.sharing.shape)).toEqual([
+      "externallyVisible",
+      "aiSharingAllowed",
+    ]);
+  });
+
+  it("exposes no delete, cleanup, or repair path in the whole family", () => {
+    for (const contract of CATALOG_CONTRACTS) {
+      expect(contract.method, contract.path).not.toBe("DELETE");
+      expect(["GET", "POST", "PUT"], contract.path).toContain(contract.method);
+      expect(contract.path, contract.path).not.toMatch(
+        /delete|remove|purge|cleanup|repair|destroy/u,
+      );
+    }
+    expect(CATALOG_CONTRACTS).toHaveLength(6);
+    expect(Object.keys(productSchema.shape)).not.toContain("deleted");
+    expect(Object.keys(productSchema.shape)).not.toContain("deletedAt");
+  });
+
+  it("builds every path the routes declare", () => {
+    expect(productPath(PRODUCT_ID)).toBe(`/catalog/products/${PRODUCT_ID}`);
+    expect(productArchivePath(PRODUCT_ID)).toBe(
+      `/catalog/products/${PRODUCT_ID}/archivals`,
+    );
+    expect(productMergePath(PRODUCT_ID)).toBe(
+      `/catalog/products/${PRODUCT_ID}/merges`,
+    );
+    expect(productReadContract.path).toBe(productPath(":productId"));
+    expect(productEditContract.path).toBe("/catalog/products/:productId");
+    expect(productArchiveContract.path).toBe(
+      "/catalog/products/:productId/archivals",
+    );
+    expect(productMergeContract.path).toBe(
+      "/catalog/products/:productId/merges",
+    );
+    expect(productCreateContract.path).toBe("/catalog/products");
+  });
+
+  it("answers a permission refusal with the identity family and its own refusals with the catalog family", () => {
+    expect(productCreateContract.responses[403]).toBe(
+      productEditContract.responses[403],
+    );
+    expect(
+      productCreateContract.responses[401].safeParse({
+        status: "denied",
+        code: "permission-denied",
+        requestId: PRODUCT_ID,
+      }).success,
+    ).toBe(true);
+    expect(catalogDenialCodeSchema.safeParse("permission-denied").success).toBe(
+      false,
+    );
+    expect(CATALOG_DENIAL_CODES).toContain("product-not-found");
+    expect(CATALOG_DENIAL_CODES).toContain("version-conflict");
+    expect(CATALOG_DENIAL_CODES).toContain("merge-into-self");
+  });
+
+  it("names the failing field so a screen can keep the value and the focus", () => {
+    const denial = {
+      code: "body-invalid",
+      fieldErrors: [
+        { code: "required", path: ["definition", "fields", "tradeName"] },
+        { code: "too-long", path: ["barcodes", 0] },
+      ],
+      requestId: PRODUCT_ID,
+      status: "denied",
+    };
+    expect(catalogDenialSchema.parse(denial)).toEqual(denial);
+    expect(productCreateContract.responses[400].parse(denial)).toEqual(denial);
+
+    // The list is always present, and empty for a denial that is not about a
+    // field, so the renderer never has to distinguish absent from empty.
+    expect(
+      catalogDenialSchema.parse({
+        code: "version-conflict",
+        fieldErrors: [],
+        requestId: PRODUCT_ID,
+        status: "denied",
+      }).fieldErrors,
+    ).toEqual([]);
+    expect(
+      catalogDenialSchema.safeParse({
+        code: "body-invalid",
+        requestId: PRODUCT_ID,
+        status: "denied",
+      }).success,
+    ).toBe(false);
+    // A field error without a path names nothing and is refused.
+    expect(
+      catalogDenialSchema.safeParse({
+        ...denial,
+        fieldErrors: [{ code: "required", path: [] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      catalogDenialSchema.safeParse({
+        ...denial,
+        fieldErrors: [{ code: "unsupported", path: ["category"] }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("stores item instructions and cold-storage state without a display surface", () => {
+    expect(
+      productInstructionsSchema.parse({
+        usesPerDay: null,
+        usesPerWeek: 2,
+        usesPerMonth: null,
+        foodTiming: "regardless-of-food",
+      }),
+    ).toMatchObject({ usesPerWeek: 2 });
+    expect(
+      productInstructionsSchema.safeParse({
+        usesPerDay: 0,
+        usesPerWeek: null,
+        usesPerMonth: null,
+        foodTiming: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      productInstructionsSchema.safeParse({
+        usesPerDay: 1.5,
+        usesPerWeek: null,
+        usesPerMonth: null,
+        foodTiming: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      productStateColoursSchema.parse({
+        manual: null,
+        coldStorageRequired: true,
+      }),
+    ).toEqual({ manual: null, coldStorageRequired: true });
+  });
+
+  it("stores no barcode, one barcode, or several", () => {
+    const create = { ...PRODUCT_ATTRIBUTES, idempotencyKey: COMMAND_ID };
+    expect(
+      productCreateRequestSchema.parse({ ...create, barcodes: [] }).barcodes,
+    ).toEqual([]);
+    expect(
+      productCreateRequestSchema.parse({
+        ...create,
+        barcodes: ["6221033000101", "6221033000118"],
+      }).barcodes,
+    ).toHaveLength(2);
+    expect(
+      productCreateRequestSchema.safeParse({ ...create, barcodes: [""] })
+        .success,
     ).toBe(false);
   });
 });

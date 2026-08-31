@@ -43,6 +43,7 @@ describe("identity authorization", () => {
   it("preserves the repository permission names in one registry", () => {
     expect(PERMISSION_NAMES).toEqual([
       "attendance.record",
+      "catalog.item.manage",
       "devices.pair",
       "draft.price.override",
       "identity.roles.manage",
