@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   Card,
@@ -12,6 +12,7 @@ import { IdentityShell } from "./identity-shell";
 import { messages } from "./messages";
 import { formatDateTime } from "./preferences";
 import { usePreferences } from "./preferences-provider";
+import { CatalogRouteView } from "./catalog-screen";
 import type { StartupState } from "./startup-state";
 import { TerminalPairingScreen } from "./terminal-pairing-screen";
 import { useStartupConnection } from "./use-startup-connection";
@@ -41,6 +42,21 @@ export function App(): React.JSX.Element {
       checkButtonRef.current?.focus();
     }
   }, [isChecking, state]);
+
+  const [currentHash, setCurrentHash] = useState(() =>
+    typeof window !== "undefined" ? window.location.hash : "",
+  );
+
+  useEffect(() => {
+    const handleHashChange = (): void => {
+      setCurrentHash(window.location.hash);
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  const isCatalogRoute =
+    currentHash.startsWith("#/catalog") || currentHash.startsWith("#catalog");
 
   return (
     <main className="shell-page">
@@ -160,7 +176,18 @@ export function App(): React.JSX.Element {
       ) : null}
 
       {state === "ready" && localApiOrigin !== null ? (
-        <IdentityShell baseUrl={localApiOrigin} />
+        isCatalogRoute ? (
+          <CatalogRouteView
+            baseUrl={localApiOrigin}
+            hash={
+              currentHash.startsWith("#/")
+                ? currentHash
+                : `#/${currentHash.replace(/^#\/?/, "")}`
+            }
+          />
+        ) : (
+          <IdentityShell baseUrl={localApiOrigin} />
+        )
       ) : null}
 
       <footer className="shell-footer">Breev</footer>
