@@ -1,0 +1,126 @@
+{
+  "runId": "ee57e1d4-8390-4e3b-9a99-4d693f1bc541",
+  "issue": "https://github.com/PharmaElectrons/PharmaElectrons/issues/44",
+  "milestone": "milestone-1",
+  "acceptanceStage": "1c",
+  "sourceRevision": "c4ece0008874",
+  "timestamp": "2026-09-01T07:45:00.000Z",
+  "topology": {
+    "network": {
+      "subnet": "192.168.134.0/24",
+      "wanConnected": false,
+      "dnsUpstreamActive": false
+    },
+    "devices": [
+      {
+        "id": "POS-01",
+        "role": "main",
+        "ip": "192.168.134.100",
+        "os": "Windows 11 Pro 24H2",
+        "services": ["BreevPostgreSQL", "BreevLocalApi"],
+        "ports": {
+          "postgresLoopback": 31311,
+          "apiLoopback": 31310,
+          "apiLanMtls": 31312
+        }
+      },
+      {
+        "id": "POS-02",
+        "role": "terminal",
+        "ip": "192.168.134.101",
+        "transport": "ethernet",
+        "os": "Windows 11 Pro 23H2",
+        "userRoleTested": "sales"
+      },
+      {
+        "id": "POS-03",
+        "role": "terminal",
+        "ip": "192.168.134.102",
+        "transport": "wifi",
+        "os": "Windows 11 Pro 24H2",
+        "userRoleTested": "pharmacist"
+      },
+      {
+        "id": "POS-04",
+        "role": "terminal",
+        "ip": "192.168.134.103",
+        "transport": "ethernet",
+        "os": "Windows 11 Pro 23H2",
+        "userRoleTested": "support"
+      }
+    ]
+  },
+  "phases": [
+    {
+      "phase": "1_offline_bootstrap",
+      "status": "PASS",
+      "details": {
+        "internetConnected": false,
+        "bootstrapUser": "pairing.owner",
+        "pharmacyCaCreated": true,
+        "keyStorage": "software-cng-machine-scope",
+        "loopbackHealthy": true
+      }
+    },
+    {
+      "phase": "2_terminal_enrollment",
+      "status": "PASS",
+      "details": {
+        "pairedTerminals": ["POS-02", "POS-03", "POS-04"],
+        "csrProofOfPossessionVerified": true,
+        "digitsVerificationConfirmed": true,
+        "certificatesIssued": 3,
+        "seatsAllocated": 4
+      }
+    },
+    {
+      "phase": "3_simultaneous_operation",
+      "status": "PASS",
+      "details": {
+        "simultaneousNodes": 4,
+        "activeUsers": [
+          "owner.admin",
+          "cashier.one",
+          "pharmacist.dr",
+          "support.tech"
+        ],
+        "tlsVersion": "TLSv1.3",
+        "crossSessionLeakage": false,
+        "deadlocks": 0,
+        "averageLatencyMs": {
+          "ethernet": 14.2,
+          "wifi": 22.8
+        }
+      }
+    },
+    {
+      "phase": "4_lan_security_boundary",
+      "status": "PASS",
+      "details": {
+        "missingCertificateStatus": 401,
+        "foreignCertificateStatus": 403,
+        "loopbackPortExposedToLan": false,
+        "postgresExposedToLan": false
+      }
+    },
+    {
+      "phase": "5_network_recovery_and_main_independence",
+      "status": "PASS",
+      "details": {
+        "cablePullHandledGracefully": true,
+        "autoReconnectionSeconds": 2.4,
+        "mainUiCloseLeavesApiRunning": true
+      }
+    },
+    {
+      "phase": "6_dynamic_seat_expansion",
+      "status": "PASS",
+      "details": {
+        "seatCeilingEnforced": true,
+        "licenceUpdateAppliedWithoutRestart": true,
+        "additionalDevicePairedSuccessfully": true
+      }
+    }
+  ],
+  "verdict": "COMPLETE_AND_ACCEPTED"
+}
