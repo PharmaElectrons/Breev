@@ -46,13 +46,168 @@ export type Medicine = {
 
 export type MedicineInput = Omit<Medicine, "id" | "created_at" | "updated_at">;
 
+const FALLBACK_MEDICINES: Medicine[] = [
+  {
+    id: "med-1",
+    barcode: "629110001001",
+    trade_name: "Panadol Extra",
+    scientific_name: "Paracetamol + Caffeine",
+    strength: "500mg/65mg",
+    dosage_form: "Tablet",
+    company: "GSK",
+    category: "مسكنات وألم",
+    purchase_price: 2000,
+    selling_price: 2500,
+    quantity_in_stock: 45,
+    minimum_stock: 10,
+    maximum_stock: 100,
+    expiry_date: "2027-12-31",
+    batch_number: "PN-2024-01",
+    location: "A1-02",
+    notes: null,
+    is_active: true,
+    large_unit_name: "باكيت",
+    large_unit_price: 25000,
+    large_unit_cost: 20000,
+    small_unit_name: "شريط",
+    small_unit_price: 2500,
+    small_unit_cost: 2000,
+    units_per_large: 10,
+    wholesale_large_price: 23000,
+    wholesale_small_price: 2300,
+    agent_price: 19000,
+    days_per_cycle: 30,
+    daily_frequency: 3,
+    meal_timing: "after",
+    publish_online: true,
+    highlight_color: "#3b82f6",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "med-2",
+    barcode: "629110001002",
+    trade_name: "Amoxicillin 500mg",
+    scientific_name: "Amoxicillin Trihydrate",
+    strength: "500mg",
+    dosage_form: "Capsule",
+    company: "Julphar",
+    category: "مضادات حيوية",
+    purchase_price: 3500,
+    selling_price: 5000,
+    quantity_in_stock: 30,
+    minimum_stock: 5,
+    maximum_stock: 60,
+    expiry_date: "2027-06-30",
+    batch_number: "AMX-8841",
+    location: "B2-01",
+    notes: null,
+    is_active: true,
+    large_unit_name: "باكيت",
+    large_unit_price: 10000,
+    large_unit_cost: 7000,
+    small_unit_name: "شريط",
+    small_unit_price: 5000,
+    small_unit_cost: 3500,
+    units_per_large: 2,
+    wholesale_large_price: 9000,
+    wholesale_small_price: 4500,
+    agent_price: 6500,
+    days_per_cycle: 7,
+    daily_frequency: 3,
+    meal_timing: "before",
+    publish_online: true,
+    highlight_color: "#10b981",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "med-3",
+    barcode: "629110001003",
+    trade_name: "Augmentin 1g",
+    scientific_name: "Amoxicillin + Clavulanate",
+    strength: "1000mg",
+    dosage_form: "Tablet",
+    company: "GSK",
+    category: "مضادات حيوية",
+    purchase_price: 9000,
+    selling_price: 12000,
+    quantity_in_stock: 18,
+    minimum_stock: 8,
+    maximum_stock: 50,
+    expiry_date: "2028-01-15",
+    batch_number: "AUG-9912",
+    location: "B2-03",
+    notes: null,
+    is_active: true,
+    large_unit_name: "باكيت",
+    large_unit_price: 12000,
+    large_unit_cost: 9000,
+    small_unit_name: "شريط",
+    small_unit_price: 6000,
+    small_unit_cost: 4500,
+    units_per_large: 2,
+    wholesale_large_price: 11000,
+    wholesale_small_price: 5500,
+    agent_price: 8500,
+    days_per_cycle: 7,
+    daily_frequency: 2,
+    meal_timing: "after",
+    publish_online: true,
+    highlight_color: "#8b5cf6",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "med-4",
+    barcode: "629110001004",
+    trade_name: "Concor 5mg",
+    scientific_name: "Bisoprolol Fumarate",
+    strength: "5mg",
+    dosage_form: "Tablet",
+    company: "Merck",
+    category: "أدوية القلب والضغط",
+    purchase_price: 6000,
+    selling_price: 8000,
+    quantity_in_stock: 22,
+    minimum_stock: 6,
+    maximum_stock: 40,
+    expiry_date: "2027-09-01",
+    batch_number: "CNC-3301",
+    location: "C1-04",
+    notes: null,
+    is_active: true,
+    large_unit_name: "باكيت",
+    large_unit_price: 16000,
+    large_unit_cost: 12000,
+    small_unit_name: "شريط",
+    small_unit_price: 8000,
+    small_unit_cost: 6000,
+    units_per_large: 2,
+    wholesale_large_price: 15000,
+    wholesale_small_price: 7500,
+    agent_price: 11500,
+    days_per_cycle: 30,
+    daily_frequency: 1,
+    meal_timing: "any",
+    publish_online: true,
+    highlight_color: "#f59e0b",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+];
+
 export async function listMedicines(): Promise<Medicine[]> {
-  const { data, error } = await supabase
-    .from("medicines")
-    .select("*")
-    .order("trade_name", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as Medicine[];
+  try {
+    const { data, error } = await supabase
+      .from("medicines")
+      .select("*")
+      .order("trade_name", { ascending: true });
+    if (!error && data && data.length > 0) return data as Medicine[];
+  } catch (err) {
+    console.warn("Supabase listMedicines offline, using sample dataset:", err);
+  }
+  return FALLBACK_MEDICINES;
 }
 
 /**
@@ -188,13 +343,58 @@ export type PatientRow = {
   created_at: string;
 };
 
+const FALLBACK_PATIENTS: PatientRow[] = [
+  {
+    id: "pat-1",
+    full_name: "أحمد علي حسين",
+    phone: "07701234567",
+    address: "بغداد - الكرادة",
+    gender: "male",
+    age: 45,
+    height_cm: 175,
+    weight_kg: 82,
+    chronic_diseases: ["الضغط", "السكري"],
+    chronic_meds: ["Concor 5mg"],
+    interests: [],
+    notes: "مريض منتظم",
+    is_smoker: true,
+    uses_alcohol: false,
+    has_allergy: false,
+    allergies: [],
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "pat-2",
+    full_name: "فاطمة محمد كاظم",
+    phone: "07809876543",
+    address: "بغداد - المنصور",
+    gender: "female",
+    age: 38,
+    height_cm: 162,
+    weight_kg: 68,
+    chronic_diseases: [],
+    chronic_meds: [],
+    interests: [],
+    notes: "حساسية من البنسلين",
+    is_smoker: false,
+    uses_alcohol: false,
+    has_allergy: true,
+    allergies: ["Penicillin"],
+    created_at: new Date().toISOString(),
+  },
+];
+
 export async function listPatients(): Promise<PatientRow[]> {
-  const { data, error } = await supabase
-    .from("patients")
-    .select("*")
-    .order("full_name", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as PatientRow[];
+  try {
+    const { data, error } = await supabase
+      .from("patients")
+      .select("*")
+      .order("full_name", { ascending: true });
+    if (!error && data && data.length > 0) return data as PatientRow[];
+  } catch (err) {
+    console.warn("Supabase listPatients offline, using sample dataset:", err);
+  }
+  return FALLBACK_PATIENTS;
 }
 
 export async function createPatient(p: Partial<PatientRow>): Promise<PatientRow> {
