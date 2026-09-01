@@ -32,10 +32,9 @@ import {
   updatePharmacySettings,
 } from "./identity-api";
 import { identityMessages, type IdentityCopy } from "./identity-messages";
+import { useIdentityState } from "./identity-state-provider";
 import { licensingMessages, type LicensingCopy } from "./licensing-messages";
 import { usePreferences } from "./preferences-provider";
-
-const IDENTITY_POLL_INTERVAL_MS = 5_000;
 
 interface PendingStepUp {
   readonly afterApproval: (challengeId: string) => Promise<void>;
@@ -52,24 +51,11 @@ export function IdentityShell({
   const { locale } = usePreferences();
   const copy = identityMessages[locale];
   const licensingCopy = licensingMessages[locale];
-  const [state, setState] = useState<IdentityState | null>(null);
+  // The shell owns the poll so the module navigation and this workspace read
+  // one authenticated context (permissions, entitlements, session).
+  const { refresh, setState, state } = useIdentityState();
   const [denial, setDenial] = useState<AccessDenial | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const refresh = useCallback(async (): Promise<void> => {
-    try {
-      setState(await requestIdentityState(baseUrl));
-    } catch {
-      // The startup connection owns transport availability. Preserve the last
-      // identity state while it reconnects.
-    }
-  }, [baseUrl]);
-
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), IDENTITY_POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
 
   const run = useCallback(
     async <T,>(work: () => Promise<T>): Promise<T | undefined> => {

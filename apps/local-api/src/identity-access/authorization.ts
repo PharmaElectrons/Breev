@@ -1,5 +1,6 @@
 export const PERMISSION_NAMES = [
   "attendance.record",
+  "catalog.item.manage",
   "devices.pair",
   "draft.price.override",
   "identity.roles.manage",

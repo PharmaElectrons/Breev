@@ -1,6 +1,10 @@
 import {
   attendanceEventContract,
   deviceRevocationContract,
+  productArchiveContract,
+  productCreateContract,
+  productEditContract,
+  productMergeContract,
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
   identityBootstrapContract,
@@ -701,6 +705,10 @@ const CORS_MUTATION_ROUTES = [
     seatReleaseApprovalContract.method,
     seatReleaseApprovalContract.path,
   ),
+  exactMutation(productCreateContract.method, productCreateContract.path),
+  dynamicMutation(productEditContract.method, productEditContract.path),
+  dynamicMutation(productArchiveContract.method, productArchiveContract.path),
+  dynamicMutation(productMergeContract.method, productMergeContract.path),
 ] as const;
 
 function exactMutation(method: string, path: string): MutationRoute {

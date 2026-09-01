@@ -1,5 +1,6 @@
 .agents/
 .claude/
+.delegate/
 .scratch/
 .unlazy/
 node_modules
@@ -14,5 +15,8 @@ test-results
 *.log
 *.tsbuildinfo
 .env
-.env.local
+.env.*
+!.env.example
+!.env.*.example
+.terminal-state/
 skills-lock.json

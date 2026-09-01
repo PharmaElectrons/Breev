@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 
+import { CatalogController } from "./catalog/catalog.controller.js";
+import { CatalogService } from "./catalog/catalog.service.js";
 import { DatabaseHealthService } from "./database-health.service.js";
 import { DevicesController } from "./devices/devices.controller.js";
 import { DevicesService } from "./devices/devices.service.js";
@@ -28,6 +30,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
 
 @Module({
   controllers: [
+    CatalogController,
     DevicesController,
     HealthController,
     IdentityAccessController,
@@ -36,6 +39,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     RecoveryController,
   ],
   providers: [
+    CatalogService,
     DatabaseHealthService,
     DevicesService,
     DurableJobsService,

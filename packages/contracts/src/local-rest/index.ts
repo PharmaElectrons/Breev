@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "5" as const;
-export const LOCAL_SCHEMA_VERSION = "6" as const;
+export const LOCAL_API_VERSION = "6" as const;
+export const LOCAL_SCHEMA_VERSION = "7" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -1062,6 +1062,347 @@ export const localRecoveryStatusContract = {
   },
 } as const;
 
+/**
+ * Catalog: the Product master.
+ *
+ * A Product is defined in one of two modes, and Breev generates its English
+ * display name from that mode's approved field order rather than accepting free
+ * text. Three absences in this family are load-bearing and deliberate:
+ *
+ * - No request schema carries a display name. Free-text entry of the generated
+ *   name is impossible by construction rather than refused by validation.
+ * - No schema here carries a stock quantity, an on-hand balance, or an expiry
+ *   date. Catalog owns descriptive and commercial data; stock is derived from
+ *   Inventory's append-only movements and expiry belongs to a Batch, so there
+ *   is no Product field for any route to write.
+ * - No route deletes. A referenced Product is archived or merged, and both
+ *   outcomes keep the row resolvable for every snapshot and foreign key that
+ *   already points at it.
+ *
+ * The Arabic search name is a sibling field, stored and displayed on its own
+ * line beneath the English name and never appended to it. Nothing in this
+ * family treats the external or AI sharing controls as an authorization
+ * decision: they are metadata, and a flag alone never exposes restricted data.
+ */
+export const PRODUCT_DEFINITION_MODES = ["general-item", "medication"] as const;
+export const productDefinitionModeSchema = z.enum(PRODUCT_DEFINITION_MODES);
+
+/**
+ * The naming templates Breev has approved. A Product stores the version its
+ * name was generated under, so a later revision adds a version here instead of
+ * silently rewriting names that already exist.
+ */
+export const PRODUCT_NAME_TEMPLATE_VERSIONS = [1] as const;
+export const productNameTemplateVersionSchema = z.literal(
+  PRODUCT_NAME_TEMPLATE_VERSIONS,
+);
+
+export const PRODUCT_STATUSES = ["active", "archived", "merged"] as const;
+export const productStatusSchema = z.enum(PRODUCT_STATUSES);
+
+export const PRODUCT_FOOD_TIMINGS = [
+  "after-food",
+  "before-food",
+  "regardless-of-food",
+] as const;
+export const productFoodTimingSchema = z.enum(PRODUCT_FOOD_TIMINGS);
+
+export const PRODUCT_STATE_COLORS = [
+  "blue",
+  "green",
+  "grey",
+  "orange",
+  "purple",
+  "red",
+  "yellow",
+] as const;
+export const productStateColorSchema = z.enum(PRODUCT_STATE_COLORS);
+
+const PRODUCT_NAME_PART_MAX_LENGTH = 120;
+const PRODUCT_NAME_PART_COUNT_MAX = 6;
+const productNamePartSchema = z
+  .string()
+  .min(1)
+  .max(PRODUCT_NAME_PART_MAX_LENGTH)
+  .refine((value) => value === value.trim());
+/**
+ * An optional naming part is always present on the wire and null when the
+ * pharmacist left it empty. Absent is not the same as unknown, and the
+ * generator skips a null part cleanly.
+ */
+const optionalProductNamePartSchema = productNamePartSchema.nullable();
+const optionalProductTextSchema = (maximum: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maximum)
+    .refine((value) => value === value.trim())
+    .nullable();
+
+/** Medication Mode: Trade Name → Strength → Dosage Form → Manufacturer. */
+export const medicationNameFieldsSchema = z.strictObject({
+  tradeName: productNamePartSchema,
+  strength: optionalProductNamePartSchema,
+  dosageForm: optionalProductNamePartSchema,
+  manufacturer: optionalProductNamePartSchema,
+});
+/**
+ * General/Medical/Cosmetic Item Mode: Company → Sub-brand/Series → Type/Use →
+ * Property/Degree → Target/Audience → Size/Volume.
+ */
+export const generalItemNameFieldsSchema = z.strictObject({
+  company: productNamePartSchema,
+  subBrand: optionalProductNamePartSchema,
+  typeOfUse: optionalProductNamePartSchema,
+  property: optionalProductNamePartSchema,
+  targetAudience: optionalProductNamePartSchema,
+  size: optionalProductNamePartSchema,
+});
+
+/**
+ * The mode switch is one discriminated choice carrying only the chosen mode's
+ * fields, so a definition can never hold two conflicting field sets at once and
+ * a request can never name a field the active mode does not have.
+ */
+export const productDefinitionSchema = z.discriminatedUnion("mode", [
+  z.strictObject({
+    mode: z.literal("medication"),
+    fields: medicationNameFieldsSchema,
+  }),
+  z.strictObject({
+    mode: z.literal("general-item"),
+    fields: generalItemNameFieldsSchema,
+  }),
+]);
+
+const productUseFrequencySchema = z.number().int().min(1).max(99).nullable();
+/**
+ * Item instructions are stored here for the sales and patient context to show
+ * later. Clinical or dosage use of them ships disabled.
+ */
+export const productInstructionsSchema = z.strictObject({
+  usesPerDay: productUseFrequencySchema,
+  usesPerWeek: productUseFrequencySchema,
+  usesPerMonth: productUseFrequencySchema,
+  foodTiming: productFoodTimingSchema.nullable(),
+});
+
+/**
+ * Per-item external and AI sharing controls. These record what the pharmacy
+ * intends; they are never consulted as an authorization decision, and setting
+ * one exposes nothing on its own.
+ */
+export const productSharingControlsSchema = z.strictObject({
+  externallyVisible: z.boolean(),
+  aiSharingAllowed: z.boolean(),
+});
+
+/**
+ * State-colour data the Product master owns: the colour a user assigned by
+ * hand, and the one automatic condition Catalog itself knows about. Every other
+ * automatic condition — low stock, expiry, sale below cost, missing barcode —
+ * is derived from Inventory, Batch, pricing, or the barcode list rather than
+ * stored, and the surfaces that display any of them arrive later.
+ */
+export const productStateColoursSchema = z.strictObject({
+  manual: productStateColorSchema.nullable(),
+  coldStorageRequired: z.boolean(),
+});
+
+/**
+ * Barcodes are stored here and nothing more: suggesting, printing, and matching
+ * them is a later slice. A Product may carry none or several.
+ */
+const productBarcodeSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine((value) => value === value.trim());
+
+/**
+ * Everything a pharmacist may set on a Product. Create and edit share it
+ * exactly, so the two can never drift into accepting different fields, and the
+ * absent display name is absent from both.
+ */
+const productAttributeFields = {
+  arabicSearchName: optionalProductTextSchema(160),
+  barcodes: z.array(productBarcodeSchema).max(32),
+  category: optionalProductTextSchema(96),
+  definition: productDefinitionSchema,
+  instructions: productInstructionsSchema,
+  scientificName: optionalProductTextSchema(160),
+  sharing: productSharingControlsSchema,
+  stateColours: productStateColoursSchema,
+} as const;
+
+/**
+ * The Product as it is read back. `displayName` and `nameTemplateVersion` are
+ * server consequences of the fields: they appear here and in no request.
+ */
+export const productSchema = z.strictObject({
+  ...productAttributeFields,
+  displayName: z
+    .string()
+    .min(1)
+    .max(
+      PRODUCT_NAME_PART_MAX_LENGTH * PRODUCT_NAME_PART_COUNT_MAX +
+        PRODUCT_NAME_PART_COUNT_MAX,
+    ),
+  id: z.uuidv7(),
+  mergedIntoProductId: z.uuidv7().nullable(),
+  nameTemplateVersion: productNameTemplateVersionSchema,
+  revision: decimalRevisionSchema,
+  status: productStatusSchema,
+});
+
+export const productCreateRequestSchema = z.strictObject({
+  ...productAttributeFields,
+  idempotencyKey: z.uuid(),
+});
+/**
+ * Editing replaces the whole editable record, including the mode. Regenerating
+ * the display name is the server's consequence of the new fields, never a name
+ * the client supplies.
+ */
+export const productEditRequestSchema = z.strictObject({
+  ...productAttributeFields,
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const productArchiveRequestSchema = z.strictObject({
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+/**
+ * Merge names the survivor future references redirect to. The merged-away
+ * Product is the one in the path, and it stays readable so historical documents
+ * still render.
+ */
+export const productMergeRequestSchema = z.strictObject({
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  survivorProductId: z.uuidv7(),
+});
+
+/**
+ * A rejected Product body reports which field failed and why, so the screen can
+ * put the message on the field the pharmacist is standing in and leave the
+ * value and the focus where they are. `path` walks the request body — for
+ * example `["definition", "fields", "tradeName"]` or `["barcodes", 0]`.
+ */
+export const CATALOG_FIELD_ERROR_CODES = [
+  "invalid",
+  "out-of-range",
+  "required",
+  "too-long",
+  "unknown-field",
+] as const;
+export const catalogFieldErrorCodeSchema = z.enum(CATALOG_FIELD_ERROR_CODES);
+export const catalogFieldErrorSchema = z.strictObject({
+  code: catalogFieldErrorCodeSchema,
+  path: z
+    .array(z.union([z.string().min(1), z.number().int().min(0)]))
+    .min(1)
+    .max(8),
+});
+
+/**
+ * Catalog's own refusals. A permission or entitlement refusal is not among
+ * them: those stay identity facts and answer on 403 with the identity family,
+ * exactly as every other module's routes do.
+ */
+export const CATALOG_DENIAL_CODES = [
+  "body-invalid",
+  "idempotency-conflict",
+  "merge-into-self",
+  "merge-survivor-not-mergeable",
+  "product-archived",
+  "product-merged",
+  "product-not-found",
+  "version-conflict",
+] as const;
+export const catalogDenialCodeSchema = z.enum(CATALOG_DENIAL_CODES);
+export const catalogDenialSchema = z.strictObject({
+  code: catalogDenialCodeSchema,
+  /** Empty unless the code is `body-invalid`. */
+  fieldErrors: z.array(catalogFieldErrorSchema),
+  requestId: z.uuidv7(),
+  status: z.literal("denied"),
+});
+
+const catalogReadDenialResponses = {
+  401: identityDenialSchema,
+  403: identityOrEntitlementDenialSchema,
+} as const;
+const catalogCommandDenialResponses = {
+  ...catalogReadDenialResponses,
+  400: catalogDenialSchema,
+  404: catalogDenialSchema,
+  409: catalogDenialSchema,
+} as const;
+
+export const productListContract = {
+  method: "GET",
+  path: "/catalog/products",
+  responses: {
+    200: z.strictObject({ products: z.array(productSchema) }),
+    ...catalogReadDenialResponses,
+  },
+} as const;
+export const productReadContract = {
+  method: "GET",
+  path: "/catalog/products/:productId",
+  responses: {
+    200: productSchema,
+    ...catalogReadDenialResponses,
+    404: catalogDenialSchema,
+  },
+} as const;
+export const productCreateContract = {
+  method: "POST",
+  path: "/catalog/products",
+  request: { body: productCreateRequestSchema },
+  responses: { 201: productSchema, ...catalogCommandDenialResponses },
+} as const;
+export const productEditContract = {
+  method: "PUT",
+  path: "/catalog/products/:productId",
+  request: { body: productEditRequestSchema },
+  responses: { 200: productSchema, ...catalogCommandDenialResponses },
+} as const;
+export const productArchiveContract = {
+  method: "POST",
+  path: "/catalog/products/:productId/archivals",
+  request: { body: productArchiveRequestSchema },
+  responses: { 201: productSchema, ...catalogCommandDenialResponses },
+} as const;
+export const productMergeContract = {
+  method: "POST",
+  path: "/catalog/products/:productId/merges",
+  request: { body: productMergeRequestSchema },
+  responses: { 201: productSchema, ...catalogCommandDenialResponses },
+} as const;
+
+export const productPath = (productId: string): string =>
+  `/catalog/products/${productId}`;
+export const productArchivePath = (productId: string): string =>
+  `/catalog/products/${productId}/archivals`;
+export const productMergePath = (productId: string): string =>
+  `/catalog/products/${productId}/merges`;
+
+/**
+ * Every Catalog route, so a test can walk the whole family and prove what is
+ * not there: no delete, no cleanup, and no repair path around the back.
+ */
+export const CATALOG_CONTRACTS = [
+  productArchiveContract,
+  productCreateContract,
+  productEditContract,
+  productListContract,
+  productMergeContract,
+  productReadContract,
+] as const;
+
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
 export type LocalHealthDatabaseUnavailable = z.infer<
   typeof localHealthDatabaseUnavailableSchema
@@ -1204,6 +1545,151 @@ export type PairingCertificateRequest = z.infer<
   typeof pairingCertificateRequestSchema
 >;
 export type PairingCertificate = z.infer<typeof pairingCertificateSchema>;
+
+export type ProductDefinitionMode = z.infer<typeof productDefinitionModeSchema>;
+export type ProductNameTemplateVersion = z.infer<
+  typeof productNameTemplateVersionSchema
+>;
+export type ProductStatus = z.infer<typeof productStatusSchema>;
+export type ProductFoodTiming = z.infer<typeof productFoodTimingSchema>;
+export type ProductStateColour = z.infer<typeof productStateColorSchema>;
+export type MedicationNameFields = z.infer<typeof medicationNameFieldsSchema>;
+export type GeneralItemNameFields = z.infer<typeof generalItemNameFieldsSchema>;
+export type ProductDefinition = z.infer<typeof productDefinitionSchema>;
+export type ProductInstructions = z.infer<typeof productInstructionsSchema>;
+export type ProductSharingControls = z.infer<
+  typeof productSharingControlsSchema
+>;
+export type ProductStateColours = z.infer<typeof productStateColoursSchema>;
+export type Product = z.infer<typeof productSchema>;
+export type ProductCreateRequest = z.infer<typeof productCreateRequestSchema>;
+export type ProductEditRequest = z.infer<typeof productEditRequestSchema>;
+export type ProductArchiveRequest = z.infer<typeof productArchiveRequestSchema>;
+export type ProductMergeRequest = z.infer<typeof productMergeRequestSchema>;
+export type CatalogFieldErrorCode = z.infer<typeof catalogFieldErrorCodeSchema>;
+export type CatalogFieldError = z.infer<typeof catalogFieldErrorSchema>;
+export type CatalogDenialCode = z.infer<typeof catalogDenialCodeSchema>;
+export type CatalogDenial = z.infer<typeof catalogDenialSchema>;
+
+/**
+ * The approved product naming templates, and the total function that applies
+ * them.
+ *
+ * This is a pure policy, not a wire schema, but it lives beside the Product
+ * field schemas above because it is a total function of exactly those fields.
+ * Keeping it here is what makes the approved field order singular: the server
+ * that stores a name, the screen that previews one as the pharmacist types,
+ * and the tests that assert on either all import this one definition, so no
+ * copy of the template can drift away from the others.
+ *
+ * Two rules are structural here rather than merely documented:
+ *
+ * - The Arabic search name is not a parameter of any function below. It is a
+ *   sibling field on the Product, displayed on its own line beneath the English
+ *   name, and no code path can concatenate it into the English display because
+ *   no code path is ever given it.
+ * - The template version is an explicit argument, never an ambient constant. A
+ *   Product stores the version its name was generated under, so a later
+ *   template revision cannot silently rewrite a name that already exists.
+ */
+export type ProductNameFieldsByMode = {
+  readonly [TMode in ProductDefinitionMode]: Extract<
+    ProductDefinition,
+    { mode: TMode }
+  >["fields"];
+};
+
+export const CURRENT_PRODUCT_NAME_TEMPLATE_VERSION = 1 as const;
+
+type ProductNameTemplate = {
+  readonly [
+    TMode in ProductDefinitionMode
+  ]: readonly (keyof ProductNameFieldsByMode[TMode])[];
+};
+
+/**
+ * One approved template exists. A revision adds a version here instead of
+ * editing this entry, because Products already carry version 1 and must keep
+ * regenerating the exact string they were stored with.
+ */
+export const PRODUCT_NAME_TEMPLATES: Readonly<
+  Record<ProductNameTemplateVersion, ProductNameTemplate>
+> = {
+  1: {
+    "general-item": [
+      "company",
+      "subBrand",
+      "typeOfUse",
+      "property",
+      "targetAudience",
+      "size",
+    ],
+    medication: ["tradeName", "strength", "dosageForm", "manufacturer"],
+  },
+};
+
+const DISPLAY_NAME_PART_SEPARATOR = " ";
+const COLLAPSIBLE_WHITESPACE = /\s+/gu;
+
+/**
+ * Joins the parts a template names, in the template's order, skipping the ones
+ * that are not there.
+ *
+ * "Skips cleanly" is achieved by construction rather than by cleanup: an absent
+ * or blank part is never pushed, so the join can leave no doubled separator, no
+ * leading separator, and no trailing separator whatever combination of optional
+ * parts is missing. Each surviving part is trimmed and its internal runs of
+ * whitespace collapsed, so a value typed with stray spacing cannot smuggle a
+ * doubled separator into the middle of a name.
+ *
+ * The joiner reads only the keys the template lists. A field no template names
+ * — the Arabic search name above all — cannot reach the English display even
+ * when it rides along on the record the caller passes in.
+ */
+export function composeDisplayName(
+  fieldOrder: readonly string[],
+  fields: Readonly<Record<string, string | null | undefined>>,
+): string {
+  const parts: string[] = [];
+  for (const field of fieldOrder) {
+    const value = fields[field];
+    if (typeof value !== "string") {
+      continue;
+    }
+    const normalized = value.trim().replace(COLLAPSIBLE_WHITESPACE, " ");
+    if (normalized.length > 0) {
+      parts.push(normalized);
+    }
+  }
+  return parts.join(DISPLAY_NAME_PART_SEPARATOR);
+}
+
+/**
+ * The Product display name for one mode's fields under one approved template
+ * version.
+ *
+ * Deterministic and total: the same inputs always produce the same string, and
+ * no combination of absent optional parts throws. The result is not an
+ * identity — two legitimately distinct Products may generate the same string,
+ * and uniqueness belongs to the internal ID, SKU, barcode, and registration
+ * number instead.
+ */
+export function generateDisplayName<TMode extends ProductDefinitionMode>(
+  mode: TMode,
+  fields: ProductNameFieldsByMode[TMode],
+  templateVersion: ProductNameTemplateVersion,
+): string {
+  return composeDisplayName(
+    PRODUCT_NAME_TEMPLATES[templateVersion][mode],
+    fields,
+  );
+}
+
+export function isProductNameTemplateVersion(
+  value: number,
+): value is ProductNameTemplateVersion {
+  return (PRODUCT_NAME_TEMPLATE_VERSIONS as readonly number[]).includes(value);
+}
 
 export class LocalRestVersionMismatchError extends Error {
   public constructor(

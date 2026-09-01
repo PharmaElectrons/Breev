@@ -1,6 +1,6 @@
 # Breev engineering baseline
 
-**Status:** authoritative product and architecture baseline as of **23 August 2026**.
+**Status:** authoritative product and architecture baseline as of **1 September 2026**.
 
 This baseline replaces every earlier document under `docs/` and every pre-baseline local issue under `.scratch/` and authorizes planning against the current requirements. Each release gate in [`open-decisions.md`](open-decisions.md) still requires its named evidence before that capability ships.
 
@@ -46,7 +46,7 @@ The pre-consolidation repository documentation (the earlier requirement register
 
 ## Current implementation state
 
-There is no production implementation. The current five `apps/` and twenty-five `packages/` workspaces contain only name constants, old `breef` identifiers, and obsolete tool versions. They contain no Electron window, React UI, Nest application, schema, migration, transaction, or test. The first delivery slice deletes that scaffold and creates only the runtimes that meet the conditions in [`architecture.md`](architecture.md). It requires no compatibility layer or scaffold migration.
+Production implementation exists in the three earned workspaces: `apps/desktop`, `apps/local-api`, and `packages/contracts`. The marker scaffold of five apps and twenty-five packages is gone. Milestone 1 delivers the packaged Electron desktop, the NestJS local authority over PostgreSQL, runtime-validated contracts, the startup and recovery states, device trust, and the identity and licensing boundaries, each with its automated evidence. Catalog product definition is the first milestone-2 vertical slice, implemented end to end through its contract, permission enforcement, PostgreSQL persistence, renderer, and browser tests. Add further modules and workspaces only as the sequencing in [`delivery.md`](delivery.md) and the extraction test in [`architecture.md`](architecture.md) allow. No compatibility layer for the obsolete scaffold is required.
 
 ## Keeping this baseline authoritative
 
