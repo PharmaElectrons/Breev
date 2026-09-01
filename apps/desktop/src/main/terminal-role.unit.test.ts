@@ -1,11 +1,35 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  INSTALLED_DEVICE_ROLE_FILE,
   readDeviceRole,
   readTerminalDeviceName,
+  resolveDesktopDeviceRole,
   resolveTerminalStateDirectory,
 } from "./terminal-role.js";
+
+const temporaryDirectories: string[] = [];
+
+function createProgramData(): string {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "breev-role-"));
+  temporaryDirectories.push(directory);
+  return directory;
+}
+
+function createConfigurationDirectory(programData: string): string {
+  const directory = path.join(programData, "Breev", "config");
+  mkdirSync(directory, { recursive: true });
+  return directory;
+}
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
 
 describe("device role", () => {
   it.each([{}, { BREEV_DEVICE_ROLE: "" }, { BREEV_DEVICE_ROLE: "main" }])(
@@ -25,6 +49,106 @@ describe("device role", () => {
       expect(() => readDeviceRole({ BREEV_DEVICE_ROLE: value })).toThrow();
     },
   );
+});
+
+describe("installed Windows device role", () => {
+  it.each([
+    ["main" as const, "terminal"],
+    ["terminal" as const, "main"],
+  ])(
+    "uses the installer-owned %s role instead of the process environment",
+    (installedRole, environmentRole) => {
+      const programData = createProgramData();
+      const configurationDirectory = createConfigurationDirectory(programData);
+      writeFileSync(
+        path.join(configurationDirectory, INSTALLED_DEVICE_ROLE_FILE),
+        installedRole,
+        "utf8",
+      );
+
+      expect(
+        resolveDesktopDeviceRole(
+          {
+            BREEV_DEVICE_ROLE: environmentRole,
+            ProgramData: programData,
+          },
+          { isPackaged: true, platform: "win32" },
+        ),
+      ).toBe(installedRole);
+    },
+  );
+
+  it("keeps an existing Main installation on Main when no role state exists", () => {
+    const programData = createProgramData();
+
+    expect(
+      resolveDesktopDeviceRole(
+        { BREEV_DEVICE_ROLE: "terminal", ProgramData: programData },
+        { isPackaged: true, platform: "win32" },
+      ),
+    ).toBe("main");
+  });
+
+  it("requires repair when terminal state exists without a role file", () => {
+    const programData = createProgramData();
+    const configurationDirectory = createConfigurationDirectory(programData);
+    mkdirSync(path.join(configurationDirectory, "terminal"));
+
+    expect(() =>
+      resolveDesktopDeviceRole(
+        { ProgramData: programData },
+        { isPackaged: true, platform: "win32" },
+      ),
+    ).toThrow(/repair/i);
+  });
+
+  it.each(["", "main\n", "Terminal", "pos"])(
+    "requires repair for invalid installed role content: %j",
+    (value) => {
+      const programData = createProgramData();
+      const configurationDirectory = createConfigurationDirectory(programData);
+      writeFileSync(
+        path.join(configurationDirectory, INSTALLED_DEVICE_ROLE_FILE),
+        value,
+        "utf8",
+      );
+
+      expect(() =>
+        resolveDesktopDeviceRole(
+          { ProgramData: programData },
+          { isPackaged: true, platform: "win32" },
+        ),
+      ).toThrow(/repair/i);
+    },
+  );
+
+  it("requires repair when the installed role cannot be read", () => {
+    const programData = createProgramData();
+    const configurationDirectory = createConfigurationDirectory(programData);
+    mkdirSync(path.join(configurationDirectory, INSTALLED_DEVICE_ROLE_FILE));
+
+    expect(() =>
+      resolveDesktopDeviceRole(
+        { ProgramData: programData },
+        { isPackaged: true, platform: "win32" },
+      ),
+    ).toThrow(/cannot be read.*repair/i);
+  });
+
+  it("fails when ProgramData cannot be located", () => {
+    expect(() =>
+      resolveDesktopDeviceRole({}, { isPackaged: true, platform: "win32" }),
+    ).toThrow(/ProgramData/);
+  });
+
+  it("keeps environment role selection for development", () => {
+    expect(
+      resolveDesktopDeviceRole(
+        { BREEV_DEVICE_ROLE: "terminal" },
+        { isPackaged: false, platform: "win32" },
+      ),
+    ).toBe("terminal");
+  });
 });
 
 describe("terminal state directory", () => {

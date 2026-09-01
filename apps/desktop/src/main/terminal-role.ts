@@ -1,8 +1,10 @@
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import type { DesktopDeviceRole } from "@breev/contracts/desktop-preload";
 
 export const DEVICE_ROLE_VARIABLE = "BREEV_DEVICE_ROLE" as const;
+export const INSTALLED_DEVICE_ROLE_FILE = "device-role" as const;
 export const TERMINAL_STATE_DIRECTORY_VARIABLE =
   "BREEV_TERMINAL_STATE_DIR" as const;
 export const TERMINAL_DEVICE_NAME_VARIABLE =
@@ -25,6 +27,62 @@ export function readDeviceRole(environment: Environment): DesktopDeviceRole {
   }
   throw new Error(
     `${DEVICE_ROLE_VARIABLE} must be either "main" or "terminal"`,
+  );
+}
+
+/**
+ * Packaged Windows installations take their role from installer-owned state,
+ * not from an ambient process environment variable. A missing role file is
+ * treated as Main for existing Main installations created before role
+ * selection existed. Existing terminal state without the role file is unsafe
+ * to guess and requires an installer repair.
+ */
+export function resolveDesktopDeviceRole(
+  environment: Environment,
+  options: {
+    readonly isPackaged: boolean;
+    readonly platform: NodeJS.Platform;
+  },
+): DesktopDeviceRole {
+  if (!options.isPackaged || options.platform !== "win32") {
+    return readDeviceRole(environment);
+  }
+
+  const programData = environment.ProgramData;
+  if (programData === undefined || programData.length === 0) {
+    throw new Error(
+      "A packaged Windows installation requires ProgramData to locate its device role",
+    );
+  }
+
+  const configurationDirectory = path.join(programData, "Breev", "config");
+  const roleFile = path.join(
+    configurationDirectory,
+    INSTALLED_DEVICE_ROLE_FILE,
+  );
+  if (!existsSync(roleFile)) {
+    if (existsSync(path.join(configurationDirectory, "terminal"))) {
+      throw new Error(
+        "The installed device role is missing for this POS Terminal. Repair the Breev installation.",
+      );
+    }
+    return "main";
+  }
+
+  let value: string;
+  try {
+    value = readFileSync(roleFile, "utf8");
+  } catch {
+    throw new Error(
+      "The installed device role cannot be read. Repair the Breev installation.",
+    );
+  }
+
+  if (value === "main" || value === "terminal") {
+    return value;
+  }
+  throw new Error(
+    'The installed device role must contain exactly "main" or "terminal". Repair the Breev installation.',
   );
 }
 
