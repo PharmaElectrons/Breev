@@ -1,6 +1,7 @@
 import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
+  CATALOG_CONTRACTS,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   LOCAL_RECOVERY_STATUS_SUCCESS_STATUS,
@@ -545,6 +546,104 @@ describe.sequential("Main device security persistence seam", () => {
     expect(denialCount(afterWidened, "cors-preflight-not-allowed")).toBe(
       denialCount(after, "cors-preflight-not-allowed") + 1,
     );
+  });
+
+  /*
+   * Every mutation the renderer can issue must be preflight-allowed.
+   *
+   * Catalog shipped its contracts, controller, and browser tests without ever
+   * being added to the CORS mutation allowlist, so every product create, edit,
+   * archive, and merge failed its preflight from the packaged renderer and
+   * surfaced as "Failed to fetch". The browser suites could not catch it: they
+   * serve the renderer and proxy the API from one origin, so no preflight is
+   * ever issued. This test walks the shipped contract registry instead of a
+   * hand-written list, so the next module cannot repeat it.
+   */
+  it("answers the preflight for every catalog mutation the renderer can issue", async () => {
+    const sampleId = "01a05d7a-6abd-7e85-9893-740321e7d3ac";
+    const mutations = CATALOG_CONTRACTS.filter(
+      (contract) => contract.method !== "GET",
+    );
+    expect(mutations.length).toBeGreaterThan(0);
+
+    for (const contract of mutations) {
+      const requestPath = contract.path.replaceAll(/:[a-zA-Z]+/gu, sampleId);
+      const preflight = await fetch(new URL(requestPath, apiOrigin), {
+        headers: {
+          "Access-Control-Request-Headers": "content-type, x-breev-csrf",
+          "Access-Control-Request-Method": contract.method,
+          Origin: PACKAGED_RENDERER_ORIGIN,
+        },
+        method: "OPTIONS",
+      });
+
+      expect(
+        { path: requestPath, status: preflight.status },
+        `${contract.method} ${contract.path} must be preflight-allowed`,
+      ).toEqual({ path: requestPath, status: 204 });
+      expect(preflight.headers.get("access-control-allow-origin")).toBe(
+        PACKAGED_RENDERER_ORIGIN,
+      );
+      expect(preflight.headers.get("access-control-allow-methods")).toBe(
+        contract.method,
+      );
+    }
+  });
+
+  /*
+   * Allowing Catalog through must not widen anything else. Catalog never hard
+   * deletes (docs/domain.md: archive or merge, never delete), so no DELETE may
+   * become preflight-allowed by adding these routes.
+   */
+  it("keeps the catalog preflight narrow", async () => {
+    const sampleId = "01a05d7a-6abd-7e85-9893-740321e7d3ac";
+    const cases = [
+      {
+        method: "DELETE",
+        origin: PACKAGED_RENDERER_ORIGIN,
+        path: `/catalog/products/${sampleId}`,
+        why: "catalog never hard deletes",
+      },
+      {
+        method: "POST",
+        origin: "https://attacker.example",
+        path: "/catalog/products",
+        why: "a foreign origin is refused",
+      },
+      {
+        method: "PUT",
+        origin: PACKAGED_RENDERER_ORIGIN,
+        path: "/catalog/products/not-a-uuid",
+        why: "the dynamic segment is a UUIDv7, not a wildcard",
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const preflight = await fetch(new URL(testCase.path, apiOrigin), {
+        headers: {
+          "Access-Control-Request-Headers": "content-type, x-breev-csrf",
+          "Access-Control-Request-Method": testCase.method,
+          Origin: testCase.origin,
+        },
+        method: "OPTIONS",
+      });
+      expect(
+        { status: preflight.status, why: testCase.why },
+        `${testCase.method} ${testCase.path}`,
+      ).toEqual({ status: 403, why: testCase.why });
+      expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+    }
+
+    const widened = await fetch(new URL("/catalog/products", apiOrigin), {
+      headers: {
+        "Access-Control-Request-Headers":
+          "content-type, x-breev-csrf, x-attacker-header",
+        "Access-Control-Request-Method": "POST",
+        Origin: PACKAGED_RENDERER_ORIGIN,
+      },
+      method: "OPTIONS",
+    });
+    expect(widened.status).toBe(403);
   });
 
   it("rejects a rebound Host before the mutation handler", async () => {
