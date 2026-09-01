@@ -38,8 +38,8 @@ import {
   resolveRendererEntry,
 } from "./security.js";
 import {
-  readDeviceRole,
   readTerminalDeviceName,
+  resolveDesktopDeviceRole,
   resolveTerminalStateDirectory,
 } from "./terminal-role.js";
 import {
@@ -334,7 +334,10 @@ async function startRoleRuntime(): Promise<{
   readonly localApiOrigin: string;
   readonly role: DesktopDeviceRole;
 }> {
-  const role = readDeviceRole(process.env);
+  const role = resolveDesktopDeviceRole(process.env, {
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+  });
   if (role === "main") {
     return {
       localApiOrigin: readLocalApiOrigin(process.env.BREEV_LOCAL_API_URL),
