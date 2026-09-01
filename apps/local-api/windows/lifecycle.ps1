@@ -12,6 +12,11 @@ param(
   [Parameter(Mandatory = $true)]
   [string] $PayloadRoot,
 
+  # Empty preserves the installed role, or selects Main on a clean/legacy Main
+  # machine. The unified installer passes the exact lower-case role for a new
+  # interactive or unattended installation.
+  [string] $Role = "",
+
   [string] $DataRoot = (Join-Path $env:ProgramData "Breev"),
 
   # The address the LAN mTLS listener binds and advertises to terminals.
@@ -57,6 +62,7 @@ $postgresqlPort = 31311
 $firewallGroup = "Breev"
 $lanFirewallRuleName = "BreevLanApi"
 $lanFirewallDisplayName = "Breev LAN API"
+$deviceRoleFileName = "device-role"
 $destructionConfirmationPhrase = "destroy-pharmacy-data"
 $createdServices = [Collections.Generic.List[string]]::new()
 $sensitiveValues = [Collections.Generic.List[string]]::new()
@@ -291,6 +297,136 @@ function Set-FileAcl {
     -Path $Path `
     -AdditionalGrants $AdditionalGrants `
     -InheritanceFlags ([Security.AccessControl.InheritanceFlags]::None)
+}
+
+function Read-InstalledDeviceRole {
+  param([string] $Path)
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return ""
+  }
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "The installed device role is unreadable and requires Repair"
+  }
+
+  try {
+    $installedRole = Get-Content -LiteralPath $Path -Raw
+  } catch {
+    throw "The installed device role is unreadable and requires Repair"
+  }
+  if ($installedRole -cne "main" -and $installedRole -cne "terminal") {
+    throw "The installed device role is invalid and requires Repair"
+  }
+  return $installedRole
+}
+
+function Resolve-LifecycleRole {
+  param([string] $RequestedRole)
+
+  if (-not [string]::IsNullOrEmpty($RequestedRole) -and
+      $RequestedRole -cne "main" -and
+      $RequestedRole -cne "terminal") {
+    throw 'Role must be exactly "main" or "terminal"'
+  }
+
+  $configRoot = Join-Path $DataRoot "config"
+  $rolePath = Join-Path $configRoot $deviceRoleFileName
+  $installedRole = Read-InstalledDeviceRole -Path $rolePath
+  $mainStatePaths = @(
+    (Join-Path $configRoot "database-url"),
+    (Join-Path $configRoot "schema-owner-url"),
+    (Join-Path $configRoot "main-device.json"),
+    (Join-Path $DataRoot "postgresql")
+  )
+  $hasMainState = @($mainStatePaths | Where-Object { Test-Path -LiteralPath $_ }).Count -gt 0
+  $hasTerminalState = Test-Path -LiteralPath (Join-Path $configRoot "terminal") -PathType Container
+
+  if (-not [string]::IsNullOrEmpty($installedRole)) {
+    if (-not [string]::IsNullOrEmpty($RequestedRole) -and $RequestedRole -cne $installedRole) {
+      throw "The requested role conflicts with the installed device role"
+    }
+    if (($installedRole -ceq "terminal" -and $hasMainState) -or
+        ($installedRole -ceq "main" -and $hasTerminalState)) {
+      throw "The installed role conflicts with preserved Breev state and requires reviewed Repair"
+    }
+    return $installedRole
+  }
+
+  if ($hasMainState -and $hasTerminalState) {
+    throw "Breev found conflicting Main and Terminal state and requires reviewed Repair"
+  }
+  if (-not [string]::IsNullOrEmpty($RequestedRole)) {
+    if (($RequestedRole -ceq "terminal" -and $hasMainState) -or
+        ($RequestedRole -ceq "main" -and $hasTerminalState)) {
+      throw "The requested role conflicts with preserved Breev state"
+    }
+    return $RequestedRole
+  }
+  if ($hasTerminalState) {
+    throw "The Terminal role file is missing; run Repair with the Terminal role selected"
+  }
+
+  # Existing Main installations predate the role file. No role and no terminal
+  # state therefore keeps the proven Main lifecycle and backfills the file only
+  # after readiness succeeds.
+  return "main"
+}
+
+function Assert-TerminalMachineState {
+  foreach ($serviceName in @($apiServiceName, $postgresqlServiceName)) {
+    if (Test-ServiceExists -Name $serviceName) {
+      throw "A POS Terminal cannot be installed while Breev Main services exist"
+    }
+  }
+  $firewallRules = @(Get-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue)
+  if ($firewallRules.Count -gt 0) {
+    throw "A POS Terminal cannot be installed while Breev Main firewall rules exist"
+  }
+}
+
+function Initialize-TerminalConfiguration {
+  $configRoot = Join-Path $DataRoot "config"
+  $terminalRoot = Join-Path $configRoot "terminal"
+  $pathLookupRights =
+    [Security.AccessControl.FileSystemRights]::Traverse -bor
+    [Security.AccessControl.FileSystemRights]::ReadAttributes
+  $localUsersGrant = @(
+    [ordered]@{ identity = "S-1-5-32-545"; rights = $pathLookupRights }
+  )
+
+  Set-DirectoryAcl -Path $DataRoot -AdditionalGrants $localUsersGrant
+  Set-DirectoryAcl -Path $configRoot -AdditionalGrants $localUsersGrant
+  Set-DirectoryAcl -Path $terminalRoot -AdditionalGrants @(
+    [ordered]@{ identity = "S-1-5-32-545"; rights = [Security.AccessControl.FileSystemRights]::Modify }
+  ) -ResetDescendants
+}
+
+function Write-InstalledDeviceRole {
+  param([string] $DeviceRole)
+
+  $configRoot = Join-Path $DataRoot "config"
+  $rolePath = Join-Path $configRoot $deviceRoleFileName
+  $existingRole = Read-InstalledDeviceRole -Path $rolePath
+  if (-not [string]::IsNullOrEmpty($existingRole)) {
+    if ($existingRole -cne $DeviceRole) {
+      throw "The installed device role changed during the lifecycle operation"
+    }
+    Set-FileAcl -Path $rolePath -AdditionalGrants @(
+      [ordered]@{ identity = "S-1-5-32-545"; rights = [Security.AccessControl.FileSystemRights]::Read }
+    )
+    return
+  }
+
+  $temporaryPath = "$rolePath.tmp"
+  try {
+    $DeviceRole | Set-Content -LiteralPath $temporaryPath -Encoding ASCII -NoNewline
+    Set-FileAcl -Path $temporaryPath -AdditionalGrants @(
+      [ordered]@{ identity = "S-1-5-32-545"; rights = [Security.AccessControl.FileSystemRights]::Read }
+    )
+    Move-Item -LiteralPath $temporaryPath -Destination $rolePath
+  } finally {
+    Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function New-RandomSecret {
@@ -1098,6 +1234,35 @@ if ($Action -eq "Uninstall") {
   exit 0
 }
 
+$resolvedRole = Resolve-LifecycleRole -RequestedRole $Role
+
+# BEGIN terminal role lifecycle
+if ($resolvedRole -ceq "terminal") {
+  # Both checks are read-only and run before the terminal configuration is
+  # created. A role conflict therefore cannot partially convert a Main.
+  Assert-TerminalMachineState
+  Test-Payload
+  try {
+    Initialize-TerminalConfiguration
+    Invoke-FailurePoint -Name "AfterDataPrepared"
+    # For a terminal, readiness means the complete signed runtime was
+    # validated and its user-writable, DPAPI-protected state boundary exists.
+    Invoke-FailurePoint -Name "BeforeReadiness"
+    Write-InstalledDeviceRole -DeviceRole $resolvedRole
+    Write-LifecycleState -Status "healthy"
+  } catch {
+    $terminalFailure = $_
+    try {
+      Write-LifecycleState -Status "failed-data-preserved" -FailurePoint $InjectFailure -ErrorMessage $terminalFailure.Exception.Message
+    } catch {
+      # Preserve the original terminal lifecycle failure if state recording fails.
+    }
+    throw $terminalFailure
+  }
+  exit 0
+}
+# END terminal role lifecycle
+
 $lanHost = ""
 # Empty until the endpoint is decided, so a run that failed before deciding
 # records no endpoint rather than claiming a single-machine installation.
@@ -1139,6 +1304,7 @@ try {
   if ($lanHost -ne "") {
     Wait-LanListener -LanHost $lanHost
   }
+  Write-InstalledDeviceRole -DeviceRole $resolvedRole
   Write-LifecycleState -Status "healthy" -LanEndpoint $lanEndpoint
 } catch {
   $lifecycleFailure = $_
