@@ -1,5 +1,6 @@
 .agents/
 .claude/
+.delegate/
 .scratch/
 .unlazy/
 node_modules

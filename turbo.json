@@ -12,6 +12,13 @@
     "start": {
       "cache": false,
       "dependsOn": ["build", "^build"],
+      "passThroughEnv": [
+        "API_HOST",
+        "API_PORT",
+        "BREEV_*",
+        "DATABASE_MIGRATION_URL",
+        "DATABASE_URL"
+      ],
       "persistent": true
     },
     "test:integration": {

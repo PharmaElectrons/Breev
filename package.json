@@ -38,9 +38,10 @@
     "test": "pnpm test:unit && pnpm test:integration && pnpm test:browser && pnpm test:smoke",
     "test:boundaries": "node tooling/boundaries/prove.mjs",
     "test:browser": "pnpm build && pnpm --filter @breev/desktop test:browser",
+    "test:dev-launcher": "node --test tooling/dev-launcher.test.mjs",
     "test:integration": "turbo run test:integration --filter=@breev/local-api",
     "test:smoke": "pnpm build && pnpm --filter @breev/desktop test:smoke",
-    "test:unit": "turbo run test:unit && pnpm test:boundaries",
+    "test:unit": "turbo run test:unit && pnpm test:boundaries && pnpm test:dev-launcher",
     "typecheck": "turbo run typecheck",
     "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm check:licence-artifact && pnpm test:unit && pnpm test:integration && pnpm test:browser && pnpm test:smoke"
   },

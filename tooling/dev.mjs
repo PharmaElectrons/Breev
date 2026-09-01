@@ -65,8 +65,11 @@ checkProc.on("exit", (code) => {
     delete mergedEnv.BREEV_MAIN_DEVICE_SESSION;
   }
 
-  // 3. Start local API and Desktop UI with Turbo
-  const npmCmd = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  // 3. Start local API and Desktop UI with Turbo.
+  // Windows resolves pnpm to a .cmd shim, and Node refuses to spawn one
+  // without a shell, so the launcher needs one there.
+  const isWindows = process.platform === "win32";
+  const npmCmd = isWindows ? "pnpm.cmd" : "pnpm";
   const turboProc = spawn(
     npmCmd,
     [
@@ -81,6 +84,7 @@ checkProc.on("exit", (code) => {
       cwd: root,
       stdio: "inherit",
       env: mergedEnv,
+      shell: isWindows,
     },
   );
 
