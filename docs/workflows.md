@@ -17,7 +17,7 @@ These workflows are user-visible contracts. The local API controls every busines
 2. Before any replacement or repair, the installer reads `%ProgramData%\Breev\config\device-role` and checks preserved Main and Terminal state. An explicit role that conflicts with installed state is refused. A silent update omits `/ROLE` and preserves the installed role automatically.
 3. Main installation reaches Ready only after PostgreSQL, migrations, the local API, and any enabled LAN listener are healthy. Terminal installation reaches Ready after the complete payload and the terminal configuration boundary are valid; it creates no local database, Breev service, listener, or firewall rule.
 4. Repair runs the same role-specific readiness sequence. A failed repair records failure while preserving Main data and CA state or Terminal pairing state. It never converts a machine between roles.
-5. Uninstall removes the application and active Main-only services/rules but preserves `%ProgramData%\Breev`. Reinstall resolves the preserved role. Destructive data removal remains a separate, explicitly authorized administrator action and is never reachable from the installer UI, silent installer, updater, repair, or uninstaller.
+5. A genuine uninstall removes the application, active Main-only services/rules, and all `%ProgramData%\Breev` machine data, including the role, Main database/CA, or Terminal pairing state. It recreates no lifecycle record, so a later assisted install presents the role selection again and a later silent install must supply the intended `/ROLE`. During repair or update, electron-builder marks old-version removal with `--updated`; only that path uses the data-preserving lifecycle and restores the installed role without prompting.
 
 ## Start and connect
 

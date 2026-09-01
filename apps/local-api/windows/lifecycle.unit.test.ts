@@ -23,7 +23,7 @@ describe("Windows role-aware lifecycle", () => {
     expect(lifecycle).toContain('Role must be exactly "main" or "terminal"');
   });
 
-  it("resolves preserved role state only after non-preserving actions return", () => {
+  it("resolves preserved role state only after uninstall actions return", () => {
     expectOrdered(lifecycle, [
       'if ($Action -eq "DestructiveUninstall")',
       'if ($Action -eq "Uninstall")',
@@ -115,6 +115,26 @@ describe("Windows role-aware lifecycle", () => {
     expect(uninstallLifecycle).toContain(
       'Write-LifecycleState -Status "data-preserved"',
     );
+  });
+
+  it("removes the complete data root during an authorized destructive uninstall", () => {
+    const start = lifecycle.indexOf('if ($Action -eq "DestructiveUninstall")');
+    const end = lifecycle.indexOf('if ($Action -eq "Uninstall")', start);
+    const destructiveLifecycle = lifecycle.slice(start, end);
+
+    expect(destructiveLifecycle).toContain("$DataDestructionAuthorized");
+    expect(destructiveLifecycle).toContain(
+      "$DestructionConfirmation -cne $destructionConfirmationPhrase",
+    );
+    expect(destructiveLifecycle).toContain(
+      "Remove-Item -LiteralPath $DataRoot -Recurse -Force",
+    );
+    expectOrdered(destructiveLifecycle, [
+      "Stop-And-DeleteService",
+      "Stop-BreevProcesses",
+      "Remove-BreevFirewallRules",
+      "Remove-Item -LiteralPath $DataRoot -Recurse -Force",
+    ]);
   });
 
   it("rejects conflicting Main and Terminal state before terminal mutation", () => {

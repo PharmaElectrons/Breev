@@ -313,18 +313,28 @@ try {
 
   $uninstallerPath = Get-UninstallerPath
   $uninstallProcess = Start-Process -FilePath $uninstallerPath -ArgumentList @("/S", "/allusers") -Wait -PassThru
-  Add-Check -Name "uninstall-removes-application-only" -Passed (
+  Add-Check -Name "uninstall-removes-application-and-machine-data" -Passed (
     $uninstallProcess.ExitCode -eq 0 -and
     -not (Test-Path -LiteralPath $installRoot) -and
+    -not (Test-Path -LiteralPath $dataRoot) -and
     @(Get-BreevInstalledProducts).Count -eq 0
   ) -Details @{ exitCode = $uninstallProcess.ExitCode }
-  Add-TerminalInvariantCheck -Name "uninstall-preserves-role-and-terminal-state" -ExpectedWitnessSha256 $witnessSha256
+  $afterUninstallFacts = Get-TerminalFacts
+  Add-Check -Name "uninstall-removes-role-and-terminal-state" -Passed (
+    $null -eq $afterUninstallFacts.role -and
+    -not $afterUninstallFacts.terminalRootExists -and
+    -not $afterUninstallFacts.apiServicePresent -and
+    -not $afterUninstallFacts.postgresqlServicePresent -and
+    @($afterUninstallFacts.mainStatePathsPresent).Count -eq 0 -and
+    @($afterUninstallFacts.firewallRules).Count -eq 0 -and
+    @($afterUninstallFacts.listeners).Count -eq 0
+  ) -Details $afterUninstallFacts
 
-  $reinstallExitCode = Invoke-Installer -Path $UpdateInstallerPath -Arguments @("/S", "/allusers")
-  Add-Check -Name "reinstall-detects-preserved-role" -Passed (
+  $reinstallExitCode = Invoke-Installer -Path $UpdateInstallerPath -Arguments @("/S", "/allusers", "/ROLE=terminal")
+  Add-Check -Name "reinstall-selects-terminal-role-again" -Passed (
     $reinstallExitCode -eq 0 -and (Get-InstalledVersion) -eq $UpdateInstallerVersion
   ) -Details @{ exitCode = $reinstallExitCode; version = (Get-InstalledVersion) }
-  Add-TerminalInvariantCheck -Name "reinstall-opens-preserved-terminal-state" -ExpectedWitnessSha256 $witnessSha256
+  Add-TerminalInvariantCheck -Name "reinstall-creates-fresh-terminal-state"
 
   $result.passed = @($checks | Where-Object { -not $_.passed }).Count -eq 0
 } catch {

@@ -39,8 +39,8 @@ param(
   [string] $InjectFailure = "None",
 
   # Destructive removal is authorized twice, by a switch and by an exact
-  # phrase, and only ever from a manually typed elevated command. The
-  # uninstaller never passes either one.
+  # phrase. A genuine NSIS uninstall passes both; electron-builder's
+  # --updated removal path never does.
   [switch] $DataDestructionAuthorized,
 
   [string] $DestructionConfirmation = "",
@@ -1176,9 +1176,10 @@ if ($Action -eq "DestructiveUninstall") {
   if ((-not $DataDestructionAuthorized) -or ($DestructionConfirmation -cne $destructionConfirmationPhrase)) {
     throw "Destructive removal requires -DataDestructionAuthorized and -DestructionConfirmation $destructionConfirmationPhrase"
   }
-  # Unlike Uninstall, this action fails loudly. It is never run by the
-  # uninstaller, so nothing is trapped in a retry loop, and a partial
-  # destruction that reported success would be the worst possible outcome.
+  # Unlike the update-preparation Uninstall action, this action fails loudly.
+  # The genuine NSIS uninstaller stops before deleting application files when
+  # this fails, because a partial destruction reported as success would be the
+  # worst possible outcome.
   foreach ($serviceName in @($apiServiceName, $postgresqlServiceName)) {
     Stop-And-DeleteService -Name $serviceName
   }

@@ -187,38 +187,36 @@
 !macroend
 
 !macro customUnInstall
-  ; This uninstaller only ever runs the data-preserving Uninstall action. It
-  ; stops and removes the services and closes the LAN firewall rule, and leaves
-  ; the pharmacy data and the pharmacy CA in place.
-  ;
-  ; Destroying pharmacy data is a separate, separately authorized action that
-  ; no installer path reaches. An administrator runs it by hand from an
-  ; elevated PowerShell:
-  ;
-  ;   powershell.exe -NoProfile -ExecutionPolicy Bypass
-  ;     -File "$INSTDIR\resources\windows-payload\lifecycle.ps1"
-  ;     -Action DestructiveUninstall -InstallRoot "$INSTDIR"
-  ;     -PayloadRoot "$INSTDIR\resources\windows-payload"
-  ;     -DataDestructionAuthorized -DestructionConfirmation destroy-pharmacy-data
-  ;
-  ; The uninstall lifecycle must never abort the uninstaller: any nonzero
-  ; result here (including a PowerShell launch or parameter-binding failure
-  ; the script itself cannot catch) would send electron-builder's
-  ; uninstallOldVersion into its "cannot be closed" retry loop and block
-  ; every reinstall. The lifecycle script is itself best-effort for
-  ; Uninstall and records what it could not do.
+  ; electron-builder passes --updated when this uninstaller is removing the old
+  ; application during an update. That path must preserve the installed role,
+  ; database, CA, and pairing state. A genuine uninstall removes all Breev
+  ; machine data and does not recreate lifecycle state, so the next assisted
+  ; install is clean and presents the role page again.
   ReadEnvStr $R8 "BREEV_WINDOWS_INJECT_FAILURE"
   ${If} $R8 == ""
     StrCpy $R8 "None"
   ${EndIf}
-  DetailPrint "Running the Breev Uninstall lifecycle"
   StrCpy $R9 "-1"
   ClearErrors
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "Uninstall" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -InjectFailure "$R8"' $R9
+  ${If} ${isUpdated}
+    DetailPrint "Preparing Breev for an application update"
+    ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "Uninstall" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -InjectFailure "$R8"' $R9
+  ${Else}
+    DetailPrint "Removing Breev services and machine data"
+    ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "DestructiveUninstall" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -DataDestructionAuthorized -DestructionConfirmation "destroy-pharmacy-data" -SkipStateWrite -InjectFailure "$R8"' $R9
+  ${EndIf}
   ${If} ${Errors}
     StrCpy $R9 "-1"
   ${EndIf}
   ${If} $R9 != 0
-    DetailPrint "The Breev Uninstall lifecycle reported exit code $R9; continuing removal"
+    ${If} ${isUpdated}
+      DetailPrint "The Breev update preparation reported exit code $R9; continuing application-file replacement"
+    ${Else}
+      ${IfNot} ${Silent}
+        MessageBox MB_OK|MB_ICONSTOP "Breev could not remove all machine data. No application files were removed. Exit code: $R9"
+      ${EndIf}
+      SetErrorLevel $R9
+      Quit
+    ${EndIf}
   ${EndIf}
 !macroend

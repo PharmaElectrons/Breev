@@ -49,6 +49,14 @@ const installSectionTemplate = readFileSync(
   path.join(nsisTemplateRoot, "installSection.nsh"),
   "utf8",
 );
+const installUtilTemplate = readFileSync(
+  path.join(nsisTemplateRoot, "include", "installUtil.nsh"),
+  "utf8",
+);
+const uninstallerTemplate = readFileSync(
+  path.join(nsisTemplateRoot, "uninstaller.nsh"),
+  "utf8",
+);
 
 function expectOrdered(source: string, values: readonly string[]): void {
   let previousIndex = -1;
@@ -121,6 +129,27 @@ describe("unified Windows installer role selection", () => {
     ]);
   });
 
+  it("preserves data only for updates and cleans genuine uninstalls", () => {
+    const start = installer.indexOf("!macro customUnInstall");
+    const uninstallMacro = installer.slice(start);
+
+    expectOrdered(uninstallMacro, [
+      "${If} ${isUpdated}",
+      '-Action "Uninstall"',
+      "${Else}",
+      '-Action "DestructiveUninstall"',
+      "-DataDestructionAuthorized",
+      '-DestructionConfirmation "destroy-pharmacy-data"',
+      "-SkipStateWrite",
+    ]);
+    expect(uninstallMacro).toContain("No application files were removed");
+    expect(installUtilTemplate).toContain('StrCpy $0 "$0 --updated"');
+    expectOrdered(uninstallerTemplate, [
+      "!insertmacro customUnInstall",
+      "# delete the installed files",
+    ]);
+  });
+
   it("matches the pinned builder hook order before old-version removal", () => {
     expectOrdered(assistedTemplate, [
       "customPageAfterChangeDir",
@@ -163,13 +192,13 @@ describe("unified Windows installer role selection", () => {
     expect(issue34Aggregator).toContain('Add-Criterion $criteria "AC-9"');
   });
 
-  it("proves Terminal repair, failure, uninstall, and footprint invariants", () => {
+  it("proves Terminal repair, failure, update, clean uninstall, and footprint invariants", () => {
     for (const check of [
       "repair-preserves-role-and-terminal-state",
       "failed-repair-preserves-terminal-state",
       "update-preserves-role-and-terminal-state",
-      "uninstall-preserves-role-and-terminal-state",
-      "reinstall-opens-preserved-terminal-state",
+      "uninstall-removes-role-and-terminal-state",
+      "reinstall-selects-terminal-role-again",
     ]) {
       expect(terminalProof).toContain(check);
     }
