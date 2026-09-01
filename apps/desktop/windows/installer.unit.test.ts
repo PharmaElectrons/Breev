@@ -14,6 +14,20 @@ const candidateBuilder = readFileSync(
   ),
   "utf8",
 );
+const terminalProof = readFileSync(
+  new URL(
+    "../../../tooling/windows/proof/Invoke-TerminalInstallerProof.ps1",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const issue34Aggregator = readFileSync(
+  new URL(
+    "../../../tooling/windows/proof/Confirm-Issue34Evidence.ps1",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const require = createRequire(import.meta.url);
 const electronBuilderPackage = require.resolve("electron-builder/package.json");
 const nsisTemplateRoot = path.join(
@@ -127,5 +141,46 @@ describe("unified Windows installer role selection", () => {
       '$builderInstaller = Join-Path $builderOutput "BreevSetup.exe"',
     );
     expect(candidateBuilder).not.toContain("Breev-$version-windows-x64.exe");
+  });
+
+  it("keeps the Terminal lifecycle proof correlated with the existing Main proof", () => {
+    expect(terminalProof).toContain(
+      'source = "tooling/windows/proof/Invoke-TerminalInstallerProof.ps1"',
+    );
+    expect(terminalProof).toContain(
+      '$mainEvidence.source -eq "tooling/windows/proof/Invoke-InstalledRuntimeProof.ps1"',
+    );
+    expect(terminalProof).toContain(
+      'Invoke-Installer -Path $InstallerPath -Arguments @("/S", "/allusers", "/ROLE=terminal")',
+    );
+    expect(terminalProof).toContain(
+      'Invoke-Installer -Path $UpdateInstallerPath -Arguments @("/S", "/allusers")',
+    );
+    expect(issue34Aggregator).toContain("[string] $TerminalResultPath");
+    expect(issue34Aggregator).toContain(
+      "$terminal.mainEvidence.sha256 -eq (Get-FileHash -LiteralPath",
+    );
+    expect(issue34Aggregator).toContain('Add-Criterion $criteria "AC-9"');
+  });
+
+  it("proves Terminal repair, failure, uninstall, and footprint invariants", () => {
+    for (const check of [
+      "repair-preserves-role-and-terminal-state",
+      "failed-repair-preserves-terminal-state",
+      "update-preserves-role-and-terminal-state",
+      "uninstall-preserves-role-and-terminal-state",
+      "reinstall-opens-preserved-terminal-state",
+    ]) {
+      expect(terminalProof).toContain(check);
+    }
+    expect(terminalProof).toContain("$breevPorts = @(31310, 31311, 31312)");
+    expect(terminalProof).toContain(
+      "@($Facts.mainStatePathsPresent).Count -eq 0",
+    );
+    expect(terminalProof).toContain("@($Facts.firewallRules).Count -eq 0");
+    expect(terminalProof).toContain("@($Facts.listeners).Count -eq 0");
+    expect(terminalProof).toContain(
+      "Refusing destructive lifecycle tests without -DisposableEnvironmentAcknowledged",
+    );
   });
 });

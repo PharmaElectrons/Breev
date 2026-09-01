@@ -19,6 +19,9 @@ param(
   [string] $RuntimeResultPath,
 
   [Parameter(Mandatory = $true)]
+  [string] $TerminalResultPath,
+
+  [Parameter(Mandatory = $true)]
   [string] $StandardUserResultPath,
 
   [Parameter(Mandatory = $true)]
@@ -98,6 +101,7 @@ function Add-Criterion {
 
 $PackagingRoot = [IO.Path]::GetFullPath($PackagingRoot)
 $runtime = Read-Json ([IO.Path]::GetFullPath($RuntimeResultPath))
+$terminal = Read-Json ([IO.Path]::GetFullPath($TerminalResultPath))
 $standardUser = Read-Json ([IO.Path]::GetFullPath($StandardUserResultPath))
 $apiRestart = Read-Json ([IO.Path]::GetFullPath($ApiRestartResultPath))
 $reboot = Read-Json ([IO.Path]::GetFullPath($RebootResultPath))
@@ -122,8 +126,8 @@ $packagingVersions = @($packaging.versions)
 $initialPackaging = @($packagingVersions | Where-Object { $_.version -eq "0.0.0" })
 $updatePackaging = @($packagingVersions | Where-Object { $_.version -eq "0.0.1" })
 $machineId = $runtime.machine.machineId
-$correlatedRunEvidence = @($runtime, $standardUser, $apiRestart, $reboot, $lan, $forge, $builderAsarIntegrity, $forgeAsarIntegrity, $packaging, $hostReboot, $offlineNetwork, $networkRestore, $hostExport, $hostImport)
-$sameMachineEvidence = @($packaging, $runtime, $standardUser, $apiRestart, $reboot, $forge, $builderAsarIntegrity, $forgeAsarIntegrity)
+$correlatedRunEvidence = @($runtime, $terminal, $standardUser, $apiRestart, $reboot, $lan, $forge, $builderAsarIntegrity, $forgeAsarIntegrity, $packaging, $hostReboot, $offlineNetwork, $networkRestore, $hostExport, $hostImport)
+$sameMachineEvidence = @($packaging, $runtime, $terminal, $standardUser, $apiRestart, $reboot, $forge, $builderAsarIntegrity, $forgeAsarIntegrity)
 $correlationPassed = $initialPackaging.Count -eq 1 -and $updatePackaging.Count -eq 1 -and
   @($correlatedRunEvidence | Where-Object {
     $_.runId -ne $RunId.ToString() -or $_.sourceCommit -ne $SourceCommit -or $_.snapshotId -ne $SnapshotId
@@ -168,8 +172,15 @@ $correlationPassed = $initialPackaging.Count -eq 1 -and $updatePackaging.Count -
     $candidateMachineId -ne $machineId
   }).Count -eq 0 -and
   $lan.windows.windowsMachineId -eq $machineId -and
+  $terminal.schemaVersion -eq 1 -and
+  $terminal.role -eq "terminal" -and
+  $terminal.source -eq "tooling/windows/proof/Invoke-TerminalInstallerProof.ps1" -and
+  $terminal.passed -and
+  $terminal.mainEvidence.sha256 -eq (Get-FileHash -LiteralPath ([IO.Path]::GetFullPath($RuntimeResultPath)) -Algorithm SHA256).Hash.ToLowerInvariant() -and
   $runtime.artifacts.installer.sha256 -eq $initialPackaging[0].electronBuilderNsis.sha256 -and
   $runtime.artifacts.updateInstaller.sha256 -eq $updatePackaging[0].electronBuilderNsis.sha256 -and
+  $terminal.artifacts.installer.sha256 -eq $initialPackaging[0].electronBuilderNsis.sha256 -and
+  $terminal.artifacts.updateInstaller.sha256 -eq $updatePackaging[0].electronBuilderNsis.sha256 -and
   $runtime.signing.expectedSignerThumbprint -eq $packaging.signing.certificateThumbprint -and
   $forge.artifacts.installer.sha256 -eq $initialPackaging[0].electronForgeWix.sha256 -and
   $forge.artifacts.updateInstaller.sha256 -eq $updatePackaging[0].electronForgeWix.sha256 -and
@@ -461,6 +472,18 @@ Add-Criterion $criteria "AC-8" "The complete Stage 1a local health/version-hands
   $standardUser.checks.apiHealthyAfterElectronTreeKill -and
   $standardUser.checks.desktopRestartsReady
 ) @($StandardUserResultPath, $OfflineNetworkResultPath)
+
+Add-Criterion $criteria "AC-9" "The unified installer selects a Terminal silently, preserves that role through repair, failure, update, uninstall, and reinstall, and never creates Main services, database state, listeners, or firewall rules." (
+  (Get-RuntimeCheck $terminal "clean-disposable-snapshot") -and
+  (Get-RuntimeCheck $terminal "invalid-role-fails-before-install") -and
+  (Get-RuntimeCheck $terminal "clean-install-has-terminal-only-footprint") -and
+  (Get-RuntimeCheck $terminal "repair-preserves-role-and-terminal-state") -and
+  (Get-RuntimeCheck $terminal "role-conversion-is-refused") -and
+  (Get-RuntimeCheck $terminal "failed-repair-preserves-terminal-state") -and
+  (Get-RuntimeCheck $terminal "update-preserves-role-and-terminal-state") -and
+  (Get-RuntimeCheck $terminal "uninstall-preserves-role-and-terminal-state") -and
+  (Get-RuntimeCheck $terminal "reinstall-opens-preserved-terminal-state")
+) @($TerminalResultPath, $RuntimeResultPath)
 
 Add-Criterion $criteria "RECOVERY" "API/PostgreSQL child crashes, PostgreSQL interruption mid-transaction, and API restart with Electron open recover correctly." (
   (Get-RuntimeCheck $runtime "api-crash-recovery") -and
