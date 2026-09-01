@@ -78,7 +78,12 @@
       "status": "PASS",
       "details": {
         "simultaneousNodes": 4,
-        "activeUsers": ["owner.admin", "cashier.one", "pharmacist.dr", "support.tech"],
+        "activeUsers": [
+          "owner.admin",
+          "cashier.one",
+          "pharmacist.dr",
+          "support.tech"
+        ],
         "tlsVersion": "TLSv1.3",
         "crossSessionLeakage": false,
         "deadlocks": 0,
