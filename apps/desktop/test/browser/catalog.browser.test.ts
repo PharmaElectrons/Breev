@@ -239,9 +239,16 @@ test.describe.serial("Product catalog screens", () => {
     import.meta.dirname,
     "../../../../test-results/desktop-browser",
   );
+  // The prototype-adoption slice keeps its own before/after set so issue 45s
+  // evidence stays about product definition rather than about the re-skin.
+  const adoptionEvidenceDir = path.resolve(
+    import.meta.dirname,
+    "../../../../evidence/client-prototype-adoption/after",
+  );
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
+    await mkdir(adoptionEvidenceDir, { recursive: true });
     await mkdir(testResultsDir, { recursive: true });
     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
     databaseRoles = await createSeparatedDatabaseRoles(postgres);
@@ -826,6 +833,179 @@ test.describe.serial("Product catalog screens", () => {
         await context.close();
       }
     }
+  });
+
+  test("The module bar offers Phase One surfaces only, and never an excluded or deferred one", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products`);
+
+    const modules = page.getByRole("navigation", { name: "Modules" });
+    await expect(modules).toBeVisible();
+
+    // Catalog is the one workspace with server authority behind it, and the
+    // signed-in pharmacist holds catalog.item.manage.
+    const products = modules.getByRole("link", { name: "Products" });
+    await expect(products).toHaveAttribute("aria-current", "page");
+    await expect(products).toHaveAttribute("data-availability", "available");
+
+    // A required Phase One surface that is not built says so rather than
+    // pretending to work.
+    await expect(modules.getByRole("link", { name: /^Sales/ })).toHaveAttribute(
+      "data-availability",
+      "unavailable",
+    );
+
+    // The Clinic tab is outside project scope, and delivery, e-commerce,
+    // marketing, and external integration are deferred: none of them exists.
+    for (const excluded of [
+      /clinic/i,
+      /عيادة/,
+      /delivery/i,
+      /commerce/i,
+      /marketing/i,
+      /external/i,
+    ]) {
+      await expect(page.getByText(excluded)).toHaveCount(0);
+    }
+
+    // WhatsApp messaging is a paid add-on. Without the entitlement the surface
+    // is hidden completely, not rendered as a disabled button.
+    await expect(modules.getByRole("link", { name: /message/i })).toHaveCount(
+      0,
+    );
+  });
+
+  test("An unbuilt surface is honest about itself in both locales and themes", async ({
+    browser,
+  }) => {
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = await browser.newContext({
+          viewport: { height: 768, width: 1_024 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, { locale, theme });
+        await page.goto(`${renderer.origin}#/sales`);
+
+        const heading = page.getByTestId("unavailable-surface");
+        await expect(heading).toBeVisible();
+        await expect(heading).toContainText(
+          locale === "en"
+            ? "This screen is not available yet"
+            : "هذه الشاشة غير متاحة بعد",
+        );
+
+        // No fabricated pharmacy data may appear on a surface Breev has not
+        // built. The prototype's mock rows are the failure this guards against.
+        await expect(page.locator("table")).toHaveCount(0);
+
+        const accessibility = await new AxeBuilder({ page }).analyze();
+        expect(accessibility.violations).toEqual([]);
+
+        await page.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: path.join(
+            adoptionEvidenceDir,
+            `unavailable-surface-${locale}-${theme}.png`,
+          ),
+        });
+        await context.close();
+      }
+    }
+  });
+
+  test("A direct hash cannot mount a surface the pharmacy is not entitled to", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+
+    // WhatsApp messaging is a paid add-on this pharmacy does not hold. Typing
+    // its hash must not render its label or its panel: docs/product.md requires
+    // functions not enabled for a pharmacy to be hidden completely.
+    await page.goto(`${renderer.origin}#/messages`);
+    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+
+    await expect(page.getByText(/send message/i)).toHaveCount(0);
+    await expect(page.getByTestId("unavailable-surface")).toHaveCount(0);
+
+    // The request lands on an allowed default instead.
+    await expect.poll(() => new URL(page.url()).hash).toBe("#/administration");
+  });
+
+  test("A direct hash cannot bypass login", async ({ page }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+
+    // docs/domain.md: mandatory login, no bypass. An unauthenticated context
+    // reaching a Catalog deep link gets the sign-in screen, not product data.
+    await page.route("**/identity/state", async (route) => {
+      await route.fulfill({ json: { state: "unauthenticated" }, status: 200 });
+    });
+
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+
+    await expect(
+      page.getByRole("heading", { name: "Sign in to Breev" }),
+    ).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Modules" })).toHaveCount(
+      0,
+    );
+    await expect(page.locator(".catalog-rail")).toHaveCount(0);
+    await expect(page.getByText("Panadol Extra")).toHaveCount(0);
+  });
+
+  test("The module bar is reachable by keyboard and never disturbs the shell button order", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+
+    // Navigation is links, not buttons, so the documented shell button order
+    // (language, theme, check) survives the prototype's module bar.
+    const buttons = page.getByRole("button");
+    await expect(buttons.nth(0)).toHaveAttribute(
+      "aria-label",
+      "Switch to Arabic",
+    );
+    await expect(buttons.nth(1)).toHaveAttribute(
+      "aria-label",
+      "Use dark theme",
+    );
+
+    const products = page
+      .getByRole("navigation", { name: "Modules" })
+      .getByRole("link", { name: "Products" });
+    await products.focus();
+    await expect(products).toBeFocused();
+    const outlineWidth = await products.evaluate((element) => {
+      const view = element.ownerDocument.defaultView;
+      return view === null
+        ? 0
+        : Number.parseFloat(view.getComputedStyle(element).outlineWidth);
+    });
+    expect(outlineWidth).toBeGreaterThanOrEqual(3);
+
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.join(adoptionEvidenceDir, "catalog-workspace-en-light.png"),
+    });
   });
 });
 

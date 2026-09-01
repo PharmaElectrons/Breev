@@ -119,7 +119,17 @@ function checkRendererImport(sourceFile, specifier) {
     specifier === "electron" ||
     specifier === "pg" ||
     specifier.startsWith("drizzle-orm") ||
-    specifier.startsWith("@nestjs/");
+    specifier.startsWith("@nestjs/") ||
+    // A second business or schema authority. The client prototype under
+    // design/prototype reaches PostgreSQL through a browser Supabase client and
+    // runs TanStack Start server routes; docs/architecture.md makes the local
+    // API the only local business and database authority, and keeps server
+    // routing out of the Electron renderer. Enforced on the resolved import
+    // graph rather than by scanning source text, which a string or an alias
+    // would slip past.
+    specifier.startsWith("@supabase/") ||
+    specifier.startsWith("@tanstack/react-start") ||
+    specifier.startsWith("@tanstack/start");
 
   if (forbiddenExternal) {
     violations.push(
@@ -136,6 +146,8 @@ function checkRendererResolvedImport(sourceFile, specifier, target) {
   const normalizedTarget = slash(target);
   if (
     normalizedTarget.includes("/apps/local-api/") ||
+    // The client design prototype is a reference, never a dependency.
+    normalizedTarget.includes("/design/prototype/") ||
     normalizedTarget.includes("/src/main/") ||
     normalizedTarget.includes("/src/preload/") ||
     /\/(?:database|db|schema|tables?)(?:\/|\.)/u.test(normalizedTarget)
