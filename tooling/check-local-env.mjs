@@ -4,10 +4,17 @@ import { parseEnv } from "node:util";
 
 const root = path.resolve(import.meta.dirname, "..");
 const explicitRole =
-  process.argv.find((arg) => arg.startsWith("--role="))?.split("=")[1]?.trim()
-  ?? (process.argv.includes("--terminal") || process.argv.includes("terminal") ? "terminal" : undefined)
-  ?? (process.argv.includes("--main") || process.argv.includes("main") ? "main" : undefined)
-  ?? process.env.BREEV_DEVICE_ROLE?.trim();
+  process.argv
+    .find((arg) => arg.startsWith("--role="))
+    ?.split("=")[1]
+    ?.trim() ??
+  (process.argv.includes("--terminal") || process.argv.includes("terminal")
+    ? "terminal"
+    : undefined) ??
+  (process.argv.includes("--main") || process.argv.includes("main")
+    ? "main"
+    : undefined) ??
+  process.env.BREEV_DEVICE_ROLE?.trim();
 
 function resolveEnvFile(defaultRelative, roleRelative) {
   const rolePath = roleRelative ? path.join(root, roleRelative) : undefined;

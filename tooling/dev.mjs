@@ -5,7 +5,10 @@ import { parseEnv } from "node:util";
 
 const root = path.resolve(import.meta.dirname, "..");
 const roleArg =
-  process.argv.find((arg) => arg.startsWith("--role="))?.split("=")[1]?.trim() ??
+  process.argv
+    .find((arg) => arg.startsWith("--role="))
+    ?.split("=")[1]
+    ?.trim() ??
   (process.argv.includes("terminal") || process.argv.includes("--terminal")
     ? "terminal"
     : undefined) ??
@@ -39,12 +42,12 @@ checkProc.on("exit", (code) => {
 
   const desktopEnvFile =
     role === "terminal"
-      ? (existsSync(path.join(root, "apps/desktop/.env.terminal"))
-          ? path.join(root, "apps/desktop/.env.terminal")
-          : path.join(root, "apps/desktop/.env"))
-      : (existsSync(path.join(root, "apps/desktop/.env.main"))
-          ? path.join(root, "apps/desktop/.env.main")
-          : path.join(root, "apps/desktop/.env"));
+      ? existsSync(path.join(root, "apps/desktop/.env.terminal"))
+        ? path.join(root, "apps/desktop/.env.terminal")
+        : path.join(root, "apps/desktop/.env")
+      : existsSync(path.join(root, "apps/desktop/.env.main"))
+        ? path.join(root, "apps/desktop/.env.main")
+        : path.join(root, "apps/desktop/.env");
 
   const rootEnv = existsSync(rootEnvFile)
     ? parseEnv(readFileSync(rootEnvFile, "utf8"))
