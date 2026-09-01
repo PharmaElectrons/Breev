@@ -165,7 +165,8 @@
   DetailPrint "Running the Breev ${ACTION} lifecycle"
   StrCpy $R9 "-1"
   ClearErrors
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "${ACTION}" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -Role "$BreevRole" -InjectFailure "$R8"' $R9
+  nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "${ACTION}" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -Role "$BreevRole" -InjectFailure "$R8"'
+  Pop $R9
   ${If} ${Errors}
     StrCpy $R9 "-1"
   ${EndIf}
@@ -200,10 +201,12 @@
   ClearErrors
   ${If} ${isUpdated}
     DetailPrint "Preparing Breev for an application update"
-    ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "Uninstall" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -InjectFailure "$R8"' $R9
+    nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "Uninstall" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -InjectFailure "$R8"'
+    Pop $R9
   ${Else}
     DetailPrint "Removing Breev services and machine data"
-    ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "DestructiveUninstall" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -DataDestructionAuthorized -DestructionConfirmation "destroy-pharmacy-data" -SkipStateWrite -InjectFailure "$R8"' $R9
+    nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\resources\windows-payload\lifecycle.ps1" -Action "DestructiveUninstall" -InstallRoot "$INSTDIR" -PayloadRoot "$INSTDIR\resources\windows-payload" -DataDestructionAuthorized -DestructionConfirmation "destroy-pharmacy-data" -SkipStateWrite -InjectFailure "$R8"'
+    Pop $R9
   ${EndIf}
   ${If} ${Errors}
     StrCpy $R9 "-1"
