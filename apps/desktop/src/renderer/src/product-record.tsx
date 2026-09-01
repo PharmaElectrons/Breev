@@ -123,9 +123,9 @@ export function ProductRecord({
         </div>
       ) : null}
 
-      <article className="identity-card p-6 max-w-4xl w-full mx-auto space-y-6">
+      <article className="identity-card p-5 max-w-4xl w-full mx-auto space-y-5 animate-reveal">
         {/* Record Header */}
-        <header className="border-b border-[var(--border)] pb-4">
+        <header className="border-b border-[color:var(--border)] pb-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
@@ -201,11 +201,11 @@ export function ProductRecord({
           {/* Identity & Technical Facts */}
           <section
             aria-labelledby="technical-facts-heading"
-            className="space-y-3 p-4 rounded-xl border border-[var(--border)]"
+            className="space-y-2 p-3 rounded-lg border border-[color:var(--border)]"
           >
             <h3
               id="technical-facts-heading"
-              className="text-sm font-bold uppercase tracking-wider text-muted-foreground"
+              className="text-xs font-bold uppercase tracking-widest text-muted-foreground"
             >
               {copy.record.title}
             </h3>
@@ -226,7 +226,7 @@ export function ProductRecord({
                   <dt className="text-muted-foreground">
                     {copy.record.mergedInto}:
                   </dt>
-                  <dd className="font-mono text-xs break-all text-amber-600 dark:text-amber-400">
+                  <dd className="font-mono text-xs break-all merged-into-value">
                     {product.mergedIntoProductId}
                   </dd>
                 </>
@@ -237,10 +237,10 @@ export function ProductRecord({
           {/* Read-Only Inventory Balance Section */}
           <section
             aria-label={copy.inventory.readOnlyAssistiveText}
-            className="space-y-3 p-4 rounded-xl border border-[var(--border)]"
+            className="space-y-2 p-3 rounded-lg border border-[color:var(--border)]"
             role="region"
           >
-            <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
               {copy.inventory.title}
             </h3>
             <div className="space-y-2">
@@ -254,7 +254,7 @@ export function ProductRecord({
               >
                 {copy.inventory.emptyState}
               </div>
-              <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded border border-[var(--border)]">
+              <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded border border-[color:var(--control-border)]">
                 {copy.inventory.readOnlyAssistiveText}
               </span>
             </div>
@@ -268,7 +268,7 @@ export function ProductRecord({
         >
           <h3
             id="definition-breakdown-heading"
-            className="text-base font-bold border-b border-[var(--border)] pb-2"
+            className="text-base font-bold border-b border-[color:var(--border)] pb-2"
           >
             {copy.definition.modeLabel}:{" "}
             <span className="font-semibold text-primary">
@@ -277,7 +277,7 @@ export function ProductRecord({
           </h3>
 
           {product.definition.mode === "medication" ? (
-            <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm p-4 rounded-xl border border-[var(--border)]">
+            <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-sm p-3 rounded-lg border border-[color:var(--border)]">
               <div>
                 <dt className="text-muted-foreground">
                   {copy.definition.medication.tradeName}
@@ -312,7 +312,7 @@ export function ProductRecord({
               </div>
             </dl>
           ) : (
-            <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm p-4 rounded-xl border border-[var(--border)]">
+            <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-sm p-3 rounded-lg border border-[color:var(--border)]">
               <div>
                 <dt className="text-muted-foreground">
                   {copy.definition.generalItem.company}
@@ -372,7 +372,7 @@ export function ProductRecord({
         >
           <h3
             id="supporting-fields-heading"
-            className="text-base font-bold border-b border-[var(--border)] pb-2"
+            className="text-base font-bold border-b border-[color:var(--border)] pb-2"
           >
             {copy.fields.category} &amp; {copy.barcodes.label}
           </h3>
@@ -401,7 +401,7 @@ export function ProductRecord({
                     {product.barcodes.map((bc) => (
                       <li
                         key={bc}
-                        className="px-2.5 py-1 rounded border border-[var(--border)] font-mono text-xs"
+                        className="px-2.5 py-1 rounded border border-[color:var(--control-border)] font-mono text-xs"
                       >
                         {bc}
                       </li>
@@ -417,11 +417,11 @@ export function ProductRecord({
         <section aria-labelledby="instructions-heading" className="space-y-3">
           <h3
             id="instructions-heading"
-            className="text-base font-bold border-b border-[var(--border)] pb-2"
+            className="text-base font-bold border-b border-[color:var(--border)] pb-2"
           >
             {copy.instructions.title}
           </h3>
-          <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm p-4 rounded-xl border border-[var(--border)]">
+          <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm p-3 rounded-lg border border-[color:var(--border)]">
             <div>
               <dt className="text-muted-foreground">
                 {copy.instructions.usesPerDay}
@@ -466,13 +466,11 @@ export function ProductRecord({
           <section aria-labelledby="sharing-heading" className="space-y-2">
             <h3
               id="sharing-heading"
-              className="text-base font-bold border-b border-[var(--border)] pb-2"
+              className="text-base font-bold border-b border-[color:var(--border)] pb-2"
             >
               {copy.sharing.title}
             </h3>
-            <p className="text-xs text-muted-foreground">
-              {copy.sharing.metadataNotice}
-            </p>
+            <p className="field-note">{copy.sharing.metadataNotice}</p>
             <ul className="space-y-1 text-sm list-none p-0">
               <li>
                 <strong>{copy.sharing.externallyVisible}:</strong>{" "}
@@ -491,7 +489,7 @@ export function ProductRecord({
           >
             <h3
               id="state-indicators-heading"
-              className="text-base font-bold border-b border-[var(--border)] pb-2"
+              className="text-base font-bold border-b border-[color:var(--border)] pb-2"
             >
               {copy.stateColours.title}
             </h3>
@@ -586,10 +584,7 @@ export function ProductRecord({
             </p>
 
             {mergeError ? (
-              <p
-                className="text-red-500 text-xs font-semibold mb-3"
-                role="alert"
-              >
+              <p className="field-error mb-3" role="alert">
                 {mergeError}
               </p>
             ) : null}

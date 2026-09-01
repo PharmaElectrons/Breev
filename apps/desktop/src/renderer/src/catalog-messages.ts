@@ -84,6 +84,11 @@ export interface CatalogCopy {
     readonly newProduct: string;
     readonly title: string;
   };
+  readonly rail: {
+    readonly count: string;
+    readonly newShort: string;
+    readonly selectPrompt: string;
+  };
   readonly modeSwitchModal: {
     readonly abandonedFieldsLead: string;
     readonly cancel: string;
@@ -227,6 +232,11 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       loading: "جارٍ تحميل المنتجات...",
       newProduct: "تعريف منتج جديد",
       title: "المنتجات المعرّفة",
+    },
+    rail: {
+      count: "المواد",
+      newShort: "+ جديد",
+      selectPrompt: "اختر مادة من القائمة أو عرّف مادة جديدة.",
     },
     modeSwitchModal: {
       abandonedFieldsLead: "سيتم مسح وتفريغ القيم التالية:",
@@ -387,6 +397,11 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       loading: "Loading products...",
       newProduct: "Define new product",
       title: "Defined products",
+    },
+    rail: {
+      count: "Products",
+      newShort: "+ New",
+      selectPrompt: "Select a product from the list, or define a new one.",
     },
     modeSwitchModal: {
       abandonedFieldsLead: "The following entered fields will be cleared:",

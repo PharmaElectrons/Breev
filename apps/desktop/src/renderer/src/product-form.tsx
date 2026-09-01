@@ -571,7 +571,7 @@ export function ProductForm({
         />
       ) : null}
 
-      <article className="identity-card p-6 max-w-4xl w-full mx-auto">
+      <article className="identity-card p-5 max-w-4xl w-full mx-auto animate-reveal">
         <header className="identity-heading">
           <span className="identity-symbol" aria-hidden="true">
             {isEditing ? "✎" : "+"}
@@ -632,8 +632,8 @@ export function ProductForm({
 
           {/* 2. Mode Definition Fields */}
           {mode === "medication" ? (
-            <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-4 border border-[var(--border)] p-4 rounded-xl">
-              <legend className="px-2 font-bold text-sm">
+            <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-[color:var(--border)] p-3 rounded-lg">
+              <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
                 {copy.definition.modes.medication}
               </legend>
 
@@ -665,7 +665,7 @@ export function ProductForm({
                 {fieldErrors.tradeName ? (
                   <p
                     id={`${formId}-tradeName-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.tradeName}
@@ -699,7 +699,7 @@ export function ProductForm({
                 {fieldErrors.strength ? (
                   <p
                     id={`${formId}-strength-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.strength}
@@ -733,7 +733,7 @@ export function ProductForm({
                 {fieldErrors.dosageForm ? (
                   <p
                     id={`${formId}-dosageForm-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.dosageForm}
@@ -767,7 +767,7 @@ export function ProductForm({
                 {fieldErrors.manufacturer ? (
                   <p
                     id={`${formId}-manufacturer-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.manufacturer}
@@ -776,8 +776,8 @@ export function ProductForm({
               </div>
             </fieldset>
           ) : (
-            <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-4 border border-[var(--border)] p-4 rounded-xl">
-              <legend className="px-2 font-bold text-sm">
+            <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-[color:var(--border)] p-3 rounded-lg">
+              <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
                 {copy.definition.modes["general-item"]}
               </legend>
 
@@ -807,7 +807,7 @@ export function ProductForm({
                 {fieldErrors.company ? (
                   <p
                     id={`${formId}-company-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.company}
@@ -841,7 +841,7 @@ export function ProductForm({
                 {fieldErrors.subBrand ? (
                   <p
                     id={`${formId}-subBrand-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.subBrand}
@@ -875,7 +875,7 @@ export function ProductForm({
                 {fieldErrors.typeOfUse ? (
                   <p
                     id={`${formId}-typeOfUse-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.typeOfUse}
@@ -909,7 +909,7 @@ export function ProductForm({
                 {fieldErrors.property ? (
                   <p
                     id={`${formId}-property-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.property}
@@ -943,7 +943,7 @@ export function ProductForm({
                 {fieldErrors.targetAudience ? (
                   <p
                     id={`${formId}-targetAudience-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.targetAudience}
@@ -975,7 +975,7 @@ export function ProductForm({
                 {fieldErrors.size ? (
                   <p
                     id={`${formId}-size-error`}
-                    className="text-red-500 text-xs font-semibold mt-1"
+                    className="field-error"
                     role="alert"
                   >
                     {fieldErrors.size}
@@ -985,22 +985,27 @@ export function ProductForm({
             </fieldset>
           )}
 
-          {/* 3. Generated English Display Name - Output element (never an input) */}
-          <div className="field-label p-4 rounded-xl border border-[var(--border)]">
-            <span className="font-bold text-sm">
+          {/*
+            3. The generated English display name.
+            The client's own Add-Material panel assembles this while the
+            pharmacist types, and this keeps that behaviour. It is an <output>,
+            never an input: the display name is generated from the approved
+            field template and is never unrelated free text (docs/domain.md).
+          */}
+          <div className="field-label generated-name-banner">
+            <span className="generated-name-label">
               {copy.fields.generatedDisplayName}
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="field-note">
               {copy.fields.generatedDisplayNameHint}
             </span>
             <output
               aria-live="polite"
-              className="block p-3 mt-1 border border-[var(--border)] rounded-lg font-mono text-base font-semibold min-h-[2.8rem] flex items-center"
               data-testid="generated-display-name"
               name="generatedDisplayName"
             >
               {generatedDisplayName || (
-                <span className="text-muted-foreground font-normal italic">
+                <span className="field-note">
                   {copy.fields.generatedDisplayNameEmpty}
                 </span>
               )}
@@ -1012,7 +1017,7 @@ export function ProductForm({
             <label htmlFor={`${formId}-arabicSearchName`}>
               <span>{copy.fields.arabicSearchName}</span>
             </label>
-            <span className="text-xs text-muted-foreground">
+            <span className="field-note">
               {copy.fields.arabicSearchNameHint}
             </span>
             <input
@@ -1033,7 +1038,7 @@ export function ProductForm({
             {fieldErrors.arabicSearchName ? (
               <p
                 id={`${formId}-arabicSearchName-error`}
-                className="text-red-500 text-xs font-semibold mt-1"
+                className="field-error"
                 role="alert"
               >
                 {fieldErrors.arabicSearchName}
@@ -1064,7 +1069,7 @@ export function ProductForm({
               {fieldErrors.scientificName ? (
                 <p
                   id={`${formId}-scientificName-error`}
-                  className="text-red-500 text-xs font-semibold mt-1"
+                  className="field-error"
                   role="alert"
                 >
                   {fieldErrors.scientificName}
@@ -1091,7 +1096,7 @@ export function ProductForm({
               {fieldErrors.category ? (
                 <p
                   id={`${formId}-category-error`}
-                  className="text-red-500 text-xs font-semibold mt-1"
+                  className="field-error"
                   role="alert"
                 >
                   {fieldErrors.category}
@@ -1101,14 +1106,14 @@ export function ProductForm({
           </div>
 
           {/* 6. Barcodes Storage */}
-          <fieldset className="border border-[var(--border)] p-4 rounded-xl">
-            <legend className="px-2 font-bold text-sm">
+          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
+            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
               {copy.barcodes.label}
             </legend>
             <div className="flex gap-2 mb-3">
               <input
                 aria-label={copy.barcodes.label}
-                className="flex-1 min-h-[2.8rem] px-3 border border-[var(--border)] rounded-lg bg-background"
+                className="flex-1 min-h-[2.5rem] px-3 border border-[color:var(--control-border)] rounded-lg bg-background"
                 maxLength={64}
                 name="newBarcode"
                 placeholder={copy.barcodes.placeholder}
@@ -1132,20 +1137,18 @@ export function ProductForm({
             </div>
 
             {barcodes.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                {copy.barcodes.empty}
-              </p>
+              <p className="field-note">{copy.barcodes.empty}</p>
             ) : (
               <ul className="flex flex-wrap gap-2 list-none p-0 m-0">
                 {barcodes.map((bc, idx) => (
                   <li
                     key={bc}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--border)] font-mono text-sm"
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[color:var(--border)] font-mono text-sm"
                   >
                     <span>{bc}</span>
                     <button
                       aria-label={`${copy.barcodes.remove} ${bc}`}
-                      className="text-red-500 hover:text-red-700 font-bold px-1"
+                      className="font-bold px-1 text-[color:var(--danger)]"
                       type="button"
                       onClick={() => handleRemoveBarcode(idx)}
                     >
@@ -1158,13 +1161,11 @@ export function ProductForm({
           </fieldset>
 
           {/* 7. Item Instructions */}
-          <fieldset className="border border-[var(--border)] p-4 rounded-xl">
-            <legend className="px-2 font-bold text-sm">
+          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
+            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
               {copy.instructions.title}
             </legend>
-            <p className="text-xs text-muted-foreground mb-3">
-              {copy.instructions.description}
-            </p>
+            <p className="field-note mb-3">{copy.instructions.description}</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div className="field-label">
@@ -1254,13 +1255,11 @@ export function ProductForm({
           </fieldset>
 
           {/* 8. Sharing & AI Visibility Metadata */}
-          <fieldset className="border border-[var(--border)] p-4 rounded-xl">
-            <legend className="px-2 font-bold text-sm">
+          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
+            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
               {copy.sharing.title}
             </legend>
-            <p className="text-xs text-muted-foreground mb-3">
-              {copy.sharing.metadataNotice}
-            </p>
+            <p className="field-note mb-3">{copy.sharing.metadataNotice}</p>
 
             <div className="space-y-2">
               <label className="check-row flex items-center gap-2 cursor-pointer">
@@ -1296,8 +1295,8 @@ export function ProductForm({
           </fieldset>
 
           {/* 9. State Indicators */}
-          <fieldset className="border border-[var(--border)] p-4 rounded-xl">
-            <legend className="px-2 font-bold text-sm">
+          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
+            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
               {copy.stateColours.title}
             </legend>
 
@@ -1346,7 +1345,7 @@ export function ProductForm({
           </fieldset>
 
           {/* Form Actions */}
-          <div className="form-actions flex justify-end gap-3 pt-4 border-t border-[var(--border)]">
+          <div className="form-actions flex justify-end gap-3 pt-4 border-t border-[color:var(--border)]">
             {onCancel ? (
               <button
                 className="quiet-button"
