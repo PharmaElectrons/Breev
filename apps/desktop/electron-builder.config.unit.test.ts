@@ -22,6 +22,7 @@ describe("Windows electron-builder candidate", () => {
       perMachine: true,
       differentialPackage: true,
       include: "windows/installer.nsh",
+      artifactName: "BreevSetup.${ext}",
     });
   });
 

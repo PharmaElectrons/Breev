@@ -129,7 +129,7 @@ export default {
   nsis: {
     allowElevation: true,
     allowToChangeInstallationDirectory: false,
-    artifactName: "Breev-${version}-windows-x64.${ext}",
+    artifactName: "BreevSetup.${ext}",
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     differentialPackage: true,

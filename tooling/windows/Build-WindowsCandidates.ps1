@@ -224,7 +224,7 @@ try {
     $builderOutput = Join-Path $repoRoot "artifacts/windows/electron-builder"
     Remove-Item -LiteralPath $builderOutput -Recurse -Force -ErrorAction SilentlyContinue
     Invoke-Checked -FilePath "pnpm.cmd" -Arguments @("--filter", "@breev/desktop", "package:windows")
-    $builderInstaller = Join-Path $builderOutput "Breev-$version-windows-x64.exe"
+    $builderInstaller = Join-Path $builderOutput "BreevSetup.exe"
     $builderExecutable = Join-Path $builderOutput "win-unpacked/Breev.exe"
     $builderDestination = Join-Path $versionRoot "electron-builder"
     New-Item -ItemType Directory -Force -Path $builderDestination | Out-Null
