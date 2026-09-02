@@ -116,7 +116,11 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ownerUsername = user?.username ?? "";
     ownerPassword =
       ownerUsername === "first.owner" ? OWNER_PASSWORD : SECOND_OWNER_PASSWORD;
-    expect(success?.body?.allowedPermissions).toHaveLength(12);
+    // Bootstrap grants the owner only the implemented permissions — the seven
+    // that back a live operation today — never the five with no operation
+    // behind them yet (draft.price.override, pricing.below_cost,
+    // sales.invoice.reverse, sales.return.post, sync.conflict.resolve).
+    expect(success?.body?.allowedPermissions).toHaveLength(7);
 
     const roles = await request(credentials, "GET", "/identity/roles");
     expect(roles.status, failureContext([roles])).toBe(200);
@@ -1312,8 +1316,11 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       { id: string; key: string; revision: string }[] | undefined;
     const accountantRoleId =
       roleRows?.find((role) => role.key === "accountant")?.id ?? "";
+    // The roles endpoint lists only the implemented permissions — the ones
+    // that back a live operation — never a name a future slice has not yet
+    // landed the operation for.
     const permissionNames = roles.body?.permissions as string[];
-    expect(permissionNames).toHaveLength(12);
+    expect(permissionNames).toHaveLength(7);
 
     for (const permission of permissionNames) {
       const challenge = await approvedChallenge(
@@ -1344,6 +1351,110 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       });
       await login(ownerUsername, ownerPassword);
     }
+  });
+
+  it("lists only implemented permissions, refuses granting a future name, and filters a future grant seeded directly in PostgreSQL", async () => {
+    await login(ownerUsername, ownerPassword);
+    const roles = await request(credentials, "GET", "/identity/roles");
+    expect(roles.status, failureContext([roles])).toBe(200);
+    // (a) The roles endpoint lists exactly the implemented names — never a
+    // name whose operation has not landed yet.
+    const permissionNames = roles.body?.permissions as string[];
+    expect(permissionNames).toEqual([
+      "attendance.record",
+      "catalog.item.manage",
+      "devices.pair",
+      "identity.roles.manage",
+      "identity.users.manage",
+      "licensing.manage",
+      "pharmacy.settings.manage",
+    ]);
+    const roleRows = roles.body?.roles as {
+      grants: string[];
+      id: string;
+      key: string;
+      revision: string;
+    }[];
+    for (const role of roleRows) {
+      expect(
+        role.grants.every((grant) => permissionNames.includes(grant)),
+        `${role.key}: ${JSON.stringify(role.grants)}`,
+      ).toBe(true);
+    }
+    const supportRole = roleRows.find(({ key }) => key === "support");
+    expect(supportRole).toBeDefined();
+
+    // (b) Granting a future name is refused server-side, even to the owner
+    // holding identity.roles.manage — the UI is never the boundary for what a
+    // role can be granted.
+    const challenge = await approvedChallenge(
+      "identity.role.permissions.update",
+      supportRole?.id,
+      ownerPassword,
+    );
+    const refused = await request(
+      credentials,
+      "PUT",
+      `/identity/roles/${supportRole?.id}/permissions`,
+      command({
+        challengeId: challenge,
+        expectedRevision: supportRole?.revision,
+        permissions: ["sales.return.post"],
+      }),
+    );
+    expect(refused, failureContext([refused])).toMatchObject({
+      status: 400,
+      body: { code: "body-invalid" },
+    });
+    const requestId = refused.body?.requestId as string | undefined;
+    expect(requestId).toBeDefined();
+    const audited = await administrator.query<{ outcome: string }>(
+      "select outcome from identity_audit_records where id = $1",
+      [requestId],
+    );
+    expect(audited.rows[0]?.outcome).toBe("body-invalid");
+    const afterRefusal = await request(credentials, "GET", "/identity/roles");
+    const supportAfterRefusal = (
+      afterRefusal.body?.roles as { grants: string[]; key: string }[]
+    ).find(({ key }) => key === "support");
+    expect(supportAfterRefusal?.grants).toEqual(supportRole?.grants);
+
+    // (c) A role row seeded with a future grant directly in PostgreSQL still
+    // round-trips the endpoint without that grant appearing, and the owner
+    // floor is unaffected — the floor concerns only identity.roles.manage and
+    // identity.users.manage, both implemented permissions.
+    const supportPharmacy = await administrator.query<{
+      pharmacy_id: string;
+    }>("select pharmacy_id from pharmacy_roles where id = $1", [
+      supportRole?.id,
+    ]);
+    await administrator.query(
+      `insert into role_permission_grants
+         (pharmacy_id, role_id, permission_name, granted_by)
+       values ($1, $2, 'sync.conflict.resolve', $3)`,
+      [supportPharmacy.rows[0]?.pharmacy_id, supportRole?.id, ownerId],
+    );
+    const roundTripped = await request(credentials, "GET", "/identity/roles");
+    expect(roundTripped.status, failureContext([roundTripped])).toBe(200);
+    const seededSupport = (
+      roundTripped.body?.roles as { grants: string[]; key: string }[]
+    ).find(({ key }) => key === "support");
+    expect(seededSupport?.grants).not.toContain("sync.conflict.resolve");
+    expect(roundTripped.body?.permissions).not.toContain(
+      "sync.conflict.resolve",
+    );
+    const ownerFloor = await administrator.query<{ permission_name: string }>(
+      `select grant_row.permission_name
+       from role_permission_grants grant_row
+       join pharmacy_roles role on role.id = grant_row.role_id
+       where role.role_key = 'owner'
+         and grant_row.permission_name = any($1::text[])
+       order by grant_row.permission_name`,
+      [["identity.roles.manage", "identity.users.manage"]],
+    );
+    expect(
+      ownerFloor.rows.map(({ permission_name }) => permission_name),
+    ).toEqual(["identity.roles.manage", "identity.users.manage"]);
   });
 
   it("applies explicit role grants and typed attendance settings end to end", async () => {
@@ -1459,12 +1570,16 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         command({
           challengeId: roleChallenge,
           expectedRevision: await currentRoleRevision(pharmacistRoleId ?? ""),
-          permissions: ["sales.return.post"],
+          // An implemented permission, not the future
+          // "sales.return.post": granting a name with no operation behind it
+          // is refused server-side (proven elsewhere), so this end-to-end
+          // grant flow has to use a name that can actually be granted.
+          permissions: ["catalog.item.manage"],
         }),
       ),
     ).toMatchObject({
       status: 200,
-      body: { grants: ["sales.return.post"], key: "pharmacist" },
+      body: { grants: ["catalog.item.manage"], key: "pharmacist" },
     });
 
     const userChallenge = await approvedChallenge(
