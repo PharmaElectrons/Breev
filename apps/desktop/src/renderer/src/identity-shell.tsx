@@ -15,6 +15,7 @@ import { DevicesPanel } from "./devices-panel";
 import {
   approveStepUpChallenge,
   bootstrapIdentity,
+  changeIdentityPassword,
   createAttendanceEvent,
   createIdentityUser,
   createStepUpChallenge,
@@ -27,6 +28,7 @@ import {
   requestIdentityRoles,
   requestIdentityState,
   requestIdentityUsers,
+  resetIdentityUserPassword,
   updateIdentityRolePermissions,
   updateIdentityUser,
   updatePharmacySettings,
@@ -40,6 +42,11 @@ interface PendingStepUp {
   readonly afterApproval: (challengeId: string) => Promise<void>;
   readonly challengeId: string;
 }
+
+const OWNER_PERMISSION_FLOOR = new Set([
+  "identity.roles.manage",
+  "identity.users.manage",
+]);
 
 type AccessDenial = IdentityDenial | LicensingDenial;
 
@@ -346,6 +353,7 @@ function AuthenticatedWorkspace({
   const [pendingStepUp, setPendingStepUp] = useState<PendingStepUp | null>(
     null,
   );
+  const [passwordChanged, setPasswordChanged] = useState(false);
   const [selectedCapability, setSelectedCapability] = useState<CapabilityName>(
     state.entitlement.capabilities[0] ?? "renewal",
   );
@@ -478,6 +486,77 @@ function AuthenticatedWorkspace({
               {copy.logout}
             </button>
           </div>
+        </article>
+
+        <article
+          aria-labelledby="change-password-title"
+          className="identity-card admin-card"
+        >
+          <div>
+            <h3 id="change-password-title">{copy.changeMyPassword}</h3>
+            <p>{copy.changePasswordDescription}</p>
+          </div>
+          {passwordChanged ? (
+            <p aria-live="polite" className="state-line" role="status">
+              <span aria-hidden="true">✓</span> {copy.passwordChanged}
+            </p>
+          ) : null}
+          <form
+            className="identity-form password-change-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const data = new FormData(form);
+              setPasswordChanged(false);
+              void run(() =>
+                changeIdentityPassword(baseUrl, {
+                  currentPassword: requiredValue(
+                    data,
+                    "currentPassword",
+                    false,
+                  ),
+                  expectedRevision: state.user.revision,
+                  idempotencyKey: newIdempotencyKey(),
+                  newPassword: requiredValue(data, "newPassword", false),
+                }),
+              ).then(async (updated) => {
+                if (updated === undefined) {
+                  const currentPassword =
+                    form.elements.namedItem("currentPassword");
+                  if (currentPassword instanceof HTMLInputElement) {
+                    currentPassword.focus();
+                  }
+                  return;
+                }
+                form.reset();
+                setPasswordChanged(true);
+                await refreshState();
+                const submit = form.querySelector<HTMLButtonElement>(
+                  'button[type="submit"]',
+                );
+                submit?.focus();
+              });
+            }}
+          >
+            <LabeledInput
+              autoComplete="current-password"
+              label={copy.currentPassword}
+              maxLength={128}
+              name="currentPassword"
+              type="password"
+            />
+            <LabeledInput
+              autoComplete="new-password"
+              label={copy.newPassword}
+              maxLength={128}
+              minLength={15}
+              name="newPassword"
+              type="password"
+            />
+            <button className="primary-button" disabled={busy} type="submit">
+              {copy.changeMyPassword}
+            </button>
+          </form>
         </article>
 
         <section
@@ -826,11 +905,59 @@ function AuthenticatedWorkspace({
             <ul className="user-list">
               {users.map((user) => (
                 <li key={user.id}>
-                  <div>
+                  <div className="user-details">
                     <strong>{user.displayName}</strong>
                     <span>
                       {user.username} · {copy.roles[user.role]}
                     </span>
+                    <form
+                      className="user-management-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const form = event.currentTarget;
+                        const displayName = requiredValue(
+                          new FormData(form),
+                          "displayName",
+                        );
+                        void beginStepUp(
+                          "identity.user.update",
+                          user.id,
+                          async (challengeId) => {
+                            const updated = await run(() =>
+                              updateIdentityUser(baseUrl, user.id, {
+                                challengeId,
+                                displayName,
+                                expectedRevision: user.revision,
+                                idempotencyKey: newIdempotencyKey(),
+                              }),
+                            );
+                            if (updated !== undefined) {
+                              await loadAdministration();
+                              await refreshState();
+                            }
+                          },
+                        );
+                      }}
+                    >
+                      <label className="field-label compact-field">
+                        <span>
+                          {copy.displayName}: {user.username}
+                        </span>
+                        <input
+                          defaultValue={user.displayName}
+                          maxLength={96}
+                          name="displayName"
+                          required
+                        />
+                      </label>
+                      <button
+                        className="quiet-button"
+                        disabled={busy}
+                        type="submit"
+                      >
+                        {copy.saveDisplayName}
+                      </button>
+                    </form>
                   </div>
                   <div className="user-actions">
                     <span className="state-chip" data-status={user.status}>
@@ -869,6 +996,59 @@ function AuthenticatedWorkspace({
                         ? copy.lockUser
                         : copy.unlockUser}
                     </button>
+                    {user.id === state.user.id ? null : (
+                      <form
+                        className="user-management-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const form = event.currentTarget;
+                          const newPassword = requiredValue(
+                            new FormData(form),
+                            "newPassword",
+                            false,
+                          );
+                          void beginStepUp(
+                            "identity.user.password.reset",
+                            user.id,
+                            async (challengeId) => {
+                              const updated = await run(() =>
+                                resetIdentityUserPassword(baseUrl, user.id, {
+                                  challengeId,
+                                  expectedRevision: user.revision,
+                                  idempotencyKey: newIdempotencyKey(),
+                                  newPassword,
+                                }),
+                              );
+                              if (updated !== undefined) {
+                                form.reset();
+                                await loadAdministration();
+                              }
+                            },
+                          );
+                        }}
+                      >
+                        <label className="field-label compact-field">
+                          <span>
+                            {copy.newPassword}: {user.username}
+                          </span>
+                          <input
+                            autoComplete="new-password"
+                            maxLength={128}
+                            minLength={15}
+                            name="newPassword"
+                            required
+                            type="password"
+                          />
+                        </label>
+                        <button
+                          className="quiet-button"
+                          disabled={busy}
+                          type="submit"
+                        >
+                          {copy.resetPassword}
+                        </button>
+                      </form>
+                    )}
                   </div>
                 </li>
               ))}
@@ -892,6 +1072,16 @@ function AuthenticatedWorkspace({
                         checked={(roleDrafts[role.id] ?? []).includes(
                           permission,
                         )}
+                        disabled={
+                          role.key === "owner" &&
+                          OWNER_PERMISSION_FLOOR.has(permission)
+                        }
+                        title={
+                          role.key === "owner" &&
+                          OWNER_PERMISSION_FLOOR.has(permission)
+                            ? copy.ownerPermissionFloor
+                            : undefined
+                        }
                         type="checkbox"
                         onChange={(event) =>
                           setRoleDrafts((current) => ({
@@ -957,8 +1147,10 @@ function AuthenticatedWorkspace({
               return false;
             }
             const completed = pendingStepUp;
+            const returnFocus = previousFocus.current;
             closeStepUp();
             await completed.afterApproval(completed.challengeId);
+            queueMicrotask(() => returnFocus?.focus());
             return true;
           }}
         />

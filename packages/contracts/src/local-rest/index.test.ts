@@ -22,7 +22,9 @@ import {
   productStateColoursSchema,
   CATALOG_CONTRACTS,
   CATALOG_DENIAL_CODES,
+  identityChangePasswordRequestSchema,
   identityCreateUserRequestSchema,
+  identityResetUserPasswordRequestSchema,
   identityStepUpApproveRequestSchema,
   identityStepUpCreateRequestSchema,
   identityUpdateRolePermissionsRequestSchema,
@@ -99,6 +101,24 @@ describe("identity mutation contracts", () => {
       },
     ],
     [
+      identityChangePasswordRequestSchema,
+      {
+        currentPassword: "current password",
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        newPassword: "a sufficiently long replacement password",
+      },
+    ],
+    [
+      identityResetUserPasswordRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        newPassword: "a sufficiently long reset password",
+      },
+    ],
+    [
       identityUpdateRolePermissionsRequestSchema,
       {
         challengeId: COMMAND_ID,
@@ -170,8 +190,8 @@ describe("identity mutation contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("6");
-    expect(LOCAL_SCHEMA_VERSION).toBe("7");
+    expect(LOCAL_API_VERSION).toBe("7");
+    expect(LOCAL_SCHEMA_VERSION).toBe("8");
   });
 
   it("accepts the healthy handshake", () => {
@@ -393,6 +413,9 @@ describe("terminal pairing contracts", () => {
     expect(stepUpActionSchema.options).toContain("devices.revoke");
     expect(stepUpActionSchema.options).toContain(
       "devices.seat.release.request",
+    );
+    expect(stepUpActionSchema.options).toContain(
+      "identity.user.password.reset",
     );
   });
 

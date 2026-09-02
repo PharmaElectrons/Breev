@@ -1145,6 +1145,25 @@ a:focus-visible,
   grid-column: 1 / -1;
 }
 
+.password-change-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.user-details {
+  min-inline-size: min(100%, 22rem);
+}
+
+.user-management-form {
+  display: flex;
+  align-items: end;
+  gap: 0.65rem;
+}
+
+.user-management-form .compact-field {
+  min-inline-size: min(100%, 14rem);
+}
+
 .user-list {
   display: grid;
   gap: 0;
@@ -1828,6 +1847,15 @@ a:focus-visible,
   .admin-heading,
   .inline-form,
   .user-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .password-change-form {
+    grid-template-columns: 1fr;
+  }
+
+  .user-management-form {
     align-items: stretch;
     flex-direction: column;
   }

@@ -15,7 +15,10 @@ export interface IdentityCopy {
   readonly cancel: string;
   readonly checkIn: string;
   readonly checkOut: string;
+  readonly changeMyPassword: string;
+  readonly changePasswordDescription: string;
   readonly createUser: string;
+  readonly currentPassword: string;
   readonly denial: string;
   readonly denials: Record<IdentityDenialCode, string>;
   readonly displayName: string;
@@ -27,7 +30,10 @@ export interface IdentityCopy {
   readonly loginSubmit: string;
   readonly loginTitle: string;
   readonly logout: string;
+  readonly newPassword: string;
+  readonly ownerPermissionFloor: string;
   readonly password: string;
+  readonly passwordChanged: string;
   readonly permissionConfiguration: string;
   readonly permissions: string;
   readonly pharmacyName: string;
@@ -37,7 +43,9 @@ export interface IdentityCopy {
   readonly requestReference: string;
   readonly role: string;
   readonly roles: Record<PharmacyRoleKey, string>;
+  readonly resetPassword: string;
   readonly save: string;
+  readonly saveDisplayName: string;
   readonly sessionExpiredDescription: string;
   readonly sessionExpiredTitle: string;
   readonly sessionRevokedDescription: string;
@@ -87,7 +95,11 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     cancel: "إلغاء",
     checkIn: "تسجيل الحضور",
     checkOut: "تسجيل الانصراف",
+    changeMyPassword: "تغيير كلمة مروري",
+    changePasswordDescription:
+      "أدخل كلمة مرورك الحالية، ثم اختر كلمة مرور جديدة.",
     createUser: "إنشاء المستخدم",
+    currentPassword: "كلمة المرور الحالية",
     denial: "تم رفض الإجراء",
     denials: {
       "attendance-already-checked-in": "تم تسجيل حضورك بالفعل.",
@@ -100,6 +112,8 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "idempotency-conflict": "أُعيد استخدام مرجع الطلب لإجراء مختلف.",
       "invalid-credentials": "اسم المستخدم أو كلمة المرور غير صحيحة.",
       "last-owner-required": "يجب أن يبقى مالك نشط واحد على الأقل.",
+      "owner-permission-floor-required":
+        "يجب أن يحتفظ دور المالك بصلاحيتي إدارة الأدوار والمستخدمين.",
       "permission-denied": "لا يملك حسابك الإذن المطلوب.",
       "rate-limit-exceeded": "محاولات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.",
       "session-expired": "انتهت الجلسة. سجل الدخول مرة أخرى.",
@@ -124,7 +138,11 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     loginSubmit: "تسجيل الدخول",
     loginTitle: "تسجيل الدخول إلى بريف",
     logout: "تسجيل الخروج",
+    newPassword: "كلمة المرور الجديدة",
+    ownerPermissionFloor:
+      "يجب أن يحتفظ دور المالك بصلاحيتي إدارة الأدوار والمستخدمين.",
     password: "كلمة المرور",
+    passwordChanged: "تم تغيير كلمة المرور.",
     permissionConfiguration: "إعداد صلاحيات الأدوار",
     permissions: "الصلاحيات الممنوحة",
     pharmacyName: "اسم الصيدلية",
@@ -135,7 +153,9 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     requestReference: "مرجع الطلب",
     role: "الدور",
     roles: roleNames.ar,
+    resetPassword: "إعادة تعيين كلمة المرور",
     save: "حفظ",
+    saveDisplayName: "حفظ الاسم",
     sessionExpiredDescription: "انتهت مدة الجلسة المحلية الآمنة.",
     sessionExpiredTitle: "انتهت الجلسة",
     sessionRevokedDescription: "لم تعد هذه الجلسة مخولة للعمل.",
@@ -160,7 +180,11 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     cancel: "Cancel",
     checkIn: "Check in",
     checkOut: "Check out",
+    changeMyPassword: "Change my password",
+    changePasswordDescription:
+      "Enter your current password, then choose a new password.",
     createUser: "Create user",
+    currentPassword: "Current password",
     denial: "Action denied",
     denials: {
       "attendance-already-checked-in": "You are already checked in.",
@@ -175,6 +199,8 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
         "That request reference was already used for another command.",
       "invalid-credentials": "The username or password is incorrect.",
       "last-owner-required": "At least one active owner must remain.",
+      "owner-permission-floor-required":
+        "The owner role must keep role and user management permissions.",
       "permission-denied":
         "Your account does not have the required permission.",
       "rate-limit-exceeded":
@@ -204,7 +230,11 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     loginSubmit: "Sign in",
     loginTitle: "Sign in to Breev",
     logout: "Sign out",
+    newPassword: "New password",
+    ownerPermissionFloor:
+      "The owner role must keep role and user management permissions.",
     password: "Password",
+    passwordChanged: "Password changed.",
     permissionConfiguration: "Configure role permissions",
     permissions: "Granted permissions",
     pharmacyName: "Pharmacy name",
@@ -215,7 +245,9 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     requestReference: "Request reference",
     role: "Role",
     roles: roleNames.en,
+    resetPassword: "Reset password",
     save: "Save",
+    saveDisplayName: "Save name",
     sessionExpiredDescription:
       "The secure local session reached its time limit.",
     sessionExpiredTitle: "Session expired",
