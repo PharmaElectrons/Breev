@@ -3309,13 +3309,7 @@ export class IdentityAccessService {
          and subject_key = $5
          and window_number = (select window_number from clock)
          and request_count = 1`,
-      [
-        table.deviceId,
-        action,
-        subjectKey,
-        AUTH_RATE_WINDOW_SECONDS,
-        deviceKey,
-      ],
+      [table.deviceId, action, subjectKey, AUTH_RATE_WINDOW_SECONDS, deviceKey],
     );
   }
 
