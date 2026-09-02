@@ -357,7 +357,22 @@ function AuthenticatedWorkspace({
   const [selectedCapability, setSelectedCapability] = useState<CapabilityName>(
     state.entitlement.capabilities[0] ?? "renewal",
   );
-  const previousFocus = useRef<HTMLElement | null>(null);
+  // Async Step-Up completions (approval -> afterApproval -> list reload ->
+  // state refresh) can outlast the render in which the button that opened the
+  // dialog is disabled by `busy`. Focus is tracked by a stable element id
+  // rather than a captured node so it survives both the disabled window and
+  // any re-render of the row it belongs to, and is applied by an effect that
+  // waits for `busy` to actually clear instead of guessing at timing.
+  const previousFocusId = useRef<string | null>(null);
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (busy || pendingFocusId === null) {
+      return;
+    }
+    document.getElementById(pendingFocusId)?.focus();
+    setPendingFocusId(null);
+  }, [busy, pendingFocusId]);
   const canManageUsers = state.allowedPermissions.includes(
     "identity.users.manage",
   );
@@ -422,7 +437,8 @@ function AuthenticatedWorkspace({
       subjectId: string | undefined,
       afterApproval: (challengeId: string) => Promise<void>,
     ): Promise<void> => {
-      previousFocus.current = document.activeElement as HTMLElement | null;
+      previousFocusId.current =
+        (document.activeElement as HTMLElement | null)?.id ?? null;
       const challenge = await run(() =>
         createStepUpChallenge(baseUrl, {
           action,
@@ -439,7 +455,14 @@ function AuthenticatedWorkspace({
 
   const closeStepUp = (): void => {
     setPendingStepUp(null);
-    queueMicrotask(() => previousFocus.current?.focus());
+  };
+
+  const cancelStepUp = (): void => {
+    const returnFocusId = previousFocusId.current;
+    closeStepUp();
+    if (returnFocusId !== null) {
+      queueMicrotask(() => document.getElementById(returnFocusId)?.focus());
+    }
   };
 
   return (
@@ -533,10 +556,7 @@ function AuthenticatedWorkspace({
                 form.reset();
                 setPasswordChanged(true);
                 await refreshState();
-                const submit = form.querySelector<HTMLButtonElement>(
-                  'button[type="submit"]',
-                );
-                submit?.focus();
+                setPendingFocusId("change-password-submit");
               });
             }}
           >
@@ -555,7 +575,12 @@ function AuthenticatedWorkspace({
               name="newPassword"
               type="password"
             />
-            <button className="primary-button" disabled={busy} type="submit">
+            <button
+              className="primary-button"
+              disabled={busy}
+              id="change-password-submit"
+              type="submit"
+            >
               {copy.changeMyPassword}
             </button>
           </form>
@@ -644,6 +669,7 @@ function AuthenticatedWorkspace({
                 <button
                   className="primary-button"
                   disabled={busy}
+                  id="licence-install-submit"
                   type="submit"
                 >
                   {licensingCopy.install}
@@ -656,6 +682,7 @@ function AuthenticatedWorkspace({
                 <button
                   className="quiet-button"
                   disabled={busy}
+                  id="licence-deactivate-button"
                   type="button"
                   onClick={() =>
                     void beginStepUp(
@@ -809,6 +836,7 @@ function AuthenticatedWorkspace({
                 <button
                   className="primary-button"
                   disabled={busy}
+                  id="add-user-button"
                   type="button"
                   onClick={() =>
                     void beginStepUp(
@@ -956,6 +984,7 @@ function AuthenticatedWorkspace({
                       <button
                         className="quiet-button"
                         disabled={busy}
+                        id={`user-${user.id}-save-name`}
                         type="submit"
                       >
                         {copy.saveDisplayName}
@@ -1008,6 +1037,7 @@ function AuthenticatedWorkspace({
                       <button
                         className="quiet-button"
                         disabled={busy}
+                        id={`user-${user.id}-save-role`}
                         type="submit"
                       >
                         {copy.saveRole}
@@ -1024,6 +1054,7 @@ function AuthenticatedWorkspace({
                     <button
                       className="quiet-button"
                       disabled={busy}
+                      id={`user-${user.id}-lock-toggle`}
                       type="button"
                       onClick={() =>
                         void beginStepUp(
@@ -1098,6 +1129,7 @@ function AuthenticatedWorkspace({
                         <button
                           className="quiet-button"
                           disabled={busy}
+                          id={`user-${user.id}-reset-password`}
                           type="submit"
                         >
                           {copy.resetPassword}
@@ -1155,6 +1187,7 @@ function AuthenticatedWorkspace({
                   <button
                     className="quiet-button"
                     disabled={busy}
+                    id={`role-${role.id}-save-permissions`}
                     type="button"
                     onClick={() =>
                       void beginStepUp(
@@ -1189,7 +1222,7 @@ function AuthenticatedWorkspace({
           copy={copy}
           denial={denial}
           licensingCopy={licensingCopy}
-          onCancel={closeStepUp}
+          onCancel={cancelStepUp}
           onDismissDenial={onDismissDenial}
           onSubmit={async (password) => {
             const approval = await run(() =>
@@ -1202,10 +1235,10 @@ function AuthenticatedWorkspace({
               return false;
             }
             const completed = pendingStepUp;
-            const returnFocus = previousFocus.current;
+            const returnFocusId = previousFocusId.current;
             closeStepUp();
             await completed.afterApproval(completed.challengeId);
-            queueMicrotask(() => returnFocus?.focus());
+            setPendingFocusId(returnFocusId);
             return true;
           }}
         />
