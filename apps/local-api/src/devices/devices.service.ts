@@ -44,7 +44,10 @@ import {
 } from "../identity-access/identity-access.service.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { createUuidV7 } from "../pharmacy-ca/pharmacy-ca-crypto.js";
-import { PharmacyCaService } from "../pharmacy-ca/pharmacy-ca.service.js";
+import {
+  PharmacyCaService,
+  type PharmacyCaState,
+} from "../pharmacy-ca/pharmacy-ca.service.js";
 import type { TerminalSocketRegistry } from "../pharmacy-ca/terminal-socket-registry.js";
 import { devicesDenial, writeDevicesAudit } from "./devices-audit.js";
 import {
@@ -78,6 +81,20 @@ import { PAIRING_ENDPOINT, type PairingEndpoint } from "./pairing-endpoint.js";
  */
 const DEVICES_INSTALLATION_LOCK = 165_308_863;
 const PAIRING_CAPABILITY = "additional-device-pos" as const;
+
+/**
+ * Stands in for the installation identity on the two audit facts that can only
+ * happen before one exists: a command refused because there is no pharmacy CA,
+ * and a pairing start whose key store would not mint the CA's key.
+ *
+ * `devices_audit_records.installation_id` is `not null`, so these records need
+ * a value. It is a fixed, obviously synthetic all-zero UUIDv7 rather than a
+ * generated one, because a fresh identifier per event would read back as a
+ * crowd of installations that never existed. Both outcomes name the absence
+ * explicitly, so the record stays self-describing. Making the column nullable
+ * is the cleaner model and is left as a separate schema change.
+ */
+const NO_INSTALLATION_ID = "00000000-0000-7000-8000-000000000000" as const;
 const SEAT_RELEASE_LIFETIME_SECONDS = 300;
 const JOIN_SECRET_BYTES = 32;
 
@@ -151,7 +168,7 @@ export class DevicesService {
     input: PairingSessionStartRequest,
   ): Promise<PairingSessionStarted> {
     const context = await this.requireMainAdministrator(request);
-    const installation = await this.installationId();
+    const installation = (await this.ensureInstallationState()).installationId;
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -306,7 +323,11 @@ export class DevicesService {
     request: Request,
   ): Promise<PairingSessionView> {
     const context = await this.requireMainAdministrator(request);
-    const installation = await this.installationId();
+    const state = await this.existingInstallationState();
+    if (state === undefined) {
+      return { state: "none" as const };
+    }
+    const installation = state.installationId;
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -348,7 +369,10 @@ export class DevicesService {
     input: PairingSessionConfirmRequest,
   ): Promise<PairingSessionConfirmed> {
     const context = await this.requireMainAdministrator(request);
-    const installation = await this.installationId();
+    const installation = await this.requireInstallationId(
+      "devices.pairing_session.confirm",
+      context,
+    );
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -480,7 +504,7 @@ export class DevicesService {
       }
       const deviceId = createUuidV7();
       await this.pharmacyCa.assertDeviceCertifiable(client, deviceId);
-      const certificate = this.pharmacyCa.signDeviceCertificate({
+      const certificate = await this.pharmacyCa.signDeviceCertificate({
         deviceId,
         devicePublicKeyDer: spki,
         licenceId: licence.licenceId,
@@ -558,7 +582,10 @@ export class DevicesService {
     input: PairingSessionCancelRequest,
   ): Promise<PairingSessionCancelled> {
     const context = await this.requireMainAdministrator(request);
-    const installation = await this.installationId();
+    const installation = await this.requireInstallationId(
+      "devices.pairing_session.cancel",
+      context,
+    );
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -697,7 +724,10 @@ export class DevicesService {
     input: DeviceRevocationRequest,
   ): Promise<DeviceRevocation> {
     const context = await this.requireMainAdministrator(request);
-    const installation = await this.installationId();
+    const installation = await this.requireInstallationId(
+      "devices.revoke",
+      context,
+    );
     const client = await this.localDatabase.requirePool().connect();
     let revoked: DeviceRevocation | undefined;
     try {
@@ -793,7 +823,10 @@ export class DevicesService {
     input: SeatReleaseRequestCreate,
   ): Promise<SeatReleaseRequest> {
     const context = await this.requireMainAdministrator(request);
-    const installation = await this.installationId();
+    const installation = await this.requireInstallationId(
+      "devices.seat_release.request",
+      context,
+    );
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -926,7 +959,10 @@ export class DevicesService {
     input: SeatReleaseApprovalRequest,
   ): Promise<SeatReleaseApproval> {
     const context = await this.requireMainAdministrator(request);
-    const installation = await this.installationId();
+    const installation = await this.requireInstallationId(
+      "devices.seat_release.approve",
+      context,
+    );
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -1082,7 +1118,10 @@ export class DevicesService {
   // ─── LAN pairing channel ───────────────────────────────────────────────────
 
   public async caCertificate(): Promise<PairingCaCertificate> {
-    const state = await this.installationState();
+    const state = await this.existingInstallationState();
+    if (state === undefined) {
+      throw new Error("CA not initialized");
+    }
     return {
       caCertificatePem: state.caCertPem,
       installationId: state.installationId,
@@ -1098,7 +1137,8 @@ export class DevicesService {
    * whether the session existed.
    */
   public async join(input: PairingJoinRequest): Promise<PairingJoinAccepted> {
-    const state = await this.installationState();
+    await this.requireInstallationId("devices.pairing.join");
+    const state = this.requireExistingInstallationState();
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -1224,7 +1264,8 @@ export class DevicesService {
   }
 
   public async channelState(sessionId: string): Promise<PairingChannelState> {
-    const state = await this.installationState();
+    await this.requireInstallationId("devices.pairing.state");
+    const state = this.requireExistingInstallationState();
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -1262,7 +1303,8 @@ export class DevicesService {
   public async certificate(
     input: PairingCertificateRequest,
   ): Promise<PairingCertificate> {
-    const state = await this.installationState();
+    await this.requireInstallationId("devices.pairing.certificate");
+    const state = this.requireExistingInstallationState();
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -1363,7 +1405,16 @@ export class DevicesService {
       "devices.pair",
     );
     if (context.deviceId === undefined) {
-      const installation = await this.installationId();
+      let installation = (await this.existingInstallationState())
+        ?.installationId;
+      if (installation === undefined) {
+        const pool = this.localDatabase.requirePool();
+        const idResult = await pool.query<{ id: string }>(
+          "select uuidv7()::text as id",
+        );
+        installation =
+          idResult.rows[0]?.id ?? "00000000-0000-7000-8000-000000000000";
+      }
       const requestId = await writeDevicesAudit(
         this.localDatabase.requirePool(),
         {
@@ -1392,17 +1443,105 @@ export class DevicesService {
     this.invitations.set(sessionId, qrUri);
   }
 
-  private async installationState() {
+  /**
+   * The installation identity, or nothing.
+   *
+   * Every read path uses this. It never creates a pharmacy CA: minting one
+   * generates a machine key and is an installation-lifecycle act, not something
+   * a status poll may trigger.
+   */
+  private existingInstallationState(): PharmacyCaState | undefined {
     try {
       return this.pharmacyCa.requireState();
     } catch {
-      await this.pharmacyCa.initializeCA();
-      return this.pharmacyCa.requireState();
+      return undefined;
     }
   }
 
-  private async installationId(): Promise<string> {
-    return (await this.installationState()).installationId;
+  /**
+   * The installation identity for a caller that has already refused the request
+   * when there is none — every use sits immediately after
+   * {@link requireInstallationId}, which throws its denial first. Reaching this
+   * without a CA is therefore a programming fault, not a decision, so it throws
+   * rather than inventing a state or asserting one into existence.
+   */
+  private requireExistingInstallationState(): PharmacyCaState {
+    const state = this.existingInstallationState();
+    if (state === undefined) {
+      throw new Error("The pharmacy CA state was required but is absent");
+    }
+    return state;
+  }
+
+  /**
+   * The installation identity, created if this is the first time it is needed.
+   *
+   * Only the pairing-start command calls this, and only after it has proved the
+   * `devices.pair` permission, a Step-Up, and the `additional-device-pos`
+   * entitlement — the licence that is the sole reason a terminal, and therefore
+   * a device certificate, would exist at all. The boot path in
+   * `createLanMtlsServer` is the other creator; there is deliberately no third.
+   */
+  private async ensureInstallationState(): Promise<PharmacyCaState> {
+    const existing = this.existingInstallationState();
+    if (existing !== undefined) {
+      return existing;
+    }
+    try {
+      await this.pharmacyCa.initializeCA();
+    } catch {
+      // A key store that will not mint a key is an infrastructure failure, but
+      // it is still a decision this command has to report rather than a crash:
+      // it answers with its own code, records the outcome, and leaves the API
+      // serving every other request.
+      const requestId = await writeDevicesAudit(
+        this.localDatabase.requirePool(),
+        {
+          action: "devices.pairing_session.start",
+          installationId: NO_INSTALLATION_ID,
+          outcome: "ca-key-store-failure",
+        },
+      );
+      throw devicesDenial(500, "ca-key-store-failure", requestId);
+    }
+    return this.pharmacyCa.requireState();
+  }
+
+  /**
+   * The installation identity for a command that presupposes one. A pairing
+   * confirmation, a revocation, or a seat release only means anything once
+   * pairing has started, so their absence of a CA is a refusal rather than a
+   * reason to create one.
+   */
+  private async requireInstallationId(
+    action: string,
+    context?: IdentityExecutionContext,
+  ): Promise<string> {
+    const state = this.existingInstallationState();
+    if (state !== undefined) {
+      return state.installationId;
+    }
+    const requestId = await writeDevicesAudit(
+      this.localDatabase.requirePool(),
+      {
+        action,
+        installationId: NO_INSTALLATION_ID,
+        outcome: "ca-not-found",
+        ...(context?.actorId === undefined
+          ? {}
+          : { actorUserId: context.actorId }),
+        ...(context?.terminalDeviceId === undefined
+          ? {}
+          : { deviceId: context.terminalDeviceId }),
+        ...(context?.sessionId === undefined
+          ? {}
+          : { identitySessionId: context.sessionId }),
+        ...(context?.pharmacyId === undefined
+          ? {}
+          : { pharmacyId: context.pharmacyId }),
+      },
+    );
+    throw devicesDenial(409, "ca-not-found", requestId);
   }
 
   private async caFingerprint(client: PoolClient): Promise<string> {

@@ -30,8 +30,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   const caKeyName = `test-ca-${installationId}`;
 
   beforeAll(async () => {
-    providerName = selectKeyStorageProvider().providerName;
-    caKeyResult = createPersistedKeyPair({
+    providerName = (await selectKeyStorageProvider()).providerName;
+    caKeyResult = await createPersistedKeyPair({
       providerName,
       keyName: caKeyName,
       algorithm: "RSA",
@@ -46,8 +46,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     });
   });
 
-  afterAll(() => {
-    deletePersistedKey({ providerName, keyName: caKeyName });
+  afterAll(async () => {
+    await deletePersistedKey({ providerName, keyName: caKeyName });
   });
 
   // ─── 1. CA Certificate Construction & Properties ──────────────────────────
@@ -540,16 +540,16 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   describe.runIf(process.platform === "win32")(
     "Windows CNG Non-Exportability",
     () => {
-      it("proves the CA key export fails", () => {
+      it("proves the CA key export fails", async () => {
         expect(caKeyResult.keyHandle.isMachineKey).toBe(true);
         expect(caKeyResult.keyHandle.serviceAccountSid).toMatch(/^S-1-/);
-        expect(readPersistedKeyAcl(caKeyResult.keyHandle)).toEqual({
+        expect(await readPersistedKeyAcl(caKeyResult.keyHandle)).toEqual({
           aceCount: 1,
           aceType: "AccessAllowed",
           allowedSid: caKeyResult.keyHandle.serviceAccountSid,
           protected: true,
         });
-        const exportResult = tryExportPrivateKey(caKeyResult.keyHandle);
+        const exportResult = await tryExportPrivateKey(caKeyResult.keyHandle);
         expect(exportResult.exported).toBe(false);
         expect(exportResult.message).toContain("EXPORT_DENIED");
       });

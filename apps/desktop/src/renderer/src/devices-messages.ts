@@ -81,6 +81,8 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
     denial: "تم رفض الإجراء",
     denials: {
       "body-invalid": "تحقق من البيانات المدخلة.",
+      "ca-key-store-failure": "تعذّر إنشاء الهوية التشفيرية للصيدلية.",
+      "ca-not-found": "لم تُنشأ الهوية التشفيرية للصيدلية بعد.",
       "device-not-found": "لم يعد هذا الجهاز موجوداً في سجل الأجهزة.",
       "device-not-revoked": "يجب إبطال الجهاز قبل طلب تحرير مقعده.",
       "pairing-attempts-exceeded":
@@ -173,6 +175,10 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
     denial: "Action denied",
     denials: {
       "body-invalid": "Check the information you entered.",
+      "ca-key-store-failure":
+        "The pharmacy cryptographic identity could not be created.",
+      "ca-not-found":
+        "The pharmacy cryptographic identity has not been created yet.",
       "device-not-found": "That device is no longer in the device register.",
       "device-not-revoked":
         "Revoke the device before requesting the release of its seat.",

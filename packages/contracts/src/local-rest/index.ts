@@ -506,6 +506,8 @@ export const capabilityProofContract = {
  */
 export const DEVICES_DENIAL_CODES = [
   "body-invalid",
+  "ca-key-store-failure",
+  "ca-not-found",
   "device-not-found",
   "device-not-revoked",
   "pairing-attempts-exceeded",

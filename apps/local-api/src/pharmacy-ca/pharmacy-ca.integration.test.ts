@@ -640,7 +640,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
     () => {
       it("proves the CA private key is non-exportable from Windows CNG", async () => {
         const state = pharmacyCa.requireState();
-        const exportResult = tryExportPrivateKey(state.keyHandle);
+        const exportResult = await tryExportPrivateKey(state.keyHandle);
 
         expect(exportResult.exported).toBe(false);
         expect(exportResult.message).toContain("EXPORT_DENIED");
