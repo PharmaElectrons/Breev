@@ -19,7 +19,15 @@ export interface DevicesAuditInput {
   readonly details?: Readonly<Record<string, boolean | number | string>>;
   readonly deviceId?: string;
   readonly identitySessionId?: string;
-  readonly installationId: string;
+  /**
+   * The installation this fact belongs to, or `null` when there genuinely is
+   * none — the two outcomes that can occur before a pharmacy CA exists at
+   * all, `ca-not-found` and `ca-key-store-failure`. The field stays required
+   * so every other audit write still names a real installation at the type
+   * level; only these two paths are entitled to pass `null` instead of a
+   * fabricated placeholder.
+   */
+  readonly installationId: string | null;
   readonly mainDeviceId?: string;
   readonly outcome: string;
   readonly pairingSessionId?: string;

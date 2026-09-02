@@ -55,10 +55,12 @@ import {
   appendOutboxEntry,
 } from "../posting/outbox.js";
 import {
+  IMPLEMENTED_PERMISSION_NAMES,
   PERMISSION_NAMES,
   STEP_UP_ACTIONS,
   evaluateStepUpApproval,
   hasPermission,
+  isImplementedPermissionName,
   isPermissionName,
   isStepUpAction,
   type PermissionName,
@@ -462,12 +464,16 @@ export class IdentityAccessService {
       if (ownerId === undefined) {
         throw new Error("Bootstrap did not create the owner");
       }
+      // Only the implemented permissions are granted here. A name with no
+      // live operation behind it stays out of the owner's grants until the
+      // change that lands its operation grants it — see
+      // `IMPLEMENTED_PERMISSION_NAMES` in authorization.ts.
       await client.query(
         `insert into role_permission_grants
            (pharmacy_id, role_id, permission_name, granted_by)
          select $1, $2, name, $3
-         from permission_definitions`,
-        [pharmacyId, ownerRoleId, ownerId],
+         from unnest($4::text[]) as implemented(name)`,
+        [pharmacyId, ownerRoleId, ownerId, IMPLEMENTED_PERMISSION_NAMES],
       );
       await client.query(
         `insert into pharmacy_settings
@@ -1627,7 +1633,10 @@ export class IdentityAccessService {
       request,
       "identity.roles.manage",
     );
-    if (!input.permissions.every(isPermissionName)) {
+    // Refused server-side even though a compliant renderer never offers a
+    // future name: the UI is never the boundary for what a role can be
+    // granted.
+    if (!input.permissions.every(isImplementedPermissionName)) {
       return await this.rejectInvalidBody(request);
     }
     const permissions = [...new Set(input.permissions)].sort();
@@ -2170,9 +2179,14 @@ export class IdentityAccessService {
       [context.pharmacyId, PHARMACY_ROLE_KEYS],
     );
     return {
-      permissions: [...PERMISSION_NAMES],
+      // Only the implemented permissions are ever offered as grantable or
+      // shown as granted. A role row can still hold a future name directly in
+      // PostgreSQL — left there rather than deleted, since a later slice may
+      // rely on it once its operation lands — but this endpoint filters it
+      // out rather than describing authority the build cannot yet perform.
+      permissions: [...IMPLEMENTED_PERMISSION_NAMES],
       roles: result.rows.map((row) => ({
-        grants: row.grants.filter(isPermissionName),
+        grants: row.grants.filter(isImplementedPermissionName),
         id: row.id,
         key: row.key,
         revision: row.revision,
