@@ -27,6 +27,7 @@ import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
+import { seedOwnerRoleWithFloor } from "../../test/owner-floor-fixture.js";
 import { mintLicence } from "../devices/test-helpers/licence-issuer.test.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { createUuidV7 } from "../pharmacy-ca/pharmacy-ca-crypto.js";
@@ -73,20 +74,13 @@ describe.sequential("licensing PostgreSQL seam", () => {
         "insert into pharmacies (id, name) values ($1, 'Breev Licence Test Pharmacy')",
         [TEST_PHARMACY_ID],
       );
-    await database.requirePool().query(
-      `insert into pharmacy_roles (id, pharmacy_id, role_key)
-       values ($1, $2, 'owner')`,
-      [OWNER_ROLE_ID, TEST_PHARMACY_ID],
-    );
-    await database.requirePool().query(
-      `insert into identity_users (
-         id, pharmacy_id, username, username_key, display_name, role_id,
-         password_hash, password_algorithm, password_version,
-         password_memory_kib, password_iterations, password_parallelism
-       ) values ($1, $2, 'licence.actor', 'licence.actor',
-                 'Licence Actor', $3, $4, 'argon2id', 19, 19456, 2, 1)`,
-      [ACTOR_ID, TEST_PHARMACY_ID, OWNER_ROLE_ID, Buffer.alloc(64)],
-    );
+    await seedOwnerRoleWithFloor(database.requirePool(), {
+      actorId: ACTOR_ID,
+      displayName: "Licence Actor",
+      pharmacyId: TEST_PHARMACY_ID,
+      roleId: OWNER_ROLE_ID,
+      username: "licence.actor",
+    });
     licensing = new LicensingService(database);
   }, 60_000);
 
