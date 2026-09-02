@@ -10,10 +10,12 @@ import {
   type AttendanceEventRequest,
   type IdentityAuthenticatedState,
   type IdentityBootstrapRequest,
+  type IdentityChangePasswordRequest,
   type IdentityCreateUserRequest,
   type IdentityDenial,
   type IdentityDenialCode,
   type IdentityLoginRequest,
+  type IdentityResetUserPasswordRequest,
   type IdentityRole,
   type IdentityRoles,
   type IdentityState,
@@ -106,6 +108,11 @@ const PHARMACY_ROLE_KEYS = [
   "accountant",
   "support",
 ] as const satisfies readonly PharmacyRoleKey[];
+
+const OWNER_PERMISSION_FLOOR = [
+  "identity.roles.manage",
+  "identity.users.manage",
+] as const satisfies readonly PermissionName[];
 
 interface SessionRow {
   readonly session_id: string;
@@ -857,7 +864,11 @@ export class IdentityAccessService {
       request,
       "identity.users.manage",
     );
-    if (input.role === undefined && input.status === undefined) {
+    if (
+      input.displayName === undefined &&
+      input.role === undefined &&
+      input.status === undefined
+    ) {
       return await this.rejectInvalidBody(request);
     }
     const client = await this.localDatabase.requirePool().connect();
@@ -895,6 +906,7 @@ export class IdentityAccessService {
       });
       const nextRole = input.role ?? before.role_key;
       const nextStatus = input.status ?? before.status;
+      const nextDisplayName = input.displayName ?? before.display_name;
       if (
         before.role_key === "owner" &&
         before.status === "active" &&
@@ -935,9 +947,10 @@ export class IdentityAccessService {
       }
       await client.query(
         `update identity_users
-         set role_id = $2, status = $3, auth_revision = auth_revision + 1
+         set role_id = $2, status = $3, display_name = $4,
+             auth_revision = auth_revision + 1
          where id = $1`,
-        [userId, roleId, nextStatus],
+        [userId, roleId, nextStatus, nextDisplayName],
       );
       if (nextStatus === "locked") {
         await client.query(
@@ -966,6 +979,277 @@ export class IdentityAccessService {
         context,
         "identity.user.update",
         input,
+        response,
+      );
+      await client.query("commit");
+      return response;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async changePassword(
+    request: Request,
+    input: IdentityChangePasswordRequest,
+  ): Promise<UserView> {
+    const context = await this.requireExecutionContext(request);
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      await client.query("begin");
+      await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.password.change",
+        input,
+        identityUserSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
+      const fresh = await this.currentContext(client, context);
+      const before = await this.selectUser(
+        client,
+        fresh.pharmacyId,
+        fresh.actorId,
+        true,
+      );
+      if (before.auth_revision !== input.expectedRevision) {
+        return await this.rejectVersionConflict(
+          client,
+          fresh,
+          "identity.password.change",
+          fresh.actorId,
+        );
+      }
+      const usernameKey = normalizeUsername(before.username);
+      if (!(await this.consumeAuthAttempt(fresh, "login", usernameKey))) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.password.change",
+          actorUserId: fresh.actorId,
+          beforeState: { authRevision: before.auth_revision },
+          device: fresh,
+          identitySessionId: fresh.sessionId,
+          outcome: "rate-limit-exceeded",
+          pharmacyId: fresh.pharmacyId,
+          targetId: fresh.actorId,
+        });
+        await client.query("commit");
+        throw this.denied(429, "rate-limit-exceeded", requestId);
+      }
+      const verification = await verifyPassword(
+        input.currentPassword,
+        before.password_hash,
+      );
+      if (!verification.matches) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.password.change",
+          actorUserId: fresh.actorId,
+          beforeState: { authRevision: before.auth_revision },
+          device: fresh,
+          identitySessionId: fresh.sessionId,
+          outcome: "invalid-credentials",
+          pharmacyId: fresh.pharmacyId,
+          targetId: fresh.actorId,
+        });
+        await client.query("commit");
+        throw this.denied(401, "invalid-credentials", requestId);
+      }
+      const storedPassword = await hashPassword(input.newPassword);
+      await client.query(
+        `update identity_users
+         set password_hash = $2,
+             password_algorithm = $3,
+             password_version = $4,
+             password_memory_kib = $5,
+             password_iterations = $6,
+             password_parallelism = $7,
+             auth_revision = auth_revision + 1
+         where id = $1`,
+        [
+          fresh.actorId,
+          storedPassword.hash,
+          storedPassword.algorithm,
+          storedPassword.parameters.version,
+          storedPassword.parameters.memoryKiB,
+          storedPassword.parameters.iterations,
+          storedPassword.parameters.parallelism,
+        ],
+      );
+      await client.query(
+        `update identity_sessions
+         set revoked_at = statement_timestamp(),
+             revocation_reason = 'administrative'
+         where user_id = $1 and revoked_at is null`,
+        [fresh.actorId],
+      );
+      await this.replaceSession(client, {
+        device: bindingOf(fresh),
+        pharmacyId: fresh.pharmacyId,
+        userId: fresh.actorId,
+      });
+      await this.clearAuthAttempts(client, fresh, "login", usernameKey);
+      await this.advanceIdentityRevision(client, fresh.pharmacyId);
+      const after = await this.selectUser(
+        client,
+        fresh.pharmacyId,
+        fresh.actorId,
+      );
+      await this.writeAudit(client, {
+        action: "identity.password.change",
+        actorUserId: fresh.actorId,
+        afterState: { authRevision: after.auth_revision },
+        beforeState: { authRevision: before.auth_revision },
+        device: fresh,
+        identitySessionId: fresh.sessionId,
+        outcome: "succeeded",
+        pharmacyId: fresh.pharmacyId,
+        targetId: fresh.actorId,
+      });
+      const response = userView(after);
+      await this.recordCommandResult(
+        client,
+        fresh,
+        "identity.password.change",
+        input,
+        response,
+      );
+      await client.query("commit");
+      return response;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async resetUserPassword(
+    request: Request,
+    userId: string,
+    input: IdentityResetUserPasswordRequest,
+  ): Promise<UserView> {
+    const context = await this.requirePermission(
+      request,
+      "identity.users.manage",
+    );
+    const storedPassword = await hashPassword(input.newPassword);
+    const commandInput = { ...input, targetId: userId };
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      await client.query("begin");
+      await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.user.password.reset",
+        commandInput,
+        identityUserSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
+      const fresh = await this.requirePermissionInTransaction(
+        client,
+        context,
+        "identity.users.manage",
+      );
+      const before = await this.findUser(
+        client,
+        fresh.pharmacyId,
+        userId,
+        true,
+      );
+      if (before === undefined) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.user.password.reset",
+          actorUserId: fresh.actorId,
+          device: fresh,
+          identitySessionId: fresh.sessionId,
+          outcome: "identity-resource-not-found",
+          pharmacyId: fresh.pharmacyId,
+          targetId: userId,
+        });
+        await client.query("commit");
+        throw this.denied(404, "identity-resource-not-found", requestId);
+      }
+      if (userId === fresh.actorId) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.user.password.reset",
+          actorUserId: fresh.actorId,
+          beforeState: { authRevision: before.auth_revision },
+          device: fresh,
+          identitySessionId: fresh.sessionId,
+          outcome: "body-invalid",
+          pharmacyId: fresh.pharmacyId,
+          targetId: userId,
+        });
+        await client.query("commit");
+        throw this.denied(400, "body-invalid", requestId);
+      }
+      if (before.auth_revision !== input.expectedRevision) {
+        return await this.rejectVersionConflict(
+          client,
+          fresh,
+          "identity.user.password.reset",
+          userId,
+        );
+      }
+      await this.consumeStepUp(client, fresh, input.challengeId, {
+        action: "identity.user.password.reset",
+        subjectId: userId,
+      });
+      await client.query(
+        `update identity_users
+         set password_hash = $2,
+             password_algorithm = $3,
+             password_version = $4,
+             password_memory_kib = $5,
+             password_iterations = $6,
+             password_parallelism = $7,
+             auth_revision = auth_revision + 1
+         where id = $1`,
+        [
+          userId,
+          storedPassword.hash,
+          storedPassword.algorithm,
+          storedPassword.parameters.version,
+          storedPassword.parameters.memoryKiB,
+          storedPassword.parameters.iterations,
+          storedPassword.parameters.parallelism,
+        ],
+      );
+      await client.query(
+        `update identity_sessions
+         set revoked_at = statement_timestamp(),
+             revocation_reason = 'administrative'
+         where user_id = $1 and revoked_at is null`,
+        [userId],
+      );
+      await this.advanceIdentityRevision(client, fresh.pharmacyId);
+      const after = await this.selectUser(client, fresh.pharmacyId, userId);
+      await this.writeAudit(client, {
+        action: "identity.user.password.reset",
+        actorUserId: fresh.actorId,
+        afterState: { authRevision: after.auth_revision },
+        beforeState: { authRevision: before.auth_revision },
+        device: fresh,
+        identitySessionId: fresh.sessionId,
+        outcome: "succeeded",
+        pharmacyId: fresh.pharmacyId,
+        targetId: userId,
+      });
+      const response = userView(after);
+      await this.recordCommandResult(
+        client,
+        fresh,
+        "identity.user.password.reset",
+        commandInput,
         response,
       );
       await client.query("commit");
@@ -1388,11 +1672,29 @@ export class IdentityAccessService {
           roleId,
         );
       }
+      const before = await this.rolePermissions(client, roleId);
+      const missingOwnerPermissions = OWNER_PERMISSION_FLOOR.filter(
+        (permission) => !permissions.includes(permission),
+      );
+      if (role.key === "owner" && missingOwnerPermissions.length > 0) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.role.permissions.update",
+          actorUserId: context.actorId,
+          afterState: { missingOwnerPermissions, permissions },
+          beforeState: { permissions: before },
+          device: context,
+          identitySessionId: context.sessionId,
+          outcome: "owner-permission-floor-required",
+          pharmacyId: context.pharmacyId,
+          targetId: roleId,
+        });
+        await client.query("commit");
+        throw this.denied(409, "owner-permission-floor-required", requestId);
+      }
       await this.consumeStepUp(client, context, input.challengeId, {
         action: "identity.role.permissions.update",
         subjectId: roleId,
       });
-      const before = await this.rolePermissions(client, roleId);
       await client.query(
         "delete from role_permission_grants where role_id = $1",
         [roleId],
@@ -2623,7 +2925,10 @@ export class IdentityAccessService {
         revision: BigInt(1 + row.revoked + 2 * row.released),
       };
     }
-    if (action === "identity.user.update") {
+    if (
+      action === "identity.user.password.reset" ||
+      action === "identity.user.update"
+    ) {
       const user = await client.query<{ auth_revision: string }>(
         `select auth_revision::text from identity_users
          where id = $1 and pharmacy_id = $2`,
@@ -2689,17 +2994,26 @@ export class IdentityAccessService {
     userId: string,
     lock = false,
   ): Promise<UserRow> {
+    const user = await this.findUser(client, pharmacyId, userId, lock);
+    if (user === undefined) {
+      throw new Error("The identity user is missing");
+    }
+    return user;
+  }
+
+  private async findUser(
+    client: PoolClient,
+    pharmacyId: string,
+    userId: string,
+    lock = false,
+  ): Promise<UserRow | undefined> {
     const result = await client.query<UserRow>(
       `${USER_SELECT}
        where identity_user.pharmacy_id = $1 and identity_user.id = $2
        ${lock ? "for update of identity_user" : ""}`,
       [pharmacyId, userId],
     );
-    const user = result.rows[0];
-    if (user === undefined) {
-      throw new Error("The identity user is missing");
-    }
-    return user;
+    return result.rows[0];
   }
 
   private async selectRole(
@@ -2948,6 +3262,20 @@ export class IdentityAccessService {
     return result.rows[0]?.allowed === true;
   }
 
+  /**
+   * Settles the budget after an attempt that actually authenticated.
+   *
+   * The subject's own window is cleared outright: proving the credential ends
+   * any suspicion attached to that username.
+   *
+   * The device window is only refunded the one increment this attempt made. It
+   * must not be cleared, because a device budget any single success can reset
+   * is no budget at all — an attacker holding one valid credential would zero
+   * it between guesses at other usernames. It must not be left either, because
+   * the counter is charged before success is known, and an owner who approves
+   * six Step-Ups in a minute would otherwise lock the device out of its own
+   * administration. Refunding leaves exactly the failures on the meter.
+   */
   private async clearAuthAttempts(
     queryable: Queryable,
     device: AuditDeviceColumns,
@@ -2956,11 +3284,38 @@ export class IdentityAccessService {
   ): Promise<void> {
     const [deviceKey, subjectKey] = authRateKeys(action, subject);
     const table = authRateTable(device);
+    // The refund and the removal target disjoint rows — one where this attempt
+    // was not the only charge in the window, one where it was — so both read
+    // the same snapshot safely. The stored count is constrained positive, so a
+    // last remaining charge is deleted rather than decremented to zero.
     await queryable.query(
-      `delete from ${table.name}
+      `with clock as (
+         select floor(extract(epoch from statement_timestamp()) / $4)::bigint
+           as window_number
+       ), cleared_subject as (
+         delete from ${table.name}
+         where ${table.column} = $1 and action = $2
+           and subject_key = $3
+       ), refunded_device as (
+         update ${table.name}
+         set request_count = request_count - 1
+         where ${table.column} = $1 and action = $2
+           and subject_key = $5
+           and window_number = (select window_number from clock)
+           and request_count > 1
+       )
+       delete from ${table.name}
        where ${table.column} = $1 and action = $2
-         and subject_key = any(array[$3::bytea, $4::bytea])`,
-      [table.deviceId, action, deviceKey, subjectKey],
+         and subject_key = $5
+         and window_number = (select window_number from clock)
+         and request_count = 1`,
+      [
+        table.deviceId,
+        action,
+        subjectKey,
+        AUTH_RATE_WINDOW_SECONDS,
+        deviceKey,
+      ],
     );
   }
 
@@ -3207,10 +3562,12 @@ function userView(row: UserRow): UserView {
   });
 }
 
-function userAuditState(
-  row: UserRow,
-): Record<string, "active" | "locked" | PharmacyRoleKey> {
-  return { role: row.role_key, status: row.status };
+function userAuditState(row: UserRow): Record<string, string> {
+  return {
+    displayName: row.display_name,
+    role: row.role_key,
+    status: row.status,
+  };
 }
 
 function normalizeUsername(username: string): string {

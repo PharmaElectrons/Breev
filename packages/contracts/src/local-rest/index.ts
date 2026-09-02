@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "6" as const;
-export const LOCAL_SCHEMA_VERSION = "7" as const;
+export const LOCAL_API_VERSION = "7" as const;
+export const LOCAL_SCHEMA_VERSION = "8" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -61,6 +61,7 @@ export const stepUpActionSchema = z.enum([
   "devices.revoke",
   "devices.seat.release.request",
   "identity.role.permissions.update",
+  "identity.user.password.reset",
   "identity.user.create",
   "identity.user.update",
   "licensing.licence.deactivate",
@@ -78,6 +79,7 @@ export const IDENTITY_DENIAL_CODES = [
   "identity-resource-not-found",
   "idempotency-conflict",
   "last-owner-required",
+  "owner-permission-floor-required",
   "permission-denied",
   "rate-limit-exceeded",
   "session-expired",
@@ -223,9 +225,22 @@ export const identityCreateUserRequestSchema = z.strictObject({
 export const identityUpdateUserRequestSchema = z.strictObject({
   ...identityCommandFields,
   challengeId: z.uuidv7(),
+  displayName: displayNameSchema.optional(),
   expectedRevision: decimalRevisionSchema,
   role: pharmacyRoleKeySchema.optional(),
   status: z.enum(["active", "locked"]).optional(),
+});
+export const identityChangePasswordRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  currentPassword: z.string().min(1).max(128),
+  expectedRevision: decimalRevisionSchema,
+  newPassword: passwordSchema,
+});
+export const identityResetUserPasswordRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  challengeId: z.uuidv7(),
+  expectedRevision: decimalRevisionSchema,
+  newPassword: passwordSchema,
 });
 export const identityRoleSchema = z.strictObject({
   id: z.uuidv7(),
@@ -389,6 +404,34 @@ export const identityUpdateUserContract = {
 } as const;
 export const identityUserPath = (userId: string): string =>
   `/identity/users/${userId}`;
+export const identityChangePasswordContract = {
+  method: "POST",
+  path: "/identity/password-changes",
+  request: { body: identityChangePasswordRequestSchema },
+  responses: {
+    200: identityUserSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+    409: identityDenialSchema,
+    429: identityDenialSchema,
+  },
+} as const;
+export const identityUserPasswordResetPath = (userId: string): string =>
+  `/identity/users/${userId}/password-reset`;
+export const identityResetUserPasswordContract = {
+  method: "POST",
+  path: "/identity/users/:userId/password-reset",
+  request: { body: identityResetUserPasswordRequestSchema },
+  responses: {
+    200: identityUserSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
 export const identityStepUpCreateContract = {
   method: "POST",
   path: "/identity/step-up-challenges",
@@ -1472,6 +1515,12 @@ export type IdentityCreateUserRequest = z.infer<
 >;
 export type IdentityUpdateUserRequest = z.infer<
   typeof identityUpdateUserRequestSchema
+>;
+export type IdentityChangePasswordRequest = z.infer<
+  typeof identityChangePasswordRequestSchema
+>;
+export type IdentityResetUserPasswordRequest = z.infer<
+  typeof identityResetUserPasswordRequestSchema
 >;
 export type IdentityRole = z.infer<typeof identityRoleSchema>;
 export type IdentityRoles = z.infer<typeof identityRolesSchema>;

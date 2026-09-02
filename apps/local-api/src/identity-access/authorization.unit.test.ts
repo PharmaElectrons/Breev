@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   PERMISSION_NAMES,
+  STEP_UP_ACTIONS,
   evaluateStepUpApproval,
   hasPermission,
   type StepUpApprovalInput,
@@ -88,6 +89,12 @@ describe("Step-Up Authorization", () => {
 
   it("approves a fresh challenge for the same authorized execution context", () => {
     expect(evaluateStepUpApproval(approvedInput)).toBe("approved");
+  });
+
+  it("maps administrator password reset to user management", () => {
+    expect(STEP_UP_ACTIONS["identity.user.password.reset"]).toBe(
+      "identity.users.manage",
+    );
   });
 
   it("expires at the bounded lifetime instead of extending it", () => {

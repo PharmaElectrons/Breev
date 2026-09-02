@@ -4,12 +4,14 @@ import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
   identityBootstrapContract,
+  identityChangePasswordContract,
   identityCreateUserContract,
   identityDenialSchema,
   identityLoginContract,
   identityLogoutContract,
   identityRolePermissionsPath,
   identityRoleSchema,
+  identityResetUserPasswordContract,
   identityRolesContract,
   identityRolesSchema,
   identityStateContract,
@@ -20,6 +22,7 @@ import {
   identityUpdateRolePermissionsContract,
   identityUpdateUserContract,
   identityUserPath,
+  identityUserPasswordResetPath,
   identityUserSchema,
   identityUsersContract,
   entitlementContextSchema,
@@ -32,10 +35,12 @@ import {
   type AttendanceEventRequest,
   type IdentityAuthenticatedState,
   type IdentityBootstrapRequest,
+  type IdentityChangePasswordRequest,
   type IdentityCreateUserRequest,
   type IdentityDenial,
   type IdentityLoginRequest,
   type IdentityRole,
+  type IdentityResetUserPasswordRequest,
   type IdentityRoles,
   type IdentityState,
   type IdentityStepUpApproveRequest,
@@ -174,6 +179,35 @@ export async function updateIdentityUser(
     baseUrl,
     identityUserPath(userId),
     identityUpdateUserContract.method,
+    200,
+    identityUserSchema,
+    body,
+  );
+}
+
+export async function changeIdentityPassword(
+  baseUrl: string,
+  body: IdentityChangePasswordRequest,
+): Promise<IdentityUser> {
+  return await requestJson(
+    baseUrl,
+    identityChangePasswordContract.path,
+    identityChangePasswordContract.method,
+    200,
+    identityUserSchema,
+    body,
+  );
+}
+
+export async function resetIdentityUserPassword(
+  baseUrl: string,
+  userId: string,
+  body: IdentityResetUserPasswordRequest,
+): Promise<IdentityUser> {
+  return await requestJson(
+    baseUrl,
+    identityUserPasswordResetPath(userId),
+    identityResetUserPasswordContract.method,
     200,
     identityUserSchema,
     body,

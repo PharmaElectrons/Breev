@@ -737,6 +737,113 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
   });
 
+  test("edits a display name and rotates credentials with keyboard-safe controls", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    const managerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Manager" });
+    const displayName = managerRow.getByLabel("Display name: browser.manager");
+    await displayName.fill("Browser Manager Renamed");
+    const saveName = managerRow.getByRole("button", { name: "Save name" });
+    await saveName.click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+    await expect(managerRow.getByText("Browser Manager Renamed")).toBeVisible();
+    await expect(saveName).toBeFocused();
+
+    const resetPassword = "browser manager reset password is private";
+    await managerRow
+      .getByLabel("New password: browser.manager")
+      .fill(resetPassword);
+    const reset = managerRow.getByRole("button", { name: "Reset password" });
+    await reset.click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+    await expect(reset).toBeFocused();
+
+    await administrator.query(
+      "delete from identity_auth_rate_windows where device_id = $1",
+      [credentials.deviceId],
+    );
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.manager");
+    await page.getByLabel("Password").fill(resetPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Manager Renamed" }),
+    ).toBeVisible();
+
+    const selfChange = page
+      .getByRole("heading", { name: "Change my password" })
+      .locator("../..");
+    const selfChangedPassword = "browser manager self changed password";
+    await selfChange.getByLabel("Current password").fill(resetPassword);
+    await selfChange.getByLabel("New password").fill(selfChangedPassword);
+    const change = selfChange.getByRole("button", {
+      name: "Change my password",
+    });
+    await change.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Password changed.")).toBeVisible();
+    await expect(change).toBeFocused();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.manager");
+    await page.getByLabel("Password").fill(resetPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByText("The username or password is incorrect."),
+    ).toBeVisible();
+    await page.getByLabel("Password").fill(selfChangedPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Manager Renamed" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await expect(
+      page.getByRole("heading", { name: "تغيير كلمة مروري" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("كلمة المرور الحالية")).toBeVisible();
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+    await administrator.query(
+      "delete from identity_auth_rate_windows where device_id = $1",
+      [credentials.deviceId],
+    );
+  });
+
   test("configures attendance and roles with Step-Up, then presents a locked login generically", async ({
     page,
   }) => {

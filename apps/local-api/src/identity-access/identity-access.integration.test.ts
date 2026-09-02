@@ -10,7 +10,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import path from "node:path";
 import { Pool } from "pg";
@@ -27,6 +27,9 @@ const OWNER_PASSWORD = "correct horse battery staple";
 const SECOND_OWNER_PASSWORD = "another correct horse battery staple";
 const MANAGER_PASSWORD = "manager password stays only in this test";
 const ACCOUNTANT_PASSWORD = "test password for accountant user";
+const SELF_CHANGE_OLD_PASSWORD = "idempotent user password stays private";
+const SELF_CHANGE_NEW_PASSWORD = "rotated self password stays private";
+const ADMIN_RESET_PASSWORD = "administrator reset password stays private";
 
 interface MainDeviceCredentials {
   readonly deviceId: string;
@@ -518,7 +521,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       challengeId: challenge,
       displayName: "Idempotent User",
       idempotencyKey: createKey,
-      password: "idempotent user password stays private",
+      password: SELF_CHANGE_OLD_PASSWORD,
       role: "support",
       username: "idempotent.user",
     };
@@ -588,6 +591,542 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       [settingsKey],
     );
     expect(settingsStores.rows[0]).toEqual({ identity: "0", posting: "1" });
+  });
+
+  it("keeps the owner administration floor while non-owner grants remain configurable", async () => {
+    const adminDevice = await registerDevice();
+    await login(ownerUsername, ownerPassword, adminDevice);
+    const roles = await request(adminDevice, "GET", "/identity/roles");
+    const roleRows = roles.body?.roles as Array<{
+      grants: string[];
+      id: string;
+      key: string;
+      revision: string;
+    }>;
+    const permissions = roles.body?.permissions as string[];
+    const ownerRole = roleRows.find(({ key }) => key === "owner");
+    const supportRole = roleRows.find(({ key }) => key === "support");
+    expect(ownerRole).toBeDefined();
+    expect(supportRole).toBeDefined();
+
+    const ownerChallenge = await approvedChallenge(
+      "identity.role.permissions.update",
+      ownerRole?.id,
+      ownerPassword,
+      adminDevice,
+    );
+    const requestedWithoutFloor = permissions.filter(
+      (permission) =>
+        permission !== "identity.roles.manage" &&
+        permission !== "identity.users.manage",
+    );
+    expect(
+      await request(
+        adminDevice,
+        "PUT",
+        `/identity/roles/${ownerRole?.id}/permissions`,
+        command({
+          challengeId: ownerChallenge,
+          expectedRevision: ownerRole?.revision,
+          permissions: requestedWithoutFloor,
+        }),
+      ),
+    ).toMatchObject({
+      status: 409,
+      body: { code: "owner-permission-floor-required" },
+    });
+    const ownerFloorDenial = await administrator.query<{
+      count: string;
+    }>(
+      `select count(*)::text as count
+       from identity_audit_records
+       where action = 'identity.role.permissions.update'
+         and outcome = 'owner-permission-floor-required'
+         and target_id = $1`,
+      [ownerRole?.id],
+    );
+    expect(ownerFloorDenial.rows[0]?.count).toBe("1");
+
+    await expect(
+      administrator.query(
+        `delete from role_permission_grants grant_row
+         using pharmacy_roles role
+         where grant_row.role_id = role.id
+           and role.role_key = 'owner'
+           and grant_row.permission_name = 'identity.users.manage'`,
+      ),
+    ).rejects.toMatchObject({
+      code: "23514",
+      constraint: "owner_role_permission_floor",
+    });
+    const storedFloor = await administrator.query<{ permission_name: string }>(
+      `select grant_row.permission_name
+       from role_permission_grants grant_row
+       join pharmacy_roles role on role.id = grant_row.role_id
+       where role.role_key = 'owner'
+         and grant_row.permission_name = any($1::text[])
+       order by grant_row.permission_name`,
+      [["identity.roles.manage", "identity.users.manage"]],
+    );
+    expect(
+      storedFloor.rows.map(({ permission_name }) => permission_name),
+    ).toEqual(["identity.roles.manage", "identity.users.manage"]);
+
+    const grantChallenge = await approvedChallenge(
+      "identity.role.permissions.update",
+      supportRole?.id,
+      ownerPassword,
+      adminDevice,
+    );
+    const granted = await request(
+      adminDevice,
+      "PUT",
+      `/identity/roles/${supportRole?.id}/permissions`,
+      command({
+        challengeId: grantChallenge,
+        expectedRevision: supportRole?.revision,
+        permissions: ["attendance.record"],
+      }),
+    );
+    expect(granted).toMatchObject({
+      status: 200,
+      body: { grants: ["attendance.record"], key: "support" },
+    });
+    const clearChallenge = await approvedChallenge(
+      "identity.role.permissions.update",
+      supportRole?.id,
+      ownerPassword,
+      adminDevice,
+    );
+    expect(
+      await request(
+        adminDevice,
+        "PUT",
+        `/identity/roles/${supportRole?.id}/permissions`,
+        command({
+          challengeId: clearChallenge,
+          expectedRevision: String(granted.body?.revision ?? ""),
+          permissions: [],
+        }),
+      ),
+    ).toMatchObject({ status: 200, body: { grants: [], key: "support" } });
+  });
+
+  it("changes a user's own password, replaces the acting session, and replays safely", async () => {
+    const subject = await administrator.query<{
+      auth_revision: string;
+      id: string;
+    }>(
+      `select id, auth_revision::text
+       from identity_users where username_key = 'idempotent.user'`,
+    );
+    const user = subject.rows[0];
+    expect(user).toBeDefined();
+    const actingDevice = await registerDevice();
+    const otherDevice = await registerDevice();
+    await login("idempotent.user", SELF_CHANGE_OLD_PASSWORD, actingDevice);
+    await login("idempotent.user", SELF_CHANGE_OLD_PASSWORD, otherDevice);
+    const beforeState = await request(actingDevice, "GET", "/identity/state");
+    const previousSessionId = String(
+      (beforeState.body?.session as { id?: string } | undefined)?.id ?? "",
+    );
+    const idempotencyKey = createUuidV7();
+    const changeBody = {
+      currentPassword: SELF_CHANGE_OLD_PASSWORD,
+      expectedRevision: user?.auth_revision ?? "",
+      idempotencyKey,
+      newPassword: SELF_CHANGE_NEW_PASSWORD,
+    };
+    const changed = await request(
+      actingDevice,
+      "POST",
+      "/identity/password-changes",
+      changeBody,
+    );
+    expect(changed).toMatchObject({
+      status: 200,
+      body: { id: user?.id },
+    });
+    expect(changed.body).not.toHaveProperty("currentPassword");
+    expect(changed.body).not.toHaveProperty("newPassword");
+    expect(
+      await request(
+        actingDevice,
+        "POST",
+        "/identity/password-changes",
+        changeBody,
+      ),
+    ).toEqual(changed);
+    expect(
+      await request(actingDevice, "POST", "/identity/password-changes", {
+        ...changeBody,
+        expectedRevision: String(BigInt(changeBody.expectedRevision) + 1n),
+      }),
+    ).toMatchObject({
+      status: 409,
+      body: { code: "idempotency-conflict" },
+    });
+
+    const afterState = await request(actingDevice, "GET", "/identity/state");
+    expect(afterState).toMatchObject({
+      status: 200,
+      body: { state: "authenticated", user: { id: user?.id } },
+    });
+    expect(
+      (afterState.body?.session as { id?: string } | undefined)?.id,
+    ).not.toBe(previousSessionId);
+    expect(await request(otherDevice, "GET", "/identity/state")).toEqual({
+      body: { state: "session-revoked" },
+      status: 200,
+    });
+    expect(
+      await request(actingDevice, "POST", "/identity/login", {
+        password: SELF_CHANGE_OLD_PASSWORD,
+        username: "idempotent.user",
+      }),
+    ).toMatchObject({
+      status: 401,
+      body: { code: "invalid-credentials" },
+    });
+    expect(
+      await request(actingDevice, "POST", "/identity/login", {
+        password: SELF_CHANGE_NEW_PASSWORD,
+        username: "idempotent.user",
+      }),
+    ).toMatchObject({ status: 200 });
+
+    const storedFingerprint = await administrator.query<{
+      request_fingerprint: Buffer;
+    }>(
+      `select request_fingerprint
+       from identity_command_results
+       where idempotency_key = $1`,
+      [idempotencyKey],
+    );
+    const passwordFreeFingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          commandName: "identity.password.change",
+          input: {
+            expectedRevision: changeBody.expectedRevision,
+            idempotencyKey,
+          },
+        }),
+      )
+      .digest();
+    expect(storedFingerprint.rows[0]?.request_fingerprint).toEqual(
+      passwordFreeFingerprint,
+    );
+  });
+
+  it("counts wrong current passwords and keeps the shared device budget after a success", async () => {
+    const changeDevice = await registerDevice();
+    await login(ownerUsername, ownerPassword, changeDevice, true);
+    const ownerState = await request(changeDevice, "GET", "/identity/state");
+    const expectedRevision = String(
+      (ownerState.body?.user as { revision?: string } | undefined)?.revision ??
+        "",
+    );
+    // The sign-in above refunds its own charge, so the meter starts empty and
+    // the whole allowance is spent on wrong passwords before the limit bites.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(
+        await request(changeDevice, "POST", "/identity/password-changes", {
+          currentPassword: "wrong current password",
+          expectedRevision,
+          idempotencyKey: createUuidV7(),
+          newPassword: "unused replacement password",
+        }),
+      ).toMatchObject({
+        status: 401,
+        body: { code: "invalid-credentials" },
+      });
+    }
+    expect(
+      await request(changeDevice, "POST", "/identity/password-changes", {
+        currentPassword: "wrong current password",
+        expectedRevision,
+        idempotencyKey: createUuidV7(),
+        newPassword: "unused replacement password",
+      }),
+    ).toMatchObject({
+      status: 429,
+      body: { code: "rate-limit-exceeded" },
+    });
+
+    const sharedBudgetDevice = await registerDevice();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect(
+        await request(sharedBudgetDevice, "POST", "/identity/login", {
+          password: "wrong password",
+          username: `unknown.user.${attempt}`,
+        }),
+      ).toMatchObject({ status: 401, body: { code: "invalid-credentials" } });
+    }
+    expect(
+      await request(sharedBudgetDevice, "POST", "/identity/login", {
+        password: ownerPassword,
+        username: ownerUsername,
+      }),
+    ).toMatchObject({ status: 200 });
+    // The three earlier failures survive the success. Had the success cleared
+    // the device budget — the weakness this guards — the meter would be empty
+    // here and no number of further guesses in this window would be refused.
+    for (const username of ["another.unknown.user", "one.more.unknown.user"]) {
+      expect(
+        await request(sharedBudgetDevice, "POST", "/identity/login", {
+          password: "wrong password",
+          username,
+        }),
+      ).toMatchObject({ status: 401, body: { code: "invalid-credentials" } });
+    }
+    expect(
+      await request(sharedBudgetDevice, "POST", "/identity/login", {
+        password: "wrong password",
+        username: "last.unknown.user",
+      }),
+    ).toMatchObject({
+      status: 429,
+      body: { code: "rate-limit-exceeded" },
+    });
+  });
+
+  it("requires one-use Step-Up for an administrator reset and revokes every subject session", async () => {
+    const subject = await administrator.query<{
+      auth_revision: string;
+      id: string;
+    }>(
+      `select id, auth_revision::text
+       from identity_users where username_key = 'role.sales'`,
+    );
+    const user = subject.rows[0];
+    expect(user).toBeDefined();
+    const subjectDeviceA = await registerDevice();
+    const subjectDeviceB = await registerDevice();
+    const oldPassword = "test password for sales_employee user";
+    await login("role.sales", oldPassword, subjectDeviceA);
+    await login("role.sales", oldPassword, subjectDeviceB);
+
+    const adminDevice = await registerDevice();
+    await login(ownerUsername, ownerPassword, adminDevice);
+    const challengeId = await createChallenge(
+      "identity.user.password.reset",
+      user?.id,
+      adminDevice,
+    );
+    expect(
+      await request(
+        adminDevice,
+        "POST",
+        `/identity/users/${user?.id}/password-reset`,
+        {
+          challengeId,
+          expectedRevision: user?.auth_revision,
+          idempotencyKey: createUuidV7(),
+          newPassword: ADMIN_RESET_PASSWORD,
+        },
+      ),
+    ).toMatchObject({
+      status: 409,
+      body: { code: "step-up-not-approved" },
+    });
+    expect(
+      await approveChallenge(
+        challengeId,
+        ownerPassword,
+        createUuidV7(),
+        adminDevice,
+      ),
+    ).toMatchObject({ status: 200, body: { status: "approved" } });
+
+    const resetBody = {
+      challengeId,
+      expectedRevision: user?.auth_revision ?? "",
+      idempotencyKey: createUuidV7(),
+      newPassword: ADMIN_RESET_PASSWORD,
+    };
+    const reset = await request(
+      adminDevice,
+      "POST",
+      `/identity/users/${user?.id}/password-reset`,
+      resetBody,
+    );
+    expect(reset).toMatchObject({ status: 200, body: { id: user?.id } });
+    expect(reset.body).not.toHaveProperty("newPassword");
+    expect(
+      await request(
+        adminDevice,
+        "POST",
+        `/identity/users/${user?.id}/password-reset`,
+        resetBody,
+      ),
+    ).toEqual(reset);
+    expect(
+      await request(
+        adminDevice,
+        "POST",
+        `/identity/users/${user?.id}/password-reset`,
+        {
+          ...resetBody,
+          expectedRevision: String(BigInt(resetBody.expectedRevision) + 1n),
+        },
+      ),
+    ).toMatchObject({
+      status: 409,
+      body: { code: "idempotency-conflict" },
+    });
+    expect(
+      await request(
+        adminDevice,
+        "POST",
+        `/identity/users/${user?.id}/password-reset`,
+        {
+          ...resetBody,
+          expectedRevision: String(reset.body?.revision ?? ""),
+          idempotencyKey: createUuidV7(),
+        },
+      ),
+    ).toMatchObject({
+      status: 409,
+      body: { code: "step-up-reused" },
+    });
+
+    for (const subjectDevice of [subjectDeviceA, subjectDeviceB]) {
+      expect(await request(subjectDevice, "GET", "/identity/state")).toEqual({
+        body: { state: "session-revoked" },
+        status: 200,
+      });
+    }
+    expect(
+      await request(subjectDeviceB, "POST", "/identity/password-changes", {
+        currentPassword: oldPassword,
+        expectedRevision: String(reset.body?.revision ?? ""),
+        idempotencyKey: createUuidV7(),
+        newPassword: "another unused replacement password",
+      }),
+    ).toMatchObject({
+      status: 401,
+      body: { code: "session-revoked" },
+    });
+    expect(
+      await request(subjectDeviceA, "POST", "/identity/login", {
+        password: oldPassword,
+        username: "role.sales",
+      }),
+    ).toMatchObject({ status: 401, body: { code: "invalid-credentials" } });
+    expect(
+      await request(subjectDeviceA, "POST", "/identity/login", {
+        password: ADMIN_RESET_PASSWORD,
+        username: "role.sales",
+      }),
+    ).toMatchObject({ status: 200 });
+
+    const resetAudit = await administrator.query<{
+      after_state: Record<string, unknown>;
+      before_state: Record<string, unknown>;
+    }>(
+      `select before_state, after_state
+       from identity_audit_records
+       where action = 'identity.user.password.reset'
+         and outcome = 'succeeded'
+         and target_id = $1`,
+      [user?.id],
+    );
+    expect(resetAudit.rows).toEqual([
+      {
+        after_state: {
+          authRevision: String(BigInt(user?.auth_revision ?? "0") + 1n),
+        },
+        before_state: { authRevision: user?.auth_revision },
+      },
+    ]);
+    const actionDefinition = await administrator.query<{
+      required_permission: string;
+    }>(
+      `select required_permission
+       from step_up_action_definitions
+       where name = 'identity.user.password.reset'`,
+    );
+    expect(actionDefinition.rows[0]?.required_permission).toBe(
+      "identity.users.manage",
+    );
+  });
+
+  it("edits display names, rejects empty updates, and exercises role reassignment", async () => {
+    const adminDevice = await registerDevice();
+    await login(ownerUsername, ownerPassword, adminDevice);
+    const subject = await administrator.query<{
+      auth_revision: string;
+      display_name: string;
+      id: string;
+    }>(
+      `select id, auth_revision::text, display_name
+       from identity_users where username_key = 'idempotent.user'`,
+    );
+    const user = subject.rows[0];
+    expect(user).toBeDefined();
+    const displayChallenge = await approvedChallenge(
+      "identity.user.update",
+      user?.id,
+      ownerPassword,
+      adminDevice,
+    );
+    const displayUpdate = await request(
+      adminDevice,
+      "PATCH",
+      `/identity/users/${user?.id}`,
+      {
+        challengeId: displayChallenge,
+        displayName: "Renamed Idempotent User",
+        expectedRevision: user?.auth_revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(displayUpdate).toMatchObject({
+      status: 200,
+      body: { displayName: "Renamed Idempotent User" },
+    });
+    expect(
+      await request(adminDevice, "PATCH", `/identity/users/${user?.id}`, {
+        challengeId: createUuidV7(),
+        expectedRevision: String(displayUpdate.body?.revision ?? ""),
+        idempotencyKey: createUuidV7(),
+      }),
+    ).toMatchObject({ status: 400, body: { code: "body-invalid" } });
+
+    const roleChallenge = await approvedChallenge(
+      "identity.user.update",
+      user?.id,
+      ownerPassword,
+      adminDevice,
+    );
+    expect(
+      await request(adminDevice, "PATCH", `/identity/users/${user?.id}`, {
+        challengeId: roleChallenge,
+        expectedRevision: String(displayUpdate.body?.revision ?? ""),
+        idempotencyKey: createUuidV7(),
+        role: "pharmacist",
+      }),
+    ).toMatchObject({ status: 200, body: { role: "pharmacist" } });
+
+    const displayAudit = await administrator.query<{
+      after_state: Record<string, unknown>;
+      before_state: Record<string, unknown>;
+    }>(
+      `select before_state, after_state
+       from identity_audit_records
+       where action = 'identity.user.update'
+         and outcome = 'succeeded'
+         and target_id = $1
+         and after_state ->> 'displayName' = 'Renamed Idempotent User'
+       order by occurred_at
+       limit 1`,
+      [user?.id],
+    );
+    expect(displayAudit.rows[0]).toMatchObject({
+      before_state: { displayName: user?.display_name },
+      after_state: { displayName: "Renamed Idempotent User" },
+    });
   });
 
   it("enforces user, role, and permission constraints in PostgreSQL", async () => {
@@ -680,6 +1219,17 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       }),
       request(
         credentials,
+        "POST",
+        `/identity/users/${ownerId}/password-reset`,
+        {
+          challengeId: arbitraryChallenge,
+          expectedRevision: "1",
+          idempotencyKey: createUuidV7(),
+          newPassword: "denied reset password stays private",
+        },
+      ),
+      request(
+        credentials,
         "PUT",
         `/identity/roles/${managerRoleId}/permissions`,
         command({
@@ -721,6 +1271,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "step-up-missing-permission", status: 403 },
+      { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
       { code: "permission-denied", status: 403 },
@@ -995,9 +1546,15 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       concurrentLogins.every(({ status }) => status === 200 || status === 401),
       failureContext(concurrentLogins),
     ).toBe(true);
+    // Scoped to the device under test. The invariant being proved is that one
+    // device binding keeps exactly one live session however many logins race on
+    // it. Other devices registered by other cases in this file each legitimately
+    // hold their own session, so a global count would measure their bookkeeping
+    // rather than this invariant.
     const activeSessions = await administrator.query<{ count: string }>(
       `select count(*)::text as count from identity_sessions
-       where revoked_at is null`,
+       where revoked_at is null and device_id = $1`,
+      [credentials.deviceId],
     );
     expect(activeSessions.rows[0]?.count).toBe("1");
 
@@ -1099,11 +1656,17 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       expect(audit.state).not.toContain(OWNER_PASSWORD);
       expect(audit.state).not.toContain(SECOND_OWNER_PASSWORD);
       expect(audit.state).not.toContain(MANAGER_PASSWORD);
+      expect(audit.state).not.toContain(SELF_CHANGE_OLD_PASSWORD);
+      expect(audit.state).not.toContain(SELF_CHANGE_NEW_PASSWORD);
+      expect(audit.state).not.toContain(ADMIN_RESET_PASSWORD);
       expect(audit.state.toLowerCase()).not.toContain("password_hash");
     }
     expect(apiOutput).not.toContain(OWNER_PASSWORD);
     expect(apiOutput).not.toContain(SECOND_OWNER_PASSWORD);
     expect(apiOutput).not.toContain(MANAGER_PASSWORD);
+    expect(apiOutput).not.toContain(SELF_CHANGE_OLD_PASSWORD);
+    expect(apiOutput).not.toContain(SELF_CHANGE_NEW_PASSWORD);
+    expect(apiOutput).not.toContain(ADMIN_RESET_PASSWORD);
 
     const auditId = audits.rows[0]?.id;
     expect(auditId).toBeDefined();
@@ -1126,26 +1689,44 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         attendanceId.rows[0]?.id,
       ]),
     ).rejects.toMatchObject({ code: "55000" });
-    const commandResult = await administrator.query<{
+    const commandResults = await administrator.query<{
       id: string;
       response_body: string;
     }>(
       `select id, response_body::text
-       from identity_command_results order by created_at limit 1`,
+       from identity_command_results order by created_at`,
     );
-    expect(commandResult.rows[0]?.response_body.toLowerCase()).not.toContain(
-      "password",
-    );
+    for (const commandResult of commandResults.rows) {
+      // Both known secrets are checked against the whole recorded body, with
+      // nothing exempted.
+      expect(commandResult.response_body).not.toContain(
+        SELF_CHANGE_NEW_PASSWORD,
+      );
+      expect(commandResult.response_body).not.toContain(ADMIN_RESET_PASSWORD);
+
+      // The blunt sweep for the word itself stays, because it catches a
+      // credential arriving through a field nobody thought to name. One field
+      // is exempt: `action` carries the command name, and
+      // `identity.user.password.reset` describes a command rather than
+      // exposing anything. Exempting the name is not the same as exempting a
+      // value, so every other field is still swept.
+      const recorded = JSON.parse(commandResult.response_body) as Record<
+        string,
+        unknown
+      >;
+      delete recorded.action;
+      expect(JSON.stringify(recorded).toLowerCase()).not.toContain("password");
+    }
     await expect(
       administrator.query(
         "update identity_command_results set command_name = 'identity.changed' where id = $1",
-        [commandResult.rows[0]?.id],
+        [commandResults.rows[0]?.id],
       ),
     ).rejects.toMatchObject({ code: "55000" });
     await expect(
       administrator.query(
         "delete from identity_command_results where id = $1",
-        [commandResult.rows[0]?.id],
+        [commandResults.rows[0]?.id],
       ),
     ).rejects.toMatchObject({ code: "55000" });
   });
@@ -1192,20 +1773,39 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     return device;
   }
 
-  async function login(username: string, password: string): Promise<void> {
-    const response = await request(credentials, "POST", "/identity/login", {
+  async function login(
+    username: string,
+    password: string,
+    binding = credentials,
+    preserveDeviceBudget = false,
+  ): Promise<void> {
+    const response = await request(binding, "POST", "/identity/login", {
       password,
       username,
     });
     expect(response.status, failureContext([response])).toBe(200);
+    // Most scenarios use login only to arrange their actor. Isolate those
+    // setups from the one test that proves a successful login cannot reset the
+    // shared device budget; that test sends its login requests directly.
+    if (!preserveDeviceBudget) {
+      await administrator.query(
+        `delete from identity_auth_rate_windows
+         where device_id = $1 and action = 'login' and subject_key = $2`,
+        [
+          binding.deviceId,
+          createHash("sha256").update("device:login").digest(),
+        ],
+      );
+    }
   }
 
   async function createChallenge(
     action: StepUpAction,
     subjectId?: string,
+    binding = credentials,
   ): Promise<string> {
     const response = await request(
-      credentials,
+      binding,
       "POST",
       "/identity/step-up-challenges",
       command({ action, ...(subjectId === undefined ? {} : { subjectId }) }),
@@ -1218,9 +1818,10 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     challengeId: string,
     password: string,
     idempotencyKey = createUuidV7(),
+    binding = credentials,
   ): Promise<ApiResponse> {
     return await request(
-      credentials,
+      binding,
       "POST",
       `/identity/step-up-challenges/${challengeId}/approve`,
       { idempotencyKey, password },
@@ -1231,9 +1832,15 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     action: StepUpAction,
     subjectId: string | undefined,
     password: string,
+    binding = credentials,
   ): Promise<string> {
-    const challengeId = await createChallenge(action, subjectId);
-    const approval = await approveChallenge(challengeId, password);
+    const challengeId = await createChallenge(action, subjectId, binding);
+    const approval = await approveChallenge(
+      challengeId,
+      password,
+      createUuidV7(),
+      binding,
+    );
     expect(approval, failureContext([approval])).toMatchObject({
       status: 200,
       body: { status: "approved" },
