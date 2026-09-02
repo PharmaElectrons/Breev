@@ -46,6 +46,7 @@ export interface IdentityCopy {
   readonly resetPassword: string;
   readonly save: string;
   readonly saveDisplayName: string;
+  readonly saveRole: string;
   readonly sessionExpiredDescription: string;
   readonly sessionExpiredTitle: string;
   readonly sessionRevokedDescription: string;
@@ -156,6 +157,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     resetPassword: "إعادة تعيين كلمة المرور",
     save: "حفظ",
     saveDisplayName: "حفظ الاسم",
+    saveRole: "حفظ الدور",
     sessionExpiredDescription: "انتهت مدة الجلسة المحلية الآمنة.",
     sessionExpiredTitle: "انتهت الجلسة",
     sessionRevokedDescription: "لم تعد هذه الجلسة مخولة للعمل.",
@@ -248,6 +250,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     resetPassword: "Reset password",
     save: "Save",
     saveDisplayName: "Save name",
+    saveRole: "Save role",
     sessionExpiredDescription:
       "The secure local session reached its time limit.",
     sessionExpiredTitle: "Session expired",
