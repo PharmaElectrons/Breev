@@ -97,8 +97,7 @@ export class PharmacyCaService {
         return;
       }
 
-      const { providerName, assuranceLevel } =
-        await selectKeyStorageProvider();
+      const { providerName, assuranceLevel } = await selectKeyStorageProvider();
       const installationId = createUuidV7();
       const keyIdentity = { providerName, keyName: caKeyName(installationId) };
       let keyResult: Awaited<ReturnType<typeof createPersistedKeyPair>>;

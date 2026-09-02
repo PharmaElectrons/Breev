@@ -133,15 +133,12 @@ test.describe.serial("Main pairing screen", () => {
       page.getByRole("heading", { name: "Welcome, Devices Owner" }),
     ).toBeVisible();
 
-    // The devices section exists for a user who holds devices.pair. The seat
-    // count is licence data and nothing else: with no licence installed there
-    // is no permitted count to state, and the screen says so instead of
-    // inventing one.
+    // The devices section exists for a user who holds devices.pair AND the
+    // additional-device-pos entitlement. On Free Core, it is completely absent.
     await expect(
       page.getByRole("heading", { name: "Additional POS terminals" }),
-    ).toBeVisible();
-    await expect(page.getByText("Seats in use")).toBeVisible();
-    await expect(seatUsage(page)).toHaveText("No licence installed");
+    ).not.toBeVisible();
+    await expect(page.getByText("Seats in use")).not.toBeVisible();
 
     pharmacyId = await readPharmacyId(apiOrigin, credentials);
     await installLicence(apiOrigin, credentials, {
@@ -149,6 +146,12 @@ test.describe.serial("Main pairing screen", () => {
       permittedDeviceCount: 4,
       pharmacyId,
     });
+
+    // Once the licence is installed, the capability is granted and the panel appears.
+    await expect(
+      page.getByRole("heading", { name: "Additional POS terminals" }),
+    ).toBeVisible();
+    await expect(page.getByText("Seats in use")).toBeVisible();
     await expect(seatUsage(page)).toHaveText("1 / 4");
 
     // Starting a session is a reauthenticated act, reached by keyboard alone.

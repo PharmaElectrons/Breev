@@ -8,7 +8,10 @@ const childProcess = vi.hoisted(() => ({
 
 vi.mock("node:child_process", () => childProcess);
 
-import { PLATFORM_CRYPTO_PROVIDER, selectKeyStorageProvider } from "./cng-addon.js";
+import {
+  PLATFORM_CRYPTO_PROVIDER,
+  selectKeyStorageProvider,
+} from "./cng-addon.js";
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
 

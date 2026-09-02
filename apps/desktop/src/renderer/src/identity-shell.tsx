@@ -361,7 +361,9 @@ function AuthenticatedWorkspace({
   );
   const canManageLicensing =
     state.allowedPermissions.includes("licensing.manage");
-  const canPairDevices = state.allowedPermissions.includes("devices.pair");
+  const canPairDevices =
+    state.allowedPermissions.includes("devices.pair") &&
+    state.entitlement.capabilities.includes("additional-device-pos");
   const visibleSelectedCapability = state.entitlement.capabilities.includes(
     selectedCapability,
   )
