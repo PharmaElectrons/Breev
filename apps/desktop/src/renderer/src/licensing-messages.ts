@@ -1,4 +1,7 @@
-import type { CapabilityName } from "@breev/contracts/local-rest";
+import type {
+  CapabilityName,
+  EntitlementContext,
+} from "@breev/contracts/local-rest";
 
 import type { Locale } from "./preferences";
 
@@ -15,16 +18,38 @@ export interface LicensingCopy {
     | "licence-invalid",
     string
   >;
+  readonly daysRemaining: string;
   readonly expires: string;
+  /** The near-expiry warning; `days` is the whole days left until expiry. */
+  readonly expiryWarning: (days: number) => string;
+  readonly founderGrants: string;
+  readonly founderGrantsNone: string;
+  readonly graceUntil: string;
+  readonly graceWarning: string;
   readonly install: string;
   readonly installDescription: string;
+  readonly issued: string;
   readonly licenceDocument: string;
   readonly licenceStatus: string;
   readonly plan: string;
-  readonly statuses: Record<
-    "clock-rollback" | "expired" | "free-core" | "invalid-licence" | "licensed",
-    string
-  >;
+  readonly planFeatures: string;
+  readonly planFeaturesNone: string;
+  readonly renew: string;
+  readonly renewDescription: string;
+  readonly statuses: Record<EntitlementContext["status"], string>;
+}
+
+/**
+ * Arabic counts a day differently at one, two, three to ten, and above ten.
+ * The number itself is formatted by the caller's locale; this only chooses
+ * the noun form.
+ */
+function arabicDays(days: number): string {
+  if (days === 0) return "اليوم";
+  if (days === 1) return "يوم واحد";
+  if (days === 2) return "يومان";
+  const formatted = new Intl.NumberFormat("ar-IQ").format(days);
+  return days <= 10 ? `${formatted} أيام` : `${formatted} يوماً`;
 }
 
 export const licensingMessages: Record<Locale, LicensingCopy> = {
@@ -61,17 +86,34 @@ export const licensingMessages: Record<Locale, LicensingCopy> = {
       "licence-invalid":
         "تعذر التحقق من صحة الترخيص أو ارتباطه بهذه الصيدلية والجهاز الرئيسي.",
     },
+    daysRemaining: "الأيام المتبقية",
     expires: "ينتهي في",
+    expiryWarning: (days) =>
+      days === 0
+        ? "ينتهي الترخيص اليوم. جدّده لتستمر الوظائف المدفوعة."
+        : `ينتهي الترخيص خلال ${arabicDays(days)}. جدّده لتستمر الوظائف المدفوعة.`,
+    founderGrants: "منح المؤسس",
+    founderGrantsNone: "لا توجد منح إضافية",
+    graceUntil: "فترة السماح حتى",
+    graceWarning:
+      "انتهت مدة الترخيص وتستمر الوظائف المدفوعة خلال فترة السماح. لا يمكن إقران نقطة بيع جديدة حتى التجديد.",
     install: "تثبيت الترخيص",
     installDescription:
       "ألصق مستند الترخيص الموقّع. سيُطلب تأكيد كلمة المرور قبل التثبيت.",
+    issued: "صدر في",
     licenceDocument: "مستند الترخيص الموقّع",
     licenceStatus: "حالة الترخيص",
     plan: "الخطة",
+    planFeatures: "وظائف الخطة",
+    planFeaturesNone: "لا توجد وظائف مدفوعة في الخطة",
+    renew: "تجديد الترخيص أو تثبيته",
+    renewDescription:
+      "ألصق مستند الترخيص المجدد الموقّع. يطبّقه بريف دون إعادة تثبيت أو تغيير في البيانات، بعد تأكيد كلمة المرور.",
     statuses: {
       "clock-rollback": "تم رصد رجوع الساعة — الوظائف المجانية فقط",
       expired: "انتهى الترخيص — الوظائف المجانية فقط",
       "free-core": "الوظائف المجانية",
+      grace: "انتهى الترخيص — ضمن فترة السماح",
       "invalid-licence": "الترخيص غير صالح — الوظائف المجانية فقط",
       licensed: "الترخيص فعّال",
     },
@@ -111,17 +153,34 @@ export const licensingMessages: Record<Locale, LicensingCopy> = {
       "licence-invalid":
         "The licence signature or its pharmacy/Main-device binding is invalid.",
     },
+    daysRemaining: "Days remaining",
     expires: "Expires",
+    expiryWarning: (days) =>
+      days === 0
+        ? "The licence expires today. Renew it to keep paid functions running."
+        : `The licence expires in ${days === 1 ? "1 day" : `${days} days`}. Renew it to keep paid functions running.`,
+    founderGrants: "Founder grants",
+    founderGrantsNone: "No additional grants",
+    graceUntil: "Grace period until",
+    graceWarning:
+      "The licence has expired and paid functions continue during the grace period. A new terminal cannot be paired until the licence is renewed.",
     install: "Install licence",
     installDescription:
       "Paste the signed licence document. Password confirmation is required before installation.",
+    issued: "Issued",
     licenceDocument: "Signed licence document",
     licenceStatus: "Licence status",
     plan: "Plan",
+    planFeatures: "Plan features",
+    planFeaturesNone: "No paid features in the plan",
+    renew: "Renew or install licence",
+    renewDescription:
+      "Paste the renewed signed licence. Breev applies it without reinstalling or changing data, after password confirmation.",
     statuses: {
       "clock-rollback": "Clock rollback detected — Free Core only",
       expired: "Licence expired — Free Core only",
       "free-core": "Free Core",
+      grace: "Licence expired — within the grace period",
       "invalid-licence": "Licence invalid — Free Core only",
       licensed: "Licence active",
     },

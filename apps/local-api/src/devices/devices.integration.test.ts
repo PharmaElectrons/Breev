@@ -1104,6 +1104,55 @@ describe.sequential("terminal pairing persistence seam", () => {
     expect(await seatUsage()).toEqual({ permitted: 6, used: 4 });
   }, 240_000);
 
+  it("keeps paired terminals working during grace but refuses to pair a new one", async () => {
+    // A licence whose paid term ended yesterday and whose signed grace end is
+    // still ahead. Every terminal already seated keeps working; the pharmacy
+    // cannot add another until it renews. The window is the issuer's — no
+    // local constant decides it.
+    const day = 24 * 60 * 60 * 1000;
+    await licensing.install({
+      actorId: await ownerId(),
+      encodedLicence: mintLicence({
+        expiresAt: new Date(Date.now() - day).toISOString(),
+        graceEndsAt: new Date(Date.now() + 6 * day).toISOString(),
+        licenceId: createUuidV7(),
+        mainDeviceId: MAIN_DEVICE_ID,
+        permittedDeviceCount: 6,
+        pharmacyId,
+      }),
+      mainDeviceId: MAIN_DEVICE_ID,
+      now: new Date(),
+      pharmacyId,
+    });
+    expect(await seatUsage()).toEqual({ permitted: 6, used: 4 });
+    expect((await loginFrom(terminals[0]!)).statusCode).toBe(200);
+
+    const denial = await denialOf(async () =>
+      devices.startPairingSession(await verifiedMainRequest(), {
+        idempotencyKey: randomUUID(),
+        stepUpChallengeId: await approvedStepUp("devices.pairing.start"),
+      }),
+    );
+    expect(denial.denial.code).toBe("pairing-grace-period");
+    const audit = await administrator.query<{ outcome: string }>(
+      `select outcome from devices_audit_records
+       where action = 'devices.pairing.start'
+       order by recorded_at desc, id desc
+       limit 1`,
+    );
+    expect(audit.rows[0]?.outcome).toBe("grace-period");
+
+    // A renewed licence lifts the refusal without touching any device.
+    await installLicence(6);
+    const session = await startSession();
+    await devices.cancelPairingSession(
+      await verifiedMainRequest(),
+      session.sessionId,
+      { idempotencyKey: randomUUID(), reason: "user-cancelled" },
+    );
+    expect(await seatUsage()).toEqual({ permitted: 6, used: 4 });
+  }, 240_000);
+
   it("serves one Main and three terminals at the same time over the LAN", async () => {
     expect(terminals).toHaveLength(3);
     const agents = terminals.map(

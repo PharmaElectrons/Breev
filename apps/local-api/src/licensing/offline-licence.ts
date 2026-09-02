@@ -33,8 +33,17 @@ type InvalidReason =
   | "unsupported-algorithm"
   | "unsupported-format";
 
+/**
+ * `grace` is the signed window from `expiresAt` (inclusive) to `graceEndsAt`
+ * (exclusive). The claims are still trusted and paid capabilities continue;
+ * what changes is decided by the caller — today, new terminal pairing is
+ * refused. The window's length is whatever the issuer signed. This is the
+ * one place that reads the clock against the licence, so no other module
+ * decides expiry.
+ */
 export type OfflineLicenceVerification =
   | { readonly status: "valid"; readonly claims: OfflineLicenceClaims }
+  | { readonly status: "grace"; readonly claims: OfflineLicenceClaims }
   | { readonly status: "invalid"; readonly reason: InvalidReason };
 
 interface LicenceEnvelope {
@@ -84,7 +93,8 @@ export function verifyOfflineLicence(input: {
   const now = input.now.getTime();
   if (!Number.isFinite(now)) return invalid("malformed");
   if (now < Date.parse(claims.issuedAt)) return invalid("not-yet-valid");
-  if (now >= Date.parse(claims.expiresAt)) return invalid("expired");
+  if (now >= Date.parse(claims.graceEndsAt)) return invalid("expired");
+  if (now >= Date.parse(claims.expiresAt)) return { status: "grace", claims };
   return { status: "valid", claims };
 }
 

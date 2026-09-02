@@ -118,9 +118,17 @@ describe.sequential("licensing PostgreSQL seam", () => {
       status: "licensed",
     });
 
-    const expired = await currentAt("2027-01-01T00:00:00.000Z");
-    expect(expired.status).toBe("expired");
-    expect(expired.capabilities).toEqual(FREE_CORE_CAPABILITIES);
+    // The paid term ended and the signed grace end (2027-01-08) has not: paid
+    // work continues, the licence stays visible, and the status says so. The
+    // grace-end boundary itself is proven by the last case in this file, at
+    // instants later than every other case, so Trusted Breev Time never has
+    // to roll back.
+    const grace = await currentAt("2027-01-01T00:00:00.000Z");
+    expect(grace).toMatchObject({
+      status: "grace",
+      licence: { permittedDeviceCount: 3, plan: "professional" },
+    });
+    expect(grace.capabilities).toContain("one-way-cloud-sync");
 
     await licensing.install({
       actorId: ACTOR_ID,
@@ -404,6 +412,45 @@ describe.sequential("licensing PostgreSQL seam", () => {
       [TEST_PHARMACY_ID, TEST_MAIN_DEVICE_ID],
     );
     expect(stored.rows[0]?.permitted_device_count).toBe(largeDeviceCount);
+  });
+
+  // The grace rule, end to end through the stored document and Trusted Breev
+  // Time: the signed expiry opens grace with every paid capability intact,
+  // and the signed grace end closes it to Free Core. Every instant here is
+  // later than any instant above, because the high-water mark only advances.
+  it("honours the signed grace end: paid work continues after expiry and stops at graceEndsAt", async () => {
+    await licensing.install({
+      actorId: ACTOR_ID,
+      encodedLicence: mintLicence({
+        expiresAt: "2031-01-01T00:00:00.000Z",
+        graceEndsAt: "2031-01-08T00:00:00.000Z",
+        issuedAt: "2030-07-01T00:00:00.000Z",
+        licenceId: createUuidV7(),
+        mainDeviceId: TEST_MAIN_DEVICE_ID,
+        permittedDeviceCount: 3,
+        pharmacyId: TEST_PHARMACY_ID,
+      }),
+      mainDeviceId: TEST_MAIN_DEVICE_ID,
+      now: new Date("2030-07-01T00:00:00.000Z"),
+      pharmacyId: TEST_PHARMACY_ID,
+    });
+    expect((await currentAt("2030-12-31T23:59:59.999Z")).status).toBe(
+      "licensed",
+    );
+
+    const grace = await currentAt("2031-01-01T00:00:00.000Z");
+    expect(grace).toMatchObject({
+      status: "grace",
+      licence: { permittedDeviceCount: 3 },
+    });
+    expect(grace.capabilities).toContain("additional-device-pos");
+    expect((await currentAt("2031-01-07T23:59:59.999Z")).status).toBe("grace");
+
+    expect(await currentAt("2031-01-08T00:00:00.000Z")).toEqual({
+      status: "expired",
+      capabilities: FREE_CORE_CAPABILITIES,
+      licence: null,
+    });
   });
 
   async function waitForBlockedAdvance(): Promise<void> {

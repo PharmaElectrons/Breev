@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "7" as const;
+export const LOCAL_API_VERSION = "8" as const;
 export const LOCAL_SCHEMA_VERSION = "8" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
@@ -154,9 +154,18 @@ export const licenceSummarySchema = z.strictObject({
   expiresAt: z.iso.datetime(),
   graceEndsAt: z.iso.datetime(),
 });
+/**
+ * `grace` is the window between the licence's signed `expiresAt` and its
+ * signed `graceEndsAt`: paid capabilities continue and the licence stays
+ * visible, but the pharmacy cannot pair a new terminal until it renews. The
+ * length of the window is the issuer's, never a local constant, and the rule
+ * itself is the working default pending the client's paid-expiry decision in
+ * docs/open-decisions.md.
+ */
 export const entitlementContextSchema = z.strictObject({
   status: z.enum([
     "licensed",
+    "grace",
     "free-core",
     "invalid-licence",
     "expired",
@@ -559,6 +568,7 @@ export const DEVICES_DENIAL_CODES = [
   "device-not-revoked",
   "pairing-attempts-exceeded",
   "pairing-entitlement-missing",
+  "pairing-grace-period",
   "pairing-seat-unavailable",
   "pairing-session-conflict",
   "pairing-session-expired",

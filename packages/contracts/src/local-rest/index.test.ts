@@ -35,6 +35,7 @@ import {
   deviceRevocationPath,
   deviceRevocationRequestSchema,
   devicesDenialSchema,
+  entitlementContextSchema,
   pairingCertificateContract,
   pairingChannelStatePath,
   pairingJoinContract,
@@ -190,7 +191,7 @@ describe("identity mutation contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("7");
+    expect(LOCAL_API_VERSION).toBe("8");
     expect(LOCAL_SCHEMA_VERSION).toBe("8");
   });
 
@@ -506,6 +507,39 @@ describe("terminal pairing contracts", () => {
       pairingSessionStartedSchema.safeParse({
         ...started,
         joinSecret: "leaked",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("names the grace-period pairing refusal and the grace entitlement", () => {
+    expect(DEVICES_DENIAL_CODES).toContain("pairing-grace-period");
+    const licence = {
+      formatVersion: 1,
+      keyId: "test",
+      licenceId: SESSION_ID,
+      pharmacyId: SESSION_ID,
+      mainDeviceId: SESSION_ID,
+      plan: "professional",
+      features: ["additional-device-pos"],
+      founderOverrideGrants: [],
+      permittedDeviceCount: 3,
+      issuedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+      graceEndsAt: "2027-01-08T00:00:00.000Z",
+    };
+    // Grace keeps the licence visible: the panel shows the signed grace end.
+    expect(
+      entitlementContextSchema.parse({
+        status: "grace",
+        capabilities: ["local-sales", "additional-device-pos"],
+        licence,
+      }).status,
+    ).toBe("grace");
+    expect(
+      entitlementContextSchema.safeParse({
+        status: "in-grace",
+        capabilities: [],
+        licence,
       }).success,
     ).toBe(false);
   });

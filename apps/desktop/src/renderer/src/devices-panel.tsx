@@ -49,6 +49,7 @@ export function DevicesPanel({
   beginStepUp,
   identityCopy,
   licensingCopy,
+  pairingAllowed,
 }: {
   readonly baseUrl: string;
   readonly beginStepUp: (
@@ -58,6 +59,12 @@ export function DevicesPanel({
   ) => Promise<void>;
   readonly identityCopy: IdentityCopy;
   readonly licensingCopy: LicensingCopy;
+  /**
+   * False while the licence is in its grace period. The panel then explains
+   * instead of offering Start pairing; the local API refuses the start either
+   * way, so this is presentation, never the boundary.
+   */
+  readonly pairingAllowed: boolean;
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = devicesMessages[locale];
@@ -351,6 +358,7 @@ export function DevicesPanel({
             onConfirm={confirmSession}
             onStart={startPairing}
             onViewDevices={() => setSection("devices")}
+            pairingAllowed={pairingAllowed}
           />
         ) : (
           <DeviceList
@@ -407,6 +415,7 @@ function PairingSection({
   onConfirm,
   onStart,
   onViewDevices,
+  pairingAllowed,
   session,
 }: {
   readonly busy: boolean;
@@ -419,6 +428,7 @@ function PairingSection({
   readonly onConfirm: (sessionId: string) => void;
   readonly onStart: () => void;
   readonly onViewDevices: () => void;
+  readonly pairingAllowed: boolean;
   readonly session: PairingSessionView | null;
 }): React.JSX.Element {
   if (session === null) {
@@ -434,15 +444,23 @@ function PairingSection({
     case "none":
       return (
         <div className="pairing-start">
-          <p>{copy.sessionNone}</p>
-          <button
-            className="primary-button"
-            disabled={busy}
-            type="button"
-            onClick={onStart}
-          >
-            {copy.startPairing}
-          </button>
+          {pairingAllowed ? (
+            <>
+              <p>{copy.sessionNone}</p>
+              <button
+                className="primary-button"
+                disabled={busy}
+                type="button"
+                onClick={onStart}
+              >
+                {copy.startPairing}
+              </button>
+            </>
+          ) : (
+            <p className="pairing-grace" role="status">
+              {copy.pairingGracePeriod}
+            </p>
+          )}
         </div>
       );
     case "open":

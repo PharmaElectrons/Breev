@@ -191,6 +191,19 @@ export class DevicesService {
           statusCode: 403,
         });
       }
+      // Grace keeps every paired terminal working, but a pharmacy whose paid
+      // term has lapsed does not get to add another one until it renews
+      // (docs/workflows.md, subscription expiry; working default pending the
+      // client's paid-expiry decision).
+      if (fresh.entitlement.status === "grace") {
+        throw await this.denyInTransaction(client, fresh, {
+          action: "devices.pairing.start",
+          code: "pairing-grace-period",
+          installation,
+          outcome: "grace-period",
+          statusCode: 403,
+        });
+      }
       const endpoint = this.endpoint;
       if (endpoint === undefined) {
         // Without a LAN listener there is no address a terminal could reach,
@@ -427,6 +440,18 @@ export class DevicesService {
           code: "pairing-entitlement-missing",
           installation,
           outcome: "entitlement-missing",
+          pairingSessionId: session.id,
+          statusCode: 403,
+        });
+      }
+      // Rechecked at confirmation as well as at start: a licence that lapsed
+      // into grace between the two must not seat a new terminal.
+      if (fresh.entitlement.status === "grace") {
+        throw await this.denyInTransaction(client, fresh, {
+          action: "devices.pairing.confirm",
+          code: "pairing-grace-period",
+          installation,
+          outcome: "grace-period",
           pairingSessionId: session.id,
           statusCode: 403,
         });

@@ -217,23 +217,38 @@ describe("verifyOfflineLicence", () => {
     ).toEqual({ status: "valid", claims });
   });
 
-  it("treats the exact expiry instant as expired and does not apply grace", () => {
-    const keys = generateKeyPairSync("ed25519");
-    const encodedLicence = encodeLicence(defaultClaims(), keys.privateKey);
-    expect(
-      verifyOfflineLicence({
+  // The decided grace behaviour (working default pending the client's
+  // paid-expiry rule): the exact expiry instant opens the signed grace
+  // window, and the exact grace-end instant closes it. Nothing here knows how
+  // long the window is; the issuer signed it.
+  it.each([
+    ["2027-12-31T23:59:59.999Z", { status: "valid" }],
+    ["2028-01-01T00:00:00.000Z", { status: "grace" }],
+    ["2028-01-07T23:59:59.999Z", { status: "grace" }],
+    ["2028-01-08T00:00:00.000Z", { status: "invalid", reason: "expired" }],
+  ] as const)(
+    "decides the signed expiry and grace window at %s",
+    (instant, expected) => {
+      const keys = generateKeyPairSync("ed25519");
+      const claims = defaultClaims();
+      const encodedLicence = encodeLicence(claims, keys.privateKey);
+      const result = verifyOfflineLicence({
         encodedLicence,
         expectedPharmacyId: PHARMACY_ID,
         expectedMainDeviceId: MAIN_DEVICE_ID,
-        now: new Date(defaultClaims().expiresAt),
+        now: new Date(instant),
         publicKeys: {
           test: keys.publicKey
             .export({ type: "spki", format: "pem" })
             .toString(),
         },
-      }),
-    ).toEqual({ status: "invalid", reason: "expired" });
-  });
+      });
+      expect(result).toMatchObject(expected);
+      if (result.status !== "invalid") {
+        expect(result.claims).toEqual(claims);
+      }
+    },
+  );
 });
 
 function defaultClaims(): OfflineLicenceClaims {

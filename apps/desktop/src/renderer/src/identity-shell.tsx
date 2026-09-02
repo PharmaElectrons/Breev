@@ -12,6 +12,7 @@ import type {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DevicesPanel } from "./devices-panel";
+import { requiredCapabilityFor } from "./feature-surfaces";
 import {
   approveStepUpChallenge,
   bootstrapIdentity,
@@ -384,9 +385,11 @@ function AuthenticatedWorkspace({
   );
   const canManageLicensing =
     state.allowedPermissions.includes("licensing.manage");
+  const devicesCapability = requiredCapabilityFor("devices-panel");
   const canPairDevices =
     state.allowedPermissions.includes("devices.pair") &&
-    state.entitlement.capabilities.includes("additional-device-pos");
+    (devicesCapability === null ||
+      state.entitlement.capabilities.includes(devicesCapability));
   const visibleSelectedCapability = state.entitlement.capabilities.includes(
     selectedCapability,
   )
@@ -742,6 +745,7 @@ function AuthenticatedWorkspace({
             beginStepUp={beginStepUp}
             identityCopy={copy}
             licensingCopy={licensingCopy}
+            pairingAllowed={state.entitlement.status !== "grace"}
           />
         ) : null}
 
