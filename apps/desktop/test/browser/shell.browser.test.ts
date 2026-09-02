@@ -684,13 +684,21 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("button", { name: "Create user" }),
     ).toBeVisible();
-    await page.getByLabel("Display name", { exact: true }).last().fill("Browser Manager");
-    await page.getByLabel("Username", { exact: true }).last().fill("browser.manager");
+    await page
+      .getByLabel("Display name", { exact: true })
+      .last()
+      .fill("Browser Manager");
+    await page
+      .getByLabel("Username", { exact: true })
+      .last()
+      .fill("browser.manager");
     await page
       .getByLabel("Password", { exact: true })
       .last()
       .fill("browser manager password is private");
-    await page.getByRole("combobox", { name: "Role", exact: true }).selectOption("manager");
+    await page
+      .getByRole("combobox", { name: "Role", exact: true })
+      .selectOption("manager");
     await page.getByRole("button", { name: "Create user" }).click();
     await expect(page.getByText("Browser Manager")).toBeVisible();
 
@@ -1631,9 +1639,6 @@ function spawnLocalApi(
       },
     },
   );
-  child.stdout.on('data', d => console.log('API OUT:', d.toString()));
-  child.stderr.on('data', d => console.error('API ERR:', d.toString()));
-  return child;
 }
 
 function createMainDeviceCredentials(): MainDeviceCredentials {
@@ -1729,7 +1734,7 @@ async function waitForHealth(
   baseUrl: string,
   status: "healthy" | "repair-required",
 ): Promise<void> {
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${baseUrl}/health`);
