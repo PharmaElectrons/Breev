@@ -45,6 +45,27 @@ export interface ServerTlsCredentials {
   readonly caCertPem: string;
 }
 
+interface PersistedPharmacyCaRow {
+  readonly installation_id: string;
+  readonly ca_certificate: string;
+  readonly ca_fingerprint: string;
+  readonly provider_name: string;
+  readonly assurance_level: "platform-tpm" | "software-cng-fallback";
+}
+
+export class PharmacyCaKeyStoreError extends Error {
+  public readonly code = "PHARMACY_CA_KEY_STORE_UNAVAILABLE" as const;
+
+  public constructor(
+    message: string,
+    public readonly installationId: string,
+    cause: unknown,
+  ) {
+    super(message, { cause });
+    this.name = "PharmacyCaKeyStoreError";
+  }
+}
+
 @Injectable()
 export class PharmacyCaService {
   private state: PharmacyCaState | undefined;
@@ -52,19 +73,16 @@ export class PharmacyCaService {
   public constructor(private readonly localDatabase: LocalDatabaseService) {}
 
   public async initializeCA(): Promise<void> {
+    if (this.state !== undefined) {
+      return;
+    }
     const pool = this.localDatabase.requirePool();
     const client = await pool.connect();
     let createdKey: { keyName: string; providerName: string } | undefined;
     try {
       await client.query("begin");
       await client.query("select pg_advisory_xact_lock(165308857)");
-      const existing = await client.query<{
-        installation_id: string;
-        ca_certificate: string;
-        ca_fingerprint: string;
-        provider_name: string;
-        assurance_level: "platform-tpm" | "software-cng-fallback";
-      }>(
+      const existing = await client.query<PersistedPharmacyCaRow>(
         `select installation_id, ca_certificate, ca_fingerprint,
                 provider_name, assurance_level
          from pharmacy_ca
@@ -73,64 +91,47 @@ export class PharmacyCaService {
 
       if (existing.rowCount === 1) {
         const row = existing.rows[0]!;
-        let keyResult: { keyHandle: CngKeyHandle; publicKeyDer: Buffer };
-        try {
-          keyResult = openPersistedKey({
-            providerName: row.provider_name,
-            keyName: caKeyName(row.installation_id),
-          });
-        } catch (error) {
-          throw Object.assign(
-            new Error(
-              "The pharmacy CA private key is inaccessible. " +
-                "Repair is required — the CA cannot be silently replaced. " +
-                `Provider: ${row.provider_name}, key: ${caKeyName(row.installation_id)}`,
-            ),
-            { code: "PHARMACY_CA_KEY_INACCESSIBLE", cause: error },
-          );
-        }
-        if (
-          !caCertificateMatches({
-            certPem: row.ca_certificate,
-            fingerprint: row.ca_fingerprint,
-            installationId: row.installation_id,
-            publicKeyDer: keyResult.publicKeyDer,
-          })
-        ) {
-          throw Object.assign(
-            new Error(
-              "The pharmacy CA certificate does not match its persisted key and installation identity.",
-            ),
-            { code: "PHARMACY_CA_IDENTITY_MISMATCH" },
-          );
-        }
-        const state: PharmacyCaState = {
-          keyHandle: keyResult.keyHandle,
-          publicKeyDer: keyResult.publicKeyDer,
-          caCertPem: row.ca_certificate,
-          installationId: row.installation_id,
-          providerName: row.provider_name,
-          assuranceLevel: row.assurance_level,
-        };
+        const state = await this.restoreState(row);
         await client.query("commit");
         this.state = state;
         return;
       }
 
-      const { providerName, assuranceLevel } = selectKeyStorageProvider();
+      const { providerName, assuranceLevel } =
+        await selectKeyStorageProvider();
       const installationId = createUuidV7();
-      createdKey = { providerName, keyName: caKeyName(installationId) };
-      const keyResult = createPersistedKeyPair({
-        ...createdKey,
-        algorithm: "RSA",
-        keyBits: 2048,
-      });
-      const issued = buildCACertificate({
-        keyHandle: keyResult.keyHandle,
-        publicKeyDer: keyResult.publicKeyDer,
-        installationId,
-        validityDays: CA_VALIDITY_DAYS,
-      });
+      const keyIdentity = { providerName, keyName: caKeyName(installationId) };
+      let keyResult: Awaited<ReturnType<typeof createPersistedKeyPair>>;
+      try {
+        keyResult = await createPersistedKeyPair({
+          ...keyIdentity,
+          algorithm: "RSA",
+          keyBits: 2048,
+        });
+      } catch (error) {
+        throw new PharmacyCaKeyStoreError(
+          "The pharmacy CA key could not be created in Windows machine key storage.",
+          installationId,
+          error,
+        );
+      }
+      // Rollback owns the key only after key storage confirms that it exists.
+      createdKey = keyIdentity;
+      let issued: IssuedCertificate;
+      try {
+        issued = await buildCACertificate({
+          keyHandle: keyResult.keyHandle,
+          publicKeyDer: keyResult.publicKeyDer,
+          installationId,
+          validityDays: CA_VALIDITY_DAYS,
+        });
+      } catch (error) {
+        throw new PharmacyCaKeyStoreError(
+          "The pharmacy CA key could not sign its certificate.",
+          installationId,
+          error,
+        );
+      }
 
       await client.query(
         `insert into pharmacy_ca
@@ -158,12 +159,34 @@ export class PharmacyCaService {
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       if (createdKey !== undefined) {
-        deletePersistedKey(createdKey);
+        await deletePersistedKey(createdKey);
       }
       throw error;
     } finally {
       client.release();
     }
+  }
+
+  /** Loads an existing installation identity without creating one. */
+  public async loadExistingCA(): Promise<PharmacyCaState | undefined> {
+    if (this.state !== undefined) {
+      return this.state;
+    }
+    const existing = await this.localDatabase
+      .requirePool()
+      .query<PersistedPharmacyCaRow>(
+        `select installation_id, ca_certificate, ca_fingerprint,
+                provider_name, assurance_level
+         from pharmacy_ca
+         where singleton = true`,
+      );
+    const row = existing.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    const state = await this.restoreState(row);
+    this.state = state;
+    return state;
   }
 
   public async issueServerCertificate(
@@ -172,7 +195,7 @@ export class PharmacyCaService {
     const state = this.requireState();
     const pool = this.localDatabase.requirePool();
 
-    const issued: IssuedLeafCertificate = buildServerCertificate({
+    const issued: IssuedLeafCertificate = await buildServerCertificate({
       caKeyHandle: state.keyHandle,
       caCertPem: state.caCertPem,
       installationId: state.installationId,
@@ -206,14 +229,14 @@ export class PharmacyCaService {
    * is a local key operation with no network call, so it is safe to perform
    * while that transaction is open.
    */
-  public signDeviceCertificate(params: {
+  public async signDeviceCertificate(params: {
     readonly deviceId: string;
     readonly devicePublicKeyDer: Buffer;
     readonly licenceId: string;
     readonly pharmacyId: string;
-  }): IssuedCertificate {
+  }): Promise<IssuedCertificate> {
     const state = this.requireState();
-    return buildDeviceCertificate({
+    return await buildDeviceCertificate({
       caCertPem: state.caCertPem,
       caKeyHandle: state.keyHandle,
       deviceId: params.deviceId,
@@ -310,5 +333,48 @@ export class PharmacyCaService {
 
   public get caCertPem(): string {
     return this.requireState().caCertPem;
+  }
+
+  private async restoreState(
+    row: PersistedPharmacyCaRow,
+  ): Promise<PharmacyCaState> {
+    let keyResult: { keyHandle: CngKeyHandle; publicKeyDer: Buffer };
+    try {
+      keyResult = await openPersistedKey({
+        providerName: row.provider_name,
+        keyName: caKeyName(row.installation_id),
+      });
+    } catch (error) {
+      throw new PharmacyCaKeyStoreError(
+        "The pharmacy CA private key is inaccessible. " +
+          "Repair is required — the CA cannot be silently replaced. " +
+          `Provider: ${row.provider_name}, key: ${caKeyName(row.installation_id)}`,
+        row.installation_id,
+        error,
+      );
+    }
+    if (
+      !caCertificateMatches({
+        certPem: row.ca_certificate,
+        fingerprint: row.ca_fingerprint,
+        installationId: row.installation_id,
+        publicKeyDer: keyResult.publicKeyDer,
+      })
+    ) {
+      throw Object.assign(
+        new Error(
+          "The pharmacy CA certificate does not match its persisted key and installation identity.",
+        ),
+        { code: "PHARMACY_CA_IDENTITY_MISMATCH" },
+      );
+    }
+    return {
+      keyHandle: keyResult.keyHandle,
+      publicKeyDer: keyResult.publicKeyDer,
+      caCertPem: row.ca_certificate,
+      installationId: row.installation_id,
+      providerName: row.provider_name,
+      assuranceLevel: row.assurance_level,
+    };
   }
 }

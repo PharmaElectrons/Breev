@@ -480,7 +480,7 @@ export class DevicesService {
       }
       const deviceId = createUuidV7();
       await this.pharmacyCa.assertDeviceCertifiable(client, deviceId);
-      const certificate = this.pharmacyCa.signDeviceCertificate({
+      const certificate = await this.pharmacyCa.signDeviceCertificate({
         deviceId,
         devicePublicKeyDer: spki,
         licenceId: licence.licenceId,
