@@ -913,6 +913,7 @@ function AuthenticatedWorkspace({
                       {user.username} · {copy.roles[user.role]}
                     </span>
                     <form
+                      key="display-name"
                       className="user-management-form"
                       onSubmit={(event) => {
                         event.preventDefault();
@@ -958,6 +959,58 @@ function AuthenticatedWorkspace({
                         type="submit"
                       >
                         {copy.saveDisplayName}
+                      </button>
+                    </form>
+                    <form
+                      key="role"
+                      className="user-management-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const form = event.currentTarget;
+                        const role = requiredValue(
+                          new FormData(form),
+                          "role",
+                        ) as PharmacyRoleKey;
+                        void beginStepUp(
+                          "identity.user.update",
+                          user.id,
+                          async (challengeId) => {
+                            const updated = await run(() =>
+                              updateIdentityUser(baseUrl, user.id, {
+                                challengeId,
+                                expectedRevision: user.revision,
+                                idempotencyKey: newIdempotencyKey(),
+                                role,
+                              }),
+                            );
+                            if (updated !== undefined) {
+                              await loadAdministration();
+                              await refreshState();
+                            } else {
+                              form.reset();
+                            }
+                          },
+                        );
+                      }}
+                    >
+                      <label className="field-label compact-field">
+                        <span>
+                          {copy.role}: {user.username}
+                        </span>
+                        <select defaultValue={user.role} name="role" required>
+                          {Object.entries(copy.roles).map(([key, label]) => (
+                            <option key={key} value={key}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        className="quiet-button"
+                        disabled={busy}
+                        type="submit"
+                      >
+                        {copy.saveRole}
                       </button>
                     </form>
                   </div>

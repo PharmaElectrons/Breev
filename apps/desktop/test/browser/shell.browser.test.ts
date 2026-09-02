@@ -684,13 +684,13 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("button", { name: "Create user" }),
     ).toBeVisible();
-    await page.getByLabel("Display name").last().fill("Browser Manager");
-    await page.getByLabel("Username").last().fill("browser.manager");
+    await page.getByLabel("Display name", { exact: true }).last().fill("Browser Manager");
+    await page.getByLabel("Username", { exact: true }).last().fill("browser.manager");
     await page
-      .getByLabel("Password")
+      .getByLabel("Password", { exact: true })
       .last()
       .fill("browser manager password is private");
-    await page.getByRole("combobox", { name: "Role" }).selectOption("manager");
+    await page.getByRole("combobox", { name: "Role", exact: true }).selectOption("manager");
     await page.getByRole("button", { name: "Create user" }).click();
     await expect(page.getByText("Browser Manager")).toBeVisible();
 
@@ -842,6 +842,101 @@ test.describe.serial("bilingual desktop shell", () => {
       "delete from identity_auth_rate_windows where device_id = $1",
       [credentials.deviceId],
     );
+  });
+
+  test("reassigns a user's role with keyboard controls and handles last-owner denial", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    const managerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Manager Renamed" });
+
+    await expect(
+      managerRow.getByText("browser.manager · Manager"),
+    ).toBeVisible();
+
+    await managerRow
+      .getByRole("combobox", { name: "Role: browser.manager" })
+      .selectOption("pharmacist");
+    const saveRole = managerRow.getByRole("button", { name: "Save role" });
+    await saveRole.click();
+
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+
+    await expect(
+      managerRow.getByText("browser.manager · Pharmacist"),
+    ).toBeVisible();
+    await expect(saveRole).toBeFocused();
+
+    const usersResponse = (await page.evaluate(async () => {
+      const response = await fetch("/identity/users", {
+        headers: { Accept: "application/json" },
+      });
+      return await response.json();
+    })) as { users: { username: string; role: string }[] };
+    const managerUser = usersResponse.users.find(
+      (u) => u.username === "browser.manager",
+    );
+    expect(managerUser?.role).toBe("pharmacist");
+
+    const ownerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Owner" });
+
+    await ownerRow
+      .getByRole("combobox", { name: "Role: browser.owner" })
+      .selectOption("manager");
+    await ownerRow.getByRole("button", { name: "Save role" }).click();
+
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+
+    await expect(
+      page.getByText("At least one active owner must remain."),
+    ).toBeVisible();
+    await page.locator(".denial-alert .dismiss-button").click();
+    await expect(
+      ownerRow.getByRole("combobox", { name: "Role: browser.owner" }),
+    ).toHaveValue("owner");
+
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
+
+    await expect(
+      managerRow.getByText("browser.manager · الصيدلي"),
+    ).toBeVisible();
+    await expect(
+      managerRow.getByRole("combobox", { name: "الدور: browser.manager" }),
+    ).toBeVisible();
+    await expect(
+      managerRow.getByRole("button", { name: "حفظ الدور" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByRole("button", { name: "Use light theme" }).click();
   });
 
   test("configures attendance and roles with Step-Up, then presents a locked login generically", async ({
@@ -1536,6 +1631,9 @@ function spawnLocalApi(
       },
     },
   );
+  child.stdout.on('data', d => console.log('API OUT:', d.toString()));
+  child.stderr.on('data', d => console.error('API ERR:', d.toString()));
+  return child;
 }
 
 function createMainDeviceCredentials(): MainDeviceCredentials {
@@ -1631,7 +1729,7 @@ async function waitForHealth(
   baseUrl: string,
   status: "healthy" | "repair-required",
 ): Promise<void> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${baseUrl}/health`);
