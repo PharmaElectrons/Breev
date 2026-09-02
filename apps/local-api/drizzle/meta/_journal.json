@@ -64,6 +64,13 @@
       "when": 1788278400000,
       "tag": "0008_identity_recoverability",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788451200000,
+      "tag": "0010_licence_device_count_bound",
+      "breakpoints": true
     }
   ]
 }

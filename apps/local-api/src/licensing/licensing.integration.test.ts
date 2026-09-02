@@ -4,13 +4,32 @@ import {
 } from "@testcontainers/postgresql";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// C3's test for a licence far above the retired 10,000 device ceiling needs
+// a licence signed by a key this suite controls (Breev ships verification
+// keys only, and no signing key for the published test issuer exists in
+// this repository — by design; see devices.integration.test.ts for the
+// same substitution). The registry keeps the real keys the other fixtures
+// below are signed with and adds the run-time test issuer alongside them.
+vi.mock("./licence-keys.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./licence-keys.js")>();
+  const issuer = await import("../devices/test-helpers/licence-issuer.test.js");
+  return {
+    OFFLINE_LICENCE_PUBLIC_KEYS: {
+      ...actual.OFFLINE_LICENCE_PUBLIC_KEYS,
+      [issuer.TEST_ISSUER_KEY_ID]: issuer.TEST_ISSUER_PUBLIC_KEY_PEM,
+    },
+  };
+});
 
 import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
+import { mintLicence } from "../devices/test-helpers/licence-issuer.test.js";
 import { LocalDatabaseService } from "../local-database.service.js";
+import { createUuidV7 } from "../pharmacy-ca/pharmacy-ca-crypto.js";
 import { FREE_CORE_CAPABILITIES } from "./entitlement.js";
 import {
   TEST_MAIN_DEVICE_ID,
@@ -345,6 +364,52 @@ describe.sequential("licensing PostgreSQL seam", () => {
        where lower_bound >= '2029-01-01T00:00:00.000Z'`,
     );
     expect(marks.rows[0]?.count).toBe("1");
+  });
+
+  // C3: permittedDeviceCount is licensing data, never a hard-coded software
+  // limit. A licence far above the retired 10,000 commercial ceiling must
+  // still parse, install (which persists it past the licence_installations
+  // check constraint), and round-trip back out through a fresh query.
+  it("installs and round-trips a licence permitting far more than 10,000 devices", async () => {
+    const largeDeviceCount = 250_000;
+    const encodedLicence = mintLicence({
+      expiresAt: "2030-06-01T00:00:00.000Z",
+      graceEndsAt: "2030-06-08T00:00:00.000Z",
+      issuedAt: "2030-01-01T00:00:00.000Z",
+      licenceId: createUuidV7(),
+      mainDeviceId: TEST_MAIN_DEVICE_ID,
+      permittedDeviceCount: largeDeviceCount,
+      pharmacyId: TEST_PHARMACY_ID,
+    });
+
+    const installed = await licensing.install({
+      actorId: ACTOR_ID,
+      encodedLicence,
+      mainDeviceId: TEST_MAIN_DEVICE_ID,
+      now: new Date("2030-01-01T00:30:00.000Z"),
+      pharmacyId: TEST_PHARMACY_ID,
+    });
+    expect(installed).toMatchObject({
+      status: "licensed",
+      licence: { permittedDeviceCount: largeDeviceCount },
+    });
+
+    const requeried = await currentAt("2030-03-01T00:00:00.000Z");
+    expect(requeried).toMatchObject({
+      status: "licensed",
+      licence: { permittedDeviceCount: largeDeviceCount },
+    });
+
+    const stored = await administrator.query<{
+      permitted_device_count: number;
+    }>(
+      `select permitted_device_count from licence_installations
+       where pharmacy_id = $1 and main_device_id = $2
+       order by installed_at desc
+       limit 1`,
+      [TEST_PHARMACY_ID, TEST_MAIN_DEVICE_ID],
+    );
+    expect(stored.rows[0]?.permitted_device_count).toBe(largeDeviceCount);
   });
 
   async function waitForBlockedAdvance(): Promise<void> {

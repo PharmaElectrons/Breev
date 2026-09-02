@@ -20,7 +20,10 @@ export const TEST_ISSUER_PUBLIC_KEY_PEM = keys.publicKey.export({
 }) as string;
 
 export interface MintedLicenceInput {
+  readonly expiresAt?: string;
   readonly features?: readonly string[];
+  readonly graceEndsAt?: string;
+  readonly issuedAt?: string;
   readonly licenceId: string;
   readonly mainDeviceId: string;
   readonly permittedDeviceCount: number;
@@ -35,12 +38,12 @@ export function mintLicence(input: MintedLicenceInput): string {
     mainDeviceId: input.mainDeviceId,
     plan: "professional",
     permittedDeviceCount: input.permittedDeviceCount,
-    graceEndsAt: "2099-01-08T00:00:00.000Z",
+    graceEndsAt: input.graceEndsAt ?? "2099-01-08T00:00:00.000Z",
     licenceId: input.licenceId,
     features: input.features ?? ["additional-device-pos"],
     founderOverrideGrants: [],
-    issuedAt: "2020-01-01T00:00:00.000Z",
-    expiresAt: "2099-01-01T00:00:00.000Z",
+    issuedAt: input.issuedAt ?? "2020-01-01T00:00:00.000Z",
+    expiresAt: input.expiresAt ?? "2099-01-01T00:00:00.000Z",
   };
   const payload = Buffer.from(JSON.stringify(claims), "utf8");
   return JSON.stringify({

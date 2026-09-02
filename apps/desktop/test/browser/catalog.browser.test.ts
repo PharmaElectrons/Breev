@@ -22,7 +22,7 @@ import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -34,6 +34,12 @@ import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
+import {
+  spawnLocalApiProcess,
+  stopProcess,
+  waitForHealth as waitForLocalApiHealth,
+} from "../local-api-process.js";
+import { evidencePath } from "./evidence-path.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_USERNAME = "catalog.browser.owner";
@@ -231,20 +237,14 @@ test.describe.serial("Product catalog screens", () => {
   let mergeSurvivor: Product;
   let postgres: StartedPostgreSqlContainer;
   let renderer: RendererServer;
-  const evidenceDir = path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/issue-45/after",
-  );
+  const evidenceDir = evidencePath("issue-45/after");
   const testResultsDir = path.resolve(
     import.meta.dirname,
     "../../../../test-results/desktop-browser",
   );
   // The prototype-adoption slice keeps its own before/after set so issue 45s
   // evidence stays about product definition rather than about the re-skin.
-  const adoptionEvidenceDir = path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/client-prototype-adoption/after",
-  );
+  const adoptionEvidenceDir = evidencePath("client-prototype-adoption/after");
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
@@ -256,7 +256,7 @@ test.describe.serial("Product catalog screens", () => {
     const apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
     api = spawnLocalApi(apiPort, databaseRoles, credentials);
-    await waitForHealth(apiOrigin);
+    await waitForLocalApiHealth(apiOrigin, "healthy", api, 30_000);
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
 
     const bootstrapped = await requestLocalApi(
@@ -1024,21 +1024,18 @@ function spawnLocalApi(
   databaseRoles: SeparatedDatabaseRoles,
   credentials: MainDeviceCredentials,
 ): ChildProcessWithoutNullStreams {
-  return spawn(
-    process.execPath,
-    [path.resolve(import.meta.dirname, "../../../local-api/dist/main.js")],
+  return spawnLocalApiProcess(
+    path.resolve(import.meta.dirname, "../../../local-api/dist/main.js"),
     {
-      env: {
-        ...process.env,
-        API_HOST: "127.0.0.1",
-        API_PORT: String(port),
-        BREEV_INSTALLATION_STATE: "ready",
-        BREEV_MAIN_DEVICE_ID: credentials.deviceId,
-        BREEV_MAIN_DEVICE_SECRET: credentials.deviceSecret,
-        BREEV_MAIN_DEVICE_SESSION: credentials.sessionToken,
-        DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
-        DATABASE_URL: databaseRoles.applicationUrl,
-      },
+      ...process.env,
+      API_HOST: "127.0.0.1",
+      API_PORT: String(port),
+      BREEV_INSTALLATION_STATE: "ready",
+      BREEV_MAIN_DEVICE_ID: credentials.deviceId,
+      BREEV_MAIN_DEVICE_SECRET: credentials.deviceSecret,
+      BREEV_MAIN_DEVICE_SESSION: credentials.sessionToken,
+      DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+      DATABASE_URL: databaseRoles.applicationUrl,
     },
   );
 }
@@ -1161,22 +1158,6 @@ async function grantCatalogPermission(
   );
 }
 
-async function waitForHealth(baseUrl: string): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/health`);
-      const body = (await response.json()) as { status?: string };
-      if (body.status === "healthy") {
-        return;
-      }
-    } catch {
-      await delay(100);
-    }
-  }
-  throw new Error(`The local API did not report healthy at ${baseUrl}`);
-}
-
 async function reservePort(): Promise<number> {
   const server = createTcpServer();
   const port = await new Promise<number>((resolve, reject) => {
@@ -1217,24 +1198,4 @@ async function closeServer(server: Server | undefined): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
-}
-
-async function stopProcess(
-  child: ChildProcessWithoutNullStreams | undefined,
-): Promise<void> {
-  if (child === undefined || child.exitCode !== null) {
-    return;
-  }
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
-    setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 5_000).unref();
-  });
-}
-
-async function delay(milliseconds: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
