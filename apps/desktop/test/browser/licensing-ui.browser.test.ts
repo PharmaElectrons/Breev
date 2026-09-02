@@ -11,6 +11,8 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 
+import { evidencePath as sharedEvidencePath } from "./evidence-path.js";
+
 const PHARMACY_ID = "019b0000-0000-7000-8000-000000000301";
 const DEVICE_ID = "019b0000-0000-7000-8000-000000000302";
 const CHALLENGE_ID = "019b0000-0000-7000-8000-000000000306";
@@ -26,10 +28,7 @@ test.describe("offline licence feature hiding", () => {
 
   test.beforeAll(async () => {
     renderer = await startLicensingRenderer(freeCoreState());
-    await mkdir(
-      path.resolve(import.meta.dirname, "../../../../evidence/issue-39/after"),
-      { recursive: true },
-    );
+    await mkdir(sharedEvidencePath("issue-39/after"), { recursive: true });
   });
 
   test.afterAll(async () => {
@@ -371,10 +370,7 @@ async function startLicensingRenderer(
 }
 
 function evidencePath(name: string): string {
-  return path.resolve(
-    import.meta.dirname,
-    `../../../../evidence/issue-39/after/${name}`,
-  );
+  return sharedEvidencePath(`issue-39/after/${name}`);
 }
 
 async function focusWithKeyboard(page: Page, target: Locator): Promise<void> {

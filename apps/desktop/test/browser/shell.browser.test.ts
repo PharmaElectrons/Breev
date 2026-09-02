@@ -22,7 +22,7 @@ import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -34,6 +34,12 @@ import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
+import {
+  spawnLocalApiProcess,
+  stopProcess,
+  waitForHealth,
+} from "../local-api-process.js";
+import { evidencePath } from "./evidence-path.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
@@ -88,7 +94,7 @@ test.describe.serial("bilingual desktop shell", () => {
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
     renderer = await startRendererServer(apiOrigin, credentials);
   });
@@ -132,7 +138,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectBrowserStorageToContainPreferencesOnly(page);
 
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     await expect(page.getByTestId("shell-state")).toHaveText("جاهز");
   });
 
@@ -151,12 +157,12 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await stopProcess(api);
     api = spawnLocalApi(apiPort, databaseRoles, "repair-required", credentials);
-    await waitForHealth(apiOrigin, "repair-required");
+    await waitForHealth(apiOrigin, "repair-required", api);
     await expect(page.getByTestId("shell-state")).toHaveText("Repair required");
 
     await stopProcess(api);
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
   });
 
@@ -247,16 +253,14 @@ test.describe.serial("bilingual desktop shell", () => {
             ? page.screenshot({
                 animations: "disabled",
                 fullPage: true,
-                path: path.resolve(
-                  import.meta.dirname,
-                  `../../../../evidence/issue-42/after/unpaired-${locale}-${theme}.png`,
+                path: evidencePath(
+                  `issue-42/after/unpaired-${locale}-${theme}.png`,
                 ),
               })
             : page.screenshot({
                 animations: "disabled",
-                path: path.resolve(
-                  import.meta.dirname,
-                  `../../../../evidence/issue-33/after/${locale}-${theme}-${state}.png`,
+                path: evidencePath(
+                  `issue-33/after/${locale}-${theme}-${state}.png`,
                 ),
               }));
           await context.close();
@@ -415,10 +419,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-light-owner.png",
-      ),
+      path: evidencePath("issue-38/after/en-light-owner.png"),
     });
   });
 
@@ -481,10 +482,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/ar-dark-owner.png",
-      ),
+      path: evidencePath("issue-38/after/ar-dark-owner.png"),
     });
 
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
@@ -585,10 +583,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/licensed-en-light.png",
-      ),
+      path: evidencePath("issue-39/after/licensed-en-light.png"),
     });
 
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
@@ -600,10 +595,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/licensed-ar-dark.png",
-      ),
+      path: evidencePath("issue-39/after/licensed-ar-dark.png"),
     });
 
     await page.unroute("**/identity/state");
@@ -634,10 +626,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/expired-ar-dark.png",
-      ),
+      path: evidencePath("issue-39/after/expired-ar-dark.png"),
     });
     await page.unroute("**/identity/state");
   });
@@ -725,10 +714,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-light-default-deny.png",
-      ),
+      path: evidencePath("issue-38/after/en-light-default-deny.png"),
     });
 
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -959,10 +945,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-dark-session-expired.png",
-      ),
+      path: evidencePath("issue-38/after/en-dark-session-expired.png"),
     });
 
     await page.getByLabel("Username").fill("browser.owner");
@@ -1165,9 +1148,8 @@ async function expectIdentityStateMatrix(
       await page.screenshot({
         animations: "disabled",
         fullPage: true,
-        path: path.resolve(
-          import.meta.dirname,
-          `../../../../evidence/issue-38/after/${state.evidenceName}-${locale}-${theme}.png`,
+        path: evidencePath(
+          `issue-38/after/${state.evidenceName}-${locale}-${theme}.png`,
         ),
       });
     }
@@ -1229,10 +1211,7 @@ async function expectStepUpStateMatrix(page: Page): Promise<void> {
       await page.screenshot({
         animations: "disabled",
         fullPage: true,
-        path: path.resolve(
-          import.meta.dirname,
-          `../../../../evidence/issue-38/after/step-up-${locale}-${theme}.png`,
-        ),
+        path: evidencePath(`issue-38/after/step-up-${locale}-${theme}.png`),
       });
       await cancel.focus();
       await page.keyboard.press("Enter");
@@ -1519,21 +1498,18 @@ function spawnLocalApi(
   installationState: "ready" | "repair-required" = "ready",
   credentials?: MainDeviceCredentials,
 ): ChildProcessWithoutNullStreams {
-  return spawn(
-    process.execPath,
-    [path.resolve(import.meta.dirname, "../../../local-api/dist/main.js")],
+  return spawnLocalApiProcess(
+    path.resolve(import.meta.dirname, "../../../local-api/dist/main.js"),
     {
-      env: {
-        ...process.env,
-        API_HOST: "127.0.0.1",
-        API_PORT: String(port),
-        BREEV_INSTALLATION_STATE: installationState,
-        BREEV_MAIN_DEVICE_ID: credentials?.deviceId,
-        BREEV_MAIN_DEVICE_SECRET: credentials?.deviceSecret,
-        BREEV_MAIN_DEVICE_SESSION: credentials?.sessionToken,
-        DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
-        DATABASE_URL: databaseRoles.applicationUrl,
-      },
+      ...process.env,
+      API_HOST: "127.0.0.1",
+      API_PORT: String(port),
+      BREEV_INSTALLATION_STATE: installationState,
+      BREEV_MAIN_DEVICE_ID: credentials?.deviceId,
+      BREEV_MAIN_DEVICE_SECRET: credentials?.deviceSecret,
+      BREEV_MAIN_DEVICE_SESSION: credentials?.sessionToken,
+      DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+      DATABASE_URL: databaseRoles.applicationUrl,
     },
   );
 }
@@ -1627,25 +1603,6 @@ async function submitCrossSiteForm(page: Page, action: string): Promise<void> {
   }, action);
 }
 
-async function waitForHealth(
-  baseUrl: string,
-  status: "healthy" | "repair-required",
-): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/health`);
-      const body = (await response.json()) as { status?: string };
-      if (body.status === status) {
-        return;
-      }
-    } catch {
-      await delay(100);
-    }
-  }
-  throw new Error(`Local API did not report ${status} at ${baseUrl}`);
-}
-
 async function reservePort(): Promise<number> {
   const server = createTcpServer();
   const port = await new Promise<number>((resolve, reject) => {
@@ -1679,6 +1636,10 @@ async function listen(server: Server): Promise<number> {
   });
 }
 
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function closeServer(server: Server | undefined): Promise<void> {
   if (server === undefined) {
     return;
@@ -1686,24 +1647,4 @@ async function closeServer(server: Server | undefined): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
-}
-
-async function stopProcess(
-  child: ChildProcessWithoutNullStreams | undefined,
-): Promise<void> {
-  if (child === undefined || child.exitCode !== null) {
-    return;
-  }
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
-    setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 5_000).unref();
-  });
-}
-
-async function delay(milliseconds: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

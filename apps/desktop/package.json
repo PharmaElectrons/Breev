@@ -17,6 +17,7 @@
     "postinstall": "install-electron",
     "start": "node --env-file-if-exists=../../.env --env-file-if-exists=.env ./node_modules/electron/cli.js .",
     "test:browser": "playwright test --config playwright.browser.config.ts",
+    "test:browser:regenerate-evidence": "node scripts/regenerate-evidence.mjs",
     "test:smoke": "pnpm package && playwright test --config playwright.config.ts",
     "test:unit": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"

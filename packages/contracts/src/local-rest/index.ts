@@ -145,7 +145,11 @@ export const licenceSummarySchema = z.strictObject({
   plan: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/u),
   features: z.array(paidCapabilityNameSchema),
   founderOverrideGrants: z.array(paidCapabilityNameSchema),
-  permittedDeviceCount: z.number().int().min(1).max(10_000),
+  // The permitted device count is licensing data set by the Super Admin,
+  // never a hard-coded software limit (see product.md "Plans, entitlements,
+  // and administration"). This upper bound is a transport-safety guard
+  // against a malformed or forged value, not a product ceiling.
+  permittedDeviceCount: z.number().int().min(1).max(1_000_000),
   issuedAt: z.iso.datetime(),
   expiresAt: z.iso.datetime(),
   graceEndsAt: z.iso.datetime(),

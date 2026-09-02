@@ -149,7 +149,10 @@ function parseClaims(
     typeof parsed.permittedDeviceCount !== "number" ||
     !Number.isInteger(parsed.permittedDeviceCount) ||
     parsed.permittedDeviceCount < 1 ||
-    parsed.permittedDeviceCount > 10_000 ||
+    // Licensing data, never a hard-coded software limit; this upper bound
+    // is a transport-safety guard, not a product ceiling (mirrors
+    // packages/contracts/src/local-rest/index.ts's licenceSummarySchema).
+    parsed.permittedDeviceCount > 1_000_000 ||
     !isIsoInstant(parsed.issuedAt) ||
     !isIsoInstant(parsed.expiresAt) ||
     !isIsoInstant(parsed.graceEndsAt) ||
