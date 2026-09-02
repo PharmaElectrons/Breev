@@ -139,6 +139,10 @@ describe("verifyOfflineLicence", () => {
       },
     ],
     ["a zero device allowance", { permittedDeviceCount: 0 }],
+    [
+      "a device allowance above the transport-safety bound",
+      { permittedDeviceCount: 1_000_001 },
+    ],
     ["an expiry before issue", { expiresAt: "2025-12-31T23:59:59.999Z" }],
     ["grace before expiry", { graceEndsAt: "2027-12-31T23:59:59.999Z" }],
     ["a non-canonical issue instant", { issuedAt: "2026-01-01T00:00:00Z" }],
@@ -191,6 +195,26 @@ describe("verifyOfflineLicence", () => {
         },
       }),
     ).toEqual({ status: "invalid", reason: "not-yet-valid" });
+  });
+
+  it("accepts a device allowance far above the retired 10,000 commercial ceiling", () => {
+    const keys = generateKeyPairSync("ed25519");
+    const claims = { ...defaultClaims(), permittedDeviceCount: 50_000 };
+    const encodedLicence = encodeLicence(claims, keys.privateKey);
+
+    expect(
+      verifyOfflineLicence({
+        encodedLicence,
+        expectedPharmacyId: PHARMACY_ID,
+        expectedMainDeviceId: MAIN_DEVICE_ID,
+        now: new Date("2027-01-01T00:00:00.000Z"),
+        publicKeys: {
+          test: keys.publicKey
+            .export({ type: "spki", format: "pem" })
+            .toString(),
+        },
+      }),
+    ).toEqual({ status: "valid", claims });
   });
 
   it("treats the exact expiry instant as expired and does not apply grace", () => {

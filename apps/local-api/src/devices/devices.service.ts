@@ -82,19 +82,6 @@ import { PAIRING_ENDPOINT, type PairingEndpoint } from "./pairing-endpoint.js";
 const DEVICES_INSTALLATION_LOCK = 165_308_863;
 const PAIRING_CAPABILITY = "additional-device-pos" as const;
 
-/**
- * Stands in for the installation identity on the two audit facts that can only
- * happen before one exists: a command refused because there is no pharmacy CA,
- * and a pairing start whose key store would not mint the CA's key.
- *
- * `devices_audit_records.installation_id` is `not null`, so these records need
- * a value. It is a fixed, obviously synthetic all-zero UUIDv7 rather than a
- * generated one, because a fresh identifier per event would read back as a
- * crowd of installations that never existed. Both outcomes name the absence
- * explicitly, so the record stays self-describing. Making the column nullable
- * is the cleaner model and is left as a separate schema change.
- */
-const NO_INSTALLATION_ID = "00000000-0000-7000-8000-000000000000" as const;
 const SEAT_RELEASE_LIFETIME_SECONDS = 300;
 const JOIN_SECRET_BYTES = 32;
 
@@ -1405,16 +1392,11 @@ export class DevicesService {
       "devices.pair",
     );
     if (context.deviceId === undefined) {
-      let installation = (await this.existingInstallationState())
-        ?.installationId;
-      if (installation === undefined) {
-        const pool = this.localDatabase.requirePool();
-        const idResult = await pool.query<{ id: string }>(
-          "select uuidv7()::text as id",
-        );
-        installation =
-          idResult.rows[0]?.id ?? "00000000-0000-7000-8000-000000000000";
-      }
+      // A terminal can be refused before any pharmacy CA exists, in which case
+      // there is genuinely no installation to name — the audit says so with
+      // null rather than inventing an id.
+      const installation =
+        (await this.existingInstallationState())?.installationId ?? null;
       const requestId = await writeDevicesAudit(
         this.localDatabase.requirePool(),
         {
@@ -1498,7 +1480,7 @@ export class DevicesService {
         this.localDatabase.requirePool(),
         {
           action: "devices.pairing_session.start",
-          installationId: NO_INSTALLATION_ID,
+          installationId: null,
           outcome: "ca-key-store-failure",
         },
       );
@@ -1525,7 +1507,7 @@ export class DevicesService {
       this.localDatabase.requirePool(),
       {
         action,
-        installationId: NO_INSTALLATION_ID,
+        installationId: null,
         outcome: "ca-not-found",
         ...(context?.actorId === undefined
           ? {}

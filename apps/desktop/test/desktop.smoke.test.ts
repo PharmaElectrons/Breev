@@ -17,6 +17,12 @@ import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "./database-roles.js";
+import { evidencePath } from "./browser/evidence-path.js";
+import {
+  spawnLocalApiProcess,
+  stopProcess,
+  waitForHealth,
+} from "./local-api-process.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
@@ -46,7 +52,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
   );
 
   try {
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     proxy = await startHealthProxy(apiOrigin);
     const executablePath = packagedExecutablePath();
     await access(executablePath);
@@ -149,7 +155,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
     await expectNoFallbackStorage(window);
 
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     await expect(window.getByTestId("shell-state")).toHaveText("Ready");
 
     proxy.setIncompatible(true);
@@ -161,7 +167,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
 
     await stopProcess(api);
     api = spawnLocalApi(apiPort, databaseRoles, "repair-required", credentials);
-    await waitForHealth(apiOrigin, "repair-required");
+    await waitForHealth(apiOrigin, "repair-required", api);
     await expect(window.getByTestId("shell-state")).toHaveText(
       "Repair required",
     );
@@ -197,7 +203,7 @@ test("the packaged desktop commits through its bound Main session offline and af
   );
 
   try {
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     const executablePath = packagedExecutablePath();
     await access(executablePath);
     desktop = spawn(
@@ -289,9 +295,8 @@ test("the packaged desktop commits through its bound Main session offline and af
       `127.0.0.1:${apiPort}`,
     );
 
-    const screenshotPath = path.resolve(
-      import.meta.dirname,
-      "../../../evidence/issue-35/after/en-light-device-binding.png",
+    const screenshotPath = evidencePath(
+      "issue-35/after/en-light-device-binding.png",
     );
     await mkdir(path.dirname(screenshotPath), { recursive: true });
     await window.screenshot({
@@ -306,7 +311,7 @@ test("the packaged desktop commits through its bound Main session offline and af
       "Main unavailable",
     );
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     await expect(window.getByTestId("shell-state")).toHaveText("Ready");
     await window.getByRole("button", { name: "Verify Main device" }).click();
     await waitForMutationCount(apiOrigin, credentials, "2");
@@ -460,21 +465,18 @@ function spawnLocalApi(
   installationState: "ready" | "repair-required" = "ready",
   credentials?: MainDeviceCredentials,
 ): ChildProcessWithoutNullStreams {
-  return spawn(
-    process.execPath,
-    [path.resolve(import.meta.dirname, "../../local-api/dist/main.js")],
+  return spawnLocalApiProcess(
+    path.resolve(import.meta.dirname, "../../local-api/dist/main.js"),
     {
-      env: {
-        ...process.env,
-        API_HOST: "127.0.0.1",
-        API_PORT: String(port),
-        BREEV_INSTALLATION_STATE: installationState,
-        BREEV_MAIN_DEVICE_ID: credentials?.deviceId,
-        BREEV_MAIN_DEVICE_SECRET: credentials?.deviceSecret,
-        BREEV_MAIN_DEVICE_SESSION: credentials?.sessionToken,
-        DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
-        DATABASE_URL: databaseRoles.applicationUrl,
-      },
+      ...process.env,
+      API_HOST: "127.0.0.1",
+      API_PORT: String(port),
+      BREEV_INSTALLATION_STATE: installationState,
+      BREEV_MAIN_DEVICE_ID: credentials?.deviceId,
+      BREEV_MAIN_DEVICE_SECRET: credentials?.deviceSecret,
+      BREEV_MAIN_DEVICE_SESSION: credentials?.sessionToken,
+      DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+      DATABASE_URL: databaseRoles.applicationUrl,
     },
   );
 }
@@ -544,25 +546,6 @@ function packagedExecutablePath(): string {
   return path.join(artifact, "Breev");
 }
 
-async function waitForHealth(
-  baseUrl: string,
-  status: "healthy" | "repair-required",
-): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/health`);
-      const body = (await response.json()) as { status?: string };
-      if (body.status === status) {
-        return;
-      }
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-  }
-  throw new Error(`Local API did not report ${status} at ${baseUrl}`);
-}
-
 async function reservePort(): Promise<number> {
   const server = createTcpServer();
   const port = await listen(server);
@@ -590,21 +573,5 @@ async function closeServer(server: NetServer | undefined): Promise<void> {
   }
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
-  });
-}
-
-async function stopProcess(
-  child: ChildProcessWithoutNullStreams | undefined,
-): Promise<void> {
-  if (child === undefined || child.exitCode !== null) {
-    return;
-  }
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
-    setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 5_000).unref();
   });
 }

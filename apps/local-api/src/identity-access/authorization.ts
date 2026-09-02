@@ -15,6 +15,28 @@ export const PERMISSION_NAMES = [
 
 export type PermissionName = (typeof PERMISSION_NAMES)[number];
 
+/**
+ * The permissions that back a live operation today. A name joins this set in
+ * the same change that lands the operation it authorizes — never before, so a
+ * role screen can never let an owner configure authority over a capability the
+ * build cannot yet perform. `PERMISSION_NAMES` stays the full vocabulary
+ * (it seeds `permission_definitions`, the foreign-key target every grant
+ * references); this is the narrower set the API and the renderer are allowed
+ * to show as grantable.
+ */
+export const IMPLEMENTED_PERMISSION_NAMES = [
+  "attendance.record",
+  "catalog.item.manage",
+  "devices.pair",
+  "identity.roles.manage",
+  "identity.users.manage",
+  "licensing.manage",
+  "pharmacy.settings.manage",
+] as const satisfies readonly PermissionName[];
+
+export type ImplementedPermissionName =
+  (typeof IMPLEMENTED_PERMISSION_NAMES)[number];
+
 export const STEP_UP_ACTIONS = {
   "devices.pairing.start": "devices.pair",
   "devices.revoke": "devices.pair",
@@ -110,6 +132,12 @@ export function evaluateStepUpApproval({
 
 export function isPermissionName(value: string): value is PermissionName {
   return (PERMISSION_NAMES as readonly string[]).includes(value);
+}
+
+export function isImplementedPermissionName(
+  value: string,
+): value is ImplementedPermissionName {
+  return (IMPLEMENTED_PERMISSION_NAMES as readonly string[]).includes(value);
 }
 
 export function isStepUpAction(value: string): value is StepUpAction {

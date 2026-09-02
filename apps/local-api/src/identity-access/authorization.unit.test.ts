@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  IMPLEMENTED_PERMISSION_NAMES,
   PERMISSION_NAMES,
   STEP_UP_ACTIONS,
   evaluateStepUpApproval,
@@ -56,6 +57,27 @@ describe("identity authorization", () => {
       "sales.return.post",
       "sync.conflict.resolve",
     ]);
+  });
+
+  it("restricts the implemented set to names that back a live operation", () => {
+    // The five names with no operation behind them yet must never be
+    // grantable: draft.price.override, pricing.below_cost,
+    // sales.invoice.reverse, sales.return.post, and sync.conflict.resolve.
+    expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
+      "attendance.record",
+      "catalog.item.manage",
+      "devices.pair",
+      "identity.roles.manage",
+      "identity.users.manage",
+      "licensing.manage",
+      "pharmacy.settings.manage",
+    ]);
+    for (const permission of IMPLEMENTED_PERMISSION_NAMES) {
+      expect(PERMISSION_NAMES, permission).toContain(permission);
+    }
+    expect(IMPLEMENTED_PERMISSION_NAMES.length).toBeLessThan(
+      PERMISSION_NAMES.length,
+    );
   });
 });
 
