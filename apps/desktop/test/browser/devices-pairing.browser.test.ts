@@ -760,13 +760,19 @@ async function createUser(
   if (roleId === undefined) {
     throw new Error(`The built-in ${input.role} role is missing`);
   }
-  const { role: _role, ...user } = input;
   const created = await apiRequest(
     origin,
     mainDevice,
     "POST",
     "/identity/users",
-    { ...user, challengeId, idempotencyKey: randomUUID(), roleId },
+    {
+      challengeId,
+      displayName: input.displayName,
+      idempotencyKey: randomUUID(),
+      password: input.password,
+      roleId,
+      username: input.username,
+    },
   );
   if (created.status !== 201) {
     throw new Error(

@@ -1788,6 +1788,349 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     });
   });
 
+  it("keeps roles the only source of authority: shared grants, strict bodies, denied creation, manager administration, and rollback", async () => {
+    await login("role.support", "test password for support user");
+    const missingStepUp = await request(
+      credentials,
+      "POST",
+      "/identity/step-up-challenges",
+      command({ action: "identity.role.create" }),
+    );
+    expect(missingStepUp, failureContext([missingStepUp])).toMatchObject({
+      status: 403,
+      body: { code: "step-up-missing-permission" },
+    });
+    const deniedCreation = await request(
+      credentials,
+      "POST",
+      "/identity/roles",
+      command({
+        challengeId: createUuidV7(),
+        name: "Denied custom role",
+        permissions: [],
+      }),
+    );
+    expect(deniedCreation, failureContext([deniedCreation])).toMatchObject({
+      status: 403,
+      body: { code: "permission-denied" },
+    });
+    const supportUser = await administrator.query<{ id: string }>(
+      "select id from identity_users where username_key = 'role.support'",
+    );
+    const authorizationAudit = await administrator.query<{
+      action: string;
+      actor_user_id: string;
+      outcome: string;
+      required_permission: string;
+    }>(
+      `select action, actor_user_id, outcome,
+              after_state ->> 'requiredPermission' as required_permission
+       from identity_audit_records
+       where id = $1`,
+      [deniedCreation.body?.requestId],
+    );
+    expect(authorizationAudit.rows).toEqual([
+      {
+        action: "identity.authorization",
+        actor_user_id: supportUser.rows[0]?.id,
+        outcome: "denied",
+        required_permission: "identity.roles.manage",
+      },
+    ]);
+
+    await login("pharmacy.manager", MANAGER_PASSWORD);
+    const managerCreateChallenge = await approvedChallenge(
+      "identity.role.create",
+      undefined,
+      MANAGER_PASSWORD,
+    );
+    const managerCreated = await request(
+      credentials,
+      "POST",
+      "/identity/roles",
+      command({
+        challengeId: managerCreateChallenge,
+        name: "Evening supervisor",
+        permissions: ["attendance.record"],
+      }),
+    );
+    expect(managerCreated, failureContext([managerCreated])).toMatchObject({
+      status: 201,
+      body: {
+        grants: ["attendance.record"],
+        kind: "custom",
+        name: "Evening supervisor",
+        revision: "1",
+      },
+    });
+    const eveningRoleId = String(managerCreated.body?.id ?? "");
+    const managerGrantChallenge = await approvedChallenge(
+      "identity.role.permissions.update",
+      eveningRoleId,
+      MANAGER_PASSWORD,
+    );
+    const managerGranted = await request(
+      credentials,
+      "PUT",
+      `/identity/roles/${eveningRoleId}/permissions`,
+      command({
+        challengeId: managerGrantChallenge,
+        expectedRevision: "1",
+        permissions: ["attendance.record", "catalog.item.manage"],
+      }),
+    );
+    expect(managerGranted, failureContext([managerGranted])).toMatchObject({
+      status: 200,
+      body: {
+        grants: ["attendance.record", "catalog.item.manage"],
+        revision: "2",
+      },
+    });
+    const managerRenameChallenge = await approvedChallenge(
+      "identity.role.rename",
+      eveningRoleId,
+      MANAGER_PASSWORD,
+    );
+    const managerRenamed = await request(
+      credentials,
+      "PATCH",
+      `/identity/roles/${eveningRoleId}`,
+      command({
+        challengeId: managerRenameChallenge,
+        expectedRevision: "2",
+        name: "Evening lead",
+      }),
+    );
+    expect(managerRenamed, failureContext([managerRenamed])).toMatchObject({
+      status: 200,
+      body: { name: "Evening lead", revision: "3" },
+    });
+    const managerUsers = await request(credentials, "GET", "/identity/users");
+    expect(managerUsers, failureContext([managerUsers])).toMatchObject({
+      status: 403,
+      body: { code: "permission-denied" },
+    });
+
+    await login(ownerUsername, ownerPassword);
+    const sharedUsers = [
+      {
+        displayName: "Evening User One",
+        password: "evening user one password stays private",
+        username: "evening.user.one",
+      },
+      {
+        displayName: "Evening User Two",
+        password: "evening user two password stays private",
+        username: "evening.user.two",
+      },
+    ];
+    const sharedUserIds: string[] = [];
+    for (const sharedUser of sharedUsers) {
+      const challengeId = await approvedChallenge(
+        "identity.user.create",
+        undefined,
+        ownerPassword,
+      );
+      const created = await request(
+        credentials,
+        "POST",
+        "/identity/users",
+        command({
+          challengeId,
+          displayName: sharedUser.displayName,
+          password: sharedUser.password,
+          roleId: eveningRoleId,
+          username: sharedUser.username,
+        }),
+      );
+      expect(created, failureContext([created])).toMatchObject({
+        status: 201,
+        body: { role: { id: eveningRoleId, name: "Evening lead" } },
+      });
+      sharedUserIds.push(String(created.body?.id ?? ""));
+    }
+
+    const initialSharedPermissions: string[][] = [];
+    for (const sharedUser of sharedUsers) {
+      await login(sharedUser.username, sharedUser.password);
+      const state = await request(credentials, "GET", "/identity/state");
+      expect(state, failureContext([state])).toMatchObject({ status: 200 });
+      initialSharedPermissions.push(
+        (state.body?.allowedPermissions as string[] | undefined) ?? [],
+      );
+    }
+    expect(initialSharedPermissions[0]).toEqual(initialSharedPermissions[1]);
+    expect(initialSharedPermissions[0]).toEqual([
+      "attendance.record",
+      "catalog.item.manage",
+    ]);
+
+    await login(ownerUsername, ownerPassword);
+    const ownerGrantChallenge = await approvedChallenge(
+      "identity.role.permissions.update",
+      eveningRoleId,
+      ownerPassword,
+    );
+    const ownerGranted = await request(
+      credentials,
+      "PUT",
+      `/identity/roles/${eveningRoleId}/permissions`,
+      command({
+        challengeId: ownerGrantChallenge,
+        expectedRevision: "3",
+        permissions: ["catalog.item.manage"],
+      }),
+    );
+    expect(ownerGranted, failureContext([ownerGranted])).toMatchObject({
+      status: 200,
+      body: { grants: ["catalog.item.manage"], revision: "4" },
+    });
+    const updatedSharedPermissions: string[][] = [];
+    for (const sharedUser of sharedUsers) {
+      await login(sharedUser.username, sharedUser.password);
+      const state = await request(credentials, "GET", "/identity/state");
+      expect(state, failureContext([state])).toMatchObject({ status: 200 });
+      updatedSharedPermissions.push(
+        (state.body?.allowedPermissions as string[] | undefined) ?? [],
+      );
+    }
+    expect(updatedSharedPermissions[0]).toEqual(updatedSharedPermissions[1]);
+    expect(updatedSharedPermissions[0]).toEqual(["catalog.item.manage"]);
+
+    await login(ownerUsername, ownerPassword);
+    const createWithGrants = await request(
+      credentials,
+      "POST",
+      "/identity/users",
+      command({
+        challengeId: createUuidV7(),
+        displayName: "Per-user Grant Attempt",
+        grants: ["devices.pair"],
+        password: "per-user grant password is never stored",
+        roleId: eveningRoleId,
+        username: "per.user.grant",
+      }),
+    );
+    expect(createWithGrants, failureContext([createWithGrants])).toMatchObject({
+      status: 400,
+      body: { code: "body-invalid" },
+    });
+    const updateWithPermissions = await request(
+      credentials,
+      "PATCH",
+      `/identity/users/${sharedUserIds[0]}`,
+      command({
+        challengeId: createUuidV7(),
+        expectedRevision: "1",
+        permissions: ["devices.pair"],
+      }),
+    );
+    expect(
+      updateWithPermissions,
+      failureContext([updateWithPermissions]),
+    ).toMatchObject({
+      status: 400,
+      body: { code: "body-invalid" },
+    });
+    const grantTables = await administrator.query<{ table_name: string }>(
+      `select table_name
+       from information_schema.tables
+       where table_name = 'user_permission_grants'`,
+    );
+    expect(grantTables.rows).toEqual([]);
+    const grantColumns = await administrator.query<{ column_name: string }>(
+      `select column_name
+       from information_schema.columns
+       where table_name = 'identity_users'
+         and (column_name ilike '%grant%' or column_name ilike '%permission%')`,
+    );
+    expect(grantColumns.rows).toEqual([]);
+
+    const failureChallenge = await approvedChallenge(
+      "identity.role.create",
+      undefined,
+      ownerPassword,
+    );
+    const failureIdempotencyKey = createUuidV7();
+    const beforeFailure = await administrator.query<{
+      identity_revision: string;
+    }>("select identity_revision::text from pharmacies");
+    try {
+      await administrator.query(
+        `create function w2_injected_role_permission_failure()
+         returns trigger
+         language plpgsql
+         as $$
+         begin
+           if exists (
+             select 1 from pharmacy_roles
+             where id = new.role_id
+               and custom_name_key = 'injected failure'
+           ) then
+             raise exception 'injected failure' using errcode = 'P0001';
+           end if;
+           return new;
+         end;
+         $$`,
+      );
+      await administrator.query(
+        `create trigger w2_injected_role_permission_failure
+         before insert on role_permission_grants
+         for each row execute function w2_injected_role_permission_failure()`,
+      );
+      const failed = await request(credentials, "POST", "/identity/roles", {
+        challengeId: failureChallenge,
+        idempotencyKey: failureIdempotencyKey,
+        name: "Injected failure",
+        permissions: ["attendance.record"],
+      });
+      expect(failed.status, failureContext([failed])).toBe(500);
+
+      const rollbackFacts = await administrator.query<{
+        commands: string;
+        grants: string;
+        identity_revision: string;
+        roles: string;
+        success_audits: string;
+      }>(
+        `select
+           (select count(*)::text from pharmacy_roles
+            where custom_name_key = 'injected failure') as roles,
+           (select count(*)::text from role_permission_grants
+            where role_id in (
+              select id from pharmacy_roles
+              where custom_name_key = 'injected failure'
+            )) as grants,
+           (select count(*)::text from identity_audit_records
+            where action = 'identity.role.create'
+              and outcome = 'succeeded'
+              and after_state ->> 'name' = 'Injected failure') as success_audits,
+           (select count(*)::text from identity_command_results
+            where idempotency_key = $1) as commands,
+           (select identity_revision::text from pharmacies) as identity_revision`,
+        [failureIdempotencyKey],
+      );
+      expect(rollbackFacts.rows[0]).toEqual({
+        commands: "0",
+        grants: "0",
+        identity_revision: beforeFailure.rows[0]?.identity_revision,
+        roles: "0",
+        success_audits: "0",
+      });
+    } finally {
+      try {
+        await administrator.query(
+          `drop trigger if exists w2_injected_role_permission_failure
+           on role_permission_grants`,
+        );
+      } finally {
+        await administrator.query(
+          "drop function if exists w2_injected_role_permission_failure()",
+        );
+      }
+    }
+  });
+
   it("applies explicit role grants and typed attendance settings end to end", async () => {
     await login(ownerUsername, ownerPassword);
     const grants = [

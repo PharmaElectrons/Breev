@@ -1156,6 +1156,29 @@ describe.sequential("terminal pairing persistence seam", () => {
     );
     expect(audit.rows[0]?.outcome).toBe("grace-period");
 
+    const graceBoundaryNow = Date.now();
+    await licensing.install({
+      actorId: await ownerId(),
+      encodedLicence: mintLicence({
+        expiresAt: new Date(graceBoundaryNow - day).toISOString(),
+        graceEndsAt: new Date(graceBoundaryNow + 2_000).toISOString(),
+        licenceId: createUuidV7(),
+        mainDeviceId: MAIN_DEVICE_ID,
+        permittedDeviceCount: 6,
+        pharmacyId,
+      }),
+      mainDeviceId: MAIN_DEVICE_ID,
+      now: new Date(graceBoundaryNow),
+      pharmacyId,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    const afterGrace = await loginFrom(terminals[0]!);
+    expect(afterGrace.statusCode).toBe(403);
+    expect(afterGrace.body).toMatchObject({
+      code: "entitlement-denied",
+      requiredCapability: "additional-device-pos",
+    });
+
     // A renewed licence lifts the refusal without touching any device.
     await installLicence(6);
     const session = await startSession();
