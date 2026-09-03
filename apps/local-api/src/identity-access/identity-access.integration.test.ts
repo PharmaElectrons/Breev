@@ -506,6 +506,31 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ).toBe(true);
   });
 
+  it("scopes Step-Up approval idempotency to the addressed challenge", async () => {
+    await login(ownerUsername, ownerPassword);
+    const firstChallenge = await createChallenge("identity.user.create");
+    const secondChallenge = await createChallenge("identity.user.create");
+    const approvalKey = createUuidV7();
+    const firstApproval = await approveChallenge(
+      firstChallenge,
+      ownerPassword,
+      approvalKey,
+    );
+    expect(firstApproval).toMatchObject({
+      status: 200,
+      body: { id: firstChallenge, status: "approved" },
+    });
+    expect(
+      await approveChallenge(firstChallenge, ownerPassword, approvalKey),
+    ).toEqual(firstApproval);
+    expect(
+      await approveChallenge(secondChallenge, ownerPassword, approvalKey),
+    ).toMatchObject({
+      status: 409,
+      body: { code: "idempotency-conflict" },
+    });
+  });
+
   it("replays committed commands and rejects stale versions or changed reuse", async () => {
     await login(ownerUsername, ownerPassword);
     const challenge = await createChallenge("identity.user.create");
@@ -1490,7 +1515,14 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         }),
       ),
     ).toMatchObject({ status: 400, body: { code: "role-name-reserved" } });
-    for (const name of ["المالك", "Local support"]) {
+    for (const name of [
+      "المالك",
+      "Local support",
+      "المالك\u200F",
+      "\u200Eالمالك",
+      "المــالك",
+      "Ow\u200Bner",
+    ]) {
       expect(
         await request(
           credentials,

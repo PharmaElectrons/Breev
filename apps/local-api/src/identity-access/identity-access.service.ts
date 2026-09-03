@@ -117,10 +117,16 @@ const OWNER_PERMISSION_FLOOR = [
  * trimmed, then lower-cased. "Senior cashier", "senior  CASHIER", and
  * "Senior-Cashier" are one role. The stored display name keeps the
  * pharmacy's own spelling.
+ *
+ * Migration 0011 stores this result in `custom_name_key`. After release, any
+ * change to this function requires a migration that recomputes every stored
+ * `custom_name_key`. The 3 September 2026 trim-after-collapse change is safe
+ * only because it ships in the same release as migration 0011.
  */
 function normalizeRoleName(name: string): string {
   return name
     .normalize("NFKC")
+    .replace(/\p{Default_Ignorable_Code_Point}|\u0640/gu, "")
     .replace(/[\s_-]+/gu, " ")
     .trim()
     .toLocaleLowerCase("en-US");
@@ -1883,7 +1889,7 @@ export class IdentityAccessService {
         "identity.step_up.approve",
         input,
         identityStepUpChallengeSchema,
-        undefined,
+        challengeId,
       );
       if (replay !== undefined) {
         await this.clearAuthAttempts(
@@ -2009,7 +2015,7 @@ export class IdentityAccessService {
         "identity.step_up.approve",
         input,
         response,
-        undefined,
+        challengeId,
       );
       await client.query("commit");
       return response;
