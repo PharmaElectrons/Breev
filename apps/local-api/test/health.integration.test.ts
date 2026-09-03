@@ -1,4 +1,6 @@
 import {
+  LOCAL_API_VERSION,
+  LOCAL_SCHEMA_VERSION,
   parseLocalHealthResponse,
   type LocalHealthResponse,
 } from "@breev/contracts/local-rest";
@@ -95,8 +97,8 @@ describe.sequential("local API health persistence seam", () => {
       const { response, body } = await waitForRepairRequired(repairBaseUrl);
       expect(response.status).toBe(503);
       expect(body).toEqual({
-        apiVersion: "6",
-        schemaVersion: "7",
+        apiVersion: LOCAL_API_VERSION,
+        schemaVersion: LOCAL_SCHEMA_VERSION,
         status: "repair-required",
         repair: { code: "installation-state-invalid" },
       });
