@@ -24,6 +24,37 @@ export const PHARMACY_ROLE_KEYS = [
   "accountant",
   "support",
 ] as const;
+export type PharmacyRoleKey = (typeof PHARMACY_ROLE_KEYS)[number];
+
+/**
+ * Breev's own built-in role names. These names are product vocabulary, not
+ * pharmacy data, and the server reserves every localized value for built-in
+ * roles.
+ */
+export const PHARMACY_ROLE_DISPLAY_NAMES: Readonly<
+  Record<"ar" | "en", Readonly<Record<PharmacyRoleKey, string>>>
+> = {
+  ar: {
+    owner: "المالك",
+    manager: "المدير",
+    pharmacist: "الصيدلي",
+    sales_employee: "موظف المبيعات",
+    purchasing_employee: "موظف المشتريات",
+    inventory_employee: "موظف المخزون",
+    accountant: "المحاسب",
+    support: "الدعم المحلي",
+  },
+  en: {
+    owner: "Owner",
+    manager: "Manager",
+    pharmacist: "Pharmacist",
+    sales_employee: "Sales employee",
+    purchasing_employee: "Purchasing employee",
+    inventory_employee: "Inventory employee",
+    accountant: "Accountant",
+    support: "Local support",
+  },
+};
 export const FREE_CORE_CAPABILITY_NAMES = [
   "local-sales",
   "local-purchases",
@@ -133,7 +164,7 @@ export const identityResourceIdSchema = z.uuidv7();
  * built-in roles, identified by its stable `key` and named by the renderer in
  * the user's language, or a custom role the pharmacy created, identified only
  * by its id and named verbatim by the pharmacy. The discriminant is `kind`,
- * never the name: a custom role called "Owner" is still a custom role.
+ * never the name.
  *
  * `identityRoleReferenceSchema` is what a user carries; `identityRoleSchema`
  * adds the revision and the grants that the administration screens edit.
@@ -208,18 +239,30 @@ export const licenceSummarySchema = z.strictObject({
  * itself is the working default pending the client's paid-expiry decision in
  * docs/open-decisions.md.
  */
-export const entitlementContextSchema = z.strictObject({
-  status: z.enum([
-    "licensed",
-    "grace",
-    "free-core",
-    "invalid-licence",
-    "expired",
-    "clock-rollback",
-  ]),
-  capabilities: z.array(capabilityNameSchema),
-  licence: licenceSummarySchema.nullable(),
-});
+export const entitlementContextSchema = z
+  .strictObject({
+    status: z.enum([
+      "licensed",
+      "grace",
+      "free-core",
+      "invalid-licence",
+      "expired",
+      "clock-rollback",
+    ]),
+    capabilities: z.array(capabilityNameSchema),
+    licence: licenceSummarySchema.nullable(),
+  })
+  .superRefine((context, refinement) => {
+    const requiresLicence =
+      context.status === "licensed" || context.status === "grace";
+    if (requiresLicence !== (context.licence !== null)) {
+      refinement.addIssue({
+        code: "custom",
+        message: "Licence presence does not match entitlement status",
+        path: ["licence"],
+      });
+    }
+  });
 const authenticatedStateSchema = z.strictObject({
   state: z.literal("authenticated"),
   pharmacy: z.strictObject({
@@ -307,7 +350,22 @@ export const identityResetUserPasswordRequestSchema = z.strictObject({
  * implemented operation.
  */
 export const identityRolesSchema = z.strictObject({
-  roles: z.array(identityRoleSchema).min(PHARMACY_ROLE_KEYS.length),
+  roles: z
+    .array(identityRoleSchema)
+    .min(PHARMACY_ROLE_KEYS.length)
+    .superRefine((roles, refinement) => {
+      for (const key of PHARMACY_ROLE_KEYS) {
+        const count = roles.filter(
+          (role) => role.kind === "built-in" && role.key === key,
+        ).length;
+        if (count !== 1) {
+          refinement.addIssue({
+            code: "custom",
+            message: `Built-in role ${key} must appear exactly once`,
+          });
+        }
+      }
+    }),
   permissions: z.array(permissionNameSchema),
 });
 export const identityUpdateRolePermissionsRequestSchema = z.strictObject({
@@ -1584,7 +1642,6 @@ export type LocalProofMutationSuccess = z.infer<
 export type LocalProofEvidenceSuccess = z.infer<
   typeof localProofEvidenceSuccessSchema
 >;
-export type PharmacyRoleKey = z.infer<typeof pharmacyRoleKeySchema>;
 export type CapabilityName = z.infer<typeof capabilityNameSchema>;
 export type PaidCapabilityName = z.infer<typeof paidCapabilityNameSchema>;
 export type EntitlementContext = z.infer<typeof entitlementContextSchema>;

@@ -73,17 +73,17 @@
       "breakpoints": true
     },
     {
-      "idx": 11,
-      "version": "7",
-      "when": 1788537600000,
-      "tag": "0011_custom_roles",
-      "breakpoints": true
-    },
-    {
       "idx": 10,
       "version": "7",
       "when": 1788451200000,
       "tag": "0010_licence_device_count_bound",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788537600000,
+      "tag": "0011_custom_roles",
       "breakpoints": true
     }
   ]

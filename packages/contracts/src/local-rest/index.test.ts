@@ -38,6 +38,7 @@ import {
   identityUpdateUserRequestSchema,
   identityUserSchema,
   PHARMACY_ROLE_KEYS,
+  PHARMACY_ROLE_DISPLAY_NAMES,
   deviceInventoryContract,
   deviceInventorySchema,
   deviceRevocationContract,
@@ -270,6 +271,40 @@ describe("identity role contracts", () => {
       identityRolesSchema.safeParse({ permissions: [], roles: eight.slice(1) })
         .success,
     ).toBe(false);
+    const customOnly = PHARMACY_ROLE_KEYS.map((_, index) => ({
+      ...custom,
+      id: `0198e7ce-7685-7000-8000-0000000000${String(index + 20)}`,
+      name: `Custom ${index + 1}`,
+    }));
+    expect(
+      identityRolesSchema.safeParse({ permissions: [], roles: customOnly })
+        .success,
+    ).toBe(false);
+    expect(
+      identityRolesSchema.safeParse({
+        permissions: [],
+        roles: [
+          ...eight,
+          {
+            ...eight[0],
+            id: "0198e7ce-7685-7000-8000-000000000099",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("provides every trimmed built-in role name in both locales", () => {
+    for (const locale of ["ar", "en"] as const) {
+      expect(Object.keys(PHARMACY_ROLE_DISPLAY_NAMES[locale]).sort()).toEqual(
+        [...PHARMACY_ROLE_KEYS].sort(),
+      );
+      for (const key of PHARMACY_ROLE_KEYS) {
+        const name = PHARMACY_ROLE_DISPLAY_NAMES[locale][key];
+        expect(name.length).toBeGreaterThan(0);
+        expect(name).toBe(name.trim());
+      }
+    }
   });
 
   it("assigns a role to a user by id and never by key", () => {
@@ -692,6 +727,20 @@ describe("terminal pairing contracts", () => {
     expect(
       entitlementContextSchema.safeParse({
         status: "in-grace",
+        capabilities: [],
+        licence,
+      }).success,
+    ).toBe(false);
+    expect(
+      entitlementContextSchema.safeParse({
+        status: "grace",
+        capabilities: [],
+        licence: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      entitlementContextSchema.safeParse({
+        status: "free-core",
         capabilities: [],
         licence,
       }).success,

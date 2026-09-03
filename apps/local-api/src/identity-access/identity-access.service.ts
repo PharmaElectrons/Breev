@@ -1,4 +1,6 @@
 import {
+  PHARMACY_ROLE_DISPLAY_NAMES,
+  PHARMACY_ROLE_KEYS,
   attendanceEventSchema,
   identityDenialSchema,
   identityRoleSchema,
@@ -104,17 +106,6 @@ const SETTINGS_COMMAND_NAME = "pharmacy.settings.update";
  */
 const TERMINAL_CAPABILITY: PaidCapabilityName = "additional-device-pos";
 
-const PHARMACY_ROLE_KEYS = [
-  "owner",
-  "manager",
-  "pharmacist",
-  "sales_employee",
-  "purchasing_employee",
-  "inventory_employee",
-  "accountant",
-  "support",
-] as const satisfies readonly PharmacyRoleKey[];
-
 const OWNER_PERMISSION_FLOOR = [
   "identity.roles.manage",
   "identity.users.manage",
@@ -122,16 +113,16 @@ const OWNER_PERMISSION_FLOOR = [
 
 /**
  * How a custom role name is compared for uniqueness and reservation: NFKC,
- * trimmed, runs of whitespace, underscores, and hyphens collapsed to one
- * space, lower-cased. "Senior cashier", "senior  CASHIER", and
+ * runs of whitespace, underscores, and hyphens collapsed to one space,
+ * trimmed, then lower-cased. "Senior cashier", "senior  CASHIER", and
  * "Senior-Cashier" are one role. The stored display name keeps the
  * pharmacy's own spelling.
  */
 function normalizeRoleName(name: string): string {
   return name
     .normalize("NFKC")
-    .trim()
     .replace(/[\s_-]+/gu, " ")
+    .trim()
     .toLocaleLowerCase("en-US");
 }
 
@@ -142,7 +133,11 @@ function normalizeRoleName(name: string): string {
  * beside the real one; it is not what keeps the owner floor.
  */
 const RESERVED_ROLE_NAME_KEYS: ReadonlySet<string> = new Set(
-  PHARMACY_ROLE_KEYS.map((key) => normalizeRoleName(key)),
+  [
+    ...PHARMACY_ROLE_KEYS,
+    ...Object.values(PHARMACY_ROLE_DISPLAY_NAMES.ar),
+    ...Object.values(PHARMACY_ROLE_DISPLAY_NAMES.en),
+  ].map((name) => normalizeRoleName(name)),
 );
 
 /** One `pharmacy_roles` row: exactly one of `role_key` and `custom_name` is set. */
@@ -837,6 +832,9 @@ export class IdentityAccessService {
     }
     const permissions = [...new Set(input.permissions)].sort();
     const nameKey = normalizeRoleName(input.name);
+    if (nameKey.length === 0 || !/[\p{L}\p{N}]/u.test(nameKey)) {
+      return await this.rejectInvalidBody(request);
+    }
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -847,6 +845,7 @@ export class IdentityAccessService {
         "identity.role.create",
         input,
         identityRoleSchema,
+        undefined,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -923,6 +922,7 @@ export class IdentityAccessService {
         "identity.role.create",
         input,
         response,
+        undefined,
       );
       await client.query("commit");
       return response;
@@ -948,6 +948,9 @@ export class IdentityAccessService {
       "identity.roles.manage",
     );
     const nameKey = normalizeRoleName(input.name);
+    if (nameKey.length === 0 || !/[\p{L}\p{N}]/u.test(nameKey)) {
+      return await this.rejectInvalidBody(request);
+    }
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -958,6 +961,7 @@ export class IdentityAccessService {
         "identity.role.rename",
         input,
         identityRoleSchema,
+        roleId,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -1068,6 +1072,7 @@ export class IdentityAccessService {
         "identity.role.rename",
         input,
         response,
+        roleId,
       );
       await client.query("commit");
       return response;
@@ -1121,6 +1126,7 @@ export class IdentityAccessService {
         "identity.user.create",
         input,
         identityUserSchema,
+        undefined,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -1217,6 +1223,7 @@ export class IdentityAccessService {
         "identity.user.create",
         input,
         response,
+        undefined,
       );
       await client.query("commit");
       return response;
@@ -1254,6 +1261,7 @@ export class IdentityAccessService {
         "identity.user.update",
         input,
         identityUserSchema,
+        userId,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -1367,6 +1375,7 @@ export class IdentityAccessService {
         "identity.user.update",
         input,
         response,
+        userId,
       );
       await client.query("commit");
       return response;
@@ -1393,6 +1402,7 @@ export class IdentityAccessService {
         "identity.password.change",
         input,
         identityUserSchema,
+        undefined,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -1504,6 +1514,7 @@ export class IdentityAccessService {
         "identity.password.change",
         input,
         response,
+        undefined,
       );
       await client.query("commit");
       return response;
@@ -1525,7 +1536,6 @@ export class IdentityAccessService {
       "identity.users.manage",
     );
     const storedPassword = await hashPassword(input.newPassword);
-    const commandInput = { ...input, targetId: userId };
     const client = await this.localDatabase.requirePool().connect();
     try {
       await client.query("begin");
@@ -1534,8 +1544,9 @@ export class IdentityAccessService {
         client,
         context,
         "identity.user.password.reset",
-        commandInput,
+        input,
         identityUserSchema,
+        userId,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -1636,8 +1647,9 @@ export class IdentityAccessService {
         client,
         fresh,
         "identity.user.password.reset",
-        commandInput,
+        input,
         response,
+        userId,
       );
       await client.query("commit");
       return response;
@@ -1689,6 +1701,7 @@ export class IdentityAccessService {
         "identity.step_up.create",
         input,
         identityStepUpChallengeSchema,
+        undefined,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -1775,6 +1788,7 @@ export class IdentityAccessService {
         "identity.step_up.create",
         input,
         response,
+        undefined,
       );
       await client.query("commit");
       return response;
@@ -1869,6 +1883,7 @@ export class IdentityAccessService {
         "identity.step_up.approve",
         input,
         identityStepUpChallengeSchema,
+        undefined,
       );
       if (replay !== undefined) {
         await this.clearAuthAttempts(
@@ -1994,6 +2009,7 @@ export class IdentityAccessService {
         "identity.step_up.approve",
         input,
         response,
+        undefined,
       );
       await client.query("commit");
       return response;
@@ -2031,6 +2047,7 @@ export class IdentityAccessService {
         "identity.role.permissions.update",
         input,
         identityRoleSchema,
+        roleId,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -2127,6 +2144,7 @@ export class IdentityAccessService {
         "identity.role.permissions.update",
         input,
         response,
+        roleId,
       );
       await client.query("commit");
       return response;
@@ -2381,6 +2399,7 @@ export class IdentityAccessService {
         "attendance.record",
         input,
         attendanceEventSchema,
+        undefined,
       );
       if (replay !== undefined) {
         await client.query("commit");
@@ -2520,6 +2539,7 @@ export class IdentityAccessService {
         "attendance.record",
         input,
         response,
+        undefined,
       );
       await client.query("commit");
       return response;
@@ -2556,11 +2576,10 @@ export class IdentityAccessService {
         [context.pharmacyId, PHARMACY_ROLE_KEYS],
       );
     return {
-      // Only the implemented permissions are ever offered as grantable or
-      // shown as granted. A role row can still hold a future name directly in
-      // PostgreSQL — left there rather than deleted, since a later slice may
-      // rely on it once its operation lands — but this endpoint filters it
-      // out rather than describing authority the build cannot yet perform.
+      // Only implemented permissions are offered or shown. This route filters
+      // unimplemented grant names out of the response. Saving a role replaces
+      // all of its grants with the submitted implemented names, so a hidden
+      // unimplemented grant does not survive that save.
       permissions: [...IMPLEMENTED_PERMISSION_NAMES],
       roles: result.rows.map((row) => roleView(row, row.grants)),
     };
@@ -2708,6 +2727,7 @@ export class IdentityAccessService {
       commandName,
       input,
       parser,
+      undefined,
     );
   }
 
@@ -2724,6 +2744,7 @@ export class IdentityAccessService {
       commandName,
       input,
       response,
+      undefined,
     );
   }
 
@@ -3514,12 +3535,13 @@ export class IdentityAccessService {
     commandName: string,
     input: IdentityCommandInput,
     parser: PayloadParser<T>,
+    targetId: string | undefined,
   ): Promise<T | undefined> {
     await client.query(
       "select pg_advisory_xact_lock(hashtextextended($1, 38))",
       [`${context.pharmacyId}:${context.actorId}:${input.idempotencyKey}`],
     );
-    const fingerprint = commandFingerprint(commandName, input);
+    const fingerprint = commandFingerprint(commandName, targetId, input);
     const result = await client.query<{
       command_name: string;
       request_fingerprint: Buffer;
@@ -3558,6 +3580,7 @@ export class IdentityAccessService {
     commandName: string,
     input: IdentityCommandInput,
     response: unknown,
+    targetId: string | undefined,
   ): Promise<void> {
     await client.query(
       `insert into identity_command_results (
@@ -3573,7 +3596,7 @@ export class IdentityAccessService {
         context.terminalDeviceId ?? null,
         input.idempotencyKey,
         commandName,
-        commandFingerprint(commandName, input),
+        commandFingerprint(commandName, targetId, input),
         JSON.stringify(response),
       ],
     );
@@ -4015,6 +4038,7 @@ function authRateKeys(
  */
 function commandFingerprint(
   commandName: string,
+  targetId: string | undefined,
   input: IdentityCommandInput,
 ): Buffer {
   const safeInput = Object.fromEntries(
@@ -4023,7 +4047,13 @@ function commandFingerprint(
       .sort(([left], [right]) => left.localeCompare(right)),
   );
   return createHash("sha256")
-    .update(JSON.stringify({ commandName, input: safeInput }))
+    .update(
+      JSON.stringify({
+        commandName,
+        targetId: targetId ?? null,
+        input: safeInput,
+      }),
+    )
     .digest();
 }
 

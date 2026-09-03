@@ -1,7 +1,8 @@
-import type {
-  IdentityDenialCode,
-  IdentityRoleReference,
-  PharmacyRoleKey,
+import {
+  PHARMACY_ROLE_DISPLAY_NAMES,
+  type IdentityDenialCode,
+  type IdentityRoleReference,
+  type PharmacyRoleKey,
 } from "@breev/contracts/local-rest";
 
 import type {
@@ -33,6 +34,7 @@ export interface IdentityCopy {
   readonly createUser: string;
   readonly currentPassword: string;
   readonly customRole: string;
+  readonly customRoleBadge: string;
   readonly denial: string;
   readonly denials: Record<IdentityDenialCode, string>;
   readonly displayName: string;
@@ -65,7 +67,7 @@ export interface IdentityCopy {
   readonly role: string;
   readonly roleList: string;
   readonly roleName: string;
-  readonly roles: Record<PharmacyRoleKey, string>;
+  readonly roles: Readonly<Record<PharmacyRoleKey, string>>;
   readonly resetPassword: string;
   readonly save: string;
   readonly saveDisplayName: string;
@@ -85,29 +87,6 @@ export interface IdentityCopy {
   readonly username: string;
   readonly welcome: string;
 }
-
-const roleNames: Record<Locale, Record<PharmacyRoleKey, string>> = {
-  ar: {
-    owner: "المالك",
-    manager: "المدير",
-    pharmacist: "الصيدلي",
-    sales_employee: "موظف المبيعات",
-    purchasing_employee: "موظف المشتريات",
-    inventory_employee: "موظف المخزون",
-    accountant: "المحاسب",
-    support: "الدعم المحلي",
-  },
-  en: {
-    owner: "Owner",
-    manager: "Manager",
-    pharmacist: "Pharmacist",
-    sales_employee: "Sales employee",
-    purchasing_employee: "Purchasing employee",
-    inventory_employee: "Inventory employee",
-    accountant: "Accountant",
-    support: "Local support",
-  },
-};
 
 /**
  * A built-in role is named by Breev in the user's language; a custom role is
@@ -213,6 +192,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     createUser: "إنشاء المستخدم",
     currentPassword: "كلمة المرور الحالية",
     customRole: "دور مخصص لهذه الصيدلية",
+    customRoleBadge: "مخصص",
     denial: "تم رفض الإجراء",
     denials: {
       "attendance-already-checked-in": "تم تسجيل حضورك بالفعل.",
@@ -284,7 +264,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     role: "الدور",
     roleList: "الأدوار",
     roleName: "اسم الدور",
-    roles: roleNames.ar,
+    roles: PHARMACY_ROLE_DISPLAY_NAMES.ar,
     resetPassword: "إعادة تعيين كلمة المرور",
     save: "حفظ",
     saveDisplayName: "حفظ الاسم",
@@ -325,6 +305,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     createUser: "Create user",
     currentPassword: "Current password",
     customRole: "Custom role of this pharmacy",
+    customRoleBadge: "Custom",
     denial: "Action denied",
     denials: {
       "attendance-already-checked-in": "You are already checked in.",
@@ -402,7 +383,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     role: "Role",
     roleList: "Roles",
     roleName: "Role name",
-    roles: roleNames.en,
+    roles: PHARMACY_ROLE_DISPLAY_NAMES.en,
     resetPassword: "Reset password",
     save: "Save",
     saveDisplayName: "Save name",

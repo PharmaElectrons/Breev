@@ -48,9 +48,10 @@ export function RoleEditor({
   busy,
   copy,
   currentUserRoleId,
-  denial,
+  getLastDenial,
   onChanged,
   permissions,
+  requestFocus,
   roles,
   run,
 }: {
@@ -63,13 +64,19 @@ export function RoleEditor({
   readonly busy: boolean;
   readonly copy: IdentityCopy;
   readonly currentUserRoleId: string;
-  readonly denial: RoleEditorDenial | null;
+  readonly getLastDenial: () => RoleEditorDenial | null;
   /** Reloads roles from the server and refreshes the authenticated state. */
-  readonly onChanged: () => Promise<void>;
+  readonly onChanged: (options?: {
+    readonly preserveDenial?: boolean;
+  }) => Promise<void>;
   /** The grantable permission ids the server offers. */
   readonly permissions: readonly string[];
+  readonly requestFocus: (elementId: string) => void;
   readonly roles: readonly IdentityRole[];
-  readonly run: <T>(work: () => Promise<T>) => Promise<T | undefined>;
+  readonly run: <T>(
+    work: () => Promise<T>,
+    options?: { readonly preserveDenial?: boolean },
+  ) => Promise<T | undefined>;
 }): React.JSX.Element {
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [pendingSelection, setPendingSelection] = useState<string | null>(null);
@@ -83,14 +90,6 @@ export function RoleEditor({
   useEffect(() => {
     setDrafts(Object.fromEntries(roles.map((role) => [role.id, role.grants])));
   }, [roles]);
-
-  // A version conflict means the role changed under the user; the only honest
-  // draft is the server's, so it is reloaded rather than kept.
-  useEffect(() => {
-    if (denial?.code === "version-conflict") {
-      void onChanged();
-    }
-  }, [denial, onChanged]);
 
   useEffect(() => {
     if (
@@ -144,6 +143,8 @@ export function RoleEditor({
         );
         if (updated !== undefined) {
           await reloadAfter();
+        } else if (getLastDenial()?.code === "version-conflict") {
+          await onChanged({ preserveDenial: true });
         }
       },
     );
@@ -161,6 +162,8 @@ export function RoleEditor({
       );
       if (renamed !== undefined) {
         await reloadAfter();
+      } else if (getLastDenial()?.code === "version-conflict") {
+        await onChanged({ preserveDenial: true });
       }
     });
   };
@@ -180,6 +183,7 @@ export function RoleEditor({
         setPendingSelection(created.id);
         setCreating(false);
         setNewRoleGrants([]);
+        requestFocus(`role-${created.id}-select`);
         await reloadAfter();
       }
     });
@@ -214,6 +218,7 @@ export function RoleEditor({
                   aria-current={
                     !creating && role.id === selectedRoleId ? "page" : undefined
                   }
+                  id={`role-${role.id}-select`}
                   type="button"
                   onClick={() => {
                     setCreating(false);
@@ -222,6 +227,9 @@ export function RoleEditor({
                 >
                   <span className="role-name">
                     {roleDisplayName(role, copy)}
+                    {role.kind === "custom" ? (
+                      <span className="role-badge">{copy.customRoleBadge}</span>
+                    ) : null}
                   </span>
                   <span className="role-count">
                     {copy.permissionCount(

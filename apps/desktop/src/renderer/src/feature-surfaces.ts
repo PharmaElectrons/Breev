@@ -3,6 +3,8 @@ import {
   type PaidCapabilityName,
 } from "@breev/contracts/local-rest";
 
+import type { ModuleId } from "./module-ids";
+
 /**
  * The renderer surfaces a paid capability shows.
  *
@@ -34,7 +36,7 @@ export const FEATURE_SURFACES: Readonly<
  * test enforces, so the first match is the only match.
  */
 export function requiredCapabilityFor(
-  surface: string,
+  surface: ModuleId | FeatureSurfaceId,
 ): PaidCapabilityName | null {
   for (const capability of PAID_CAPABILITY_NAMES) {
     if (

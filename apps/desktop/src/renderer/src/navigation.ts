@@ -1,6 +1,9 @@
 import type { CapabilityName } from "@breev/contracts/local-rest";
 
 import { requiredCapabilityFor } from "./feature-surfaces";
+import type { ModuleId } from "./module-ids";
+
+export type { ModuleId } from "./module-ids";
 
 /**
  * The Phase One module surfaces the production shell may show.
@@ -12,20 +15,6 @@ import { requiredCapabilityFor } from "./feature-surfaces";
  * not advertise them at all — an "unavailable" entry would still promise scope
  * the product has not sold.
  */
-export type ModuleId =
-  | "accounts"
-  | "administration"
-  | "basket"
-  | "dashboard"
-  | "inventory"
-  | "messages"
-  | "patients"
-  | "products"
-  | "purchases"
-  | "reports"
-  | "sales"
-  | "settings";
-
 export type ModuleAvailability = "available" | "unavailable";
 
 interface ModuleDefinition {

@@ -128,7 +128,11 @@ describe.sequential("licensing PostgreSQL seam", () => {
       status: "grace",
       licence: { permittedDeviceCount: 3, plan: "professional" },
     });
-    expect(grace.capabilities).toContain("one-way-cloud-sync");
+    expect(grace.capabilities).toEqual([
+      ...FREE_CORE_CAPABILITIES,
+      "one-way-cloud-sync",
+      "purchase-invoice-ocr",
+    ]);
 
     await licensing.install({
       actorId: ACTOR_ID,
@@ -444,6 +448,25 @@ describe.sequential("licensing PostgreSQL seam", () => {
       licence: { permittedDeviceCount: 3 },
     });
     expect(grace.capabilities).toContain("additional-device-pos");
+    expect(
+      (
+        await licensing.install({
+          actorId: ACTOR_ID,
+          encodedLicence: mintLicence({
+            expiresAt: "2031-01-01T00:00:00.000Z",
+            graceEndsAt: "2031-01-08T00:00:00.000Z",
+            issuedAt: "2030-12-31T00:00:00.000Z",
+            licenceId: createUuidV7(),
+            mainDeviceId: TEST_MAIN_DEVICE_ID,
+            permittedDeviceCount: 3,
+            pharmacyId: TEST_PHARMACY_ID,
+          }),
+          mainDeviceId: TEST_MAIN_DEVICE_ID,
+          now: new Date("2031-01-01T00:00:00.001Z"),
+          pharmacyId: TEST_PHARMACY_ID,
+        })
+      ).status,
+    ).toBe("grace");
     expect((await currentAt("2031-01-07T23:59:59.999Z")).status).toBe("grace");
 
     expect(await currentAt("2031-01-08T00:00:00.000Z")).toEqual({

@@ -1928,7 +1928,22 @@ a:focus-visible,
 }
 
 .role-list .role-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
   overflow-wrap: anywhere;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .role-count {

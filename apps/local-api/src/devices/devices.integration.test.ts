@@ -1151,7 +1151,7 @@ describe.sequential("terminal pairing persistence seam", () => {
     const audit = await administrator.query<{ outcome: string }>(
       `select outcome from devices_audit_records
        where action = 'devices.pairing.start'
-       order by recorded_at desc, id desc
+       order by occurred_at desc, id desc
        limit 1`,
     );
     expect(audit.rows[0]?.outcome).toBe("grace-period");
@@ -1188,6 +1188,56 @@ describe.sequential("terminal pairing persistence seam", () => {
       { idempotencyKey: randomUUID(), reason: "user-cancelled" },
     );
     expect(await seatUsage()).toEqual({ permitted: 6, used: 4 });
+  }, 240_000);
+
+  it("refuses confirmation when the licence enters grace after the terminal joins", async () => {
+    const session = await startSession();
+    const keys = createTerminalKeys();
+    expect(
+      (await joinAs(keys, session, "Grace transition terminal")).statusCode,
+    ).toBe(200);
+    const usageBefore = await seatUsage();
+    const day = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    await licensing.install({
+      actorId: await ownerId(),
+      encodedLicence: mintLicence({
+        expiresAt: new Date(now - day).toISOString(),
+        graceEndsAt: new Date(now + 6 * day).toISOString(),
+        licenceId: createUuidV7(),
+        mainDeviceId: MAIN_DEVICE_ID,
+        permittedDeviceCount: 6,
+        pharmacyId,
+      }),
+      mainDeviceId: MAIN_DEVICE_ID,
+      now: new Date(now),
+      pharmacyId,
+    });
+
+    const denial = await denialOf(async () =>
+      devices.confirmPairingSession(
+        await verifiedMainRequest(),
+        session.sessionId,
+        { idempotencyKey: randomUUID() },
+      ),
+    );
+    expect(denial.denial.code).toBe("pairing-grace-period");
+    const audit = await administrator.query<{ outcome: string }>(
+      `select outcome from devices_audit_records
+       where action = 'devices.pairing.confirm'
+       order by occurred_at desc, id desc
+       limit 1`,
+    );
+    expect(audit.rows[0]?.outcome).toBe("grace-period");
+    expect(await seatUsage()).toEqual(usageBefore);
+    const storedSession = await administrator.query<{ state: string }>(
+      "select state from pairing_sessions where id = $1",
+      [session.sessionId],
+    );
+    expect(storedSession.rows[0]?.state).toBe("awaiting-confirmation");
+
+    await installLicence(6);
+    await cancelSession(session.sessionId);
   }, 240_000);
 
   it("serves one Main and three terminals at the same time over the LAN", async () => {

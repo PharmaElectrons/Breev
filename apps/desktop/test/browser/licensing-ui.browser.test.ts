@@ -249,6 +249,9 @@ test.describe("offline licence feature hiding", () => {
     renderer.setState(pairableState());
     await page.reload();
     await expect(
+      founderGrants.getByText("No additional grants", { exact: true }),
+    ).toBeVisible();
+    await expect(
       page.getByRole("button", { name: "Start pairing" }),
     ).toBeVisible();
     renderer.setState(graceState());
@@ -303,6 +306,24 @@ test.describe("offline licence feature hiding", () => {
     });
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
     await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
+  test("hides licence renewal without licensing management permission", async ({
+    page,
+  }) => {
+    renderer.setState(licensedWithoutLicensingManagementState());
+    await installMainDesktopFake(page, renderer.origin);
+    await page.goto(renderer.origin);
+
+    const card = page.getByRole("region", { name: "Licence status" });
+    await expect(card.getByText("professional", { exact: true })).toBeVisible();
+    await expect(card.locator(".licence-form")).toHaveCount(0);
+    await expect(
+      card.getByRole("button", { name: "Renew or install licence" }),
+    ).toHaveCount(0);
+    await expect(
+      card.getByRole("button", { name: "Remove licence" }),
+    ).toHaveCount(0);
   });
 });
 
@@ -395,6 +416,13 @@ function licensedState(): IdentityAuthenticatedState {
       licence: licensedLicence(),
       status: "licensed",
     },
+  };
+}
+
+function licensedWithoutLicensingManagementState(): IdentityAuthenticatedState {
+  return {
+    ...licensedState(),
+    allowedPermissions: [],
   };
 }
 

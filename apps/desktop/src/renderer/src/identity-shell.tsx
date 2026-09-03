@@ -59,6 +59,13 @@ interface PendingStepUp {
 const EXPIRY_WARNING_DAYS = 14;
 
 type AccessDenial = IdentityDenial | LicensingDenial;
+interface RunOptions {
+  readonly preserveDenial?: boolean;
+}
+type RunRequest = <T>(
+  work: () => Promise<T>,
+  options?: RunOptions,
+) => Promise<T | undefined>;
 
 function formatLicenceDate(instant: string, locale: "ar" | "en"): string {
   return new Date(instant).toLocaleDateString(
@@ -78,12 +85,28 @@ export function IdentityShell({
   // one authenticated context (permissions, entitlements, session).
   const { refresh, setState, state } = useIdentityState();
   const [denial, setDenial] = useState<AccessDenial | null>(null);
+  const lastDenial = useRef<AccessDenial | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const clearDenial = useCallback((): void => {
+    lastDenial.current = null;
+    setDenial(null);
+  }, []);
+
+  const getLastDenial = useCallback(
+    (): AccessDenial | null => lastDenial.current,
+    [],
+  );
+
   const run = useCallback(
-    async <T,>(work: () => Promise<T>): Promise<T | undefined> => {
+    async <T,>(
+      work: () => Promise<T>,
+      options: RunOptions = {},
+    ): Promise<T | undefined> => {
       setBusy(true);
-      setDenial(null);
+      if (options.preserveDenial !== true) {
+        clearDenial();
+      }
       try {
         return await work();
       } catch (error) {
@@ -91,6 +114,7 @@ export function IdentityShell({
           error instanceof IdentityApiDenied ||
           error instanceof LicensingApiDenied
         ) {
+          lastDenial.current = error.denial;
           setDenial(error.denial);
           if (
             error.denial.code === "session-expired" ||
@@ -105,7 +129,7 @@ export function IdentityShell({
         setBusy(false);
       }
     },
-    [refresh],
+    [clearDenial, refresh],
   );
 
   if (state === null) {
@@ -126,7 +150,7 @@ export function IdentityShell({
           copy={copy}
           denial={denial}
           licensingCopy={licensingCopy}
-          onDismiss={() => setDenial(null)}
+          onDismiss={clearDenial}
         />
       )}
       {state.state === "bootstrap-required" ? (
@@ -148,8 +172,9 @@ export function IdentityShell({
           busy={busy}
           copy={copy}
           denial={denial}
+          getLastDenial={getLastDenial}
           licensingCopy={licensingCopy}
-          onDismissDenial={() => setDenial(null)}
+          onDismissDenial={clearDenial}
           onState={setState}
           run={run}
           state={state}
@@ -344,6 +369,7 @@ function AuthenticatedWorkspace({
   busy,
   copy,
   denial,
+  getLastDenial,
   licensingCopy,
   onDismissDenial,
   onState,
@@ -354,10 +380,11 @@ function AuthenticatedWorkspace({
   readonly busy: boolean;
   readonly copy: IdentityCopy;
   readonly denial: AccessDenial | null;
+  readonly getLastDenial: () => AccessDenial | null;
   readonly licensingCopy: LicensingCopy;
   readonly onDismissDenial: () => void;
   readonly onState: (state: IdentityState) => void;
-  readonly run: <T>(work: () => Promise<T>) => Promise<T | undefined>;
+  readonly run: RunRequest;
   readonly state: IdentityAuthenticatedState;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -435,33 +462,57 @@ function AuthenticatedWorkspace({
     }
   }, [selectedCapability, state.entitlement.capabilities]);
 
-  const loadAdministration = useCallback(async (): Promise<void> => {
-    if (canManageUsers) {
-      const response = await run(() => requestIdentityUsers(baseUrl));
-      if (response !== undefined) {
-        setUsers(response.users);
-        setAssignableRoles(response.roles);
+  const loadAdministration = useCallback(
+    async (options: RunOptions = {}): Promise<void> => {
+      if (canManageUsers) {
+        const response = await run(
+          () => requestIdentityUsers(baseUrl),
+          options,
+        );
+        if (response !== undefined) {
+          setUsers(response.users);
+          setAssignableRoles(response.roles);
+        }
       }
-    }
-    if (canManageRoles) {
-      const response = await run(() => requestIdentityRoles(baseUrl));
-      if (response !== undefined) {
-        setRoles(response.roles);
-        setPermissionNames(response.permissions);
+      if (canManageRoles) {
+        const response = await run(
+          () => requestIdentityRoles(baseUrl),
+          options,
+        );
+        if (response !== undefined) {
+          setRoles(response.roles);
+          setPermissionNames(response.permissions);
+        }
       }
-    }
-  }, [baseUrl, canManageRoles, canManageUsers, run]);
+    },
+    [baseUrl, canManageRoles, canManageUsers, run],
+  );
 
   useEffect(() => {
     void loadAdministration();
   }, [loadAdministration]);
 
-  const refreshState = useCallback(async (): Promise<void> => {
-    const next = await run(() => requestIdentityState(baseUrl));
-    if (next !== undefined) {
-      onState(next);
-    }
-  }, [baseUrl, onState, run]);
+  const refreshState = useCallback(
+    async (options: RunOptions = {}): Promise<void> => {
+      const next = await run(() => requestIdentityState(baseUrl), options);
+      if (next !== undefined) {
+        onState(next);
+      }
+    },
+    [baseUrl, onState, run],
+  );
+
+  const reloadRoleAdministration = useCallback(
+    async (options: RunOptions = {}): Promise<void> => {
+      await loadAdministration(options);
+      await refreshState(options);
+    },
+    [loadAdministration, refreshState],
+  );
+
+  const requestFocus = useCallback((elementId: string): void => {
+    previousFocusId.current = elementId;
+  }, []);
 
   const beginStepUp = useCallback(
     async (
@@ -496,6 +547,8 @@ function AuthenticatedWorkspace({
       queueMicrotask(() => document.getElementById(returnFocusId)?.focus());
     }
   };
+
+  const visiblePermissions = cataloguedPermissions(state.allowedPermissions);
 
   return (
     <>
@@ -871,9 +924,9 @@ function AuthenticatedWorkspace({
           <div>
             <h3>{copy.permissions}</h3>
             <p>
-              {state.allowedPermissions.length === 0
+              {visiblePermissions.length === 0
                 ? copy.denials["permission-denied"]
-                : cataloguedPermissions(state.allowedPermissions)
+                : visiblePermissions
                     .map((permission) => copy.permissionLabels[permission].name)
                     .join(" · ")}
             </p>
@@ -1025,6 +1078,14 @@ function AuthenticatedWorkspace({
                     <strong>{user.displayName}</strong>
                     <span>
                       {user.username} · {roleDisplayName(user.role, copy)}
+                      {user.role.kind === "custom" ? (
+                        <>
+                          {" "}
+                          <span className="role-badge">
+                            {copy.customRoleBadge}
+                          </span>
+                        </>
+                      ) : null}
                     </span>
                     <form
                       key="display-name"
@@ -1151,7 +1212,7 @@ function AuthenticatedWorkspace({
                           "identity.user.update",
                           user.id,
                           async (challengeId) => {
-                            await run(() =>
+                            const updated = await run(() =>
                               updateIdentityUser(baseUrl, user.id, {
                                 challengeId,
                                 expectedRevision: user.revision,
@@ -1162,8 +1223,10 @@ function AuthenticatedWorkspace({
                                     : "active",
                               }),
                             );
-                            await loadAdministration();
-                            await refreshState();
+                            if (updated !== undefined) {
+                              await loadAdministration();
+                              await refreshState();
+                            }
                           },
                         )
                       }
@@ -1240,14 +1303,12 @@ function AuthenticatedWorkspace({
             busy={busy}
             copy={copy}
             currentUserRoleId={state.user.role.id}
-            denial={denial}
+            getLastDenial={getLastDenial}
             permissions={permissionNames}
+            requestFocus={requestFocus}
             roles={roles}
             run={run}
-            onChanged={async () => {
-              await loadAdministration();
-              await refreshState();
-            }}
+            onChanged={reloadRoleAdministration}
           />
         ) : null}
       </div>
@@ -1270,9 +1331,9 @@ function AuthenticatedWorkspace({
               return false;
             }
             const completed = pendingStepUp;
-            const returnFocusId = previousFocusId.current;
             closeStepUp();
             await completed.afterApproval(completed.challengeId);
+            const returnFocusId = previousFocusId.current;
             setPendingFocusId(returnFocusId);
             return true;
           }}

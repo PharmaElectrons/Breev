@@ -814,6 +814,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       .update(
         JSON.stringify({
           commandName: "identity.password.change",
+          targetId: null,
           input: {
             expectedRevision: changeBody.expectedRevision,
             idempotencyKey,
@@ -1489,6 +1490,34 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         }),
       ),
     ).toMatchObject({ status: 400, body: { code: "role-name-reserved" } });
+    for (const name of ["المالك", "Local support"]) {
+      expect(
+        await request(
+          credentials,
+          "POST",
+          "/identity/roles",
+          command({
+            challengeId: createChallengeId,
+            name,
+            permissions: [],
+          }),
+        ),
+      ).toMatchObject({ status: 400, body: { code: "role-name-reserved" } });
+    }
+    for (const name of ["_-_", "\u200B"]) {
+      expect(
+        await request(
+          credentials,
+          "POST",
+          "/identity/roles",
+          command({
+            challengeId: createChallengeId,
+            name,
+            permissions: [],
+          }),
+        ),
+      ).toMatchObject({ status: 400, body: { code: "body-invalid" } });
+    }
     expect(
       await request(
         credentials,
@@ -1599,21 +1628,43 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         }),
       ),
     ).toMatchObject({ status: 409, body: { code: "role-not-custom" } });
+    const secondCreateChallenge = await approvedChallenge(
+      "identity.role.create",
+      undefined,
+      ownerPassword,
+    );
+    const secondCreated = await request(
+      credentials,
+      "POST",
+      "/identity/roles",
+      command({
+        challengeId: secondCreateChallenge,
+        name: "Relief cashier",
+        permissions: [],
+      }),
+    );
+    expect(secondCreated, failureContext([secondCreated])).toMatchObject({
+      status: 201,
+      body: { kind: "custom", name: "Relief cashier", revision: "1" },
+    });
+    const secondCustomRoleId = String(secondCreated.body?.id ?? "");
+
     const renameChallenge = await approvedChallenge(
       "identity.role.rename",
       customRoleId,
       ownerPassword,
     );
+    const renameBody = command({
+      challengeId: renameChallenge,
+      expectedRevision: "1",
+      name: "Senior cashier (evening)",
+    });
     expect(
       await request(
         credentials,
         "PATCH",
         `/identity/roles/${customRoleId}`,
-        command({
-          challengeId: renameChallenge,
-          expectedRevision: "1",
-          name: "Senior cashier (evening)",
-        }),
+        renameBody,
       ),
     ).toMatchObject({
       status: 200,
@@ -1624,6 +1675,27 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         revision: "2",
       },
     });
+    expect(
+      await request(
+        credentials,
+        "PATCH",
+        `/identity/roles/${secondCustomRoleId}`,
+        renameBody,
+      ),
+    ).toMatchObject({
+      status: 409,
+      body: { code: "idempotency-conflict" },
+    });
+    const rolesAfterConflict = await request(
+      credentials,
+      "GET",
+      "/identity/roles",
+    );
+    expect(
+      (rolesAfterConflict.body?.roles as { id: string; name?: string }[]).find(
+        ({ id }) => id === secondCustomRoleId,
+      ),
+    ).toMatchObject({ name: "Relief cashier" });
     const staleRename = await approvedChallenge(
       "identity.role.rename",
       customRoleId,

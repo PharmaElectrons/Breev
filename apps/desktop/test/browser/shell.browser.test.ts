@@ -17,7 +17,7 @@ import {
   parseLocalProofEvidenceResponse,
   type LocalProofEvidenceSuccess,
 } from "@breev/contracts/local-rest";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -983,10 +983,9 @@ test.describe.serial("bilingual desktop shell", () => {
     // The editor names every permission in plain words; no internal id such
     // as "identity.roles.manage" is visible anywhere in it.
     const editor = page.locator(".role-editor");
+    const permissionSummary = page.locator(".permission-summary");
     await expect(editor).toBeVisible();
-    expect(await editor.innerText()).not.toMatch(
-      /\b[a-z]+\.[a-z_]+(?:\.[a-z_]+)?\b/u,
-    );
+    await expectNoRawPermissionIds(editor, permissionSummary);
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await expect(
       roleList.getByRole("button", { name: "Owner 7 of 7 permissions" }),
@@ -1011,6 +1010,11 @@ test.describe.serial("bilingual desktop shell", () => {
 
     // The new role is selected, shows exactly the chosen grant, and Save
     // stays disabled until something changes.
+    const customRoleButton = roleList.getByRole("button", {
+      name: /^Senior cashier Custom 1 of 7 permissions$/,
+    });
+    await expect(customRoleButton).toBeFocused();
+    await expect(customRoleButton.locator(".role-badge")).toHaveText("Custom");
     const details = page.getByRole("region", { name: "Senior cashier" });
     await expect(details).toBeVisible();
     await expect(
@@ -1027,7 +1031,7 @@ test.describe.serial("bilingual desktop shell", () => {
     ).toBeDisabled();
     await expect(
       roleList.getByRole("button", {
-        name: "Senior cashier 1 of 7 permissions",
+        name: "Senior cashier Custom 1 of 7 permissions",
       }),
     ).toBeVisible();
 
@@ -1051,6 +1055,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       managerRow.getByText("browser.manager · Senior cashier"),
     ).toBeVisible();
+    await expect(managerRow.locator(".role-badge")).toHaveText("Custom");
     await expect(saveRole).toBeFocused();
     const usersResponse = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
@@ -1081,14 +1086,18 @@ test.describe.serial("bilingual desktop shell", () => {
       arabicRoleList.getByRole("button", { name: "Senior cashier" }),
     ).toBeVisible();
     await expect(
+      arabicRoleList
+        .getByRole("button", { name: "Senior cashier" })
+        .locator(".role-badge"),
+    ).toHaveText("مخصص");
+    await expect(
       page.getByRole("region", { name: "Senior cashier" }),
     ).toBeVisible();
     await expect(
       managerRow.getByText("browser.manager · Senior cashier"),
     ).toBeVisible();
-    expect(await editor.innerText()).not.toMatch(
-      /\b[a-z]+\.[a-z_]+(?:\.[a-z_]+)?\b/u,
-    );
+    await expect(managerRow.locator(".role-badge")).toHaveText("مخصص");
+    await expectNoRawPermissionIds(editor, permissionSummary);
     const accessibility = await new AxeBuilder({ page }).analyze();
     expect(accessibility.violations).toEqual([]);
     await page.screenshot({
@@ -1338,7 +1347,7 @@ test.describe.serial("bilingual desktop shell", () => {
     ).toBeVisible();
     await expect(
       roleList.getByRole("button", {
-        name: "Senior cashier 1 of 7 permissions",
+        name: "Senior cashier Custom 1 of 7 permissions",
       }),
     ).toBeVisible();
 
@@ -1430,12 +1439,10 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
 
-    const rawPermissionId = /\b[a-z]+\.[a-z_]+(?:\.[a-z_]+)?\b/u;
     const editor = page.locator(".role-editor");
     const permissionSummary = page.locator(".permission-summary");
     const expectNoRawPermissionId = async (): Promise<void> => {
-      expect(await editor.innerText()).not.toMatch(rawPermissionId);
-      expect(await permissionSummary.innerText()).not.toMatch(rawPermissionId);
+      await expectNoRawPermissionIds(editor, permissionSummary);
       for (const role of ["button", "checkbox", "link"] as const) {
         const names: string[] = [];
         for (const control of await editor.getByRole(role).all()) {
@@ -1445,9 +1452,9 @@ test.describe.serial("bilingual desktop shell", () => {
               "",
           );
         }
-        expect(names.join(" ")).not.toMatch(rawPermissionId);
+        expect(names.join(" ")).not.toMatch(RAW_PERMISSION_ID);
         await expect(
-          editor.getByRole(role, { name: rawPermissionId }),
+          editor.getByRole(role, { name: RAW_PERMISSION_ID }),
         ).toHaveCount(0);
       }
     };
@@ -1459,7 +1466,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectNoRawPermissionId();
     await page
       .getByRole("button", {
-        name: "Ø§Ù„ØªØ¨Ø¯ÙŠÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ø¥Ù†Ø¬Ù„ÙŠØ²ÙŠØ©",
+        name: "التبديل إلى الإنجليزية",
       })
       .click();
   });
@@ -1749,6 +1756,31 @@ test.describe.serial("bilingual desktop shell", () => {
     await attackerPage.close();
   });
 });
+
+const RAW_PERMISSION_ID = /\b[a-z]+\.[a-z_]+(?:\.[a-z_]+)?\b/u;
+
+async function expectNoRawPermissionIds(
+  ...scopes: readonly Locator[]
+): Promise<void> {
+  for (const scope of scopes) {
+    const exposedStrings = await scope.evaluate((root) => {
+      const elements = [root, ...root.querySelectorAll("*")];
+      return [
+        ...elements.flatMap((element) =>
+          ["title", "aria-label", "aria-description"].map(
+            (attribute) => element.getAttribute(attribute) ?? "",
+          ),
+        ),
+        ...[...root.querySelectorAll("option")].map(
+          (option) => option.getAttribute("label") ?? option.textContent ?? "",
+        ),
+      ];
+    });
+    expect([await scope.innerText(), ...exposedStrings].join(" ")).not.toMatch(
+      RAW_PERMISSION_ID,
+    );
+  }
+}
 
 async function expectIdentityStateMatrix(
   page: Page,
