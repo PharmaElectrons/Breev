@@ -211,7 +211,9 @@ test.describe("offline licence feature hiding", () => {
     await expect(
       card.getByText("Renew it to keep paid functions running"),
     ).toHaveCount(0);
-    const renew = card.getByRole("button", { name: "Renew or install licence" });
+    const renew = card.getByRole("button", {
+      name: "Renew or install licence",
+    });
     await expect(renew).toBeVisible();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
@@ -263,13 +265,16 @@ test.describe("offline licence feature hiding", () => {
     await expect(
       page.getByRole("button", { name: "One-way cloud sync" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start pairing" })).toHaveCount(
-      0,
-    );
     await expect(
-      page.getByText("The licence is in its grace period. Paired terminals keep working", {
-        exact: false,
-      }),
+      page.getByRole("button", { name: "Start pairing" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText(
+        "The licence is in its grace period. Paired terminals keep working",
+        {
+          exact: false,
+        },
+      ),
     ).toBeVisible();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({
@@ -283,7 +288,9 @@ test.describe("offline licence feature hiding", () => {
     await expect(
       page.getByText("انتهى الترخيص — ضمن فترة السماح"),
     ).toBeVisible();
-    await expect(page.getByText("فترة السماح حتى", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("فترة السماح حتى", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("منح المؤسس", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "بدء الإقران" })).toHaveCount(
       0,
@@ -523,10 +530,7 @@ async function startLicensingRenderer(
       response.end(JSON.stringify(state.entitlement));
       return;
     }
-    if (
-      request.method === "POST" &&
-      request.url === "/licensing/licences"
-    ) {
+    if (request.method === "POST" && request.url === "/licensing/licences") {
       // A renewal installs a newer signed licence; the fake answers with the
       // far-future licensed state.
       state = licensedState();

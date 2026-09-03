@@ -663,7 +663,9 @@ function AuthenticatedWorkspace({
                   </div>
                   <div>
                     <dt>{licensingCopy.deviceAllowance}</dt>
-                    <dd>{formatNumber(licence.permittedDeviceCount, locale)}</dd>
+                    <dd>
+                      {formatNumber(licence.permittedDeviceCount, locale)}
+                    </dd>
                   </div>
                 </dl>
               )}

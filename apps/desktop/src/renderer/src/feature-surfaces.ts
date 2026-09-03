@@ -3,8 +3,6 @@ import {
   type PaidCapabilityName,
 } from "@breev/contracts/local-rest";
 
-import type { ModuleId } from "./navigation";
-
 /**
  * The renderer surfaces a paid capability shows.
  *
@@ -17,7 +15,7 @@ import type { ModuleId } from "./navigation";
  * capability with no built surface yet maps to nothing rather than to a
  * speculative gate.
  */
-export type FeatureSurfaceId = ModuleId | "devices-panel";
+export type FeatureSurfaceId = "devices-panel" | "messages";
 
 export const FEATURE_SURFACES: Readonly<
   Record<PaidCapabilityName, readonly FeatureSurfaceId[]>
@@ -36,10 +34,14 @@ export const FEATURE_SURFACES: Readonly<
  * test enforces, so the first match is the only match.
  */
 export function requiredCapabilityFor(
-  surface: FeatureSurfaceId,
+  surface: string,
 ): PaidCapabilityName | null {
   for (const capability of PAID_CAPABILITY_NAMES) {
-    if (FEATURE_SURFACES[capability].includes(surface)) {
+    if (
+      FEATURE_SURFACES[capability].some(
+        (namedSurface) => namedSurface === surface,
+      )
+    ) {
       return capability;
     }
   }
