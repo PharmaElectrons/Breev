@@ -107,7 +107,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         status: "free-core",
       },
       state: "authenticated",
-      user: { role: "owner" },
+      user: { role: { key: "owner", kind: "built-in" } },
     });
     const user = success?.body?.user as
       { id: string; username: string } | undefined;
@@ -485,7 +485,10 @@ describe.sequential("identity/access PostgreSQL seam", () => {
           role,
           `test password for ${role} user`,
         ),
-      ).toMatchObject({ status: 201, body: { role } });
+      ).toMatchObject({
+        status: 201,
+        body: { role: { key: role, kind: "built-in" } },
+      });
     }
     const representedRoles = await administrator.query<{
       role_key: string;
@@ -526,7 +529,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       displayName: "Idempotent User",
       idempotencyKey: createKey,
       password: SELF_CHANGE_OLD_PASSWORD,
-      role: "support",
+      roleId: await roleIdFor("support"),
       username: "idempotent.user",
     };
     const created = await request(
@@ -1109,9 +1112,12 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         challengeId: roleChallenge,
         expectedRevision: String(displayUpdate.body?.revision ?? ""),
         idempotencyKey: createUuidV7(),
-        role: "pharmacist",
+        roleId: await roleIdFor("pharmacist"),
       }),
-    ).toMatchObject({ status: 200, body: { role: "pharmacist" } });
+    ).toMatchObject({
+      status: 200,
+      body: { role: { key: "pharmacist", kind: "built-in" } },
+    });
 
     const displayAudit = await administrator.query<{
       after_state: Record<string, unknown>;
@@ -1190,7 +1196,9 @@ describe.sequential("identity/access PostgreSQL seam", () => {
 
   it("denies every protected API operation for a role without explicit grants", async () => {
     const ownerChallenge = await createChallenge("identity.user.create");
-    await login("pharmacy.manager", MANAGER_PASSWORD);
+    // The built-in support role carries no grant at all. (The manager role
+    // is no longer the example: it is seeded with identity.roles.manage.)
+    await login("role.support", "test password for support user");
 
     expect(await approveChallenge(ownerChallenge, ownerPassword)).toMatchObject(
       {
@@ -1212,7 +1220,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
         displayName: "Denied User",
         idempotencyKey: createUuidV7(),
         password: "denied password is never stored",
-        role: "pharmacist",
+        roleId: createUuidV7(),
         username: "denied.user",
       }),
       request(credentials, "PATCH", `/identity/users/${managerId}`, {
@@ -1455,6 +1463,329 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(
       ownerFloor.rows.map(({ permission_name }) => permission_name),
     ).toEqual(["identity.roles.manage", "identity.users.manage"]);
+  });
+
+  it("creates, renames, grants, and assigns a custom role under Step-Up, audit, and idempotency", async () => {
+    await login(ownerUsername, ownerPassword);
+    const catalogue = await request(credentials, "GET", "/identity/roles");
+    const builtInCount = (catalogue.body?.roles as unknown[]).length;
+
+    // A reserved or unimplemented request is refused before the challenge is
+    // spent, so the same challenge still creates the role afterwards.
+    const createChallengeId = await approvedChallenge(
+      "identity.role.create",
+      undefined,
+      ownerPassword,
+    );
+    expect(
+      await request(
+        credentials,
+        "POST",
+        "/identity/roles",
+        command({
+          challengeId: createChallengeId,
+          name: "Sales-Employee",
+          permissions: [],
+        }),
+      ),
+    ).toMatchObject({ status: 400, body: { code: "role-name-reserved" } });
+    expect(
+      await request(
+        credentials,
+        "POST",
+        "/identity/roles",
+        command({
+          challengeId: createChallengeId,
+          name: "Senior cashier",
+          permissions: ["sales.return.post"],
+        }),
+      ),
+    ).toMatchObject({ status: 400, body: { code: "body-invalid" } });
+
+    const createBody = {
+      challengeId: createChallengeId,
+      idempotencyKey: createUuidV7(),
+      name: "Senior cashier",
+      permissions: ["catalog.item.manage", "attendance.record"],
+    };
+    const created = await request(
+      credentials,
+      "POST",
+      "/identity/roles",
+      createBody,
+    );
+    expect(created, failureContext([created])).toMatchObject({
+      status: 201,
+      body: {
+        grants: ["attendance.record", "catalog.item.manage"],
+        kind: "custom",
+        name: "Senior cashier",
+        revision: "1",
+      },
+    });
+    const customRoleId = String(created.body?.id ?? "");
+    expect(
+      await request(credentials, "POST", "/identity/roles", createBody),
+    ).toEqual(created);
+    expect(
+      await request(credentials, "POST", "/identity/roles", {
+        ...createBody,
+        name: "Other name",
+      }),
+    ).toMatchObject({ status: 409, body: { code: "idempotency-conflict" } });
+    const createAudits = await administrator.query<{ count: string }>(
+      `select count(*)::text as count from identity_audit_records
+       where action = 'identity.role.create'
+         and outcome = 'succeeded'
+         and target_id = $1`,
+      [customRoleId],
+    );
+    expect(createAudits.rows[0]?.count).toBe("1");
+
+    // Listed after the built-ins, and offered to user managers as a reference.
+    const listed = await request(credentials, "GET", "/identity/roles");
+    const listedRoles = listed.body?.roles as {
+      id: string;
+      kind: string;
+      name?: string;
+    }[];
+    expect(listedRoles).toHaveLength(builtInCount + 1);
+    expect(listedRoles.at(-1)).toMatchObject({
+      id: customRoleId,
+      kind: "custom",
+      name: "Senior cashier",
+    });
+    const usersList = await request(credentials, "GET", "/identity/users");
+    expect(usersList.body?.roles).toEqual(
+      expect.arrayContaining([
+        { id: customRoleId, kind: "custom", name: "Senior cashier" },
+      ]),
+    );
+
+    // A name that differs only by case and spacing is the same name.
+    const duplicateChallenge = await approvedChallenge(
+      "identity.role.create",
+      undefined,
+      ownerPassword,
+    );
+    expect(
+      await request(
+        credentials,
+        "POST",
+        "/identity/roles",
+        command({
+          challengeId: duplicateChallenge,
+          name: "senior   CASHIER",
+          permissions: [],
+        }),
+      ),
+    ).toMatchObject({ status: 409, body: { code: "role-name-taken" } });
+
+    // Rename: never a built-in role; a custom role under its revision.
+    const builtInRename = await approvedChallenge(
+      "identity.role.rename",
+      managerRoleId,
+      ownerPassword,
+    );
+    expect(
+      await request(
+        credentials,
+        "PATCH",
+        `/identity/roles/${managerRoleId}`,
+        command({
+          challengeId: builtInRename,
+          expectedRevision: await currentRoleRevision(managerRoleId),
+          name: "Shift lead",
+        }),
+      ),
+    ).toMatchObject({ status: 409, body: { code: "role-not-custom" } });
+    const renameChallenge = await approvedChallenge(
+      "identity.role.rename",
+      customRoleId,
+      ownerPassword,
+    );
+    expect(
+      await request(
+        credentials,
+        "PATCH",
+        `/identity/roles/${customRoleId}`,
+        command({
+          challengeId: renameChallenge,
+          expectedRevision: "1",
+          name: "Senior cashier (evening)",
+        }),
+      ),
+    ).toMatchObject({
+      status: 200,
+      body: {
+        grants: ["attendance.record", "catalog.item.manage"],
+        kind: "custom",
+        name: "Senior cashier (evening)",
+        revision: "2",
+      },
+    });
+    const staleRename = await approvedChallenge(
+      "identity.role.rename",
+      customRoleId,
+      ownerPassword,
+    );
+    expect(
+      await request(
+        credentials,
+        "PATCH",
+        `/identity/roles/${customRoleId}`,
+        command({
+          challengeId: staleRename,
+          expectedRevision: "1",
+          name: "Stale name",
+        }),
+      ),
+    ).toMatchObject({ status: 409, body: { code: "version-conflict" } });
+
+    // Assignment is by id. An id that is not a role of this pharmacy is a
+    // not-found that leaves the challenge usable; the custom role assigns.
+    const assignChallenge = await approvedChallenge(
+      "identity.user.create",
+      undefined,
+      ownerPassword,
+    );
+    const cashierPassword = "custom role password stays in this test";
+    expect(
+      await request(
+        credentials,
+        "POST",
+        "/identity/users",
+        command({
+          challengeId: assignChallenge,
+          displayName: "Nobody",
+          password: cashierPassword,
+          roleId: createUuidV7(),
+          username: "custom.nobody",
+        }),
+      ),
+    ).toMatchObject({
+      status: 404,
+      body: { code: "identity-resource-not-found" },
+    });
+    const cashier = await request(
+      credentials,
+      "POST",
+      "/identity/users",
+      command({
+        challengeId: assignChallenge,
+        displayName: "Custom Cashier",
+        password: cashierPassword,
+        roleId: customRoleId,
+        username: "custom.cashier",
+      }),
+    );
+    expect(cashier, failureContext([cashier])).toMatchObject({
+      status: 201,
+      body: {
+        role: {
+          id: customRoleId,
+          kind: "custom",
+          name: "Senior cashier (evening)",
+        },
+      },
+    });
+    const cashierId = String(cashier.body?.id ?? "");
+
+    // The assigned user carries exactly the role's grants, and a change to
+    // the role reaches them on their next request. The change also moves the
+    // pharmacy identity revision, so a challenge approved before it is stale.
+    await login("custom.cashier", cashierPassword);
+    expect(await request(credentials, "GET", "/identity/state")).toMatchObject({
+      status: 200,
+      body: {
+        allowedPermissions: ["attendance.record", "catalog.item.manage"],
+        user: { role: { kind: "custom", name: "Senior cashier (evening)" } },
+      },
+    });
+    await login(ownerUsername, ownerPassword);
+    const staleUserChallenge = await approvedChallenge(
+      "identity.user.update",
+      cashierId,
+      ownerPassword,
+    );
+    const grantChallenge = await approvedChallenge(
+      "identity.role.permissions.update",
+      customRoleId,
+      ownerPassword,
+    );
+    expect(
+      await request(
+        credentials,
+        "PUT",
+        `/identity/roles/${customRoleId}/permissions`,
+        command({
+          challengeId: grantChallenge,
+          expectedRevision: "2",
+          permissions: ["catalog.item.manage"],
+        }),
+      ),
+    ).toMatchObject({
+      status: 200,
+      body: { grants: ["catalog.item.manage"], kind: "custom", revision: "3" },
+    });
+    expect(
+      await request(
+        credentials,
+        "PATCH",
+        `/identity/users/${cashierId}`,
+        command({
+          challengeId: staleUserChallenge,
+          displayName: "Stale Cashier",
+          expectedRevision: await currentUserRevision(cashierId),
+        }),
+      ),
+    ).toMatchObject({ status: 403, body: { code: "step-up-stale" } });
+    await login("custom.cashier", cashierPassword);
+    expect(await request(credentials, "GET", "/identity/state")).toMatchObject({
+      status: 200,
+      body: { allowedPermissions: ["catalog.item.manage"] },
+    });
+
+    // Reassignment to a built-in role by id, audited with both references.
+    await login(ownerUsername, ownerPassword);
+    const reassign = await approvedChallenge(
+      "identity.user.update",
+      cashierId,
+      ownerPassword,
+    );
+    expect(
+      await request(
+        credentials,
+        "PATCH",
+        `/identity/users/${cashierId}`,
+        command({
+          challengeId: reassign,
+          expectedRevision: await currentUserRevision(cashierId),
+          roleId: await roleIdFor("support"),
+        }),
+      ),
+    ).toMatchObject({
+      status: 200,
+      body: { role: { key: "support", kind: "built-in" } },
+    });
+    const reassignAudit = await administrator.query<{
+      after_state: Record<string, unknown>;
+      before_state: Record<string, unknown>;
+    }>(
+      `select before_state, after_state from identity_audit_records
+       where action = 'identity.user.update'
+         and outcome = 'succeeded'
+         and target_id = $1
+       order by occurred_at desc
+       limit 1`,
+      [cashierId],
+    );
+    expect(reassignAudit.rows[0]).toMatchObject({
+      after_state: { role: { key: "support", kind: "built-in" } },
+      before_state: {
+        role: { kind: "custom", name: "Senior cashier (evening)" },
+      },
+    });
   });
 
   it("applies explicit role grants and typed attendance settings end to end", async () => {
@@ -1975,7 +2306,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       displayName,
       idempotencyKey: createUuidV7(),
       password,
-      role,
+      roleId: await roleIdFor(role),
       username,
     });
   }
@@ -1994,6 +2325,18 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       (state.body?.attendance as { version?: string } | null | undefined)
         ?.version ?? "1",
     );
+  }
+
+  /**
+   * The id of a built-in role, read straight from PostgreSQL so a scenario
+   * can assign a role without needing identity.roles.manage itself.
+   */
+  async function roleIdFor(key: string): Promise<string> {
+    const role = await administrator.query<{ id: string }>(
+      "select id from pharmacy_roles where role_key = $1",
+      [key],
+    );
+    return role.rows[0]?.id ?? "";
   }
 
   async function currentRoleRevision(roleId: string): Promise<string> {

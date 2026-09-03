@@ -11,12 +11,15 @@ import {
   type IdentityAuthenticatedState,
   type IdentityBootstrapRequest,
   type IdentityChangePasswordRequest,
+  type IdentityCreateRoleRequest,
   type IdentityCreateUserRequest,
   type IdentityDenial,
   type IdentityDenialCode,
   type IdentityLoginRequest,
+  type IdentityRenameRoleRequest,
   type IdentityResetUserPasswordRequest,
   type IdentityRole,
+  type IdentityRoleReference,
   type IdentityRoles,
   type IdentityState,
   type IdentityStepUpApproveRequest,
@@ -25,6 +28,7 @@ import {
   type IdentityUpdateRolePermissionsRequest,
   type IdentityUpdateUserRequest,
   type IdentityUser,
+  type IdentityUsers,
   type EntitlementContext,
   type PaidCapabilityName,
   type PharmacySettings,
@@ -116,6 +120,39 @@ const OWNER_PERMISSION_FLOOR = [
   "identity.users.manage",
 ] as const satisfies readonly PermissionName[];
 
+/**
+ * How a custom role name is compared for uniqueness and reservation: NFKC,
+ * trimmed, runs of whitespace, underscores, and hyphens collapsed to one
+ * space, lower-cased. "Senior cashier", "senior  CASHIER", and
+ * "Senior-Cashier" are one role. The stored display name keeps the
+ * pharmacy's own spelling.
+ */
+function normalizeRoleName(name: string): string {
+  return name
+    .normalize("NFKC")
+    .trim()
+    .replace(/[\s_-]+/gu, " ")
+    .toLocaleLowerCase("en-US");
+}
+
+/**
+ * A custom role may not take a built-in role's identity through its name. The
+ * database identifies a built-in role by `role_key` regardless, so this guard
+ * only stops a misleading label ("Owner", "sales employee") from appearing
+ * beside the real one; it is not what keeps the owner floor.
+ */
+const RESERVED_ROLE_NAME_KEYS: ReadonlySet<string> = new Set(
+  PHARMACY_ROLE_KEYS.map((key) => normalizeRoleName(key)),
+);
+
+/** One `pharmacy_roles` row: exactly one of `role_key` and `custom_name` is set. */
+interface RoleRow {
+  readonly custom_name: string | null;
+  readonly id: string;
+  readonly revision: string;
+  readonly role_key: PharmacyRoleKey | null;
+}
+
 interface SessionRow {
   readonly session_id: string;
   readonly device_id: string | null;
@@ -129,7 +166,8 @@ interface SessionRow {
   readonly user_status: "active" | "locked";
   readonly auth_revision: string;
   readonly role_id: string;
-  readonly role_key: PharmacyRoleKey;
+  readonly role_key: PharmacyRoleKey | null;
+  readonly role_custom_name: string | null;
   readonly role_revision: string;
   readonly expires_at: Date;
   readonly revoked_at: Date | null;
@@ -150,7 +188,8 @@ interface UserRow {
   readonly password_hash: Buffer;
   readonly auth_revision: string;
   readonly role_id: string;
-  readonly role_key: PharmacyRoleKey;
+  readonly role_key: PharmacyRoleKey | null;
+  readonly role_custom_name: string | null;
   readonly role_revision: string;
 }
 
@@ -231,7 +270,8 @@ export interface IdentityExecutionContext {
   readonly pharmacyId: string;
   readonly pharmacyIdentityRevision: bigint;
   readonly roleId: string;
-  readonly roleKey: PharmacyRoleKey;
+  /** The built-in key, or `null` for a pharmacy custom role. */
+  readonly roleKey: PharmacyRoleKey | null;
   readonly roleRevision: bigint;
   readonly sessionId: string;
   readonly terminalCertFingerprint: Buffer | undefined;
@@ -475,6 +515,18 @@ export class IdentityAccessService {
          from unnest($4::text[]) as implemented(name)`,
         [pharmacyId, ownerRoleId, ownerId, IMPLEMENTED_PERMISSION_NAMES],
       );
+      // The built-in manager role administers roles through the ordinary
+      // permission check (stakeholder decision of 3 September 2026). It
+      // receives no other authority: assigning roles to users still needs
+      // identity.users.manage, which the pharmacy grants if it wants to.
+      await client.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         select $1, id, 'identity.roles.manage', $2
+         from pharmacy_roles
+         where pharmacy_id = $1 and role_key = 'manager'`,
+        [pharmacyId, ownerId],
+      );
       await client.query(
         `insert into pharmacy_settings
            (pharmacy_id, attendance_enabled, updated_by)
@@ -556,6 +608,7 @@ export class IdentityAccessService {
               identity_user.auth_revision::text,
               role.id as role_id,
               role.role_key,
+              role.custom_name as role_custom_name,
               role.revision::text as role_revision
        from identity_users identity_user
        join pharmacy_roles role on role.id = identity_user.role_id
@@ -734,18 +787,319 @@ export class IdentityAccessService {
     }
   }
 
-  public async users(request: Request): Promise<{ users: UserView[] }> {
+  /**
+   * The users, plus the roles they can be assigned. A holder of
+   * `identity.users.manage` picks a role by id from this list; the grants
+   * behind each role stay on the roles route, behind `identity.roles.manage`.
+   */
+  public async users(request: Request): Promise<IdentityUsers> {
     const context = await this.requirePermission(
       request,
       "identity.users.manage",
     );
-    const result = await this.localDatabase.requirePool().query<UserRow>(
-      `${USER_SELECT}
-       where identity_user.pharmacy_id = $1
-       order by identity_user.display_name, identity_user.id`,
-      [context.pharmacyId],
+    const pool = this.localDatabase.requirePool();
+    const [users, roles] = await Promise.all([
+      pool.query<UserRow>(
+        `${USER_SELECT}
+         where identity_user.pharmacy_id = $1
+         order by identity_user.display_name, identity_user.id`,
+        [context.pharmacyId],
+      ),
+      pool.query<RoleRow>(
+        `select id, role_key, custom_name, revision::text
+         from pharmacy_roles
+         where pharmacy_id = $1
+         ${ROLE_ORDER}`,
+        [context.pharmacyId, PHARMACY_ROLE_KEYS],
+      ),
+    ]);
+    return {
+      roles: roles.rows.map(roleReference),
+      users: users.rows.map(userView),
+    };
+  }
+
+  /**
+   * Creates a custom role with its name and its initial grants in one
+   * command. The Step-Up subject is the pharmacy's identity revision, which
+   * this command advances, so a challenge cannot be spent twice.
+   */
+  public async createRole(
+    request: Request,
+    input: IdentityCreateRoleRequest,
+  ): Promise<IdentityRole> {
+    const context = await this.requirePermission(
+      request,
+      "identity.roles.manage",
     );
-    return { users: result.rows.map(userView) };
+    if (!input.permissions.every(isImplementedPermissionName)) {
+      return await this.rejectInvalidBody(request);
+    }
+    const permissions = [...new Set(input.permissions)].sort();
+    const nameKey = normalizeRoleName(input.name);
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      await client.query("begin");
+      await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.role.create",
+        input,
+        identityRoleSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
+      const refusal = await this.roleNameRefusal(
+        client,
+        context.pharmacyId,
+        nameKey,
+      );
+      if (refusal !== undefined) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.role.create",
+          actorUserId: context.actorId,
+          afterState: { name: input.name, permissions },
+          device: context,
+          identitySessionId: context.sessionId,
+          outcome: refusal,
+          pharmacyId: context.pharmacyId,
+        });
+        await client.query("commit");
+        throw this.denied(
+          refusal === "role-name-reserved" ? 400 : 409,
+          refusal,
+          requestId,
+        );
+      }
+      await this.consumeStepUp(client, context, input.challengeId, {
+        action: "identity.role.create",
+        subjectId: context.pharmacyId,
+      });
+      const created = await client.query<{ id: string; revision: string }>(
+        `insert into pharmacy_roles (pharmacy_id, custom_name, custom_name_key)
+         values ($1, $2, $3)
+         returning id, revision::text`,
+        [context.pharmacyId, input.name, nameKey],
+      );
+      const role = created.rows[0];
+      if (role === undefined) {
+        throw new Error("The custom role was not created");
+      }
+      if (permissions.length > 0) {
+        await client.query(
+          `insert into role_permission_grants
+             (pharmacy_id, role_id, permission_name, granted_by)
+           select $1, $2, permission_name, $3
+           from unnest($4::text[]) as values_to_grant(permission_name)`,
+          [context.pharmacyId, role.id, context.actorId, permissions],
+        );
+      }
+      await this.advanceIdentityRevision(client, context.pharmacyId);
+      await this.writeAudit(client, {
+        action: "identity.role.create",
+        actorUserId: context.actorId,
+        afterState: { kind: "custom", name: input.name, permissions },
+        device: context,
+        identitySessionId: context.sessionId,
+        outcome: "succeeded",
+        pharmacyId: context.pharmacyId,
+        targetId: role.id,
+      });
+      const response = roleView(
+        {
+          custom_name: input.name,
+          id: role.id,
+          revision: role.revision,
+          role_key: null,
+        },
+        permissions,
+      );
+      await this.recordCommandResult(
+        client,
+        context,
+        "identity.role.create",
+        input,
+        response,
+      );
+      await client.query("commit");
+      return response;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Renames a custom role. A built-in role is identified by its key and named
+   * by the renderer in the user's language, so it is never renamed here.
+   */
+  public async renameRole(
+    request: Request,
+    roleId: string,
+    input: IdentityRenameRoleRequest,
+  ): Promise<IdentityRole> {
+    const context = await this.requirePermission(
+      request,
+      "identity.roles.manage",
+    );
+    const nameKey = normalizeRoleName(input.name);
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      await client.query("begin");
+      await this.lockIdentity(client, context.pharmacyId);
+      const replay = await this.beginIdempotentCommand(
+        client,
+        context,
+        "identity.role.rename",
+        input,
+        identityRoleSchema,
+      );
+      if (replay !== undefined) {
+        await client.query("commit");
+        return replay;
+      }
+      const role = await this.selectRole(
+        client,
+        context.pharmacyId,
+        roleId,
+        true,
+      );
+      if (role === undefined) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.role.rename",
+          actorUserId: context.actorId,
+          device: context,
+          identitySessionId: context.sessionId,
+          outcome: "identity-resource-not-found",
+          pharmacyId: context.pharmacyId,
+        });
+        await client.query("commit");
+        throw this.denied(404, "identity-resource-not-found", requestId);
+      }
+      if (role.role_key !== null) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.role.rename",
+          actorUserId: context.actorId,
+          afterState: { name: input.name },
+          beforeState: roleReference(role),
+          device: context,
+          identitySessionId: context.sessionId,
+          outcome: "role-not-custom",
+          pharmacyId: context.pharmacyId,
+          targetId: roleId,
+        });
+        await client.query("commit");
+        throw this.denied(409, "role-not-custom", requestId);
+      }
+      if (role.revision !== input.expectedRevision) {
+        return await this.rejectVersionConflict(
+          client,
+          context,
+          "identity.role.rename",
+          roleId,
+        );
+      }
+      const refusal = await this.roleNameRefusal(
+        client,
+        context.pharmacyId,
+        nameKey,
+        roleId,
+      );
+      if (refusal !== undefined) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.role.rename",
+          actorUserId: context.actorId,
+          afterState: { name: input.name },
+          beforeState: roleReference(role),
+          device: context,
+          identitySessionId: context.sessionId,
+          outcome: refusal,
+          pharmacyId: context.pharmacyId,
+          targetId: roleId,
+        });
+        await client.query("commit");
+        throw this.denied(
+          refusal === "role-name-reserved" ? 400 : 409,
+          refusal,
+          requestId,
+        );
+      }
+      await this.consumeStepUp(client, context, input.challengeId, {
+        action: "identity.role.rename",
+        subjectId: roleId,
+      });
+      const updated = await client.query<{ revision: string }>(
+        `update pharmacy_roles
+         set custom_name = $2, custom_name_key = $3, revision = revision + 1
+         where id = $1
+         returning revision::text`,
+        [roleId, input.name, nameKey],
+      );
+      await this.advanceIdentityRevision(client, context.pharmacyId);
+      const grants = await this.rolePermissions(client, roleId);
+      await this.writeAudit(client, {
+        action: "identity.role.rename",
+        actorUserId: context.actorId,
+        afterState: { kind: "custom", name: input.name },
+        beforeState: roleReference(role),
+        device: context,
+        identitySessionId: context.sessionId,
+        outcome: "succeeded",
+        pharmacyId: context.pharmacyId,
+        targetId: roleId,
+      });
+      const response = roleView(
+        {
+          custom_name: input.name,
+          id: roleId,
+          revision: updated.rows[0]?.revision ?? "",
+          role_key: null,
+        },
+        grants,
+      );
+      await this.recordCommandResult(
+        client,
+        context,
+        "identity.role.rename",
+        input,
+        response,
+      );
+      await client.query("commit");
+      return response;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Why a custom role name cannot be used, or `undefined` when it can. Runs
+   * under the pharmacy identity lock, so two concurrent creations of the
+   * same name cannot both pass; the partial unique index is the last line.
+   */
+  private async roleNameRefusal(
+    client: PoolClient,
+    pharmacyId: string,
+    nameKey: string,
+    exceptRoleId?: string,
+  ): Promise<"role-name-reserved" | "role-name-taken" | undefined> {
+    if (RESERVED_ROLE_NAME_KEYS.has(nameKey)) {
+      return "role-name-reserved";
+    }
+    const taken = await client.query(
+      `select 1 from pharmacy_roles
+       where pharmacy_id = $1 and custom_name_key = $2
+         and id is distinct from $3`,
+      [pharmacyId, nameKey, exceptRoleId ?? null],
+    );
+    return taken.rowCount === 0 ? undefined : "role-name-taken";
   }
 
   public async createUser(
@@ -772,19 +1126,32 @@ export class IdentityAccessService {
         await client.query("commit");
         return replay;
       }
+      // The role is resolved within this pharmacy before the challenge is
+      // spent: a role id that is not this pharmacy's — or no longer exists —
+      // is a not-found, and leaves the challenge usable.
+      const role = await this.selectRole(
+        client,
+        context.pharmacyId,
+        input.roleId,
+      );
+      if (role === undefined) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.user.create",
+          actorUserId: context.actorId,
+          afterState: { roleId: input.roleId },
+          device: context,
+          identitySessionId: context.sessionId,
+          outcome: "identity-resource-not-found",
+          pharmacyId: context.pharmacyId,
+        });
+        await client.query("commit");
+        throw this.denied(404, "identity-resource-not-found", requestId);
+      }
       await this.consumeStepUp(client, context, input.challengeId, {
         action: "identity.user.create",
         subjectId: context.actorId,
       });
-      const role = await client.query<{ id: string }>(
-        `select id from pharmacy_roles
-         where pharmacy_id = $1 and role_key = $2`,
-        [context.pharmacyId, input.role],
-      );
-      const roleId = role.rows[0]?.id;
-      if (roleId === undefined) {
-        throw new Error("The configured pharmacy role is missing");
-      }
+      const roleId = role.id;
       const created = await client.query<{ id: string }>(
         `insert into identity_users (
            pharmacy_id, username, username_key, display_name, role_id,
@@ -831,7 +1198,7 @@ export class IdentityAccessService {
       await this.writeAudit(client, {
         action: "identity.user.create",
         actorUserId: context.actorId,
-        afterState: { role: input.role, status: "active" },
+        afterState: { role: roleReference(role), status: "active" },
         device: context,
         identitySessionId: context.sessionId,
         outcome: "succeeded",
@@ -872,7 +1239,7 @@ export class IdentityAccessService {
     );
     if (
       input.displayName === undefined &&
-      input.role === undefined &&
+      input.roleId === undefined &&
       input.status === undefined
     ) {
       return await this.rejectInvalidBody(request);
@@ -906,17 +1273,40 @@ export class IdentityAccessService {
           userId,
         );
       }
+      const nextRole =
+        input.roleId === undefined
+          ? {
+              custom_name: before.role_custom_name,
+              id: before.role_id,
+              revision: before.role_revision,
+              role_key: before.role_key,
+            }
+          : await this.selectRole(client, context.pharmacyId, input.roleId);
+      if (nextRole === undefined) {
+        const requestId = await this.writeAudit(client, {
+          action: "identity.user.update",
+          actorUserId: context.actorId,
+          afterState: { roleId: input.roleId },
+          beforeState: userAuditState(before),
+          device: context,
+          identitySessionId: context.sessionId,
+          outcome: "identity-resource-not-found",
+          pharmacyId: context.pharmacyId,
+          targetId: userId,
+        });
+        await client.query("commit");
+        throw this.denied(404, "identity-resource-not-found", requestId);
+      }
       await this.consumeStepUp(client, context, input.challengeId, {
         action: "identity.user.update",
         subjectId: userId,
       });
-      const nextRole = input.role ?? before.role_key;
       const nextStatus = input.status ?? before.status;
       const nextDisplayName = input.displayName ?? before.display_name;
       if (
         before.role_key === "owner" &&
         before.status === "active" &&
-        (nextRole !== "owner" || nextStatus !== "active")
+        (nextRole.role_key !== "owner" || nextStatus !== "active")
       ) {
         const ownerCount = await client.query<{ count: string }>(
           `select count(*)::text as count
@@ -942,21 +1332,12 @@ export class IdentityAccessService {
           throw this.denied(409, "last-owner-required", requestId);
         }
       }
-      const role = await client.query<{ id: string }>(
-        `select id from pharmacy_roles
-         where pharmacy_id = $1 and role_key = $2`,
-        [context.pharmacyId, nextRole],
-      );
-      const roleId = role.rows[0]?.id;
-      if (roleId === undefined) {
-        throw new Error("The configured pharmacy role is missing");
-      }
       await client.query(
         `update identity_users
          set role_id = $2, status = $3, display_name = $4,
              auth_revision = auth_revision + 1
          where id = $1`,
-        [userId, roleId, nextStatus, nextDisplayName],
+        [userId, nextRole.id, nextStatus, nextDisplayName],
       );
       if (nextStatus === "locked") {
         await client.query(
@@ -1685,7 +2066,7 @@ export class IdentityAccessService {
       const missingOwnerPermissions = OWNER_PERMISSION_FLOOR.filter(
         (permission) => !permissions.includes(permission),
       );
-      if (role.key === "owner" && missingOwnerPermissions.length > 0) {
+      if (role.role_key === "owner" && missingOwnerPermissions.length > 0) {
         const requestId = await this.writeAudit(client, {
           action: "identity.role.permissions.update",
           actorUserId: context.actorId,
@@ -1736,12 +2117,10 @@ export class IdentityAccessService {
         pharmacyId: context.pharmacyId,
         targetId: roleId,
       });
-      const response = identityRoleSchema.parse({
-        grants: permissions,
-        id: roleId,
-        key: role.key,
-        revision: updated.rows[0]?.revision ?? "",
-      });
+      const response = roleView(
+        { ...role, revision: updated.rows[0]?.revision ?? "" },
+        permissions,
+      );
       await this.recordCommandResult(
         client,
         context,
@@ -2157,14 +2536,12 @@ export class IdentityAccessService {
       request,
       "identity.roles.manage",
     );
-    const result = await this.localDatabase.requirePool().query<{
-      grants: string[];
-      id: string;
-      key: PharmacyRoleKey;
-      revision: string;
-    }>(
-      `select role.id,
-              role.role_key as key,
+    const result = await this.localDatabase
+      .requirePool()
+      .query<RoleRow & { grants: string[] }>(
+        `select role.id,
+              role.role_key,
+              role.custom_name,
               role.revision::text,
               coalesce(
                 array_agg(grant_row.permission_name order by grant_row.permission_name)
@@ -2175,9 +2552,9 @@ export class IdentityAccessService {
        left join role_permission_grants grant_row on grant_row.role_id = role.id
        where role.pharmacy_id = $1
        group by role.id
-       order by array_position($2::pharmacy_role_key[], role.role_key)`,
-      [context.pharmacyId, PHARMACY_ROLE_KEYS],
-    );
+       ${ROLE_ORDER}`,
+        [context.pharmacyId, PHARMACY_ROLE_KEYS],
+      );
     return {
       // Only the implemented permissions are ever offered as grantable or
       // shown as granted. A role row can still hold a future name directly in
@@ -2185,12 +2562,7 @@ export class IdentityAccessService {
       // rely on it once its operation lands — but this endpoint filters it
       // out rather than describing authority the build cannot yet perform.
       permissions: [...IMPLEMENTED_PERMISSION_NAMES],
-      roles: result.rows.map((row) => ({
-        grants: row.grants.filter(isImplementedPermissionName),
-        id: row.id,
-        key: row.key,
-        revision: row.revision,
-      })),
+      roles: result.rows.map((row) => roleView(row, row.grants)),
     };
   }
 
@@ -2450,7 +2822,11 @@ export class IdentityAccessService {
         displayName: row.display_name,
         id: row.user_id,
         revision: row.auth_revision,
-        role: row.role_key,
+        role: roleReference({
+          custom_name: row.role_custom_name,
+          id: row.role_id,
+          role_key: row.role_key,
+        }),
         status: row.user_status,
         username: row.username,
       },
@@ -2892,12 +3268,15 @@ export class IdentityAccessService {
     }
     if (
       action === "devices.pairing.start" ||
+      action === "identity.role.create" ||
       action === "identity.user.create"
     ) {
+      // Creating a role or a user has no subject row yet; the pharmacy's
+      // identity revision, which both commands advance, stands in for it.
       const expectedSubject =
-        action === "devices.pairing.start"
-          ? context.pharmacyId
-          : context.actorId;
+        action === "identity.user.create"
+          ? context.actorId
+          : context.pharmacyId;
       if (subjectId !== undefined && subjectId !== expectedSubject) {
         throw await this.contextDenial(context, 400, "body-invalid");
       }
@@ -3035,20 +3414,9 @@ export class IdentityAccessService {
     pharmacyId: string,
     roleId: string,
     lock = false,
-  ): Promise<
-    | {
-        readonly id: string;
-        readonly key: PharmacyRoleKey;
-        readonly revision: string;
-      }
-    | undefined
-  > {
-    const result = await client.query<{
-      id: string;
-      key: PharmacyRoleKey;
-      revision: string;
-    }>(
-      `select id, role_key as key, revision::text
+  ): Promise<RoleRow | undefined> {
+    const result = await client.query<RoleRow>(
+      `select id, role_key, custom_name, revision::text
        from pharmacy_roles
        where pharmacy_id = $1 and id = $2
        ${lock ? "for update" : ""}`,
@@ -3389,6 +3757,7 @@ const SESSION_SELECT = `select session.id as session_id,
        identity_user.auth_revision::text,
        role.id as role_id,
        role.role_key,
+       role.custom_name as role_custom_name,
        role.revision::text as role_revision,
        session.expires_at,
        session.revoked_at,
@@ -3538,9 +3907,42 @@ const USER_SELECT = `select identity_user.id,
        identity_user.auth_revision::text,
        role.id as role_id,
        role.role_key,
+       role.custom_name as role_custom_name,
        role.revision::text as role_revision
 from identity_users identity_user
 join pharmacy_roles role on role.id = identity_user.role_id`;
+
+/**
+ * Built-in roles first, in their canonical order, then custom roles by their
+ * normalized name. Bound parameters: `$1` pharmacy id, `$2` the role keys.
+ */
+const ROLE_ORDER = `order by (role_key is null),
+         array_position($2::pharmacy_role_key[], role_key),
+         custom_name_key,
+         id`;
+
+/** The role as a user carries it: identity and name, never grants. */
+function roleReference(row: {
+  readonly custom_name: string | null;
+  readonly id: string;
+  readonly role_key: PharmacyRoleKey | null;
+}): IdentityRoleReference {
+  if (row.role_key !== null) {
+    return { id: row.id, key: row.role_key, kind: "built-in" };
+  }
+  if (row.custom_name === null) {
+    throw new Error("A pharmacy role carries a built-in key or a custom name");
+  }
+  return { id: row.id, kind: "custom", name: row.custom_name };
+}
+
+function roleView(row: RoleRow, grants: readonly string[]): IdentityRole {
+  return identityRoleSchema.parse({
+    ...roleReference(row),
+    grants: grants.filter(isImplementedPermissionName),
+    revision: row.revision,
+  });
+}
 
 /**
  * Replays a recorded settings outcome exactly as it was first returned. A
@@ -3559,21 +3961,29 @@ function replaySettingsOutcome(replay: PostingCommandReplay): PharmacySettings {
   );
 }
 
+function userRoleReference(row: UserRow): IdentityRoleReference {
+  return roleReference({
+    custom_name: row.role_custom_name,
+    id: row.role_id,
+    role_key: row.role_key,
+  });
+}
+
 function userView(row: UserRow): UserView {
   return identityUserSchema.parse({
     displayName: row.display_name,
     id: row.id,
     revision: row.auth_revision,
-    role: row.role_key,
+    role: userRoleReference(row),
     status: row.status,
     username: row.username,
   });
 }
 
-function userAuditState(row: UserRow): Record<string, string> {
+function userAuditState(row: UserRow): Record<string, unknown> {
   return {
     displayName: row.display_name,
-    role: row.role_key,
+    role: userRoleReference(row),
     status: row.status,
   };
 }

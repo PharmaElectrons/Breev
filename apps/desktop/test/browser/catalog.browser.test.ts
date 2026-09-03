@@ -303,6 +303,9 @@ test.describe.serial("Product catalog screens", () => {
       { idempotencyKey: randomUUID(), password: OWNER_PASSWORD },
     );
     expect(approved.status).toBe(200);
+    const pharmacistRole = await administrator.query<{ id: string }>(
+      "select id from pharmacy_roles where role_key = 'pharmacist'",
+    );
     const pharmacist = await requestLocalApi(
       apiOrigin,
       credentials,
@@ -313,7 +316,7 @@ test.describe.serial("Product catalog screens", () => {
         displayName: "Catalog Browser Pharmacist",
         idempotencyKey: randomUUID(),
         password: PHARMACIST_PASSWORD,
-        role: "pharmacist",
+        roleId: pharmacistRole.rows[0]?.id,
         username: PHARMACIST_USERNAME,
       },
     );

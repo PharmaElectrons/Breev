@@ -1,3 +1,4 @@
+import { stepUpActionSchema } from "@breev/contracts/local-rest";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -10,6 +11,21 @@ import {
 } from "./authorization.js";
 
 describe("identity authorization", () => {
+  it("publishes exactly the Step-Up actions the server enforces", () => {
+    // The wire enum is hand-synced with the registry; a drift either way
+    // would let a client name an action the server cannot bind, or leave a
+    // server action no client can request.
+    expect([...stepUpActionSchema.options].sort()).toEqual(
+      Object.keys(STEP_UP_ACTIONS).sort(),
+    );
+    expect(STEP_UP_ACTIONS["identity.role.create"]).toBe(
+      "identity.roles.manage",
+    );
+    expect(STEP_UP_ACTIONS["identity.role.rename"]).toBe(
+      "identity.roles.manage",
+    );
+  });
+
   it("denies every role until an explicit grant exists", () => {
     for (const role of [
       "owner",

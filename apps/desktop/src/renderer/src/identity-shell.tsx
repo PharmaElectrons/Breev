@@ -3,10 +3,10 @@ import type {
   IdentityAuthenticatedState,
   IdentityDenial,
   IdentityRole,
+  IdentityRoleReference,
   IdentityState,
   IdentityUser,
   LicensingDenial,
-  PharmacyRoleKey,
   StepUpAction,
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,26 +30,41 @@ import {
   requestIdentityState,
   requestIdentityUsers,
   resetIdentityUserPassword,
-  updateIdentityRolePermissions,
   updateIdentityUser,
   updatePharmacySettings,
 } from "./identity-api";
-import { identityMessages, type IdentityCopy } from "./identity-messages";
+import {
+  identityMessages,
+  roleDisplayName,
+  type IdentityCopy,
+} from "./identity-messages";
 import { useIdentityState } from "./identity-state-provider";
+import { daysUntil } from "./licence-dates";
 import { licensingMessages, type LicensingCopy } from "./licensing-messages";
+import { cataloguedPermissions } from "./permission-catalogue";
+import { formatNumber } from "./preferences";
 import { usePreferences } from "./preferences-provider";
+import { RoleEditor } from "./role-editor";
 
 interface PendingStepUp {
   readonly afterApproval: (challengeId: string) => Promise<void>;
   readonly challengeId: string;
 }
 
-const OWNER_PERMISSION_FLOOR = new Set([
-  "identity.roles.manage",
-  "identity.users.manage",
-]);
+/**
+ * How many days before expiry the owner panel starts warning. An engineering
+ * default for display only (docs/workflows.md: the owner sees the expiry and
+ * grace dates before disruption); the server enforces the boundary itself.
+ */
+const EXPIRY_WARNING_DAYS = 14;
 
 type AccessDenial = IdentityDenial | LicensingDenial;
+
+function formatLicenceDate(instant: string, locale: "ar" | "en"): string {
+  return new Date(instant).toLocaleDateString(
+    locale === "ar" ? "ar-IQ" : "en-IQ",
+  );
+}
 
 export function IdentityShell({
   baseUrl,
@@ -347,9 +362,13 @@ function AuthenticatedWorkspace({
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const [users, setUsers] = useState<IdentityUser[]>([]);
+  // The roles a user manager may assign: references only, from the users
+  // list, so assigning needs identity.users.manage and nothing more.
+  const [assignableRoles, setAssignableRoles] = useState<
+    IdentityRoleReference[]
+  >([]);
   const [roles, setRoles] = useState<IdentityRole[]>([]);
   const [permissionNames, setPermissionNames] = useState<string[]>([]);
-  const [roleDrafts, setRoleDrafts] = useState<Record<string, string[]>>({});
   const [userChallenge, setUserChallenge] = useState<string | null>(null);
   const [pendingStepUp, setPendingStepUp] = useState<PendingStepUp | null>(
     null,
@@ -385,6 +404,20 @@ function AuthenticatedWorkspace({
   );
   const canManageLicensing =
     state.allowedPermissions.includes("licensing.manage");
+  // Licence dates on the panel are display arithmetic on the renderer clock.
+  // The local API decides every boundary against Trusted Breev Time; a
+  // renderer clock that disagrees changes only what this card says.
+  const licence = state.entitlement.licence;
+  const daysUntilExpiry =
+    licence === null
+      ? null
+      : daysUntil(new Date().toISOString(), licence.expiresAt);
+  const licenceWarning =
+    state.entitlement.status === "grace"
+      ? licensingCopy.graceWarning
+      : daysUntilExpiry !== null && daysUntilExpiry <= EXPIRY_WARNING_DAYS
+        ? licensingCopy.expiryWarning(Math.max(0, daysUntilExpiry))
+        : null;
   const devicesCapability = requiredCapabilityFor("devices-panel");
   const canPairDevices =
     state.allowedPermissions.includes("devices.pair") &&
@@ -407,6 +440,7 @@ function AuthenticatedWorkspace({
       const response = await run(() => requestIdentityUsers(baseUrl));
       if (response !== undefined) {
         setUsers(response.users);
+        setAssignableRoles(response.roles);
       }
     }
     if (canManageRoles) {
@@ -414,11 +448,6 @@ function AuthenticatedWorkspace({
       if (response !== undefined) {
         setRoles(response.roles);
         setPermissionNames(response.permissions);
-        setRoleDrafts(
-          Object.fromEntries(
-            response.roles.map((role) => [role.id, role.grants]),
-          ),
-        );
       }
     }
   }, [baseUrl, canManageRoles, canManageUsers, run]);
@@ -489,7 +518,7 @@ function AuthenticatedWorkspace({
               {copy.welcome}, {state.user.displayName}
             </h2>
             <p>
-              {copy.roles[state.user.role]} · {state.user.username}
+              {roleDisplayName(state.user.role, copy)} · {state.user.username}
             </p>
           </div>
           <div className="workspace-actions">
@@ -608,27 +637,76 @@ function AuthenticatedWorkspace({
                   {licensingCopy.statuses[state.entitlement.status]}
                 </p>
               </div>
-              {state.entitlement.licence === null ? null : (
+              {licence === null ? null : (
                 <dl className="licence-facts">
                   <div>
                     <dt>{licensingCopy.plan}</dt>
-                    <dd>{state.entitlement.licence.plan}</dd>
+                    <dd>{licence.plan}</dd>
+                  </div>
+                  <div>
+                    <dt>{licensingCopy.issued}</dt>
+                    <dd>{formatLicenceDate(licence.issuedAt, locale)}</dd>
                   </div>
                   <div>
                     <dt>{licensingCopy.expires}</dt>
+                    <dd>{formatLicenceDate(licence.expiresAt, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{licensingCopy.graceUntil}</dt>
+                    <dd>{formatLicenceDate(licence.graceEndsAt, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{licensingCopy.daysRemaining}</dt>
                     <dd>
-                      {new Date(
-                        state.entitlement.licence.expiresAt,
-                      ).toLocaleDateString(locale === "ar" ? "ar-IQ" : "en-IQ")}
+                      {formatNumber(Math.max(0, daysUntilExpiry ?? 0), locale)}
                     </dd>
                   </div>
                   <div>
                     <dt>{licensingCopy.deviceAllowance}</dt>
-                    <dd>{state.entitlement.licence.permittedDeviceCount}</dd>
+                    <dd>{formatNumber(licence.permittedDeviceCount, locale)}</dd>
                   </div>
                 </dl>
               )}
             </div>
+
+            {licenceWarning === null ? null : (
+              <p className="licence-warning" role="status">
+                <span aria-hidden="true">⚠</span> {licenceWarning}
+              </p>
+            )}
+
+            {licence === null ? null : (
+              <div className="licence-grants">
+                <div>
+                  <h4>{licensingCopy.planFeatures}</h4>
+                  {licence.features.length === 0 ? (
+                    <p>{licensingCopy.planFeaturesNone}</p>
+                  ) : (
+                    <ul>
+                      {licence.features.map((capability) => (
+                        <li key={capability}>
+                          {licensingCopy.capabilities[capability]}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <h4>{licensingCopy.founderGrants}</h4>
+                  {licence.founderOverrideGrants.length === 0 ? (
+                    <p>{licensingCopy.founderGrantsNone}</p>
+                  ) : (
+                    <ul>
+                      {licence.founderOverrideGrants.map((capability) => (
+                        <li key={capability}>
+                          {licensingCopy.capabilities[capability]}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
 
             {canManageLicensing ? (
               <form
@@ -659,7 +737,7 @@ function AuthenticatedWorkspace({
                   );
                 }}
               >
-                <p>{licensingCopy.installDescription}</p>
+                <p>{licensingCopy.renewDescription}</p>
                 <label className="field-label">
                   <span>{licensingCopy.licenceDocument}</span>
                   <textarea
@@ -675,7 +753,7 @@ function AuthenticatedWorkspace({
                   id="licence-install-submit"
                   type="submit"
                 >
-                  {licensingCopy.install}
+                  {licensingCopy.renew}
                 </button>
               </form>
             ) : null}
@@ -793,7 +871,9 @@ function AuthenticatedWorkspace({
             <p>
               {state.allowedPermissions.length === 0
                 ? copy.denials["permission-denied"]
-                : state.allowedPermissions.join(" · ")}
+                : cataloguedPermissions(state.allowedPermissions)
+                    .map((permission) => copy.permissionLabels[permission].name)
+                    .join(" · ")}
             </p>
           </div>
         </article>
@@ -870,7 +950,7 @@ function AuthenticatedWorkspace({
                       displayName: requiredValue(data, "displayName"),
                       idempotencyKey: newIdempotencyKey(),
                       password: requiredValue(data, "password", false),
-                      role: requiredValue(data, "role") as PharmacyRoleKey,
+                      roleId: requiredValue(data, "roleId"),
                       username: requiredValue(data, "username"),
                     }),
                   ).then(async (created) => {
@@ -910,10 +990,10 @@ function AuthenticatedWorkspace({
                 />
                 <label className="field-label">
                   <span>{copy.role}</span>
-                  <select name="role" required>
-                    {Object.entries(copy.roles).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
+                  <select name="roleId" required>
+                    {assignableRoles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {roleDisplayName(role, copy)}
                       </option>
                     ))}
                   </select>
@@ -942,7 +1022,7 @@ function AuthenticatedWorkspace({
                   <div className="user-details">
                     <strong>{user.displayName}</strong>
                     <span>
-                      {user.username} · {copy.roles[user.role]}
+                      {user.username} · {roleDisplayName(user.role, copy)}
                     </span>
                     <form
                       key="display-name"
@@ -1000,10 +1080,10 @@ function AuthenticatedWorkspace({
                       onSubmit={(event) => {
                         event.preventDefault();
                         const form = event.currentTarget;
-                        const role = requiredValue(
+                        const roleId = requiredValue(
                           new FormData(form),
-                          "role",
-                        ) as PharmacyRoleKey;
+                          "roleId",
+                        );
                         void beginStepUp(
                           "identity.user.update",
                           user.id,
@@ -1013,7 +1093,7 @@ function AuthenticatedWorkspace({
                                 challengeId,
                                 expectedRevision: user.revision,
                                 idempotencyKey: newIdempotencyKey(),
-                                role,
+                                roleId,
                               }),
                             );
                             if (updated !== undefined) {
@@ -1030,10 +1110,14 @@ function AuthenticatedWorkspace({
                         <span>
                           {copy.role}: {user.username}
                         </span>
-                        <select defaultValue={user.role} name="role" required>
-                          {Object.entries(copy.roles).map(([key, label]) => (
-                            <option key={key} value={key}>
-                              {label}
+                        <select
+                          defaultValue={user.role.id}
+                          name="roleId"
+                          required
+                        >
+                          {assignableRoles.map((role) => (
+                            <option key={role.id} value={role.id}>
+                              {roleDisplayName(role, copy)}
                             </option>
                           ))}
                         </select>
@@ -1148,76 +1232,21 @@ function AuthenticatedWorkspace({
         ) : null}
 
         {canManageRoles ? (
-          <article className="identity-card admin-card">
-            <h3>{copy.permissionConfiguration}</h3>
-            <div className="role-grid">
-              {roles.map((role) => (
-                <fieldset key={role.id}>
-                  <legend>{copy.roles[role.key]}</legend>
-                  {permissionNames.map((permission) => (
-                    <label
-                      className="check-row permission-row"
-                      key={permission}
-                    >
-                      <input
-                        checked={(roleDrafts[role.id] ?? []).includes(
-                          permission,
-                        )}
-                        disabled={
-                          role.key === "owner" &&
-                          OWNER_PERMISSION_FLOOR.has(permission)
-                        }
-                        title={
-                          role.key === "owner" &&
-                          OWNER_PERMISSION_FLOOR.has(permission)
-                            ? copy.ownerPermissionFloor
-                            : undefined
-                        }
-                        type="checkbox"
-                        onChange={(event) =>
-                          setRoleDrafts((current) => ({
-                            ...current,
-                            [role.id]: event.target.checked
-                              ? [...(current[role.id] ?? []), permission].sort()
-                              : (current[role.id] ?? []).filter(
-                                  (item) => item !== permission,
-                                ),
-                          }))
-                        }
-                      />
-                      <span>{permission}</span>
-                    </label>
-                  ))}
-                  <button
-                    className="quiet-button"
-                    disabled={busy}
-                    id={`role-${role.id}-save-permissions`}
-                    type="button"
-                    onClick={() =>
-                      void beginStepUp(
-                        "identity.role.permissions.update",
-                        role.id,
-                        async (challengeId) => {
-                          await run(() =>
-                            updateIdentityRolePermissions(baseUrl, role.id, {
-                              challengeId,
-                              expectedRevision: role.revision,
-                              idempotencyKey: newIdempotencyKey(),
-                              permissions: roleDrafts[role.id] ?? [],
-                            }),
-                          );
-                          await loadAdministration();
-                          await refreshState();
-                        },
-                      )
-                    }
-                  >
-                    {copy.save}
-                  </button>
-                </fieldset>
-              ))}
-            </div>
-          </article>
+          <RoleEditor
+            baseUrl={baseUrl}
+            beginStepUp={beginStepUp}
+            busy={busy}
+            copy={copy}
+            currentUserRoleId={state.user.role.id}
+            denial={denial}
+            permissions={permissionNames}
+            roles={roles}
+            run={run}
+            onChanged={async () => {
+              await loadAdministration();
+              await refreshState();
+            }}
+          />
         ) : null}
       </div>
       {pendingStepUp === null ? null : (

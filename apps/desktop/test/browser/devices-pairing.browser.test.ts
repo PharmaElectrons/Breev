@@ -749,12 +749,24 @@ async function createUser(
     mainDevice,
     "identity.user.create",
   );
+  // Roles are assigned by id; the users list carries the assignable roles.
+  const listed = await apiRequest(origin, mainDevice, "GET", "/identity/users");
+  const roles =
+    (listed.body as { roles?: { id: string; key?: string; kind: string }[] })
+      .roles ?? [];
+  const roleId = roles.find(
+    (role) => role.kind === "built-in" && role.key === input.role,
+  )?.id;
+  if (roleId === undefined) {
+    throw new Error(`The built-in ${input.role} role is missing`);
+  }
+  const { role: _role, ...user } = input;
   const created = await apiRequest(
     origin,
     mainDevice,
     "POST",
     "/identity/users",
-    { ...input, challengeId, idempotencyKey: randomUUID() },
+    { ...user, challengeId, idempotencyKey: randomUUID(), roleId },
   );
   if (created.status !== 201) {
     throw new Error(

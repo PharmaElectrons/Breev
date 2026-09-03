@@ -26,8 +26,6 @@ export interface LicensingCopy {
   readonly founderGrantsNone: string;
   readonly graceUntil: string;
   readonly graceWarning: string;
-  readonly install: string;
-  readonly installDescription: string;
   readonly issued: string;
   readonly licenceDocument: string;
   readonly licenceStatus: string;
@@ -97,9 +95,6 @@ export const licensingMessages: Record<Locale, LicensingCopy> = {
     graceUntil: "فترة السماح حتى",
     graceWarning:
       "انتهت مدة الترخيص وتستمر الوظائف المدفوعة خلال فترة السماح. لا يمكن إقران نقطة بيع جديدة حتى التجديد.",
-    install: "تثبيت الترخيص",
-    installDescription:
-      "ألصق مستند الترخيص الموقّع. سيُطلب تأكيد كلمة المرور قبل التثبيت.",
     issued: "صدر في",
     licenceDocument: "مستند الترخيص الموقّع",
     licenceStatus: "حالة الترخيص",
@@ -164,9 +159,6 @@ export const licensingMessages: Record<Locale, LicensingCopy> = {
     graceUntil: "Grace period until",
     graceWarning:
       "The licence has expired and paid functions continue during the grace period. A new terminal cannot be paired until the licence is renewed.",
-    install: "Install licence",
-    installDescription:
-      "Paste the signed licence document. Password confirmation is required before installation.",
     issued: "Issued",
     licenceDocument: "Signed licence document",
     licenceStatus: "Licence status",

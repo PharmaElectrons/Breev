@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "8" as const;
-export const LOCAL_SCHEMA_VERSION = "8" as const;
+export const LOCAL_API_VERSION = "9" as const;
+export const LOCAL_SCHEMA_VERSION = "9" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -60,7 +60,9 @@ export const stepUpActionSchema = z.enum([
   "devices.pairing.start",
   "devices.revoke",
   "devices.seat.release.request",
+  "identity.role.create",
   "identity.role.permissions.update",
+  "identity.role.rename",
   "identity.user.password.reset",
   "identity.user.create",
   "identity.user.update",
@@ -82,6 +84,9 @@ export const IDENTITY_DENIAL_CODES = [
   "owner-permission-floor-required",
   "permission-denied",
   "rate-limit-exceeded",
+  "role-name-reserved",
+  "role-name-taken",
+  "role-not-custom",
   "session-expired",
   "session-missing",
   "session-revoked",
@@ -120,11 +125,52 @@ const identityCommandFields = {
 } as const;
 export const identityResourceIdSchema = z.uuidv7();
 
+/**
+ * Roles.
+ *
+ * Each user holds exactly one role and a user's permissions are exactly that
+ * role's grants (docs/domain.md, identity). A role is either one of the eight
+ * built-in roles, identified by its stable `key` and named by the renderer in
+ * the user's language, or a custom role the pharmacy created, identified only
+ * by its id and named verbatim by the pharmacy. The discriminant is `kind`,
+ * never the name: a custom role called "Owner" is still a custom role.
+ *
+ * `identityRoleReferenceSchema` is what a user carries; `identityRoleSchema`
+ * adds the revision and the grants that the administration screens edit.
+ */
+export const customRoleNameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine((value) => value === value.trim());
+const builtInRoleReferenceFields = {
+  id: z.uuidv7(),
+  kind: z.literal("built-in"),
+  key: pharmacyRoleKeySchema,
+} as const;
+const customRoleReferenceFields = {
+  id: z.uuidv7(),
+  kind: z.literal("custom"),
+  name: customRoleNameSchema,
+} as const;
+const roleAuthorityFields = {
+  revision: decimalRevisionSchema,
+  grants: z.array(permissionNameSchema),
+} as const;
+export const identityRoleReferenceSchema = z.discriminatedUnion("kind", [
+  z.strictObject(builtInRoleReferenceFields),
+  z.strictObject(customRoleReferenceFields),
+]);
+export const identityRoleSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ ...builtInRoleReferenceFields, ...roleAuthorityFields }),
+  z.strictObject({ ...customRoleReferenceFields, ...roleAuthorityFields }),
+]);
+
 export const identityUserSchema = z.strictObject({
   id: z.uuidv7(),
   displayName: displayNameSchema,
   username: usernameSchema,
-  role: pharmacyRoleKeySchema,
+  role: identityRoleReferenceSchema,
   status: z.enum(["active", "locked"]),
   revision: decimalRevisionSchema,
 });
@@ -233,14 +279,14 @@ export const identityCreateUserRequestSchema = z.strictObject({
   displayName: displayNameSchema,
   username: usernameSchema,
   password: passwordSchema,
-  role: pharmacyRoleKeySchema,
+  roleId: identityResourceIdSchema,
 });
 export const identityUpdateUserRequestSchema = z.strictObject({
   ...identityCommandFields,
   challengeId: z.uuidv7(),
   displayName: displayNameSchema.optional(),
   expectedRevision: decimalRevisionSchema,
-  role: pharmacyRoleKeySchema.optional(),
+  roleId: identityResourceIdSchema.optional(),
   status: z.enum(["active", "locked"]).optional(),
 });
 export const identityChangePasswordRequestSchema = z.strictObject({
@@ -255,14 +301,13 @@ export const identityResetUserPasswordRequestSchema = z.strictObject({
   expectedRevision: decimalRevisionSchema,
   newPassword: passwordSchema,
 });
-export const identityRoleSchema = z.strictObject({
-  id: z.uuidv7(),
-  key: pharmacyRoleKeySchema,
-  revision: decimalRevisionSchema,
-  grants: z.array(permissionNameSchema),
-});
+/**
+ * The eight built-in roles are always present; custom roles follow them. The
+ * `permissions` list is the grantable vocabulary — only names backed by an
+ * implemented operation.
+ */
 export const identityRolesSchema = z.strictObject({
-  roles: z.array(identityRoleSchema).length(PHARMACY_ROLE_KEYS.length),
+  roles: z.array(identityRoleSchema).min(PHARMACY_ROLE_KEYS.length),
   permissions: z.array(permissionNameSchema),
 });
 export const identityUpdateRolePermissionsRequestSchema = z.strictObject({
@@ -270,6 +315,19 @@ export const identityUpdateRolePermissionsRequestSchema = z.strictObject({
   challengeId: z.uuidv7(),
   expectedRevision: decimalRevisionSchema,
   permissions: z.array(permissionNameSchema).max(128),
+});
+/** A custom role is created with its name and its initial grants in one command. */
+export const identityCreateRoleRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  challengeId: z.uuidv7(),
+  name: customRoleNameSchema,
+  permissions: z.array(permissionNameSchema).max(128),
+});
+export const identityRenameRoleRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  challengeId: z.uuidv7(),
+  expectedRevision: decimalRevisionSchema,
+  name: customRoleNameSchema,
 });
 export const pharmacySettingsUpdateRequestSchema = z.strictObject({
   ...identityCommandFields,
@@ -381,11 +439,21 @@ export const identityRolesContract = {
     403: identityOrEntitlementDenialSchema,
   },
 } as const;
+/**
+ * The users list carries the assignable roles as references, so a holder of
+ * `identity.users.manage` can assign a role by id without holding
+ * `identity.roles.manage`; grants stay on the roles route.
+ */
 export const identityUsersContract = {
   method: "GET",
   path: "/identity/users",
   responses: {
-    200: z.strictObject({ users: z.array(identityUserSchema) }),
+    200: z.strictObject({
+      roles: z
+        .array(identityRoleReferenceSchema)
+        .min(PHARMACY_ROLE_KEYS.length),
+      users: z.array(identityUserSchema),
+    }),
     401: identityDenialSchema,
     403: identityOrEntitlementDenialSchema,
   },
@@ -472,6 +540,35 @@ export const identityStepUpApproveContract = {
     404: identityDenialSchema,
     409: identityDenialSchema,
     429: identityDenialSchema,
+  },
+} as const;
+export const identityCreateRoleContract = {
+  method: "POST",
+  path: "/identity/roles",
+  request: { body: identityCreateRoleRequestSchema },
+  responses: {
+    201: identityRoleSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
+export const identityRolePath = (roleId: string): string =>
+  `/identity/roles/${roleId}`;
+/** Rename applies to custom roles only; a built-in role answers `role-not-custom`. */
+export const identityRenameRoleContract = {
+  method: "PATCH",
+  path: "/identity/roles/:roleId",
+  request: { body: identityRenameRoleRequestSchema },
+  responses: {
+    200: identityRoleSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
   },
 } as const;
 export const identityRolePermissionsPath = (roleId: string): string =>
@@ -1536,10 +1633,20 @@ export type IdentityChangePasswordRequest = z.infer<
 export type IdentityResetUserPasswordRequest = z.infer<
   typeof identityResetUserPasswordRequestSchema
 >;
+export type IdentityRoleReference = z.infer<typeof identityRoleReferenceSchema>;
 export type IdentityRole = z.infer<typeof identityRoleSchema>;
 export type IdentityRoles = z.infer<typeof identityRolesSchema>;
+export type IdentityUsers = z.infer<
+  (typeof identityUsersContract.responses)[200]
+>;
 export type IdentityUpdateRolePermissionsRequest = z.infer<
   typeof identityUpdateRolePermissionsRequestSchema
+>;
+export type IdentityCreateRoleRequest = z.infer<
+  typeof identityCreateRoleRequestSchema
+>;
+export type IdentityRenameRoleRequest = z.infer<
+  typeof identityRenameRoleRequestSchema
 >;
 export type PharmacySettingsUpdateRequest = z.infer<
   typeof pharmacySettingsUpdateRequestSchema

@@ -23,12 +23,21 @@ import {
   CATALOG_CONTRACTS,
   CATALOG_DENIAL_CODES,
   identityChangePasswordRequestSchema,
+  identityCreateRoleContract,
+  identityCreateRoleRequestSchema,
   identityCreateUserRequestSchema,
+  identityRenameRoleContract,
+  identityRenameRoleRequestSchema,
   identityResetUserPasswordRequestSchema,
+  identityRolePath,
+  identityRoleSchema,
+  identityRolesSchema,
   identityStepUpApproveRequestSchema,
   identityStepUpCreateRequestSchema,
   identityUpdateRolePermissionsRequestSchema,
   identityUpdateUserRequestSchema,
+  identityUserSchema,
+  PHARMACY_ROLE_KEYS,
   deviceInventoryContract,
   deviceInventorySchema,
   deviceRevocationContract,
@@ -88,8 +97,26 @@ describe("identity mutation contracts", () => {
         displayName: "New User",
         idempotencyKey: COMMAND_ID,
         password: "a sufficiently long private password",
-        role: "pharmacist",
+        roleId: COMMAND_ID,
         username: "new.user",
+      },
+    ],
+    [
+      identityCreateRoleRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        idempotencyKey: COMMAND_ID,
+        name: "Senior cashier",
+        permissions: ["catalog.item.manage"],
+      },
+    ],
+    [
+      identityRenameRoleRequestSchema,
+      {
+        challengeId: COMMAND_ID,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        name: "Senior cashier",
       },
     ],
     [
@@ -189,10 +216,137 @@ describe("identity mutation contracts", () => {
   );
 });
 
+describe("identity role contracts", () => {
+  const builtIn = {
+    grants: ["attendance.record"],
+    id: COMMAND_ID,
+    key: "manager",
+    kind: "built-in",
+    revision: "1",
+  };
+  const custom = {
+    grants: [],
+    id: COMMAND_ID,
+    kind: "custom",
+    name: "Senior cashier",
+    revision: "1",
+  };
+
+  it("carries a built-in role by key and a custom role by name, never both", () => {
+    expect(identityRoleSchema.parse(builtIn)).toEqual(builtIn);
+    expect(identityRoleSchema.parse(custom)).toEqual(custom);
+    for (const malformed of [
+      { ...builtIn, name: "Owner" },
+      { ...custom, key: "owner" },
+      { ...custom, kind: "built-in" },
+      { ...builtIn, kind: "system" },
+      { ...custom, name: "" },
+      { ...custom, name: " Senior cashier" },
+      { ...custom, name: "x".repeat(65) },
+    ]) {
+      expect(
+        identityRoleSchema.safeParse(malformed).success,
+        JSON.stringify(malformed),
+      ).toBe(false);
+    }
+  });
+
+  it("requires at least the eight built-in roles and accepts custom roles beyond them", () => {
+    const eight = PHARMACY_ROLE_KEYS.map((key, index) => ({
+      ...builtIn,
+      id: `0198e7ce-7685-7000-8000-0000000000${String(index + 10)}`,
+      key,
+    }));
+    expect(
+      identityRolesSchema.safeParse({ permissions: [], roles: eight }).success,
+    ).toBe(true);
+    expect(
+      identityRolesSchema.safeParse({
+        permissions: [],
+        roles: [...eight, custom],
+      }).success,
+    ).toBe(true);
+    expect(
+      identityRolesSchema.safeParse({ permissions: [], roles: eight.slice(1) })
+        .success,
+    ).toBe(false);
+  });
+
+  it("assigns a role to a user by id and never by key", () => {
+    const create = {
+      challengeId: COMMAND_ID,
+      displayName: "New User",
+      idempotencyKey: COMMAND_ID,
+      password: "a sufficiently long private password",
+      roleId: COMMAND_ID,
+      username: "new.user",
+    };
+    expect(identityCreateUserRequestSchema.safeParse(create).success).toBe(
+      true,
+    );
+    const { roleId, ...withoutRole } = create;
+    expect(roleId).toBe(COMMAND_ID);
+    expect(
+      identityCreateUserRequestSchema.safeParse({
+        ...withoutRole,
+        role: "pharmacist",
+      }).success,
+    ).toBe(false);
+    expect(
+      identityUpdateUserRequestSchema.safeParse({
+        challengeId: COMMAND_ID,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        role: "pharmacist",
+      }).success,
+    ).toBe(false);
+    expect(
+      identityUpdateUserRequestSchema.safeParse({
+        challengeId: COMMAND_ID,
+        expectedRevision: "1",
+        idempotencyKey: COMMAND_ID,
+        roleId: COMMAND_ID,
+      }).success,
+    ).toBe(true);
+    const user = {
+      displayName: "A User",
+      id: COMMAND_ID,
+      revision: "1",
+      status: "active",
+      username: "a.user",
+    };
+    expect(
+      identityUserSchema.safeParse({ ...user, role: "owner" }).success,
+    ).toBe(false);
+    expect(
+      identityUserSchema.parse({
+        ...user,
+        role: { id: COMMAND_ID, key: "owner", kind: "built-in" },
+      }).role,
+    ).toEqual({ id: COMMAND_ID, key: "owner", kind: "built-in" });
+    expect(
+      identityUserSchema.parse({
+        ...user,
+        role: { id: COMMAND_ID, kind: "custom", name: "Senior cashier" },
+      }).role,
+    ).toEqual({ id: COMMAND_ID, kind: "custom", name: "Senior cashier" });
+  });
+
+  it("names the role commands and their Step-Up actions", () => {
+    expect(stepUpActionSchema.options).toContain("identity.role.create");
+    expect(stepUpActionSchema.options).toContain("identity.role.rename");
+    expect(identityCreateRoleContract.method).toBe("POST");
+    expect(identityCreateRoleContract.path).toBe("/identity/roles");
+    expect(identityRenameRoleContract.method).toBe("PATCH");
+    expect(identityRenameRoleContract.path).toBe("/identity/roles/:roleId");
+    expect(identityRolePath(COMMAND_ID)).toBe(`/identity/roles/${COMMAND_ID}`);
+  });
+});
+
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("8");
-    expect(LOCAL_SCHEMA_VERSION).toBe("8");
+    expect(LOCAL_API_VERSION).toBe("9");
+    expect(LOCAL_SCHEMA_VERSION).toBe("9");
   });
 
   it("accepts the healthy handshake", () => {

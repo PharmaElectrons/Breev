@@ -281,6 +281,20 @@ describe.sequential("terminal pairing persistence seam", () => {
     return request;
   }
 
+  async function roleIdFor(key: string): Promise<string> {
+    const result = await database
+      .requirePool()
+      .query<{ id: string }>(
+        "select id from pharmacy_roles where role_key = $1",
+        [key],
+      );
+    const id = result.rows[0]?.id;
+    if (id === undefined) {
+      throw new Error(`The built-in ${key} role is missing`);
+    }
+    return id;
+  }
+
   async function ownerId(): Promise<string> {
     const result = await database
       .requirePool()
@@ -1266,7 +1280,7 @@ describe.sequential("terminal pairing persistence seam", () => {
       displayName: "Counter Pharmacist",
       idempotencyKey,
       password: "a password typed at the till",
-      role: "pharmacist",
+      roleId: await roleIdFor("pharmacist"),
       username: "counter.pharmacist",
     });
     expect(created.username).toBe("counter.pharmacist");
@@ -1505,7 +1519,7 @@ describe.sequential("terminal pairing persistence seam", () => {
       displayName: "Second Owner",
       idempotencyKey: randomUUID(),
       password: APPROVER_PASSWORD,
-      role: "owner",
+      roleId: await roleIdFor("owner"),
       username: "second.owner",
     });
 

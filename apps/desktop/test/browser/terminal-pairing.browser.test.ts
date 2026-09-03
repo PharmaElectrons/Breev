@@ -684,7 +684,11 @@ function terminalIdentityState(): IdentityAuthenticatedState {
       displayName: "Terminal Cashier",
       id: "019b0000-0000-7000-8000-000000000405",
       revision: "1",
-      role: "sales_employee",
+      role: {
+        id: "019b0000-0000-7000-8000-000000000406",
+        key: "sales_employee",
+        kind: "built-in",
+      },
       status: "active",
       username: "terminal.cashier",
     },

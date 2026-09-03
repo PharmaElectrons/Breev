@@ -685,9 +685,10 @@ test.describe.serial("bilingual desktop shell", () => {
       .getByLabel("Password", { exact: true })
       .last()
       .fill("browser manager password is private");
+    // Roles are chosen by their localized name; the wire carries the role id.
     await page
       .getByRole("combobox", { name: "Role", exact: true })
-      .selectOption("manager");
+      .selectOption({ label: "Manager" });
     await page.getByRole("button", { name: "Create user" }).click();
     await expect(page.getByText("Browser Manager")).toBeVisible();
 
@@ -700,11 +701,19 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager" }),
     ).toBeVisible();
+    // The built-in manager role is seeded with role administration and
+    // nothing else: the role editor is offered, user management is not, and
+    // the permission summary names the one permission in plain words.
     await expect(
       page.getByRole("heading", { name: "User management" }),
     ).toHaveCount(0);
     await expect(
-      page.getByText("Your account does not have the required permission."),
+      page.getByRole("heading", { name: "Configure role permissions" }),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator(".permission-summary")
+        .getByText("Manage roles and permissions", { exact: true }),
     ).toBeVisible();
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
@@ -861,7 +870,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await managerRow
       .getByRole("combobox", { name: "Role: browser.manager" })
-      .selectOption("pharmacist");
+      .selectOption({ label: "Pharmacist" });
     const saveRole = managerRow.getByRole("button", { name: "Save role" });
     await saveRole.click();
 
@@ -884,11 +893,13 @@ test.describe.serial("bilingual desktop shell", () => {
         headers: { Accept: "application/json" },
       });
       return await response.json();
-    })) as { users: { username: string; role: string }[] };
+    })) as { users: { username: string; role: { key?: string } }[] };
     const managerUser = usersResponse.users.find(
       (u) => u.username === "browser.manager",
     );
-    expect(managerUser?.role).toBe("pharmacist");
+    expect(managerUser?.role).toEqual(
+      expect.objectContaining({ key: "pharmacist", kind: "built-in" }),
+    );
 
     const ownerRow = page
       .locator(".user-list li")
@@ -896,7 +907,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await ownerRow
       .getByRole("combobox", { name: "Role: browser.owner" })
-      .selectOption("manager");
+      .selectOption({ label: "Manager" });
     await ownerRow.getByRole("button", { name: "Save role" }).click();
 
     await page
@@ -912,9 +923,12 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByText("At least one active owner must remain."),
     ).toBeVisible();
     await page.locator(".denial-alert .dismiss-button").click();
+    // The selector shows the real server value again, not the refused one.
     await expect(
-      ownerRow.getByRole("combobox", { name: "Role: browser.owner" }),
-    ).toHaveValue("owner");
+      ownerRow
+        .getByRole("combobox", { name: "Role: browser.owner" })
+        .locator("option:checked"),
+    ).toHaveText("Owner");
 
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
@@ -933,6 +947,140 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByRole("button", { name: "Use light theme" }).click();
   });
 
+  test("creates a custom role with only the chosen permissions and assigns it by name in both locales", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    // The editor names every permission in plain words; no internal id such
+    // as "identity.roles.manage" is visible anywhere in it.
+    const editor = page.locator(".role-editor");
+    await expect(editor).toBeVisible();
+    expect(await editor.innerText()).not.toMatch(
+      /\b[a-z]+\.[a-z_]+(?:\.[a-z_]+)?\b/u,
+    );
+    const roleList = page.getByRole("navigation", { name: "Roles" });
+    await expect(
+      roleList.getByRole("button", { name: "Owner 7 of 7 permissions" }),
+    ).toBeVisible();
+
+    // Keyboard-only creation: Enter on Add role focuses the name field.
+    const addRole = page.getByRole("button", { name: "Add role" });
+    await addRole.focus();
+    await page.keyboard.press("Enter");
+    const newRole = page.getByRole("region", { name: "New role" });
+    await expect(newRole.getByLabel("Role name")).toBeFocused();
+    await page.keyboard.type("Senior cashier");
+    await newRole.getByLabel("Manage products", { exact: true }).check();
+    const createRole = newRole.getByRole("button", { name: "Create role" });
+    await createRole.focus();
+    await page.keyboard.press("Enter");
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page.keyboard.press("Enter");
+
+    // The new role is selected, shows exactly the chosen grant, and Save
+    // stays disabled until something changes.
+    const details = page.getByRole("region", { name: "Senior cashier" });
+    await expect(details).toBeVisible();
+    await expect(
+      details.getByText("Custom role of this pharmacy"),
+    ).toBeVisible();
+    await expect(
+      details.getByLabel("Manage products", { exact: true }),
+    ).toBeChecked();
+    await expect(
+      details.getByLabel("Manage users", { exact: true }),
+    ).not.toBeChecked();
+    await expect(
+      details.getByRole("button", { name: "Save permissions" }),
+    ).toBeDisabled();
+    await expect(
+      roleList.getByRole("button", {
+        name: "Senior cashier 1 of 7 permissions",
+      }),
+    ).toBeVisible();
+
+    // Assignment by name, through the ordinary user controls.
+    const managerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Manager Renamed" });
+    await managerRow
+      .getByRole("combobox", { name: "Role: browser.manager" })
+      .selectOption({ label: "Senior cashier" });
+    const saveRole = managerRow.getByRole("button", { name: "Save role" });
+    await saveRole.click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+    await expect(
+      managerRow.getByText("browser.manager · Senior cashier"),
+    ).toBeVisible();
+    await expect(saveRole).toBeFocused();
+    const usersResponse = (await page.evaluate(async () => {
+      const response = await fetch("/identity/users", {
+        headers: { Accept: "application/json" },
+      });
+      return await response.json();
+    })) as { users: { username: string; role: { name?: string } }[] };
+    expect(
+      usersResponse.users.find((u) => u.username === "browser.manager")?.role,
+    ).toEqual(
+      expect.objectContaining({ kind: "custom", name: "Senior cashier" }),
+    );
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("issue-roles/after/en-light-custom-role.png"),
+    });
+
+    // Arabic: built-in roles carry Breev's Arabic names; the custom role keeps
+    // the pharmacy's own spelling in both languages.
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
+    const arabicRoleList = page.getByRole("navigation", { name: "الأدوار" });
+    await expect(
+      arabicRoleList.getByRole("button", { name: "المدير" }),
+    ).toBeVisible();
+    await expect(
+      arabicRoleList.getByRole("button", { name: "Senior cashier" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Senior cashier" }),
+    ).toBeVisible();
+    await expect(
+      managerRow.getByText("browser.manager · Senior cashier"),
+    ).toBeVisible();
+    expect(await editor.innerText()).not.toMatch(
+      /\b[a-z]+\.[a-z_]+(?:\.[a-z_]+)?\b/u,
+    );
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("issue-roles/after/ar-dark-custom-role.png"),
+    });
+
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
   test("configures attendance and roles with Step-Up, then presents a locked login generically", async ({
     page,
   }) => {
@@ -942,15 +1090,22 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(renderer.origin);
-    const managerRole = page.getByRole("group", { name: "Manager" });
+    await page
+      .getByRole("navigation", { name: "Roles" })
+      .getByRole("button", { name: "Manager" })
+      .click();
+    const managerRole = page.getByRole("region", { name: "Manager" });
     await expect(managerRole).toBeVisible();
+    await expect(
+      managerRole.getByRole("button", { name: "Save permissions" }),
+    ).toBeDisabled();
     for (const permission of [
-      "attendance.record",
-      "pharmacy.settings.manage",
+      "Record attendance",
+      "Change pharmacy settings",
     ]) {
-      await managerRole.getByLabel(permission).check();
+      await managerRole.getByLabel(permission, { exact: true }).check();
     }
-    await managerRole.getByRole("button", { name: "Save" }).click();
+    await managerRole.getByRole("button", { name: "Save permissions" }).click();
     await page
       .getByRole("dialog")
       .getByLabel("Password")

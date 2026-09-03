@@ -1192,34 +1192,6 @@ a:focus-visible,
   font-size: 0.82rem;
 }
 
-.role-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.role-grid fieldset {
-  display: grid;
-  align-content: start;
-  gap: 0.15rem;
-  min-inline-size: 0;
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 0.85rem;
-  padding: 1rem;
-}
-
-.role-grid legend {
-  padding-inline: 0.35rem;
-  font-weight: 800;
-}
-
-.permission-row span {
-  overflow-wrap: anywhere;
-  font-family: var(--font-family-mono);
-  font-size: 0.75rem;
-}
-
 .denial-alert {
   position: relative;
   display: grid;
@@ -1861,7 +1833,6 @@ a:focus-visible,
   }
 
   .user-form,
-  .role-grid,
   .licensing-grid,
   .pairing-endpoint-fields,
   .pairing-invitation {
@@ -1914,5 +1885,188 @@ a:focus-visible,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Roles and permissions: master list beside the selected role. */
+.role-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.6fr);
+  align-items: start;
+  gap: 1rem;
+}
+
+.role-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.role-list button {
+  display: flex;
+  inline-size: 100%;
+  min-block-size: 2.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.8rem;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 700;
+  text-align: start;
+}
+
+.role-list button[aria-current="page"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--background));
+  color: var(--primary);
+}
+
+.role-list .role-name {
+  overflow-wrap: anywhere;
+}
+
+.role-count {
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.role-details {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 1rem;
+}
+
+.role-details h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.role-kind {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+
+.role-rename-form {
+  display: flex;
+  align-items: end;
+  gap: 0.65rem;
+}
+
+.role-rename-form .field-label {
+  flex: 1;
+}
+
+.permission-groups {
+  display: grid;
+  gap: 1rem;
+}
+
+.permission-group {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.permission-group legend {
+  padding: 0;
+  font-weight: 800;
+}
+
+.permission-item {
+  display: grid;
+  gap: 0;
+}
+
+.permission-item .check-row {
+  min-block-size: 2.5rem;
+  font-weight: 600;
+}
+
+.permission-description {
+  margin: 0;
+  padding-inline-start: 1.85rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.role-warning {
+  margin: 0;
+  border: 1px solid var(--warning);
+  border-radius: 0.7rem;
+  padding: 0.75rem 1rem;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+@media (max-width: 37rem) {
+  .role-editor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .role-rename-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+/* Owner licence panel: the warning and the plan-versus-founder lists. */
+.licence-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  border: 1px solid var(--warning);
+  border-radius: 0.7rem;
+  padding: 0.75rem 1rem;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.licence-grants {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 1rem;
+}
+
+.licence-grants h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+
+.licence-grants ul {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-inline-start: 1.1rem;
+}
+
+.licence-grants p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 37rem) {
+  .licence-grants {
+    grid-template-columns: 1fr;
   }
 }

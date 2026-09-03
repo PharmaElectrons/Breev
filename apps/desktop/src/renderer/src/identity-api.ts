@@ -5,10 +5,13 @@ import {
   BREEV_CSRF_VALUE,
   identityBootstrapContract,
   identityChangePasswordContract,
+  identityCreateRoleContract,
   identityCreateUserContract,
   identityDenialSchema,
   identityLoginContract,
   identityLogoutContract,
+  identityRenameRoleContract,
+  identityRolePath,
   identityRolePermissionsPath,
   identityRoleSchema,
   identityResetUserPasswordContract,
@@ -36,9 +39,11 @@ import {
   type IdentityAuthenticatedState,
   type IdentityBootstrapRequest,
   type IdentityChangePasswordRequest,
+  type IdentityCreateRoleRequest,
   type IdentityCreateUserRequest,
   type IdentityDenial,
   type IdentityLoginRequest,
+  type IdentityRenameRoleRequest,
   type IdentityRole,
   type IdentityResetUserPasswordRequest,
   type IdentityRoles,
@@ -49,6 +54,7 @@ import {
   type IdentityUpdateRolePermissionsRequest,
   type IdentityUpdateUserRequest,
   type IdentityUser,
+  type IdentityUsers,
   type EntitlementContext,
   type LicenceDeactivateRequest,
   type LicenceInstallRequest,
@@ -146,7 +152,7 @@ export async function requestIdentityRoles(
 
 export async function requestIdentityUsers(
   baseUrl: string,
-): Promise<{ users: IdentityUser[] }> {
+): Promise<IdentityUsers> {
   return await requestJson(
     baseUrl,
     identityUsersContract.path,
@@ -239,6 +245,35 @@ export async function approveStepUpChallenge(
     "POST",
     200,
     identityStepUpChallengeSchema,
+    body,
+  );
+}
+
+export async function createIdentityRole(
+  baseUrl: string,
+  body: IdentityCreateRoleRequest,
+): Promise<IdentityRole> {
+  return await requestJson(
+    baseUrl,
+    identityCreateRoleContract.path,
+    identityCreateRoleContract.method,
+    201,
+    identityRoleSchema,
+    body,
+  );
+}
+
+export async function renameIdentityRole(
+  baseUrl: string,
+  roleId: string,
+  body: IdentityRenameRoleRequest,
+): Promise<IdentityRole> {
+  return await requestJson(
+    baseUrl,
+    identityRolePath(roleId),
+    identityRenameRoleContract.method,
+    200,
+    identityRoleSchema,
     body,
   );
 }
