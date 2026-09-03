@@ -89,8 +89,8 @@ describe("supplier and purchase draft contracts", () => {
   it("has no supplier or draft hard-delete route", () => {
     expect(PURCHASING_CONTRACTS).toHaveLength(10);
     expect(
-      PURCHASING_CONTRACTS.every((contract) => contract.method !== "DELETE"),
-    ).toBe(true);
+      PURCHASING_CONTRACTS.map((contract) => contract.method),
+    ).not.toContain("DELETE");
   });
 
   it("requires an effective date on every supplier default", () => {
