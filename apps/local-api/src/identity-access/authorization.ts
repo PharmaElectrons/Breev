@@ -8,8 +8,10 @@ export const PERMISSION_NAMES = [
   "licensing.manage",
   "pharmacy.settings.manage",
   "pricing.below_cost",
+  "purchases.drafts.manage",
   "sales.invoice.reverse",
   "sales.return.post",
+  "suppliers.manage",
   "sync.conflict.resolve",
 ] as const;
 
@@ -32,6 +34,8 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "identity.users.manage",
   "licensing.manage",
   "pharmacy.settings.manage",
+  "purchases.drafts.manage",
+  "suppliers.manage",
 ] as const satisfies readonly PermissionName[];
 
 export type ImplementedPermissionName =

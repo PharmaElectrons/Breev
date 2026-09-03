@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "9" as const;
-export const LOCAL_SCHEMA_VERSION = "9" as const;
+export const LOCAL_API_VERSION = "10" as const;
+export const LOCAL_SCHEMA_VERSION = "10" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -1617,6 +1617,250 @@ export const CATALOG_CONTRACTS = [
   productReadContract,
 ] as const;
 
+const supplierNameSchema = z
+  .string()
+  .min(1)
+  .max(160)
+  .refine((value) => value === value.trim());
+const supplierTermsSchema = z
+  .string()
+  .min(1)
+  .max(1_000)
+  .refine((value) => value === value.trim())
+  .nullable();
+/** Exact percentage text with at most six decimal places; never a JS number. */
+export const allowancePercentageSchema = z
+  .string()
+  .regex(/^(?:100(?:\.0{1,6})?|(?:0|[1-9]\d?)(?:\.\d{1,6})?)$/u);
+const supplierFields = {
+  allowanceEffectiveFrom: z.iso.date(),
+  defaultAllowancePercentage: allowancePercentageSchema,
+  name: supplierNameSchema,
+  terms: supplierTermsSchema,
+} as const;
+
+export const supplierSchema = z.strictObject({
+  ...supplierFields,
+  id: z.uuidv7(),
+  mergedIntoSupplierId: z.uuidv7().nullable(),
+  revision: decimalRevisionSchema,
+  status: z.enum(["active", "archived", "merged"]),
+});
+export const supplierCreateRequestSchema = z.strictObject({
+  ...supplierFields,
+  idempotencyKey: z.uuid(),
+});
+export const supplierEditRequestSchema = z.strictObject({
+  ...supplierFields,
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const supplierArchiveRequestSchema = z.strictObject({
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const supplierMergeRequestSchema = z.strictObject({
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  survivorSupplierId: z.uuidv7(),
+});
+
+export const purchaseSettlementContextSchema = z.enum(["cash", "debt"]);
+const purchaseDraftHeaderFields = {
+  invoiceDate: z.iso.date(),
+  settlementContext: purchaseSettlementContextSchema,
+  supplierId: z.uuidv7(),
+  supplierInvoiceNumber: z
+    .string()
+    .min(1)
+    .max(120)
+    .refine((value) => value === value.trim()),
+} as const;
+export const purchaseDraftSchema = z.strictObject({
+  ...purchaseDraftHeaderFields,
+  allowanceSnapshot: z.strictObject({
+    basisFils: z.string().regex(/^0$|^[1-9]\d*$/u),
+    percentage: allowancePercentageSchema,
+  }),
+  createdAt: z.iso.datetime(),
+  id: z.uuidv7(),
+  status: z.enum(["active", "discarded"]),
+  supplierNameSnapshot: supplierNameSchema,
+  updatedAt: z.iso.datetime(),
+  version: decimalRevisionSchema,
+});
+export const purchaseDraftWarningSchema = z.strictObject({
+  code: z.literal("duplicate-supplier-invoice-number"),
+  existingDraftIds: z.array(z.uuidv7()).min(1),
+  operationalRule: z.literal("warn-open-decision"),
+});
+export const purchaseDraftResultSchema = z.strictObject({
+  draft: purchaseDraftSchema,
+  warnings: z.array(purchaseDraftWarningSchema),
+});
+export const purchaseDraftCreateRequestSchema = z.strictObject({
+  ...purchaseDraftHeaderFields,
+  idempotencyKey: z.uuid(),
+});
+export const purchaseDraftUpdateRequestSchema = z.strictObject({
+  ...purchaseDraftHeaderFields,
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const purchaseDraftDiscardRequestSchema = z.strictObject({
+  confirmation: z.literal("discard-populated-purchase-draft"),
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+
+export const PURCHASING_FIELD_ERROR_CODES = [
+  "invalid",
+  "out-of-range",
+  "required",
+  "too-long",
+  "unknown-field",
+] as const;
+export const purchasingFieldErrorSchema = z.strictObject({
+  code: z.enum(PURCHASING_FIELD_ERROR_CODES),
+  path: z
+    .array(z.union([z.string().min(1), z.number().int().min(0)]))
+    .min(1)
+    .max(8),
+});
+export const PURCHASING_DENIAL_CODES = [
+  "body-invalid",
+  "draft-discarded",
+  "draft-not-found",
+  "idempotency-conflict",
+  "merge-into-self",
+  "merge-survivor-not-mergeable",
+  "allowance-rate-date-conflict",
+  "supplier-no-rate-on-date",
+  "supplier-archived",
+  "supplier-merged",
+  "supplier-not-found",
+  "version-conflict",
+] as const;
+export const purchasingDenialSchema = z.strictObject({
+  code: z.enum(PURCHASING_DENIAL_CODES),
+  fieldErrors: z.array(purchasingFieldErrorSchema),
+  requestId: z.uuidv7(),
+  status: z.literal("denied"),
+});
+const purchasingReadDenialResponses = {
+  401: identityDenialSchema,
+  403: identityOrEntitlementDenialSchema,
+} as const;
+const purchasingCommandDenialResponses = {
+  ...purchasingReadDenialResponses,
+  400: purchasingDenialSchema,
+  404: purchasingDenialSchema,
+  409: purchasingDenialSchema,
+} as const;
+
+export const supplierListContract = {
+  method: "GET",
+  path: "/suppliers",
+  responses: {
+    200: z.strictObject({ suppliers: z.array(supplierSchema) }),
+    ...purchasingReadDenialResponses,
+  },
+} as const;
+export const supplierCreateContract = {
+  method: "POST",
+  path: "/suppliers",
+  request: { body: supplierCreateRequestSchema },
+  responses: { 201: supplierSchema, ...purchasingCommandDenialResponses },
+} as const;
+export const supplierEditContract = {
+  method: "PUT",
+  path: "/suppliers/:supplierId",
+  request: { body: supplierEditRequestSchema },
+  responses: { 200: supplierSchema, ...purchasingCommandDenialResponses },
+} as const;
+export const supplierArchiveContract = {
+  method: "POST",
+  path: "/suppliers/:supplierId/archivals",
+  request: { body: supplierArchiveRequestSchema },
+  responses: { 201: supplierSchema, ...purchasingCommandDenialResponses },
+} as const;
+export const supplierMergeContract = {
+  method: "POST",
+  path: "/suppliers/:supplierId/merges",
+  request: { body: supplierMergeRequestSchema },
+  responses: { 201: supplierSchema, ...purchasingCommandDenialResponses },
+} as const;
+export const purchaseDraftListContract = {
+  method: "GET",
+  path: "/purchases/drafts",
+  responses: {
+    200: z.strictObject({ drafts: z.array(purchaseDraftSchema) }),
+    ...purchasingReadDenialResponses,
+  },
+} as const;
+export const purchaseDraftReadContract = {
+  method: "GET",
+  path: "/purchases/drafts/:draftId",
+  responses: {
+    200: purchaseDraftSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
+  },
+} as const;
+export const purchaseDraftCreateContract = {
+  method: "POST",
+  path: "/purchases/drafts",
+  request: { body: purchaseDraftCreateRequestSchema },
+  responses: {
+    201: purchaseDraftResultSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseDraftUpdateContract = {
+  method: "PUT",
+  path: "/purchases/drafts/:draftId/header",
+  request: { body: purchaseDraftUpdateRequestSchema },
+  responses: {
+    200: purchaseDraftResultSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseDraftDiscardContract = {
+  method: "POST",
+  path: "/purchases/drafts/:draftId/discards",
+  request: { body: purchaseDraftDiscardRequestSchema },
+  responses: {
+    201: purchaseDraftSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+
+export const supplierPath = (supplierId: string): string =>
+  `/suppliers/${supplierId}`;
+export const supplierArchivePath = (supplierId: string): string =>
+  `/suppliers/${supplierId}/archivals`;
+export const supplierMergePath = (supplierId: string): string =>
+  `/suppliers/${supplierId}/merges`;
+export const purchaseDraftPath = (draftId: string): string =>
+  `/purchases/drafts/${draftId}`;
+export const purchaseDraftHeaderPath = (draftId: string): string =>
+  `/purchases/drafts/${draftId}/header`;
+export const purchaseDraftDiscardPath = (draftId: string): string =>
+  `/purchases/drafts/${draftId}/discards`;
+
+export const PURCHASING_CONTRACTS = [
+  supplierArchiveContract,
+  supplierCreateContract,
+  supplierEditContract,
+  supplierListContract,
+  supplierMergeContract,
+  purchaseDraftCreateContract,
+  purchaseDraftDiscardContract,
+  purchaseDraftListContract,
+  purchaseDraftReadContract,
+  purchaseDraftUpdateContract,
+] as const;
+
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
 export type LocalHealthDatabaseUnavailable = z.infer<
   typeof localHealthDatabaseUnavailableSchema
@@ -1799,6 +2043,32 @@ export type CatalogFieldErrorCode = z.infer<typeof catalogFieldErrorCodeSchema>;
 export type CatalogFieldError = z.infer<typeof catalogFieldErrorSchema>;
 export type CatalogDenialCode = z.infer<typeof catalogDenialCodeSchema>;
 export type CatalogDenial = z.infer<typeof catalogDenialSchema>;
+export type AllowancePercentage = z.infer<typeof allowancePercentageSchema>;
+export type Supplier = z.infer<typeof supplierSchema>;
+export type SupplierCreateRequest = z.infer<typeof supplierCreateRequestSchema>;
+export type SupplierEditRequest = z.infer<typeof supplierEditRequestSchema>;
+export type SupplierArchiveRequest = z.infer<
+  typeof supplierArchiveRequestSchema
+>;
+export type SupplierMergeRequest = z.infer<typeof supplierMergeRequestSchema>;
+export type PurchaseSettlementContext = z.infer<
+  typeof purchaseSettlementContextSchema
+>;
+export type PurchaseDraft = z.infer<typeof purchaseDraftSchema>;
+export type PurchaseDraftWarning = z.infer<typeof purchaseDraftWarningSchema>;
+export type PurchaseDraftResult = z.infer<typeof purchaseDraftResultSchema>;
+export type PurchaseDraftCreateRequest = z.infer<
+  typeof purchaseDraftCreateRequestSchema
+>;
+export type PurchaseDraftUpdateRequest = z.infer<
+  typeof purchaseDraftUpdateRequestSchema
+>;
+export type PurchaseDraftDiscardRequest = z.infer<
+  typeof purchaseDraftDiscardRequestSchema
+>;
+export type PurchasingFieldError = z.infer<typeof purchasingFieldErrorSchema>;
+export type PurchasingDenial = z.infer<typeof purchasingDenialSchema>;
+export type PurchasingDenialCode = PurchasingDenial["code"];
 
 /**
  * The approved product naming templates, and the total function that applies

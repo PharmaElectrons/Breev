@@ -1,5 +1,6 @@
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { randomBytes } from "node:crypto";
+import { Pool } from "pg";
 
 export interface SeparatedDatabaseRoles {
   readonly applicationUrl: string;
@@ -47,12 +48,60 @@ export async function createSeparatedDatabaseRoles(
   };
 }
 
+export async function createSeparatedDatabaseRolesFromUrl(
+  administratorUrl: string,
+): Promise<SeparatedDatabaseRoles> {
+  const url = new URL(administratorUrl);
+  const databaseName = url.pathname.slice(1);
+  if (!/^[a-z_][a-z0-9_]*$/u.test(databaseName)) {
+    throw new Error("The PostgreSQL test database name is unsafe");
+  }
+  const applicationPassword = randomBytes(24).toString("hex");
+  const migrationPassword = randomBytes(24).toString("hex");
+  const administrator = new Pool({ connectionString: administratorUrl });
+  try {
+    await administrator.query(
+      `revoke create on schema public from public;
+       create role breev_schema_owner login password '${migrationPassword}';
+       create role breev_app login password '${applicationPassword}';
+       grant create on database "${databaseName}" to breev_schema_owner;
+       grant usage, create on schema public to breev_schema_owner;
+       grant usage on schema public to breev_app;`,
+    );
+  } finally {
+    await administrator.end();
+  }
+  return {
+    applicationUrl: connectionUrlFromAdministrator(
+      url,
+      "breev_app",
+      applicationPassword,
+    ),
+    migrationUrl: connectionUrlFromAdministrator(
+      url,
+      "breev_schema_owner",
+      migrationPassword,
+    ),
+  };
+}
+
 function connectionUrl(
   postgres: StartedPostgreSqlContainer,
   username: string,
   password: string,
 ): string {
   const url = new URL(postgres.getConnectionUri());
+  url.username = username;
+  url.password = password;
+  return url.toString();
+}
+
+function connectionUrlFromAdministrator(
+  administratorUrl: URL,
+  username: string,
+  password: string,
+): string {
+  const url = new URL(administratorUrl);
   url.username = username;
   url.password = password;
   return url.toString();

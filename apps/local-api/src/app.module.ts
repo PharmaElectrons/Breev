@@ -21,6 +21,8 @@ import { LicensingService } from "./licensing/licensing.service.js";
 import { MainDeviceProofController } from "./main-device/main-device-proof.controller.js";
 import { MainDeviceSecurityService } from "./main-device/main-device-security.service.js";
 import { PharmacyCaService } from "./pharmacy-ca/pharmacy-ca.service.js";
+import { PurchasingController } from "./purchasing/purchasing.controller.js";
+import { PurchasingService } from "./purchasing/purchasing.service.js";
 import { RecoveryCoordinatorService } from "./recovery/recovery-coordinator.service.js";
 import { readMachineRecoveryKey } from "./recovery/recovery-crypto.js";
 import { RecoveryJobService } from "./recovery/recovery-job.service.js";
@@ -36,6 +38,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     IdentityAccessController,
     LicensingController,
     MainDeviceProofController,
+    PurchasingController,
     RecoveryController,
   ],
   providers: [
@@ -53,6 +56,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     LicensingService,
     MainDeviceSecurityService,
     PharmacyCaService,
+    PurchasingService,
     { provide: RECOVERY_KEY_PROVIDER, useValue: readMachineRecoveryKey },
     RecoveryCoordinatorService,
     RestoreQuarantineService,

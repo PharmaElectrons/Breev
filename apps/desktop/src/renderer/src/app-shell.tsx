@@ -25,6 +25,7 @@ import {
 import { navigationMessages } from "./navigation-messages";
 import { formatDateTime } from "./preferences";
 import { usePreferences } from "./preferences-provider";
+import { PurchasingRouteView } from "./purchasing-screen";
 import type { StartupState } from "./startup-state";
 import { TerminalPairingScreen } from "./terminal-pairing-screen";
 import { UnavailableSurface } from "./unavailable-surface";
@@ -256,6 +257,8 @@ export function AppShell({
             baseUrl={localApiOrigin}
             hash={catalogHash(currentHash)}
           />
+        ) : activeModuleId === "purchases" ? (
+          <PurchasingRouteView baseUrl={localApiOrigin} />
         ) : (
           <IdentityShell baseUrl={localApiOrigin} />
         )

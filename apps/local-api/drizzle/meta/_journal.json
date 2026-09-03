@@ -85,6 +85,13 @@
       "when": 1788537600000,
       "tag": "0011_custom_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788624000000,
+      "tag": "0012_suppliers_and_purchase_drafts",
+      "breakpoints": true
     }
   ]
 }
