@@ -11,6 +11,8 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 
+import { evidencePath as sharedEvidencePath } from "./evidence-path.js";
+
 const PHARMACY_ID = "019b0000-0000-7000-8000-000000000301";
 const DEVICE_ID = "019b0000-0000-7000-8000-000000000302";
 const CHALLENGE_ID = "019b0000-0000-7000-8000-000000000306";
@@ -26,10 +28,7 @@ test.describe("offline licence feature hiding", () => {
 
   test.beforeAll(async () => {
     renderer = await startLicensingRenderer(freeCoreState());
-    await mkdir(
-      path.resolve(import.meta.dirname, "../../../../evidence/issue-39/after"),
-      { recursive: true },
-    );
+    await mkdir(sharedEvidencePath("issue-39/after"), { recursive: true });
   });
 
   test.afterAll(async () => {
@@ -43,27 +42,8 @@ test.describe("offline licence feature hiding", () => {
   test("keeps Free Core visible and adds only signed paid capabilities", async ({
     page,
   }) => {
-    await page.addInitScript((origin) => {
-      const unpairedState = {
-        candidates: [],
-        stage: "awaiting-invitation" as const,
-      };
-      const desktopApi: BreevDesktopApi = Object.freeze({
-        cancelTerminalPairing: async () => unpairedState,
-        getTerminalPairingState: async () => unpairedState,
-        submitManualEndpoint: async () => unpairedState,
-        submitPairingInvitation: async () => unpairedState,
-        getStartupConfig: async () => ({
-          localApiOrigin: origin,
-          role: "main" as const,
-        }),
-      });
-      Object.defineProperty(globalThis, "breevDesktop", {
-        configurable: false,
-        value: desktopApi,
-        writable: false,
-      });
-    }, renderer.origin);
+    renderer.setState(freeCoreState());
+    await installMainDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
 
     await expect(
@@ -202,7 +182,177 @@ test.describe("offline licence feature hiding", () => {
       path: evidencePath("expired-ar-dark.png"),
     });
   });
+
+  test("shows the owner the licence dates, days left, plan versus founder grants, and refuses new pairing during grace", async ({
+    page,
+  }) => {
+    renderer.setState(licensedState());
+    await installMainDesktopFake(page, renderer.origin);
+    await page.goto(renderer.origin);
+    const card = page.getByRole("region", { name: "Licence status" });
+    for (const fact of [
+      "Issued",
+      "Expires",
+      "Grace period until",
+      "Days remaining",
+      "Permitted devices",
+    ]) {
+      await expect(card.getByText(fact, { exact: true })).toBeVisible();
+    }
+    const planFeatures = card
+      .getByRole("heading", { name: "Plan features" })
+      .locator("..");
+    await expect(planFeatures.getByText("One-way cloud sync")).toBeVisible();
+    await expect(planFeatures.getByText("Purchase-invoice OCR")).toHaveCount(0);
+    const founderGrants = card
+      .getByRole("heading", { name: "Founder grants" })
+      .locator("..");
+    await expect(founderGrants.getByText("Purchase-invoice OCR")).toBeVisible();
+    await expect(
+      card.getByText("Renew it to keep paid functions running"),
+    ).toHaveCount(0);
+    const renew = card.getByRole("button", {
+      name: "Renew or install licence",
+    });
+    await expect(renew).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    // Ten days left: the warning names the count. Renewal is reached by
+    // keyboard, and focus returns to Renew once Step-Up completes.
+    renderer.setState(expiringSoonState());
+    await page.reload();
+    await expect(
+      card.getByText(
+        "The licence expires in 10 days. Renew it to keep paid functions running.",
+      ),
+    ).toBeVisible();
+    await card.getByLabel("Signed licence document").fill("renewed-licence");
+    await focusWithKeyboard(page, renew);
+    await page.keyboard.press("Enter");
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser test password");
+    await page.keyboard.press("Enter");
+    await expect(renew).toBeFocused();
+    await expect(
+      card.getByText("Renew it to keep paid functions running"),
+    ).toHaveCount(0);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("panel-en-light.png"),
+    });
+
+    // A licensed pharmacy may start pairing; the same pharmacy in grace keeps
+    // its paid functions but is told it cannot pair a new terminal.
+    renderer.setState(pairableState());
+    await page.reload();
+    await expect(
+      founderGrants.getByText("No additional grants", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Start pairing" }),
+    ).toBeVisible();
+    renderer.setState(graceState());
+    await page.reload();
+    await expect(
+      card.getByText("Licence expired — within the grace period"),
+    ).toBeVisible();
+    await expect(
+      card.getByText(
+        "The licence has expired and paid functions continue during the grace period.",
+        { exact: false },
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "One-way cloud sync" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Start pairing" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText(
+        "The licence is in its grace period. Paired terminals keep working",
+        {
+          exact: false,
+        },
+      ),
+    ).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("grace-en-light.png"),
+    });
+
+    await page.getByRole("button", { name: "Use dark theme" }).click();
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await expect(
+      page.getByText("انتهى الترخيص — ضمن فترة السماح"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("فترة السماح حتى", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("منح المؤسس", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "بدء الإقران" })).toHaveCount(
+      0,
+    );
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("grace-ar-dark.png"),
+    });
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
+  test("hides licence renewal without licensing management permission", async ({
+    page,
+  }) => {
+    renderer.setState(licensedWithoutLicensingManagementState());
+    await installMainDesktopFake(page, renderer.origin);
+    await page.goto(renderer.origin);
+
+    const card = page.getByRole("region", { name: "Licence status" });
+    await expect(card.getByText("professional", { exact: true })).toBeVisible();
+    await expect(card.locator(".licence-form")).toHaveCount(0);
+    await expect(
+      card.getByRole("button", { name: "Renew or install licence" }),
+    ).toHaveCount(0);
+    await expect(
+      card.getByRole("button", { name: "Remove licence" }),
+    ).toHaveCount(0);
+  });
 });
+
+async function installMainDesktopFake(
+  page: Page,
+  origin: string,
+): Promise<void> {
+  await page.addInitScript((localApiOrigin) => {
+    const unpairedState = {
+      candidates: [],
+      stage: "awaiting-invitation" as const,
+    };
+    const desktopApi: BreevDesktopApi = Object.freeze({
+      cancelTerminalPairing: async () => unpairedState,
+      getTerminalPairingState: async () => unpairedState,
+      submitManualEndpoint: async () => unpairedState,
+      submitPairingInvitation: async () => unpairedState,
+      getStartupConfig: async () => ({
+        localApiOrigin,
+        role: "main" as const,
+      }),
+    });
+    Object.defineProperty(globalThis, "breevDesktop", {
+      configurable: false,
+      value: desktopApi,
+      writable: false,
+    });
+  }, origin);
+}
 
 function freeCoreState(): IdentityAuthenticatedState {
   return {
@@ -224,10 +374,33 @@ function freeCoreState(): IdentityAuthenticatedState {
       displayName: "Licence Owner",
       id: "019b0000-0000-7000-8000-000000000304",
       revision: "1",
-      role: "owner",
+      role: {
+        id: "019b0000-0000-7000-8000-000000000307",
+        key: "owner",
+        kind: "built-in",
+      },
       status: "active",
       username: "licence.owner",
     },
+  };
+}
+
+function licensedLicence(): NonNullable<
+  IdentityAuthenticatedState["entitlement"]["licence"]
+> {
+  return {
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    features: ["one-way-cloud-sync"],
+    formatVersion: 1,
+    founderOverrideGrants: ["purchase-invoice-ocr"],
+    graceEndsAt: "2099-01-08T00:00:00.000Z",
+    issuedAt: "2026-01-01T00:00:00.000Z",
+    keyId: "browser-test",
+    licenceId: "019b0000-0000-7000-8000-000000000305",
+    mainDeviceId: DEVICE_ID,
+    permittedDeviceCount: 3,
+    pharmacyId: PHARMACY_ID,
+    plan: "professional",
   };
 }
 
@@ -240,21 +413,74 @@ function licensedState(): IdentityAuthenticatedState {
         "one-way-cloud-sync",
         "purchase-invoice-ocr",
       ],
+      licence: licensedLicence(),
+      status: "licensed",
+    },
+  };
+}
+
+function licensedWithoutLicensingManagementState(): IdentityAuthenticatedState {
+  return {
+    ...licensedState(),
+    allowedPermissions: [],
+  };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Ten and a half days before expiry: the panel warns about ten days. */
+function expiringSoonState(): IdentityAuthenticatedState {
+  const licensed = licensedState();
+  return {
+    ...licensed,
+    entitlement: {
+      ...licensed.entitlement,
       licence: {
-        expiresAt: "2099-01-01T00:00:00.000Z",
-        features: ["one-way-cloud-sync"],
-        formatVersion: 1,
-        founderOverrideGrants: ["purchase-invoice-ocr"],
-        graceEndsAt: "2099-01-08T00:00:00.000Z",
-        issuedAt: "2026-01-01T00:00:00.000Z",
-        keyId: "browser-test",
-        licenceId: "019b0000-0000-7000-8000-000000000305",
-        mainDeviceId: DEVICE_ID,
-        permittedDeviceCount: 3,
-        pharmacyId: PHARMACY_ID,
-        plan: "professional",
+        ...licensedLicence(),
+        expiresAt: new Date(Date.now() + 10.5 * DAY_MS).toISOString(),
+        graceEndsAt: new Date(Date.now() + 17.5 * DAY_MS).toISOString(),
+      },
+    },
+  };
+}
+
+/** A licensed pharmacy whose owner may pair terminals. */
+function pairableState(): IdentityAuthenticatedState {
+  const licensed = licensedState();
+  return {
+    ...licensed,
+    allowedPermissions: ["devices.pair", "licensing.manage"],
+    entitlement: {
+      capabilities: [
+        ...FREE_CORE_CAPABILITY_NAMES,
+        "additional-device-pos",
+        "one-way-cloud-sync",
+      ],
+      licence: {
+        ...licensedLicence(),
+        features: ["additional-device-pos", "one-way-cloud-sync"],
+        founderOverrideGrants: [],
       },
       status: "licensed",
+    },
+  };
+}
+
+/** The same pharmacy one day after its paid term ended, six days from grace end. */
+function graceState(): IdentityAuthenticatedState {
+  const pairable = pairableState();
+  return {
+    ...pairable,
+    entitlement: {
+      ...pairable.entitlement,
+      licence: {
+        ...licensedLicence(),
+        expiresAt: new Date(Date.now() - DAY_MS).toISOString(),
+        features: ["additional-device-pos", "one-way-cloud-sync"],
+        founderOverrideGrants: [],
+        graceEndsAt: new Date(Date.now() + 6 * DAY_MS).toISOString(),
+      },
+      status: "grace",
     },
   };
 }
@@ -332,6 +558,26 @@ async function startLicensingRenderer(
       response.end(JSON.stringify(state.entitlement));
       return;
     }
+    if (request.method === "POST" && request.url === "/licensing/licences") {
+      // A renewal installs a newer signed licence; the fake answers with the
+      // far-future licensed state.
+      state = licensedState();
+      response.writeHead(201, { "content-type": "application/json" });
+      response.end(JSON.stringify(state.entitlement));
+      return;
+    }
+    if (request.url === "/devices") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({ devices: [], seatUsage: { permitted: 3, used: 1 } }),
+      );
+      return;
+    }
+    if (request.url === "/devices/pairing-sessions/current") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ state: "none" }));
+      return;
+    }
     if (request.url === "/favicon.ico") {
       response.writeHead(204).end();
       return;
@@ -371,10 +617,7 @@ async function startLicensingRenderer(
 }
 
 function evidencePath(name: string): string {
-  return path.resolve(
-    import.meta.dirname,
-    `../../../../evidence/issue-39/after/${name}`,
-  );
+  return sharedEvidencePath(`issue-39/after/${name}`);
 }
 
 async function focusWithKeyboard(page: Page, target: Locator): Promise<void> {

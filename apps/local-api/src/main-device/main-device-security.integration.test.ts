@@ -21,7 +21,7 @@ import {
 } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -39,6 +39,10 @@ const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const PACKAGED_RENDERER_ORIGIN = "breev://app";
 const PROOF_RATE_LIMIT = "3";
 const PROOF_RATE_WINDOW_SECONDS = "3600";
+
+interface MigrationJournal {
+  readonly entries: readonly unknown[];
+}
 
 interface MainDeviceCredentials {
   readonly deviceId: string;
@@ -162,8 +166,14 @@ describe.sequential("Main device security persistence seam", () => {
          from pg_tables p
          where p.schemaname = 'public' and p.tablename = 'main_devices'`,
       );
+      const journal = JSON.parse(
+        await readFile(
+          path.resolve(import.meta.dirname, "../../drizzle/meta/_journal.json"),
+          "utf8",
+        ),
+      ) as MigrationJournal;
       expect(migration.rows[0]).toEqual({
-        migration_count: "8",
+        migration_count: String(journal.entries.length),
         tableowner: "breev_schema_owner",
       });
 

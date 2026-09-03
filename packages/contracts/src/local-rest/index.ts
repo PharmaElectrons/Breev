@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "6" as const;
-export const LOCAL_SCHEMA_VERSION = "7" as const;
+export const LOCAL_API_VERSION = "9" as const;
+export const LOCAL_SCHEMA_VERSION = "9" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -24,6 +24,37 @@ export const PHARMACY_ROLE_KEYS = [
   "accountant",
   "support",
 ] as const;
+export type PharmacyRoleKey = (typeof PHARMACY_ROLE_KEYS)[number];
+
+/**
+ * Breev's own built-in role names. These names are product vocabulary, not
+ * pharmacy data, and the server reserves every localized value for built-in
+ * roles.
+ */
+export const PHARMACY_ROLE_DISPLAY_NAMES: Readonly<
+  Record<"ar" | "en", Readonly<Record<PharmacyRoleKey, string>>>
+> = {
+  ar: {
+    owner: "المالك",
+    manager: "المدير",
+    pharmacist: "الصيدلي",
+    sales_employee: "موظف المبيعات",
+    purchasing_employee: "موظف المشتريات",
+    inventory_employee: "موظف المخزون",
+    accountant: "المحاسب",
+    support: "الدعم المحلي",
+  },
+  en: {
+    owner: "Owner",
+    manager: "Manager",
+    pharmacist: "Pharmacist",
+    sales_employee: "Sales employee",
+    purchasing_employee: "Purchasing employee",
+    inventory_employee: "Inventory employee",
+    accountant: "Accountant",
+    support: "Local support",
+  },
+};
 export const FREE_CORE_CAPABILITY_NAMES = [
   "local-sales",
   "local-purchases",
@@ -60,7 +91,10 @@ export const stepUpActionSchema = z.enum([
   "devices.pairing.start",
   "devices.revoke",
   "devices.seat.release.request",
+  "identity.role.create",
   "identity.role.permissions.update",
+  "identity.role.rename",
+  "identity.user.password.reset",
   "identity.user.create",
   "identity.user.update",
   "licensing.licence.deactivate",
@@ -78,8 +112,12 @@ export const IDENTITY_DENIAL_CODES = [
   "identity-resource-not-found",
   "idempotency-conflict",
   "last-owner-required",
+  "owner-permission-floor-required",
   "permission-denied",
   "rate-limit-exceeded",
+  "role-name-reserved",
+  "role-name-taken",
+  "role-not-custom",
   "session-expired",
   "session-missing",
   "session-revoked",
@@ -118,11 +156,52 @@ const identityCommandFields = {
 } as const;
 export const identityResourceIdSchema = z.uuidv7();
 
+/**
+ * Roles.
+ *
+ * Each user holds exactly one role and a user's permissions are exactly that
+ * role's grants (docs/domain.md, identity). A role is either one of the eight
+ * built-in roles, identified by its stable `key` and named by the renderer in
+ * the user's language, or a custom role the pharmacy created, identified only
+ * by its id and named verbatim by the pharmacy. The discriminant is `kind`,
+ * never the name.
+ *
+ * `identityRoleReferenceSchema` is what a user carries; `identityRoleSchema`
+ * adds the revision and the grants that the administration screens edit.
+ */
+export const customRoleNameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine((value) => value === value.trim());
+const builtInRoleReferenceFields = {
+  id: z.uuidv7(),
+  kind: z.literal("built-in"),
+  key: pharmacyRoleKeySchema,
+} as const;
+const customRoleReferenceFields = {
+  id: z.uuidv7(),
+  kind: z.literal("custom"),
+  name: customRoleNameSchema,
+} as const;
+const roleAuthorityFields = {
+  revision: decimalRevisionSchema,
+  grants: z.array(permissionNameSchema),
+} as const;
+export const identityRoleReferenceSchema = z.discriminatedUnion("kind", [
+  z.strictObject(builtInRoleReferenceFields),
+  z.strictObject(customRoleReferenceFields),
+]);
+export const identityRoleSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ ...builtInRoleReferenceFields, ...roleAuthorityFields }),
+  z.strictObject({ ...customRoleReferenceFields, ...roleAuthorityFields }),
+]);
+
 export const identityUserSchema = z.strictObject({
   id: z.uuidv7(),
   displayName: displayNameSchema,
   username: usernameSchema,
-  role: pharmacyRoleKeySchema,
+  role: identityRoleReferenceSchema,
   status: z.enum(["active", "locked"]),
   revision: decimalRevisionSchema,
 });
@@ -143,22 +222,47 @@ export const licenceSummarySchema = z.strictObject({
   plan: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/u),
   features: z.array(paidCapabilityNameSchema),
   founderOverrideGrants: z.array(paidCapabilityNameSchema),
-  permittedDeviceCount: z.number().int().min(1).max(10_000),
+  // The permitted device count is licensing data set by the Super Admin,
+  // never a hard-coded software limit (see product.md "Plans, entitlements,
+  // and administration"). This upper bound is a transport-safety guard
+  // against a malformed or forged value, not a product ceiling.
+  permittedDeviceCount: z.number().int().min(1).max(1_000_000),
   issuedAt: z.iso.datetime(),
   expiresAt: z.iso.datetime(),
   graceEndsAt: z.iso.datetime(),
 });
-export const entitlementContextSchema = z.strictObject({
-  status: z.enum([
-    "licensed",
-    "free-core",
-    "invalid-licence",
-    "expired",
-    "clock-rollback",
-  ]),
-  capabilities: z.array(capabilityNameSchema),
-  licence: licenceSummarySchema.nullable(),
-});
+/**
+ * `grace` is the window between the licence's signed `expiresAt` and its
+ * signed `graceEndsAt`: paid capabilities continue and the licence stays
+ * visible, but the pharmacy cannot pair a new terminal until it renews. The
+ * length of the window is the issuer's, never a local constant, and the rule
+ * itself is the working default pending the client's paid-expiry decision in
+ * docs/open-decisions.md.
+ */
+export const entitlementContextSchema = z
+  .strictObject({
+    status: z.enum([
+      "licensed",
+      "grace",
+      "free-core",
+      "invalid-licence",
+      "expired",
+      "clock-rollback",
+    ]),
+    capabilities: z.array(capabilityNameSchema),
+    licence: licenceSummarySchema.nullable(),
+  })
+  .superRefine((context, refinement) => {
+    const requiresLicence =
+      context.status === "licensed" || context.status === "grace";
+    if (requiresLicence !== (context.licence !== null)) {
+      refinement.addIssue({
+        code: "custom",
+        message: "Licence presence does not match entitlement status",
+        path: ["licence"],
+      });
+    }
+  });
 const authenticatedStateSchema = z.strictObject({
   state: z.literal("authenticated"),
   pharmacy: z.strictObject({
@@ -218,23 +322,50 @@ export const identityCreateUserRequestSchema = z.strictObject({
   displayName: displayNameSchema,
   username: usernameSchema,
   password: passwordSchema,
-  role: pharmacyRoleKeySchema,
+  roleId: identityResourceIdSchema,
 });
 export const identityUpdateUserRequestSchema = z.strictObject({
   ...identityCommandFields,
   challengeId: z.uuidv7(),
+  displayName: displayNameSchema.optional(),
   expectedRevision: decimalRevisionSchema,
-  role: pharmacyRoleKeySchema.optional(),
+  roleId: identityResourceIdSchema.optional(),
   status: z.enum(["active", "locked"]).optional(),
 });
-export const identityRoleSchema = z.strictObject({
-  id: z.uuidv7(),
-  key: pharmacyRoleKeySchema,
-  revision: decimalRevisionSchema,
-  grants: z.array(permissionNameSchema),
+export const identityChangePasswordRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  currentPassword: z.string().min(1).max(128),
+  expectedRevision: decimalRevisionSchema,
+  newPassword: passwordSchema,
 });
+export const identityResetUserPasswordRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  challengeId: z.uuidv7(),
+  expectedRevision: decimalRevisionSchema,
+  newPassword: passwordSchema,
+});
+/**
+ * The eight built-in roles are always present; custom roles follow them. The
+ * `permissions` list is the grantable vocabulary — only names backed by an
+ * implemented operation.
+ */
 export const identityRolesSchema = z.strictObject({
-  roles: z.array(identityRoleSchema).length(PHARMACY_ROLE_KEYS.length),
+  roles: z
+    .array(identityRoleSchema)
+    .min(PHARMACY_ROLE_KEYS.length)
+    .superRefine((roles, refinement) => {
+      for (const key of PHARMACY_ROLE_KEYS) {
+        const count = roles.filter(
+          (role) => role.kind === "built-in" && role.key === key,
+        ).length;
+        if (count !== 1) {
+          refinement.addIssue({
+            code: "custom",
+            message: `Built-in role ${key} must appear exactly once`,
+          });
+        }
+      }
+    }),
   permissions: z.array(permissionNameSchema),
 });
 export const identityUpdateRolePermissionsRequestSchema = z.strictObject({
@@ -242,6 +373,19 @@ export const identityUpdateRolePermissionsRequestSchema = z.strictObject({
   challengeId: z.uuidv7(),
   expectedRevision: decimalRevisionSchema,
   permissions: z.array(permissionNameSchema).max(128),
+});
+/** A custom role is created with its name and its initial grants in one command. */
+export const identityCreateRoleRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  challengeId: z.uuidv7(),
+  name: customRoleNameSchema,
+  permissions: z.array(permissionNameSchema).max(128),
+});
+export const identityRenameRoleRequestSchema = z.strictObject({
+  ...identityCommandFields,
+  challengeId: z.uuidv7(),
+  expectedRevision: decimalRevisionSchema,
+  name: customRoleNameSchema,
 });
 export const pharmacySettingsUpdateRequestSchema = z.strictObject({
   ...identityCommandFields,
@@ -353,11 +497,21 @@ export const identityRolesContract = {
     403: identityOrEntitlementDenialSchema,
   },
 } as const;
+/**
+ * The users list carries the assignable roles as references, so a holder of
+ * `identity.users.manage` can assign a role by id without holding
+ * `identity.roles.manage`; grants stay on the roles route.
+ */
 export const identityUsersContract = {
   method: "GET",
   path: "/identity/users",
   responses: {
-    200: z.strictObject({ users: z.array(identityUserSchema) }),
+    200: z.strictObject({
+      roles: z
+        .array(identityRoleReferenceSchema)
+        .min(PHARMACY_ROLE_KEYS.length),
+      users: z.array(identityUserSchema),
+    }),
     401: identityDenialSchema,
     403: identityOrEntitlementDenialSchema,
   },
@@ -389,6 +543,34 @@ export const identityUpdateUserContract = {
 } as const;
 export const identityUserPath = (userId: string): string =>
   `/identity/users/${userId}`;
+export const identityChangePasswordContract = {
+  method: "POST",
+  path: "/identity/password-changes",
+  request: { body: identityChangePasswordRequestSchema },
+  responses: {
+    200: identityUserSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+    409: identityDenialSchema,
+    429: identityDenialSchema,
+  },
+} as const;
+export const identityUserPasswordResetPath = (userId: string): string =>
+  `/identity/users/${userId}/password-reset`;
+export const identityResetUserPasswordContract = {
+  method: "POST",
+  path: "/identity/users/:userId/password-reset",
+  request: { body: identityResetUserPasswordRequestSchema },
+  responses: {
+    200: identityUserSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
 export const identityStepUpCreateContract = {
   method: "POST",
   path: "/identity/step-up-challenges",
@@ -416,6 +598,35 @@ export const identityStepUpApproveContract = {
     404: identityDenialSchema,
     409: identityDenialSchema,
     429: identityDenialSchema,
+  },
+} as const;
+export const identityCreateRoleContract = {
+  method: "POST",
+  path: "/identity/roles",
+  request: { body: identityCreateRoleRequestSchema },
+  responses: {
+    201: identityRoleSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
+  },
+} as const;
+export const identityRolePath = (roleId: string): string =>
+  `/identity/roles/${roleId}`;
+/** Rename applies to custom roles only; a built-in role answers `role-not-custom`. */
+export const identityRenameRoleContract = {
+  method: "PATCH",
+  path: "/identity/roles/:roleId",
+  request: { body: identityRenameRoleRequestSchema },
+  responses: {
+    200: identityRoleSchema,
+    400: identityDenialSchema,
+    401: identityDenialSchema,
+    403: identityOrEntitlementDenialSchema,
+    404: identityDenialSchema,
+    409: identityDenialSchema,
   },
 } as const;
 export const identityRolePermissionsPath = (roleId: string): string =>
@@ -506,10 +717,13 @@ export const capabilityProofContract = {
  */
 export const DEVICES_DENIAL_CODES = [
   "body-invalid",
+  "ca-key-store-failure",
+  "ca-not-found",
   "device-not-found",
   "device-not-revoked",
   "pairing-attempts-exceeded",
   "pairing-entitlement-missing",
+  "pairing-grace-period",
   "pairing-seat-unavailable",
   "pairing-session-conflict",
   "pairing-session-expired",
@@ -1428,7 +1642,6 @@ export type LocalProofMutationSuccess = z.infer<
 export type LocalProofEvidenceSuccess = z.infer<
   typeof localProofEvidenceSuccessSchema
 >;
-export type PharmacyRoleKey = z.infer<typeof pharmacyRoleKeySchema>;
 export type CapabilityName = z.infer<typeof capabilityNameSchema>;
 export type PaidCapabilityName = z.infer<typeof paidCapabilityNameSchema>;
 export type EntitlementContext = z.infer<typeof entitlementContextSchema>;
@@ -1471,10 +1684,26 @@ export type IdentityCreateUserRequest = z.infer<
 export type IdentityUpdateUserRequest = z.infer<
   typeof identityUpdateUserRequestSchema
 >;
+export type IdentityChangePasswordRequest = z.infer<
+  typeof identityChangePasswordRequestSchema
+>;
+export type IdentityResetUserPasswordRequest = z.infer<
+  typeof identityResetUserPasswordRequestSchema
+>;
+export type IdentityRoleReference = z.infer<typeof identityRoleReferenceSchema>;
 export type IdentityRole = z.infer<typeof identityRoleSchema>;
 export type IdentityRoles = z.infer<typeof identityRolesSchema>;
+export type IdentityUsers = z.infer<
+  (typeof identityUsersContract.responses)[200]
+>;
 export type IdentityUpdateRolePermissionsRequest = z.infer<
   typeof identityUpdateRolePermissionsRequestSchema
+>;
+export type IdentityCreateRoleRequest = z.infer<
+  typeof identityCreateRoleRequestSchema
+>;
+export type IdentityRenameRoleRequest = z.infer<
+  typeof identityRenameRoleRequestSchema
 >;
 export type PharmacySettingsUpdateRequest = z.infer<
   typeof pharmacySettingsUpdateRequestSchema

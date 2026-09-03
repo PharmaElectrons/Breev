@@ -3,18 +3,20 @@ import type {
   IdentityAuthenticatedState,
   IdentityDenial,
   IdentityRole,
+  IdentityRoleReference,
   IdentityState,
   IdentityUser,
   LicensingDenial,
-  PharmacyRoleKey,
   StepUpAction,
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DevicesPanel } from "./devices-panel";
+import { requiredCapabilityFor } from "./feature-surfaces";
 import {
   approveStepUpChallenge,
   bootstrapIdentity,
+  changeIdentityPassword,
   createAttendanceEvent,
   createIdentityUser,
   createStepUpChallenge,
@@ -27,21 +29,49 @@ import {
   requestIdentityRoles,
   requestIdentityState,
   requestIdentityUsers,
-  updateIdentityRolePermissions,
+  resetIdentityUserPassword,
   updateIdentityUser,
   updatePharmacySettings,
 } from "./identity-api";
-import { identityMessages, type IdentityCopy } from "./identity-messages";
+import {
+  identityMessages,
+  roleDisplayName,
+  type IdentityCopy,
+} from "./identity-messages";
 import { useIdentityState } from "./identity-state-provider";
+import { daysUntil } from "./licence-dates";
 import { licensingMessages, type LicensingCopy } from "./licensing-messages";
+import { cataloguedPermissions } from "./permission-catalogue";
+import { formatNumber } from "./preferences";
 import { usePreferences } from "./preferences-provider";
+import { RoleEditor } from "./role-editor";
 
 interface PendingStepUp {
   readonly afterApproval: (challengeId: string) => Promise<void>;
   readonly challengeId: string;
 }
 
+/**
+ * How many days before expiry the owner panel starts warning. An engineering
+ * default for display only (docs/workflows.md: the owner sees the expiry and
+ * grace dates before disruption); the server enforces the boundary itself.
+ */
+const EXPIRY_WARNING_DAYS = 14;
+
 type AccessDenial = IdentityDenial | LicensingDenial;
+interface RunOptions {
+  readonly preserveDenial?: boolean;
+}
+type RunRequest = <T>(
+  work: () => Promise<T>,
+  options?: RunOptions,
+) => Promise<T | undefined>;
+
+function formatLicenceDate(instant: string, locale: "ar" | "en"): string {
+  return new Date(instant).toLocaleDateString(
+    locale === "ar" ? "ar-IQ" : "en-IQ",
+  );
+}
 
 export function IdentityShell({
   baseUrl,
@@ -55,12 +85,28 @@ export function IdentityShell({
   // one authenticated context (permissions, entitlements, session).
   const { refresh, setState, state } = useIdentityState();
   const [denial, setDenial] = useState<AccessDenial | null>(null);
+  const lastDenial = useRef<AccessDenial | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const clearDenial = useCallback((): void => {
+    lastDenial.current = null;
+    setDenial(null);
+  }, []);
+
+  const getLastDenial = useCallback(
+    (): AccessDenial | null => lastDenial.current,
+    [],
+  );
+
   const run = useCallback(
-    async <T,>(work: () => Promise<T>): Promise<T | undefined> => {
+    async <T,>(
+      work: () => Promise<T>,
+      options: RunOptions = {},
+    ): Promise<T | undefined> => {
       setBusy(true);
-      setDenial(null);
+      if (options.preserveDenial !== true) {
+        clearDenial();
+      }
       try {
         return await work();
       } catch (error) {
@@ -68,6 +114,7 @@ export function IdentityShell({
           error instanceof IdentityApiDenied ||
           error instanceof LicensingApiDenied
         ) {
+          lastDenial.current = error.denial;
           setDenial(error.denial);
           if (
             error.denial.code === "session-expired" ||
@@ -82,7 +129,7 @@ export function IdentityShell({
         setBusy(false);
       }
     },
-    [refresh],
+    [clearDenial, refresh],
   );
 
   if (state === null) {
@@ -103,7 +150,7 @@ export function IdentityShell({
           copy={copy}
           denial={denial}
           licensingCopy={licensingCopy}
-          onDismiss={() => setDenial(null)}
+          onDismiss={clearDenial}
         />
       )}
       {state.state === "bootstrap-required" ? (
@@ -125,8 +172,9 @@ export function IdentityShell({
           busy={busy}
           copy={copy}
           denial={denial}
+          getLastDenial={getLastDenial}
           licensingCopy={licensingCopy}
-          onDismissDenial={() => setDenial(null)}
+          onDismissDenial={clearDenial}
           onState={setState}
           run={run}
           state={state}
@@ -321,6 +369,7 @@ function AuthenticatedWorkspace({
   busy,
   copy,
   denial,
+  getLastDenial,
   licensingCopy,
   onDismissDenial,
   onState,
@@ -331,25 +380,46 @@ function AuthenticatedWorkspace({
   readonly busy: boolean;
   readonly copy: IdentityCopy;
   readonly denial: AccessDenial | null;
+  readonly getLastDenial: () => AccessDenial | null;
   readonly licensingCopy: LicensingCopy;
   readonly onDismissDenial: () => void;
   readonly onState: (state: IdentityState) => void;
-  readonly run: <T>(work: () => Promise<T>) => Promise<T | undefined>;
+  readonly run: RunRequest;
   readonly state: IdentityAuthenticatedState;
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const [users, setUsers] = useState<IdentityUser[]>([]);
+  // The roles a user manager may assign: references only, from the users
+  // list, so assigning needs identity.users.manage and nothing more.
+  const [assignableRoles, setAssignableRoles] = useState<
+    IdentityRoleReference[]
+  >([]);
   const [roles, setRoles] = useState<IdentityRole[]>([]);
   const [permissionNames, setPermissionNames] = useState<string[]>([]);
-  const [roleDrafts, setRoleDrafts] = useState<Record<string, string[]>>({});
   const [userChallenge, setUserChallenge] = useState<string | null>(null);
   const [pendingStepUp, setPendingStepUp] = useState<PendingStepUp | null>(
     null,
   );
+  const [passwordChanged, setPasswordChanged] = useState(false);
   const [selectedCapability, setSelectedCapability] = useState<CapabilityName>(
     state.entitlement.capabilities[0] ?? "renewal",
   );
-  const previousFocus = useRef<HTMLElement | null>(null);
+  // Async Step-Up completions (approval -> afterApproval -> list reload ->
+  // state refresh) can outlast the render in which the button that opened the
+  // dialog is disabled by `busy`. Focus is tracked by a stable element id
+  // rather than a captured node so it survives both the disabled window and
+  // any re-render of the row it belongs to, and is applied by an effect that
+  // waits for `busy` to actually clear instead of guessing at timing.
+  const previousFocusId = useRef<string | null>(null);
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (busy || pendingFocusId === null) {
+      return;
+    }
+    document.getElementById(pendingFocusId)?.focus();
+    setPendingFocusId(null);
+  }, [busy, pendingFocusId]);
   const canManageUsers = state.allowedPermissions.includes(
     "identity.users.manage",
   );
@@ -361,7 +431,25 @@ function AuthenticatedWorkspace({
   );
   const canManageLicensing =
     state.allowedPermissions.includes("licensing.manage");
-  const canPairDevices = state.allowedPermissions.includes("devices.pair");
+  // Licence dates on the panel are display arithmetic on the renderer clock.
+  // The local API decides every boundary against Trusted Breev Time; a
+  // renderer clock that disagrees changes only what this card says.
+  const licence = state.entitlement.licence;
+  const daysUntilExpiry =
+    licence === null
+      ? null
+      : daysUntil(new Date().toISOString(), licence.expiresAt);
+  const licenceWarning =
+    state.entitlement.status === "grace"
+      ? licensingCopy.graceWarning
+      : daysUntilExpiry !== null && daysUntilExpiry <= EXPIRY_WARNING_DAYS
+        ? licensingCopy.expiryWarning(Math.max(0, daysUntilExpiry))
+        : null;
+  const devicesCapability = requiredCapabilityFor("devices-panel");
+  const canPairDevices =
+    state.allowedPermissions.includes("devices.pair") &&
+    (devicesCapability === null ||
+      state.entitlement.capabilities.includes(devicesCapability));
   const visibleSelectedCapability = state.entitlement.capabilities.includes(
     selectedCapability,
   )
@@ -374,37 +462,57 @@ function AuthenticatedWorkspace({
     }
   }, [selectedCapability, state.entitlement.capabilities]);
 
-  const loadAdministration = useCallback(async (): Promise<void> => {
-    if (canManageUsers) {
-      const response = await run(() => requestIdentityUsers(baseUrl));
-      if (response !== undefined) {
-        setUsers(response.users);
-      }
-    }
-    if (canManageRoles) {
-      const response = await run(() => requestIdentityRoles(baseUrl));
-      if (response !== undefined) {
-        setRoles(response.roles);
-        setPermissionNames(response.permissions);
-        setRoleDrafts(
-          Object.fromEntries(
-            response.roles.map((role) => [role.id, role.grants]),
-          ),
+  const loadAdministration = useCallback(
+    async (options: RunOptions = {}): Promise<void> => {
+      if (canManageUsers) {
+        const response = await run(
+          () => requestIdentityUsers(baseUrl),
+          options,
         );
+        if (response !== undefined) {
+          setUsers(response.users);
+          setAssignableRoles(response.roles);
+        }
       }
-    }
-  }, [baseUrl, canManageRoles, canManageUsers, run]);
+      if (canManageRoles) {
+        const response = await run(
+          () => requestIdentityRoles(baseUrl),
+          options,
+        );
+        if (response !== undefined) {
+          setRoles(response.roles);
+          setPermissionNames(response.permissions);
+        }
+      }
+    },
+    [baseUrl, canManageRoles, canManageUsers, run],
+  );
 
   useEffect(() => {
     void loadAdministration();
   }, [loadAdministration]);
 
-  const refreshState = useCallback(async (): Promise<void> => {
-    const next = await run(() => requestIdentityState(baseUrl));
-    if (next !== undefined) {
-      onState(next);
-    }
-  }, [baseUrl, onState, run]);
+  const refreshState = useCallback(
+    async (options: RunOptions = {}): Promise<void> => {
+      const next = await run(() => requestIdentityState(baseUrl), options);
+      if (next !== undefined) {
+        onState(next);
+      }
+    },
+    [baseUrl, onState, run],
+  );
+
+  const reloadRoleAdministration = useCallback(
+    async (options: RunOptions = {}): Promise<void> => {
+      await loadAdministration(options);
+      await refreshState(options);
+    },
+    [loadAdministration, refreshState],
+  );
+
+  const requestFocus = useCallback((elementId: string): void => {
+    previousFocusId.current = elementId;
+  }, []);
 
   const beginStepUp = useCallback(
     async (
@@ -412,7 +520,8 @@ function AuthenticatedWorkspace({
       subjectId: string | undefined,
       afterApproval: (challengeId: string) => Promise<void>,
     ): Promise<void> => {
-      previousFocus.current = document.activeElement as HTMLElement | null;
+      previousFocusId.current =
+        (document.activeElement as HTMLElement | null)?.id ?? null;
       const challenge = await run(() =>
         createStepUpChallenge(baseUrl, {
           action,
@@ -429,8 +538,17 @@ function AuthenticatedWorkspace({
 
   const closeStepUp = (): void => {
     setPendingStepUp(null);
-    queueMicrotask(() => previousFocus.current?.focus());
   };
+
+  const cancelStepUp = (): void => {
+    const returnFocusId = previousFocusId.current;
+    closeStepUp();
+    if (returnFocusId !== null) {
+      queueMicrotask(() => document.getElementById(returnFocusId)?.focus());
+    }
+  };
+
+  const visiblePermissions = cataloguedPermissions(state.allowedPermissions);
 
   return (
     <>
@@ -453,7 +571,7 @@ function AuthenticatedWorkspace({
               {copy.welcome}, {state.user.displayName}
             </h2>
             <p>
-              {copy.roles[state.user.role]} · {state.user.username}
+              {roleDisplayName(state.user.role, copy)} · {state.user.username}
             </p>
           </div>
           <div className="workspace-actions">
@@ -480,6 +598,79 @@ function AuthenticatedWorkspace({
           </div>
         </article>
 
+        <article
+          aria-labelledby="change-password-title"
+          className="identity-card admin-card"
+        >
+          <div>
+            <h3 id="change-password-title">{copy.changeMyPassword}</h3>
+            <p>{copy.changePasswordDescription}</p>
+          </div>
+          {passwordChanged ? (
+            <p aria-live="polite" className="state-line" role="status">
+              <span aria-hidden="true">✓</span> {copy.passwordChanged}
+            </p>
+          ) : null}
+          <form
+            className="identity-form password-change-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const data = new FormData(form);
+              setPasswordChanged(false);
+              void run(() =>
+                changeIdentityPassword(baseUrl, {
+                  currentPassword: requiredValue(
+                    data,
+                    "currentPassword",
+                    false,
+                  ),
+                  expectedRevision: state.user.revision,
+                  idempotencyKey: newIdempotencyKey(),
+                  newPassword: requiredValue(data, "newPassword", false),
+                }),
+              ).then(async (updated) => {
+                if (updated === undefined) {
+                  const currentPassword =
+                    form.elements.namedItem("currentPassword");
+                  if (currentPassword instanceof HTMLInputElement) {
+                    currentPassword.focus();
+                  }
+                  return;
+                }
+                form.reset();
+                setPasswordChanged(true);
+                await refreshState();
+                setPendingFocusId("change-password-submit");
+              });
+            }}
+          >
+            <LabeledInput
+              autoComplete="current-password"
+              label={copy.currentPassword}
+              maxLength={128}
+              name="currentPassword"
+              type="password"
+            />
+            <LabeledInput
+              autoComplete="new-password"
+              label={copy.newPassword}
+              maxLength={128}
+              minLength={15}
+              name="newPassword"
+              type="password"
+            />
+            <button
+              className="primary-button"
+              disabled={busy}
+              id="change-password-submit"
+              type="submit"
+            >
+              {copy.changeMyPassword}
+            </button>
+          </form>
+        </article>
+
         <section
           className="licensing-grid"
           aria-label={licensingCopy.licenceStatus}
@@ -499,27 +690,78 @@ function AuthenticatedWorkspace({
                   {licensingCopy.statuses[state.entitlement.status]}
                 </p>
               </div>
-              {state.entitlement.licence === null ? null : (
+              {licence === null ? null : (
                 <dl className="licence-facts">
                   <div>
                     <dt>{licensingCopy.plan}</dt>
-                    <dd>{state.entitlement.licence.plan}</dd>
+                    <dd>{licence.plan}</dd>
+                  </div>
+                  <div>
+                    <dt>{licensingCopy.issued}</dt>
+                    <dd>{formatLicenceDate(licence.issuedAt, locale)}</dd>
                   </div>
                   <div>
                     <dt>{licensingCopy.expires}</dt>
+                    <dd>{formatLicenceDate(licence.expiresAt, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{licensingCopy.graceUntil}</dt>
+                    <dd>{formatLicenceDate(licence.graceEndsAt, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{licensingCopy.daysRemaining}</dt>
                     <dd>
-                      {new Date(
-                        state.entitlement.licence.expiresAt,
-                      ).toLocaleDateString(locale === "ar" ? "ar-IQ" : "en-IQ")}
+                      {formatNumber(Math.max(0, daysUntilExpiry ?? 0), locale)}
                     </dd>
                   </div>
                   <div>
                     <dt>{licensingCopy.deviceAllowance}</dt>
-                    <dd>{state.entitlement.licence.permittedDeviceCount}</dd>
+                    <dd>
+                      {formatNumber(licence.permittedDeviceCount, locale)}
+                    </dd>
                   </div>
                 </dl>
               )}
             </div>
+
+            {licenceWarning === null ? null : (
+              <p className="licence-warning" role="status">
+                <span aria-hidden="true">⚠</span> {licenceWarning}
+              </p>
+            )}
+
+            {licence === null ? null : (
+              <div className="licence-grants">
+                <div>
+                  <h4>{licensingCopy.planFeatures}</h4>
+                  {licence.features.length === 0 ? (
+                    <p>{licensingCopy.planFeaturesNone}</p>
+                  ) : (
+                    <ul>
+                      {licence.features.map((capability) => (
+                        <li key={capability}>
+                          {licensingCopy.capabilities[capability]}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <h4>{licensingCopy.founderGrants}</h4>
+                  {licence.founderOverrideGrants.length === 0 ? (
+                    <p>{licensingCopy.founderGrantsNone}</p>
+                  ) : (
+                    <ul>
+                      {licence.founderOverrideGrants.map((capability) => (
+                        <li key={capability}>
+                          {licensingCopy.capabilities[capability]}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
 
             {canManageLicensing ? (
               <form
@@ -550,7 +792,7 @@ function AuthenticatedWorkspace({
                   );
                 }}
               >
-                <p>{licensingCopy.installDescription}</p>
+                <p>{licensingCopy.renewDescription}</p>
                 <label className="field-label">
                   <span>{licensingCopy.licenceDocument}</span>
                   <textarea
@@ -563,9 +805,10 @@ function AuthenticatedWorkspace({
                 <button
                   className="primary-button"
                   disabled={busy}
+                  id="licence-install-submit"
                   type="submit"
                 >
-                  {licensingCopy.install}
+                  {licensingCopy.renew}
                 </button>
               </form>
             ) : null}
@@ -575,6 +818,7 @@ function AuthenticatedWorkspace({
                 <button
                   className="quiet-button"
                   disabled={busy}
+                  id="licence-deactivate-button"
                   type="button"
                   onClick={() =>
                     void beginStepUp(
@@ -634,6 +878,7 @@ function AuthenticatedWorkspace({
             beginStepUp={beginStepUp}
             identityCopy={copy}
             licensingCopy={licensingCopy}
+            pairingAllowed={state.entitlement.status !== "grace"}
           />
         ) : null}
 
@@ -679,9 +924,11 @@ function AuthenticatedWorkspace({
           <div>
             <h3>{copy.permissions}</h3>
             <p>
-              {state.allowedPermissions.length === 0
+              {visiblePermissions.length === 0
                 ? copy.denials["permission-denied"]
-                : state.allowedPermissions.join(" · ")}
+                : visiblePermissions
+                    .map((permission) => copy.permissionLabels[permission].name)
+                    .join(" · ")}
             </p>
           </div>
         </article>
@@ -728,6 +975,7 @@ function AuthenticatedWorkspace({
                 <button
                   className="primary-button"
                   disabled={busy}
+                  id="add-user-button"
                   type="button"
                   onClick={() =>
                     void beginStepUp(
@@ -757,7 +1005,7 @@ function AuthenticatedWorkspace({
                       displayName: requiredValue(data, "displayName"),
                       idempotencyKey: newIdempotencyKey(),
                       password: requiredValue(data, "password", false),
-                      role: requiredValue(data, "role") as PharmacyRoleKey,
+                      roleId: requiredValue(data, "roleId"),
                       username: requiredValue(data, "username"),
                     }),
                   ).then(async (created) => {
@@ -797,10 +1045,10 @@ function AuthenticatedWorkspace({
                 />
                 <label className="field-label">
                   <span>{copy.role}</span>
-                  <select name="role" required>
-                    {Object.entries(copy.roles).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
+                  <select name="roleId" required>
+                    {assignableRoles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {roleDisplayName(role, copy)}
                       </option>
                     ))}
                   </select>
@@ -826,11 +1074,126 @@ function AuthenticatedWorkspace({
             <ul className="user-list">
               {users.map((user) => (
                 <li key={user.id}>
-                  <div>
+                  <div className="user-details">
                     <strong>{user.displayName}</strong>
                     <span>
-                      {user.username} · {copy.roles[user.role]}
+                      {user.username} · {roleDisplayName(user.role, copy)}
+                      {user.role.kind === "custom" ? (
+                        <>
+                          {" "}
+                          <span className="role-badge">
+                            {copy.customRoleBadge}
+                          </span>
+                        </>
+                      ) : null}
                     </span>
+                    <form
+                      key="display-name"
+                      className="user-management-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const form = event.currentTarget;
+                        const displayName = requiredValue(
+                          new FormData(form),
+                          "displayName",
+                        );
+                        void beginStepUp(
+                          "identity.user.update",
+                          user.id,
+                          async (challengeId) => {
+                            const updated = await run(() =>
+                              updateIdentityUser(baseUrl, user.id, {
+                                challengeId,
+                                displayName,
+                                expectedRevision: user.revision,
+                                idempotencyKey: newIdempotencyKey(),
+                              }),
+                            );
+                            if (updated !== undefined) {
+                              await loadAdministration();
+                              await refreshState();
+                            }
+                          },
+                        );
+                      }}
+                    >
+                      <label className="field-label compact-field">
+                        <span>
+                          {copy.displayName}: {user.username}
+                        </span>
+                        <input
+                          defaultValue={user.displayName}
+                          maxLength={96}
+                          name="displayName"
+                          required
+                        />
+                      </label>
+                      <button
+                        className="quiet-button"
+                        disabled={busy}
+                        id={`user-${user.id}-save-name`}
+                        type="submit"
+                      >
+                        {copy.saveDisplayName}
+                      </button>
+                    </form>
+                    <form
+                      key="role"
+                      className="user-management-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const form = event.currentTarget;
+                        const roleId = requiredValue(
+                          new FormData(form),
+                          "roleId",
+                        );
+                        void beginStepUp(
+                          "identity.user.update",
+                          user.id,
+                          async (challengeId) => {
+                            const updated = await run(() =>
+                              updateIdentityUser(baseUrl, user.id, {
+                                challengeId,
+                                expectedRevision: user.revision,
+                                idempotencyKey: newIdempotencyKey(),
+                                roleId,
+                              }),
+                            );
+                            if (updated !== undefined) {
+                              await loadAdministration();
+                              await refreshState();
+                            } else {
+                              form.reset();
+                            }
+                          },
+                        );
+                      }}
+                    >
+                      <label className="field-label compact-field">
+                        <span>
+                          {copy.role}: {user.username}
+                        </span>
+                        <select
+                          defaultValue={user.role.id}
+                          name="roleId"
+                          required
+                        >
+                          {assignableRoles.map((role) => (
+                            <option key={role.id} value={role.id}>
+                              {roleDisplayName(role, copy)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        className="quiet-button"
+                        disabled={busy}
+                        id={`user-${user.id}-save-role`}
+                        type="submit"
+                      >
+                        {copy.saveRole}
+                      </button>
+                    </form>
                   </div>
                   <div className="user-actions">
                     <span className="state-chip" data-status={user.status}>
@@ -842,13 +1205,14 @@ function AuthenticatedWorkspace({
                     <button
                       className="quiet-button"
                       disabled={busy}
+                      id={`user-${user.id}-lock-toggle`}
                       type="button"
                       onClick={() =>
                         void beginStepUp(
                           "identity.user.update",
                           user.id,
                           async (challengeId) => {
-                            await run(() =>
+                            const updated = await run(() =>
                               updateIdentityUser(baseUrl, user.id, {
                                 challengeId,
                                 expectedRevision: user.revision,
@@ -859,8 +1223,10 @@ function AuthenticatedWorkspace({
                                     : "active",
                               }),
                             );
-                            await loadAdministration();
-                            await refreshState();
+                            if (updated !== undefined) {
+                              await loadAdministration();
+                              await refreshState();
+                            }
                           },
                         )
                       }
@@ -869,6 +1235,60 @@ function AuthenticatedWorkspace({
                         ? copy.lockUser
                         : copy.unlockUser}
                     </button>
+                    {user.id === state.user.id ? null : (
+                      <form
+                        className="user-management-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const form = event.currentTarget;
+                          const newPassword = requiredValue(
+                            new FormData(form),
+                            "newPassword",
+                            false,
+                          );
+                          void beginStepUp(
+                            "identity.user.password.reset",
+                            user.id,
+                            async (challengeId) => {
+                              const updated = await run(() =>
+                                resetIdentityUserPassword(baseUrl, user.id, {
+                                  challengeId,
+                                  expectedRevision: user.revision,
+                                  idempotencyKey: newIdempotencyKey(),
+                                  newPassword,
+                                }),
+                              );
+                              if (updated !== undefined) {
+                                form.reset();
+                                await loadAdministration();
+                              }
+                            },
+                          );
+                        }}
+                      >
+                        <label className="field-label compact-field">
+                          <span>
+                            {copy.newPassword}: {user.username}
+                          </span>
+                          <input
+                            autoComplete="new-password"
+                            maxLength={128}
+                            minLength={15}
+                            name="newPassword"
+                            required
+                            type="password"
+                          />
+                        </label>
+                        <button
+                          className="quiet-button"
+                          disabled={busy}
+                          id={`user-${user.id}-reset-password`}
+                          type="submit"
+                        >
+                          {copy.resetPassword}
+                        </button>
+                      </form>
+                    )}
                   </div>
                 </li>
               ))}
@@ -877,65 +1297,19 @@ function AuthenticatedWorkspace({
         ) : null}
 
         {canManageRoles ? (
-          <article className="identity-card admin-card">
-            <h3>{copy.permissionConfiguration}</h3>
-            <div className="role-grid">
-              {roles.map((role) => (
-                <fieldset key={role.id}>
-                  <legend>{copy.roles[role.key]}</legend>
-                  {permissionNames.map((permission) => (
-                    <label
-                      className="check-row permission-row"
-                      key={permission}
-                    >
-                      <input
-                        checked={(roleDrafts[role.id] ?? []).includes(
-                          permission,
-                        )}
-                        type="checkbox"
-                        onChange={(event) =>
-                          setRoleDrafts((current) => ({
-                            ...current,
-                            [role.id]: event.target.checked
-                              ? [...(current[role.id] ?? []), permission].sort()
-                              : (current[role.id] ?? []).filter(
-                                  (item) => item !== permission,
-                                ),
-                          }))
-                        }
-                      />
-                      <span>{permission}</span>
-                    </label>
-                  ))}
-                  <button
-                    className="quiet-button"
-                    disabled={busy}
-                    type="button"
-                    onClick={() =>
-                      void beginStepUp(
-                        "identity.role.permissions.update",
-                        role.id,
-                        async (challengeId) => {
-                          await run(() =>
-                            updateIdentityRolePermissions(baseUrl, role.id, {
-                              challengeId,
-                              expectedRevision: role.revision,
-                              idempotencyKey: newIdempotencyKey(),
-                              permissions: roleDrafts[role.id] ?? [],
-                            }),
-                          );
-                          await loadAdministration();
-                          await refreshState();
-                        },
-                      )
-                    }
-                  >
-                    {copy.save}
-                  </button>
-                </fieldset>
-              ))}
-            </div>
-          </article>
+          <RoleEditor
+            baseUrl={baseUrl}
+            beginStepUp={beginStepUp}
+            busy={busy}
+            copy={copy}
+            currentUserRoleId={state.user.role.id}
+            getLastDenial={getLastDenial}
+            permissions={permissionNames}
+            requestFocus={requestFocus}
+            roles={roles}
+            run={run}
+            onChanged={reloadRoleAdministration}
+          />
         ) : null}
       </div>
       {pendingStepUp === null ? null : (
@@ -944,7 +1318,7 @@ function AuthenticatedWorkspace({
           copy={copy}
           denial={denial}
           licensingCopy={licensingCopy}
-          onCancel={closeStepUp}
+          onCancel={cancelStepUp}
           onDismissDenial={onDismissDenial}
           onSubmit={async (password) => {
             const approval = await run(() =>
@@ -959,6 +1333,8 @@ function AuthenticatedWorkspace({
             const completed = pendingStepUp;
             closeStepUp();
             await completed.afterApproval(completed.challengeId);
+            const returnFocusId = previousFocusId.current;
+            setPendingFocusId(returnFocusId);
             return true;
           }}
         />

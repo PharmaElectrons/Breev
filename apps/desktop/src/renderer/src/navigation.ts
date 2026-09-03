@@ -1,7 +1,9 @@
-import type {
-  CapabilityName,
-  PaidCapabilityName,
-} from "@breev/contracts/local-rest";
+import type { CapabilityName } from "@breev/contracts/local-rest";
+
+import { requiredCapabilityFor } from "./feature-surfaces";
+import type { ModuleId } from "./module-ids";
+
+export type { ModuleId } from "./module-ids";
 
 /**
  * The Phase One module surfaces the production shell may show.
@@ -13,20 +15,6 @@ import type {
  * not advertise them at all — an "unavailable" entry would still promise scope
  * the product has not sold.
  */
-export type ModuleId =
-  | "accounts"
-  | "administration"
-  | "basket"
-  | "dashboard"
-  | "inventory"
-  | "messages"
-  | "patients"
-  | "products"
-  | "purchases"
-  | "reports"
-  | "sales"
-  | "settings";
-
 export type ModuleAvailability = "available" | "unavailable";
 
 interface ModuleDefinition {
@@ -38,13 +26,6 @@ interface ModuleDefinition {
    * the requirements call for it and hiding it would misrepresent the product.
    */
   readonly implemented: boolean;
-  /**
-   * A paid plan capability. Missing entitlement hides the surface completely
-   * rather than disabling it — docs/product.md: "Menus and functions not
-   * enabled for a pharmacy are hidden completely, not shown as disabled
-   * buttons". UI hiding is never the enforcement boundary.
-   */
-  readonly requiredCapability: PaidCapabilityName | null;
   /**
    * A named permission the user must already hold. The renderer receives
    * allowed navigation (docs/workflows.md §Start and connect step 4); the local
@@ -59,84 +40,72 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
     hash: "#/dashboard",
     id: "dashboard",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/sales",
     id: "sales",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/purchases",
     id: "purchases",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/inventory",
     id: "inventory",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/catalog/products",
     id: "products",
     implemented: true,
-    requiredCapability: null,
     requiredPermission: "catalog.item.manage",
   },
   {
     hash: "#/patients",
     id: "patients",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/messages",
     id: "messages",
     implemented: false,
-    requiredCapability: "whatsapp-messaging",
     requiredPermission: null,
   },
   {
     hash: "#/basket",
     id: "basket",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/reports",
     id: "reports",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/accounts",
     id: "accounts",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/administration",
     id: "administration",
     implemented: true,
-    requiredCapability: null,
     requiredPermission: null,
   },
   {
     hash: "#/settings",
     id: "settings",
     implemented: false,
-    requiredCapability: null,
     requiredPermission: null,
   },
 ] as const;
@@ -174,8 +143,12 @@ export interface NavigationModule {
 /**
  * The allowed navigation for one authenticated context.
  *
- * A surface disappears when its paid capability is not granted or when the user
- * does not hold its named permission. Everything else is listed, and a surface
+ * A surface disappears when its paid capability (from the feature registry in
+ * `feature-surfaces.ts`) is not granted or when the user does not hold its
+ * named permission. Missing entitlement hides the surface completely rather
+ * than disabling it — docs/product.md: "Menus and functions not enabled for a
+ * pharmacy are hidden completely, not shown as disabled buttons". UI hiding is
+ * never the enforcement boundary. Everything else is listed, and a surface
  * without an implementation behind it says so instead of pretending to work.
  */
 export function navigationModules(
@@ -185,10 +158,8 @@ export function navigationModules(
   const capabilities = new Set<string>(access.capabilities);
 
   return MODULE_DEFINITIONS.filter((definition) => {
-    if (
-      definition.requiredCapability !== null &&
-      !capabilities.has(definition.requiredCapability)
-    ) {
+    const requiredCapability = requiredCapabilityFor(definition.id);
+    if (requiredCapability !== null && !capabilities.has(requiredCapability)) {
       return false;
     }
     return (

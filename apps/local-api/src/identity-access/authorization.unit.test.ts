@@ -1,13 +1,31 @@
+import { stepUpActionSchema } from "@breev/contracts/local-rest";
 import { describe, expect, it } from "vitest";
 
 import {
+  IMPLEMENTED_PERMISSION_NAMES,
   PERMISSION_NAMES,
+  STEP_UP_ACTIONS,
   evaluateStepUpApproval,
   hasPermission,
   type StepUpApprovalInput,
 } from "./authorization.js";
 
 describe("identity authorization", () => {
+  it("publishes exactly the Step-Up actions the server enforces", () => {
+    // The wire enum is hand-synced with the registry; a drift either way
+    // would let a client name an action the server cannot bind, or leave a
+    // server action no client can request.
+    expect([...stepUpActionSchema.options].sort()).toEqual(
+      Object.keys(STEP_UP_ACTIONS).sort(),
+    );
+    expect(STEP_UP_ACTIONS["identity.role.create"]).toBe(
+      "identity.roles.manage",
+    );
+    expect(STEP_UP_ACTIONS["identity.role.rename"]).toBe(
+      "identity.roles.manage",
+    );
+  });
+
   it("denies every role until an explicit grant exists", () => {
     for (const role of [
       "owner",
@@ -56,6 +74,27 @@ describe("identity authorization", () => {
       "sync.conflict.resolve",
     ]);
   });
+
+  it("restricts the implemented set to names that back a live operation", () => {
+    // The five names with no operation behind them yet must never be
+    // grantable: draft.price.override, pricing.below_cost,
+    // sales.invoice.reverse, sales.return.post, and sync.conflict.resolve.
+    expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
+      "attendance.record",
+      "catalog.item.manage",
+      "devices.pair",
+      "identity.roles.manage",
+      "identity.users.manage",
+      "licensing.manage",
+      "pharmacy.settings.manage",
+    ]);
+    for (const permission of IMPLEMENTED_PERMISSION_NAMES) {
+      expect(PERMISSION_NAMES, permission).toContain(permission);
+    }
+    expect(IMPLEMENTED_PERMISSION_NAMES.length).toBeLessThan(
+      PERMISSION_NAMES.length,
+    );
+  });
 });
 
 describe("Step-Up Authorization", () => {
@@ -88,6 +127,12 @@ describe("Step-Up Authorization", () => {
 
   it("approves a fresh challenge for the same authorized execution context", () => {
     expect(evaluateStepUpApproval(approvedInput)).toBe("approved");
+  });
+
+  it("maps administrator password reset to user management", () => {
+    expect(STEP_UP_ACTIONS["identity.user.password.reset"]).toBe(
+      "identity.users.manage",
+    );
   });
 
   it("expires at the bounded lifetime instead of extending it", () => {

@@ -3,6 +3,7 @@
 .delegate/
 .scratch/
 .unlazy/
+docs/ai/
 node_modules
 dist
 out

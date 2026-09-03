@@ -46,6 +46,47 @@ describe("deriveEntitlement", () => {
     ]);
   });
 
+  it("keeps every signed capability during grace and only changes the status", () => {
+    const claims = {
+      formatVersion: 1 as const,
+      keyId: "test",
+      licenceId: "019b0000-0000-7000-8000-000000000103",
+      pharmacyId: "019b0000-0000-7000-8000-000000000101",
+      mainDeviceId: "019b0000-0000-7000-8000-000000000102",
+      plan: "professional",
+      features: ["additional-device-pos" as const],
+      founderOverrideGrants: ["purchase-invoice-ocr" as const],
+      permittedDeviceCount: 3,
+      issuedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2028-01-01T00:00:00.000Z",
+      graceEndsAt: "2028-01-08T00:00:00.000Z",
+    };
+    const entitlement = deriveEntitlement({
+      licence: { status: "grace", claims },
+      clockRollbackDetected: false,
+    });
+    expect(entitlement.status).toBe("grace");
+    expect(entitlement.capabilities).toEqual([
+      ...FREE_CORE_CAPABILITIES,
+      "additional-device-pos",
+      "purchase-invoice-ocr",
+    ]);
+    expect(entitlement.licence).toEqual(claims);
+
+    // Rollback still wins over grace: a suspicious clock never keeps paid
+    // work alive.
+    expect(
+      deriveEntitlement({
+        licence: { status: "grace", claims },
+        clockRollbackDetected: true,
+      }),
+    ).toEqual({
+      status: "clock-rollback",
+      capabilities: FREE_CORE_CAPABILITIES,
+      licence: null,
+    });
+  });
+
   it("removes only paid capabilities after clock rollback", () => {
     const entitlement = deriveEntitlement({
       licence: { status: "invalid", reason: "expired" },

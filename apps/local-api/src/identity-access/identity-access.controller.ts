@@ -3,13 +3,21 @@ import {
   attendanceEventRequestSchema,
   identityBootstrapContract,
   identityBootstrapRequestSchema,
+  identityChangePasswordContract,
+  identityChangePasswordRequestSchema,
+  identityCreateRoleContract,
+  identityCreateRoleRequestSchema,
   identityCreateUserContract,
   identityCreateUserRequestSchema,
   identityLoginContract,
   identityLoginRequestSchema,
   identityLogoutContract,
   identityLogoutRequestSchema,
+  identityRenameRoleContract,
+  identityRenameRoleRequestSchema,
   identityResourceIdSchema,
+  identityResetUserPasswordContract,
+  identityResetUserPasswordRequestSchema,
   identityRolesContract,
   identityStateContract,
   identityStepUpApproveContract,
@@ -30,6 +38,7 @@ import {
   type IdentityState,
   type IdentityStepUpChallenge,
   type IdentityUser,
+  type IdentityUsers,
   type PharmacySettings,
 } from "@breev/contracts/local-rest";
 import {
@@ -111,10 +120,39 @@ export class IdentityAccessController {
   }
 
   @Get(identityUsersContract.path)
-  public async users(
-    @Req() request: Request,
-  ): Promise<{ users: IdentityUser[] }> {
+  public async users(@Req() request: Request): Promise<IdentityUsers> {
     return await translateIdentityDenial(() => this.identity.users(request));
+  }
+
+  @Post(identityCreateRoleContract.path)
+  @HttpCode(201)
+  public async createRole(
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<IdentityRole> {
+    return await translateIdentityDenial(async () => {
+      const input = identityCreateRoleRequestSchema.safeParse(body);
+      if (!input.success) {
+        return await this.identity.rejectInvalidBody(request);
+      }
+      return await this.identity.createRole(request, input.data);
+    });
+  }
+
+  @Patch(identityRenameRoleContract.path)
+  public async renameRole(
+    @Param("roleId") roleId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<IdentityRole> {
+    return await translateIdentityDenial(async () => {
+      const parsedId = identityResourceIdSchema.safeParse(roleId);
+      const input = identityRenameRoleRequestSchema.safeParse(body);
+      if (!parsedId.success || !input.success) {
+        return await this.identity.rejectInvalidBody(request);
+      }
+      return await this.identity.renameRole(request, parsedId.data, input.data);
+    });
   }
 
   @Post(identityCreateUserContract.path)
@@ -145,6 +183,42 @@ export class IdentityAccessController {
         return await this.identity.rejectInvalidBody(request);
       }
       return await this.identity.updateUser(request, parsedId.data, input.data);
+    });
+  }
+
+  @Post(identityChangePasswordContract.path)
+  @HttpCode(200)
+  public async changePassword(
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<IdentityUser> {
+    return await translateIdentityDenial(async () => {
+      const input = identityChangePasswordRequestSchema.safeParse(body);
+      if (!input.success) {
+        return await this.identity.rejectInvalidBody(request);
+      }
+      return await this.identity.changePassword(request, input.data);
+    });
+  }
+
+  @Post(identityResetUserPasswordContract.path)
+  @HttpCode(200)
+  public async resetUserPassword(
+    @Param("userId") userId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<IdentityUser> {
+    return await translateIdentityDenial(async () => {
+      const parsedId = identityResourceIdSchema.safeParse(userId);
+      const input = identityResetUserPasswordRequestSchema.safeParse(body);
+      if (!parsedId.success || !input.success) {
+        return await this.identity.rejectInvalidBody(request);
+      }
+      return await this.identity.resetUserPassword(
+        request,
+        parsedId.data,
+        input.data,
+      );
     });
   }
 

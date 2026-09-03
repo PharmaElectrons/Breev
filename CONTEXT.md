@@ -11,6 +11,7 @@ This is the canonical glossary. Definitions describe the business language, not 
 | Additional POS Terminal | A paid LAN client with no independent authoritative database. It needs the Main Pharmacy Computer and LAN, but not the internet. |
 | Free Core | Local pharmacy operation on the Main Pharmacy Computer and full access to pharmacy-owned data without a paid plan or cloud. |
 | Permission | An authenticated user's authority to perform an action. It is independent of a plan Entitlement. |
+| Role | A named set of Permissions. Each user holds exactly one Role. The eight built-in roles are seeded and localized by Breev; a Pharmacy may add custom roles with a pharmacy-entered name. Permissions belong to Roles, never to individual users. |
 | Entitlement | A signed plan capability grant, such as an added terminal, OCR, messaging, or cloud sync. It never grants user authority. |
 | Step-Up Authorization | Immediate reauthentication by the same authorized user for a named sensitive action. |
 | Dual Control | Two distinct authorized users prepare and approve a sensitive action. A user cannot approve their own action. |

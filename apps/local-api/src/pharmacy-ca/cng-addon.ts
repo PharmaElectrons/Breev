@@ -11,7 +11,7 @@
  * supported for integration tests, returning appropriate platform indicators.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import {
   createPublicKey,
   generateKeyPairSync,
@@ -78,10 +78,10 @@ export const SOFTWARE_KEY_STORAGE_PROVIDER =
 
 // ─── Provider Selection & Detection ───────────────────────────────────────────
 
-export function selectKeyStorageProvider(): {
+export async function selectKeyStorageProvider(): Promise<{
   providerName: string;
   assuranceLevel: "platform-tpm" | "software-cng-fallback";
-} {
+}> {
   if (process.platform !== "win32") {
     return {
       providerName: "breev-software-test-provider",
@@ -91,16 +91,10 @@ export function selectKeyStorageProvider(): {
 
   try {
     const probeName = `breev-cng-probe-${randomUUID()}`;
-    const output = execFileSync(
-      "powershell",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        buildProviderProbeScript(probeName),
-      ],
-      { encoding: "utf8", timeout: WINDOWS_CNG_PROVIDER_PROBE_TIMEOUT_MS },
-    ).trim();
+    const output = await runPowerShell(
+      buildProviderProbeScript(probeName),
+      WINDOWS_CNG_PROVIDER_PROBE_TIMEOUT_MS,
+    );
 
     if (output === "AVAILABLE") {
       return {
@@ -120,18 +114,22 @@ export function selectKeyStorageProvider(): {
 
 // ─── Key Management ───────────────────────────────────────────────────────────
 
-export function createPersistedKeyPair(opts: CreateKeyOptions): KeyResult {
+export async function createPersistedKeyPair(
+  opts: CreateKeyOptions,
+): Promise<KeyResult> {
   assertValidKeyOptions(opts);
   if (process.platform === "win32") {
-    return createWindowsCngKey(opts);
+    return await createWindowsCngKey(opts);
   }
   return createSoftwareFallbackKey(opts);
 }
 
-export function openPersistedKey(opts: OpenKeyOptions): KeyResult {
+export async function openPersistedKey(
+  opts: OpenKeyOptions,
+): Promise<KeyResult> {
   assertValidKeyIdentity(opts);
   if (process.platform === "win32") {
-    return openWindowsCngKey(opts);
+    return await openWindowsCngKey(opts);
   }
   const found = softwareKeyStore.get(opts.keyName);
   if (found) {
@@ -142,11 +140,11 @@ export function openPersistedKey(opts: OpenKeyOptions): KeyResult {
   );
 }
 
-export function signData(
+export async function signData(
   keyHandle: CngKeyHandle,
   dataBuffer: Buffer,
   opts: SignOptions,
-): Buffer {
+): Promise<Buffer> {
   if (keyHandle.softwareFallbackKey) {
     return sign(
       opts.algorithm.toLowerCase(),
@@ -156,13 +154,15 @@ export function signData(
   }
 
   if (process.platform === "win32") {
-    return signDataWithWindowsCng(keyHandle, dataBuffer, opts);
+    return await signDataWithWindowsCng(keyHandle, dataBuffer, opts);
   }
 
   throw new Error("CNG signing is only supported on Windows");
 }
 
-export function tryExportPrivateKey(keyHandle: CngKeyHandle): TryExportResult {
+export async function tryExportPrivateKey(
+  keyHandle: CngKeyHandle,
+): Promise<TryExportResult> {
   assertValidKeyIdentity(keyHandle);
   if (process.platform === "win32" && !keyHandle.softwareFallbackKey) {
     const psScript = `
@@ -178,11 +178,7 @@ export function tryExportPrivateKey(keyHandle: CngKeyHandle): TryExportResult {
       }
     `;
 
-    const result = execFileSync(
-      "powershell",
-      ["-NoProfile", "-NonInteractive", "-Command", psScript],
-      { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
-    ).trim();
+    const result = await runPowerShell(psScript, WINDOWS_CNG_TIMEOUT_MS);
 
     if (result.includes("ERROR_EXPORT_SUCCEEDED")) {
       throw new Error("SECURITY INVARIANT VIOLATION: CA key was exportable");
@@ -199,7 +195,9 @@ export function tryExportPrivateKey(keyHandle: CngKeyHandle): TryExportResult {
   );
 }
 
-export function readPersistedKeyAcl(keyHandle: CngKeyHandle): PersistedKeyAcl {
+export async function readPersistedKeyAcl(
+  keyHandle: CngKeyHandle,
+): Promise<PersistedKeyAcl> {
   assertValidKeyIdentity(keyHandle);
   if (process.platform !== "win32" || keyHandle.softwareFallbackKey) {
     throw new Error("CNG key ACLs can only be inspected on Windows");
@@ -221,11 +219,7 @@ export function readPersistedKeyAcl(keyHandle: CngKeyHandle): PersistedKeyAcl {
       $key.Dispose()
     }
   `;
-  const output = execFileSync(
-    "powershell",
-    ["-NoProfile", "-NonInteractive", "-Command", psScript],
-    { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
-  ).trim();
+  const output = await runPowerShell(psScript, WINDOWS_CNG_TIMEOUT_MS);
   const acl = JSON.parse(output) as Partial<PersistedKeyAcl>;
   if (
     !Number.isInteger(acl.aceCount) ||
@@ -238,7 +232,7 @@ export function readPersistedKeyAcl(keyHandle: CngKeyHandle): PersistedKeyAcl {
   return acl as PersistedKeyAcl;
 }
 
-export function deletePersistedKey(opts: OpenKeyOptions): void {
+export async function deletePersistedKey(opts: OpenKeyOptions): Promise<void> {
   assertValidKeyIdentity(opts);
   if (process.platform === "win32") {
     const psScript = `
@@ -249,11 +243,7 @@ export function deletePersistedKey(opts: OpenKeyOptions): void {
       } catch {}
     `;
     try {
-      execFileSync(
-        "powershell",
-        ["-NoProfile", "-NonInteractive", "-Command", psScript],
-        { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
-      );
+      await runPowerShell(psScript, WINDOWS_CNG_TIMEOUT_MS);
     } catch {
       // Best-effort cleanup
     }
@@ -264,7 +254,7 @@ export function deletePersistedKey(opts: OpenKeyOptions): void {
 
 // ─── Windows CNG Implementation via PowerShell / .NET ─────────────────────────
 
-function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
+async function createWindowsCngKey(opts: CreateKeyOptions): Promise<KeyResult> {
   const keyBits = opts.keyBits || 2048;
   const psScript = `
     $ErrorActionPreference = 'Stop'
@@ -290,11 +280,7 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
     Write-Output "$mod\`n$exp\`n$sid"
   `;
 
-  const output = execFileSync(
-    "powershell",
-    ["-NoProfile", "-NonInteractive", "-Command", psScript],
-    { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
-  ).trim();
+  const output = await runPowerShell(psScript, WINDOWS_CNG_TIMEOUT_MS);
 
   const lines = output
     .split(/\r?\n/)
@@ -333,7 +319,7 @@ function createWindowsCngKey(opts: CreateKeyOptions): KeyResult {
   };
 }
 
-function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
+async function openWindowsCngKey(opts: OpenKeyOptions): Promise<KeyResult> {
   const psScript = `
     $ErrorActionPreference = 'Stop'
     $openOpt = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey -bor [System.Security.Cryptography.CngKeyOpenOptions]::Silent
@@ -348,11 +334,7 @@ function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
     Write-Output "$mod\`n$exp\`n$sid"
   `;
 
-  const output = execFileSync(
-    "powershell",
-    ["-NoProfile", "-NonInteractive", "-Command", psScript],
-    { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
-  ).trim();
+  const output = await runPowerShell(psScript, WINDOWS_CNG_TIMEOUT_MS);
 
   const lines = output
     .split(/\r?\n/)
@@ -391,11 +373,11 @@ function openWindowsCngKey(opts: OpenKeyOptions): KeyResult {
   };
 }
 
-function signDataWithWindowsCng(
+async function signDataWithWindowsCng(
   keyHandle: CngKeyHandle,
   dataBuffer: Buffer,
   opts: SignOptions,
-): Buffer {
+): Promise<Buffer> {
   const dataBase64 = dataBuffer.toString("base64");
   const hashAlg = opts.algorithm;
 
@@ -411,11 +393,7 @@ function signDataWithWindowsCng(
     Write-Output ([Convert]::ToBase64String($sig))
   `;
 
-  const sigBase64 = execFileSync(
-    "powershell",
-    ["-NoProfile", "-NonInteractive", "-Command", psScript],
-    { encoding: "utf8", timeout: WINDOWS_CNG_TIMEOUT_MS },
-  ).trim();
+  const sigBase64 = await runPowerShell(psScript, WINDOWS_CNG_TIMEOUT_MS);
 
   if (!sigBase64) {
     throw new Error(
@@ -427,6 +405,23 @@ function signDataWithWindowsCng(
 }
 
 const softwareKeyStore = new Map<string, KeyResult>();
+
+function runPowerShell(script: string, timeout: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      { encoding: "utf8", timeout },
+      (error, stdout) => {
+        if (error !== null) {
+          reject(error);
+          return;
+        }
+        resolve(stdout.trim());
+      },
+    );
+  });
+}
 
 function assertValidKeyIdentity(opts: OpenKeyOptions): void {
   if (!/^[A-Za-z0-9-]{1,200}$/.test(opts.keyName)) {

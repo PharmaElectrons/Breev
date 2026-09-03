@@ -42,8 +42,11 @@ export function deriveEntitlement(input: {
   const paid = PAID_CAPABILITIES.filter((capability) =>
     granted.has(capability),
   );
+  // Grace carries the same capabilities as a live licence: the signed
+  // document is still trusted until its grace end. Only the status differs,
+  // so the pairing path and the owner panel can tell the two apart.
   return {
-    status: "licensed",
+    status: input.licence.status === "grace" ? "grace" : "licensed",
     capabilities: [...FREE_CORE_CAPABILITIES, ...paid],
     licence: {
       ...input.licence.claims,
@@ -54,7 +57,7 @@ export function deriveEntitlement(input: {
 }
 
 function freeCore(
-  status: Exclude<EntitlementContext["status"], "licensed">,
+  status: Exclude<EntitlementContext["status"], "grace" | "licensed">,
 ): EntitlementContext {
   return { status, capabilities: [...FREE_CORE_CAPABILITIES], licence: null };
 }

@@ -24,6 +24,8 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 
+import { evidencePath } from "./evidence-path.js";
+
 const PHARMACY_ID = "019b0000-0000-7000-8000-000000000401";
 const INSTALLATION_ID = "019b0000-0000-7000-8000-000000000402";
 const DEVICE_ID = "019b0000-0000-7000-8000-000000000403";
@@ -588,10 +590,7 @@ async function expectBrowserStorageToContainPreferencesOnly(
 }
 
 function evidenceDirectory(): string {
-  return path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/issue-42/after",
-  );
+  return evidencePath("issue-42/after");
 }
 
 async function startTerminalRenderer(): Promise<TerminalRenderer> {
@@ -685,7 +684,11 @@ function terminalIdentityState(): IdentityAuthenticatedState {
       displayName: "Terminal Cashier",
       id: "019b0000-0000-7000-8000-000000000405",
       revision: "1",
-      role: "sales_employee",
+      role: {
+        id: "019b0000-0000-7000-8000-000000000406",
+        key: "sales_employee",
+        kind: "built-in",
+      },
       status: "active",
       username: "terminal.cashier",
     },

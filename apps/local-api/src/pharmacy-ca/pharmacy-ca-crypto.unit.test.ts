@@ -30,15 +30,15 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   const caKeyName = `test-ca-${installationId}`;
 
   beforeAll(async () => {
-    providerName = selectKeyStorageProvider().providerName;
-    caKeyResult = createPersistedKeyPair({
+    providerName = (await selectKeyStorageProvider()).providerName;
+    caKeyResult = await createPersistedKeyPair({
       providerName,
       keyName: caKeyName,
       algorithm: "RSA",
       keyBits: 2048,
     });
 
-    caCert = buildCACertificate({
+    caCert = await buildCACertificate({
       keyHandle: caKeyResult.keyHandle,
       publicKeyDer: caKeyResult.publicKeyDer,
       installationId,
@@ -46,8 +46,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     });
   });
 
-  afterAll(() => {
-    deletePersistedKey({ providerName, keyName: caKeyName });
+  afterAll(async () => {
+    await deletePersistedKey({ providerName, keyName: caKeyName });
   });
 
   // ─── 1. CA Certificate Construction & Properties ──────────────────────────
@@ -62,8 +62,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
 
   // ─── 2. Server Certificate Issuance & Validation ──────────────────────────
 
-  it("builds a server certificate with breev-server role and validates against CA", () => {
-    const serverCert = buildServerCertificate({
+  it("builds a server certificate with breev-server role and validates against CA", async () => {
+    const serverCert = await buildServerCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
       installationId,
@@ -97,11 +97,11 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
 
   // ─── 3. Device Certificate Issuance & Validation ──────────────────────────
 
-  it("binds pharmacy, device, type, licence, and serial into the subject names", () => {
+  it("binds pharmacy, device, type, licence, and serial into the subject names", async () => {
     const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 
-    const deviceCert = buildDeviceCertificate({
+    const deviceCert = await buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
       licenceId,
@@ -128,12 +128,12 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     expect(BigInt(`0x${deviceCert.serialHex}`)).toBeGreaterThan(0n);
   });
 
-  it("builds a device certificate with breev-device role and validates against CA", () => {
+  it("builds a device certificate with breev-device role and validates against CA", async () => {
     const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-    const deviceCert = buildDeviceCertificate({
+    const deviceCert = await buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
       licenceId,
@@ -164,10 +164,10 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     });
   });
 
-  it("assigns a unique positive serial to every certificate", () => {
-    const issueDevice = () => {
+  it("assigns a unique positive serial to every certificate", async () => {
+    const issueDevice = async () => {
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-      return buildDeviceCertificate({
+      return await buildDeviceCertificate({
         caKeyHandle: caKeyResult.keyHandle,
         caCertPem: caCert.certPem,
         licenceId,
@@ -179,8 +179,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       });
     };
 
-    const first = issueDevice();
-    const second = issueDevice();
+    const first = await issueDevice();
+    const second = await issueDevice();
 
     expect(first.serialHex).toMatch(/^[0-9a-f]+$/);
     expect(BigInt(`0x${first.serialHex}`)).toBeGreaterThan(0n);
@@ -189,7 +189,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
 
   it.skipIf(process.platform === "win32")(
     "encodes repeated positive 128-bit serials canonically",
-    () => {
+    async () => {
       const { publicKey } = generateKeyPairSync("rsa", {
         modulusLength: 2048,
       });
@@ -199,7 +199,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       });
 
       for (let index = 0; index < 4_096; index += 1) {
-        const issued = buildDeviceCertificate({
+        const issued = await buildDeviceCertificate({
           caKeyHandle: caKeyResult.keyHandle,
           caCertPem: caCert.certPem,
           licenceId,
@@ -216,12 +216,12 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
 
   // ─── 4. Validation Rejection Scenarios ────────────────────────────────────
 
-  it("rejects expired certificates with cert-expired", () => {
+  it("rejects expired certificates with cert-expired", async () => {
     const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-    const expiredCert = buildDeviceCertificate({
+    const expiredCert = await buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
       licenceId,
@@ -250,8 +250,8 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     });
   });
 
-  it("rejects role mismatches (server cert as device)", () => {
-    const serverCert = buildServerCertificate({
+  it("rejects role mismatches (server cert as device)", async () => {
+    const serverCert = await buildServerCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
       installationId,
@@ -277,13 +277,13 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     });
   });
 
-  it("rejects installation identity mismatch", () => {
+  it("rejects installation identity mismatch", async () => {
     const otherInstallationId = createUuidV7();
     const deviceId = createUuidV7();
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-    const deviceCert = buildDeviceCertificate({
+    const deviceCert = await buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
       licenceId,
@@ -312,10 +312,10 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     });
   });
 
-  it("rejects certificates signed by a foreign CA", () => {
+  it("rejects certificates signed by a foreign CA", async () => {
     const { publicKey: foreignPub, privateKey: foreignPriv } =
       generateKeyPairSync("rsa", { modulusLength: 2048 });
-    const foreignCa = buildCACertificate({
+    const foreignCa = await buildCACertificate({
       keyHandle: {
         keyName: "foreign",
         providerName: "test",
@@ -331,7 +331,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-    const foreignDeviceCert = buildDeviceCertificate({
+    const foreignDeviceCert = await buildDeviceCertificate({
       caKeyHandle: {
         keyName: "foreign",
         providerName: "test",
@@ -370,7 +370,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   // ─── 5. Mutual TLS (mTLS) Live Handshake Fixture ──────────────────────────
 
   it("completes a full mutual TLS 1.3 handshake with client certificate authentication", async () => {
-    const serverCert = buildServerCertificate({
+    const serverCert = await buildServerCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
       installationId,
@@ -388,7 +388,7 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
       type: "pkcs8",
     }) as string;
 
-    const deviceCert = buildDeviceCertificate({
+    const deviceCert = await buildDeviceCertificate({
       caKeyHandle: caKeyResult.keyHandle,
       caCertPem: caCert.certPem,
       licenceId,
@@ -540,16 +540,16 @@ describe.sequential("Pharmacy CA Cryptography and Validation Seam", () => {
   describe.runIf(process.platform === "win32")(
     "Windows CNG Non-Exportability",
     () => {
-      it("proves the CA key export fails", () => {
+      it("proves the CA key export fails", async () => {
         expect(caKeyResult.keyHandle.isMachineKey).toBe(true);
         expect(caKeyResult.keyHandle.serviceAccountSid).toMatch(/^S-1-/);
-        expect(readPersistedKeyAcl(caKeyResult.keyHandle)).toEqual({
+        expect(await readPersistedKeyAcl(caKeyResult.keyHandle)).toEqual({
           aceCount: 1,
           aceType: "AccessAllowed",
           allowedSid: caKeyResult.keyHandle.serviceAccountSid,
           protected: true,
         });
-        const exportResult = tryExportPrivateKey(caKeyResult.keyHandle);
+        const exportResult = await tryExportPrivateKey(caKeyResult.keyHandle);
         expect(exportResult.exported).toBe(false);
         expect(exportResult.message).toContain("EXPORT_DENIED");
       });

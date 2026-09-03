@@ -30,6 +30,8 @@ export interface DevicesCopy {
   readonly invitationUri: string;
   readonly loading: string;
   readonly pairedAt: string;
+  /** Shown in place of Start pairing while the licence is in its grace period. */
+  readonly pairingGracePeriod: string;
   readonly pairingTitle: string;
   readonly qrLabel: string;
   readonly qrUnavailable: string;
@@ -81,12 +83,16 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
     denial: "تم رفض الإجراء",
     denials: {
       "body-invalid": "تحقق من البيانات المدخلة.",
+      "ca-key-store-failure": "تعذّر إنشاء الهوية التشفيرية للصيدلية.",
+      "ca-not-found": "لم تُنشأ الهوية التشفيرية للصيدلية بعد.",
       "device-not-found": "لم يعد هذا الجهاز موجوداً في سجل الأجهزة.",
       "device-not-revoked": "يجب إبطال الجهاز قبل طلب تحرير مقعده.",
       "pairing-attempts-exceeded":
         "تجاوزت جلسة الإقران عدد المحاولات المسموح. ابدأ جلسة جديدة.",
       "pairing-entitlement-missing":
         "لا يتيح الترخيص الحالي إضافة نقاط بيع. جدّد الترخيص أو أضف المقاعد المطلوبة.",
+      "pairing-grace-period":
+        "الترخيص ضمن فترة السماح. جدّده قبل إقران نقطة بيع جديدة.",
       "pairing-seat-unavailable":
         "لا يوجد مقعد متاح ضمن عدد الأجهزة المسموح. حرّر مقعد جهاز مبطل أولاً.",
       "pairing-session-conflict":
@@ -113,6 +119,8 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
     invitationUri: "رابط الدعوة",
     loading: "جارٍ تحميل حالة الأجهزة",
     pairedAt: "تاريخ الإقران",
+    pairingGracePeriod:
+      "الترخيص ضمن فترة السماح. تستمر نقاط البيع المقترنة في العمل، ولا يمكن إقران نقطة بيع جديدة حتى التجديد.",
     pairingTitle: "إقران نقطة بيع",
     qrLabel: "رمز الإقران — امسحه بقارئ نقطة البيع",
     qrUnavailable: "رمز الإقران غير متاح. ابدأ جلسة إقران جديدة.",
@@ -173,6 +181,10 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
     denial: "Action denied",
     denials: {
       "body-invalid": "Check the information you entered.",
+      "ca-key-store-failure":
+        "The pharmacy cryptographic identity could not be created.",
+      "ca-not-found":
+        "The pharmacy cryptographic identity has not been created yet.",
       "device-not-found": "That device is no longer in the device register.",
       "device-not-revoked":
         "Revoke the device before requesting the release of its seat.",
@@ -180,6 +192,8 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
         "The pairing session exceeded the permitted join attempts. Start a new session.",
       "pairing-entitlement-missing":
         "The current licence does not include additional POS terminals. Renew the licence or add the seats you need.",
+      "pairing-grace-period":
+        "The licence is in its grace period. Renew it before pairing a new terminal.",
       "pairing-seat-unavailable":
         "No seat is available within the permitted device count. Release a revoked device's seat first.",
       "pairing-session-conflict":
@@ -208,6 +222,8 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
     invitationUri: "Invitation link",
     loading: "Loading device status",
     pairedAt: "Paired",
+    pairingGracePeriod:
+      "The licence is in its grace period. Paired terminals keep working, and a new terminal cannot be paired until the licence is renewed.",
     pairingTitle: "Pair a terminal",
     qrLabel: "Pairing code — scan it with the terminal's scanner",
     qrUnavailable: "The pairing code is not available. Start a new session.",

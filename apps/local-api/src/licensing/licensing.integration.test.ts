@@ -4,13 +4,33 @@ import {
 } from "@testcontainers/postgresql";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// C3's test for a licence far above the retired 10,000 device ceiling needs
+// a licence signed by a key this suite controls (Breev ships verification
+// keys only, and no signing key for the published test issuer exists in
+// this repository — by design; see devices.integration.test.ts for the
+// same substitution). The registry keeps the real keys the other fixtures
+// below are signed with and adds the run-time test issuer alongside them.
+vi.mock("./licence-keys.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./licence-keys.js")>();
+  const issuer = await import("../devices/test-helpers/licence-issuer.test.js");
+  return {
+    OFFLINE_LICENCE_PUBLIC_KEYS: {
+      ...actual.OFFLINE_LICENCE_PUBLIC_KEYS,
+      [issuer.TEST_ISSUER_KEY_ID]: issuer.TEST_ISSUER_PUBLIC_KEY_PEM,
+    },
+  };
+});
 
 import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
+import { seedOwnerRoleWithFloor } from "../../test/owner-floor-fixture.js";
+import { mintLicence } from "../devices/test-helpers/licence-issuer.test.js";
 import { LocalDatabaseService } from "../local-database.service.js";
+import { createUuidV7 } from "../pharmacy-ca/pharmacy-ca-crypto.js";
 import { FREE_CORE_CAPABILITIES } from "./entitlement.js";
 import {
   TEST_MAIN_DEVICE_ID,
@@ -54,20 +74,13 @@ describe.sequential("licensing PostgreSQL seam", () => {
         "insert into pharmacies (id, name) values ($1, 'Breev Licence Test Pharmacy')",
         [TEST_PHARMACY_ID],
       );
-    await database.requirePool().query(
-      `insert into pharmacy_roles (id, pharmacy_id, role_key)
-       values ($1, $2, 'owner')`,
-      [OWNER_ROLE_ID, TEST_PHARMACY_ID],
-    );
-    await database.requirePool().query(
-      `insert into identity_users (
-         id, pharmacy_id, username, username_key, display_name, role_id,
-         password_hash, password_algorithm, password_version,
-         password_memory_kib, password_iterations, password_parallelism
-       ) values ($1, $2, 'licence.actor', 'licence.actor',
-                 'Licence Actor', $3, $4, 'argon2id', 19, 19456, 2, 1)`,
-      [ACTOR_ID, TEST_PHARMACY_ID, OWNER_ROLE_ID, Buffer.alloc(64)],
-    );
+    await seedOwnerRoleWithFloor(database.requirePool(), {
+      actorId: ACTOR_ID,
+      displayName: "Licence Actor",
+      pharmacyId: TEST_PHARMACY_ID,
+      roleId: OWNER_ROLE_ID,
+      username: "licence.actor",
+    });
     licensing = new LicensingService(database);
   }, 60_000);
 
@@ -105,9 +118,21 @@ describe.sequential("licensing PostgreSQL seam", () => {
       status: "licensed",
     });
 
-    const expired = await currentAt("2027-01-01T00:00:00.000Z");
-    expect(expired.status).toBe("expired");
-    expect(expired.capabilities).toEqual(FREE_CORE_CAPABILITIES);
+    // The paid term ended and the signed grace end (2027-01-08) has not: paid
+    // work continues, the licence stays visible, and the status says so. The
+    // grace-end boundary itself is proven by the last case in this file, at
+    // instants later than every other case, so Trusted Breev Time never has
+    // to roll back.
+    const grace = await currentAt("2027-01-01T00:00:00.000Z");
+    expect(grace).toMatchObject({
+      status: "grace",
+      licence: { permittedDeviceCount: 3, plan: "professional" },
+    });
+    expect(grace.capabilities).toEqual([
+      ...FREE_CORE_CAPABILITIES,
+      "one-way-cloud-sync",
+      "purchase-invoice-ocr",
+    ]);
 
     await licensing.install({
       actorId: ACTOR_ID,
@@ -345,6 +370,110 @@ describe.sequential("licensing PostgreSQL seam", () => {
        where lower_bound >= '2029-01-01T00:00:00.000Z'`,
     );
     expect(marks.rows[0]?.count).toBe("1");
+  });
+
+  // C3: permittedDeviceCount is licensing data, never a hard-coded software
+  // limit. A licence far above the retired 10,000 commercial ceiling must
+  // still parse, install (which persists it past the licence_installations
+  // check constraint), and round-trip back out through a fresh query.
+  it("installs and round-trips a licence permitting far more than 10,000 devices", async () => {
+    const largeDeviceCount = 250_000;
+    const encodedLicence = mintLicence({
+      expiresAt: "2030-06-01T00:00:00.000Z",
+      graceEndsAt: "2030-06-08T00:00:00.000Z",
+      issuedAt: "2030-01-01T00:00:00.000Z",
+      licenceId: createUuidV7(),
+      mainDeviceId: TEST_MAIN_DEVICE_ID,
+      permittedDeviceCount: largeDeviceCount,
+      pharmacyId: TEST_PHARMACY_ID,
+    });
+
+    const installed = await licensing.install({
+      actorId: ACTOR_ID,
+      encodedLicence,
+      mainDeviceId: TEST_MAIN_DEVICE_ID,
+      now: new Date("2030-01-01T00:30:00.000Z"),
+      pharmacyId: TEST_PHARMACY_ID,
+    });
+    expect(installed).toMatchObject({
+      status: "licensed",
+      licence: { permittedDeviceCount: largeDeviceCount },
+    });
+
+    const requeried = await currentAt("2030-03-01T00:00:00.000Z");
+    expect(requeried).toMatchObject({
+      status: "licensed",
+      licence: { permittedDeviceCount: largeDeviceCount },
+    });
+
+    const stored = await administrator.query<{
+      permitted_device_count: number;
+    }>(
+      `select permitted_device_count from licence_installations
+       where pharmacy_id = $1 and main_device_id = $2
+       order by installed_at desc
+       limit 1`,
+      [TEST_PHARMACY_ID, TEST_MAIN_DEVICE_ID],
+    );
+    expect(stored.rows[0]?.permitted_device_count).toBe(largeDeviceCount);
+  });
+
+  // The grace rule, end to end through the stored document and Trusted Breev
+  // Time: the signed expiry opens grace with every paid capability intact,
+  // and the signed grace end closes it to Free Core. Every instant here is
+  // later than any instant above, because the high-water mark only advances.
+  it("honours the signed grace end: paid work continues after expiry and stops at graceEndsAt", async () => {
+    await licensing.install({
+      actorId: ACTOR_ID,
+      encodedLicence: mintLicence({
+        expiresAt: "2031-01-01T00:00:00.000Z",
+        graceEndsAt: "2031-01-08T00:00:00.000Z",
+        issuedAt: "2030-07-01T00:00:00.000Z",
+        licenceId: createUuidV7(),
+        mainDeviceId: TEST_MAIN_DEVICE_ID,
+        permittedDeviceCount: 3,
+        pharmacyId: TEST_PHARMACY_ID,
+      }),
+      mainDeviceId: TEST_MAIN_DEVICE_ID,
+      now: new Date("2030-07-01T00:00:00.000Z"),
+      pharmacyId: TEST_PHARMACY_ID,
+    });
+    expect((await currentAt("2030-12-31T23:59:59.999Z")).status).toBe(
+      "licensed",
+    );
+
+    const grace = await currentAt("2031-01-01T00:00:00.000Z");
+    expect(grace).toMatchObject({
+      status: "grace",
+      licence: { permittedDeviceCount: 3 },
+    });
+    expect(grace.capabilities).toContain("additional-device-pos");
+    expect(
+      (
+        await licensing.install({
+          actorId: ACTOR_ID,
+          encodedLicence: mintLicence({
+            expiresAt: "2031-01-01T00:00:00.000Z",
+            graceEndsAt: "2031-01-08T00:00:00.000Z",
+            issuedAt: "2030-12-31T00:00:00.000Z",
+            licenceId: createUuidV7(),
+            mainDeviceId: TEST_MAIN_DEVICE_ID,
+            permittedDeviceCount: 3,
+            pharmacyId: TEST_PHARMACY_ID,
+          }),
+          mainDeviceId: TEST_MAIN_DEVICE_ID,
+          now: new Date("2031-01-01T00:00:00.001Z"),
+          pharmacyId: TEST_PHARMACY_ID,
+        })
+      ).status,
+    ).toBe("grace");
+    expect((await currentAt("2031-01-07T23:59:59.999Z")).status).toBe("grace");
+
+    expect(await currentAt("2031-01-08T00:00:00.000Z")).toEqual({
+      status: "expired",
+      capabilities: FREE_CORE_CAPABILITIES,
+      licence: null,
+    });
   });
 
   async function waitForBlockedAdvance(): Promise<void> {

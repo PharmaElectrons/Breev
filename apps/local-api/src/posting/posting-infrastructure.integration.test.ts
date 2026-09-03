@@ -10,6 +10,7 @@ import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
+import { seedOwnerRoleWithFloor } from "../../test/owner-floor-fixture.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { writePostingAudit } from "./audit-writer.js";
 import { canonicalRequestHash, type JsonValue } from "./canonical-hash.js";
@@ -856,24 +857,28 @@ describe.sequential("posting infrastructure PostgreSQL seam", () => {
       "insert into pharmacies (id, name) values ($1, 'Breev Posting Test Pharmacy')",
       [PHARMACY_ID],
     );
+    await seedOwnerRoleWithFloor(application, {
+      actorId: ACTOR_ID,
+      displayName: "Posting Actor",
+      pharmacyId: PHARMACY_ID,
+      roleId: OWNER_ROLE_ID,
+      username: "posting.actor",
+    });
     await application.query(
-      "insert into pharmacy_roles (id, pharmacy_id, role_key) values ($1, $2, 'owner')",
-      [OWNER_ROLE_ID, PHARMACY_ID],
+      `insert into identity_users (
+         id, pharmacy_id, username, username_key, display_name, role_id,
+         password_hash, password_algorithm, password_version,
+         password_memory_kib, password_iterations, password_parallelism
+       ) values ($1, $2, $3, $3, 'Posting Actor', $4, $5,
+                 'argon2id', 19, 19456, 2, 1)`,
+      [
+        SECOND_ACTOR_ID,
+        PHARMACY_ID,
+        "posting.second",
+        OWNER_ROLE_ID,
+        Buffer.alloc(64),
+      ],
     );
-    for (const [id, username] of [
-      [ACTOR_ID, "posting.actor"],
-      [SECOND_ACTOR_ID, "posting.second"],
-    ] as const) {
-      await application.query(
-        `insert into identity_users (
-           id, pharmacy_id, username, username_key, display_name, role_id,
-           password_hash, password_algorithm, password_version,
-           password_memory_kib, password_iterations, password_parallelism
-         ) values ($1, $2, $3, $3, 'Posting Actor', $4, $5,
-                   'argon2id', 19, 19456, 2, 1)`,
-        [id, PHARMACY_ID, username, OWNER_ROLE_ID, Buffer.alloc(64)],
-      );
-    }
     const session = await application.query<{ token_hash: Buffer }>(
       "select token_hash from main_device_sessions where device_id = $1",
       [DEVICE_ID],

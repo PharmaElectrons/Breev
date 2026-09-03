@@ -154,12 +154,15 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
       command({ password: OWNER_PASSWORD }),
     );
     expect(approved.status, failureContext([approved])).toBe(200);
+    const pharmacistRole = await administrator.query<{ id: string }>(
+      "select id from pharmacy_roles where role_key = 'pharmacist'",
+    );
     const pharmacist = await request("POST", "/identity/users", {
       challengeId,
       displayName: "Authorization Pharmacist",
       idempotencyKey: createUuidV7(),
       password: PHARMACIST_PASSWORD,
-      role: "pharmacist",
+      roleId: pharmacistRole.rows[0]?.id,
       username: PHARMACIST_USERNAME,
     });
     expect(pharmacist.status, failureContext([pharmacist])).toBe(201);

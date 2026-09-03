@@ -96,12 +96,12 @@ export interface CertValidationFailure {
 export type CertValidationResult =
   CertValidationSuccess | CertValidationFailure;
 
-export function buildCACertificate(params: {
+export async function buildCACertificate(params: {
   readonly keyHandle: CngKeyHandle;
   readonly publicKeyDer: Buffer;
   readonly installationId: string;
   readonly validityDays: number;
-}): IssuedCertificate {
+}): Promise<IssuedCertificate> {
   assertUuidV7(params.installationId, "installationId");
   const notBefore = new Date(Date.now() - 60_000);
   const notAfter = validityEnd(notBefore, params.validityDays);
@@ -137,16 +137,22 @@ export function buildCACertificate(params: {
     ]),
   });
 
-  return signCertificate(tbs, params.keyHandle, notBefore, notAfter, serial);
+  return await signCertificate(
+    tbs,
+    params.keyHandle,
+    notBefore,
+    notAfter,
+    serial,
+  );
 }
 
-export function buildServerCertificate(params: {
+export async function buildServerCertificate(params: {
   readonly caKeyHandle: CngKeyHandle;
   readonly caCertPem: string;
   readonly installationId: string;
   readonly sanIPs: readonly string[];
   readonly validityDays: number;
-}): IssuedLeafCertificate {
+}): Promise<IssuedLeafCertificate> {
   assertUuidV7(params.installationId, "installationId");
   if (
     params.sanIPs.length === 0 ||
@@ -200,7 +206,7 @@ export function buildServerCertificate(params: {
       ),
     ]),
   });
-  const issued = signCertificate(
+  const issued = await signCertificate(
     tbs,
     params.caKeyHandle,
     notBefore,
@@ -224,7 +230,7 @@ export function buildServerCertificate(params: {
  * anything else, and which licence paid for its seat. The random serial is the
  * sixth. None of them come from the caller's certificate request.
  */
-export function buildDeviceCertificate(params: {
+export async function buildDeviceCertificate(params: {
   readonly caKeyHandle: CngKeyHandle;
   readonly caCertPem: string;
   readonly deviceId: string;
@@ -233,7 +239,7 @@ export function buildDeviceCertificate(params: {
   readonly licenceId: string;
   readonly pharmacyId: string;
   readonly validityDays: number;
-}): IssuedCertificate {
+}): Promise<IssuedCertificate> {
   assertUuidV7(params.deviceId, "deviceId");
   assertUuidV7(params.installationId, "installationId");
   assertUuidV7(params.licenceId, "licenceId");
@@ -288,7 +294,13 @@ export function buildDeviceCertificate(params: {
     ]),
   });
 
-  return signCertificate(tbs, params.caKeyHandle, notBefore, notAfter, serial);
+  return await signCertificate(
+    tbs,
+    params.caKeyHandle,
+    notBefore,
+    notAfter,
+    serial,
+  );
 }
 
 export function validateCertificate(params: {
@@ -412,15 +424,17 @@ export function caCertificateMatches(params: {
   }
 }
 
-function signCertificate(
+async function signCertificate(
   tbs: TBSCertificate,
   keyHandle: CngKeyHandle,
   notBefore: Date,
   notAfter: Date,
   serial: Buffer,
-): IssuedCertificate {
+): Promise<IssuedCertificate> {
   const tbsDer = Buffer.from(AsnSerializer.serialize(tbs));
-  const signature = signData(keyHandle, tbsDer, { algorithm: "SHA256" });
+  const signature = await signData(keyHandle, tbsDer, {
+    algorithm: "SHA256",
+  });
   const certDer = Buffer.from(
     AsnSerializer.serialize(
       new Certificate({

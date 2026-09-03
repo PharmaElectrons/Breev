@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 
+import { seedOwnerRoleWithFloor } from "../../../test/owner-floor-fixture.js";
 import { createUuidV7 } from "../../pharmacy-ca/pharmacy-ca-crypto.js";
 import type { PharmacyCaService } from "../../pharmacy-ca/pharmacy-ca.service.js";
 
@@ -27,20 +28,13 @@ export async function seedPharmacy(
     pharmacyId,
     input.name,
   ]);
-  await pool.query(
-    `insert into pharmacy_roles (id, pharmacy_id, role_key)
-     values ($1, $2, 'owner')`,
-    [ownerRoleId, pharmacyId],
-  );
-  await pool.query(
-    `insert into identity_users (
-       id, pharmacy_id, username, username_key, display_name, role_id,
-       password_hash, password_algorithm, password_version,
-       password_memory_kib, password_iterations, password_parallelism
-     ) values ($1, $2, 'device.fixture', 'device.fixture', 'Device Fixture',
-               $3, $4, 'argon2id', 19, 19456, 2, 1)`,
-    [ownerId, pharmacyId, ownerRoleId, Buffer.alloc(64)],
-  );
+  await seedOwnerRoleWithFloor(pool, {
+    actorId: ownerId,
+    displayName: "Device Fixture",
+    pharmacyId,
+    roleId: ownerRoleId,
+    username: "device.fixture",
+  });
   return {
     mainDeviceId: input.mainDeviceId,
     ownerId,
@@ -171,7 +165,7 @@ export async function issueFixtureDeviceCertificate(
   readonly fingerprint: string;
 }> {
   const deviceId = createUuidV7();
-  const certificate = pharmacyCa.signDeviceCertificate({
+  const certificate = await pharmacyCa.signDeviceCertificate({
     deviceId,
     devicePublicKeyDer: input.devicePublicKeyDer,
     licenceId: input.licenceId,

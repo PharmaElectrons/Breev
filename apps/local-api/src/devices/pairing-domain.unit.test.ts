@@ -393,7 +393,7 @@ describe("seat policy", () => {
    * of that number alone across its whole legal range: no value is special, and
    * nothing in the code fixes the limit at four.
    */
-  it.each([1, 2, 3, 4, 5, 9, 17, 64, 500, 10_000])(
+  it.each([1, 2, 3, 4, 5, 9, 17, 64, 500, 10_000, 10_001, 50_000])(
     "allows exactly permitted-minus-one terminals for a licence permitting %i",
     (permittedDeviceCount) => {
       for (

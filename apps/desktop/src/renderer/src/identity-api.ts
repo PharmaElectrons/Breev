@@ -4,12 +4,17 @@ import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
   identityBootstrapContract,
+  identityChangePasswordContract,
+  identityCreateRoleContract,
   identityCreateUserContract,
   identityDenialSchema,
   identityLoginContract,
   identityLogoutContract,
+  identityRenameRoleContract,
+  identityRolePath,
   identityRolePermissionsPath,
   identityRoleSchema,
+  identityResetUserPasswordContract,
   identityRolesContract,
   identityRolesSchema,
   identityStateContract,
@@ -20,6 +25,7 @@ import {
   identityUpdateRolePermissionsContract,
   identityUpdateUserContract,
   identityUserPath,
+  identityUserPasswordResetPath,
   identityUserSchema,
   identityUsersContract,
   entitlementContextSchema,
@@ -32,10 +38,14 @@ import {
   type AttendanceEventRequest,
   type IdentityAuthenticatedState,
   type IdentityBootstrapRequest,
+  type IdentityChangePasswordRequest,
+  type IdentityCreateRoleRequest,
   type IdentityCreateUserRequest,
   type IdentityDenial,
   type IdentityLoginRequest,
+  type IdentityRenameRoleRequest,
   type IdentityRole,
+  type IdentityResetUserPasswordRequest,
   type IdentityRoles,
   type IdentityState,
   type IdentityStepUpApproveRequest,
@@ -44,6 +54,7 @@ import {
   type IdentityUpdateRolePermissionsRequest,
   type IdentityUpdateUserRequest,
   type IdentityUser,
+  type IdentityUsers,
   type EntitlementContext,
   type LicenceDeactivateRequest,
   type LicenceInstallRequest,
@@ -141,7 +152,7 @@ export async function requestIdentityRoles(
 
 export async function requestIdentityUsers(
   baseUrl: string,
-): Promise<{ users: IdentityUser[] }> {
+): Promise<IdentityUsers> {
   return await requestJson(
     baseUrl,
     identityUsersContract.path,
@@ -180,6 +191,35 @@ export async function updateIdentityUser(
   );
 }
 
+export async function changeIdentityPassword(
+  baseUrl: string,
+  body: IdentityChangePasswordRequest,
+): Promise<IdentityUser> {
+  return await requestJson(
+    baseUrl,
+    identityChangePasswordContract.path,
+    identityChangePasswordContract.method,
+    200,
+    identityUserSchema,
+    body,
+  );
+}
+
+export async function resetIdentityUserPassword(
+  baseUrl: string,
+  userId: string,
+  body: IdentityResetUserPasswordRequest,
+): Promise<IdentityUser> {
+  return await requestJson(
+    baseUrl,
+    identityUserPasswordResetPath(userId),
+    identityResetUserPasswordContract.method,
+    200,
+    identityUserSchema,
+    body,
+  );
+}
+
 export async function createStepUpChallenge(
   baseUrl: string,
   body: IdentityStepUpCreateRequest,
@@ -205,6 +245,35 @@ export async function approveStepUpChallenge(
     "POST",
     200,
     identityStepUpChallengeSchema,
+    body,
+  );
+}
+
+export async function createIdentityRole(
+  baseUrl: string,
+  body: IdentityCreateRoleRequest,
+): Promise<IdentityRole> {
+  return await requestJson(
+    baseUrl,
+    identityCreateRoleContract.path,
+    identityCreateRoleContract.method,
+    201,
+    identityRoleSchema,
+    body,
+  );
+}
+
+export async function renameIdentityRole(
+  baseUrl: string,
+  roleId: string,
+  body: IdentityRenameRoleRequest,
+): Promise<IdentityRole> {
+  return await requestJson(
+    baseUrl,
+    identityRolePath(roleId),
+    identityRenameRoleContract.method,
+    200,
+    identityRoleSchema,
     body,
   );
 }

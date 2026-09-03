@@ -17,12 +17,12 @@ import {
   parseLocalProofEvidenceResponse,
   type LocalProofEvidenceSuccess,
 } from "@breev/contracts/local-rest";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -34,6 +34,12 @@ import {
   createSeparatedDatabaseRoles,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
+import {
+  spawnLocalApiProcess,
+  stopProcess,
+  waitForHealth,
+} from "../local-api-process.js";
+import { evidencePath } from "./evidence-path.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
@@ -88,7 +94,7 @@ test.describe.serial("bilingual desktop shell", () => {
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
     renderer = await startRendererServer(apiOrigin, credentials);
   });
@@ -132,7 +138,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectBrowserStorageToContainPreferencesOnly(page);
 
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     await expect(page.getByTestId("shell-state")).toHaveText("جاهز");
   });
 
@@ -151,12 +157,12 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await stopProcess(api);
     api = spawnLocalApi(apiPort, databaseRoles, "repair-required", credentials);
-    await waitForHealth(apiOrigin, "repair-required");
+    await waitForHealth(apiOrigin, "repair-required", api);
     await expect(page.getByTestId("shell-state")).toHaveText("Repair required");
 
     await stopProcess(api);
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
-    await waitForHealth(apiOrigin, "healthy");
+    await waitForHealth(apiOrigin, "healthy", api);
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
   });
 
@@ -247,16 +253,14 @@ test.describe.serial("bilingual desktop shell", () => {
             ? page.screenshot({
                 animations: "disabled",
                 fullPage: true,
-                path: path.resolve(
-                  import.meta.dirname,
-                  `../../../../evidence/issue-42/after/unpaired-${locale}-${theme}.png`,
+                path: evidencePath(
+                  `issue-42/after/unpaired-${locale}-${theme}.png`,
                 ),
               })
             : page.screenshot({
                 animations: "disabled",
-                path: path.resolve(
-                  import.meta.dirname,
-                  `../../../../evidence/issue-33/after/${locale}-${theme}-${state}.png`,
+                path: evidencePath(
+                  `issue-33/after/${locale}-${theme}-${state}.png`,
                 ),
               }));
           await context.close();
@@ -415,10 +419,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-light-owner.png",
-      ),
+      path: evidencePath("issue-38/after/en-light-owner.png"),
     });
   });
 
@@ -481,10 +482,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/ar-dark-owner.png",
-      ),
+      path: evidencePath("issue-38/after/ar-dark-owner.png"),
     });
 
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
@@ -585,10 +583,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/licensed-en-light.png",
-      ),
+      path: evidencePath("issue-39/after/licensed-en-light.png"),
     });
 
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
@@ -600,10 +595,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/licensed-ar-dark.png",
-      ),
+      path: evidencePath("issue-39/after/licensed-ar-dark.png"),
     });
 
     await page.unroute("**/identity/state");
@@ -634,10 +626,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-39/after/expired-ar-dark.png",
-      ),
+      path: evidencePath("issue-39/after/expired-ar-dark.png"),
     });
     await page.unroute("**/identity/state");
   });
@@ -684,13 +673,22 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("button", { name: "Create user" }),
     ).toBeVisible();
-    await page.getByLabel("Display name").last().fill("Browser Manager");
-    await page.getByLabel("Username").last().fill("browser.manager");
     await page
-      .getByLabel("Password")
+      .getByLabel("Display name", { exact: true })
+      .last()
+      .fill("Browser Manager");
+    await page
+      .getByLabel("Username", { exact: true })
+      .last()
+      .fill("browser.manager");
+    await page
+      .getByLabel("Password", { exact: true })
       .last()
       .fill("browser manager password is private");
-    await page.getByRole("combobox", { name: "Role" }).selectOption("manager");
+    // Roles are chosen by their localized name; the wire carries the role id.
+    await page
+      .getByRole("combobox", { name: "Role", exact: true })
+      .selectOption({ label: "Manager" });
     await page.getByRole("button", { name: "Create user" }).click();
     await expect(page.getByText("Browser Manager")).toBeVisible();
 
@@ -703,11 +701,19 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager" }),
     ).toBeVisible();
+    // The built-in manager role is seeded with role administration and
+    // nothing else: the role editor is offered, user management is not, and
+    // the permission summary names the one permission in plain words.
     await expect(
       page.getByRole("heading", { name: "User management" }),
     ).toHaveCount(0);
     await expect(
-      page.getByText("Your account does not have the required permission."),
+      page.getByRole("heading", { name: "Configure role permissions" }),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator(".permission-summary")
+        .getByText("Manage roles and permissions", { exact: true }),
     ).toBeVisible();
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
@@ -725,16 +731,744 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-light-default-deny.png",
-      ),
+      path: evidencePath("issue-38/after/en-light-default-deny.png"),
     });
 
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+  });
+
+  test("edits a display name and rotates credentials with keyboard-safe controls", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    const managerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Manager" });
+    const displayName = managerRow.getByLabel("Display name: browser.manager");
+    await displayName.fill("Browser Manager Renamed");
+    const saveName = managerRow.getByRole("button", { name: "Save name" });
+    await saveName.click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+    await expect(managerRow.getByText("Browser Manager Renamed")).toBeVisible();
+    await expect(saveName).toBeFocused();
+
+    const resetPassword = "browser manager reset password is private";
+    await managerRow
+      .getByLabel("New password: browser.manager")
+      .fill(resetPassword);
+    const reset = managerRow.getByRole("button", { name: "Reset password" });
+    await reset.click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+    await expect(reset).toBeFocused();
+
+    await administrator.query(
+      "delete from identity_auth_rate_windows where device_id = $1",
+      [credentials.deviceId],
+    );
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.manager");
+    await page.getByLabel("Password").fill(resetPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Manager Renamed" }),
+    ).toBeVisible();
+
+    const selfChange = page
+      .getByRole("heading", { name: "Change my password" })
+      .locator("../..");
+    const selfChangedPassword = "browser manager self changed password";
+    await selfChange.getByLabel("Current password").fill(resetPassword);
+    await selfChange.getByLabel("New password").fill(selfChangedPassword);
+    const change = selfChange.getByRole("button", {
+      name: "Change my password",
+    });
+    await change.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Password changed.")).toBeVisible();
+    await expect(change).toBeFocused();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.manager");
+    await page.getByLabel("Password").fill(resetPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByText("The username or password is incorrect."),
+    ).toBeVisible();
+    await page.getByLabel("Password").fill(selfChangedPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Manager Renamed" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await expect(
+      page.getByRole("heading", { name: "تغيير كلمة مروري" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("كلمة المرور الحالية")).toBeVisible();
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    // Leave the shared serial fixture on its documented credential for the
+    // custom-role login and the later locked-login case.
+    await managerRow
+      .getByLabel("New password: browser.manager")
+      .fill("browser manager password is private");
+    const restorePassword = managerRow.getByRole("button", {
+      name: "Reset password",
+    });
+    await restorePassword.click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+    await expect(restorePassword).toBeFocused();
+
+    await administrator.query(
+      "delete from identity_auth_rate_windows where device_id = $1",
+      [credentials.deviceId],
+    );
+  });
+
+  test("reassigns a user's role with keyboard controls and handles last-owner denial", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    const managerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Manager Renamed" });
+
+    await expect(
+      managerRow.getByText("browser.manager · Manager"),
+    ).toBeVisible();
+
+    await managerRow
+      .getByRole("combobox", { name: "Role: browser.manager" })
+      .selectOption({ label: "Pharmacist" });
+    const saveRole = managerRow.getByRole("button", { name: "Save role" });
+    await saveRole.click();
+
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+
+    await expect(
+      managerRow.getByText("browser.manager · Pharmacist"),
+    ).toBeVisible();
+    await expect(saveRole).toBeFocused();
+
+    const usersResponse = (await page.evaluate(async () => {
+      const response = await fetch("/identity/users", {
+        headers: { Accept: "application/json" },
+      });
+      return await response.json();
+    })) as { users: { username: string; role: { key?: string } }[] };
+    const managerUser = usersResponse.users.find(
+      (u) => u.username === "browser.manager",
+    );
+    expect(managerUser?.role).toEqual(
+      expect.objectContaining({ key: "pharmacist", kind: "built-in" }),
+    );
+
+    const ownerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Owner" });
+
+    await ownerRow
+      .getByRole("combobox", { name: "Role: browser.owner" })
+      .selectOption({ label: "Manager" });
+    await ownerRow.getByRole("button", { name: "Save role" }).click();
+
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+
+    await expect(
+      page.getByText("At least one active owner must remain."),
+    ).toBeVisible();
+    await page.locator(".denial-alert .dismiss-button").click();
+    // The selector shows the real server value again, not the refused one.
+    await expect(
+      ownerRow
+        .getByRole("combobox", { name: "Role: browser.owner" })
+        .locator("option:checked"),
+    ).toHaveText("Owner");
+
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
+
+    await expect(
+      managerRow.getByText("browser.manager · الصيدلي"),
+    ).toBeVisible();
+    await expect(
+      managerRow.getByRole("combobox", { name: "الدور: browser.manager" }),
+    ).toBeVisible();
+    await expect(
+      managerRow.getByRole("button", { name: "حفظ الدور" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
+  test("creates a custom role with only the chosen permissions and assigns it by name in both locales", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    // The editor names every permission in plain words; no internal id such
+    // as "identity.roles.manage" is visible anywhere in it.
+    const editor = page.locator(".role-editor");
+    const permissionSummary = page.locator(".permission-summary");
+    await expect(editor).toBeVisible();
+    await expectNoRawPermissionIds(editor, permissionSummary);
+    const roleList = page.getByRole("navigation", { name: "Roles" });
+    await expect(
+      roleList.getByRole("button", { name: "Owner 7 of 7 permissions" }),
+    ).toBeVisible();
+
+    // Keyboard-only creation: Enter on Add role focuses the name field.
+    const addRole = page.getByRole("button", { name: "Add role" });
+    await addRole.focus();
+    await page.keyboard.press("Enter");
+    const newRole = page.getByRole("region", { name: "New role" });
+    await expect(newRole.getByLabel("Role name")).toBeFocused();
+    await page.keyboard.type("Senior cashier");
+    await newRole.getByLabel("Manage products", { exact: true }).check();
+    const createRole = newRole.getByRole("button", { name: "Create role" });
+    await createRole.focus();
+    await page.keyboard.press("Enter");
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page.keyboard.press("Enter");
+
+    // The new role is selected, shows exactly the chosen grant, and Save
+    // stays disabled until something changes.
+    const customRoleButton = roleList.getByRole("button", {
+      name: /^Senior cashier Custom 1 of 7 permissions$/,
+    });
+    await expect(customRoleButton).toBeFocused();
+    await expect(customRoleButton.locator(".role-badge")).toHaveText("Custom");
+    const details = page.getByRole("region", { name: "Senior cashier" });
+    await expect(details).toBeVisible();
+    await expect(
+      details.getByText("Custom role of this pharmacy"),
+    ).toBeVisible();
+    await expect(
+      details.getByLabel("Manage products", { exact: true }),
+    ).toBeChecked();
+    await expect(
+      details.getByLabel("Manage users", { exact: true }),
+    ).not.toBeChecked();
+    await expect(
+      details.getByRole("button", { name: "Save permissions" }),
+    ).toBeDisabled();
+    await expect(
+      roleList.getByRole("button", {
+        name: "Senior cashier Custom 1 of 7 permissions",
+      }),
+    ).toBeVisible();
+
+    // Assignment by name, through the ordinary user controls.
+    const managerRow = page
+      .locator(".user-list li")
+      .filter({ hasText: "Browser Manager Renamed" });
+    await managerRow
+      .getByRole("combobox", { name: "Role: browser.manager" })
+      .selectOption({ label: "Senior cashier" });
+    const saveRole = managerRow.getByRole("button", { name: "Save role" });
+    await saveRole.click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Confirm password" })
+      .click();
+    await expect(
+      managerRow.getByText("browser.manager · Senior cashier"),
+    ).toBeVisible();
+    await expect(managerRow.locator(".role-badge")).toHaveText("Custom");
+    await expect(saveRole).toBeFocused();
+    const usersResponse = (await page.evaluate(async () => {
+      const response = await fetch("/identity/users", {
+        headers: { Accept: "application/json" },
+      });
+      return await response.json();
+    })) as { users: { username: string; role: { name?: string } }[] };
+    expect(
+      usersResponse.users.find((u) => u.username === "browser.manager")?.role,
+    ).toEqual(
+      expect.objectContaining({ kind: "custom", name: "Senior cashier" }),
+    );
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("issue-roles/after/en-light-custom-role.png"),
+    });
+
+    // Arabic: built-in roles carry Breev's Arabic names; the custom role keeps
+    // the pharmacy's own spelling in both languages.
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
+    const arabicRoleList = page.getByRole("navigation", { name: "الأدوار" });
+    await expect(
+      arabicRoleList.getByRole("button", { name: "المدير" }),
+    ).toBeVisible();
+    await expect(
+      arabicRoleList.getByRole("button", { name: "Senior cashier" }),
+    ).toBeVisible();
+    await expect(
+      arabicRoleList
+        .getByRole("button", { name: "Senior cashier" })
+        .locator(".role-badge"),
+    ).toHaveText("مخصص");
+    await expect(
+      page.getByRole("region", { name: "Senior cashier" }),
+    ).toBeVisible();
+    await expect(
+      managerRow.getByText("browser.manager · Senior cashier"),
+    ).toBeVisible();
+    await expect(managerRow.locator(".role-badge")).toHaveText("مخصص");
+    await expectNoRawPermissionIds(editor, permissionSummary);
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("issue-roles/after/ar-dark-custom-role.png"),
+    });
+
+    await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
+  test("custom-role user sees exactly its grants and cannot manage identities", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.manager");
+    await page
+      .getByLabel("Password")
+      .fill("browser manager password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", {
+        name: "Welcome, Browser Manager Renamed",
+      }),
+    ).toBeVisible();
+
+    await expect(page.locator(".permission-summary p")).toHaveText(
+      "Manage products",
+    );
+    const identityState = (await page.evaluate(async () => {
+      const response = await fetch("/identity/state", {
+        headers: { Accept: "application/json" },
+      });
+      return (await response.json()) as { allowedPermissions: string[] };
+    })) as { allowedPermissions: string[] };
+    expect(identityState.allowedPermissions).toEqual(["catalog.item.manage"]);
+    await expect(
+      page.getByRole("heading", { name: "Configure role permissions" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "User management" }),
+    ).toHaveCount(0);
+
+    const rolesDenial = (await page.evaluate(async () => {
+      const response = await fetch("/identity/roles", {
+        headers: { Accept: "application/json" },
+      });
+      return {
+        body: (await response.json()) as { code?: string },
+        status: response.status,
+      };
+    })) as { body: { code?: string }; status: number };
+    expect(rolesDenial).toEqual({
+      body: expect.objectContaining({ code: "permission-denied" }),
+      status: 403,
+    });
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("issue-roles/after/custom-role-user.png"),
+    });
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+  });
+
+  test("Step-Up cancellation returns focus to role actions", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    const roleList = page.getByRole("navigation", { name: "Roles" });
+    await roleList
+      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .click();
+    const managerRole = page.getByRole("region", { name: "Manager" });
+    await managerRole.getByLabel("Record attendance", { exact: true }).check();
+    const savePermissions = managerRole.getByRole("button", {
+      name: "Save permissions",
+    });
+    const saveButtonId = await savePermissions.getAttribute("id");
+    if (saveButtonId === null) {
+      throw new Error("The Manager permission save button has no stable id");
+    }
+    expect(saveButtonId).toMatch(/^role-.+-save-permissions$/u);
+    const stableSaveButton = page.locator(`[id="${saveButtonId}"]`);
+
+    await savePermissions.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(stableSaveButton).toBeFocused();
+
+    await stableSaveButton.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(stableSaveButton).toBeFocused();
+
+    await page.getByRole("button", { name: "Add role" }).click();
+    const newRole = page.getByRole("region", { name: "New role" });
+    await newRole.getByLabel("Role name").fill("Cancelled role draft");
+    const createRole = newRole.getByRole("button", { name: "Create role" });
+    await createRole.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(createRole).toBeFocused();
+    await newRole.getByRole("button", { name: "Cancel" }).click();
+    await expect(managerRole).toBeVisible();
+  });
+
+  test("wrong Step-Up password keeps the role permission draft", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    await page
+      .getByRole("navigation", { name: "Roles" })
+      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .click();
+    const managerRole = page.getByRole("region", { name: "Manager" });
+    const attendance = managerRole.getByLabel("Record attendance", {
+      exact: true,
+    });
+    const savePermissions = managerRole.getByRole("button", {
+      name: "Save permissions",
+    });
+    await attendance.check();
+    await savePermissions.click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Password").fill("wrong password");
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByText("The password is incorrect.")).toBeVisible();
+    await dialog.locator(".denial-alert .dismiss-button").click();
+    await dialog
+      .locator(".form-actions")
+      .getByRole("button", { name: "Cancel" })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    await expect(attendance).toBeChecked();
+    await expect(savePermissions).toBeEnabled();
+
+    await attendance.uncheck();
+    await expect(savePermissions).toBeDisabled();
+  });
+
+  test("a role version conflict reloads server truth", async ({ page }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    await page
+      .getByRole("navigation", { name: "Roles" })
+      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .click();
+    const managerRole = page.getByRole("region", { name: "Manager" });
+    const attendance = managerRole.getByLabel("Record attendance", {
+      exact: true,
+    });
+    const savePermissions = managerRole.getByRole("button", {
+      name: "Save permissions",
+    });
+    await attendance.check();
+
+    await administrator.query(
+      "update pharmacy_roles set revision = revision + 1 where role_key = 'manager'",
+    );
+    await administrator.query(
+      "update pharmacies set identity_revision = identity_revision + 1",
+    );
+
+    await savePermissions.click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Password")
+      .fill("browser owner password is private");
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByText(
+        "The data changed. Review the latest state and try again.",
+      ),
+    ).toBeVisible();
+    await expect(attendance).not.toBeChecked();
+    await expect(savePermissions).toBeDisabled();
+  });
+
+  test("role counts and checked states reflect each role", async ({ page }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    const roleList = page.getByRole("navigation", { name: "Roles" });
+    await expect(
+      roleList.getByRole("button", { name: "Owner 7 of 7 permissions" }),
+    ).toBeVisible();
+    await expect(
+      roleList.getByRole("button", {
+        name: "Local support 0 of 7 permissions",
+      }),
+    ).toBeVisible();
+    await expect(
+      roleList.getByRole("button", {
+        name: "Senior cashier Custom 1 of 7 permissions",
+      }),
+    ).toBeVisible();
+
+    await roleList
+      .getByRole("button", { name: "Owner 7 of 7 permissions" })
+      .click();
+    const ownerRole = page.getByRole("region", { name: "Owner" });
+    const ownerFloor =
+      "The owner role must keep role and user management permissions.";
+    for (const permission of ["Manage users", "Manage roles and permissions"]) {
+      const checkbox = ownerRole.getByLabel(permission, { exact: true });
+      await expect(checkbox).toBeChecked();
+      await expect(checkbox).toBeDisabled();
+      const descriptionId = await checkbox.getAttribute("aria-describedby");
+      if (descriptionId === null) {
+        throw new Error(`${permission} has no description`);
+      }
+      const description = page.locator(`[id="${descriptionId}"]`);
+      expect((await description.innerText()).endsWith(ownerFloor)).toBe(true);
+    }
+
+    await roleList
+      .getByRole("button", {
+        name: "Local support 0 of 7 permissions",
+      })
+      .click();
+    const supportRole = page.getByRole("region", { name: "Local support" });
+    for (const checkbox of await supportRole.getByRole("checkbox").all()) {
+      await expect(checkbox).not.toBeChecked();
+    }
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: evidencePath("issue-roles/after/role-counts-and-states.png"),
+    });
+  });
+
+  test("role editor remains usable at 1024 by 768 and 200 percent text", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    const originalViewport = page.viewportSize();
+    try {
+      await page.setViewportSize({ width: 1_024, height: 768 });
+      await page.evaluate("document.documentElement.style.fontSize = '200%'");
+      const roleList = page.getByRole("navigation", { name: "Roles" });
+      await expect(roleList).toBeVisible();
+      await roleList
+        .getByRole("button", { name: "Owner 7 of 7 permissions" })
+        .click();
+      await expect(
+        page
+          .getByRole("region", { name: "Owner" })
+          .getByRole("button", { name: "Save permissions" }),
+      ).toBeVisible();
+      expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: true,
+        path: evidencePath("issue-roles/after/roles-200-percent.png"),
+      });
+    } finally {
+      await page.evaluate("document.documentElement.style.fontSize = ''");
+      if (originalViewport !== null) {
+        await page.setViewportSize(originalViewport);
+      }
+    }
+  });
+
+  test("role editor and permission summary never expose raw permission ids", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    const editor = page.locator(".role-editor");
+    const permissionSummary = page.locator(".permission-summary");
+    const expectNoRawPermissionId = async (): Promise<void> => {
+      await expectNoRawPermissionIds(editor, permissionSummary);
+      for (const role of ["button", "checkbox", "link"] as const) {
+        const names: string[] = [];
+        for (const control of await editor.getByRole(role).all()) {
+          names.push(
+            (await control.getAttribute("aria-label")) ??
+              (await control.textContent()) ??
+              "",
+          );
+        }
+        expect(names.join(" ")).not.toMatch(RAW_PERMISSION_ID);
+        await expect(
+          editor.getByRole(role, { name: RAW_PERMISSION_ID }),
+        ).toHaveCount(0);
+      }
+    };
+
+    await expectNoRawPermissionId();
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expectNoRawPermissionId();
+    await page
+      .getByRole("button", {
+        name: "التبديل إلى الإنجليزية",
+      })
+      .click();
   });
 
   test("configures attendance and roles with Step-Up, then presents a locked login generically", async ({
@@ -746,15 +1480,22 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(renderer.origin);
-    const managerRole = page.getByRole("group", { name: "Manager" });
+    await page
+      .getByRole("navigation", { name: "Roles" })
+      .getByRole("button", { name: "Manager" })
+      .click();
+    const managerRole = page.getByRole("region", { name: "Manager" });
     await expect(managerRole).toBeVisible();
+    await expect(
+      managerRole.getByRole("button", { name: "Save permissions" }),
+    ).toBeDisabled();
     for (const permission of [
-      "attendance.record",
-      "pharmacy.settings.manage",
+      "Record attendance",
+      "Change pharmacy settings",
     ]) {
-      await managerRole.getByLabel(permission).check();
+      await managerRole.getByLabel(permission, { exact: true }).check();
     }
-    await managerRole.getByRole("button", { name: "Save" }).click();
+    await managerRole.getByRole("button", { name: "Save permissions" }).click();
     await page
       .getByRole("dialog")
       .getByLabel("Password")
@@ -852,10 +1593,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.screenshot({
       animations: "disabled",
       fullPage: true,
-      path: path.resolve(
-        import.meta.dirname,
-        "../../../../evidence/issue-38/after/en-dark-session-expired.png",
-      ),
+      path: evidencePath("issue-38/after/en-dark-session-expired.png"),
     });
 
     await page.getByLabel("Username").fill("browser.owner");
@@ -1019,6 +1757,31 @@ test.describe.serial("bilingual desktop shell", () => {
   });
 });
 
+const RAW_PERMISSION_ID = /\b[a-z]+\.[a-z_]+(?:\.[a-z_]+)?\b/u;
+
+async function expectNoRawPermissionIds(
+  ...scopes: readonly Locator[]
+): Promise<void> {
+  for (const scope of scopes) {
+    const exposedStrings = await scope.evaluate((root) => {
+      const elements = [root, ...root.querySelectorAll("*")];
+      return [
+        ...elements.flatMap((element) =>
+          ["title", "aria-label", "aria-description"].map(
+            (attribute) => element.getAttribute(attribute) ?? "",
+          ),
+        ),
+        ...[...root.querySelectorAll("option")].map(
+          (option) => option.getAttribute("label") ?? option.textContent ?? "",
+        ),
+      ];
+    });
+    expect([await scope.innerText(), ...exposedStrings].join(" ")).not.toMatch(
+      RAW_PERMISSION_ID,
+    );
+  }
+}
+
 async function expectIdentityStateMatrix(
   page: Page,
   state: IdentityStateMatrix,
@@ -1058,9 +1821,8 @@ async function expectIdentityStateMatrix(
       await page.screenshot({
         animations: "disabled",
         fullPage: true,
-        path: path.resolve(
-          import.meta.dirname,
-          `../../../../evidence/issue-38/after/${state.evidenceName}-${locale}-${theme}.png`,
+        path: evidencePath(
+          `issue-38/after/${state.evidenceName}-${locale}-${theme}.png`,
         ),
       });
     }
@@ -1122,10 +1884,7 @@ async function expectStepUpStateMatrix(page: Page): Promise<void> {
       await page.screenshot({
         animations: "disabled",
         fullPage: true,
-        path: path.resolve(
-          import.meta.dirname,
-          `../../../../evidence/issue-38/after/step-up-${locale}-${theme}.png`,
-        ),
+        path: evidencePath(`issue-38/after/step-up-${locale}-${theme}.png`),
       });
       await cancel.focus();
       await page.keyboard.press("Enter");
@@ -1412,21 +2171,18 @@ function spawnLocalApi(
   installationState: "ready" | "repair-required" = "ready",
   credentials?: MainDeviceCredentials,
 ): ChildProcessWithoutNullStreams {
-  return spawn(
-    process.execPath,
-    [path.resolve(import.meta.dirname, "../../../local-api/dist/main.js")],
+  return spawnLocalApiProcess(
+    path.resolve(import.meta.dirname, "../../../local-api/dist/main.js"),
     {
-      env: {
-        ...process.env,
-        API_HOST: "127.0.0.1",
-        API_PORT: String(port),
-        BREEV_INSTALLATION_STATE: installationState,
-        BREEV_MAIN_DEVICE_ID: credentials?.deviceId,
-        BREEV_MAIN_DEVICE_SECRET: credentials?.deviceSecret,
-        BREEV_MAIN_DEVICE_SESSION: credentials?.sessionToken,
-        DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
-        DATABASE_URL: databaseRoles.applicationUrl,
-      },
+      ...process.env,
+      API_HOST: "127.0.0.1",
+      API_PORT: String(port),
+      BREEV_INSTALLATION_STATE: installationState,
+      BREEV_MAIN_DEVICE_ID: credentials?.deviceId,
+      BREEV_MAIN_DEVICE_SECRET: credentials?.deviceSecret,
+      BREEV_MAIN_DEVICE_SESSION: credentials?.sessionToken,
+      DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
+      DATABASE_URL: databaseRoles.applicationUrl,
     },
   );
 }
@@ -1520,25 +2276,6 @@ async function submitCrossSiteForm(page: Page, action: string): Promise<void> {
   }, action);
 }
 
-async function waitForHealth(
-  baseUrl: string,
-  status: "healthy" | "repair-required",
-): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/health`);
-      const body = (await response.json()) as { status?: string };
-      if (body.status === status) {
-        return;
-      }
-    } catch {
-      await delay(100);
-    }
-  }
-  throw new Error(`Local API did not report ${status} at ${baseUrl}`);
-}
-
 async function reservePort(): Promise<number> {
   const server = createTcpServer();
   const port = await new Promise<number>((resolve, reject) => {
@@ -1572,6 +2309,10 @@ async function listen(server: Server): Promise<number> {
   });
 }
 
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function closeServer(server: Server | undefined): Promise<void> {
   if (server === undefined) {
     return;
@@ -1579,24 +2320,4 @@ async function closeServer(server: Server | undefined): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
-}
-
-async function stopProcess(
-  child: ChildProcessWithoutNullStreams | undefined,
-): Promise<void> {
-  if (child === undefined || child.exitCode !== null) {
-    return;
-  }
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
-    setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 5_000).unref();
-  });
-}
-
-async function delay(milliseconds: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

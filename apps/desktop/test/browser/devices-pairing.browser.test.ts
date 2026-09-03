@@ -12,7 +12,7 @@ import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -26,10 +26,16 @@ import {
 } from "../database-roles.js";
 import { mintLicence, TEST_ISSUER_PUBLIC_KEYS } from "../licence-issuer.js";
 import {
+  spawnLocalApiProcess,
+  stopProcess,
+  waitForHealth as waitForLocalApiHealth,
+} from "../local-api-process.js";
+import {
   collectTerminalCertificate,
   joinAsTerminal,
   type JoinedTerminal,
 } from "../terminal-role.js";
+import { evidencePath } from "./evidence-path.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_PASSWORD = "browser owner password is private";
@@ -95,7 +101,7 @@ test.describe.serial("Main pairing screen", () => {
     lanPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
     api = spawnLocalApi(apiPort, lanPort, databaseRoles, credentials);
-    await waitForHealth(apiOrigin);
+    await waitForLocalApiHealth(apiOrigin, "healthy", api, 30_000);
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
     renderer = await startPairingRenderer(apiOrigin, credentials);
   });
@@ -133,15 +139,12 @@ test.describe.serial("Main pairing screen", () => {
       page.getByRole("heading", { name: "Welcome, Devices Owner" }),
     ).toBeVisible();
 
-    // The devices section exists for a user who holds devices.pair. The seat
-    // count is licence data and nothing else: with no licence installed there
-    // is no permitted count to state, and the screen says so instead of
-    // inventing one.
+    // The devices section exists for a user who holds devices.pair AND the
+    // additional-device-pos entitlement. On Free Core, it is completely absent.
     await expect(
       page.getByRole("heading", { name: "Additional POS terminals" }),
-    ).toBeVisible();
-    await expect(page.getByText("Seats in use")).toBeVisible();
-    await expect(seatUsage(page)).toHaveText("No licence installed");
+    ).not.toBeVisible();
+    await expect(page.getByText("Seats in use")).not.toBeVisible();
 
     pharmacyId = await readPharmacyId(apiOrigin, credentials);
     await installLicence(apiOrigin, credentials, {
@@ -149,6 +152,12 @@ test.describe.serial("Main pairing screen", () => {
       permittedDeviceCount: 4,
       pharmacyId,
     });
+
+    // Once the licence is installed, the capability is granted and the panel appears.
+    await expect(
+      page.getByRole("heading", { name: "Additional POS terminals" }),
+    ).toBeVisible();
+    await expect(page.getByText("Seats in use")).toBeVisible();
     await expect(seatUsage(page)).toHaveText("1 / 4");
 
     // Starting a session is a reauthenticated act, reached by keyboard alone.
@@ -323,10 +332,16 @@ test.describe.serial("Main pairing screen", () => {
     });
 
     await signIn(page, "devices.owner", OWNER_PASSWORD);
-    const managerRole = page.getByRole("group", { name: "Manager" });
+    await page
+      .getByRole("navigation", { name: "Roles" })
+      .getByRole("button", { name: "Manager" })
+      .click();
+    const managerRole = page.getByRole("region", { name: "Manager" });
     await expect(managerRole).toBeVisible();
-    await managerRole.getByLabel("devices.pair").check();
-    await managerRole.getByRole("button", { name: "Save" }).click();
+    await managerRole
+      .getByLabel("Pair and manage terminals", { exact: true })
+      .check();
+    await managerRole.getByRole("button", { name: "Save permissions" }).click();
     await page.getByRole("dialog").getByLabel("Password").fill(OWNER_PASSWORD);
     await page
       .getByRole("dialog")
@@ -642,10 +657,7 @@ async function pressButton(page: Page, name: string): Promise<void> {
 }
 
 function evidenceDirectory(): string {
-  return path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/issue-42/after",
-  );
+  return evidencePath("issue-42/after");
 }
 
 async function installDesktopFake(
@@ -743,12 +755,30 @@ async function createUser(
     mainDevice,
     "identity.user.create",
   );
+  // Roles are assigned by id; the users list carries the assignable roles.
+  const listed = await apiRequest(origin, mainDevice, "GET", "/identity/users");
+  const roles =
+    (listed.body as { roles?: { id: string; key?: string; kind: string }[] })
+      .roles ?? [];
+  const roleId = roles.find(
+    (role) => role.kind === "built-in" && role.key === input.role,
+  )?.id;
+  if (roleId === undefined) {
+    throw new Error(`The built-in ${input.role} role is missing`);
+  }
   const created = await apiRequest(
     origin,
     mainDevice,
     "POST",
     "/identity/users",
-    { ...input, challengeId, idempotencyKey: randomUUID() },
+    {
+      challengeId,
+      displayName: input.displayName,
+      idempotencyKey: randomUUID(),
+      password: input.password,
+      roleId,
+      username: input.username,
+    },
   );
   if (created.status !== 201) {
     throw new Error(
@@ -932,29 +962,26 @@ function spawnLocalApi(
   roles: SeparatedDatabaseRoles,
   mainDevice: MainDeviceCredentials,
 ): ChildProcessWithoutNullStreams {
-  return spawn(
-    process.execPath,
+  return spawnLocalApiProcess(
+    path.resolve(import.meta.dirname, "../../../local-api/dist/main.js"),
+    {
+      ...process.env,
+      API_HOST: "127.0.0.1",
+      API_PORT: String(port),
+      BREEV_INSTALLATION_STATE: "ready",
+      BREEV_LAN_API_HOST: "127.0.0.1",
+      BREEV_LAN_API_PORT: String(lanApiPort),
+      BREEV_MAIN_DEVICE_ID: mainDevice.deviceId,
+      BREEV_MAIN_DEVICE_SECRET: mainDevice.deviceSecret,
+      BREEV_MAIN_DEVICE_SESSION: mainDevice.sessionToken,
+      BREEV_TEST_LICENCE_PUBLIC_KEYS: JSON.stringify(TEST_ISSUER_PUBLIC_KEYS),
+      DATABASE_MIGRATION_URL: roles.migrationUrl,
+      DATABASE_URL: roles.applicationUrl,
+    },
     [
       "--import",
       path.resolve(import.meta.dirname, "../licence-key-override.mjs"),
-      path.resolve(import.meta.dirname, "../../../local-api/dist/main.js"),
     ],
-    {
-      env: {
-        ...process.env,
-        API_HOST: "127.0.0.1",
-        API_PORT: String(port),
-        BREEV_INSTALLATION_STATE: "ready",
-        BREEV_LAN_API_HOST: "127.0.0.1",
-        BREEV_LAN_API_PORT: String(lanApiPort),
-        BREEV_MAIN_DEVICE_ID: mainDevice.deviceId,
-        BREEV_MAIN_DEVICE_SECRET: mainDevice.deviceSecret,
-        BREEV_MAIN_DEVICE_SESSION: mainDevice.sessionToken,
-        BREEV_TEST_LICENCE_PUBLIC_KEYS: JSON.stringify(TEST_ISSUER_PUBLIC_KEYS),
-        DATABASE_MIGRATION_URL: roles.migrationUrl,
-        DATABASE_URL: roles.applicationUrl,
-      },
-    },
   );
 }
 
@@ -973,22 +1000,6 @@ function createUuidV7(): string {
   bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
   const hex = bytes.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-async function waitForHealth(baseUrl: string): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/health`);
-      const body = (await response.json()) as { status?: string };
-      if (body.status === "healthy") {
-        return;
-      }
-    } catch {
-      await delay(100);
-    }
-  }
-  throw new Error(`The local API did not report healthy at ${baseUrl}`);
 }
 
 async function reservePort(): Promise<number> {
@@ -1031,24 +1042,4 @@ async function closeServer(server: Server | undefined): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
-}
-
-async function stopProcess(
-  child: ChildProcessWithoutNullStreams | undefined,
-): Promise<void> {
-  if (child === undefined || child.exitCode !== null) {
-    return;
-  }
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
-    setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 5_000).unref();
-  });
-}
-
-async function delay(milliseconds: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
