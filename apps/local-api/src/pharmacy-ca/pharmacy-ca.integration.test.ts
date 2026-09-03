@@ -293,7 +293,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-      const expiredCert = buildDeviceCertificate({
+      const expiredCert = await buildDeviceCertificate({
         caKeyHandle: state.keyHandle,
         caCertPem: state.caCertPem,
         licenceId,
@@ -354,7 +354,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-      const mismatchedCert = buildDeviceCertificate({
+      const mismatchedCert = await buildDeviceCertificate({
         caKeyHandle: state.keyHandle,
         caCertPem: state.caCertPem,
         licenceId,
@@ -384,7 +384,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
         format: "der",
         type: "spki",
       });
-      const foreignCa = buildCACertificate({
+      const foreignCa = await buildCACertificate({
         keyHandle: {
           keyName: "foreign-ca",
           providerName: "test",
@@ -399,7 +399,7 @@ describe.sequential("Pharmacy CA and Terminal mTLS Integration Seam", () => {
       const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
       const deviceSpki = publicKey.export({ format: "der", type: "spki" });
 
-      const foreignDeviceCert = buildDeviceCertificate({
+      const foreignDeviceCert = await buildDeviceCertificate({
         caKeyHandle: {
           keyName: "foreign-ca",
           providerName: "test",

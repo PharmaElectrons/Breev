@@ -165,7 +165,7 @@ export async function issueFixtureDeviceCertificate(
   readonly fingerprint: string;
 }> {
   const deviceId = createUuidV7();
-  const certificate = pharmacyCa.signDeviceCertificate({
+  const certificate = await pharmacyCa.signDeviceCertificate({
     deviceId,
     devicePublicKeyDer: input.devicePublicKeyDer,
     licenceId: input.licenceId,
