@@ -332,10 +332,16 @@ test.describe.serial("Main pairing screen", () => {
     });
 
     await signIn(page, "devices.owner", OWNER_PASSWORD);
-    const managerRole = page.getByRole("group", { name: "Manager" });
+    await page
+      .getByRole("navigation", { name: "Roles" })
+      .getByRole("button", { name: "Manager" })
+      .click();
+    const managerRole = page.getByRole("region", { name: "Manager" });
     await expect(managerRole).toBeVisible();
-    await managerRole.getByLabel("devices.pair").check();
-    await managerRole.getByRole("button", { name: "Save" }).click();
+    await managerRole
+      .getByLabel("Pair and manage terminals", { exact: true })
+      .check();
+    await managerRole.getByRole("button", { name: "Save permissions" }).click();
     await page.getByRole("dialog").getByLabel("Password").fill(OWNER_PASSWORD);
     await page
       .getByRole("dialog")
