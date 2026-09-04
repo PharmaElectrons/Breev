@@ -9,6 +9,7 @@ import {
   createIpcGuard,
   createStartupConfigIpcGuard,
   createHardenedWindowOptions,
+  normalizeFrameUrl,
   resolveAppAssetPath,
   resolveRendererEntry,
   readMainDeviceBinding,
@@ -24,6 +25,18 @@ describe("breev app protocol", () => {
     expect(resolveAppAssetPath(rendererRoot, "breev://app/assets/app.js")).toBe(
       path.join(rendererRoot, "assets/app.js"),
     );
+  });
+
+  it("resolves app routes with client hash fragments to index.html", () => {
+    expect(
+      resolveAppAssetPath(rendererRoot, "breev://app/index.html#/purchases"),
+    ).toBe(path.join(rendererRoot, "index.html"));
+    expect(
+      resolveAppAssetPath(rendererRoot, "breev://app/#/purchases"),
+    ).toBe(path.join(rendererRoot, "index.html"));
+    expect(
+      resolveAppAssetPath(rendererRoot, "breev://app/index.html#"),
+    ).toBe(path.join(rendererRoot, "index.html"));
   });
 
   it.each([
@@ -55,6 +68,26 @@ describe("startup configuration IPC", () => {
     });
 
     expect(guard(trustedInvocation, {})).toEqual({});
+  });
+
+  it("accepts invocation from a frame whose URL carries a client hash route", () => {
+    const guard = createStartupConfigIpcGuard({
+      now: () => 1_000,
+      trustedSenderId: 7,
+    });
+
+    expect(
+      guard(
+        {
+          ...trustedInvocation,
+          senderFrame: {
+            ...trustedInvocation.senderFrame,
+            url: "breev://app/index.html#/purchases",
+          },
+        },
+        {},
+      ),
+    ).toEqual({});
   });
 
   it.each([
@@ -374,5 +407,19 @@ describe("shared IPC guard", () => {
     expect(guard(trusted, {})).toEqual({});
     expect(guard(trusted, {})).toEqual({});
     expect(() => guard(trusted, {})).toThrow(/rate/iu);
+  });
+});
+
+describe("frame URL normalization", () => {
+  it.each([
+    ["breev://app", "breev://app/index.html"],
+    ["breev://app/", "breev://app/index.html"],
+    ["breev://app/index.html", "breev://app/index.html"],
+    ["breev://app/index.html#/purchases", "breev://app/index.html"],
+    ["breev://app/#/purchases", "breev://app/index.html"],
+    ["http://127.0.0.1:5173/", "http://127.0.0.1:5173/"],
+    ["http://127.0.0.1:5173/#/purchases", "http://127.0.0.1:5173/"],
+  ])("normalizes %s to %s", (input, expected) => {
+    expect(normalizeFrameUrl(input)).toBe(expected);
   });
 });
