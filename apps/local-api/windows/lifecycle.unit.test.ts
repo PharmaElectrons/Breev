@@ -16,6 +16,16 @@ function expectOrdered(source: string, values: readonly string[]): void {
 }
 
 describe("Windows role-aware lifecycle", () => {
+  it("uses only bundled deployment entrypoints without changing initialization durability", () => {
+    expect(lifecycle).toContain('"local-api\\dist\\main.cjs"');
+    expect(lifecycle).toContain('"local-api\\dist\\migrate.cjs"');
+    expect(lifecycle).toContain('"dist\\main.cjs"');
+    expect(lifecycle).toContain('"dist\\migrate.cjs"');
+    expect(lifecycle).not.toContain("main.js");
+    expect(lifecycle).not.toContain("migrate.js");
+    expect(lifecycle).toContain("--data-checksums");
+    expect(lifecycle).not.toContain("--no-sync");
+  });
   it("keeps Role optional for the existing installer and validates exact values", () => {
     expect(lifecycle).toContain('[string] $Role = ""');
     expect(lifecycle).toContain('$RequestedRole -cne "main"');

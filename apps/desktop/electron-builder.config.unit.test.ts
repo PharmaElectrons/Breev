@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { recordPayloadFiles } from "../../tooling/windows/payload-inventory.mjs";
 
 import {
   default as builderConfiguration,
@@ -86,6 +87,7 @@ describe("Windows electron-builder candidate", () => {
       await writeFile(
         path.join(root, "payload-manifest.json"),
         JSON.stringify({
+          files: await recordPayloadFiles(root),
           components: [
             {
               name: "shawl",

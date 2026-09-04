@@ -142,8 +142,8 @@ function Get-InstalledPayloadRecord {
   $payloadRoot = $lockFiles[0].Directory.FullName
   $requiredPaths = @(
     "payload-manifest.json", "payload-lock.json", "lifecycle.ps1", "bootstrap.sql",
-    "node/node.exe", "postgresql/bin/postgres.exe", "service-wrapper/shawl.exe", "local-api/dist/main.js",
-    "local-api/dist/migrate.js", "local-api/drizzle/meta/_journal.json"
+    "node/node.exe", "postgresql/bin/postgres.exe", "service-wrapper/shawl.exe", "local-api/dist/main.cjs",
+    "local-api/dist/migrate.cjs", "local-api/drizzle/meta/_journal.json"
   )
   $files = foreach ($relativePath in $requiredPaths) {
     $path = Join-Path $payloadRoot $relativePath

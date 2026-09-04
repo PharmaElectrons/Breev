@@ -567,6 +567,44 @@ function Initialize-MainDeviceBinding {
   Set-MainDeviceFileAcl -Path $mainDevicePath
 }
 
+function Test-PayloadFiles {
+  param([string] $Root, [object[]] $Files)
+
+  if ($null -eq $Files -or $Files.Count -eq 0) {
+    throw "The Windows payload file inventory is missing"
+  }
+  $expected = @{}
+  foreach ($file in $Files) {
+    $relative = [string]$file.path
+    if ($relative -notmatch '^[A-Za-z0-9_./+-]+$' -or
+        @($relative.Split('/') | Where-Object { $_ -eq '' -or $_ -eq '.' -or $_ -eq '..' }).Count -ne 0 -or
+        $relative -eq 'payload-manifest.json' -or $expected.ContainsKey($relative) -or
+        [string]$file.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $null -eq $file.bytes -or [long]$file.bytes -lt 0) {
+      throw "The Windows payload file inventory is invalid"
+    }
+    $expected[$relative] = $file
+  }
+  $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+  $seen = 0
+  foreach ($entry in Get-ChildItem -LiteralPath $rootPath -Force -Recurse) {
+    if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw "Windows payload links are forbidden"
+    }
+    if ($entry.PSIsContainer) { continue }
+    $relative = $entry.FullName.Substring($rootPath.Length + 1).Replace('\', '/')
+    if ($relative -eq 'payload-manifest.json') { continue }
+    if (-not $expected.ContainsKey($relative)) { throw "An unexpected file exists in the Windows payload: $relative" }
+    $record = $expected[$relative]
+    if ($entry.Length -ne [long]$record.bytes -or
+        (Get-FileHash -LiteralPath $entry.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $record.sha256) {
+      throw "Windows payload integrity failed: $relative"
+    }
+    $seen += 1
+  }
+  if ($seen -ne $expected.Count) { throw "A required Windows payload file is missing" }
+}
+
 function Test-Payload {
   $manifestPath = Join-Path $PayloadRoot "payload-manifest.json"
   Assert-FileExists $manifestPath
@@ -575,6 +613,7 @@ function Test-Payload {
   if ($manifest.schemaVersion -ne 1 -or $manifest.architecture -ne "x64") {
     throw "The Windows payload manifest is incompatible"
   }
+  Test-PayloadFiles -Root $PayloadRoot -Files $manifest.files
 
   $nodePath = Join-Path $PayloadRoot "node\node.exe"
   $postgresPath = Join-Path $PayloadRoot "postgresql\bin\postgres.exe"
@@ -582,8 +621,8 @@ function Test-Payload {
   Assert-FileExists $nodePath
   Assert-FileExists $postgresPath
   Assert-FileExists $shawlPath
-  Assert-FileExists (Join-Path $PayloadRoot "local-api\dist\main.js")
-  Assert-FileExists (Join-Path $PayloadRoot "local-api\dist\migrate.js")
+  Assert-FileExists (Join-Path $PayloadRoot "local-api\dist\main.cjs")
+  Assert-FileExists (Join-Path $PayloadRoot "local-api\dist\migrate.cjs")
   Assert-FileExists (Join-Path $PayloadRoot "local-api\drizzle\meta\_journal.json")
   Assert-FileExists (Join-Path $PayloadRoot "bootstrap.sql")
 
@@ -940,7 +979,7 @@ function Register-ApiService {
   $shawlPath = Join-Path $PayloadRoot "service-wrapper\shawl.exe"
   $nodePath = Join-Path $PayloadRoot "node\node.exe"
   $apiRoot = Join-Path $PayloadRoot "local-api"
-  $apiEntry = Join-Path $apiRoot "dist\main.js"
+  $apiEntry = Join-Path $apiRoot "dist\main.cjs"
   $runtimeUrlPath = Join-Path $DataRoot "config\database-url"
   $logRoot = Join-Path $DataRoot "logs\local-api"
   $backupRoot = Join-Path $DataRoot "backups"
@@ -1079,12 +1118,12 @@ function Wait-PostgresqlReady {
 function Invoke-DatabaseMigrations {
   $nodePath = Join-Path $PayloadRoot "node\node.exe"
   $apiRoot = Join-Path $PayloadRoot "local-api"
-  $migrateEntry = Join-Path $apiRoot "dist\migrate.js"
+  $migrateEntry = Join-Path $apiRoot "dist\migrate.cjs"
   $runtimeUrlPath = Join-Path $DataRoot "config\database-url"
   $schemaOwnerUrlPath = Join-Path $DataRoot "config\schema-owner-url"
 
   if (-not (Test-Path -LiteralPath $migrateEntry -PathType Leaf)) {
-    throw "The Windows payload is missing local-api\dist\migrate.js"
+    throw "The Windows payload is missing local-api\dist\migrate.cjs"
   }
 
   $previousDatabaseUrlFile = $env:DATABASE_URL_FILE

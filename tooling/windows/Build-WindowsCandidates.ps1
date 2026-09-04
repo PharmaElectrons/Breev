@@ -118,8 +118,8 @@ function Get-PayloadRecord {
     "node/node.exe",
     "postgresql/bin/postgres.exe",
     "service-wrapper/shawl.exe",
-    "local-api/dist/main.js",
-    "local-api/dist/migrate.js",
+    "local-api/dist/main.cjs",
+    "local-api/dist/migrate.cjs",
     "local-api/drizzle/meta/_journal.json"
   )
   $files = foreach ($relativePath in $requiredPaths) {
