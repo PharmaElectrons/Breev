@@ -31,12 +31,12 @@ describe("breev app protocol", () => {
     expect(
       resolveAppAssetPath(rendererRoot, "breev://app/index.html#/purchases"),
     ).toBe(path.join(rendererRoot, "index.html"));
-    expect(
-      resolveAppAssetPath(rendererRoot, "breev://app/#/purchases"),
-    ).toBe(path.join(rendererRoot, "index.html"));
-    expect(
-      resolveAppAssetPath(rendererRoot, "breev://app/index.html#"),
-    ).toBe(path.join(rendererRoot, "index.html"));
+    expect(resolveAppAssetPath(rendererRoot, "breev://app/#/purchases")).toBe(
+      path.join(rendererRoot, "index.html"),
+    );
+    expect(resolveAppAssetPath(rendererRoot, "breev://app/index.html#")).toBe(
+      path.join(rendererRoot, "index.html"),
+    );
   });
 
   it.each([
