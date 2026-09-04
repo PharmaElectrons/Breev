@@ -28,6 +28,13 @@ const issue34Aggregator = readFileSync(
   ),
   "utf8",
 );
+const windowsCiWriter = readFileSync(
+  new URL(
+    "../../../tooling/windows/Write-WindowsCiEvidence.ps1",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const require = createRequire(import.meta.url);
 const electronBuilderPackage = require.resolve("electron-builder/package.json");
 const nsisTemplateRoot = path.join(
@@ -68,6 +75,22 @@ function expectOrdered(source: string, values: readonly string[]): void {
 }
 
 describe("unified Windows installer role selection", () => {
+  it("correlates Windows evidence with the current repository without an old-name fallback", () => {
+    expect(windowsCiWriter).toContain(
+      '$env:GITHUB_REPOSITORY -ne "PharmaElectrons/Breev"',
+    );
+    expect(issue34Aggregator).toContain(
+      '$windowsCi.repository -eq "PharmaElectrons/Breev"',
+    );
+    expect(issue34Aggregator).toContain(
+      '"https://github.com/PharmaElectrons/Breev/actions/runs/$($windowsCi.workflowRunId)"',
+    );
+    for (const source of [windowsCiWriter, issue34Aggregator]) {
+      expect(source).not.toContain("PharmaElectrons/PharmaElectrons");
+      expect(source).toContain("$SourceCommit");
+    }
+  });
+
   it("validates CLI role selection during customInit", () => {
     expect(installer).toContain("!macro customInit");
     expect(installer).toContain('${GetOptions} $R7 "/ROLE=" $R6');

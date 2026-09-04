@@ -24,7 +24,7 @@ foreach ($name in @("GITHUB_ACTIONS", "GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GIT
     throw "Missing GitHub Actions correlation: $name"
   }
 }
-if ($env:GITHUB_ACTIONS -ne "true" -or $env:GITHUB_REPOSITORY -ne "PharmaElectrons/PharmaElectrons" -or (& git rev-parse HEAD).Trim() -ne $SourceCommit) {
+if ($env:GITHUB_ACTIONS -ne "true" -or $env:GITHUB_REPOSITORY -ne "PharmaElectrons/Breev" -or (& git rev-parse HEAD).Trim() -ne $SourceCommit) {
   throw "The Windows CI environment does not match this Breev source commit"
 }
 
