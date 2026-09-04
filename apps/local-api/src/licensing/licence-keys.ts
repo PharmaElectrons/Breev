@@ -4,8 +4,8 @@
  * material.
  */
 export const OFFLINE_LICENCE_PUBLIC_KEYS: Readonly<Record<string, string>> = {
-  "breev-dev-ed25519-2026-01": `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAppOXgz9FVQm7Qii2p4RB0RjofSJz21BM3JgZ8O9MGYw=
+  "breev-dev-ed25519-2026-02": `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEArcgzSr/xEt5CFFLi9lFrye9Ui/JPOG80u4JwP2Qxk38=
 -----END PUBLIC KEY-----
 `,
   "breev-test-ed25519-2026-01": `-----BEGIN PUBLIC KEY-----

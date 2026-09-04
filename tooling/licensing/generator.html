@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="breev-dev-licence-key-id" content="breev-dev-ed25519-2026-02" />
+    <meta
+      name="breev-dev-licence-public-key-spki"
+      content="MCowBQYDK2VwAyEArcgzSr/xEt5CFFLi9lFrye9Ui/JPOG80u4JwP2Qxk38="
+    />
+    <title>Breev | مولّد تراخيص التطوير</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --background: #0f172a;
+        --panel: #1e293bcc;
+        --border: #ffffff1f;
+        --muted: #94a3b8;
+        --accent: #3b82f6;
+        --danger: #f87171;
+        --success: #34d399;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(circle at top, #1e293b, var(--background));
+        color: #f8fafc;
+        font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
+      }
+      main {
+        width: min(960px, calc(100% - 32px));
+        margin: 32px auto;
+      }
+      header,
+      section {
+        margin-bottom: 20px;
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--panel);
+      }
+      h1,
+      h2 {
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .notice {
+        color: #fbbf24;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+      .field.wide {
+        grid-column: 1 / -1;
+      }
+      label,
+      legend {
+        font-weight: 650;
+      }
+      small {
+        color: var(--muted);
+      }
+      input,
+      select,
+      button,
+      textarea {
+        font: inherit;
+      }
+      input,
+      select,
+      textarea {
+        width: 100%;
+        padding: 11px 12px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: #0f172acc;
+        color: inherit;
+      }
+      input:focus,
+      select:focus,
+      textarea:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      input[readonly] {
+        color: var(--muted);
+      }
+      fieldset {
+        margin: 0;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+      }
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 8px;
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 400;
+      }
+      .check input {
+        width: auto;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 16px 0;
+      }
+      button {
+        padding: 11px 16px;
+        border: 0;
+        border-radius: 9px;
+        background: var(--accent);
+        color: white;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #475569;
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+      .status,
+      .error {
+        margin-top: 10px;
+        white-space: pre-line;
+      }
+      .status.ready {
+        color: var(--success);
+      }
+      .status.failed,
+      .error {
+        color: var(--danger);
+      }
+      .error[hidden],
+      #result[hidden] {
+        display: none;
+      }
+      textarea {
+        min-height: 130px;
+        direction: ltr;
+        font-family: ui-monospace, Consolas, monospace;
+      }
+      pre {
+        overflow: auto;
+        direction: ltr;
+        padding: 14px;
+        border-radius: 9px;
+        background: #020617;
+        color: #cbd5e1;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>مولّد تراخيص Breev للتطوير</h1>
+        <p>Breev development licence generator — Offline Ed25519 signer</p>
+        <p class="notice">
+          للتطوير والاختبار فقط — Development and testing only.
+        </p>
+      </header>
+
+      <section aria-labelledby="target-heading">
+        <h2 id="target-heading">بيانات الربط والخطة — Binding and plan</h2>
+        <div class="presets" aria-label="قوالب الخطط — Plan presets">
+          <button type="button" class="secondary" data-preset="pro10">
+            Professional · 10 · perpetual
+          </button>
+          <button type="button" class="secondary" data-preset="standard4">
+            Professional · 4 · one year
+          </button>
+          <button type="button" class="secondary" data-preset="starter1">
+            Starter · 1 · one year
+          </button>
+          <button type="button" class="secondary" data-preset="trial">
+            Trial · 4 · 30 days
+          </button>
+        </div>
+        <div class="grid">
+          <div class="field">
+            <label for="pharmacyId">معرّف الصيدلية — Pharmacy ID</label>
+            <input
+              id="pharmacyId"
+              type="text"
+              placeholder="UUIDv7"
+              autocomplete="off"
+            />
+            <button type="button" class="secondary" id="generatePharmacyId">
+              توليد UUIDv7 — Generate
+            </button>
+          </div>
+          <div class="field">
+            <label for="mainDeviceId"
+              >معرّف الجهاز الرئيسي — Main Device ID</label
+            >
+            <input
+              id="mainDeviceId"
+              type="text"
+              placeholder="UUIDv7"
+              autocomplete="off"
+            />
+          </div>
+          <div class="field">
+            <label for="plan">الخطة — Plan</label>
+            <select id="plan">
+              <option value="professional">Professional</option>
+              <option value="gold">Gold</option>
+              <option value="starter">Starter</option>
+              <option value="enterprise">Enterprise</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="permittedDeviceCount"
+              >عدد الأجهزة — Permitted devices</label
+            >
+            <input
+              id="permittedDeviceCount"
+              type="number"
+              value="10"
+              min="1"
+              max="1000000"
+            />
+          </div>
+          <div class="field">
+            <label for="issuedDate">تاريخ الإصدار — Issued date</label>
+            <input id="issuedDate" type="date" />
+          </div>
+          <div class="field">
+            <label for="expiresDate">تاريخ الانتهاء — Expiry date</label>
+            <input id="expiresDate" type="date" value="2099-01-01" />
+          </div>
+          <div class="field">
+            <label for="graceDays">أيام السماح — Grace days</label>
+            <input id="graceDays" type="number" value="7" min="0" max="30" />
+          </div>
+          <fieldset class="field wide">
+            <legend>الخصائص الموقعة — Signed features</legend>
+            <div class="features">
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  name="feature"
+                  value="additional-device-pos"
+                  checked
+                />
+                Additional device POS</label
+              >
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  name="feature"
+                  value="purchase-invoice-ocr"
+                  checked
+                />
+                Purchase invoice OCR</label
+              >
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  name="feature"
+                  value="one-way-cloud-sync"
+                  checked
+                />
+                One-way cloud sync</label
+              >
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  name="feature"
+                  value="crm-advanced-reports"
+                  checked
+                />
+                CRM advanced reports</label
+              >
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  name="feature"
+                  value="ai-services"
+                  checked
+                />
+                AI services</label
+              >
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  name="feature"
+                  value="whatsapp-messaging"
+                  checked
+                />
+                WhatsApp messaging</label
+              >
+            </div>
+          </fieldset>
+        </div>
+      </section>
+
+      <section aria-labelledby="key-heading">
+        <h2 id="key-heading">مفتاح التوقيع — Signing key</h2>
+        <div class="grid">
+          <div class="field">
+            <label for="keyId">معرّف المفتاح — Key ID</label>
+            <input id="keyId" type="text" readonly />
+          </div>
+          <div class="field">
+            <label for="privateKeyFile">ملف المفتاح الخاص PKCS#8 PEM</label>
+            <input
+              id="privateKeyFile"
+              type="file"
+              accept=".pem,application/x-pem-file,text/plain"
+            />
+            <small
+              >يُقرأ داخل ذاكرة الصفحة فقط ولا يُحفظ — Read in page memory only
+              and never stored.</small
+            >
+          </div>
+        </div>
+        <div id="keyStatus" class="status" role="status" aria-live="polite">
+          اختر المفتاح المطابق — Select the matching private key.
+        </div>
+        <div class="actions">
+          <button id="generateLicence" type="button" disabled>
+            إصدار وتوقيع الترخيص — Mint licence
+          </button>
+        </div>
+        <div
+          id="formError"
+          class="error"
+          role="alert"
+          aria-live="assertive"
+          hidden
+        ></div>
+      </section>
+
+      <section id="result" aria-labelledby="result-heading" hidden>
+        <h2 id="result-heading">تم إصدار الترخيص — Licence ready</h2>
+        <div class="field">
+          <label for="licenseOutput">مستند الترخيص — Licence envelope</label>
+          <textarea id="licenseOutput" readonly></textarea>
+        </div>
+        <div class="actions">
+          <button id="copyLicence" type="button">نسخ — Copy</button>
+        </div>
+        <pre id="claimsPreview"></pre>
+      </section>
+    </main>
+
+    <script>
+      "use strict";
+
+      const UUID_V7_PATTERN =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const ED25519_SPKI_PREFIX = Uint8Array.from([
+        0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+      ]);
+      const KNOWN_FEATURES = new Set([
+        "additional-device-pos",
+        "purchase-invoice-ocr",
+        "one-way-cloud-sync",
+        "crm-advanced-reports",
+        "ai-services",
+        "whatsapp-messaging",
+      ]);
+      const KNOWN_PLANS = new Set([
+        "professional",
+        "gold",
+        "starter",
+        "enterprise",
+      ]);
+      const keyId = requiredMeta("breev-dev-licence-key-id");
+      const expectedPublicSpki = base64ToBytes(
+        requiredMeta("breev-dev-licence-public-key-spki"),
+      );
+      const expectedPublicRaw = publicRawFromSpki(expectedPublicSpki);
+      let signingKey = null;
+
+      const elements = {
+        pharmacyId: document.querySelector("#pharmacyId"),
+        mainDeviceId: document.querySelector("#mainDeviceId"),
+        plan: document.querySelector("#plan"),
+        permittedDeviceCount: document.querySelector("#permittedDeviceCount"),
+        issuedDate: document.querySelector("#issuedDate"),
+        expiresDate: document.querySelector("#expiresDate"),
+        graceDays: document.querySelector("#graceDays"),
+        keyId: document.querySelector("#keyId"),
+        privateKeyFile: document.querySelector("#privateKeyFile"),
+        keyStatus: document.querySelector("#keyStatus"),
+        generateLicence: document.querySelector("#generateLicence"),
+        formError: document.querySelector("#formError"),
+        result: document.querySelector("#result"),
+        licenseOutput: document.querySelector("#licenseOutput"),
+        claimsPreview: document.querySelector("#claimsPreview"),
+      };
+
+      elements.keyId.value = keyId;
+      elements.issuedDate.value = formatUtcDate(new Date());
+      document
+        .querySelector("#generatePharmacyId")
+        .addEventListener("click", () => {
+          elements.pharmacyId.value = generateUuidV7();
+        });
+      document.querySelectorAll("[data-preset]").forEach((button) => {
+        button.addEventListener("click", () =>
+          applyPreset(button.dataset.preset),
+        );
+      });
+      elements.privateKeyFile.addEventListener("change", loadSigningKey);
+      elements.generateLicence.addEventListener("click", generateLicence);
+      document.querySelector("#copyLicence").addEventListener("click", () => {
+        navigator.clipboard.writeText(elements.licenseOutput.value);
+      });
+
+      function requiredMeta(name) {
+        const value = document.querySelector(`meta[name="${name}"]`)?.content;
+        if (!value) throw new Error(`Missing generator metadata: ${name}`);
+        return value;
+      }
+
+      function formatUtcDate(date) {
+        return date.toISOString().slice(0, 10);
+      }
+
+      function generateUuidV7() {
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        let timestamp = BigInt(Date.now());
+        for (let index = 5; index >= 0; index -= 1) {
+          bytes[index] = Number(timestamp & 0xffn);
+          timestamp >>= 8n;
+        }
+        bytes[6] = (bytes[6] & 0x0f) | 0x70;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+      }
+
+      function setAllFeatures(checked) {
+        document
+          .querySelectorAll('input[name="feature"]')
+          .forEach((input) => (input.checked = checked));
+      }
+
+      function applyPreset(preset) {
+        const today = new Date();
+        elements.issuedDate.value = formatUtcDate(today);
+        if (preset === "pro10") {
+          elements.plan.value = "professional";
+          elements.permittedDeviceCount.value = "10";
+          elements.expiresDate.value = "2099-01-01";
+          setAllFeatures(true);
+          return;
+        }
+
+        const expiry = new Date(today);
+        if (preset === "trial") {
+          elements.plan.value = "professional";
+          elements.permittedDeviceCount.value = "4";
+          expiry.setUTCDate(expiry.getUTCDate() + 30);
+          setAllFeatures(true);
+        } else {
+          expiry.setUTCFullYear(expiry.getUTCFullYear() + 1);
+          if (preset === "standard4") {
+            elements.plan.value = "professional";
+            elements.permittedDeviceCount.value = "4";
+            setAllFeatures(true);
+          } else if (preset === "starter1") {
+            elements.plan.value = "starter";
+            elements.permittedDeviceCount.value = "1";
+            setAllFeatures(false);
+          } else {
+            return;
+          }
+        }
+        elements.expiresDate.value = formatUtcDate(expiry);
+      }
+
+      function base64ToBytes(value) {
+        const binary = atob(value);
+        return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      }
+
+      function base64UrlToBytes(value) {
+        const padding = "=".repeat((4 - (value.length % 4)) % 4);
+        return base64ToBytes(
+          value.replace(/-/g, "+").replace(/_/g, "/") + padding,
+        );
+      }
+
+      function base64UrlEncode(value) {
+        const bytes =
+          value instanceof Uint8Array ? value : new Uint8Array(value);
+        let binary = "";
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        return btoa(binary)
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/u, "");
+      }
+
+      function publicRawFromSpki(spki) {
+        const prefixMatches =
+          spki.length === ED25519_SPKI_PREFIX.length + 32 &&
+          ED25519_SPKI_PREFIX.every((byte, index) => spki[index] === byte);
+        if (!prefixMatches)
+          throw new Error("Invalid expected Ed25519 public key metadata");
+        return spki.slice(ED25519_SPKI_PREFIX.length);
+      }
+
+      function publicSpkiFromRaw(raw) {
+        const spki = new Uint8Array(ED25519_SPKI_PREFIX.length + raw.length);
+        spki.set(ED25519_SPKI_PREFIX);
+        spki.set(raw, ED25519_SPKI_PREFIX.length);
+        return spki;
+      }
+
+      function bytesEqual(left, right) {
+        return (
+          left.length === right.length &&
+          left.every((byte, index) => byte === right[index])
+        );
+      }
+
+      function pemToDer(pem) {
+        const match = pem
+          .trim()
+          .match(
+            /^-----BEGIN PRIVATE KEY-----\s+([A-Za-z0-9+/=\s]+)\s+-----END PRIVATE KEY-----$/u,
+          );
+        if (!match?.[1]) throw new Error("Not a PKCS#8 private key");
+        return base64ToBytes(match[1].replace(/\s+/gu, ""));
+      }
+
+      async function fingerprint(spki) {
+        const digest = new Uint8Array(
+          await crypto.subtle.digest("SHA-256", spki),
+        );
+        return Array.from(digest, (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+      }
+
+      function clearOutput() {
+        elements.licenseOutput.value = "";
+        elements.claimsPreview.textContent = "";
+        elements.result.hidden = true;
+      }
+
+      async function loadSigningKey() {
+        signingKey = null;
+        elements.generateLicence.disabled = true;
+        elements.keyStatus.className = "status";
+        hideFormError();
+        clearOutput();
+        const file = elements.privateKeyFile.files?.[0];
+        if (!file) {
+          elements.keyStatus.textContent =
+            "اختر المفتاح المطابق — Select the matching private key.";
+          return;
+        }
+
+        try {
+          const privateKey = await crypto.subtle.importKey(
+            "pkcs8",
+            pemToDer(await file.text()),
+            { name: "Ed25519" },
+            true,
+            ["sign"],
+          );
+          const jwk = await crypto.subtle.exportKey("jwk", privateKey);
+          if (typeof jwk.x !== "string")
+            throw new Error("Private key has no public component");
+          const selectedPublicRaw = base64UrlToBytes(jwk.x);
+          if (!bytesEqual(selectedPublicRaw, expectedPublicRaw)) {
+            const selectedFingerprint = await fingerprint(
+              publicSpkiFromRaw(selectedPublicRaw),
+            );
+            const expectedFingerprint = await fingerprint(expectedPublicSpki);
+            elements.keyStatus.className = "status failed";
+            elements.keyStatus.textContent = `المفتاح المختار لا يطابق مفتاح Breev المتوقع.\nSelected key does not match Breev's expected key.\nSelected: ${selectedFingerprint}\nExpected: ${expectedFingerprint}`;
+            return;
+          }
+          signingKey = privateKey;
+          elements.generateLicence.disabled = false;
+          elements.keyStatus.className = "status ready";
+          elements.keyStatus.textContent =
+            "المفتاح مطابق وجاهز للتوقيع — Key matches and is ready to sign.";
+        } catch {
+          elements.keyStatus.className = "status failed";
+          elements.keyStatus.textContent =
+            "تعذر قراءة مفتاح Ed25519 بصيغة PKCS#8 PEM.\nCould not read an Ed25519 PKCS#8 PEM private key.";
+        }
+      }
+
+      function validateForm() {
+        const pharmacyId = elements.pharmacyId.value.trim();
+        const mainDeviceId = elements.mainDeviceId.value.trim();
+        const permittedDeviceCount = Number(
+          elements.permittedDeviceCount.value,
+        );
+        const graceDays = Number(elements.graceDays.value);
+        const issuedAtDate = new Date(
+          `${elements.issuedDate.value}T00:00:00.000Z`,
+        );
+        const expiresAtDate = new Date(
+          `${elements.expiresDate.value}T00:00:00.000Z`,
+        );
+        const features = Array.from(
+          document.querySelectorAll('input[name="feature"]:checked'),
+          (input) => input.value,
+        );
+
+        if (!signingKey)
+          return {
+            error:
+              "اختر مفتاح التوقيع الصحيح أولًا — Select the correct signing key first.",
+          };
+        if (!UUID_V7_PATTERN.test(pharmacyId))
+          return {
+            error:
+              "معرّف الصيدلية يجب أن يكون UUIDv7 صالحًا — Pharmacy ID must be a valid UUIDv7.",
+          };
+        if (!UUID_V7_PATTERN.test(mainDeviceId))
+          return {
+            error:
+              "معرّف الجهاز الرئيسي يجب أن يكون UUIDv7 صالحًا — Main Device ID must be a valid UUIDv7.",
+          };
+        if (!KNOWN_PLANS.has(elements.plan.value))
+          return { error: "الخطة غير صالحة — Plan is invalid." };
+        if (
+          !Number.isInteger(permittedDeviceCount) ||
+          permittedDeviceCount < 1 ||
+          permittedDeviceCount > 1_000_000
+        )
+          return {
+            error:
+              "عدد الأجهزة يجب أن يكون رقمًا صحيحًا بين 1 و1000000 — Device count must be an integer from 1 to 1000000.",
+          };
+        if (!Number.isInteger(graceDays) || graceDays < 0 || graceDays > 30)
+          return {
+            error:
+              "أيام السماح يجب أن تكون رقمًا صحيحًا بين 0 و30 — Grace days must be an integer from 0 to 30.",
+          };
+        if (
+          Number.isNaN(issuedAtDate.valueOf()) ||
+          Number.isNaN(expiresAtDate.valueOf())
+        )
+          return {
+            error:
+              "تواريخ الإصدار والانتهاء مطلوبة — Issue and expiry dates are required.",
+          };
+        if (expiresAtDate <= issuedAtDate)
+          return {
+            error:
+              "تاريخ الانتهاء يجب أن يكون بعد تاريخ الإصدار — Expiry date must be after issue date.",
+          };
+        if (
+          features.some((feature) => !KNOWN_FEATURES.has(feature)) ||
+          new Set(features).size !== features.length
+        )
+          return {
+            error: "قائمة الخصائص غير صالحة — Feature list is invalid.",
+          };
+
+        const graceEndsAtDate = new Date(expiresAtDate);
+        graceEndsAtDate.setUTCDate(graceEndsAtDate.getUTCDate() + graceDays);
+        return {
+          value: {
+            formatVersion: 1,
+            keyId,
+            licenceId: generateUuidV7(),
+            pharmacyId,
+            mainDeviceId,
+            plan: elements.plan.value,
+            permittedDeviceCount,
+            graceEndsAt: graceEndsAtDate.toISOString(),
+            features,
+            founderOverrideGrants: ["purchase-invoice-ocr"],
+            issuedAt: issuedAtDate.toISOString(),
+            expiresAt: expiresAtDate.toISOString(),
+          },
+        };
+      }
+
+      function showFormError(message) {
+        clearOutput();
+        elements.formError.textContent = message;
+        elements.formError.hidden = false;
+      }
+
+      function hideFormError() {
+        elements.formError.textContent = "";
+        elements.formError.hidden = true;
+      }
+
+      async function generateLicence() {
+        hideFormError();
+        const validated = validateForm();
+        if (validated.error) {
+          showFormError(validated.error);
+          return;
+        }
+
+        try {
+          const payloadBytes = new TextEncoder().encode(
+            JSON.stringify(validated.value),
+          );
+          const signature = await crypto.subtle.sign(
+            "Ed25519",
+            signingKey,
+            payloadBytes,
+          );
+          const envelope = JSON.stringify({
+            algorithm: "Ed25519",
+            keyId,
+            payload: base64UrlEncode(payloadBytes),
+            signature: base64UrlEncode(signature),
+          });
+          elements.licenseOutput.value = envelope;
+          elements.claimsPreview.textContent = JSON.stringify(
+            validated.value,
+            null,
+            2,
+          );
+          elements.result.hidden = false;
+          elements.result.scrollIntoView({ behavior: "smooth" });
+        } catch {
+          showFormError("تعذر توقيع الترخيص — Licence signing failed.");
+        }
+      }
+    </script>
+  </body>
+</html>
