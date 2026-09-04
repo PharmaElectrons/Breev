@@ -211,6 +211,7 @@ async function installDesktopFake(
           role: "main" as const,
         }),
         getTerminalPairingState: async () => unpairedState,
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => unpairedState,
         submitPairingInvitation: async () => unpairedState,
       });

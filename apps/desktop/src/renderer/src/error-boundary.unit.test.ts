@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { crashCopyForLocale, createIncidentCode } from "./error-boundary";
+import {
+  crashCopyForLocale,
+  createAsyncIncidentCode,
+  createIncidentCode,
+} from "./error-boundary";
 
 describe("renderer diagnostic error boundary", () => {
   it("creates a stable closed incident code without exposing the message", () => {
@@ -21,6 +25,7 @@ describe("renderer diagnostic error boundary", () => {
     expect(createIncidentCode(new Error("x"), "bootstrap")).toMatch(/^BOOT-/u);
     expect(createIncidentCode(new Error("x"), "application")).toMatch(/^APP-/u);
     expect(createIncidentCode(new Error("x"), "workspace")).toMatch(/^VIEW-/u);
+    expect(createAsyncIncidentCode(new Error("x"))).toMatch(/^ASYNC-/u);
   });
 
   it("provides complete and distinct Arabic and English recovery copy", () => {

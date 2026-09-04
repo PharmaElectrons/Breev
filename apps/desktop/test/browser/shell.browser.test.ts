@@ -1977,6 +1977,7 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => cancelled,
         getTerminalPairingState: async () => pairing,
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => pairing,
         submitPairingInvitation: async () => pairing,
         getStartupConfig: async () => {

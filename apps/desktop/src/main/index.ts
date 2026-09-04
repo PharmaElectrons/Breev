@@ -2,11 +2,14 @@ import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
+  DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
   desktopManualEndpointRequestSchema,
   desktopPairingInvitationRequestSchema,
+  desktopReportRendererIncidentRequestSchema,
+  desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigResponseSchema,
   desktopTerminalPairingStateRequestSchema,
   terminalPairingStateResponseSchema,
@@ -25,6 +28,14 @@ import {
 import { hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+import {
+  DesktopDiagnostics,
+  incidentCode,
+  processGoneReason,
+  processType,
+  resolveDesktopLogDirectory,
+} from "./diagnostics.js";
 
 import {
   APP_CONTENT_SECURITY_POLICY,
@@ -55,6 +66,32 @@ const TERMINAL_CHANNELS = [
   DESKTOP_PAIRING_INVITATION_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
 ] as const;
+
+const diagnostics = new DesktopDiagnostics(
+  resolveDesktopLogDirectory(
+    process.env,
+    process.platform,
+    app.getPath("userData"),
+  ),
+);
+
+process.on("uncaughtExceptionMonitor", (error) => {
+  diagnostics.fatal(incidentCode(error), "uncaughtException");
+});
+process.on("unhandledRejection", (reason) => {
+  diagnostics.log({
+    code: incidentCode(reason),
+    event: "main-unhandled-rejection",
+  });
+});
+
+app.on("child-process-gone", (_event, details) => {
+  diagnostics.log({
+    event: "child-process-gone",
+    processType: processType(details.type),
+    reason: processGoneReason(details.reason),
+  });
+});
 
 let mainWindow: BrowserWindow | undefined;
 let terminalRuntime: TerminalRuntime | undefined;
@@ -89,6 +126,11 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     rendererEntry.origin,
     rendererEntry.url,
   );
+  registerRendererIncidentHandler(
+    window,
+    rendererEntry.origin,
+    rendererEntry.url,
+  );
   if (role === "terminal" && terminalRuntime !== undefined) {
     registerTerminalPairingHandlers(
       window,
@@ -101,12 +143,22 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     registerMainDeviceHeaderInjection(window, localApiOrigin);
   }
   hardenWebContents(window);
+  window.webContents.on("render-process-gone", (_event, details) => {
+    diagnostics.log({
+      event: "renderer-process-gone",
+      reason: processGoneReason(details.reason),
+    });
+  });
+  window.webContents.on("unresponsive", () => {
+    diagnostics.log({ event: "renderer-unresponsive" });
+  });
 
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
     if (mainWindow === window) {
       mainWindow = undefined;
       ipcMain.removeHandler(DESKTOP_STARTUP_CONFIG_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL);
       for (const channel of TERMINAL_CHANNELS) {
         ipcMain.removeHandler(channel);
       }
@@ -114,6 +166,39 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
   });
 
   void window.loadURL(rendererEntry.url);
+}
+
+function registerRendererIncidentHandler(
+  window: BrowserWindow,
+  trustedOrigin: string,
+  trustedUrl: string,
+): void {
+  ipcMain.removeHandler(DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL);
+  const guard = createIpcGuard({
+    maximumCalls: 20,
+    maximumPayloadBytes: 128,
+    name: "renderer incident report",
+    now: Date.now,
+    parse: (payload) =>
+      desktopReportRendererIncidentRequestSchema.parse(payload),
+    trustedOrigin,
+    trustedSenderId: window.webContents.id,
+    trustedUrl,
+  });
+  ipcMain.handle(
+    DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
+    (event, payload: unknown) => {
+      const incident = guard(toIpcInvocation(event), payload);
+      diagnostics.log({
+        code: incident.code,
+        event: "renderer-incident",
+        source: incident.source,
+      });
+      return desktopReportRendererIncidentResponseSchema.parse({
+        accepted: true,
+      });
+    },
+  );
 }
 
 function registerMainDeviceHeaderInjection(
@@ -374,14 +459,17 @@ void app.whenReady().then(async () => {
   let startup: Awaited<ReturnType<typeof startRoleRuntime>>;
   try {
     startup = await startRoleRuntime();
+    diagnostics.log({ event: "app-ready", role: startup.role });
     createWindow(startup.role, startup.localApiOrigin);
   } catch (error) {
     // A packaged build without a valid device binding or terminal state cannot
     // reach the local API. Surfacing the defect beats an unauthenticated
     // spinner.
+    const code = incidentCode(error);
+    diagnostics.log({ code, event: "startup-failed" });
     dialog.showErrorBox(
-      "Breev cannot start",
-      error instanceof Error ? error.message : String(error),
+      "Breev cannot start | تعذر تشغيل Breev",
+      `Error reference: ${code}\nمرجع الخطأ: ${code}`,
     );
     app.quit();
     return;
@@ -400,3 +488,5 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+app.once("before-quit", () => diagnostics.close());

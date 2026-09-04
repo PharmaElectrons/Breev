@@ -11,6 +11,12 @@ interface IncidentSummary {
   readonly level: ErrorBoundaryLevel;
 }
 
+export function reportRendererIncident(summary: IncidentSummary): void {
+  void window.breevDesktop
+    .reportRendererIncident({ code: summary.code, source: summary.level })
+    .catch(() => undefined);
+}
+
 interface DiagnosticErrorBoundaryProps {
   readonly children: ReactNode;
   readonly copy: CrashMessage;
@@ -134,6 +140,7 @@ export function BootstrapErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages.en.crash}
       level="bootstrap"
+      onIncident={reportRendererIncident}
       secondaryCopy={messages.ar.crash}
     >
       {children}
@@ -151,6 +158,7 @@ export function LocalizedAppErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages[locale].crash}
       level="application"
+      onIncident={reportRendererIncident}
       resetKey={locale}
     >
       {children}
@@ -170,6 +178,7 @@ export function WorkspaceErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages[locale].crash}
       level="workspace"
+      onIncident={reportRendererIncident}
       resetKey={resetKey}
     >
       {children}
@@ -195,6 +204,10 @@ export function createIncidentCode(
   return (
     prefix + "-" + (hash >>> 0).toString(16).padStart(8, "0").toUpperCase()
   );
+}
+
+export function createAsyncIncidentCode(error: unknown): string {
+  return createIncidentCode(error, "application").replace(/^APP-/u, "ASYNC-");
 }
 
 function CrashFallback({

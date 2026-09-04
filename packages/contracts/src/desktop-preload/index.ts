@@ -8,6 +8,8 @@ export const DESKTOP_MANUAL_ENDPOINT_CHANNEL =
   "breev:desktop:submit-manual-endpoint" as const;
 export const DESKTOP_PAIRING_INVITATION_CHANNEL =
   "breev:desktop:submit-pairing-invitation" as const;
+export const DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL =
+  "breev:desktop:report-renderer-incident" as const;
 export const DESKTOP_STARTUP_CONFIG_CHANNEL =
   "breev:desktop:get-startup-config" as const;
 export const DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL =
@@ -162,6 +164,25 @@ export const desktopManualEndpointRequestSchema = z.strictObject({
 
 export const desktopCancelTerminalPairingRequestSchema = z.strictObject({});
 
+export const RENDERER_INCIDENT_SOURCES = [
+  "application",
+  "bootstrap",
+  "global-error",
+  "unhandled-rejection",
+  "workspace",
+] as const;
+
+export const rendererIncidentSourceSchema = z.enum(RENDERER_INCIDENT_SOURCES);
+
+export const desktopReportRendererIncidentRequestSchema = z.strictObject({
+  code: z.string().regex(/^(?:APP|ASYNC|BOOT|VIEW)-[0-9A-F]{8}$/u),
+  source: rendererIncidentSourceSchema,
+});
+
+export const desktopReportRendererIncidentResponseSchema = z.strictObject({
+  accepted: z.literal(true),
+});
+
 export type DesktopDeviceRole = z.infer<typeof desktopDeviceRoleSchema>;
 export type DesktopStartupConfigRequest = z.infer<
   typeof desktopStartupConfigRequestSchema
@@ -194,11 +215,23 @@ export type DesktopManualEndpointRequest = z.infer<
 export type DesktopCancelTerminalPairingRequest = z.infer<
   typeof desktopCancelTerminalPairingRequestSchema
 >;
+export type RendererIncidentSource = z.infer<
+  typeof rendererIncidentSourceSchema
+>;
+export type DesktopReportRendererIncidentRequest = z.infer<
+  typeof desktopReportRendererIncidentRequestSchema
+>;
+export type DesktopReportRendererIncidentResponse = z.infer<
+  typeof desktopReportRendererIncidentResponseSchema
+>;
 
 export interface BreevDesktopApi {
   cancelTerminalPairing(): Promise<TerminalPairingState>;
   getStartupConfig(): Promise<DesktopStartupConfig>;
   getTerminalPairingState(): Promise<TerminalPairingState>;
+  reportRendererIncident(
+    request: DesktopReportRendererIncidentRequest,
+  ): Promise<DesktopReportRendererIncidentResponse>;
   submitManualEndpoint(
     request: DesktopManualEndpointRequest,
   ): Promise<TerminalPairingState>;

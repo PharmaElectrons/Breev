@@ -3,6 +3,7 @@ import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
+  DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
 } from "@breev/contracts/desktop-preload";
@@ -11,13 +12,14 @@ import { contextBridge, ipcRenderer } from "electron";
 import { createBreevDesktopApi } from "./api.js";
 
 /**
- * The renderer never names a channel. Only these five are reachable, and only
+ * The renderer never names a channel. Only these named channels are reachable, and only
  * through the method that owns each one.
  */
 const CHANNELS: ReadonlySet<string> = new Set([
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
+  DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
 ]);

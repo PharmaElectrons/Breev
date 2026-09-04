@@ -469,6 +469,7 @@ async function openTerminal(
           role: "terminal" as const,
         }),
         getTerminalPairingState: async () => current,
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async (request: DesktopManualEndpointRequest) => {
           await record({ ...request, kind: "endpoint" });
           current = joining;

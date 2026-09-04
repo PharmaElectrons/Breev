@@ -20,6 +20,7 @@ describe("desktop preload API", () => {
       "cancelTerminalPairing",
       "getStartupConfig",
       "getTerminalPairingState",
+      "reportRendererIncident",
       "submitManualEndpoint",
       "submitPairingInvitation",
     ]);
@@ -29,11 +30,21 @@ describe("desktop preload API", () => {
   });
 
   it("names one channel per method and never accepts one from the renderer", async () => {
-    const invoke = vi.fn().mockResolvedValue(pairingState);
+    const invoke = vi.fn((channel: string) =>
+      Promise.resolve(
+        channel === "breev:desktop:report-renderer-incident"
+          ? { accepted: true }
+          : pairingState,
+      ),
+    );
     const api = createBreevDesktopApi(invoke);
 
     await api.getTerminalPairingState();
     await api.cancelTerminalPairing();
+    await api.reportRendererIncident({
+      code: "VIEW-0123ABCD",
+      source: "workspace",
+    });
     await api.submitPairingInvitation({ invitation: "breev-pair://1/x" });
     await api.submitManualEndpoint({
       host: "192.168.1.5",
@@ -44,6 +55,10 @@ describe("desktop preload API", () => {
     expect(invoke.mock.calls).toEqual([
       ["breev:desktop:get-terminal-pairing-state", {}],
       ["breev:desktop:cancel-terminal-pairing", {}],
+      [
+        "breev:desktop:report-renderer-incident",
+        { code: "VIEW-0123ABCD", source: "workspace" },
+      ],
       [
         "breev:desktop:submit-pairing-invitation",
         { invitation: "breev-pair://1/x" },
@@ -110,6 +125,20 @@ describe("desktop preload API", () => {
         { invitation: "breev-pair://1/x" },
         { channel: "generic" },
       ]),
+    ).rejects.toThrow();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("rejects raw renderer error details before IPC", async () => {
+    const invoke = vi.fn();
+    const api = createBreevDesktopApi(invoke);
+
+    await expect(
+      api.reportRendererIncident({
+        code: "VIEW-0123ABCD",
+        source: "workspace",
+        stack: "patient-name-canary",
+      } as never),
     ).rejects.toThrow();
     expect(invoke).not.toHaveBeenCalled();
   });

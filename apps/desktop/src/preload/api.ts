@@ -2,11 +2,14 @@ import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
+  DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
   desktopManualEndpointRequestSchema,
   desktopPairingInvitationRequestSchema,
+  desktopReportRendererIncidentRequestSchema,
+  desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigRequestSchema,
   desktopStartupConfigResponseSchema,
   desktopTerminalPairingStateRequestSchema,
@@ -47,6 +50,15 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         await invoke(
           DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
           desktopTerminalPairingStateRequestSchema.parse({}),
+        ),
+      );
+    },
+    reportRendererIncident: async (...arguments_: unknown[]) => {
+      assertSingleArgument("reportRendererIncident", arguments_);
+      return desktopReportRendererIncidentResponseSchema.parse(
+        await invoke(
+          DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
+          desktopReportRendererIncidentRequestSchema.parse(arguments_[0]),
         ),
       );
     },

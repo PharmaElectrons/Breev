@@ -4,6 +4,8 @@ import {
   desktopCancelTerminalPairingRequestSchema,
   desktopManualEndpointRequestSchema,
   desktopPairingInvitationRequestSchema,
+  desktopReportRendererIncidentRequestSchema,
+  desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigRequestSchema,
   desktopStartupConfigResponseSchema,
   desktopTerminalPairingStateRequestSchema,
@@ -164,6 +166,30 @@ describe("desktop preload contract", () => {
       invitation: "breev-pair://1/x",
       port: 31_311,
     });
+  });
+
+  it("accepts only a closed, non-sensitive renderer incident summary", () => {
+    expect(
+      desktopReportRendererIncidentRequestSchema.parse({
+        code: "VIEW-0123ABCD",
+        source: "workspace",
+      }),
+    ).toEqual({ code: "VIEW-0123ABCD", source: "workspace" });
+    expect(
+      desktopReportRendererIncidentResponseSchema.parse({ accepted: true }),
+    ).toEqual({ accepted: true });
+  });
+
+  it.each([
+    { code: "VIEW-0123ABCD", source: "workspace", stack: "patient canary" },
+    { code: "VIEW-0123ABCD", message: "patient canary", source: "workspace" },
+    { code: "view-0123abcd", source: "workspace" },
+    { code: "VIEW-0123ABCD", source: "catalog" },
+    { code: "patient canary", source: "workspace" },
+  ])("rejects a widened renderer incident: %j", (payload) => {
+    expect(() =>
+      desktopReportRendererIncidentRequestSchema.parse(payload),
+    ).toThrow();
   });
 
   it.each([
