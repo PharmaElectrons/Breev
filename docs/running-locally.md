@@ -189,7 +189,19 @@ On a new database:
 8. Add a user. The app must ask for the current owner's password before it opens the form.
 9. Lock and reactivate that user. Each change must require a new step-up check.
 10. Change a role's permissions. Log in as a user with that role and confirm hidden administration sections and permission denials match the grants.
-11. Confirm the licence status card reads `Free Core` and that `Available functions` lists only Free Core functions. Paid functions must be absent, never shown as disabled buttons. Signed test licences live in the licensing tests; there is no issuer yet, so pasting an unsigned document must be refused as an invalid licence without disturbing any Free Core screen or data.
+11. Confirm the licence status card reads `Free Core` and that `Available functions` lists only Free Core functions. Paid functions must be absent, never shown as disabled buttons. Pasting an unsigned document must be refused as an invalid licence without disturbing any Free Core screen or data.
+
+### Issue a development licence
+
+The development-only issuer is [`tooling/licensing/generator.html`](../tooling/licensing/generator.html). Open that file in a current Chromium browser, enter the pharmacy and Main-device UUIDv7 values, and select the separately delivered `breev-dev-ed25519-2026-02.pem` file. The page enables minting only after deriving the selected key's public component and matching it to Breev's registered development verification key.
+
+The private key is never stored in Git or in a Breev build; the generator reads the selected file in page memory only. Before issuing a licence, verify a locally held key against Breev's real verifier:
+
+```powershell
+pnpm check:licence-signing-key -- "$env:LOCALAPPDATA\BreevDev\licensing\breev-dev-ed25519-2026-02.pem"
+```
+
+This issuer is for development and testing only. Open decision G-04 still governs the production issuer, key custody and rotation, trusted time, revocation, and recovery design.
 
 Use disposable local data for destructive checks. The one-time setup and user actions persist in PostgreSQL across app restarts.
 
@@ -200,6 +212,7 @@ pnpm test:unit
 pnpm test:integration
 pnpm test:browser
 pnpm test:smoke
+pnpm test:licence-generator
 ```
 
 - Unit tests cover domain helpers, security policies, contracts, and static module boundaries.
