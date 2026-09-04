@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "measuredOn": "2026-09-04",
+  "codeCommit": "0ba6bb435b5c0061851101cb99ed25a343f015c7",
+  "unit": "bytes",
+  "signatureStatus": "NotSigned",
+  "application": { "files": 1069, "bytes": 505178531 },
+  "servicePayloadIncludingManifest": { "files": 1047, "bytes": 176291010 },
+  "localApi": { "files": 18, "bytes": 7254491 },
+  "postgresql": { "files": 1022, "bytes": 72548645 },
+  "chromiumLocales": { "files": 2, "bytes": 1662238 },
+  "installer": {
+    "bytes": 151011475,
+    "sha256": "5ff3c3e773878cf960348f01868be829d697ed7fa0b9488926346447fdc67dba"
+  },
+  "localPackageSeconds": 296.0286712,
+  "selectiveExtractionMilliseconds": {
+    "node": 579,
+    "postgresql": 3780,
+    "shawl": 83
+  },
+  "limitations": [
+    "Exploratory local measurement with other checks running; not a controlled speed comparison.",
+    "Defender real-time protection was already disabled on this host; its configuration was not changed.",
+    "No installation-time or low-end cold-start guarantee is inferred.",
+    "The previous artifact baseline predates this source checkout; byte deltas are indicative, not a matched rebuild comparison.",
+    "Installed signed Main/Terminal lifecycle, mTLS and recovery certification remains required."
+  ]
+}
