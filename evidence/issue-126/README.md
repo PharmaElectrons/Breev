@@ -12,7 +12,7 @@ Each completed task is separately committed and pushed. The final PR targets `de
 | ---- | --------------------------------------------------------------------------------------- | ----------------------- |
 | 01   | Explicit PostgreSQL runtime inventory with pruning and missing-file tests               | Component checks passed |
 | 02   | Metadata-preserving API bundles, migration/native assets and complete payload integrity | Component checks passed |
-| 03   | Arabic/English packaging and selective vendor extraction                                | Pending                 |
+| 03   | Arabic/English packaging and selective vendor extraction                                | Component checks passed |
 | 04   | Rebuilt package measurements, regression evidence and review PR                         | Pending                 |
 
 ## Acceptance reconciliation
@@ -28,3 +28,5 @@ The host has no Docker executable; WSL reports `REGDB_E_CLASSNOTREG`. Full conta
 Task 02: isolated bundled-runtime integration passed (7 tests) against a disposable PostgreSQL cluster using the pruned binaries. This includes no-node_modules Nest DI startup, concurrent/idempotent privileged migrations, runtime DDL denial, UTF-8 Arabic and ICU/PLpgSQL, transaction rollback, owner bootstrap/password hash and verification, API restart/login, logical dump/restore, and physical backup verification. The two bundles total 6,759,696 bytes; 13 SQL migrations and the Windows Argon2 addon are retained. The original TypeScript module build remains the development/test build; Windows deployment uses only the CJS entrypoints and explicit assets.
 
 Integrity checks moved into task 02 so the new bundled deployment is never shipped without file coverage. The actual PowerShell verifier passed clean and tamper scenarios (3 inventory tests); the test harness explicitly imports its built-in Utility module before invoking the AST-extracted function. The full prepared payload was also checked through that verifier without invoking any service lifecycle action. Desktop post-sign configuration tests passed (4 tests). Runtime files are hashed after signing while non-signable SQL/JS must still match the assembled inventory. Final installed lifecycle certification remains pending.
+
+Task 03: selective extraction of the SHA-256-verified vendor archives passed: Node 579 ms, PostgreSQL 3,780 ms, Shawl 83 ms on this host (one exploratory run, not an installation SLA). The complete assembled inventory contains 1,046 files / 176,105,322 bytes before its own manifest. The packaged Chromium locales are exactly `ar.pak` and `en-US.pak`, totaling 1,662,238 bytes. Desktop configuration tests passed (4 tests). The explicit Windows CI workflow now runs the isolated bundled/pruned runtime test after assembling its candidates. NSIS compression and role/lifecycle semantics remain unchanged.

@@ -15,7 +15,10 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { copyPostgresqlRuntime } from "./postgresql-runtime.mjs";
+import {
+  copyPostgresqlRuntime,
+  postgresqlRuntime,
+} from "./postgresql-runtime.mjs";
 import { buildApiRuntime } from "./build-api-runtime.mjs";
 import { recordPayloadFiles } from "../../../tooling/windows/payload-inventory.mjs";
 
@@ -53,7 +56,24 @@ for (const component of payloadLock.components) {
 
   const extractRoot = path.join(outputRoot, `.extract-${component.name}`);
   await mkdir(extractRoot, { recursive: true });
-  extractArchive(archivePath, extractRoot);
+  const extractionStarted = performance.now();
+  const members =
+    component.name === "postgresql"
+      ? postgresqlRuntime.files.map((name) => `pgsql/${name}`)
+      : component.name === "node"
+        ? [
+            `node-v${component.version}-win-x64/node.exe`,
+            `node-v${component.version}-win-x64/LICENSE`,
+          ]
+        : component.name === "shawl"
+          ? ["shawl.exe"]
+          : undefined;
+  if (members === undefined)
+    throw new Error("Unknown Windows payload component");
+  await extractArchive(archivePath, extractRoot, members);
+  process.stdout.write(
+    `${component.name} selective extraction: ${Math.round(performance.now() - extractionStarted)} ms\n`,
+  );
 
   if (component.name === "node") {
     const nodeRoot = path.join(outputRoot, "node");
@@ -212,12 +232,19 @@ async function sha256(filePath) {
   return digest.digest("hex");
 }
 
-function extractArchive(archivePath, destination) {
+async function extractArchive(archivePath, destination, members) {
   if (process.platform === "win32") {
-    run("tar.exe", ["-xf", archivePath, "-C", destination]);
+    // A list file avoids Windows' command-line length limit for timezone data.
+    const listPath = path.join(destination, ".members");
+    await writeFile(listPath, `${members.join("\n")}\n`, "utf8");
+    try {
+      run("tar.exe", ["-xf", archivePath, "-C", destination, "-T", listPath]);
+    } finally {
+      await rm(listPath, { force: true });
+    }
     return;
   }
-  run("unzip", ["-q", archivePath, "-d", destination]);
+  run("unzip", ["-q", archivePath, ...members, "-d", destination]);
 }
 
 function run(command, arguments_) {

@@ -70,6 +70,7 @@ export default {
   productName: "Breev",
   asar: true,
   compression: "maximum",
+  electronLanguages: ["en-US", "ar"],
   disableAsarIntegrity: false,
   directories: {
     buildResources: "windows",

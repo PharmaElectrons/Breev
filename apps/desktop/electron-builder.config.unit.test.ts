@@ -64,6 +64,7 @@ describe("Windows electron-builder candidate", () => {
   });
 
   it("embeds one offline payload instead of a web installer", () => {
+    expect(builderConfiguration.electronLanguages).toEqual(["en-US", "ar"]);
     expect(builderConfiguration.extraMetadata).toEqual({ version: "0.0.0" });
     expect(builderConfiguration.win.target).toEqual([
       { target: "nsis", arch: ["x64"] },
