@@ -302,7 +302,7 @@ test.describe("terminal pairing screen", () => {
     await expect(page.getByLabel("Main Pharmacy Computer address")).toHaveValue(
       "192.168.1.40",
     );
-    await expect(page.getByLabel("Port")).toHaveValue("31311");
+    await expect(page.getByLabel("Port", { exact: true })).toHaveValue("31311");
 
     // An address alone cannot start a ceremony: the invitation carries the
     // session, the join secret, and the authority pin, and nothing here can
