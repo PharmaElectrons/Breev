@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { recordPayloadFiles } from "../../tooling/windows/payload-inventory.mjs";
 
 import {
   default as builderConfiguration,
@@ -63,6 +64,7 @@ describe("Windows electron-builder candidate", () => {
   });
 
   it("embeds one offline payload instead of a web installer", () => {
+    expect(builderConfiguration.electronLanguages).toEqual(["en-US", "ar"]);
     expect(builderConfiguration.extraMetadata).toEqual({ version: "0.0.0" });
     expect(builderConfiguration.win.target).toEqual([
       { target: "nsis", arch: ["x64"] },
@@ -86,6 +88,7 @@ describe("Windows electron-builder candidate", () => {
       await writeFile(
         path.join(root, "payload-manifest.json"),
         JSON.stringify({
+          files: await recordPayloadFiles(root),
           components: [
             {
               name: "shawl",

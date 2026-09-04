@@ -2,6 +2,7 @@ import { flipFuses, FuseVersion, FuseV1Options } from "@electron/fuses";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { verifyPayloadFiles } from "../../tooling/windows/payload-inventory.mjs";
 
 const certificateFile = process.env.BREEV_WINDOWS_CERTIFICATE_FILE;
 const certificatePassword = process.env.BREEV_WINDOWS_CERTIFICATE_PASSWORD;
@@ -38,6 +39,7 @@ async function recordSignedPayloadHashes(context) {
 export async function refreshPayloadExecutableHashes(payloadRoot) {
   const manifestPath = path.join(payloadRoot, "payload-manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.files = await verifyPayloadFiles(payloadRoot, manifest.files, true);
   const componentRoots = {
     node: "node",
     postgresql: "postgresql",
@@ -68,6 +70,7 @@ export default {
   productName: "Breev",
   asar: true,
   compression: "maximum",
+  electronLanguages: ["en-US", "ar"],
   disableAsarIntegrity: false,
   directories: {
     buildResources: "windows",

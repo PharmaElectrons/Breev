@@ -2,7 +2,11 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["src/**/*.unit.test.ts", "windows/**/*.unit.test.ts"],
+    include: [
+      "src/**/*.unit.test.ts",
+      "windows/**/*.unit.test.ts",
+      "windows/**/*.unit.test.mjs",
+    ],
     testTimeout: 30_000,
     hookTimeout: 30_000,
   },

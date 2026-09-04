@@ -35,6 +35,27 @@ registerHooks({
     if (url.endsWith("/licensing/licence-keys.js")) {
       return { format: "module", shortCircuit: true, source };
     }
+    if (url.endsWith("/dist/main.cjs")) {
+      // The installed proof now runs a bundle, not loose ESM modules. This
+      // test-only loader changes the registry in memory, never the artifact.
+      const bundled = readFileSync(new URL(url), "utf8");
+      const registryDeclaration =
+        /^var OFFLINE_LICENCE_PUBLIC_KEYS = \{[\s\S]*?^\};/gm;
+      if ([...bundled.matchAll(registryDeclaration)].length !== 1) {
+        throw new Error(
+          "The bundled proof requires exactly one licence registry",
+        );
+      }
+      return {
+        format: "commonjs",
+        shortCircuit: true,
+        source: bundled.replace(
+          registryDeclaration,
+          () =>
+            `var OFFLINE_LICENCE_PUBLIC_KEYS = ${JSON.stringify(registry)};`,
+        ),
+      };
+    }
     return nextLoad(url, context);
   },
 });

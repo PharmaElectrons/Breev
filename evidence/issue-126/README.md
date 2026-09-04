@@ -1,0 +1,40 @@
+# Issue 126 implementation record
+
+Branch: `codex/issue-126-payload-optimization`, based on `dev` at `961ef11`.
+
+The stakeholder initiated implementation on 4 September 2026 after reviewing the [investigation](performance-investigation.md). Work is limited to the recommended packaging changes. Preserve the unified installer, role selection, service accounts, durability, repair/update preservation and genuine-uninstall deletion semantics. No codec replacement, split installer, cache experiment or skipped synchronization is included.
+
+## Tasks and review checkpoints
+
+Each completed task is separately committed and pushed. The final PR targets `dev` and remains unmerged for review.
+
+| Task | Outcome                                                                                 | Status                  |
+| ---- | --------------------------------------------------------------------------------------- | ----------------------- |
+| 01   | Explicit PostgreSQL runtime inventory with pruning and missing-file tests               | Component checks passed |
+| 02   | Metadata-preserving API bundles, migration/native assets and complete payload integrity | Component checks passed |
+| 03   | Arabic/English packaging and selective vendor extraction                                | Component checks passed |
+| 04   | Rebuilt package measurements, regression evidence and review PR                         | Review-gated            |
+
+## Acceptance reconciliation
+
+The original issue's 285 MB / 350-file and API-under-five-file figures are infeasible with its required runtimes and migration assets. The investigation records the measured lower bounds. Track actual byte/file counts and use component regression budgets, not deletion of necessary files to satisfy those original figures. The projected complete application was 480–495 MiB / about 1,100 files before additional prerequisites; the rebuilt candidate measures **481.78 MiB / 1,069 files**, with a **144.02 MiB installer**. The PR explicitly presents this reconciliation for review and does not claim the original numerical criteria passed.
+
+## Verification record
+
+Task 01: the Windows unit subset passed (2 files / 10 tests), including inventory identity, backup/ICU/PLpgSQL/legal retention, missing-file refusal and invalid/duplicate paths. Copying the actual inspected pinned distribution through the production helper produced exactly 1,022 files / 72,548,645 bytes. This is a component check, not installed-artifact certification.
+
+The host has no Docker executable; WSL reports `REGDB_E_CLASSNOTREG`. Full container-backed suites require CI or another available runtime. Do not close G-05/G-06/G-07 or mark the issue resolved without their applicable evidence.
+
+Task 02: isolated bundled-runtime integration passed (7 tests) against a disposable PostgreSQL cluster using the pruned binaries. This includes no-node_modules Nest DI startup, concurrent/idempotent privileged migrations, runtime DDL denial, UTF-8 Arabic and ICU/PLpgSQL, transaction rollback, owner bootstrap/password hash and verification, API restart/login, logical dump/restore, and physical backup verification. The two bundles total 6,759,696 bytes; 13 SQL migrations and the Windows Argon2 addon are retained. The original TypeScript module build remains the development/test build; Windows deployment uses only the CJS entrypoints and explicit assets.
+
+Integrity checks moved into task 02 so the new bundled deployment is never shipped without file coverage. The actual PowerShell verifier passed clean and tamper scenarios (3 inventory tests); the test harness explicitly imports its built-in Utility module before invoking the AST-extracted function. The full prepared payload was also checked through that verifier without invoking any service lifecycle action. Desktop post-sign configuration tests passed (4 tests). Runtime files are hashed after signing while non-signable SQL/JS must still match the assembled inventory. Final installed lifecycle certification remains pending.
+
+Task 03: selective extraction of the SHA-256-verified vendor archives passed: Node 579 ms, PostgreSQL 3,780 ms, Shawl 83 ms on this host (one exploratory run, not an installation SLA). The complete assembled inventory contains 1,046 files / 176,105,322 bytes before its own manifest. The packaged Chromium locales are exactly `ar.pak` and `en-US.pak`, totaling 1,662,238 bytes. Desktop configuration tests passed (4 tests). The explicit Windows CI workflow now runs the isolated bundled/pruned runtime test after assembling its candidates. NSIS compression and role/lifecycle semantics remain unchanged.
+
+Task 04: [candidate verification](implementation-verification.md) and [raw measurements](candidate-metrics.json) record the rebuilt artifact, local results and unavailable installed gates. The local package build passed in 296.03 seconds; there is no controlled before/after packaging or installation timing claim. The artifact is unsigned and is not a deployable release.
+
+The [first full CI run](https://github.com/PharmaElectrons/Breev/actions/runs/33878650144) passed the complete Linux source/unit, real PostgreSQL, browser and packaged Electron suite; Windows source/unit checks, both unsigned comparison versions, their fuse checks, the seven bundled/native PostgreSQL tests and the separate CNG proof also passed. Its Windows evidence writer failed on a stale repository-name assertion after the repository moved to `PharmaElectrons/Breev`. Commit `36161d0` corrects both producer and verifier to the current exact identity, without an old-name fallback, and adds a regression assertion (11 installer unit tests passed). The [rerun](https://github.com/PharmaElectrons/Breev/actions/runs/33879877079) validates that correction.
+
+**Final full CI result: passed.** Run `33879877079` completed successfully for source commit `36161d0ba4af94ca18ca334c6bc720035a1f4651`; all three jobs (`verify`, `windows-candidates`, `windows-cng-proof`) passed, including the corrected evidence writer/export. The final documentation-only commit records these results; it does not change the verified runtime or tooling code. The PR's normal source/UI checks run again on its review head.
+
+Do not mark #126 resolved or merge this as a verified installed Windows change until the applicable signed Main/Terminal lifecycle and LAN security evidence required by `docs/quality.md` is available. The current host contains a real Breev installation and was not used for destructive proofs. A disposable VM was requested; the PR remains a review handoff, not a claim of absolute zero regressions.
