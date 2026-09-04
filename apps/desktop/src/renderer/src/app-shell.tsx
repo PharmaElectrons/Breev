@@ -79,6 +79,32 @@ export function AppShell({
   const [currentHash, setCurrentHash] = useState(() =>
     typeof window === "undefined" ? "" : window.location.hash,
   );
+  const [diagnosticAction, setDiagnosticAction] = useState<
+    "cancelled" | "failed" | "idle" | "saved" | "saving"
+  >("idle");
+  const [supportAction, setSupportAction] = useState<
+    "failed" | "idle" | "opened" | "opening" | "unavailable"
+  >("idle");
+
+  const exportDiagnostics = async (): Promise<void> => {
+    setDiagnosticAction("saving");
+    try {
+      const result = await window.breevDesktop.exportDiagnostics({});
+      setDiagnosticAction(result.status);
+    } catch {
+      setDiagnosticAction("failed");
+    }
+  };
+
+  const openSupport = async (): Promise<void> => {
+    setSupportAction("opening");
+    try {
+      const result = await window.breevDesktop.openSupport({ locale });
+      setSupportAction(result.status);
+    } catch {
+      setSupportAction("failed");
+    }
+  };
 
   useEffect(() => {
     const handleHashChange = (): void => {
@@ -150,6 +176,22 @@ export function AppShell({
           <button
             className="quiet-button"
             type="button"
+            disabled={diagnosticAction === "saving"}
+            onClick={() => void exportDiagnostics()}
+          >
+            <span>{copy.crash.exportDiagnostics}</span>
+          </button>
+          <button
+            className="quiet-button"
+            type="button"
+            disabled={supportAction === "opening"}
+            onClick={() => void openSupport()}
+          >
+            <span>{copy.crash.contactSupport}</span>
+          </button>
+          <button
+            className="quiet-button"
+            type="button"
             aria-label={copy.switchLanguage}
             onClick={() => setLocale(locale === "en" ? "ar" : "en")}
           >
@@ -171,6 +213,22 @@ export function AppShell({
           </button>
         </div>
       </header>
+
+      <p className="support-action-status" role="status" aria-live="polite">
+        {diagnosticAction === "saved"
+          ? copy.crash.exportSaved
+          : diagnosticAction === "failed"
+            ? copy.crash.exportFailed
+            : diagnosticAction === "cancelled"
+              ? copy.crash.exportCancelled
+              : supportAction === "opened"
+                ? copy.crash.contactOpened
+                : supportAction === "failed"
+                  ? copy.crash.contactFailed
+                  : supportAction === "unavailable"
+                    ? copy.crash.contactUnavailable
+                    : ""}
+      </p>
 
       <section className="status-region" aria-label={copy.connectionStatus}>
         <Card className="status-card" data-state={state}>

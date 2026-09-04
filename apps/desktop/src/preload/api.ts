@@ -1,12 +1,18 @@
 import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
+  DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
+  DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
   DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
+  desktopExportDiagnosticsRequestSchema,
+  desktopExportDiagnosticsResponseSchema,
   desktopManualEndpointRequestSchema,
+  desktopOpenSupportRequestSchema,
+  desktopOpenSupportResponseSchema,
   desktopPairingInvitationRequestSchema,
   desktopReportRendererIncidentRequestSchema,
   desktopReportRendererIncidentResponseSchema,
@@ -35,6 +41,15 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         ),
       );
     },
+    exportDiagnostics: async (...arguments_: unknown[]) => {
+      assertSingleArgument("exportDiagnostics", arguments_);
+      return desktopExportDiagnosticsResponseSchema.parse(
+        await invoke(
+          DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
+          desktopExportDiagnosticsRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
     getStartupConfig: async (...arguments_: unknown[]) => {
       assertNoArguments("getStartupConfig", arguments_);
       return desktopStartupConfigResponseSchema.parse(
@@ -50,6 +65,15 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         await invoke(
           DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
           desktopTerminalPairingStateRequestSchema.parse({}),
+        ),
+      );
+    },
+    openSupport: async (...arguments_: unknown[]) => {
+      assertSingleArgument("openSupport", arguments_);
+      return desktopOpenSupportResponseSchema.parse(
+        await invoke(
+          DESKTOP_OPEN_SUPPORT_CHANNEL,
+          desktopOpenSupportRequestSchema.parse(arguments_[0]),
         ),
       );
     },

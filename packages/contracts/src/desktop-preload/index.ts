@@ -4,8 +4,12 @@ export const DESKTOP_API_GLOBAL = "breevDesktop" as const;
 
 export const DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL =
   "breev:desktop:cancel-terminal-pairing" as const;
+export const DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL =
+  "breev:desktop:export-diagnostics" as const;
 export const DESKTOP_MANUAL_ENDPOINT_CHANNEL =
   "breev:desktop:submit-manual-endpoint" as const;
+export const DESKTOP_OPEN_SUPPORT_CHANNEL =
+  "breev:desktop:open-support" as const;
 export const DESKTOP_PAIRING_INVITATION_CHANNEL =
   "breev:desktop:submit-pairing-invitation" as const;
 export const DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL =
@@ -164,6 +168,45 @@ export const desktopManualEndpointRequestSchema = z.strictObject({
 
 export const desktopCancelTerminalPairingRequestSchema = z.strictObject({});
 
+export const desktopExportDiagnosticsRequestSchema = z.strictObject({
+  incidentCode: z
+    .string()
+    .regex(/^(?:APP|ASYNC|BOOT|MAIN|VIEW)-[0-9A-F]{8}$/u)
+    .optional(),
+});
+
+export const desktopExportDiagnosticsResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.strictObject({ status: z.literal("cancelled") }),
+    z.strictObject({
+      code: z.literal("export-failed"),
+      status: z.literal("failed"),
+    }),
+    z.strictObject({ status: z.literal("saved") }),
+  ],
+);
+
+export const desktopOpenSupportRequestSchema = z.strictObject({
+  incidentCode: z
+    .string()
+    .regex(/^(?:APP|ASYNC|BOOT|MAIN|VIEW)-[0-9A-F]{8}$/u)
+    .optional(),
+  locale: z.enum(["ar", "en"]),
+});
+
+export const desktopOpenSupportResponseSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    channel: z.enum(["email", "portal"]),
+    status: z.literal("opened"),
+  }),
+  z.strictObject({ status: z.literal("unavailable") }),
+  z.strictObject({
+    code: z.literal("open-failed"),
+    status: z.literal("failed"),
+  }),
+]);
+
 export const RENDERER_INCIDENT_SOURCES = [
   "application",
   "bootstrap",
@@ -215,6 +258,18 @@ export type DesktopManualEndpointRequest = z.infer<
 export type DesktopCancelTerminalPairingRequest = z.infer<
   typeof desktopCancelTerminalPairingRequestSchema
 >;
+export type DesktopExportDiagnosticsRequest = z.infer<
+  typeof desktopExportDiagnosticsRequestSchema
+>;
+export type DesktopExportDiagnosticsResponse = z.infer<
+  typeof desktopExportDiagnosticsResponseSchema
+>;
+export type DesktopOpenSupportRequest = z.infer<
+  typeof desktopOpenSupportRequestSchema
+>;
+export type DesktopOpenSupportResponse = z.infer<
+  typeof desktopOpenSupportResponseSchema
+>;
 export type RendererIncidentSource = z.infer<
   typeof rendererIncidentSourceSchema
 >;
@@ -227,8 +282,14 @@ export type DesktopReportRendererIncidentResponse = z.infer<
 
 export interface BreevDesktopApi {
   cancelTerminalPairing(): Promise<TerminalPairingState>;
+  exportDiagnostics(
+    request: DesktopExportDiagnosticsRequest,
+  ): Promise<DesktopExportDiagnosticsResponse>;
   getStartupConfig(): Promise<DesktopStartupConfig>;
   getTerminalPairingState(): Promise<TerminalPairingState>;
+  openSupport(
+    request: DesktopOpenSupportRequest,
+  ): Promise<DesktopOpenSupportResponse>;
   reportRendererIncident(
     request: DesktopReportRendererIncidentRequest,
   ): Promise<DesktopReportRendererIncidentResponse>;

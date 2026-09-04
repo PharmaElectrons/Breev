@@ -18,8 +18,10 @@ describe("desktop preload API", () => {
 
     expect(Object.keys(api)).toEqual([
       "cancelTerminalPairing",
+      "exportDiagnostics",
       "getStartupConfig",
       "getTerminalPairingState",
+      "openSupport",
       "reportRendererIncident",
       "submitManualEndpoint",
       "submitPairingInvitation",
@@ -141,6 +143,46 @@ describe("desktop preload API", () => {
       } as never),
     ).rejects.toThrow();
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("exports diagnostics through a pathless validated request", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      status: "saved",
+    });
+    const api = createBreevDesktopApi(invoke);
+
+    await expect(
+      api.exportDiagnostics({ incidentCode: "VIEW-0123ABCD" }),
+    ).resolves.toEqual({
+      status: "saved",
+    });
+    expect(invoke).toHaveBeenCalledWith("breev:desktop:export-diagnostics", {
+      incidentCode: "VIEW-0123ABCD",
+    });
+    await expect(
+      api.exportDiagnostics({ path: "C:\\outside" } as never),
+    ).rejects.toThrow();
+  });
+
+  it("opens only the main-owned configured support destination", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      channel: "portal",
+      status: "opened",
+    });
+    const api = createBreevDesktopApi(invoke);
+    await expect(api.openSupport({ locale: "en" })).resolves.toEqual({
+      channel: "portal",
+      status: "opened",
+    });
+    expect(invoke).toHaveBeenCalledWith("breev:desktop:open-support", {
+      locale: "en",
+    });
+    await expect(
+      api.openSupport({
+        locale: "en",
+        url: "https://attacker.example",
+      } as never),
+    ).rejects.toThrow();
   });
 
   it("rejects an invalid response from main", async () => {

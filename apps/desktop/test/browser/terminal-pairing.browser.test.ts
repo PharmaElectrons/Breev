@@ -464,11 +464,13 @@ async function openTerminal(
           current = { candidates: [], stage: "awaiting-invitation" };
           return current;
         },
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
           localApiOrigin: target,
           role: "terminal" as const,
         }),
         getTerminalPairingState: async () => current,
+        openSupport: async () => ({ status: "unavailable" as const }),
         reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async (request: DesktopManualEndpointRequest) => {
           await record({ ...request, kind: "endpoint" });

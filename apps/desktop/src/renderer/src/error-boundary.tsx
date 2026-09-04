@@ -1,4 +1,8 @@
 import { Component, type ReactNode } from "react";
+import type {
+  DesktopExportDiagnosticsResponse,
+  DesktopOpenSupportResponse,
+} from "@breev/contracts/desktop-preload";
 
 import { messages, type CrashMessage } from "./messages";
 import type { Locale } from "./preferences";
@@ -21,8 +25,12 @@ interface DiagnosticErrorBoundaryProps {
   readonly children: ReactNode;
   readonly copy: CrashMessage;
   readonly level: ErrorBoundaryLevel;
-  readonly onContactSupport?: () => void;
-  readonly onExportDiagnostics?: () => void;
+  readonly onContactSupport?: (
+    incidentCode: string,
+  ) => Promise<DesktopOpenSupportResponse>;
+  readonly onExportDiagnostics?: (
+    incidentCode: string,
+  ) => Promise<DesktopExportDiagnosticsResponse>;
   readonly onIncident?: (summary: IncidentSummary) => void;
   readonly resetKey?: string;
   readonly secondaryCopy?: CrashMessage;
@@ -30,6 +38,9 @@ interface DiagnosticErrorBoundaryProps {
 
 interface DiagnosticErrorBoundaryState {
   readonly copiedState: "failed" | "idle" | "succeeded";
+  readonly contactState:
+    "failed" | "idle" | "opened" | "opening" | "unavailable";
+  readonly exportState: "cancelled" | "failed" | "idle" | "saved" | "saving";
   readonly incidentCode: string | null;
   readonly retryCount: number;
 }
@@ -40,6 +51,8 @@ export class DiagnosticErrorBoundary extends Component<
 > {
   override state: DiagnosticErrorBoundaryState = {
     copiedState: "idle",
+    contactState: "idle",
+    exportState: "idle",
     incidentCode: null,
     retryCount: 0,
   };
@@ -70,6 +83,8 @@ export class DiagnosticErrorBoundary extends Component<
     ) {
       this.setState({
         copiedState: "idle",
+        contactState: "idle",
+        exportState: "idle",
         incidentCode: null,
         retryCount: 0,
       });
@@ -92,12 +107,22 @@ export class DiagnosticErrorBoundary extends Component<
     return (
       <CrashFallback
         copiedState={this.state.copiedState}
+        contactState={this.state.contactState}
         copy={this.props.copy}
         incidentCode={incidentCode}
         level={this.props.level}
-        onContactSupport={this.props.onContactSupport}
+        onContactSupport={
+          this.props.onContactSupport === undefined
+            ? undefined
+            : () => void this.contactSupport()
+        }
         onCopy={() => void this.copySummary()}
-        onExportDiagnostics={this.props.onExportDiagnostics}
+        exportState={this.state.exportState}
+        onExportDiagnostics={
+          this.props.onExportDiagnostics === undefined
+            ? undefined
+            : () => void this.exportDiagnostics()
+        }
         onHeading={(heading) => {
           this.heading = heading;
         }}
@@ -107,6 +132,8 @@ export class DiagnosticErrorBoundary extends Component<
             ? () =>
                 this.setState({
                   copiedState: "idle",
+                  contactState: "idle",
+                  exportState: "idle",
                   incidentCode: null,
                   retryCount: 1,
                 })
@@ -129,6 +156,47 @@ export class DiagnosticErrorBoundary extends Component<
       this.setState({ copiedState: "failed" });
     }
   }
+
+  private async exportDiagnostics(): Promise<void> {
+    const incidentCode = this.state.incidentCode;
+    if (incidentCode === null || this.props.onExportDiagnostics === undefined) {
+      return;
+    }
+    this.setState({ exportState: "saving" });
+    try {
+      const result = await this.props.onExportDiagnostics(incidentCode);
+      this.setState({ exportState: result.status });
+    } catch {
+      this.setState({ exportState: "failed" });
+    }
+  }
+
+  private async contactSupport(): Promise<void> {
+    const incidentCode = this.state.incidentCode;
+    if (incidentCode === null || this.props.onContactSupport === undefined) {
+      return;
+    }
+    this.setState({ contactState: "opening" });
+    try {
+      const result = await this.props.onContactSupport(incidentCode);
+      this.setState({ contactState: result.status });
+    } catch {
+      this.setState({ contactState: "failed" });
+    }
+  }
+}
+
+async function exportDiagnostics(
+  incidentCode: string,
+): Promise<DesktopExportDiagnosticsResponse> {
+  return window.breevDesktop.exportDiagnostics({ incidentCode });
+}
+
+async function contactSupport(
+  incidentCode: string,
+  locale: Locale,
+): Promise<DesktopOpenSupportResponse> {
+  return window.breevDesktop.openSupport({ incidentCode, locale });
 }
 
 export function BootstrapErrorBoundary({
@@ -140,6 +208,8 @@ export function BootstrapErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages.en.crash}
       level="bootstrap"
+      onContactSupport={(incidentCode) => contactSupport(incidentCode, "en")}
+      onExportDiagnostics={exportDiagnostics}
       onIncident={reportRendererIncident}
       secondaryCopy={messages.ar.crash}
     >
@@ -158,6 +228,8 @@ export function LocalizedAppErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages[locale].crash}
       level="application"
+      onContactSupport={(incidentCode) => contactSupport(incidentCode, locale)}
+      onExportDiagnostics={exportDiagnostics}
       onIncident={reportRendererIncident}
       resetKey={locale}
     >
@@ -178,6 +250,8 @@ export function WorkspaceErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages[locale].crash}
       level="workspace"
+      onContactSupport={(incidentCode) => contactSupport(incidentCode, locale)}
+      onExportDiagnostics={exportDiagnostics}
       onIncident={reportRendererIncident}
       resetKey={resetKey}
     >
@@ -212,7 +286,9 @@ export function createAsyncIncidentCode(error: unknown): string {
 
 function CrashFallback({
   copiedState,
+  contactState,
   copy,
+  exportState,
   incidentCode,
   level,
   onContactSupport,
@@ -224,7 +300,9 @@ function CrashFallback({
   secondaryCopy,
 }: {
   readonly copiedState: DiagnosticErrorBoundaryState["copiedState"];
+  readonly contactState: DiagnosticErrorBoundaryState["contactState"];
   readonly copy: CrashMessage;
+  readonly exportState: DiagnosticErrorBoundaryState["exportState"];
   readonly incidentCode: string;
   readonly level: ErrorBoundaryLevel;
   readonly onContactSupport: (() => void) | undefined;
@@ -276,6 +354,7 @@ function CrashFallback({
         {onExportDiagnostics === undefined ? null : (
           <button
             className="quiet-button"
+            disabled={exportState === "saving"}
             type="button"
             onClick={onExportDiagnostics}
           >
@@ -285,6 +364,7 @@ function CrashFallback({
         {onContactSupport === undefined ? null : (
           <button
             className="quiet-button"
+            disabled={contactState === "opening"}
             type="button"
             onClick={onContactSupport}
           >
@@ -298,6 +378,24 @@ function CrashFallback({
           : copiedState === "failed"
             ? copy.copyFailed
             : ""}
+      </p>
+      <p className="crash-copy-status" role="status" aria-live="polite">
+        {exportState === "saved"
+          ? copy.exportSaved
+          : exportState === "failed"
+            ? copy.exportFailed
+            : exportState === "cancelled"
+              ? copy.exportCancelled
+              : ""}
+      </p>
+      <p className="crash-copy-status" role="status" aria-live="polite">
+        {contactState === "opened"
+          ? copy.contactOpened
+          : contactState === "failed"
+            ? copy.contactFailed
+            : contactState === "unavailable"
+              ? copy.contactUnavailable
+              : ""}
       </p>
     </section>
   );

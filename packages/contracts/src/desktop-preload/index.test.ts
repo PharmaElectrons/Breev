@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   desktopCancelTerminalPairingRequestSchema,
+  desktopExportDiagnosticsRequestSchema,
+  desktopExportDiagnosticsResponseSchema,
   desktopManualEndpointRequestSchema,
+  desktopOpenSupportRequestSchema,
+  desktopOpenSupportResponseSchema,
   desktopPairingInvitationRequestSchema,
   desktopReportRendererIncidentRequestSchema,
   desktopReportRendererIncidentResponseSchema,
@@ -178,6 +182,52 @@ describe("desktop preload contract", () => {
     expect(
       desktopReportRendererIncidentResponseSchema.parse({ accepted: true }),
     ).toEqual({ accepted: true });
+  });
+
+  it("keeps diagnostic export pathless and returns no local path", () => {
+    expect(desktopExportDiagnosticsRequestSchema.parse({})).toEqual({});
+    expect(
+      desktopExportDiagnosticsRequestSchema.parse({
+        incidentCode: "MAIN-0123ABCD",
+      }),
+    ).toEqual({ incidentCode: "MAIN-0123ABCD" });
+    expect(
+      desktopExportDiagnosticsResponseSchema.parse({
+        status: "saved",
+      }),
+    ).toEqual({ status: "saved" });
+    expect(() =>
+      desktopExportDiagnosticsRequestSchema.parse({
+        path: "C:\\Users\\patient-name-canary\\Desktop",
+      }),
+    ).toThrow();
+    expect(() =>
+      desktopExportDiagnosticsResponseSchema.parse({
+        path: "C:\\Users\\Cashier\\Desktop",
+        status: "saved",
+      }),
+    ).toThrow();
+  });
+
+  it("accepts only a locale and optional safe code for support", () => {
+    expect(
+      desktopOpenSupportRequestSchema.parse({
+        incidentCode: "APP-0123ABCD",
+        locale: "ar",
+      }),
+    ).toEqual({ incidentCode: "APP-0123ABCD", locale: "ar" });
+    expect(
+      desktopOpenSupportResponseSchema.parse({
+        channel: "email",
+        status: "opened",
+      }),
+    ).toEqual({ channel: "email", status: "opened" });
+    expect(() =>
+      desktopOpenSupportRequestSchema.parse({
+        locale: "en",
+        url: "https://attacker.example",
+      }),
+    ).toThrow();
   });
 
   it.each([

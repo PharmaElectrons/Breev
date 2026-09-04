@@ -1,12 +1,18 @@
 import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
+  DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
+  DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
   DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
+  desktopExportDiagnosticsRequestSchema,
+  desktopExportDiagnosticsResponseSchema,
   desktopManualEndpointRequestSchema,
+  desktopOpenSupportRequestSchema,
+  desktopOpenSupportResponseSchema,
   desktopPairingInvitationRequestSchema,
   desktopReportRendererIncidentRequestSchema,
   desktopReportRendererIncidentResponseSchema,
@@ -24,8 +30,9 @@ import {
   protocol,
   safeStorage,
   session,
+  shell,
 } from "electron";
-import { hostname } from "node:os";
+import { arch, hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -36,6 +43,15 @@ import {
   processType,
   resolveDesktopLogDirectory,
 } from "./diagnostics.js";
+import {
+  createDiagnosticBundle,
+  diagnosticFileName,
+  writeDiagnosticBundle,
+} from "./diagnostic-bundle.js";
+import {
+  createSupportDestination,
+  readSupportConfiguration,
+} from "./support.js";
 
 import {
   APP_CONTENT_SECURITY_POLICY,
@@ -67,13 +83,13 @@ const TERMINAL_CHANNELS = [
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
 ] as const;
 
-const diagnostics = new DesktopDiagnostics(
-  resolveDesktopLogDirectory(
-    process.env,
-    process.platform,
-    app.getPath("userData"),
-  ),
+const diagnosticLogDirectory = resolveDesktopLogDirectory(
+  process.env,
+  process.platform,
+  app.getPath("userData"),
 );
+const diagnostics = new DesktopDiagnostics(diagnosticLogDirectory);
+const supportConfiguration = readSupportConfiguration(process.env);
 
 process.on("uncaughtExceptionMonitor", (error) => {
   diagnostics.fatal(incidentCode(error), "uncaughtException");
@@ -131,6 +147,13 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     rendererEntry.origin,
     rendererEntry.url,
   );
+  registerDiagnosticExportHandler(
+    window,
+    { localApiOrigin, role },
+    rendererEntry.origin,
+    rendererEntry.url,
+  );
+  registerSupportHandler(window, rendererEntry.origin, rendererEntry.url);
   if (role === "terminal" && terminalRuntime !== undefined) {
     registerTerminalPairingHandlers(
       window,
@@ -159,6 +182,8 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
       mainWindow = undefined;
       ipcMain.removeHandler(DESKTOP_STARTUP_CONFIG_CHANNEL);
       ipcMain.removeHandler(DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_OPEN_SUPPORT_CHANNEL);
       for (const channel of TERMINAL_CHANNELS) {
         ipcMain.removeHandler(channel);
       }
@@ -166,6 +191,120 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
   });
 
   void window.loadURL(rendererEntry.url);
+}
+
+function registerSupportHandler(
+  window: BrowserWindow,
+  trustedOrigin: string,
+  trustedUrl: string,
+): void {
+  ipcMain.removeHandler(DESKTOP_OPEN_SUPPORT_CHANNEL);
+  const guard = createIpcGuard({
+    maximumCalls: 2,
+    maximumPayloadBytes: 96,
+    name: "support handoff",
+    now: Date.now,
+    parse: (payload) => desktopOpenSupportRequestSchema.parse(payload),
+    trustedOrigin,
+    trustedSenderId: window.webContents.id,
+    trustedUrl,
+  });
+  ipcMain.handle(
+    DESKTOP_OPEN_SUPPORT_CHANNEL,
+    async (event, payload: unknown) => {
+      const request = guard(toIpcInvocation(event), payload);
+      const destination = createSupportDestination(
+        supportConfiguration,
+        request,
+        {
+          appVersion: app.getVersion(),
+          architecture: arch(),
+          platform: process.platform,
+        },
+      );
+      if (destination === undefined) {
+        return desktopOpenSupportResponseSchema.parse({
+          status: "unavailable",
+        });
+      }
+      try {
+        await shell.openExternal(destination.url, { activate: true });
+        return desktopOpenSupportResponseSchema.parse({
+          channel: destination.channel,
+          status: "opened",
+        });
+      } catch {
+        return desktopOpenSupportResponseSchema.parse({
+          code: "open-failed",
+          status: "failed",
+        });
+      }
+    },
+  );
+}
+
+function registerDiagnosticExportHandler(
+  window: BrowserWindow,
+  config: { readonly localApiOrigin: string; readonly role: DesktopDeviceRole },
+  trustedOrigin: string,
+  trustedUrl: string,
+): void {
+  ipcMain.removeHandler(DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL);
+  const guard = createIpcGuard({
+    maximumCalls: 2,
+    maximumPayloadBytes: 96,
+    name: "diagnostic export",
+    now: Date.now,
+    parse: (payload) => desktopExportDiagnosticsRequestSchema.parse(payload),
+    trustedOrigin,
+    trustedSenderId: window.webContents.id,
+    trustedUrl,
+  });
+  ipcMain.handle(
+    DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
+    async (event, payload: unknown) => {
+      const request = guard(toIpcInvocation(event), payload);
+      const defaultName = diagnosticFileName();
+      const selection = await dialog.showSaveDialog(window, {
+        defaultPath: path.join(app.getPath("downloads"), defaultName),
+        filters: [{ extensions: ["json"], name: "Breev diagnostics" }],
+        properties: ["createDirectory", "showOverwriteConfirmation"],
+        title: "Export Breev diagnostics",
+      });
+      if (selection.canceled || selection.filePath === "") {
+        return desktopExportDiagnosticsResponseSchema.parse({
+          status: "cancelled",
+        });
+      }
+      try {
+        const pairingStage =
+          config.role === "terminal"
+            ? (terminalRuntime?.state().stage ?? "failed")
+            : "not-applicable";
+        const bundle = await createDiagnosticBundle({
+          appVersion: app.getVersion(),
+          electronVersion: process.versions.electron ?? "unknown",
+          ...(request.incidentCode === undefined
+            ? {}
+            : { incidentCode: request.incidentCode }),
+          localApiOrigin: config.localApiOrigin,
+          logDirectory: diagnosticLogDirectory,
+          nodeVersion: process.versions.node,
+          pairingStage,
+          role: config.role,
+        });
+        await writeDiagnosticBundle(selection.filePath, bundle);
+        return desktopExportDiagnosticsResponseSchema.parse({
+          status: "saved",
+        });
+      } catch {
+        return desktopExportDiagnosticsResponseSchema.parse({
+          code: "export-failed",
+          status: "failed",
+        });
+      }
+    },
+  );
 }
 
 function registerRendererIncidentHandler(

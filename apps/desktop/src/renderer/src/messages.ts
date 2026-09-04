@@ -8,11 +8,17 @@ interface StatusMessage {
 
 export interface CrashMessage {
   readonly contactSupport: string;
+  readonly contactFailed: string;
+  readonly contactOpened: string;
+  readonly contactUnavailable: string;
   readonly copied: string;
   readonly copyFailed: string;
   readonly copySummary: string;
   readonly description: string;
   readonly exportDiagnostics: string;
+  readonly exportCancelled: string;
+  readonly exportFailed: string;
+  readonly exportSaved: string;
   readonly incidentLabel: string;
   readonly reloadTerminal: string;
   readonly retryView: string;
@@ -51,12 +57,18 @@ export const messages: Record<Locale, Messages> = {
     connectionStatus: "حالة الاتصال",
     crash: {
       contactSupport: "الاتصال بالدعم",
+      contactFailed: "تعذر فتح وسيلة الدعم.",
+      contactOpened: "تم فتح وسيلة الدعم. أرفق حزمة التشخيص المصدرة.",
+      contactUnavailable: "لم يتم إعداد وسيلة دعم معتمدة بعد.",
       copied: "تم نسخ ملخص الخطأ.",
       copyFailed: "تعذر النسخ. دوّن رمز الخطأ الظاهر.",
       copySummary: "نسخ ملخص الخطأ",
       description:
         "تعذر عرض هذا الجزء من بريف بأمان. لم يغيّر هذا الخطأ السجلات المرحّلة في الخادم المحلي.",
       exportDiagnostics: "تصدير حزمة التشخيص",
+      exportCancelled: "تم إلغاء التصدير.",
+      exportFailed: "تعذر حفظ حزمة التشخيص.",
+      exportSaved: "تم حفظ حزمة التشخيص. أرفق الملف عند التواصل مع الدعم.",
       incidentLabel: "رمز الخطأ",
       reloadTerminal: "إعادة تحميل نقطة البيع",
       retryView: "إعادة المحاولة",
@@ -122,12 +134,19 @@ export const messages: Record<Locale, Messages> = {
     connectionStatus: "Connection status",
     crash: {
       contactSupport: "Contact support",
+      contactFailed: "The support destination could not be opened.",
+      contactOpened: "Support opened. Attach the exported diagnostic package.",
+      contactUnavailable: "No approved support destination is configured yet.",
       copied: "Error summary copied.",
       copyFailed: "Copy failed. Write down the incident code shown here.",
       copySummary: "Copy error summary",
       description:
         "Breev could not safely display this part of the application. This UI error did not alter posted records in the local API.",
       exportDiagnostics: "Export diagnostic package",
+      exportCancelled: "Export cancelled.",
+      exportFailed: "The diagnostic package could not be saved.",
+      exportSaved:
+        "Diagnostic package saved. Attach the file when contacting support.",
       incidentLabel: "Incident code",
       reloadTerminal: "Reload terminal",
       retryView: "Try again",

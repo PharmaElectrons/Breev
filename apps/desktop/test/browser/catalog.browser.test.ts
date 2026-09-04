@@ -206,11 +206,13 @@ async function installDesktopFake(
 
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => unpairedState,
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
           localApiOrigin: apiOrigin,
           role: "main" as const,
         }),
         getTerminalPairingState: async () => unpairedState,
+        openSupport: async () => ({ status: "unavailable" as const }),
         reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => unpairedState,
         submitPairingInvitation: async () => unpairedState,
