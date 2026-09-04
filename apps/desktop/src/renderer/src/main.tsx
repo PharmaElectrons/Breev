@@ -2,6 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./app";
+import {
+  BootstrapErrorBoundary,
+  LocalizedAppErrorBoundary,
+} from "./error-boundary";
 import { PreferencesProvider } from "./preferences-provider";
 import "./styles.css";
 
@@ -12,8 +16,12 @@ if (root === null) {
 
 createRoot(root).render(
   <StrictMode>
-    <PreferencesProvider>
-      <App />
-    </PreferencesProvider>
+    <BootstrapErrorBoundary>
+      <PreferencesProvider>
+        <LocalizedAppErrorBoundary>
+          <App />
+        </LocalizedAppErrorBoundary>
+      </PreferencesProvider>
+    </BootstrapErrorBoundary>
   </StrictMode>,
 );

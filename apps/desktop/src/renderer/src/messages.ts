@@ -6,12 +6,27 @@ interface StatusMessage {
   readonly title: string;
 }
 
+export interface CrashMessage {
+  readonly contactSupport: string;
+  readonly copied: string;
+  readonly copyFailed: string;
+  readonly copySummary: string;
+  readonly description: string;
+  readonly exportDiagnostics: string;
+  readonly incidentLabel: string;
+  readonly reloadTerminal: string;
+  readonly retryView: string;
+  readonly retryUnavailable: string;
+  readonly title: string;
+}
+
 interface Messages {
   readonly apiVersion: string;
   readonly brandDescription: string;
   readonly checkAgain: string;
   readonly checking: string;
   readonly connectionStatus: string;
+  readonly crash: CrashMessage;
   readonly deviceProof: Record<
     "committed" | "denied" | "failed" | "idle" | "running",
     string
@@ -34,6 +49,20 @@ export const messages: Record<Locale, Messages> = {
     checkAgain: "تحقق الآن",
     checking: "جارٍ التحقق",
     connectionStatus: "حالة الاتصال",
+    crash: {
+      contactSupport: "الاتصال بالدعم",
+      copied: "تم نسخ ملخص الخطأ.",
+      copyFailed: "تعذر النسخ. دوّن رمز الخطأ الظاهر.",
+      copySummary: "نسخ ملخص الخطأ",
+      description:
+        "تعذر عرض هذا الجزء من بريف بأمان. لم يغيّر هذا الخطأ السجلات المرحّلة في الخادم المحلي.",
+      exportDiagnostics: "تصدير حزمة التشخيص",
+      incidentLabel: "رمز الخطأ",
+      reloadTerminal: "إعادة تحميل نقطة البيع",
+      retryView: "إعادة المحاولة",
+      retryUnavailable: "تعذرت إعادة المحاولة. أعد تحميل نقطة البيع.",
+      title: "حدث خطأ غير متوقع",
+    },
     deviceProof: {
       committed: "تم التحقق من ارتباط هذه الحاسبة والجلسة.",
       denied: "رفض الخادم ارتباط هذه الحاسبة والجلسة.",
@@ -91,6 +120,20 @@ export const messages: Record<Locale, Messages> = {
     checkAgain: "Check now",
     checking: "Checking",
     connectionStatus: "Connection status",
+    crash: {
+      contactSupport: "Contact support",
+      copied: "Error summary copied.",
+      copyFailed: "Copy failed. Write down the incident code shown here.",
+      copySummary: "Copy error summary",
+      description:
+        "Breev could not safely display this part of the application. This UI error did not alter posted records in the local API.",
+      exportDiagnostics: "Export diagnostic package",
+      incidentLabel: "Incident code",
+      reloadTerminal: "Reload terminal",
+      retryView: "Try again",
+      retryUnavailable: "Retry failed. Reload the terminal.",
+      title: "Something went wrong",
+    },
     deviceProof: {
       committed: "This device and session binding is verified.",
       denied: "The local API denied this device and session binding.",

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 
 import { CatalogRouteView } from "./catalog-screen";
+import { WorkspaceErrorBoundary } from "./error-boundary";
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityShell } from "./identity-shell";
 import { messages } from "./messages";
@@ -247,21 +248,29 @@ export function AppShell({
       ) : null}
 
       {state === "ready" && localApiOrigin !== null ? (
-        !authenticated ? (
-          // IdentityShell owns loading, bootstrap, login, expiry, and revocation.
-          <IdentityShell baseUrl={localApiOrigin} />
-        ) : !moduleImplemented(activeModuleId) ? (
-          <UnavailableSurface moduleId={activeModuleId} />
-        ) : activeModuleId === "products" ? (
-          <CatalogRouteView
-            baseUrl={localApiOrigin}
-            hash={catalogHash(currentHash)}
-          />
-        ) : activeModuleId === "purchases" ? (
-          <PurchasingRouteView baseUrl={localApiOrigin} />
-        ) : (
-          <IdentityShell baseUrl={localApiOrigin} />
-        )
+        <WorkspaceErrorBoundary
+          resetKey={
+            activeModuleId +
+            ":" +
+            (activeModuleId === "products" ? catalogHash(currentHash) : "")
+          }
+        >
+          {!authenticated ? (
+            // IdentityShell owns loading, bootstrap, login, expiry, and revocation.
+            <IdentityShell baseUrl={localApiOrigin} />
+          ) : !moduleImplemented(activeModuleId) ? (
+            <UnavailableSurface moduleId={activeModuleId} />
+          ) : activeModuleId === "products" ? (
+            <CatalogRouteView
+              baseUrl={localApiOrigin}
+              hash={catalogHash(currentHash)}
+            />
+          ) : activeModuleId === "purchases" ? (
+            <PurchasingRouteView baseUrl={localApiOrigin} />
+          ) : (
+            <IdentityShell baseUrl={localApiOrigin} />
+          )}
+        </WorkspaceErrorBoundary>
       ) : null}
 
       <footer className="shell-footer">Breev</footer>
