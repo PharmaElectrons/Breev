@@ -6,6 +6,7 @@ import {
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   supplierSchema,
+  type PurchaseDraft,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -27,6 +28,7 @@ import {
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_PASSWORD = "purchasing browser owner password stays in this test";
+let delayNextDraftCreateResponse = false;
 
 interface Credentials {
   readonly deviceId: string;
@@ -210,6 +212,88 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       }
     }
   });
+
+  test("retries an uncertain draft creation without creating a duplicate", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByLabel("Supplier invoice number").fill("TIMEOUT-RETRY-1");
+    await page
+      .getByRole("combobox", { name: "Supplier", exact: true })
+      .selectOption(supplierId);
+    await page.getByLabel("Invoice date").fill("2026-08-15");
+
+    delayNextDraftCreateResponse = true;
+    await page.getByRole("button", { name: "Create durable draft" }).click();
+    await expect(page.getByText(/The change was not saved/)).toBeVisible({
+      timeout: 7_000,
+    });
+    await page.getByRole("button", { name: "Create durable draft" }).click();
+    await expect(page.getByText("Draft saved and durable.")).toBeVisible();
+
+    const active = await apiRequest(
+      apiOrigin,
+      credentials,
+      "GET",
+      "/purchases/drafts",
+    );
+    const drafts = (active.body as { drafts: PurchaseDraft[] }).drafts;
+    expect(
+      drafts.filter(
+        (draft) => draft.supplierInvoiceNumber === "TIMEOUT-RETRY-1",
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("preserves an invalid Supplier header and returns focus for correction", async ({
+    page,
+  }) => {
+    const created = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/suppliers",
+      {
+        allowanceEffectiveFrom: "2026-01-01",
+        defaultAllowancePercentage: "1",
+        idempotencyKey: uuidV7(),
+        name: "Supplier archived during entry",
+        terms: null,
+      },
+    );
+    const invalidSupplier = supplierSchema.parse(created.body);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    const invoice = page.getByLabel("Supplier invoice number");
+    const supplier = page.getByRole("combobox", {
+      name: "Supplier",
+      exact: true,
+    });
+    await invoice.fill("INVALID-SUPPLIER-1");
+    await supplier.selectOption(invalidSupplier.id);
+    await page.getByLabel("Invoice date").fill("2026-08-15");
+    expect(
+      (
+        await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          `/suppliers/${invalidSupplier.id}/archivals`,
+          {
+            expectedRevision: invalidSupplier.revision,
+            idempotencyKey: uuidV7(),
+          },
+        )
+      ).status,
+    ).toBe(201);
+
+    await page.getByRole("button", { name: "Create durable draft" }).click();
+    await expect(page.getByText(/The change was not saved/)).toBeVisible();
+    await expect(invoice).toHaveValue("INVALID-SUPPLIER-1");
+    await expect(supplier).toHaveValue(invalidSupplier.id);
+    await expect(supplier).toBeFocused();
+  });
 });
 
 async function startRendererServer(
@@ -239,12 +323,21 @@ async function startRendererServer(
           headers: requestHeaders(credentials, body.length > 0),
           method: request.method ?? "GET",
         });
+        const upstreamBody = Buffer.from(await upstream.arrayBuffer());
+        if (
+          delayNextDraftCreateResponse &&
+          request.method === "POST" &&
+          request.url === "/purchases/drafts"
+        ) {
+          delayNextDraftCreateResponse = false;
+          await new Promise((resolve) => setTimeout(resolve, 5_500));
+        }
         response.writeHead(upstream.status, {
           "cache-control": "no-store",
           "content-type":
             upstream.headers.get("content-type") ?? "application/json",
         });
-        response.end(Buffer.from(await upstream.arrayBuffer()));
+        response.end(upstreamBody);
         return;
       }
       if (request.url === "/favicon.ico") {

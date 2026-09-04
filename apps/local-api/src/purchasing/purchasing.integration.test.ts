@@ -112,12 +112,14 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       status: "active",
       terms: "Net 30",
     });
-    const audit = await administrator.query<{ count: string }>(
-      `select count(*)::text as count from posting_audit_records
+    const audit = await administrator.query<{ count: string; terms: string }>(
+      `select count(*)::text as count, max(after_state ->> 'terms') as terms
+       from posting_audit_records
        where action = 'supplier.create' and target_id = $1 and outcome = 'committed'`,
       [supplier.id],
     );
     expect(audit.rows[0]?.count).toBe("1");
+    expect(audit.rows[0]?.terms).toBe("Net 30");
     await expect(
       administrator.query(
         `update supplier_allowance_rates set allowance_percentage = 9 where supplier_id = $1`,
@@ -227,15 +229,34 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
   });
 
   it("survives an API restart with its version and header intact", async () => {
+    const idempotencyKey = uuidV7();
+    const retryInput = {
+      ...draftBody(supplier.id, "INV-100-RESTART", "2026-06-15"),
+      expectedVersion: draft.version,
+      idempotencyKey,
+    };
+    const committed = await request(
+      "PUT",
+      purchaseDraftHeaderPath(draft.id),
+      retryInput,
+    );
+    expect(committed.status, diagnostics(committed)).toBe(200);
+    draft = committed.body?.draft as unknown as PurchaseDraft;
     await stopProcess(api);
     apiOutput = "";
     api = startApi();
     await waitForHealth(apiOrigin, () => apiOutput);
+    const replayed = await request(
+      "PUT",
+      purchaseDraftHeaderPath(draft.id),
+      retryInput,
+    );
+    expect(replayed).toEqual(committed);
     const resumed = await request("GET", `/purchases/drafts/${draft.id}`);
     expect(resumed.status, diagnostics(resumed)).toBe(200);
     expect(resumed.body).toMatchObject({
       id: draft.id,
-      supplierInvoiceNumber: "INV-100-A",
+      supplierInvoiceNumber: "INV-100-RESTART",
       version: draft.version,
     });
   });
@@ -261,6 +282,30 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       supplierId: supplier.id,
       supplierNameSnapshot: "Al-Nahrain",
     });
+    const survivorDuplicate = await request(
+      "POST",
+      "/purchases/drafts",
+      draftBody(survivor.id, "MERGED-DUP", "2026-08-01"),
+    );
+    expect(survivorDuplicate.status, diagnostics(survivorDuplicate)).toBe(201);
+    const updatedPreserved = await request(
+      "PUT",
+      purchaseDraftHeaderPath(draft.id),
+      {
+        ...draftBody(supplier.id, "MERGED-DUP", draft.invoiceDate),
+        expectedVersion: draft.version,
+      },
+    );
+    expect(updatedPreserved.status, diagnostics(updatedPreserved)).toBe(200);
+    expect(updatedPreserved.body?.warnings).toMatchObject([
+      {
+        code: "duplicate-supplier-invoice-number",
+        existingDraftIds: [
+          (survivorDuplicate.body?.draft as unknown as PurchaseDraft).id,
+        ],
+      },
+    ]);
+    draft = updatedPreserved.body?.draft as unknown as PurchaseDraft;
     const redirected = await request(
       "POST",
       "/purchases/drafts",

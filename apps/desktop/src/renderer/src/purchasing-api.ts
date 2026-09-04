@@ -2,6 +2,7 @@ import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
   identityDenialSchema,
+  licensingDenialSchema,
   purchaseDraftCreateContract,
   purchaseDraftDiscardContract,
   purchaseDraftDiscardPath,
@@ -31,7 +32,7 @@ import {
   type SupplierEditRequest,
   type SupplierMergeRequest,
 } from "@breev/contracts/local-rest";
-import { IdentityApiDenied } from "./identity-api";
+import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 
 interface Parser<T> {
   parse(payload: unknown): T;
@@ -160,6 +161,21 @@ export function newPurchasingIdempotencyKey(): string {
   return crypto.randomUUID();
 }
 
+export interface PurchasingCommandAttempt {
+  readonly fingerprint: string;
+  readonly idempotencyKey: string;
+}
+
+export function purchasingCommandAttempt(
+  previous: PurchasingCommandAttempt | null,
+  fingerprint: string,
+  createKey: () => string = newPurchasingIdempotencyKey,
+): PurchasingCommandAttempt {
+  return previous?.fingerprint === fingerprint
+    ? previous
+    : { fingerprint, idempotencyKey: createKey() };
+}
+
 async function requestJson<T>(
   baseUrl: string,
   path: string,
@@ -200,5 +216,8 @@ async function denial(response: Response): Promise<Error> {
   const identity = identityDenialSchema.safeParse(payload);
   if (identity.success)
     return new IdentityApiDenied(response.status, identity.data);
+  const licensing = licensingDenialSchema.safeParse(payload);
+  if (licensing.success)
+    return new LicensingApiDenied(response.status, licensing.data);
   return new Error(`Local API returned status ${response.status}`);
 }

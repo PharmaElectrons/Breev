@@ -12,10 +12,12 @@ import {
   discardPurchaseDraft,
   editSupplier,
   mergeSupplier,
-  newPurchasingIdempotencyKey,
+  PurchasingApiDenied,
+  purchasingCommandAttempt,
   requestPurchaseDrafts,
   requestSuppliers,
   updatePurchaseDraft,
+  type PurchasingCommandAttempt,
 } from "./purchasing-api";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
@@ -50,6 +52,7 @@ export function PurchasingRouteView({
   const [loading, setLoading] = useState(true);
   const invoiceRef = useRef<HTMLInputElement>(null);
   const supplierRef = useRef<HTMLSelectElement>(null);
+  const draftCommandAttempt = useRef<PurchasingCommandAttempt | null>(null);
 
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -89,6 +92,7 @@ export function PurchasingRouteView({
   });
 
   function showDraft(draft: PurchaseDraft): void {
+    draftCommandAttempt.current = null;
     setActiveDraft(draft);
     setSupplierInvoiceNumber(draft.supplierInvoiceNumber);
     setSupplierId(draft.supplierId);
@@ -101,6 +105,7 @@ export function PurchasingRouteView({
   }
 
   function newDraft(): void {
+    draftCommandAttempt.current = null;
     setActiveDraft(null);
     setSupplierInvoiceNumber("");
     setSupplierId("");
@@ -128,34 +133,66 @@ export function PurchasingRouteView({
         supplierId,
         supplierInvoiceNumber,
       };
+      const attempt = purchasingCommandAttempt(
+        draftCommandAttempt.current,
+        JSON.stringify({
+          action: activeDraft === null ? "create" : "update",
+          draftId: activeDraft?.id,
+          expectedVersion: activeDraft?.version,
+          header,
+        }),
+      );
+      draftCommandAttempt.current = attempt;
       const result: PurchaseDraftResult =
         activeDraft === null
           ? await createPurchaseDraft(baseUrl, {
               ...header,
-              idempotencyKey: newPurchasingIdempotencyKey(),
+              idempotencyKey: attempt.idempotencyKey,
             })
           : await updatePurchaseDraft(baseUrl, activeDraft.id, {
               ...header,
               expectedVersion: activeDraft.version,
-              idempotencyKey: newPurchasingIdempotencyKey(),
+              idempotencyKey: attempt.idempotencyKey,
             });
+      draftCommandAttempt.current = null;
       setActiveDraft(result.draft);
       setWarning(result.warnings.length > 0);
       setStatus(copy.saved);
       await reload();
-    } catch {
+    } catch (caught) {
       setError(copy.error);
+      if (
+        caught instanceof PurchasingApiDenied &&
+        (caught.denial.code === "supplier-archived" ||
+          caught.denial.code === "supplier-merged" ||
+          caught.denial.code === "supplier-not-found" ||
+          caught.denial.fieldErrors.some(
+            (fieldError) => fieldError.path[0] === "supplierId",
+          ))
+      ) {
+        supplierRef.current?.focus();
+      }
     }
   }
 
   async function confirmDiscard(): Promise<void> {
     if (activeDraft === null || !window.confirm(copy.confirmDiscard)) return;
     try {
+      const attempt = purchasingCommandAttempt(
+        draftCommandAttempt.current,
+        JSON.stringify({
+          action: "discard",
+          draftId: activeDraft.id,
+          expectedVersion: activeDraft.version,
+        }),
+      );
+      draftCommandAttempt.current = attempt;
       await discardPurchaseDraft(baseUrl, activeDraft.id, {
         confirmation: "discard-populated-purchase-draft",
         expectedVersion: activeDraft.version,
-        idempotencyKey: newPurchasingIdempotencyKey(),
+        idempotencyKey: attempt.idempotencyKey,
       });
+      draftCommandAttempt.current = null;
       newDraft();
       setStatus(copy.discarded);
       await reload();
@@ -378,8 +415,10 @@ function SupplierManager({
   const [terms, setTerms] = useState("");
   const [survivorId, setSurvivorId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const supplierCommandAttempt = useRef<PurchasingCommandAttempt | null>(null);
 
   function choose(supplier: Supplier | null): void {
+    supplierCommandAttempt.current = null;
     setSelected(supplier);
     setName(supplier?.name ?? "");
     setPercentage(supplier?.defaultAllowancePercentage ?? "0");
@@ -394,17 +433,30 @@ function SupplierManager({
     const fields = {
       allowanceEffectiveFrom: effectiveFrom,
       defaultAllowancePercentage: percentage,
-      idempotencyKey: newPurchasingIdempotencyKey(),
       name,
       terms: terms.trim() === "" ? null : terms.trim(),
     };
     try {
+      const attempt = purchasingCommandAttempt(
+        supplierCommandAttempt.current,
+        JSON.stringify({
+          action: selected === null ? "create" : "edit",
+          fields,
+          supplierId: selected?.id,
+          expectedRevision: selected?.revision,
+        }),
+      );
+      supplierCommandAttempt.current = attempt;
       const saved =
         selected === null
-          ? await createSupplier(baseUrl, fields)
+          ? await createSupplier(baseUrl, {
+              ...fields,
+              idempotencyKey: attempt.idempotencyKey,
+            })
           : await editSupplier(baseUrl, selected.id, {
               ...fields,
               expectedRevision: selected.revision,
+              idempotencyKey: attempt.idempotencyKey,
             });
       choose(saved);
       setMessage(copy.supplierSaved);
@@ -417,9 +469,18 @@ function SupplierManager({
   async function archive(): Promise<void> {
     if (selected === null || !window.confirm(copy.archiveSupplier)) return;
     try {
+      const attempt = purchasingCommandAttempt(
+        supplierCommandAttempt.current,
+        JSON.stringify({
+          action: "archive",
+          supplierId: selected.id,
+          expectedRevision: selected.revision,
+        }),
+      );
+      supplierCommandAttempt.current = attempt;
       await archiveSupplier(baseUrl, selected.id, {
         expectedRevision: selected.revision,
-        idempotencyKey: newPurchasingIdempotencyKey(),
+        idempotencyKey: attempt.idempotencyKey,
       });
       choose(null);
       setMessage(copy.supplierSaved);
@@ -432,9 +493,19 @@ function SupplierManager({
   async function merge(): Promise<void> {
     if (selected === null || survivorId === "") return;
     try {
+      const attempt = purchasingCommandAttempt(
+        supplierCommandAttempt.current,
+        JSON.stringify({
+          action: "merge",
+          supplierId: selected.id,
+          expectedRevision: selected.revision,
+          survivorSupplierId: survivorId,
+        }),
+      );
+      supplierCommandAttempt.current = attempt;
       await mergeSupplier(baseUrl, selected.id, {
         expectedRevision: selected.revision,
-        idempotencyKey: newPurchasingIdempotencyKey(),
+        idempotencyKey: attempt.idempotencyKey,
         survivorSupplierId: survivorId,
       });
       choose(null);

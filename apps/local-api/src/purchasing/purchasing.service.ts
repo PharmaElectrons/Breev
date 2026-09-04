@@ -171,14 +171,15 @@ async function resolveSupplierForDate(
     status: "active" | "archived" | "merged";
   }>(
     `with recursive chain as (
-       select id, name, status, merged_into_supplier_id, pharmacy_id, 0 as depth
+       select id, name, status, merged_into_supplier_id, pharmacy_id
        from suppliers where pharmacy_id = $1 and id = $2
        union all
        select next.id, next.name, next.status, next.merged_into_supplier_id,
-              next.pharmacy_id, chain.depth + 1
+              next.pharmacy_id
        from suppliers next join chain on next.id = chain.merged_into_supplier_id
-       where next.pharmacy_id = $1 and chain.depth < 32
-     ) select id, name, status from chain order by depth desc limit 1`,
+       where next.pharmacy_id = $1
+     ) select id, name, status from chain
+       where merged_into_supplier_id is null limit 1`,
     [pharmacyId, supplierId],
   );
   const supplier = result.rows[0];
@@ -273,8 +274,19 @@ async function draftResult(
   draft: PurchaseDraft,
 ): Promise<PurchaseDraftResult> {
   const duplicate = await client.query<{ id: string }>(
-    `with recursive aliases(id) as (
-       select $2::uuid
+    `with recursive ancestry(id, merged_into_supplier_id) as (
+       select supplier_row.id, supplier_row.merged_into_supplier_id
+       from suppliers supplier_row
+       where supplier_row.pharmacy_id = $1 and supplier_row.id = $2
+       union all
+       select parent.id, parent.merged_into_supplier_id
+       from suppliers parent
+       join ancestry on parent.id = ancestry.merged_into_supplier_id
+       where parent.pharmacy_id = $1
+     ), canonical(id) as (
+       select id from ancestry where merged_into_supplier_id is null limit 1
+     ), aliases(id) as (
+       select id from canonical
        union
        select supplier_row.id from suppliers supplier_row
        join aliases on supplier_row.merged_into_supplier_id = aliases.id
@@ -347,6 +359,7 @@ function supplierAuditState(supplier: Supplier): Record<string, string | null> {
     name: supplier.name,
     revision: supplier.revision,
     status: supplier.status,
+    terms: supplier.terms,
   };
 }
 function draftAuditState(
@@ -354,11 +367,14 @@ function draftAuditState(
   warningCount: number,
 ): Record<string, number | string> {
   return {
+    allowanceBasisFils: draft.allowanceSnapshot.basisFils,
     allowancePercentageSnapshot: draft.allowanceSnapshot.percentage,
     invoiceDate: draft.invoiceDate,
     settlementContext: draft.settlementContext,
     status: draft.status,
     supplierId: draft.supplierId,
+    supplierInvoiceNumber: draft.supplierInvoiceNumber,
+    supplierNameSnapshot: draft.supplierNameSnapshot,
     version: draft.version,
     warningCount,
   };
