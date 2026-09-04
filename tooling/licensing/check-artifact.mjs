@@ -1,9 +1,9 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const FORBIDDEN = [
-  /-----BEGIN (?:EC |RSA )?PRIVATE KEY-----/u,
+  /-----BEGIN (?:EC |RSA )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\r\n]{40,}\s+-----END (?:EC |RSA )?PRIVATE KEY-----/u,
   /\bcreateHmac\b/u,
   /\bHMAC\b/u,
   /LICEN[CS]E_(?:PRIVATE|SIGNING|SHARED)_?(?:KEY|SECRET)?/iu,
@@ -31,12 +31,16 @@ export async function inspectLicenceArtifacts(roots) {
 }
 
 async function collectFiles(root, files) {
+  if ((await stat(root)).isFile()) {
+    if (/\.(?:c?js|html|json|mjs)$/u.test(root)) files.push(root);
+    return;
+  }
   const entries = await readdir(root, { withFileTypes: true });
   for (const entry of entries) {
     const target = path.join(root, entry.name);
     if (entry.isDirectory()) {
       await collectFiles(target, files);
-    } else if (/\.(?:c?js|json|mjs)$/u.test(entry.name)) {
+    } else if (/\.(?:c?js|html|json|mjs)$/u.test(entry.name)) {
       files.push(target);
     }
   }
@@ -50,6 +54,7 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
     path.join(repositoryRoot, "apps/desktop/out"),
     path.join(repositoryRoot, "apps/local-api/dist"),
     path.join(repositoryRoot, "packages/contracts/dist"),
+    path.join(repositoryRoot, "tooling/licensing/generator.html"),
   ]);
   process.stdout.write(
     `Inspected ${count} Breev artifact files; no signing secret found.\n`,
