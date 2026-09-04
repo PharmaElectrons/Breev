@@ -83,6 +83,10 @@ All 52 brief images (49 unique) and the client-supplied prototype at `design/pro
 
 The final unified visual PDF (including the quick-stocktake design) remains a pending client delivery in [`open-decisions.md`](open-decisions.md). When received it may refine appearance, but it adds no scope and cannot override written requirements.
 
+## Windows payload optimization evidence
+
+The stakeholder initiated issue #126 implementation on 4 September 2026 after reviewing its size/performance investigation. The work preserves the existing G-05/G-06/G-07 authority, security and lifecycle requirements; it does not authorize a new installer architecture or relaxed durability. The [issue-126 implementation record](../evidence/issue-126/README.md) traces task evidence and the original issue's infeasible size/file-count assumptions. Measured budgets and any unresolved verification gaps must be presented explicitly in the review PR; the investigation does not close release gates or silently replace requirement acceptance criteria.
+
 ## Commercial terms traced
 
 The four milestones with durations, payments, and acceptance criteria; the three-business-day review with one consolidated feedback list; the defect definition; schedule protection; change control; client responsibilities; ownership and handover; and the $10/$30/$50 maintenance tiers with the developer's first-opportunity right on future work are carried in [`delivery.md`](delivery.md) from scope §13–§15, §18, §20–§21 and the client record's maintenance/SLA agreement of 31 July 2026.

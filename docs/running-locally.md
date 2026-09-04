@@ -157,8 +157,8 @@ A working window shows:
 
 - The full Breev stylesheet, not plain browser HTML
 - `Ready` in the connection card
-- Local API version `3`
-- Schema version `2`
+- Local API version `10`
+- Schema version `10`
 - The pharmacy setup form on a new database, or the login form after setup
 
 Keep the terminal open. Press `Ctrl+C` to stop the API and Electron together.
@@ -175,7 +175,7 @@ Vite HMR injects CSS through inline `<style>` elements. Breev's strict Content S
 
 ## Test the current features by hand
 
-The current user-facing slice covers identity, access, and the licence status and capability surface. Inventory, purchasing, sales, accounting, patients, and cloud screens are not implemented yet.
+The current user-facing slice covers identity, access, licensing, Product catalog management, Supplier management, and the Purchase Draft header. Purchase rows and posting, inventory operations, sales, accounting, patients, and cloud screens are not implemented yet.
 
 On a new database:
 
@@ -190,6 +190,10 @@ On a new database:
 9. Lock and reactivate that user. Each change must require a new step-up check.
 10. Change a role's permissions. Log in as a user with that role and confirm hidden administration sections and permission denials match the grants.
 11. Confirm the licence status card reads `Free Core` and that `Available functions` lists only Free Core functions. Paid functions must be absent, never shown as disabled buttons. Pasting an unsigned document must be refused as an invalid licence without disturbing any Free Core screen or data.
+12. Open Purchases and create a Supplier with terms, an effective date, and a default allowance percentage.
+13. Enter the supplier invoice number, Supplier, cash/debt context, and invoice date in that order. Create the draft and confirm its allowance snapshot and version appear before any item-entry path.
+14. Create another draft with the same invoice number and Supplier. Confirm the announced warning does not block saving and says that **Warn is the working default, not an approved rule**.
+15. Restart Breev, resume the draft with the same header, snapshot, and version, then press Escape. Dismiss the confirmation once to keep the draft and accept it once to discard explicitly.
 
 ### Issue a development licence
 

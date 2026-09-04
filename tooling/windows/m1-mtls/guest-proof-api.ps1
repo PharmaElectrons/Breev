@@ -18,7 +18,7 @@ param(
 $ErrorActionPreference = "Stop"
 $serviceName = "BreevLocalApi"
 $dataRoot = "C:\ProgramData\Breev"
-$payloadRoot = if (Test-Path -LiteralPath "C:\breev-m1\payload\local-api\dist\main.js") { "C:\breev-m1\payload" } else { "C:\Program Files\Breev\resources\windows-payload" }
+$payloadRoot = if (Test-Path -LiteralPath "C:\breev-m1\payload\local-api\dist\main.cjs") { "C:\breev-m1\payload" } else { "C:\Program Files\Breev\resources\windows-payload" }
 $apiRoot = Join-Path $payloadRoot "local-api"
 $apiReadableRoot = Join-Path $apiRoot "m1-mtls-proof"
 $restorePath = Join-Path $ProofRoot "service-restore.json"
@@ -99,7 +99,7 @@ if ($null -eq (Get-NetIPAddress -IPAddress $parsedAddress.IPAddressToString -Err
 foreach ($required in @(
   (Join-Path $payloadRoot "service-wrapper\shawl.exe"),
   (Join-Path $payloadRoot "node\node.exe"),
-  (Join-Path $apiRoot "dist\main.js"),
+  (Join-Path $apiRoot "dist\main.cjs"),
   (Join-Path $dataRoot "config\database-url"),
   (Join-Path $dataRoot "config\main-device.json"),
   (Join-Path $ProofRoot "licence-key-override.mjs"),
@@ -156,7 +156,7 @@ $arguments = @(
   "--env", "BREEV_LAN_API_HOST=$($parsedAddress.IPAddressToString)",
   "--env", "BREEV_LAN_API_PORT=$LanPort",
   "--env", "BREEV_M1_MTLS_LICENCE_PUBLIC_KEYS_FILE=$publicKeys",
-  "--", (Quote-CommandArgument $node), "--import", (Quote-CommandArgument $override), "dist\main.js"
+  "--", (Quote-CommandArgument $node), "--import", (Quote-CommandArgument $override), "dist\main.cjs"
 )
 $proofBinaryPath = $arguments -join " "
 

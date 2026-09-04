@@ -852,7 +852,7 @@ try {
     -DeniedPaths @((Join-Path $dataRoot "config\schema-owner-url"), (Join-Path $dataRoot "postgresql\PG_VERSION"))
   $postgresqlServiceAclProbe = Invoke-ServiceAclProbe -PayloadRoot $payloadRoot -ServiceName $postgresqlServiceName -LogName "postgresql" `
     -AllowedPath (Join-Path $dataRoot "postgresql\PG_VERSION") `
-    -DeniedPaths @((Join-Path $dataRoot "config\database-url"), (Join-Path $payloadRoot "local-api\dist\main.js"))
+    -DeniedPaths @((Join-Path $dataRoot "config\database-url"), (Join-Path $payloadRoot "local-api\dist\main.cjs"))
   Add-Check -Name "least-privilege-service-account-boundaries" -Passed (
     $apiServiceAclProbe.passed -and
     $apiServiceAclProbe.identity -eq "NT SERVICE\$apiServiceName" -and
@@ -972,7 +972,7 @@ try {
     (Assert-Witness -WitnessId $witnessId)
   ) -Details @{ before = $postgresqlWrapperBefore.ProcessId; oldTree = $postgresqlOldTree; oldTreeExited = $postgresqlOldTreeExited; after = $postgresqlWrapperAfter.ProcessId; newChild = $postgresqlChildAfterWrapperCrash.ProcessId }
 
-  $apiEntryPath = Join-Path $payloadRoot "local-api\dist\main.js"
+  $apiEntryPath = Join-Path $payloadRoot "local-api\dist\main.cjs"
   $apiEntryHash = (Get-FileHash -LiteralPath $apiEntryPath -Algorithm SHA256).Hash.ToLowerInvariant()
   Stop-Service -Name $apiServiceName
   Add-Content -LiteralPath $apiEntryPath -Value "`n// issue-34 intentional repair corruption" -Encoding UTF8

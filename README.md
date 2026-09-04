@@ -4,7 +4,7 @@ Breev is an offline-first pharmacy operating system for community and retail pha
 
 ## What you can test now
 
-The current application implements the first local identity and security slice:
+The current application implements the local core and the first catalog and purchasing slices:
 
 - Main device binding and API health checks
 - One-time pharmacy and owner setup
@@ -13,10 +13,14 @@ The current application implements the first local identity and security slice:
 - User creation, locking, and reactivation behind password step-up
 - Optional manual attendance with check-in and check-out
 - Signed offline licence verification with Trusted Breev Time, entitlement-based feature hiding, and an always-available Free Core
+- Server-authoritative Product catalog management
+- Supplier profiles with effective-dated default allowance percentages, basic terms, archive, and merge
+- Durable, versioned Purchase Draft headers with invoice-date allowance snapshots and confirmed discard
+- A non-blocking duplicate supplier-invoice warning; **Warn is only the working default while the client decision remains open**
 - Arabic RTL and English LTR layouts
 - Light and dark themes
 
-Inventory, purchasing, sales, accounting, patients, and cloud features are still planned. The files under [`docs/`](docs/README.md) define those requirements, but they are not testable screens yet.
+Purchase rows and posting, inventory operations, sales, accounting, patients, and cloud features are still planned. The files under [`docs/`](docs/README.md) define those requirements, but they are not testable screens yet.
 
 ## Run Breev
 

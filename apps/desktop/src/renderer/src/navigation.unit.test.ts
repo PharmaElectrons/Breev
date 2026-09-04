@@ -12,7 +12,7 @@ import {
 import { navigationMessages } from "./navigation-messages";
 
 const FREE_CORE_ACCESS = {
-  allowedPermissions: ["catalog.item.manage"],
+  allowedPermissions: ["catalog.item.manage", "purchases.drafts.manage"],
   capabilities: ["local-sales", "reports"],
 } as const;
 
@@ -58,7 +58,7 @@ describe("navigationModules", () => {
     expect(idsFor(FREE_CORE_ACCESS)).toContain("products");
   });
 
-  it("marks implemented surfaces available and unbuilt required surfaces unavailable", () => {
+  it("marks implemented workspaces available and unbuilt required surfaces unavailable", () => {
     const modules = navigationModules(FREE_CORE_ACCESS);
     const availability = new Map(
       modules.map((module) => [module.id, module.availability]),
@@ -67,7 +67,7 @@ describe("navigationModules", () => {
     expect(availability.get("administration")).toBe("available");
     expect(availability.get("dashboard")).toBe("available");
     expect(availability.get("sales")).toBe("unavailable");
-    expect(availability.get("purchases")).toBe("unavailable");
+    expect(availability.get("purchases")).toBe("available");
     expect(availability.get("reports")).toBe("unavailable");
   });
 
@@ -118,6 +118,7 @@ describe("moduleIdForHash", () => {
 describe("moduleImplemented", () => {
   it("does not consult permissions, because hiding is never enforcement", () => {
     expect(moduleImplemented("products")).toBe(true);
+    expect(moduleImplemented("purchases")).toBe(true);
     expect(moduleImplemented("administration")).toBe(true);
     expect(moduleImplemented("dashboard")).toBe(true);
     expect(moduleImplemented("sales")).toBe(false);

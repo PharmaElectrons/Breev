@@ -357,9 +357,9 @@ $windowsCiPassed = $windowsCi.schemaVersion -eq 1 -and $windowsCi.passed -and
   $windowsCi.sourceCommit -eq $SourceCommit -and
   $windowsCi.environmentPurpose -eq "windows-build-validation-only" -and
   -not $windowsCi.certificationEvidence -and
-  $windowsCi.repository -eq "PharmaElectrons/PharmaElectrons" -and
+  $windowsCi.repository -eq "PharmaElectrons/Breev" -and
   $windowsCi.workflow -eq "Verify" -and $windowsCi.workflowRunId -gt 0 -and
-  $windowsCi.workflowRunUrl -eq "https://github.com/PharmaElectrons/PharmaElectrons/actions/runs/$($windowsCi.workflowRunId)" -and
+  $windowsCi.workflowRunUrl -eq "https://github.com/PharmaElectrons/Breev/actions/runs/$($windowsCi.workflowRunId)" -and
   $windowsCi.runner.os -eq "Windows" -and $windowsCi.runner.architecture -eq "X64" -and
   (@($windowsCi.candidateVersions | Sort-Object) -join ',') -eq "0.0.0,0.0.1" -and
   $windowsCi.payloadLockSha256 -eq $packaging.payloadLockSha256 -and

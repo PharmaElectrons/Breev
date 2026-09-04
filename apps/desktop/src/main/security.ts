@@ -120,6 +120,15 @@ interface IpcGuardOptions<T> extends StartupConfigIpcGuardOptions {
  * trusted main frame, a bounded payload, a schema, and a rate. Sharing the
  * construction keeps a new channel from quietly skipping one of them.
  */
+export function normalizeFrameUrl(rawUrl: string): string {
+  const hashIndex = rawUrl.indexOf("#");
+  const withoutHash = hashIndex === -1 ? rawUrl : rawUrl.slice(0, hashIndex);
+  if (withoutHash === "breev://app" || withoutHash === "breev://app/") {
+    return "breev://app/index.html";
+  }
+  return withoutHash;
+}
+
 export function createIpcGuard<T>({
   maximumCalls,
   maximumPayloadBytes,
@@ -139,7 +148,7 @@ export function createIpcGuard<T>({
       frame === null ||
       !frame.isMainFrame ||
       frame.origin !== trustedOrigin ||
-      !isTrustedRendererUrl(frame.url, trustedUrl)
+      normalizeFrameUrl(frame.url) !== normalizeFrameUrl(trustedUrl)
     ) {
       throw new Error(`Breev denied ${name} IPC from this frame`);
     }
@@ -161,22 +170,6 @@ export function createIpcGuard<T>({
 
     return request;
   };
-}
-
-function isTrustedRendererUrl(actualUrl: string, trustedUrl: string): boolean {
-  if (actualUrl === trustedUrl) {
-    return true;
-  }
-  try {
-    const actual = new URL(actualUrl);
-    if (actual.hash.length === 0) {
-      return false;
-    }
-    actual.hash = "";
-    return actual.toString() === trustedUrl;
-  } catch {
-    return false;
-  }
 }
 
 export function createStartupConfigIpcGuard(
@@ -232,8 +225,7 @@ export function resolveAppAssetPath(
     url.port.length > 0 ||
     url.username.length > 0 ||
     url.password.length > 0 ||
-    url.search.length > 0 ||
-    url.hash.length > 0
+    url.search.length > 0
   ) {
     throw new Error("The Breev app asset request is not allowed");
   }

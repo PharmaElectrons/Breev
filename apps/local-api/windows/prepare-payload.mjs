@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   copyFile,
-  mkdtemp,
   mkdir,
   readdir,
   readFile,
@@ -16,6 +15,12 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  copyPostgresqlRuntime,
+  postgresqlRuntime,
+} from "./postgresql-runtime.mjs";
+import { buildApiRuntime } from "./build-api-runtime.mjs";
+import { recordPayloadFiles } from "../../../tooling/windows/payload-inventory.mjs";
 
 const scriptRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptRoot, "../../..");
@@ -51,7 +56,24 @@ for (const component of payloadLock.components) {
 
   const extractRoot = path.join(outputRoot, `.extract-${component.name}`);
   await mkdir(extractRoot, { recursive: true });
-  extractArchive(archivePath, extractRoot);
+  const extractionStarted = performance.now();
+  const members =
+    component.name === "postgresql"
+      ? postgresqlRuntime.files.map((name) => `pgsql/${name}`)
+      : component.name === "node"
+        ? [
+            `node-v${component.version}-win-x64/node.exe`,
+            `node-v${component.version}-win-x64/LICENSE`,
+          ]
+        : component.name === "shawl"
+          ? ["shawl.exe"]
+          : undefined;
+  if (members === undefined)
+    throw new Error("Unknown Windows payload component");
+  await extractArchive(archivePath, extractRoot, members);
+  process.stdout.write(
+    `${component.name} selective extraction: ${Math.round(performance.now() - extractionStarted)} ms\n`,
+  );
 
   if (component.name === "node") {
     const nodeRoot = path.join(outputRoot, "node");
@@ -63,15 +85,12 @@ for (const component of payloadLock.components) {
     }
   } else if (component.name === "postgresql") {
     const postgresqlRoot = path.join(outputRoot, "postgresql");
-    await rename(path.join(extractRoot, "pgsql"), postgresqlRoot);
-    await rm(path.join(postgresqlRoot, "pgAdmin 4"), {
-      recursive: true,
-      force: true,
-    });
-    await rm(path.join(postgresqlRoot, "StackBuilder"), {
-      recursive: true,
-      force: true,
-    });
+    const inventory = await copyPostgresqlRuntime(
+      path.join(extractRoot, "pgsql"),
+      postgresqlRoot,
+      component,
+    );
+    process.stdout.write(`PostgreSQL runtime: ${JSON.stringify(inventory)}\n`);
   } else if (component.name === "shawl") {
     const wrapperRoot = path.join(outputRoot, "service-wrapper");
     await mkdir(wrapperRoot, { recursive: true });
@@ -100,65 +119,8 @@ for (const component of payloadLock.components) {
 }
 
 const localApiRoot = path.join(outputRoot, "local-api");
-const deploymentRoot = await mkdtemp(
-  path.join(artifactsRoot, ".local-api-deploy-"),
-);
-try {
-  const stagedLocalApiRoot = path.join(deploymentRoot, "local-api");
-  const pnpmArguments = [
-    "--config.inject-workspace-packages=true",
-    "--config.node-linker=hoisted",
-    "--filter",
-    "@breev/local-api",
-    "deploy",
-    "--prod",
-    stagedLocalApiRoot,
-  ];
-  if (process.platform === "win32") {
-    run(process.env.ComSpec ?? "cmd.exe", [
-      "/d",
-      "/s",
-      "/c",
-      "pnpm.cmd",
-      ...pnpmArguments,
-    ]);
-  } else {
-    run("pnpm", pnpmArguments);
-  }
-  await rename(stagedLocalApiRoot, localApiRoot);
-} finally {
-  await rm(deploymentRoot, { recursive: true, force: true });
-}
-
-for (const developmentPath of [
-  ".env",
-  ".env.example",
-  ".turbo",
-  "windows",
-  "src",
-  "test",
-  "pnpm-lock.yaml",
-  "pnpm-workspace.yaml",
-  "tsconfig.json",
-  "tsconfig.build.json",
-  "vitest.config.ts",
-  "vitest.unit.config.ts",
-]) {
-  await rm(path.join(localApiRoot, developmentPath), {
-    recursive: true,
-    force: true,
-  });
-}
-for (const entry of await readdir(path.join(localApiRoot, "dist"))) {
-  if (
-    entry.includes(".unit.test.") ||
-    entry.endsWith(".d.ts") ||
-    entry.endsWith(".map") ||
-    entry.endsWith(".tsbuildinfo")
-  ) {
-    await rm(path.join(localApiRoot, "dist", entry), { force: true });
-  }
-}
+const apiInventory = await buildApiRuntime(localApiRoot);
+process.stdout.write(`Bundled API runtime: ${JSON.stringify(apiInventory)}\n`);
 
 await copyFile(
   path.join(scriptRoot, "bootstrap.sql"),
@@ -173,6 +135,19 @@ const payloadManifest = structuredClone(payloadLock);
 for (const component of payloadManifest.components) {
   component.sourceExecutableHashes = { ...component.executableHashes };
 }
+payloadManifest.files = await recordPayloadFiles(outputRoot);
+const payloadBytes = payloadManifest.files.reduce(
+  (sum, file) => sum + file.bytes,
+  0,
+);
+if (payloadBytes >= 180 * 1024 * 1024 || payloadManifest.files.length > 1200) {
+  throw new Error(
+    "The Windows service payload exceeds its reviewed 180 MiB / 1,200-file budget",
+  );
+}
+process.stdout.write(
+  `Payload inventory: ${payloadManifest.files.length} files, ${payloadBytes} bytes (excluding manifest)\n`,
+);
 await writeFile(
   path.join(outputRoot, "payload-manifest.json"),
   `${JSON.stringify(payloadManifest, null, 2)}\n`,
@@ -184,8 +159,8 @@ for (const requiredPath of [
   "postgresql/bin/postgres.exe",
   "postgresql/bin/initdb.exe",
   "service-wrapper/shawl.exe",
-  "local-api/dist/main.js",
-  "local-api/dist/migrate.js",
+  "local-api/dist/main.cjs",
+  "local-api/dist/migrate.cjs",
   "local-api/drizzle/meta/_journal.json",
 ]) {
   await assertFile(path.join(outputRoot, requiredPath));
@@ -257,12 +232,19 @@ async function sha256(filePath) {
   return digest.digest("hex");
 }
 
-function extractArchive(archivePath, destination) {
+async function extractArchive(archivePath, destination, members) {
   if (process.platform === "win32") {
-    run("tar.exe", ["-xf", archivePath, "-C", destination]);
+    // A list file avoids Windows' command-line length limit for timezone data.
+    const listPath = path.join(destination, ".members");
+    await writeFile(listPath, `${members.join("\n")}\n`, "utf8");
+    try {
+      run("tar.exe", ["-xf", archivePath, "-C", destination, "-T", listPath]);
+    } finally {
+      await rm(listPath, { force: true });
+    }
     return;
   }
-  run("unzip", ["-q", archivePath, "-d", destination]);
+  run("unzip", ["-q", archivePath, ...members, "-d", destination]);
 }
 
 function run(command, arguments_) {

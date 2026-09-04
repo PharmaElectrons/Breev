@@ -150,6 +150,10 @@ jobs:
             -RunId $runId `
             -SnapshotId "github-${{ github.run_id }}-${{ github.run_attempt }}"
 
+      - name: Verify isolated bundled API and pruned PostgreSQL runtime
+        shell: powershell
+        run: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts windows/api-runtime.integration.test.mjs
+
       - name: Record Windows CI evidence
         shell: powershell
         run: |

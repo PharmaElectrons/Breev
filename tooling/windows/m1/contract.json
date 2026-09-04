@@ -43,7 +43,7 @@
     }
   },
   "damage": {
-    "payloadRelativeFile": "local-api\\dist\\main.js",
+    "payloadRelativeFile": "local-api\\dist\\main.cjs",
     "damagedSuffix": ".m1-damaged",
     "expectedShellState": "main-unavailable",
     "expectedShellTitle": "Main unavailable"
