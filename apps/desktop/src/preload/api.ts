@@ -1,5 +1,6 @@
 import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
+  DESKTOP_COPY_IDENTIFIER_CHANNEL,
   DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_OPEN_SUPPORT_CHANNEL,
@@ -9,6 +10,8 @@ import {
   DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
+  desktopCopyIdentifierRequestSchema,
+  desktopCopyIdentifierResponseSchema,
   desktopExportDiagnosticsRequestSchema,
   desktopExportDiagnosticsResponseSchema,
   desktopManualEndpointRequestSchema,
@@ -41,6 +44,15 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         await invoke(
           DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
           desktopCancelTerminalPairingRequestSchema.parse({}),
+        ),
+      );
+    },
+    copyIdentifier: async (...arguments_: unknown[]) => {
+      assertSingleArgument("copyIdentifier", arguments_);
+      return desktopCopyIdentifierResponseSchema.parse(
+        await invoke(
+          DESKTOP_COPY_IDENTIFIER_CHANNEL,
+          desktopCopyIdentifierRequestSchema.parse(arguments_[0]),
         ),
       );
     },

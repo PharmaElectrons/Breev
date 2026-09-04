@@ -39,7 +39,7 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   {
     hash: "#/dashboard",
     id: "dashboard",
-    implemented: false,
+    implemented: true,
     requiredPermission: null,
   },
   {

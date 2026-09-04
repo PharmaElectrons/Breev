@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const DESKTOP_API_GLOBAL = "breevDesktop" as const;
 
+export const DESKTOP_COPY_IDENTIFIER_CHANNEL =
+  "breev:desktop:copy-identifier" as const;
 export const DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL =
   "breev:desktop:cancel-terminal-pairing" as const;
 export const DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL =
@@ -27,12 +29,22 @@ export const desktopDeviceRoleSchema = z.enum(DESKTOP_DEVICE_ROLES);
 
 export const desktopStartupConfigRequestSchema = z.strictObject({});
 
+export const desktopCopyIdentifierRequestSchema = z.strictObject({
+  identifier: z.uuid(),
+});
+
+export const desktopCopyIdentifierResponseSchema = z.strictObject({
+  copied: z.literal(true),
+});
+
 /**
  * A terminal reaches the Main installation through a loopback bridge that
  * Electron main owns, so the renderer keeps one loopback HTTP origin in both
  * roles and the content security policy never has to admit a LAN origin.
  */
 export const desktopStartupConfigResponseSchema = z.strictObject({
+  deviceId: z.uuidv7().optional(),
+  installationId: z.uuid().optional(),
   localApiOrigin: z.string().max(128).refine(isLocalApiOrigin),
   role: desktopDeviceRoleSchema,
 });
@@ -251,6 +263,12 @@ export const desktopReportRendererIncidentResponseSchema = z.strictObject({
 });
 
 export type DesktopDeviceRole = z.infer<typeof desktopDeviceRoleSchema>;
+export type DesktopCopyIdentifierRequest = z.infer<
+  typeof desktopCopyIdentifierRequestSchema
+>;
+export type DesktopCopyIdentifierResponse = z.infer<
+  typeof desktopCopyIdentifierResponseSchema
+>;
 export type DesktopStartupConfigRequest = z.infer<
   typeof desktopStartupConfigRequestSchema
 >;
@@ -312,6 +330,9 @@ export type DesktopReportRendererIncidentResponse = z.infer<
 
 export interface BreevDesktopApi {
   cancelTerminalPairing(): Promise<TerminalPairingState>;
+  copyIdentifier(
+    request: DesktopCopyIdentifierRequest,
+  ): Promise<DesktopCopyIdentifierResponse>;
   exportDiagnostics(
     request: DesktopExportDiagnosticsRequest,
   ): Promise<DesktopExportDiagnosticsResponse>;

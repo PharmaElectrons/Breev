@@ -21,3 +21,4 @@ test-results
 !.env.*.example
 .terminal-state/
 skills-lock.json
+notes.md

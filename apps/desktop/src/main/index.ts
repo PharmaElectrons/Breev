@@ -1,5 +1,6 @@
 import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
+  DESKTOP_COPY_IDENTIFIER_CHANNEL,
   DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_OPEN_SUPPORT_CHANNEL,
@@ -9,6 +10,7 @@ import {
   DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
+  desktopCopyIdentifierResponseSchema,
   desktopExportDiagnosticsRequestSchema,
   desktopExportDiagnosticsResponseSchema,
   desktopManualEndpointRequestSchema,
@@ -27,6 +29,7 @@ import {
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   net,
@@ -64,9 +67,12 @@ import {
   APP_CONTENT_SECURITY_POLICY,
   addMainDeviceRequestHeaders,
   addTerminalBridgeRequestHeaders,
+  createDesktopStartupConfig,
   createHardenedWindowOptions,
+  createIdentifierCopyIpcGuard,
   createIpcGuard,
   createStartupConfigIpcGuard,
+  readInstallationId,
   readMainDeviceBinding,
   resolveAppAssetPath,
   resolveRendererEntry,
@@ -146,10 +152,37 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     createHardenedWindowOptions(preloadPath, app.isPackaged),
   );
   const window = mainWindow;
+  const mainBinding =
+    role === "main"
+      ? readMainDeviceBinding(process.env, {
+          allowDefaultFile: app.isPackaged,
+        })
+      : undefined;
 
   registerStartupConfigHandler(
     window,
-    { localApiOrigin, role },
+    () =>
+      createDesktopStartupConfig({
+        identity:
+          role === "main"
+            ? {
+                deviceId: mainBinding?.deviceId,
+                installationId: readInstallationId(process.env, {
+                  allowDefaultFile: app.isPackaged,
+                }),
+              }
+            : {
+                deviceId: terminalRuntime?.deviceId,
+                installationId: terminalRuntime?.installationId,
+              },
+        localApiOrigin,
+        role,
+      }),
+    rendererEntry.origin,
+    rendererEntry.url,
+  );
+  registerIdentifierCopyHandler(
+    window,
     rendererEntry.origin,
     rendererEntry.url,
   );
@@ -180,7 +213,7 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     );
     registerTerminalBridgeHeaderInjection(window, terminalRuntime);
   } else {
-    registerMainDeviceHeaderInjection(window, localApiOrigin);
+    registerMainDeviceHeaderInjection(window, localApiOrigin, mainBinding);
   }
   hardenWebContents(window);
   window.webContents.on("render-process-gone", (_event, details) => {
@@ -198,6 +231,7 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     if (mainWindow === window) {
       mainWindow = undefined;
       ipcMain.removeHandler(DESKTOP_STARTUP_CONFIG_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_COPY_IDENTIFIER_CHANNEL);
       ipcMain.removeHandler(DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL);
       ipcMain.removeHandler(DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL);
       ipcMain.removeHandler(DESKTOP_OPEN_SUPPORT_CHANNEL);
@@ -209,6 +243,26 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
   });
 
   void window.loadURL(rendererEntry.url);
+}
+
+function registerIdentifierCopyHandler(
+  window: BrowserWindow,
+  trustedOrigin: string,
+  trustedUrl: string,
+): void {
+  ipcMain.removeHandler(DESKTOP_COPY_IDENTIFIER_CHANNEL);
+  const guard = createIdentifierCopyIpcGuard({
+    now: Date.now,
+    trustedOrigin,
+    trustedSenderId: window.webContents.id,
+    trustedUrl,
+  });
+
+  ipcMain.handle(DESKTOP_COPY_IDENTIFIER_CHANNEL, (event, payload: unknown) => {
+    const request = guard(toIpcInvocation(event), payload);
+    clipboard.writeText(request.identifier);
+    return desktopCopyIdentifierResponseSchema.parse({ copied: true });
+  });
 }
 
 function registerCentralDiagnosticHandler(
@@ -435,10 +489,8 @@ function registerRendererIncidentHandler(
 function registerMainDeviceHeaderInjection(
   window: BrowserWindow,
   localApiOrigin: string,
+  binding: ReturnType<typeof readMainDeviceBinding>,
 ): void {
-  const binding = readMainDeviceBinding(process.env, {
-    allowDefaultFile: app.isPackaged,
-  });
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: [`${localApiOrigin}/*`] },
     (details, callback) => {
@@ -476,7 +528,7 @@ function registerTerminalBridgeHeaderInjection(
 
 function registerStartupConfigHandler(
   window: BrowserWindow,
-  config: { readonly localApiOrigin: string; readonly role: DesktopDeviceRole },
+  readConfig: () => ReturnType<typeof createDesktopStartupConfig>,
   trustedOrigin: string,
   trustedUrl: string,
 ): void {
@@ -490,7 +542,7 @@ function registerStartupConfigHandler(
 
   ipcMain.handle(DESKTOP_STARTUP_CONFIG_CHANNEL, (event, payload: unknown) => {
     guard(toIpcInvocation(event), payload);
-    return desktopStartupConfigResponseSchema.parse(config);
+    return desktopStartupConfigResponseSchema.parse(readConfig());
   });
 }
 

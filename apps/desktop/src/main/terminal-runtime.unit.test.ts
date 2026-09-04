@@ -123,6 +123,8 @@ describe("terminal runtime", () => {
     const instance = await runtime(scratchDirectory());
 
     expect(instance.bridgeOrigin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/u);
+    expect(instance.deviceId).toBeUndefined();
+    expect(instance.installationId).toBeUndefined();
     expect(terminalPairingStateResponseSchema.parse(instance.state())).toEqual({
       candidates: [candidate],
       stage: "awaiting-invitation",
@@ -209,6 +211,8 @@ describe("terminal runtime", () => {
       installationId,
       stage: "paired",
     });
+    expect(instance.deviceId).toBe(deviceId);
+    expect(instance.installationId).toBe(installationId);
     expect(instance.submitInvitation("breev-pair://1/x")).toEqual(state);
     expect(instance.cancelPairing()).toEqual(state);
   });

@@ -134,6 +134,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
       nodeRequire: "undefined",
       preloadKeys: [
         "cancelTerminalPairing",
+        "copyIdentifier",
         "exportDiagnostics",
         "getStartupConfig",
         "getTerminalPairingState",
