@@ -32,6 +32,7 @@ import { Pool } from "pg";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
 import {
@@ -84,12 +85,18 @@ test.describe.serial("bilingual desktop shell", () => {
   let apiPort: number;
   let credentials: MainDeviceCredentials;
   let databaseRoles: SeparatedDatabaseRoles;
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
 
   test.beforeAll(async () => {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -1981,6 +1988,7 @@ async function installDesktopFake(
         openSupport: async () => ({ status: "unavailable" as const }),
         reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => pairing,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => pairing,
         getStartupConfig: async () => {
           if (configDelayMs > 0) {

@@ -396,6 +396,7 @@ async function installDesktopFake(
         openSupport: async () => ({ status: "unavailable" as const }),
         reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => pairing,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => pairing,
       });
       Object.defineProperty(globalThis, "breevDesktop", { value: desktopApi });

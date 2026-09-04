@@ -1,6 +1,9 @@
 import { FuseState, FuseV1Options, getCurrentFuseWire } from "@electron/fuses";
 import { expect, test } from "@playwright/test";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  PostgreSqlContainer,
+  type StartedPostgreSqlContainer,
+} from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
@@ -15,6 +18,7 @@ import { chromium, type Browser } from "playwright";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "./database-roles.js";
 import { evidencePath } from "./browser/evidence-path.js";
@@ -33,8 +37,7 @@ interface MainDeviceCredentials {
 }
 
 test("the packaged desktop enforces its outer security and health seams", async () => {
-  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-  const databaseRoles = await createSeparatedDatabaseRoles(postgres);
+  const { databaseRoles, postgres } = await prepareDatabase();
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -131,9 +134,13 @@ test("the packaged desktop enforces its outer security and health seams", async 
       nodeRequire: "undefined",
       preloadKeys: [
         "cancelTerminalPairing",
+        "exportDiagnostics",
         "getStartupConfig",
         "getTerminalPairingState",
+        "openSupport",
+        "reportRendererIncident",
         "submitManualEndpoint",
+        "submitDiagnostics",
         "submitPairingInvitation",
       ],
       rawIpc: "undefined",
@@ -179,14 +186,13 @@ test("the packaged desktop enforces its outer security and health seams", async 
     await stopProcess(desktop);
     await closeServer(proxy?.server);
     await stopProcess(api);
-    await postgres.stop().catch(() => undefined);
+    await postgres?.stop().catch(() => undefined);
     await rm(userDataDirectory, { force: true, recursive: true });
   }
 });
 
 test("the packaged desktop commits through its bound Main session offline and after API restart", async () => {
-  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-  const databaseRoles = await createSeparatedDatabaseRoles(postgres);
+  const { databaseRoles, postgres } = await prepareDatabase();
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -319,10 +325,28 @@ test("the packaged desktop commits through its bound Main session offline and af
     await browser?.close();
     await stopProcess(desktop);
     await stopProcess(api);
-    await postgres.stop().catch(() => undefined);
+    await postgres?.stop().catch(() => undefined);
     await rm(userDataDirectory, { force: true, recursive: true });
   }
 });
+
+async function prepareDatabase(): Promise<{
+  readonly databaseRoles: SeparatedDatabaseRoles;
+  readonly postgres?: StartedPostgreSqlContainer;
+}> {
+  const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+  if (administratorUrl !== undefined) {
+    return {
+      databaseRoles:
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl),
+    };
+  }
+  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+  return {
+    databaseRoles: await createSeparatedDatabaseRoles(postgres),
+    postgres,
+  };
+}
 
 async function connectToPackagedDesktop(
   userDataDirectory: string,

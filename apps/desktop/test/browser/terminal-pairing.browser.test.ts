@@ -477,6 +477,7 @@ async function openTerminal(
           current = joining;
           return current;
         },
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async (
           request: DesktopPairingInvitationRequest,
         ) => {

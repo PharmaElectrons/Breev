@@ -24,6 +24,7 @@ describe("desktop preload API", () => {
       "openSupport",
       "reportRendererIncident",
       "submitManualEndpoint",
+      "submitDiagnostics",
       "submitPairingInvitation",
     ]);
     expect(Object.isFrozen(api)).toBe(true);
@@ -182,6 +183,26 @@ describe("desktop preload API", () => {
         locale: "en",
         url: "https://attacker.example",
       } as never),
+    ).rejects.toThrow();
+  });
+
+  it("submits only a safe incident reference to the central collector", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      reportId: "0123456789abcdef0123456789abcdef",
+      status: "submitted",
+    });
+    const api = createBreevDesktopApi(invoke);
+    await expect(
+      api.submitDiagnostics({ incidentCode: "VIEW-0123ABCD" }),
+    ).resolves.toEqual({
+      reportId: "0123456789abcdef0123456789abcdef",
+      status: "submitted",
+    });
+    expect(invoke).toHaveBeenCalledWith("breev:desktop:submit-diagnostics", {
+      incidentCode: "VIEW-0123ABCD",
+    });
+    await expect(
+      api.submitDiagnostics({ logs: ["patient-name-canary"] } as never),
     ).rejects.toThrow();
   });
 

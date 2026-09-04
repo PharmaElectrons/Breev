@@ -16,6 +16,8 @@ export const DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL =
   "breev:desktop:report-renderer-incident" as const;
 export const DESKTOP_STARTUP_CONFIG_CHANNEL =
   "breev:desktop:get-startup-config" as const;
+export const DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL =
+  "breev:desktop:submit-diagnostics" as const;
 export const DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL =
   "breev:desktop:get-terminal-pairing-state" as const;
 
@@ -207,6 +209,28 @@ export const desktopOpenSupportResponseSchema = z.discriminatedUnion("status", [
   }),
 ]);
 
+export const desktopSubmitDiagnosticsRequestSchema = z.strictObject({
+  incidentCode: z
+    .string()
+    .regex(/^(?:APP|ASYNC|BOOT|MAIN|VIEW)-[0-9A-F]{8}$/u)
+    .optional(),
+});
+
+export const desktopSubmitDiagnosticsResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.strictObject({
+      reportId: z.string().regex(/^[0-9a-f]{32}$/u),
+      status: z.literal("submitted"),
+    }),
+    z.strictObject({ status: z.literal("unavailable") }),
+    z.strictObject({
+      code: z.literal("submit-failed"),
+      status: z.literal("failed"),
+    }),
+  ],
+);
+
 export const RENDERER_INCIDENT_SOURCES = [
   "application",
   "bootstrap",
@@ -270,6 +294,12 @@ export type DesktopOpenSupportRequest = z.infer<
 export type DesktopOpenSupportResponse = z.infer<
   typeof desktopOpenSupportResponseSchema
 >;
+export type DesktopSubmitDiagnosticsRequest = z.infer<
+  typeof desktopSubmitDiagnosticsRequestSchema
+>;
+export type DesktopSubmitDiagnosticsResponse = z.infer<
+  typeof desktopSubmitDiagnosticsResponseSchema
+>;
 export type RendererIncidentSource = z.infer<
   typeof rendererIncidentSourceSchema
 >;
@@ -296,6 +326,9 @@ export interface BreevDesktopApi {
   submitManualEndpoint(
     request: DesktopManualEndpointRequest,
   ): Promise<TerminalPairingState>;
+  submitDiagnostics(
+    request: DesktopSubmitDiagnosticsRequest,
+  ): Promise<DesktopSubmitDiagnosticsResponse>;
   submitPairingInvitation(
     request: DesktopPairingInvitationRequest,
   ): Promise<TerminalPairingState>;

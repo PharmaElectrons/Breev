@@ -48,16 +48,18 @@ export interface DiagnosticBundleInput {
   readonly logDirectory: string;
   readonly nodeVersion: string;
   readonly pairingStage: TerminalPairingStage | "not-applicable";
+  readonly programDataDirectory?: string;
   readonly role: DesktopDeviceRole;
 }
 
 export async function createDiagnosticBundle(
   input: DiagnosticBundleInput,
 ): Promise<unknown> {
-  const [localApi, service, logs] = await Promise.all([
+  const [localApi, service, logs, installer] = await Promise.all([
     inspectLocalApi(input.localApiOrigin),
     inspectWindowsService(input.role),
     readRecentDiagnosticLogs(input.logDirectory),
+    readInstallerLifecycle(input.programDataDirectory),
   ]);
   const createdAt = new Date().toISOString();
   const bundle = redactDiagnosticValue({
@@ -73,6 +75,7 @@ export async function createDiagnosticBundle(
     ...(input.incidentCode === undefined
       ? {}
       : { incident: { code: input.incidentCode } }),
+    installer,
     logs,
     schemaVersion: 1,
     service,
@@ -84,6 +87,72 @@ export async function createDiagnosticBundle(
     throw new Error("Diagnostic bundle redaction failed closed");
   }
   return bundle;
+}
+
+export async function readInstallerLifecycle(
+  programDataDirectory: string | undefined,
+): Promise<unknown> {
+  if (programDataDirectory === undefined) {
+    return { state: "not-applicable" };
+  }
+  try {
+    const content = await readFile(
+      path.resolve(programDataDirectory, "Breev", "state", "lifecycle.json"),
+      "utf8",
+    );
+    if (Buffer.byteLength(content) > 64 * 1024) return { state: "invalid" };
+    const parsed: unknown = JSON.parse(content);
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      return { state: "invalid" };
+    }
+    const source = parsed as Record<string, unknown>;
+    const result: Record<string, unknown> = { state: "recorded" };
+    if (
+      ["Install", "Repair", "Uninstall", "DestructiveUninstall"].includes(
+        String(source.action),
+      )
+    ) {
+      result.action = source.action;
+    }
+    if (
+      [
+        "healthy",
+        "failed-data-preserved",
+        "data-preserved",
+        "data-destroyed",
+      ].includes(String(source.status))
+    ) {
+      result.status = source.status;
+    }
+    if (
+      [
+        "None",
+        "AfterDataPrepared",
+        "AfterPostgreSqlService",
+        "AfterApiService",
+        "AfterFirewallConfigured",
+        "BeforeReadiness",
+        "",
+      ].includes(String(source.failurePoint))
+    ) {
+      result.failurePoint = source.failurePoint;
+    }
+    if (typeof source.schemaVersion === "number")
+      result.schemaVersion = source.schemaVersion;
+    if (
+      typeof source.completedAtUtc === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/u.test(source.completedAtUtc)
+    ) {
+      result.completedAtUtc = source.completedAtUtc.slice(0, 32);
+    }
+    return result;
+  } catch {
+    return { state: "unavailable" };
+  }
 }
 
 export async function writeDiagnosticBundle(

@@ -6,6 +6,7 @@ import {
   DESKTOP_PAIRING_INVITATION_CHANNEL,
   DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
+  DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
   desktopExportDiagnosticsRequestSchema,
@@ -18,6 +19,8 @@ import {
   desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigRequestSchema,
   desktopStartupConfigResponseSchema,
+  desktopSubmitDiagnosticsRequestSchema,
+  desktopSubmitDiagnosticsResponseSchema,
   desktopTerminalPairingStateRequestSchema,
   terminalPairingStateResponseSchema,
   type BreevDesktopApi,
@@ -92,6 +95,15 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         await invoke(
           DESKTOP_MANUAL_ENDPOINT_CHANNEL,
           desktopManualEndpointRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
+    submitDiagnostics: async (...arguments_: unknown[]) => {
+      assertSingleArgument("submitDiagnostics", arguments_);
+      return desktopSubmitDiagnosticsResponseSchema.parse(
+        await invoke(
+          DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
+          desktopSubmitDiagnosticsRequestSchema.parse(arguments_[0]),
         ),
       );
     },

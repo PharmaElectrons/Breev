@@ -6,6 +6,7 @@ import {
   DESKTOP_PAIRING_INVITATION_CHANNEL,
   DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
+  DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
   desktopExportDiagnosticsRequestSchema,
@@ -17,6 +18,8 @@ import {
   desktopReportRendererIncidentRequestSchema,
   desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigResponseSchema,
+  desktopSubmitDiagnosticsRequestSchema,
+  desktopSubmitDiagnosticsResponseSchema,
   desktopTerminalPairingStateRequestSchema,
   terminalPairingStateResponseSchema,
   type DesktopDeviceRole,
@@ -52,6 +55,10 @@ import {
   createSupportDestination,
   readSupportConfiguration,
 } from "./support.js";
+import {
+  readCentralDiagnosticConfiguration,
+  submitCentralDiagnostic,
+} from "./central-diagnostics.js";
 
 import {
   APP_CONTENT_SECURITY_POLICY,
@@ -88,8 +95,12 @@ const diagnosticLogDirectory = resolveDesktopLogDirectory(
   process.platform,
   app.getPath("userData"),
 );
+const programDataDirectory = process.env.ProgramData ?? process.env.PROGRAMDATA;
 const diagnostics = new DesktopDiagnostics(diagnosticLogDirectory);
 const supportConfiguration = readSupportConfiguration(process.env);
+const centralDiagnosticConfiguration = readCentralDiagnosticConfiguration(
+  process.env,
+);
 
 process.on("uncaughtExceptionMonitor", (error) => {
   diagnostics.fatal(incidentCode(error), "uncaughtException");
@@ -154,6 +165,12 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     rendererEntry.url,
   );
   registerSupportHandler(window, rendererEntry.origin, rendererEntry.url);
+  registerCentralDiagnosticHandler(
+    window,
+    { localApiOrigin, role },
+    rendererEntry.origin,
+    rendererEntry.url,
+  );
   if (role === "terminal" && terminalRuntime !== undefined) {
     registerTerminalPairingHandlers(
       window,
@@ -184,6 +201,7 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
       ipcMain.removeHandler(DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL);
       ipcMain.removeHandler(DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL);
       ipcMain.removeHandler(DESKTOP_OPEN_SUPPORT_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL);
       for (const channel of TERMINAL_CHANNELS) {
         ipcMain.removeHandler(channel);
       }
@@ -191,6 +209,77 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
   });
 
   void window.loadURL(rendererEntry.url);
+}
+
+function registerCentralDiagnosticHandler(
+  window: BrowserWindow,
+  config: { readonly localApiOrigin: string; readonly role: DesktopDeviceRole },
+  trustedOrigin: string,
+  trustedUrl: string,
+): void {
+  ipcMain.removeHandler(DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL);
+  const guard = createIpcGuard({
+    maximumCalls: 1,
+    maximumPayloadBytes: 64,
+    name: "central diagnostic submission",
+    now: Date.now,
+    parse: (payload) => desktopSubmitDiagnosticsRequestSchema.parse(payload),
+    trustedOrigin,
+    trustedSenderId: window.webContents.id,
+    trustedUrl,
+  });
+  ipcMain.handle(
+    DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
+    async (event, payload: unknown) => {
+      const request = guard(toIpcInvocation(event), payload);
+      if (centralDiagnosticConfiguration === undefined) {
+        return desktopSubmitDiagnosticsResponseSchema.parse({
+          status: "unavailable",
+        });
+      }
+      const pairingStage =
+        config.role === "terminal"
+          ? (terminalRuntime?.state().stage ?? "failed")
+          : "not-applicable";
+      try {
+        const bundle = await createDiagnosticBundle({
+          appVersion: app.getVersion(),
+          electronVersion: process.versions.electron ?? "unknown",
+          ...(request.incidentCode === undefined
+            ? {}
+            : { incidentCode: request.incidentCode }),
+          localApiOrigin: config.localApiOrigin,
+          logDirectory: diagnosticLogDirectory,
+          nodeVersion: process.versions.node,
+          pairingStage,
+          ...(programDataDirectory === undefined
+            ? {}
+            : { programDataDirectory }),
+          role: config.role,
+        });
+        const result = await submitCentralDiagnostic(
+          centralDiagnosticConfiguration,
+          {
+            appVersion: app.getVersion(),
+            bundle,
+            ...(request.incidentCode === undefined
+              ? {}
+              : { incidentCode: request.incidentCode }),
+          },
+        );
+        return desktopSubmitDiagnosticsResponseSchema.parse(
+          result.status === "submitted"
+            ? result
+            : { code: "submit-failed", status: "failed" },
+        );
+      } catch {
+        return desktopSubmitDiagnosticsResponseSchema.parse({
+          code: "submit-failed",
+          status: "failed",
+        });
+      }
+    },
+  );
 }
 
 function registerSupportHandler(
@@ -291,6 +380,9 @@ function registerDiagnosticExportHandler(
           logDirectory: diagnosticLogDirectory,
           nodeVersion: process.versions.node,
           pairingStage,
+          ...(programDataDirectory === undefined
+            ? {}
+            : { programDataDirectory }),
           role: config.role,
         });
         await writeDiagnosticBundle(selection.filePath, bundle);

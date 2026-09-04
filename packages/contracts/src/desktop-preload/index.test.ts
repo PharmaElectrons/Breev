@@ -12,6 +12,8 @@ import {
   desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigRequestSchema,
   desktopStartupConfigResponseSchema,
+  desktopSubmitDiagnosticsRequestSchema,
+  desktopSubmitDiagnosticsResponseSchema,
   desktopTerminalPairingStateRequestSchema,
   terminalPairingStateResponseSchema,
 } from "./index.js";
@@ -226,6 +228,30 @@ describe("desktop preload contract", () => {
       desktopOpenSupportRequestSchema.parse({
         locale: "en",
         url: "https://attacker.example",
+      }),
+    ).toThrow();
+  });
+
+  it("keeps central submission manual and free of arbitrary payloads", () => {
+    expect(desktopSubmitDiagnosticsRequestSchema.parse({})).toEqual({});
+    expect(
+      desktopSubmitDiagnosticsResponseSchema.parse({
+        reportId: "0123456789abcdef0123456789abcdef",
+        status: "submitted",
+      }),
+    ).toEqual({
+      reportId: "0123456789abcdef0123456789abcdef",
+      status: "submitted",
+    });
+    expect(() =>
+      desktopSubmitDiagnosticsResponseSchema.parse({
+        reportId: "unsafe-reference",
+        status: "submitted",
+      }),
+    ).toThrow();
+    expect(() =>
+      desktopSubmitDiagnosticsRequestSchema.parse({
+        bundle: { patientName: "patient-name-canary" },
       }),
     ).toThrow();
   });

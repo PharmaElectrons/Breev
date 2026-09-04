@@ -2,6 +2,7 @@ import { Component, type ReactNode } from "react";
 import type {
   DesktopExportDiagnosticsResponse,
   DesktopOpenSupportResponse,
+  DesktopSubmitDiagnosticsResponse,
 } from "@breev/contracts/desktop-preload";
 
 import { messages, type CrashMessage } from "./messages";
@@ -32,6 +33,9 @@ interface DiagnosticErrorBoundaryProps {
     incidentCode: string,
   ) => Promise<DesktopExportDiagnosticsResponse>;
   readonly onIncident?: (summary: IncidentSummary) => void;
+  readonly onSubmitDiagnostics?: (
+    incidentCode: string,
+  ) => Promise<DesktopSubmitDiagnosticsResponse>;
   readonly resetKey?: string;
   readonly secondaryCopy?: CrashMessage;
 }
@@ -43,6 +47,9 @@ interface DiagnosticErrorBoundaryState {
   readonly exportState: "cancelled" | "failed" | "idle" | "saved" | "saving";
   readonly incidentCode: string | null;
   readonly retryCount: number;
+  readonly submissionReportId: string | null;
+  readonly submissionState:
+    "failed" | "idle" | "submitted" | "submitting" | "unavailable";
 }
 
 export class DiagnosticErrorBoundary extends Component<
@@ -55,6 +62,8 @@ export class DiagnosticErrorBoundary extends Component<
     exportState: "idle",
     incidentCode: null,
     retryCount: 0,
+    submissionReportId: null,
+    submissionState: "idle",
   };
 
   private heading: HTMLHeadingElement | null = null;
@@ -87,6 +96,8 @@ export class DiagnosticErrorBoundary extends Component<
         exportState: "idle",
         incidentCode: null,
         retryCount: 0,
+        submissionReportId: null,
+        submissionState: "idle",
       });
       return;
     }
@@ -127,6 +138,11 @@ export class DiagnosticErrorBoundary extends Component<
           this.heading = heading;
         }}
         onReload={() => window.location.reload()}
+        onSubmitDiagnostics={
+          this.props.onSubmitDiagnostics === undefined
+            ? undefined
+            : () => void this.submitDiagnostics()
+        }
         onRetry={
           retryCount === 0
             ? () =>
@@ -136,10 +152,14 @@ export class DiagnosticErrorBoundary extends Component<
                   exportState: "idle",
                   incidentCode: null,
                   retryCount: 1,
+                  submissionReportId: null,
+                  submissionState: "idle",
                 })
             : undefined
         }
         secondaryCopy={this.props.secondaryCopy}
+        submissionReportId={this.state.submissionReportId}
+        submissionState={this.state.submissionState}
       />
     );
   }
@@ -150,7 +170,13 @@ export class DiagnosticErrorBoundary extends Component<
       return;
     }
     try {
-      await navigator.clipboard.writeText("Breev " + incidentCode);
+      const reportReference =
+        this.state.submissionReportId === null
+          ? ""
+          : `\n${this.props.copy.reportReference}: ${this.state.submissionReportId}`;
+      await navigator.clipboard.writeText(
+        "Breev " + incidentCode + reportReference,
+      );
       this.setState({ copiedState: "succeeded" });
     } catch {
       this.setState({ copiedState: "failed" });
@@ -184,6 +210,24 @@ export class DiagnosticErrorBoundary extends Component<
       this.setState({ contactState: "failed" });
     }
   }
+
+  private async submitDiagnostics(): Promise<void> {
+    const incidentCode = this.state.incidentCode;
+    if (incidentCode === null || this.props.onSubmitDiagnostics === undefined) {
+      return;
+    }
+    this.setState({ submissionReportId: null, submissionState: "submitting" });
+    try {
+      const result = await this.props.onSubmitDiagnostics(incidentCode);
+      this.setState({
+        submissionReportId:
+          result.status === "submitted" ? result.reportId : null,
+        submissionState: result.status,
+      });
+    } catch {
+      this.setState({ submissionState: "failed" });
+    }
+  }
 }
 
 async function exportDiagnostics(
@@ -199,6 +243,12 @@ async function contactSupport(
   return window.breevDesktop.openSupport({ incidentCode, locale });
 }
 
+async function submitDiagnostics(
+  incidentCode: string,
+): Promise<DesktopSubmitDiagnosticsResponse> {
+  return window.breevDesktop.submitDiagnostics({ incidentCode });
+}
+
 export function BootstrapErrorBoundary({
   children,
 }: {
@@ -211,6 +261,7 @@ export function BootstrapErrorBoundary({
       onContactSupport={(incidentCode) => contactSupport(incidentCode, "en")}
       onExportDiagnostics={exportDiagnostics}
       onIncident={reportRendererIncident}
+      onSubmitDiagnostics={submitDiagnostics}
       secondaryCopy={messages.ar.crash}
     >
       {children}
@@ -231,6 +282,7 @@ export function LocalizedAppErrorBoundary({
       onContactSupport={(incidentCode) => contactSupport(incidentCode, locale)}
       onExportDiagnostics={exportDiagnostics}
       onIncident={reportRendererIncident}
+      onSubmitDiagnostics={submitDiagnostics}
       resetKey={locale}
     >
       {children}
@@ -253,6 +305,7 @@ export function WorkspaceErrorBoundary({
       onContactSupport={(incidentCode) => contactSupport(incidentCode, locale)}
       onExportDiagnostics={exportDiagnostics}
       onIncident={reportRendererIncident}
+      onSubmitDiagnostics={submitDiagnostics}
       resetKey={resetKey}
     >
       {children}
@@ -297,7 +350,10 @@ function CrashFallback({
   onHeading,
   onReload,
   onRetry,
+  onSubmitDiagnostics,
   secondaryCopy,
+  submissionReportId,
+  submissionState,
 }: {
   readonly copiedState: DiagnosticErrorBoundaryState["copiedState"];
   readonly contactState: DiagnosticErrorBoundaryState["contactState"];
@@ -311,7 +367,10 @@ function CrashFallback({
   readonly onHeading: (heading: HTMLHeadingElement | null) => void;
   readonly onReload: () => void;
   readonly onRetry: (() => void) | undefined;
+  readonly onSubmitDiagnostics: (() => void) | undefined;
   readonly secondaryCopy: CrashMessage | undefined;
+  readonly submissionReportId: string | null;
+  readonly submissionState: DiagnosticErrorBoundaryState["submissionState"];
 }): React.JSX.Element {
   return (
     <section
@@ -371,6 +430,16 @@ function CrashFallback({
             {copy.contactSupport}
           </button>
         )}
+        {onSubmitDiagnostics === undefined ? null : (
+          <button
+            className="quiet-button"
+            disabled={submissionState === "submitting"}
+            type="button"
+            onClick={onSubmitDiagnostics}
+          >
+            {copy.submitDiagnostics}
+          </button>
+        )}
       </div>
       <p className="crash-copy-status" role="status" aria-live="polite">
         {copiedState === "succeeded"
@@ -395,6 +464,15 @@ function CrashFallback({
             ? copy.contactFailed
             : contactState === "unavailable"
               ? copy.contactUnavailable
+              : ""}
+      </p>
+      <p className="crash-copy-status" role="status" aria-live="polite">
+        {submissionState === "submitted"
+          ? `${copy.submitted} ${copy.reportReference}: ${submissionReportId ?? ""}`
+          : submissionState === "failed"
+            ? copy.submitFailed
+            : submissionState === "unavailable"
+              ? copy.submitUnavailable
               : ""}
       </p>
     </section>

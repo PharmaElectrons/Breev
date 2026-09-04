@@ -676,6 +676,7 @@ async function installDesktopFake(
       openSupport: async () => ({ status: "unavailable" as const }),
       reportRendererIncident: async () => ({ accepted: true as const }),
       submitManualEndpoint: async () => unpaired,
+      submitDiagnostics: async () => ({ status: "unavailable" as const }),
       submitPairingInvitation: async () => unpaired,
       getStartupConfig: async () => ({
         localApiOrigin: origin,

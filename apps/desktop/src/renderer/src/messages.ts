@@ -21,8 +21,13 @@ export interface CrashMessage {
   readonly exportSaved: string;
   readonly incidentLabel: string;
   readonly reloadTerminal: string;
+  readonly reportReference: string;
   readonly retryView: string;
   readonly retryUnavailable: string;
+  readonly submitDiagnostics: string;
+  readonly submitFailed: string;
+  readonly submitted: string;
+  readonly submitUnavailable: string;
   readonly title: string;
 }
 
@@ -71,8 +76,13 @@ export const messages: Record<Locale, Messages> = {
       exportSaved: "تم حفظ حزمة التشخيص. أرفق الملف عند التواصل مع الدعم.",
       incidentLabel: "رمز الخطأ",
       reloadTerminal: "إعادة تحميل نقطة البيع",
+      reportReference: "مرجع التقرير",
       retryView: "إعادة المحاولة",
       retryUnavailable: "تعذرت إعادة المحاولة. أعد تحميل نقطة البيع.",
+      submitDiagnostics: "إرسال تقرير التشخيص",
+      submitFailed: "تعذر إرسال التقرير. يمكنك تصدير الحزمة ومشاركتها يدوياً.",
+      submitted: "تم إرسال تقرير تشخيص منقح إلى نظام الدعم المركزي.",
+      submitUnavailable: "إرسال التقارير المركزي غير مفعّل على هذا التثبيت.",
       title: "حدث خطأ غير متوقع",
     },
     deviceProof: {
@@ -149,8 +159,16 @@ export const messages: Record<Locale, Messages> = {
         "Diagnostic package saved. Attach the file when contacting support.",
       incidentLabel: "Incident code",
       reloadTerminal: "Reload terminal",
+      reportReference: "Report reference",
       retryView: "Try again",
       retryUnavailable: "Retry failed. Reload the terminal.",
+      submitDiagnostics: "Send diagnostic report",
+      submitFailed:
+        "Report could not be sent. You can export and share the package manually.",
+      submitted:
+        "A redacted diagnostic report was sent to the central support system.",
+      submitUnavailable:
+        "Central reporting is not enabled for this installation.",
       title: "Something went wrong",
     },
     deviceProof: {
