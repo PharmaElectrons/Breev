@@ -1,6 +1,7 @@
 import type {
   DesktopDeviceRole,
   DesktopManualEndpointRequest,
+  DesktopStartupConfig,
   TerminalPairingState,
 } from "@breev/contracts/desktop-preload";
 import type { LocalHealthSuccess } from "@breev/contracts/local-rest";
@@ -33,6 +34,7 @@ interface StartupConnection {
   readonly localApiOrigin: string | null;
   readonly runDeviceProof: () => Promise<void>;
   readonly state: StartupState;
+  readonly startupConfig: DesktopStartupConfig | null;
   readonly submitManualEndpoint: (
     endpoint: DesktopManualEndpointRequest,
   ) => Promise<void>;
@@ -48,6 +50,8 @@ export function useStartupConnection(): StartupConnection {
     useState<StartupConnection["deviceProof"]>("idle");
   const [terminalPairing, setTerminalPairing] =
     useState<TerminalPairingState | null>(null);
+  const [startupConfig, setStartupConfig] =
+    useState<DesktopStartupConfig | null>(null);
   const localApiOriginRef = useRef<string | undefined>(undefined);
   const checkNowRef = useRef<() => void>(() => undefined);
 
@@ -127,6 +131,7 @@ export function useStartupConnection(): StartupConnection {
         deviceRole = config.role;
         localApiOrigin = config.localApiOrigin;
         localApiOriginRef.current = config.localApiOrigin;
+        setStartupConfig(config);
         await check(true);
       } catch (error) {
         if (!active) {
@@ -184,6 +189,17 @@ export function useStartupConnection(): StartupConnection {
         next = PAIRING_FAILED_UNEXPECTED;
       }
       setTerminalPairing(next);
+      if (next.stage === "paired") {
+        setStartupConfig((current) =>
+          current === null
+            ? current
+            : {
+                ...current,
+                deviceId: next.deviceId,
+                installationId: next.installationId,
+              },
+        );
+      }
       setState(stateFromTerminalPairing(next));
     },
     [],
@@ -220,6 +236,7 @@ export function useStartupConnection(): StartupConnection {
     localApiOrigin: localApiOriginRef.current ?? null,
     runDeviceProof,
     state,
+    startupConfig,
     submitManualEndpoint,
     submitPairingInvitation,
     terminalPairing,

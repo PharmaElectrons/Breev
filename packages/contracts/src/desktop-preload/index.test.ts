@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   desktopCancelTerminalPairingRequestSchema,
+  desktopCopyIdentifierRequestSchema,
+  desktopCopyIdentifierResponseSchema,
   desktopManualEndpointRequestSchema,
   desktopPairingInvitationRequestSchema,
   desktopStartupConfigRequestSchema,
@@ -17,13 +19,65 @@ describe("desktop preload contract", () => {
   it("accepts the startup configuration exchange for both device roles", () => {
     expect(desktopStartupConfigRequestSchema.parse({})).toEqual({});
     for (const role of ["main", "terminal"] as const) {
-      expect(
-        desktopStartupConfigResponseSchema.parse({
-          localApiOrigin: "http://127.0.0.1:31310",
-          role,
-        }),
-      ).toEqual({ localApiOrigin: "http://127.0.0.1:31310", role });
+      const payload = {
+        deviceId,
+        installationId,
+        localApiOrigin: "http://127.0.0.1:31310",
+        role,
+      };
+      expect(desktopStartupConfigResponseSchema.parse(payload)).toEqual(
+        payload,
+      );
     }
+  });
+
+  it("accepts only a UUID for the identifier copy exchange", () => {
+    expect(
+      desktopCopyIdentifierRequestSchema.parse({ identifier: deviceId }),
+    ).toEqual({ identifier: deviceId });
+    expect(desktopCopyIdentifierResponseSchema.parse({ copied: true })).toEqual(
+      { copied: true },
+    );
+    expect(() =>
+      desktopCopyIdentifierRequestSchema.parse({ identifier: "not-a-uuid" }),
+    ).toThrow();
+    expect(() =>
+      desktopCopyIdentifierRequestSchema.parse({
+        identifier: deviceId,
+        path: "C:\\ProgramData\\Breev",
+      }),
+    ).toThrow();
+    expect(() =>
+      desktopCopyIdentifierResponseSchema.parse({ copied: false }),
+    ).toThrow();
+  });
+
+  it("keeps installation identifiers optional for unpaired and development devices", () => {
+    expect(
+      desktopStartupConfigResponseSchema.parse({
+        localApiOrigin: "http://127.0.0.1:31310",
+        role: "terminal",
+      }),
+    ).toEqual({
+      localApiOrigin: "http://127.0.0.1:31310",
+      role: "terminal",
+    });
+  });
+
+  it.each([
+    {
+      deviceId: "b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4",
+      installationId,
+    },
+    { deviceId, installationId: "not-a-uuid" },
+  ])("rejects malformed installation identifiers", (identifiers) => {
+    expect(() =>
+      desktopStartupConfigResponseSchema.parse({
+        ...identifiers,
+        localApiOrigin: "http://127.0.0.1:31310",
+        role: "main",
+      }),
+    ).toThrow();
   });
 
   it.each([

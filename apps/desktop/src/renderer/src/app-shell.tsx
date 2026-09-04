@@ -26,6 +26,7 @@ import { navigationMessages } from "./navigation-messages";
 import { formatDateTime } from "./preferences";
 import { usePreferences } from "./preferences-provider";
 import type { StartupState } from "./startup-state";
+import { SystemOverview } from "./system-overview";
 import { TerminalPairingScreen } from "./terminal-pairing-screen";
 import { UnavailableSurface } from "./unavailable-surface";
 import type { useStartupConnection } from "./use-startup-connection";
@@ -59,6 +60,7 @@ export function AppShell({
     state,
     submitManualEndpoint,
     submitPairingInvitation,
+    startupConfig,
     terminalPairing,
   } = startup;
 
@@ -249,6 +251,10 @@ export function AppShell({
         !authenticated ? (
           // IdentityShell owns loading, bootstrap, login, expiry, and revocation.
           <IdentityShell baseUrl={localApiOrigin} />
+        ) : activeModuleId === "dashboard" &&
+          handshake !== null &&
+          startupConfig !== null ? (
+          <SystemOverview handshake={handshake} startupConfig={startupConfig} />
         ) : !moduleImplemented(activeModuleId) ? (
           <UnavailableSurface moduleId={activeModuleId} />
         ) : activeModuleId === "products" ? (

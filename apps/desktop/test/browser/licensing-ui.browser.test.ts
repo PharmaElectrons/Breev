@@ -1,5 +1,9 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
+import type {
+  BreevDesktopApi,
+  DesktopDeviceRole,
+  TerminalPairingState,
+} from "@breev/contracts/desktop-preload";
 import {
   FREE_CORE_CAPABILITY_NAMES,
   LOCAL_API_VERSION,
@@ -43,7 +47,7 @@ test.describe("offline licence feature hiding", () => {
     page,
   }) => {
     renderer.setState(freeCoreState());
-    await installMainDesktopFake(page, renderer.origin);
+    await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
 
     await expect(
@@ -183,11 +187,100 @@ test.describe("offline licence feature hiding", () => {
     });
   });
 
+  test("shows and copies installation identifiers without clipping in English or Arabic", async ({
+    page,
+  }) => {
+    const installationId = "b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4";
+    renderer.setState(freeCoreState());
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"], {
+        origin: renderer.origin,
+      });
+    await installDesktopFake(page, renderer.origin, {
+      deviceId: DEVICE_ID,
+      installationId,
+    });
+    await page.goto(renderer.origin);
+    await page.getByRole("link", { name: "Main dashboard" }).click();
+
+    await expect(
+      page.getByRole("heading", {
+        name: "Installation and system identifiers",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Breev Licence Pharmacy")).toBeVisible();
+    await expect(
+      page.getByText("Main Pharmacy Computer", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(DEVICE_ID)).toBeVisible();
+    await expect(page.getByText(installationId)).toBeVisible();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(page.getByText("Available", { exact: true })).toBeVisible();
+    for (const label of [
+      "Copy Pharmacy ID",
+      "Copy Device ID",
+      "Copy Installation ID",
+    ]) {
+      await expect(page.getByRole("button", { name: label })).toBeVisible();
+    }
+
+    await page.getByRole("button", { name: "Copy Device ID" }).click();
+    await expect(
+      page.getByRole("button", { name: "Copy Device ID" }),
+    ).toHaveText("Copied to clipboard");
+    expect(await page.evaluate("navigator.clipboard.readText()")).toBe(
+      DEVICE_ID,
+    );
+
+    for (const locale of ["en", "ar"] as const) {
+      if (locale === "ar") {
+        await page.getByRole("button", { name: "Switch to Arabic" }).click();
+        await expect(
+          page.getByRole("heading", {
+            name: "معرفات التثبيت ومعلومات النظام",
+          }),
+        ).toBeVisible();
+        await expect(page.getByText("معرف الصيدلية")).toBeVisible();
+        await expect(
+          page.getByText("الحاسبة الرئيسية للصيدلية", { exact: true }),
+        ).toBeVisible();
+      }
+      await expect(page.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "ar" ? "rtl" : "ltr",
+      );
+      const clippedIdentifiers = await page
+        .locator(".identifier-text")
+        .evaluateAll(
+          (identifiers) =>
+            identifiers.filter(
+              (identifier) => identifier.scrollWidth > identifier.clientWidth,
+            ).length,
+        );
+      expect(clippedIdentifiers).toBe(0);
+    }
+
+    const terminalPage = await page.context().newPage();
+    await installDesktopFake(terminalPage, renderer.origin, {
+      deviceId: DEVICE_ID,
+      installationId,
+      role: "terminal",
+    });
+    await terminalPage.goto(`${renderer.origin}/#/dashboard`);
+    await expect(
+      terminalPage.getByText("نقطة بيع إضافية", { exact: true }),
+    ).toBeVisible();
+    await terminalPage.close();
+
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+
   test("shows the owner the licence dates, days left, plan versus founder grants, and refuses new pairing during grace", async ({
     page,
   }) => {
     renderer.setState(licensedState());
-    await installMainDesktopFake(page, renderer.origin);
+    await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
     const card = page.getByRole("region", { name: "Licence status" });
     for (const fact of [
@@ -312,7 +405,7 @@ test.describe("offline licence feature hiding", () => {
     page,
   }) => {
     renderer.setState(licensedWithoutLicensingManagementState());
-    await installMainDesktopFake(page, renderer.origin);
+    await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
 
     const card = page.getByRole("region", { name: "Licence status" });
@@ -327,31 +420,62 @@ test.describe("offline licence feature hiding", () => {
   });
 });
 
-async function installMainDesktopFake(
+async function installDesktopFake(
   page: Page,
   origin: string,
+  identity: {
+    readonly deviceId?: string;
+    readonly installationId?: string;
+    readonly role?: DesktopDeviceRole;
+  } = {},
 ): Promise<void> {
-  await page.addInitScript((localApiOrigin) => {
-    const unpairedState = {
-      candidates: [],
-      stage: "awaiting-invitation" as const,
-    };
-    const desktopApi: BreevDesktopApi = Object.freeze({
-      cancelTerminalPairing: async () => unpairedState,
-      getTerminalPairingState: async () => unpairedState,
-      submitManualEndpoint: async () => unpairedState,
-      submitPairingInvitation: async () => unpairedState,
-      getStartupConfig: async () => ({
-        localApiOrigin,
-        role: "main" as const,
-      }),
-    });
-    Object.defineProperty(globalThis, "breevDesktop", {
-      configurable: false,
-      value: desktopApi,
-      writable: false,
-    });
-  }, origin);
+  await page.addInitScript(
+    ({ deviceId, installationId, localApiOrigin, role }) => {
+      const pairingState: TerminalPairingState =
+        role === "terminal" &&
+        deviceId !== undefined &&
+        installationId !== undefined
+          ? {
+              candidates: [],
+              deviceId,
+              endpoint: { host: "192.168.1.5", port: 31_311 },
+              installationId,
+              stage: "paired",
+            }
+          : {
+              candidates: [],
+              stage: "awaiting-invitation",
+            };
+      const desktopApi: BreevDesktopApi = Object.freeze({
+        cancelTerminalPairing: async () => pairingState,
+        copyIdentifier: async (request: { readonly identifier: string }) => {
+          await (
+            globalThis as unknown as {
+              navigator: {
+                clipboard: { writeText(value: string): Promise<void> };
+              };
+            }
+          ).navigator.clipboard.writeText(request.identifier);
+          return { copied: true as const };
+        },
+        getTerminalPairingState: async () => pairingState,
+        submitManualEndpoint: async () => pairingState,
+        submitPairingInvitation: async () => pairingState,
+        getStartupConfig: async () => ({
+          deviceId,
+          installationId,
+          localApiOrigin,
+          role,
+        }),
+      });
+      Object.defineProperty(globalThis, "breevDesktop", {
+        configurable: false,
+        value: desktopApi,
+        writable: false,
+      });
+    },
+    { ...identity, localApiOrigin: origin, role: identity.role ?? "main" },
+  );
 }
 
 function freeCoreState(): IdentityAuthenticatedState {

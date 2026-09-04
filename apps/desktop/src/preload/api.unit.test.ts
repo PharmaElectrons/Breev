@@ -18,6 +18,7 @@ describe("desktop preload API", () => {
 
     expect(Object.keys(api)).toEqual([
       "cancelTerminalPairing",
+      "copyIdentifier",
       "getStartupConfig",
       "getTerminalPairingState",
       "submitManualEndpoint",
@@ -29,9 +30,16 @@ describe("desktop preload API", () => {
   });
 
   it("names one channel per method and never accepts one from the renderer", async () => {
-    const invoke = vi.fn().mockResolvedValue(pairingState);
+    const invoke = vi.fn(async (channel: string) =>
+      channel === "breev:desktop:copy-identifier"
+        ? { copied: true }
+        : pairingState,
+    );
     const api = createBreevDesktopApi(invoke);
 
+    await api.copyIdentifier({
+      identifier: "0192f0a0-1c2d-7e3f-8a4b-5c6d7e8f9a0c",
+    });
     await api.getTerminalPairingState();
     await api.cancelTerminalPairing();
     await api.submitPairingInvitation({ invitation: "breev-pair://1/x" });
@@ -42,6 +50,10 @@ describe("desktop preload API", () => {
     });
 
     expect(invoke.mock.calls).toEqual([
+      [
+        "breev:desktop:copy-identifier",
+        { identifier: "0192f0a0-1c2d-7e3f-8a4b-5c6d7e8f9a0c" },
+      ],
       ["breev:desktop:get-terminal-pairing-state", {}],
       ["breev:desktop:cancel-terminal-pairing", {}],
       [
@@ -53,6 +65,19 @@ describe("desktop preload API", () => {
         { host: "192.168.1.5", invitation: "breev-pair://1/x", port: 31_311 },
       ],
     ]);
+  });
+
+  it.each([
+    [{ identifier: "not-a-uuid" }],
+    [{ identifier: "0192f0a0-1c2d-7e3f-8a4b-5c6d7e8f9a0c", extra: true }],
+    [{}],
+    [undefined],
+  ])("rejects a widened identifier copy request", async (request) => {
+    const invoke = vi.fn();
+    const api = createBreevDesktopApi(invoke);
+
+    await expect(api.copyIdentifier(request as never)).rejects.toThrow();
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it.each([

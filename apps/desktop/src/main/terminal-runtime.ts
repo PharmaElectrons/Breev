@@ -47,6 +47,8 @@ export interface TerminalRuntime {
   readonly bridgeToken: string;
   readonly cancelPairing: () => TerminalPairingState;
   readonly close: () => Promise<void>;
+  readonly deviceId: string | undefined;
+  readonly installationId: string | undefined;
   readonly state: () => TerminalPairingState;
   readonly submitInvitation: (invitation: string) => TerminalPairingState;
   readonly submitManualEndpoint: (
@@ -303,6 +305,12 @@ export async function startTerminalRuntime(
       discovery?.stop();
       agent?.destroy();
       await listening.close();
+    },
+    get deviceId() {
+      return paired?.deviceId;
+    },
+    get installationId() {
+      return paired?.installationId;
     },
     state,
     submitInvitation: (invitation) => {

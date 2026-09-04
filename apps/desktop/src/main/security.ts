@@ -3,6 +3,10 @@ import path from "node:path";
 import type { BrowserWindowConstructorOptions } from "electron";
 import {
   desktopStartupConfigRequestSchema,
+  desktopStartupConfigResponseSchema,
+  desktopCopyIdentifierRequestSchema,
+  type DesktopDeviceRole,
+  type DesktopStartupConfig,
   type DesktopStartupConfigRequest,
 } from "@breev/contracts/desktop-preload";
 import {
@@ -135,7 +139,7 @@ export function createIpcGuard<T>({
       frame === null ||
       !frame.isMainFrame ||
       frame.origin !== trustedOrigin ||
-      frame.url !== trustedUrl
+      !isTrustedRendererUrl(frame.url, trustedUrl)
     ) {
       throw new Error(`Breev denied ${name} IPC from this frame`);
     }
@@ -159,6 +163,22 @@ export function createIpcGuard<T>({
   };
 }
 
+function isTrustedRendererUrl(actualUrl: string, trustedUrl: string): boolean {
+  if (actualUrl === trustedUrl) {
+    return true;
+  }
+  try {
+    const actual = new URL(actualUrl);
+    if (actual.hash.length === 0) {
+      return false;
+    }
+    actual.hash = "";
+    return actual.toString() === trustedUrl;
+  } catch {
+    return false;
+  }
+}
+
 export function createStartupConfigIpcGuard(
   options: StartupConfigIpcGuardOptions,
 ): (
@@ -171,6 +191,21 @@ export function createStartupConfigIpcGuard(
     maximumPayloadBytes: 64,
     name: "startup configuration",
     parse: (payload) => desktopStartupConfigRequestSchema.parse(payload),
+  });
+}
+
+export function createIdentifierCopyIpcGuard(
+  options: StartupConfigIpcGuardOptions,
+): (
+  invocation: IpcInvocation,
+  payload: unknown,
+) => ReturnType<typeof desktopCopyIdentifierRequestSchema.parse> {
+  return createIpcGuard({
+    ...options,
+    maximumCalls: 20,
+    maximumPayloadBytes: 64,
+    name: "identifier copy",
+    parse: (payload) => desktopCopyIdentifierRequestSchema.parse(payload),
   });
 }
 
@@ -232,6 +267,77 @@ export interface MainDeviceBinding {
   readonly deviceId: string;
   readonly deviceSecret: string;
   readonly sessionToken: string;
+}
+
+interface LocalInstallationIdentity {
+  readonly deviceId: string | undefined;
+  readonly installationId: string | undefined;
+}
+
+export function createDesktopStartupConfig(options: {
+  readonly identity?: LocalInstallationIdentity;
+  readonly localApiOrigin: string;
+  readonly role: DesktopDeviceRole;
+}): DesktopStartupConfig {
+  return desktopStartupConfigResponseSchema.parse({
+    deviceId: options.identity?.deviceId,
+    installationId: options.identity?.installationId,
+    localApiOrigin: options.localApiOrigin,
+    role: options.role,
+  });
+}
+
+/**
+ * Reads only the public installation identifier from the Main machine config.
+ * Missing, unreadable, empty, or malformed optional metadata stays absent from
+ * the renderer. The startup response schema validates any value we do return.
+ */
+export function readInstallationId(
+  environment: Readonly<Record<string, string | undefined>>,
+  options?: { readonly allowDefaultFile?: boolean },
+): string | undefined {
+  let filePath = environment.BREEV_INSTALLATION_FILE;
+  if (filePath === undefined && options?.allowDefaultFile === true) {
+    filePath = defaultInstallationFilePath(environment);
+  }
+  if (filePath === undefined) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, "utf8"));
+  } catch {
+    return undefined;
+  }
+  const installationId =
+    typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>).installationId
+      : undefined;
+  if (
+    typeof installationId !== "string" ||
+    installationId.trim().length === 0
+  ) {
+    return undefined;
+  }
+  const result =
+    desktopStartupConfigResponseSchema.shape.installationId.safeParse(
+      installationId,
+    );
+  return result.success ? result.data : undefined;
+}
+
+function defaultInstallationFilePath(
+  environment: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  if (process.platform !== "win32") {
+    return undefined;
+  }
+  const programData = environment.ProgramData;
+  if (programData === undefined || programData.length === 0) {
+    return undefined;
+  }
+  return path.join(programData, "Breev", "config", "installation.json");
 }
 
 interface MainDeviceRequestDetails {

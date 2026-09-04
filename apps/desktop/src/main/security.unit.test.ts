@@ -6,12 +6,15 @@ import {
   APP_CONTENT_SECURITY_POLICY,
   addMainDeviceRequestHeaders,
   addTerminalBridgeRequestHeaders,
+  createDesktopStartupConfig,
+  createIdentifierCopyIpcGuard,
   createIpcGuard,
   createStartupConfigIpcGuard,
   createHardenedWindowOptions,
   resolveAppAssetPath,
   resolveRendererEntry,
   readMainDeviceBinding,
+  readInstallationId,
 } from "./security.js";
 
 describe("breev app protocol", () => {
@@ -55,6 +58,42 @@ describe("startup configuration IPC", () => {
     });
 
     expect(guard(trustedInvocation, {})).toEqual({});
+    expect(
+      guard(
+        {
+          ...trustedInvocation,
+          senderFrame: {
+            ...trustedInvocation.senderFrame,
+            url: "breev://app/index.html#/dashboard",
+          },
+        },
+        {},
+      ),
+    ).toEqual({});
+  });
+
+  it("accepts only UUID copy requests from the trusted main frame", () => {
+    const guard = createIdentifierCopyIpcGuard({
+      now: () => 1_000,
+      trustedSenderId: 7,
+    });
+    const request = {
+      identifier: "0198dcbb-d7e3-7000-8000-000000000001",
+    };
+
+    expect(guard(trustedInvocation, request)).toEqual(request);
+    expect(() =>
+      createIdentifierCopyIpcGuard({
+        now: () => 1_000,
+        trustedSenderId: 7,
+      })(trustedInvocation, { identifier: "not-a-uuid" }),
+    ).toThrow();
+    expect(() =>
+      createIdentifierCopyIpcGuard({
+        now: () => 1_000,
+        trustedSenderId: 7,
+      })({ ...trustedInvocation, senderId: 8 }, request),
+    ).toThrow();
   });
 
   it.each([
@@ -66,6 +105,16 @@ describe("startup configuration IPC", () => {
         senderFrame: {
           ...trustedInvocation.senderFrame,
           isMainFrame: false,
+        },
+      },
+      {},
+    ],
+    [
+      {
+        ...trustedInvocation,
+        senderFrame: {
+          ...trustedInvocation.senderFrame,
+          url: "breev://app/index.html?channel=generic#/dashboard",
         },
       },
       {},
@@ -111,6 +160,30 @@ describe("startup configuration IPC", () => {
       expect(guard(trustedInvocation, {})).toEqual({});
     }
     expect(() => guard(trustedInvocation, {})).toThrow(/rate/i);
+  });
+
+  it("returns the validated local identifiers for Main and terminal roles", () => {
+    const main = createDesktopStartupConfig({
+      identity: {
+        deviceId: "0198dcbb-d7e3-7000-8000-000000000001",
+        installationId: "b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4",
+      },
+      localApiOrigin: "http://127.0.0.1:31310",
+      role: "main",
+    });
+    const terminal = createDesktopStartupConfig({
+      identity: {
+        deviceId: "0198dcbb-d7e3-7000-8000-000000000002",
+        installationId: "0198dcbb-d7e3-7000-8000-000000000003",
+      },
+      localApiOrigin: "http://127.0.0.1:41999",
+      role: "terminal",
+    });
+
+    expect(main).toMatchObject({ role: "main" });
+    expect(terminal).toMatchObject({ role: "terminal" });
+    expect(main.deviceId).not.toBe(terminal.deviceId);
+    expect(main.installationId).toBe("b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4");
   });
 
   it("denies cyclic payloads that cannot pass the size guard", () => {
@@ -238,6 +311,30 @@ describe("Main device request binding", () => {
         BREEV_MAIN_DEVICE_FILE: join(configRoot, "missing.json"),
       }),
     ).toThrow("missing or unreadable");
+  });
+
+  it("reads only a valid non-empty installation ID from installation metadata", async () => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const configRoot = await mkdtemp(join(tmpdir(), "breev-installation-"));
+    const filePath = join(configRoot, "installation.json");
+    const installationId = "b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4";
+
+    await writeFile(filePath, JSON.stringify({ installationId }), "utf8");
+    expect(readInstallationId({ BREEV_INSTALLATION_FILE: filePath })).toBe(
+      installationId,
+    );
+
+    await writeFile(filePath, JSON.stringify({ installationId: " " }), "utf8");
+    expect(
+      readInstallationId({ BREEV_INSTALLATION_FILE: filePath }),
+    ).toBeUndefined();
+    expect(
+      readInstallationId({
+        BREEV_INSTALLATION_FILE: join(configRoot, "missing.json"),
+      }),
+    ).toBeUndefined();
   });
 
   it("injects binding headers only into the trusted window's exact API origin", () => {
