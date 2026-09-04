@@ -51,8 +51,8 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   {
     hash: "#/purchases",
     id: "purchases",
-    implemented: false,
-    requiredPermission: null,
+    implemented: true,
+    requiredPermission: "purchases.drafts.manage",
   },
   {
     hash: "#/inventory",

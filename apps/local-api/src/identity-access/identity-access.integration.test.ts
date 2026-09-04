@@ -18,8 +18,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
+import { IMPLEMENTED_PERMISSION_NAMES } from "./authorization.js";
 import { hashMainDeviceSecret } from "../main-device/main-device-binding.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
@@ -56,11 +58,17 @@ describe.sequential("identity/access PostgreSQL seam", () => {
   let ownerPassword = "";
   let ownerUsername = "";
   let pharmacistId = "";
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
 
   beforeAll(async () => {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -116,11 +124,11 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     ownerUsername = user?.username ?? "";
     ownerPassword =
       ownerUsername === "first.owner" ? OWNER_PASSWORD : SECOND_OWNER_PASSWORD;
-    // Bootstrap grants the owner only the implemented permissions — the seven
-    // that back a live operation today — never the five with no operation
-    // behind them yet (draft.price.override, pricing.below_cost,
-    // sales.invoice.reverse, sales.return.post, sync.conflict.resolve).
-    expect(success?.body?.allowedPermissions).toHaveLength(7);
+    // Bootstrap grants the owner only permissions backed by live operations,
+    // and the expectation follows the same registry used by authorization.
+    expect(success?.body?.allowedPermissions).toEqual([
+      ...IMPLEMENTED_PERMISSION_NAMES,
+    ]);
 
     const roles = await request(credentials, "GET", "/identity/roles");
     expect(roles.status, failureContext([roles])).toBe(200);
@@ -1354,7 +1362,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     // that back a live operation — never a name a future slice has not yet
     // landed the operation for.
     const permissionNames = roles.body?.permissions as string[];
-    expect(permissionNames).toHaveLength(7);
+    expect(permissionNames).toEqual([...IMPLEMENTED_PERMISSION_NAMES]);
 
     for (const permission of permissionNames) {
       const challenge = await approvedChallenge(
@@ -1394,15 +1402,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     // (a) The roles endpoint lists exactly the implemented names — never a
     // name whose operation has not landed yet.
     const permissionNames = roles.body?.permissions as string[];
-    expect(permissionNames).toEqual([
-      "attendance.record",
-      "catalog.item.manage",
-      "devices.pair",
-      "identity.roles.manage",
-      "identity.users.manage",
-      "licensing.manage",
-      "pharmacy.settings.manage",
-    ]);
+    expect(permissionNames).toEqual([...IMPLEMENTED_PERMISSION_NAMES]);
     const roleRows = roles.body?.roles as {
       grants: string[];
       id: string;

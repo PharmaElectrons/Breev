@@ -69,8 +69,10 @@ describe("identity authorization", () => {
       "licensing.manage",
       "pharmacy.settings.manage",
       "pricing.below_cost",
+      "purchases.drafts.manage",
       "sales.invoice.reverse",
       "sales.return.post",
+      "suppliers.manage",
       "sync.conflict.resolve",
     ]);
   });
@@ -87,6 +89,8 @@ describe("identity authorization", () => {
       "identity.users.manage",
       "licensing.manage",
       "pharmacy.settings.manage",
+      "purchases.drafts.manage",
+      "suppliers.manage",
     ]);
     for (const permission of IMPLEMENTED_PERMISSION_NAMES) {
       expect(PERMISSION_NAMES, permission).toContain(permission);

@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
 import { seedOwnerRoleWithFloor } from "../../test/owner-floor-fixture.js";
@@ -44,16 +45,16 @@ interface RoleSnapshot {
 /**
  * A pharmacy that bootstrapped before 0011, upgraded through it.
  *
- * The migration must keep every role id, user assignment, grant, and revision
- * exactly as it found them, except for the one change the stakeholder asked
- * for: the built-in manager role receives identity.roles.manage, attributed
- * to a real owner user, with the revisions it touches advanced once.
+ * The migrations must keep every role id and user assignment exactly as they
+ * found them. The built-in manager receives role administration in 0011 and
+ * the owner receives the two live purchasing permissions in 0012, with each
+ * touched role revision advanced once.
  */
 describe.sequential("migration 0011: custom roles upgrade", () => {
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
   let preUpgradeFolder: string;
 
   const pharmacyId = createUuidV7();
@@ -64,8 +65,14 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
   const supportRoleId = createUuidV7();
 
   beforeAll(async () => {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
     application = new Pool({ connectionString: databaseRoles.applicationUrl });
 
@@ -150,7 +157,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     }
   });
 
-  it("keeps every role, assignment, grant, and revision, and grants the manager role administration once", async () => {
+  it("preserves identities while granting manager and owner permissions once", async () => {
     const rolesBefore = await snapshotRoles();
     const grantsBefore = await snapshotGrants();
     const usersBefore = await snapshotUsers();
@@ -170,7 +177,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     for (const before of rolesBefore) {
       const after = rolesAfter.find((role) => role.id === before.id);
       expect(after?.revision, before.role_key ?? before.id).toBe(
-        before.role_key === "manager"
+        before.role_key === "manager" || before.role_key === "owner"
           ? String(BigInt(before.revision) + 1n)
           : before.revision,
       );
@@ -184,9 +191,19 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
           permission_name: "identity.roles.manage",
           role_id: managerRoleId,
         },
+        {
+          granted_by: ownerId,
+          permission_name: "purchases.drafts.manage",
+          role_id: ownerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "suppliers.manage",
+          role_id: ownerRoleId,
+        },
       ].sort(compareGrants),
     );
-    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 1n));
+    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 2n));
 
     const actions = await application.query<{ name: string }>(
       `select name from step_up_action_definitions
@@ -201,7 +218,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     // Running the migrations again changes nothing more.
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshotRoles()).toEqual(rolesAfter);
-    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 1n));
+    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 2n));
   }, 120_000);
 
   it("enforces one identity per role, unique custom names, and the owner floor in PostgreSQL", async () => {
