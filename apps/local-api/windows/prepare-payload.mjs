@@ -16,6 +16,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { copyPostgresqlRuntime } from "./postgresql-runtime.mjs";
 
 const scriptRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptRoot, "../../..");
@@ -63,15 +64,12 @@ for (const component of payloadLock.components) {
     }
   } else if (component.name === "postgresql") {
     const postgresqlRoot = path.join(outputRoot, "postgresql");
-    await rename(path.join(extractRoot, "pgsql"), postgresqlRoot);
-    await rm(path.join(postgresqlRoot, "pgAdmin 4"), {
-      recursive: true,
-      force: true,
-    });
-    await rm(path.join(postgresqlRoot, "StackBuilder"), {
-      recursive: true,
-      force: true,
-    });
+    const inventory = await copyPostgresqlRuntime(
+      path.join(extractRoot, "pgsql"),
+      postgresqlRoot,
+      component,
+    );
+    process.stdout.write(`PostgreSQL runtime: ${JSON.stringify(inventory)}\n`);
   } else if (component.name === "shawl") {
     const wrapperRoot = path.join(outputRoot, "service-wrapper");
     await mkdir(wrapperRoot, { recursive: true });
