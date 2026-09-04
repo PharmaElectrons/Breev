@@ -85,7 +85,11 @@ describe("complete Windows payload inventory", () => {
               "-PayloadRoot",
               root,
             ],
-            { timeout: 15_000, env: environment },
+            // A clean Windows runner may spend more than 15 seconds starting
+            // Windows PowerShell and loading its built-in modules under
+            // Defender. Keep a bounded timeout without turning cold-start
+            // variance into a payload-integrity failure.
+            { timeout: 60_000, env: environment },
           );
         await verify();
         for (const name of ["runtime.dll", "dist/main.cjs", "migration.sql"]) {
