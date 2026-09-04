@@ -65,6 +65,7 @@ describe("navigationModules", () => {
     );
     expect(availability.get("products")).toBe("available");
     expect(availability.get("administration")).toBe("available");
+    expect(availability.get("dashboard")).toBe("available");
     expect(availability.get("sales")).toBe("unavailable");
     expect(availability.get("purchases")).toBe("available");
     expect(availability.get("reports")).toBe("unavailable");
@@ -119,6 +120,7 @@ describe("moduleImplemented", () => {
     expect(moduleImplemented("products")).toBe(true);
     expect(moduleImplemented("purchases")).toBe(true);
     expect(moduleImplemented("administration")).toBe(true);
+    expect(moduleImplemented("dashboard")).toBe(true);
     expect(moduleImplemented("sales")).toBe(false);
     expect(moduleImplemented("messages")).toBe(false);
   });

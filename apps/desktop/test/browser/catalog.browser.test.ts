@@ -206,6 +206,7 @@ async function installDesktopFake(
 
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => unpairedState,
+        copyIdentifier: async () => ({ copied: true as const }),
         getStartupConfig: async () => ({
           localApiOrigin: apiOrigin,
           role: "main" as const,
@@ -850,8 +851,8 @@ test.describe.serial("Product catalog screens", () => {
     const modules = page.getByRole("navigation", { name: "Modules" });
     await expect(modules).toBeVisible();
 
-    // Catalog is the one workspace with server authority behind it, and the
-    // signed-in pharmacist holds catalog.item.manage.
+    // Catalog has server authority behind it, and the signed-in pharmacist
+    // holds catalog.item.manage.
     const products = modules.getByRole("link", { name: "Products" });
     await expect(products).toHaveAttribute("aria-current", "page");
     await expect(products).toHaveAttribute("data-availability", "available");

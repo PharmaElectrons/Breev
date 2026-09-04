@@ -671,6 +671,130 @@ a:focus-visible,
   letter-spacing: 0;
 }
 
+/* --- Installation and system overview --------------------------------- */
+
+.system-overview {
+  display: grid;
+  inline-size: min(100%, 64rem);
+  align-self: start;
+  justify-self: center;
+  gap: 1rem;
+  padding-block: 1rem 3rem;
+  padding-inline: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.system-overview-header {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  background: var(--card);
+  text-align: start;
+}
+
+.system-overview-kicker {
+  margin: 0 0 0.35rem;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[dir="rtl"] .system-overview-kicker {
+  letter-spacing: 0;
+}
+
+.system-overview-header h2 {
+  margin: 0;
+  font-size: clamp(1.25rem, 3vw, 1.65rem);
+}
+
+.system-overview-header p:last-child {
+  margin-block: 0.4rem 0;
+  color: var(--muted-foreground);
+  line-height: 1.6;
+}
+
+.system-information-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--border);
+}
+
+.system-information-row {
+  display: grid;
+  min-inline-size: 0;
+  gap: 0.55rem;
+  padding: 1rem 1.1rem;
+  background: var(--card);
+  text-align: start;
+}
+
+.system-information-row dt {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.system-information-row dd {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.system-information-value.is-mono,
+.identifier-text {
+  font-family: var(--font-family-mono);
+  font-size: 0.8rem;
+}
+
+.identifier-value {
+  flex-wrap: wrap;
+}
+
+.identifier-text {
+  min-inline-size: 0;
+  flex: 1 1 20rem;
+  direction: ltr;
+  text-align: start;
+  unicode-bidi: isolate;
+  word-break: break-word;
+}
+
+.identifier-copy-button {
+  min-block-size: 2rem;
+  flex: none;
+  border: 1px solid var(--control-border);
+  border-radius: 0.5rem;
+  padding-block: 0.35rem;
+  padding-inline: 0.7rem;
+  background: var(--card);
+  color: var(--card-foreground);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.identifier-copy-button:hover {
+  background: var(--primary-wash);
+}
+
+.connection-dot {
+  inline-size: 0.55rem;
+  block-size: 0.55rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ready);
+}
+
 /* --- Catalog master-detail workspace (prototype Products layout) --------- */
 
 .catalog-workspace {
@@ -1982,6 +2106,10 @@ a:focus-visible,
   }
 
   .version-list {
+    grid-template-columns: 1fr;
+  }
+
+  .system-information-list {
     grid-template-columns: 1fr;
   }
 

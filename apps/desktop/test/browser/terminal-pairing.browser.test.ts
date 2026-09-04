@@ -464,6 +464,7 @@ async function openTerminal(
           current = { candidates: [], stage: "awaiting-invitation" };
           return current;
         },
+        copyIdentifier: async () => ({ copied: true as const }),
         getStartupConfig: async () => ({
           localApiOrigin: target,
           role: "terminal" as const,

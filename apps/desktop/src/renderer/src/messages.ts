@@ -6,6 +6,27 @@ interface StatusMessage {
   readonly title: string;
 }
 
+interface SystemOverviewMessages {
+  readonly apiVersion: string;
+  readonly connected: string;
+  readonly copy: string;
+  readonly copied: string;
+  readonly database: string;
+  readonly databaseAvailable: string;
+  readonly description: string;
+  readonly deviceId: string;
+  readonly installationId: string;
+  readonly localDeviceRole: string;
+  readonly localServer: string;
+  readonly mainRole: string;
+  readonly notAvailable: string;
+  readonly pharmacyId: string;
+  readonly pharmacyName: string;
+  readonly schemaVersion: string;
+  readonly terminalRole: string;
+  readonly title: string;
+}
+
 interface Messages {
   readonly apiVersion: string;
   readonly brandDescription: string;
@@ -20,6 +41,7 @@ interface Messages {
   readonly lastChecked: string;
   readonly schemaVersion: string;
   readonly status: Record<StartupState, StatusMessage>;
+  readonly systemOverview: SystemOverviewMessages;
   readonly switchLanguage: string;
   readonly switchToDarkTheme: string;
   readonly switchToLightTheme: string;
@@ -79,6 +101,26 @@ export const messages: Record<Locale, Messages> = {
           "لا تملك نقطة البيع الإضافية هذه شهادة بريف بعد. أكمل الإقران مع الحاسبة الرئيسية للصيدلية للمتابعة.",
       },
     },
+    systemOverview: {
+      apiVersion: "إصدار واجهة الخادم المحلي",
+      connected: "متصل",
+      copy: "نسخ",
+      copied: "تم النسخ إلى الحافظة",
+      database: "اتصال قاعدة البيانات",
+      databaseAvailable: "متاحة",
+      description: "معلومات هذه الصيدلية والجهاز التي يحتاجها فريق الدعم.",
+      deviceId: "معرف الجهاز",
+      installationId: "معرف التثبيت",
+      localDeviceRole: "دور الجهاز المحلي",
+      localServer: "الخادم المحلي",
+      mainRole: "الحاسبة الرئيسية للصيدلية",
+      notAvailable: "غير متاح",
+      pharmacyId: "معرف الصيدلية",
+      pharmacyName: "اسم الصيدلية",
+      schemaVersion: "إصدار مخطط البيانات",
+      terminalRole: "نقطة بيع إضافية",
+      title: "معرفات التثبيت ومعلومات النظام",
+    },
     switchLanguage: "التبديل إلى الإنجليزية",
     switchToDarkTheme: "استخدام الوضع الداكن",
     switchToLightTheme: "استخدام الوضع الفاتح",
@@ -134,6 +176,27 @@ export const messages: Record<Locale, Messages> = {
         description:
           "This additional POS terminal has no Breev certificate yet. Complete pairing with the Main Pharmacy Computer to continue.",
       },
+    },
+    systemOverview: {
+      apiVersion: "Local API version",
+      connected: "Connected",
+      copy: "Copy",
+      copied: "Copied to clipboard",
+      database: "Database connection",
+      databaseAvailable: "Available",
+      description:
+        "Pharmacy and device information used when working with support.",
+      deviceId: "Device ID",
+      installationId: "Installation ID",
+      localDeviceRole: "Local device role",
+      localServer: "Local server",
+      mainRole: "Main Pharmacy Computer",
+      notAvailable: "Not available",
+      pharmacyId: "Pharmacy ID",
+      pharmacyName: "Pharmacy name",
+      schemaVersion: "Schema version",
+      terminalRole: "Additional POS Terminal",
+      title: "Installation and system identifiers",
     },
     switchLanguage: "Switch to Arabic",
     switchToDarkTheme: "Use dark theme",

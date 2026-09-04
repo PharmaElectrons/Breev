@@ -48,8 +48,7 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
       },
       dashboard: {
         label: "القائمة الرئيسية",
-        unavailableReason:
-          "تعتمد الملخصات على المبيعات والمشتريات والمخزن والحسابات، وهي غير متاحة بعد.",
+        unavailableReason: "",
       },
       inventory: {
         label: "المخزن",
@@ -112,8 +111,7 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
       },
       dashboard: {
         label: "Main dashboard",
-        unavailableReason:
-          "The summaries read sales, purchases, inventory, and accounts, none of which are available yet.",
+        unavailableReason: "",
       },
       inventory: {
         label: "Inventory",
