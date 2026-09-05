@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -22,6 +22,23 @@ afterEach(async () => {
 });
 
 describe("diagnostic bundle", () => {
+  const validBundle = {
+    application: {
+      electronVersion: "43.4.1",
+      nodeVersion: "24.13.0",
+      product: "Breev",
+      version: "1.2.3",
+    },
+    bundleId: "DIAG-20260905-0123ABCD",
+    connectivity: { localApi: { state: "healthy" } },
+    createdAt: "2026-09-05T01:02:03.000Z",
+    installer: { state: "not-applicable" },
+    logs: [{ event: "app-ready", role: "main", schemaVersion: 1 }],
+    schemaVersion: 1,
+    service: { state: "not-applicable" },
+    system: { architecture: "x64", platform: "win32", release: "10.0.26100" },
+    terminal: { pairingStage: "not-applicable", role: "main" },
+  } as const;
   it("collects only allowlisted structured log fields", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "breev-bundle-"));
     directories.push(directory);
@@ -44,19 +61,36 @@ describe("diagnostic bundle", () => {
     expect(serialized).not.toContain("secret-canary");
   });
 
-  it("redacts again at the write boundary", async () => {
+  it("writes only the strict bundle shape through an atomic staging file", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "breev-bundle-"));
     directories.push(directory);
     const destination = path.join(directory, "diagnostics.json");
-    await writeDiagnosticBundle(destination, {
-      status: "healthy",
-      patientName: "patient-name-canary",
-      token: "token-canary",
-    });
+    await writeFile(destination, "previous export", "utf8");
+    await writeDiagnosticBundle(destination, validBundle);
     const content = await readFile(destination, "utf8");
-    expect(content).toContain("healthy");
-    expect(content).not.toContain("patient-name-canary");
-    expect(content).not.toContain("token-canary");
+    expect(content).toContain('"product": "Breev"');
+    expect(await readdir(directory)).toEqual(["diagnostics.json"]);
+  });
+
+  it("rejects unknown fields and canaries without damaging an existing file", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "breev-bundle-"));
+    directories.push(directory);
+    const destination = path.join(directory, "diagnostics.json");
+    await writeFile(destination, "existing", "utf8");
+    await expect(
+      writeDiagnosticBundle(destination, {
+        ...validBundle,
+        patientName: "patient-name-canary",
+      }),
+    ).rejects.toThrow();
+    expect(await readFile(destination, "utf8")).toBe("existing");
+    expect(await readdir(directory)).toEqual(["diagnostics.json"]);
+  });
+
+  it("rejects renderer-like paths before writing", async () => {
+    await expect(
+      writeDiagnosticBundle("relative-diagnostics.json", validBundle),
+    ).rejects.toThrow(/destination/iu);
   });
 
   it("uses a portable timestamped file name and parses service states", () => {

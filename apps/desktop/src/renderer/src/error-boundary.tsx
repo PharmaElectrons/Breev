@@ -1,4 +1,10 @@
-import { Component, type ReactNode } from "react";
+import {
+  Component,
+  useEffect,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import type {
   DesktopExportDiagnosticsResponse,
   DesktopOpenSupportResponse,
@@ -49,7 +55,12 @@ interface DiagnosticErrorBoundaryState {
   readonly retryCount: number;
   readonly submissionReportId: string | null;
   readonly submissionState:
-    "failed" | "idle" | "submitted" | "submitting" | "unavailable";
+    | "confirming"
+    | "failed"
+    | "idle"
+    | "submitted"
+    | "submitting"
+    | "unavailable";
 }
 
 export class DiagnosticErrorBoundary extends Component<
@@ -67,6 +78,7 @@ export class DiagnosticErrorBoundary extends Component<
   };
 
   private heading: HTMLHeadingElement | null = null;
+  private confirmationButton: HTMLButtonElement | null = null;
 
   static getDerivedStateFromError(
     error: unknown,
@@ -76,9 +88,7 @@ export class DiagnosticErrorBoundary extends Component<
 
   override componentDidCatch(error: unknown): void {
     const code = createIncidentCode(error, this.props.level);
-    if (code !== this.state.incidentCode) {
-      this.setState({ incidentCode: code });
-    }
+    this.setState({ incidentCode: code }, () => this.heading?.focus());
     this.props.onIncident?.({ code, level: this.props.level });
   }
 
@@ -106,6 +116,12 @@ export class DiagnosticErrorBoundary extends Component<
       this.state.incidentCode !== null
     ) {
       this.heading?.focus();
+    }
+    if (
+      previousState.submissionState !== "confirming" &&
+      this.state.submissionState === "confirming"
+    ) {
+      this.confirmationButton?.focus();
     }
   }
 
@@ -141,8 +157,13 @@ export class DiagnosticErrorBoundary extends Component<
         onSubmitDiagnostics={
           this.props.onSubmitDiagnostics === undefined
             ? undefined
-            : () => void this.submitDiagnostics()
+            : () => this.setState({ submissionState: "confirming" })
         }
+        onCancelSubmission={() => this.setState({ submissionState: "idle" })}
+        onConfirmSubmission={() => void this.submitDiagnostics()}
+        onConfirmationButton={(button) => {
+          this.confirmationButton = button;
+        }}
         onRetry={
           retryCount === 0
             ? () =>
@@ -232,8 +253,9 @@ export class DiagnosticErrorBoundary extends Component<
 
 async function exportDiagnostics(
   incidentCode: string,
+  locale: Locale,
 ): Promise<DesktopExportDiagnosticsResponse> {
-  return window.breevDesktop.exportDiagnostics({ incidentCode });
+  return window.breevDesktop.exportDiagnostics({ incidentCode, locale });
 }
 
 async function contactSupport(
@@ -258,10 +280,7 @@ export function BootstrapErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages.en.crash}
       level="bootstrap"
-      onContactSupport={(incidentCode) => contactSupport(incidentCode, "en")}
-      onExportDiagnostics={exportDiagnostics}
       onIncident={reportRendererIncident}
-      onSubmitDiagnostics={submitDiagnostics}
       secondaryCopy={messages.ar.crash}
     >
       {children}
@@ -279,10 +298,7 @@ export function LocalizedAppErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages[locale].crash}
       level="application"
-      onContactSupport={(incidentCode) => contactSupport(incidentCode, locale)}
-      onExportDiagnostics={exportDiagnostics}
       onIncident={reportRendererIncident}
-      onSubmitDiagnostics={submitDiagnostics}
       resetKey={locale}
     >
       {children}
@@ -291,9 +307,13 @@ export function LocalizedAppErrorBoundary({
 }
 
 export function WorkspaceErrorBoundary({
+  actionsEnabled,
+  centralSubmissionEnabled,
   children,
   resetKey,
 }: {
+  readonly actionsEnabled: boolean;
+  readonly centralSubmissionEnabled: boolean;
   readonly children: ReactNode;
   readonly resetKey: string;
 }): React.JSX.Element {
@@ -302,10 +322,18 @@ export function WorkspaceErrorBoundary({
     <DiagnosticErrorBoundary
       copy={messages[locale].crash}
       level="workspace"
-      onContactSupport={(incidentCode) => contactSupport(incidentCode, locale)}
-      onExportDiagnostics={exportDiagnostics}
+      {...(actionsEnabled
+        ? {
+            onContactSupport: (incidentCode: string) =>
+              contactSupport(incidentCode, locale),
+            onExportDiagnostics: (incidentCode: string) =>
+              exportDiagnostics(incidentCode, locale),
+          }
+        : {})}
       onIncident={reportRendererIncident}
-      onSubmitDiagnostics={submitDiagnostics}
+      {...(actionsEnabled && centralSubmissionEnabled
+        ? { onSubmitDiagnostics: submitDiagnostics }
+        : {})}
       resetKey={resetKey}
     >
       {children}
@@ -319,10 +347,7 @@ export function createIncidentCode(
 ): string {
   const prefix =
     level === "bootstrap" ? "BOOT" : level === "workspace" ? "VIEW" : "APP";
-  const source =
-    error instanceof Error
-      ? [error.name, error.stack ?? ""].join("\n")
-      : typeof error;
+  const source = safeFingerprintMaterial(error);
   let hash = 2_166_136_261;
   for (let index = 0; index < source.length; index += 1) {
     hash ^= source.charCodeAt(index);
@@ -333,11 +358,29 @@ export function createIncidentCode(
   );
 }
 
+export function safeFingerprintMaterial(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error;
+  const safeName = /^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(error.name)
+    ? error.name
+    : "Error";
+  const frames = (error.stack ?? "")
+    .split(/\r?\n/gu)
+    .slice(1, 17)
+    .flatMap((line) => {
+      const match =
+        /^\s*at\s+(?:async\s+)?([A-Za-z_$][A-Za-z0-9_$.[\]<> ]{0,80})\s+\(/u.exec(
+          line,
+        );
+      return match?.[1] === undefined ? [] : [match[1].replace(/\s+/gu, " ")];
+    });
+  return [safeName, ...frames].join("\n");
+}
+
 export function createAsyncIncidentCode(error: unknown): string {
   return createIncidentCode(error, "application").replace(/^APP-/u, "ASYNC-");
 }
 
-function CrashFallback({
+export function CrashFallback({
   copiedState,
   contactState,
   copy,
@@ -345,6 +388,9 @@ function CrashFallback({
   incidentCode,
   level,
   onContactSupport,
+  onCancelSubmission,
+  onConfirmSubmission,
+  onConfirmationButton,
   onCopy,
   onExportDiagnostics,
   onHeading,
@@ -362,6 +408,9 @@ function CrashFallback({
   readonly incidentCode: string;
   readonly level: ErrorBoundaryLevel;
   readonly onContactSupport: (() => void) | undefined;
+  readonly onCancelSubmission: () => void;
+  readonly onConfirmSubmission: () => void;
+  readonly onConfirmationButton: (button: HTMLButtonElement | null) => void;
   readonly onCopy: () => void;
   readonly onExportDiagnostics: (() => void) | undefined;
   readonly onHeading: (heading: HTMLHeadingElement | null) => void;
@@ -384,6 +433,7 @@ function CrashFallback({
           {copy.title}
         </h1>
         <p>{copy.description}</p>
+        <p>{copy.privacyNotice}</p>
         <p className="crash-incident">
           <span>{copy.incidentLabel}</span>
           <code dir="ltr">{incidentCode}</code>
@@ -396,6 +446,14 @@ function CrashFallback({
           </div>
         )}
       </div>
+      {submissionState === "confirming" ? (
+        <DiagnosticSubmissionConfirmation
+          copy={copy}
+          onCancel={onCancelSubmission}
+          onConfirm={onConfirmSubmission}
+          onConfirmButton={onConfirmationButton}
+        />
+      ) : null}
       <div className="crash-actions">
         {onRetry === undefined ? (
           <p>{copy.retryUnavailable}</p>
@@ -463,7 +521,7 @@ function CrashFallback({
           : contactState === "failed"
             ? copy.contactFailed
             : contactState === "unavailable"
-              ? copy.contactUnavailable
+              ? `${copy.contactUnavailable} ${copy.manualSupportInstructions}`
               : ""}
       </p>
       <p className="crash-copy-status" role="status" aria-live="polite">
@@ -476,6 +534,76 @@ function CrashFallback({
               : ""}
       </p>
     </section>
+  );
+}
+
+export function DiagnosticSubmissionConfirmation({
+  copy,
+  onCancel,
+  onConfirm,
+  onConfirmButton,
+}: {
+  readonly copy: CrashMessage;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+  readonly onConfirmButton?: (button: HTMLButtonElement | null) => void;
+}): React.JSX.Element {
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const confirmButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    confirmButton.current?.focus();
+  }, []);
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    if (event.shiftKey && document.activeElement === confirmButton.current) {
+      event.preventDefault();
+      cancelButton.current?.focus();
+    } else if (
+      !event.shiftKey &&
+      document.activeElement === cancelButton.current
+    ) {
+      event.preventDefault();
+      confirmButton.current?.focus();
+    }
+  };
+  return (
+    <div
+      aria-describedby="diagnostic-confirm-description"
+      aria-labelledby="diagnostic-confirm-title"
+      aria-modal="true"
+      className="crash-confirmation"
+      onKeyDown={handleKeyDown}
+      role="alertdialog"
+    >
+      <h2 id="diagnostic-confirm-title">{copy.confirmSubmissionTitle}</h2>
+      <p id="diagnostic-confirm-description">
+        {copy.confirmSubmissionDescription}
+      </p>
+      <button
+        className="primary-button"
+        onClick={onConfirm}
+        ref={(button) => {
+          confirmButton.current = button;
+          onConfirmButton?.(button);
+        }}
+        type="button"
+      >
+        {copy.confirmSubmission}
+      </button>
+      <button
+        className="quiet-button"
+        onClick={onCancel}
+        ref={cancelButton}
+        type="button"
+      >
+        {copy.cancelSubmission}
+      </button>
+    </div>
   );
 }
 

@@ -44,10 +44,12 @@ import { pathToFileURL } from "node:url";
 
 import {
   DesktopDiagnostics,
+  createRendererRecoveryPolicy,
   incidentCode,
   processGoneReason,
   processType,
   resolveDesktopLogDirectory,
+  terminateOnUnhandledRejection,
 } from "./diagnostics.js";
 import {
   createDiagnosticBundle,
@@ -112,10 +114,9 @@ process.on("uncaughtExceptionMonitor", (error) => {
   diagnostics.fatal(incidentCode(error), "uncaughtException");
 });
 process.on("unhandledRejection", (reason) => {
-  diagnostics.log({
-    code: incidentCode(reason),
-    event: "main-unhandled-rejection",
-  });
+  terminateOnUnhandledRejection(diagnostics, reason, (exitCode) =>
+    app.exit(exitCode),
+  );
 });
 
 app.on("child-process-gone", (_event, details) => {
@@ -152,6 +153,7 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     createHardenedWindowOptions(preloadPath, app.isPackaged),
   );
   const window = mainWindow;
+  const recoverRenderer = createRendererRecoveryPolicy();
   const mainBinding =
     role === "main"
       ? readMainDeviceBinding(process.env, {
@@ -163,6 +165,8 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     window,
     () =>
       createDesktopStartupConfig({
+        diagnosticReporting:
+          centralDiagnosticConfiguration === undefined ? "disabled" : "manual",
         identity:
           role === "main"
             ? {
@@ -221,6 +225,26 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
       event: "renderer-process-gone",
       reason: processGoneReason(details.reason),
     });
+    const recovery = recoverRenderer(details.reason);
+    if (recovery === "reload" && !window.isDestroyed()) {
+      window.webContents.reload();
+    } else if (recovery === "terminate") {
+      dialog.showErrorBox(
+        "Breev stopped safely / توقف Breev بأمان",
+        "The application screen failed repeatedly. Restart Breev and provide the incident time to support.\n\nتعطلت شاشة التطبيق بشكل متكرر. أعد تشغيل Breev وقدم وقت الحادث إلى الدعم.",
+      );
+      app.exit(1);
+    }
+  });
+  window.webContents.on("preload-error", (_event, _preloadPath, error) => {
+    const code = incidentCode(error);
+    diagnostics.fatal(code, "preloadError");
+    diagnostics.log({ code, event: "preload-failed" });
+    dialog.showErrorBox(
+      "Breev could not start / تعذر بدء Breev",
+      "The secure desktop bridge failed to load. Restart Breev or contact support.\n\nتعذر تحميل جسر سطح المكتب الآمن. أعد تشغيل Breev أو تواصل مع الدعم.",
+    );
+    app.exit(1);
   });
   window.webContents.on("unresponsive", () => {
     diagnostics.log({ event: "renderer-unresponsive" });
@@ -254,6 +278,7 @@ function registerIdentifierCopyHandler(
   const guard = createIdentifierCopyIpcGuard({
     now: Date.now,
     trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
     trustedSenderId: window.webContents.id,
     trustedUrl,
   });
@@ -279,6 +304,7 @@ function registerCentralDiagnosticHandler(
     now: Date.now,
     parse: (payload) => desktopSubmitDiagnosticsRequestSchema.parse(payload),
     trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
     trustedSenderId: window.webContents.id,
     trustedUrl,
   });
@@ -349,6 +375,7 @@ function registerSupportHandler(
     now: Date.now,
     parse: (payload) => desktopOpenSupportRequestSchema.parse(payload),
     trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
     trustedSenderId: window.webContents.id,
     trustedUrl,
   });
@@ -400,6 +427,7 @@ function registerDiagnosticExportHandler(
     now: Date.now,
     parse: (payload) => desktopExportDiagnosticsRequestSchema.parse(payload),
     trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
     trustedSenderId: window.webContents.id,
     trustedUrl,
   });
@@ -410,9 +438,18 @@ function registerDiagnosticExportHandler(
       const defaultName = diagnosticFileName();
       const selection = await dialog.showSaveDialog(window, {
         defaultPath: path.join(app.getPath("downloads"), defaultName),
-        filters: [{ extensions: ["json"], name: "Breev diagnostics" }],
+        filters: [
+          {
+            extensions: ["json"],
+            name:
+              request.locale === "ar" ? "تشخيصات Breev" : "Breev diagnostics",
+          },
+        ],
         properties: ["createDirectory", "showOverwriteConfirmation"],
-        title: "Export Breev diagnostics",
+        title:
+          request.locale === "ar"
+            ? "تصدير تشخيصات Breev"
+            : "Export Breev diagnostics",
       });
       if (selection.canceled || selection.filePath === "") {
         return desktopExportDiagnosticsResponseSchema.parse({
@@ -467,6 +504,7 @@ function registerRendererIncidentHandler(
     parse: (payload) =>
       desktopReportRendererIncidentRequestSchema.parse(payload),
     trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
     trustedSenderId: window.webContents.id,
     trustedUrl,
   });
@@ -536,6 +574,7 @@ function registerStartupConfigHandler(
   const guard = createStartupConfigIpcGuard({
     now: Date.now,
     trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
     trustedSenderId: window.webContents.id,
     trustedUrl,
   });
@@ -559,6 +598,7 @@ function registerTerminalPairingHandlers(
   const guardOptions = {
     now: Date.now,
     trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
     trustedSenderId: window.webContents.id,
     trustedUrl,
   };
@@ -634,6 +674,7 @@ function toIpcInvocation(event: Electron.IpcMainInvokeEvent): {
   readonly senderFrame: {
     readonly isMainFrame: boolean;
     readonly origin: string;
+    readonly processId: number;
     readonly url: string;
   } | null;
   readonly senderId: number;
@@ -646,6 +687,7 @@ function toIpcInvocation(event: Electron.IpcMainInvokeEvent): {
         : {
             isMainFrame: frame === event.sender.mainFrame,
             origin: frame.origin,
+            processId: frame.processId,
             url: frame.url,
           },
     senderId: event.sender.id,

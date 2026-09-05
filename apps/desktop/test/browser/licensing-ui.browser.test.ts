@@ -466,6 +466,7 @@ async function installDesktopFake(
         submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => pairingState,
         getStartupConfig: async () => ({
+          diagnosticReporting: "disabled" as const,
           deviceId,
           installationId,
           localApiOrigin,

@@ -2,6 +2,8 @@ import {
   appendFileSync,
   closeSync,
   existsSync,
+  fstatSync,
+  ftruncateSync,
   mkdirSync,
   openSync,
   statSync,
@@ -12,6 +14,7 @@ import path from "node:path";
 export const DESKTOP_LOG_MAXIMUM_BYTES = 5 * 1024 * 1024;
 export const DESKTOP_LOG_FILE_COUNT = 20;
 export const DESKTOP_FATAL_LOG_MAXIMUM_BYTES = 256 * 1024;
+export const DESKTOP_LOG_MAXIMUM_PENDING_WRITES = 256;
 
 const PROCESS_GONE_REASONS = new Set([
   "abnormal-exit",
@@ -76,17 +79,20 @@ export type DiagnosticEvent =
       readonly processType: ProcessType;
     }
   | { readonly event: "renderer-unresponsive" }
+  | { readonly code: string; readonly event: "preload-failed" }
   | { readonly code: string; readonly event: "main-unhandled-rejection" }
   | { readonly code: string; readonly event: "startup-failed" }
   | {
       readonly code: string;
       readonly event: "main-fatal";
-      readonly origin: "uncaughtException" | "unhandledRejection";
+      readonly origin:
+        "preloadError" | "uncaughtException" | "unhandledRejection";
     };
 
 interface DesktopLoggerOptions {
   readonly fileCount?: number;
   readonly maximumBytes?: number;
+  readonly maximumPendingWrites?: number;
   readonly now?: () => Date;
 }
 
@@ -95,9 +101,11 @@ export class DesktopDiagnostics {
   private readonly fatalPath: string;
   private readonly fileCount: number;
   private readonly maximumBytes: number;
+  private readonly maximumPendingWrites: number;
   private readonly now: () => Date;
   private fatalDescriptor: number | undefined;
   private pending: Promise<void> = Promise.resolve();
+  private pendingWrites = 0;
 
   constructor(
     private readonly directory: string,
@@ -107,6 +115,8 @@ export class DesktopDiagnostics {
     this.fatalPath = path.join(directory, "desktop-fatal.ndjson");
     this.fileCount = options.fileCount ?? DESKTOP_LOG_FILE_COUNT;
     this.maximumBytes = options.maximumBytes ?? DESKTOP_LOG_MAXIMUM_BYTES;
+    this.maximumPendingWrites =
+      options.maximumPendingWrites ?? DESKTOP_LOG_MAXIMUM_PENDING_WRITES;
     this.now = options.now ?? (() => new Date());
     try {
       mkdirSync(directory, { recursive: true });
@@ -122,7 +132,9 @@ export class DesktopDiagnostics {
   }
 
   log(event: DiagnosticEvent): void {
+    if (this.pendingWrites >= this.maximumPendingWrites) return;
     const line = this.serialize(event);
+    this.pendingWrites += 1;
     this.pending = this.pending
       .then(async () => {
         await this.rotateIfNeeded(Buffer.byteLength(line));
@@ -131,20 +143,26 @@ export class DesktopDiagnostics {
           flag: "a",
         });
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        this.pendingWrites -= 1;
+      });
   }
 
   fatal(
     code: string,
-    origin: "uncaughtException" | "unhandledRejection",
+    origin: "preloadError" | "uncaughtException" | "unhandledRejection",
   ): void {
     if (this.fatalDescriptor === undefined) return;
     try {
-      appendFileSync(
-        this.fatalDescriptor,
-        this.serialize({ code, event: "main-fatal", origin }),
-        "utf8",
-      );
+      const line = this.serialize({ code, event: "main-fatal", origin });
+      if (
+        fstatSync(this.fatalDescriptor).size + Buffer.byteLength(line, "utf8") >
+        DESKTOP_FATAL_LOG_MAXIMUM_BYTES
+      ) {
+        ftruncateSync(this.fatalDescriptor, 0);
+      }
+      appendFileSync(this.fatalDescriptor, line, "utf8");
     } catch {
       // A fatal breadcrumb is best-effort and must never obscure termination.
     }
@@ -213,16 +231,58 @@ export function resolveDesktopLogDirectory(
 }
 
 export function incidentCode(value: unknown): string {
-  const source =
-    value instanceof Error
-      ? `${value.name}\n${value.stack ?? ""}`
-      : Object.prototype.toString.call(value);
+  const source = safeFingerprintMaterial(value);
   let hash = 2_166_136_261;
   for (let index = 0; index < source.length; index += 1) {
     hash ^= source.charCodeAt(index);
     hash = Math.imul(hash, 16_777_619);
   }
   return "MAIN-" + (hash >>> 0).toString(16).padStart(8, "0").toUpperCase();
+}
+
+export function safeFingerprintMaterial(value: unknown): string {
+  if (!(value instanceof Error)) return Object.prototype.toString.call(value);
+  const safeName = /^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(value.name)
+    ? value.name
+    : "Error";
+  const frames = (value.stack ?? "")
+    .split(/\r?\n/gu)
+    .slice(1, 17)
+    .flatMap((line) => {
+      const match =
+        /^\s*at\s+(?:async\s+)?([A-Za-z_$][A-Za-z0-9_$.[\]<> ]{0,80})\s+\(/u.exec(
+          line,
+        );
+      return match?.[1] === undefined ? [] : [match[1].replace(/\s+/gu, " ")];
+    });
+  return [safeName, ...frames].join("\n");
+}
+
+export function createRendererRecoveryPolicy(
+  now: () => number = Date.now,
+): (reason: string) => "ignore" | "reload" | "terminate" {
+  let lastRecoveryAt: number | undefined;
+  return (reason) => {
+    if (reason === "clean-exit") return "ignore";
+    const currentTime = now();
+    if (
+      lastRecoveryAt === undefined ||
+      currentTime - lastRecoveryAt >= 60_000
+    ) {
+      lastRecoveryAt = currentTime;
+      return "reload";
+    }
+    return "terminate";
+  };
+}
+
+export function terminateOnUnhandledRejection(
+  diagnostics: Pick<DesktopDiagnostics, "fatal">,
+  reason: unknown,
+  terminate: (exitCode: number) => void,
+): void {
+  diagnostics.fatal(incidentCode(reason), "unhandledRejection");
+  terminate(1);
 }
 
 export function processGoneReason(value: string): ProcessGoneReason {

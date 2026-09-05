@@ -71,6 +71,7 @@ function parseSupportPortal(value: string | undefined): string | undefined {
       candidate.username !== "" ||
       candidate.password !== "" ||
       candidate.hash !== "" ||
+      candidate.search !== "" ||
       candidate.toString().length > 2_048
     ) {
       return undefined;

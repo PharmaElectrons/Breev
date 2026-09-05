@@ -28,6 +28,10 @@ interface SystemOverviewMessages {
 }
 
 export interface CrashMessage {
+  readonly cancelSubmission: string;
+  readonly confirmSubmission: string;
+  readonly confirmSubmissionDescription: string;
+  readonly confirmSubmissionTitle: string;
   readonly contactSupport: string;
   readonly contactFailed: string;
   readonly contactOpened: string;
@@ -41,6 +45,8 @@ export interface CrashMessage {
   readonly exportFailed: string;
   readonly exportSaved: string;
   readonly incidentLabel: string;
+  readonly manualSupportInstructions: string;
+  readonly privacyNotice: string;
   readonly reloadTerminal: string;
   readonly reportReference: string;
   readonly retryView: string;
@@ -83,6 +89,11 @@ export const messages: Record<Locale, Messages> = {
     checking: "جارٍ التحقق",
     connectionStatus: "حالة الاتصال",
     crash: {
+      cancelSubmission: "إلغاء",
+      confirmSubmission: "تأكيد الإرسال",
+      confirmSubmissionDescription:
+        "سيتم إرسال حزمة تشخيص منقحة فقط. لن تُرسل سجلات المرضى أو الوصفات أو بيانات البيع أو بيانات الاعتماد.",
+      confirmSubmissionTitle: "هل تريد إرسال تقرير التشخيص؟",
       contactSupport: "الاتصال بالدعم",
       contactFailed: "تعذر فتح وسيلة الدعم.",
       contactOpened: "تم فتح وسيلة الدعم. أرفق حزمة التشخيص المصدرة.",
@@ -97,6 +108,10 @@ export const messages: Record<Locale, Messages> = {
       exportFailed: "تعذر حفظ حزمة التشخيص.",
       exportSaved: "تم حفظ حزمة التشخيص. أرفق الملف عند التواصل مع الدعم.",
       incidentLabel: "رمز الخطأ",
+      manualSupportInstructions:
+        "دوّن رمز الخطأ، ثم صدّر حزمة التشخيص وأرسلها عبر وسيلة الدعم المعتمدة لدى مؤسستك.",
+      privacyNotice:
+        "تتضمن الحزمة حالة Breev والنظام وسجلات أحداث منقحة فقط. لا تتضمن بيانات المرضى أو الوصفات أو المعاملات أو كلمات المرور أو الرموز السرية.",
       reloadTerminal: "إعادة تحميل نقطة البيع",
       reportReference: "مرجع التقرير",
       retryView: "إعادة المحاولة",
@@ -185,6 +200,11 @@ export const messages: Record<Locale, Messages> = {
     checking: "Checking",
     connectionStatus: "Connection status",
     crash: {
+      cancelSubmission: "Cancel",
+      confirmSubmission: "Confirm send",
+      confirmSubmissionDescription:
+        "Only a redacted diagnostic package will be sent. Patient, prescription, sales, and credential records are not included.",
+      confirmSubmissionTitle: "Send this diagnostic report?",
       contactSupport: "Contact support",
       contactFailed: "The support destination could not be opened.",
       contactOpened: "Support opened. Attach the exported diagnostic package.",
@@ -200,6 +220,10 @@ export const messages: Record<Locale, Messages> = {
       exportSaved:
         "Diagnostic package saved. Attach the file when contacting support.",
       incidentLabel: "Incident code",
+      manualSupportInstructions:
+        "Write down the incident code, export the diagnostic package, and send it through your organization's approved support channel.",
+      privacyNotice:
+        "The package contains Breev/system health and redacted event records only. It excludes patient, prescription, transaction, password, and secret data.",
       reloadTerminal: "Reload terminal",
       reportReference: "Report reference",
       retryView: "Try again",

@@ -48,6 +48,7 @@ describe("desktop support destination", () => {
       "http://support.example.test",
       "https://user:secret@support.example.test",
       "https://support.example.test/#unsafe",
+      "https://support.example.test/new?token=secret-canary",
       "javascript:alert(1)",
     ]) {
       expect(

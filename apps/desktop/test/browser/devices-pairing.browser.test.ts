@@ -680,6 +680,7 @@ async function installDesktopFake(
       submitDiagnostics: async () => ({ status: "unavailable" as const }),
       submitPairingInvitation: async () => unpaired,
       getStartupConfig: async () => ({
+        diagnosticReporting: "disabled" as const,
         localApiOrigin: origin,
         role: "main" as const,
       }),

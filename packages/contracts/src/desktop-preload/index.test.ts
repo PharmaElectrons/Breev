@@ -28,6 +28,7 @@ describe("desktop preload contract", () => {
     expect(desktopStartupConfigRequestSchema.parse({})).toEqual({});
     for (const role of ["main", "terminal"] as const) {
       const payload = {
+        diagnosticReporting: "disabled" as const,
         deviceId,
         installationId,
         localApiOrigin: "http://127.0.0.1:31310",
@@ -63,10 +64,12 @@ describe("desktop preload contract", () => {
   it("keeps installation identifiers optional for unpaired and development devices", () => {
     expect(
       desktopStartupConfigResponseSchema.parse({
+        diagnosticReporting: "disabled",
         localApiOrigin: "http://127.0.0.1:31310",
         role: "terminal",
       }),
     ).toEqual({
+      diagnosticReporting: "disabled",
       localApiOrigin: "http://127.0.0.1:31310",
       role: "terminal",
     });
@@ -241,12 +244,17 @@ describe("desktop preload contract", () => {
   });
 
   it("keeps diagnostic export pathless and returns no local path", () => {
-    expect(desktopExportDiagnosticsRequestSchema.parse({})).toEqual({});
+    expect(
+      desktopExportDiagnosticsRequestSchema.parse({ locale: "ar" }),
+    ).toEqual({
+      locale: "ar",
+    });
     expect(
       desktopExportDiagnosticsRequestSchema.parse({
         incidentCode: "MAIN-0123ABCD",
+        locale: "en",
       }),
-    ).toEqual({ incidentCode: "MAIN-0123ABCD" });
+    ).toEqual({ incidentCode: "MAIN-0123ABCD", locale: "en" });
     expect(
       desktopExportDiagnosticsResponseSchema.parse({
         status: "saved",
@@ -254,6 +262,7 @@ describe("desktop preload contract", () => {
     ).toEqual({ status: "saved" });
     expect(() =>
       desktopExportDiagnosticsRequestSchema.parse({
+        locale: "en",
         path: "C:\\Users\\patient-name-canary\\Desktop",
       }),
     ).toThrow();

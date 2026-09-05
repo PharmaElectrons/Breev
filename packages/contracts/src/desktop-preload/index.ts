@@ -43,6 +43,7 @@ export const desktopCopyIdentifierResponseSchema = z.strictObject({
  * roles and the content security policy never has to admit a LAN origin.
  */
 export const desktopStartupConfigResponseSchema = z.strictObject({
+  diagnosticReporting: z.enum(["disabled", "manual"]),
   deviceId: z.uuidv7().optional(),
   installationId: z.uuid().optional(),
   localApiOrigin: z.string().max(128).refine(isLocalApiOrigin),
@@ -187,6 +188,7 @@ export const desktopExportDiagnosticsRequestSchema = z.strictObject({
     .string()
     .regex(/^(?:APP|ASYNC|BOOT|MAIN|VIEW)-[0-9A-F]{8}$/u)
     .optional(),
+  locale: z.enum(["ar", "en"]),
 });
 
 export const desktopExportDiagnosticsResponseSchema = z.discriminatedUnion(

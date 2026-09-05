@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createBreevDesktopApi } from "./api.js";
 
 const startupConfig = {
+  diagnosticReporting: "disabled" as const,
   localApiOrigin: "http://127.0.0.1:31310",
   role: "main" as const,
 };
@@ -174,12 +175,13 @@ describe("desktop preload API", () => {
     const api = createBreevDesktopApi(invoke);
 
     await expect(
-      api.exportDiagnostics({ incidentCode: "VIEW-0123ABCD" }),
+      api.exportDiagnostics({ incidentCode: "VIEW-0123ABCD", locale: "en" }),
     ).resolves.toEqual({
       status: "saved",
     });
     expect(invoke).toHaveBeenCalledWith("breev:desktop:export-diagnostics", {
       incidentCode: "VIEW-0123ABCD",
+      locale: "en",
     });
     await expect(
       api.exportDiagnostics({ path: "C:\\outside" } as never),

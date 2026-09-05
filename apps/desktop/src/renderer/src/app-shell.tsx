@@ -9,7 +9,10 @@ import {
 } from "@/components/ui/card";
 
 import { CatalogRouteView } from "./catalog-screen";
-import { WorkspaceErrorBoundary } from "./error-boundary";
+import {
+  DiagnosticSubmissionConfirmation,
+  WorkspaceErrorBoundary,
+} from "./error-boundary";
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityShell } from "./identity-shell";
 import { messages } from "./messages";
@@ -88,7 +91,12 @@ export function AppShell({
     "failed" | "idle" | "opened" | "opening" | "unavailable"
   >("idle");
   const [submissionAction, setSubmissionAction] = useState<
-    "failed" | "idle" | "submitted" | "submitting" | "unavailable"
+    | "confirming"
+    | "failed"
+    | "idle"
+    | "submitted"
+    | "submitting"
+    | "unavailable"
   >("idle");
   const [submissionReportId, setSubmissionReportId] = useState<string | null>(
     null,
@@ -97,7 +105,7 @@ export function AppShell({
   const exportDiagnostics = async (): Promise<void> => {
     setDiagnosticAction("saving");
     try {
-      const result = await window.breevDesktop.exportDiagnostics({});
+      const result = await window.breevDesktop.exportDiagnostics({ locale });
       setDiagnosticAction(result.status);
     } catch {
       setDiagnosticAction("failed");
@@ -139,6 +147,8 @@ export function AppShell({
   const requestedModuleId = moduleIdForHash(currentHash);
   const authenticated =
     identityState !== null && identityState.state === "authenticated";
+  const centralSubmissionEnabled =
+    startupConfig?.diagnosticReporting === "manual";
   const modules: readonly NavigationModule[] = authenticated
     ? navigationModules({
         allowedPermissions: identityState.allowedPermissions,
@@ -195,36 +205,42 @@ export function AppShell({
         <ModuleNavigation activeModuleId={activeModuleId} modules={modules} />
 
         <div className="preference-controls">
-          <button
-            className="quiet-button"
-            type="button"
-            aria-label={copy.crash.exportDiagnostics}
-            disabled={diagnosticAction === "saving"}
-            onClick={() => void exportDiagnostics()}
-          >
-            <DiagnosticsIcon />
-            <span>{copy.crash.exportDiagnostics}</span>
-          </button>
-          <button
-            className="quiet-button"
-            type="button"
-            aria-label={copy.crash.contactSupport}
-            disabled={supportAction === "opening"}
-            onClick={() => void openSupport()}
-          >
-            <SupportIcon />
-            <span>{copy.crash.contactSupport}</span>
-          </button>
-          <button
-            className="quiet-button"
-            type="button"
-            aria-label={copy.crash.submitDiagnostics}
-            disabled={submissionAction === "submitting"}
-            onClick={() => void submitDiagnostics()}
-          >
-            <SendIcon />
-            <span>{copy.crash.submitDiagnostics}</span>
-          </button>
+          {authenticated ? (
+            <>
+              <button
+                className="quiet-button"
+                type="button"
+                aria-label={copy.crash.exportDiagnostics}
+                disabled={diagnosticAction === "saving"}
+                onClick={() => void exportDiagnostics()}
+              >
+                <DiagnosticsIcon />
+                <span>{copy.crash.exportDiagnostics}</span>
+              </button>
+              <button
+                className="quiet-button"
+                type="button"
+                aria-label={copy.crash.contactSupport}
+                disabled={supportAction === "opening"}
+                onClick={() => void openSupport()}
+              >
+                <SupportIcon />
+                <span>{copy.crash.contactSupport}</span>
+              </button>
+              {centralSubmissionEnabled ? (
+                <button
+                  className="quiet-button"
+                  type="button"
+                  aria-label={copy.crash.submitDiagnostics}
+                  disabled={submissionAction === "submitting"}
+                  onClick={() => setSubmissionAction("confirming")}
+                >
+                  <SendIcon />
+                  <span>{copy.crash.submitDiagnostics}</span>
+                </button>
+              ) : null}
+            </>
+          ) : null}
           <button
             className="quiet-button"
             type="button"
@@ -250,6 +266,14 @@ export function AppShell({
         </div>
       </header>
 
+      {submissionAction === "confirming" ? (
+        <DiagnosticSubmissionConfirmation
+          copy={copy.crash}
+          onCancel={() => setSubmissionAction("idle")}
+          onConfirm={() => void submitDiagnostics()}
+        />
+      ) : null}
+
       <p className="support-action-status" role="status" aria-live="polite">
         {diagnosticAction === "saved"
           ? copy.crash.exportSaved
@@ -262,7 +286,7 @@ export function AppShell({
                 : supportAction === "failed"
                   ? copy.crash.contactFailed
                   : supportAction === "unavailable"
-                    ? copy.crash.contactUnavailable
+                    ? `${copy.crash.contactUnavailable} ${copy.crash.manualSupportInstructions}`
                     : submissionAction === "submitted"
                       ? `${copy.crash.submitted} ${copy.crash.reportReference}: ${submissionReportId ?? ""}`
                       : submissionAction === "failed"
@@ -349,6 +373,8 @@ export function AppShell({
 
       {state === "ready" && localApiOrigin !== null ? (
         <WorkspaceErrorBoundary
+          actionsEnabled={authenticated}
+          centralSubmissionEnabled={centralSubmissionEnabled}
           resetKey={
             activeModuleId +
             ":" +

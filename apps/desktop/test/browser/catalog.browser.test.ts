@@ -210,6 +210,7 @@ async function installDesktopFake(
         copyIdentifier: async () => ({ copied: true as const }),
         exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
+          diagnosticReporting: "disabled" as const,
           localApiOrigin: apiOrigin,
           role: "main" as const,
         }),

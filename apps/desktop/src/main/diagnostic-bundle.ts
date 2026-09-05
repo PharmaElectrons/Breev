@@ -1,19 +1,19 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { open, readFile, rename, rm } from "node:fs/promises";
 import { arch, platform, release } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-
-import type {
-  DesktopDeviceRole,
-  TerminalPairingStage,
-} from "@breev/contracts/desktop-preload";
+import { z } from "zod";
 
 import {
-  containsDiagnosticCanary,
-  redactDiagnosticValue,
-} from "./diagnostic-redaction.js";
+  desktopDeviceRoleSchema,
+  terminalPairingStageSchema,
+  type DesktopDeviceRole,
+  type TerminalPairingStage,
+} from "@breev/contracts/desktop-preload";
+
+import { containsDiagnosticCanary } from "./diagnostic-redaction.js";
 
 const executeFile = promisify(execFile);
 const MAXIMUM_LOG_FILES = 5;
@@ -23,6 +23,7 @@ const SAFE_LOG_EVENTS = new Set([
   "child-process-gone",
   "main-fatal",
   "main-unhandled-rejection",
+  "preload-failed",
   "renderer-incident",
   "renderer-process-gone",
   "renderer-unresponsive",
@@ -39,6 +40,111 @@ const SAFE_LOG_KEYS = new Set([
   "schemaVersion",
   "source",
 ]);
+const MAXIMUM_BUNDLE_BYTES = 4 * 1024 * 1024;
+
+const diagnosticLogRecordSchema = z.strictObject({
+  code: z.string().max(32).optional(),
+  event: z.enum([
+    "app-ready",
+    "child-process-gone",
+    "main-fatal",
+    "main-unhandled-rejection",
+    "preload-failed",
+    "renderer-incident",
+    "renderer-process-gone",
+    "renderer-unresponsive",
+    "startup-failed",
+  ]),
+  origin: z
+    .enum(["preloadError", "uncaughtException", "unhandledRejection"])
+    .optional(),
+  processType: z.string().max(32).optional(),
+  reason: z.string().max(32).optional(),
+  recordedAt: z.string().max(40).optional(),
+  role: desktopDeviceRoleSchema.optional(),
+  schemaVersion: z.number().int().min(1).max(10).optional(),
+  source: z.string().max(32).optional(),
+});
+
+export const diagnosticBundleSchema = z.strictObject({
+  application: z.strictObject({
+    electronVersion: z.string().max(64),
+    nodeVersion: z.string().max(64),
+    product: z.literal("Breev"),
+    version: z.string().max(64),
+  }),
+  bundleId: z.string().regex(/^DIAG-\d{8}-[0-9A-F]{8}$/u),
+  connectivity: z.strictObject({
+    localApi: z.strictObject({
+      state: z.enum([
+        "degraded",
+        "healthy",
+        "reachable",
+        "repair-required",
+        "unreachable",
+      ]),
+      statusCode: z.number().int().min(100).max(599).optional(),
+    }),
+  }),
+  createdAt: z.string().max(40),
+  incident: z
+    .strictObject({
+      code: z.string().regex(/^(?:APP|ASYNC|BOOT|MAIN|VIEW)-[0-9A-F]{8}$/u),
+    })
+    .optional(),
+  installer: z.strictObject({
+    action: z
+      .enum(["Install", "Repair", "Uninstall", "DestructiveUninstall"])
+      .optional(),
+    completedAtUtc: z.string().max(32).optional(),
+    failurePoint: z
+      .enum([
+        "None",
+        "AfterDataPrepared",
+        "AfterPostgreSqlService",
+        "AfterApiService",
+        "AfterFirewallConfigured",
+        "BeforeReadiness",
+        "",
+      ])
+      .optional(),
+    schemaVersion: z.number().finite().optional(),
+    state: z.enum(["invalid", "not-applicable", "recorded", "unavailable"]),
+    status: z
+      .enum([
+        "healthy",
+        "failed-data-preserved",
+        "data-preserved",
+        "data-destroyed",
+      ])
+      .optional(),
+  }),
+  logs: z.array(diagnosticLogRecordSchema).max(2_000),
+  schemaVersion: z.literal(1),
+  service: z.strictObject({
+    state: z.enum([
+      "not-applicable",
+      "running",
+      "stopped",
+      "transitioning",
+      "unknown",
+    ]),
+  }),
+  system: z.strictObject({
+    architecture: z.string().max(32),
+    platform: z.string().max(32),
+    release: z.string().max(128),
+  }),
+  terminal: z.strictObject({
+    pairingStage: z.union([
+      terminalPairingStageSchema,
+      z.literal("not-applicable"),
+    ]),
+    role: desktopDeviceRoleSchema,
+  }),
+});
+
+export type DiagnosticBundle = z.infer<typeof diagnosticBundleSchema>;
 
 export interface DiagnosticBundleInput {
   readonly appVersion: string;
@@ -54,7 +160,7 @@ export interface DiagnosticBundleInput {
 
 export async function createDiagnosticBundle(
   input: DiagnosticBundleInput,
-): Promise<unknown> {
+): Promise<DiagnosticBundle> {
   const [localApi, service, logs, installer] = await Promise.all([
     inspectLocalApi(input.localApiOrigin),
     inspectWindowsService(input.role),
@@ -62,7 +168,7 @@ export async function createDiagnosticBundle(
     readInstallerLifecycle(input.programDataDirectory),
   ]);
   const createdAt = new Date().toISOString();
-  const bundle = redactDiagnosticValue({
+  const bundle = {
     application: {
       electronVersion: input.electronVersion,
       nodeVersion: input.nodeVersion,
@@ -81,12 +187,13 @@ export async function createDiagnosticBundle(
     service,
     system: { architecture: arch(), platform: platform(), release: release() },
     terminal: { pairingStage: input.pairingStage, role: input.role },
-  });
-  const serialized = JSON.stringify(bundle);
+  };
+  const safeBundle = diagnosticBundleSchema.parse(bundle);
+  const serialized = JSON.stringify(safeBundle);
   if (containsDiagnosticCanary(serialized)) {
     throw new Error("Diagnostic bundle redaction failed closed");
   }
-  return bundle;
+  return safeBundle;
 }
 
 export async function readInstallerLifecycle(
@@ -159,16 +266,44 @@ export async function writeDiagnosticBundle(
   filePath: string,
   bundle: unknown,
 ): Promise<void> {
-  const safeBundle = redactDiagnosticValue(bundle);
+  assertDiagnosticDestination(filePath);
+  const safeBundle = diagnosticBundleSchema.parse(bundle);
   const serialized = JSON.stringify(safeBundle, null, 2) + "\n";
   if (containsDiagnosticCanary(serialized)) {
     throw new Error("Diagnostic bundle redaction failed closed");
   }
-  await writeFile(filePath, serialized, {
-    encoding: "utf8",
-    flag: "w",
-    mode: 0o600,
-  });
+  if (Buffer.byteLength(serialized, "utf8") > MAXIMUM_BUNDLE_BYTES) {
+    throw new Error("Diagnostic bundle exceeds the safe export limit");
+  }
+
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${randomBytes(8).toString("hex")}.tmp`,
+  );
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(temporaryPath, "wx", 0o600);
+    await handle.writeFile(serialized, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await rename(temporaryPath, filePath);
+  } finally {
+    await handle?.close().catch(() => undefined);
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
+}
+
+function assertDiagnosticDestination(filePath: string): void {
+  const normalized = path.normalize(filePath);
+  if (
+    !path.isAbsolute(normalized) ||
+    !normalized.toLowerCase().endsWith(".json") ||
+    normalized.includes("\0") ||
+    /^(?:\\\\\.\\|\\\\\?\\GLOBALROOT\\)/iu.test(normalized)
+  ) {
+    throw new Error("Diagnostic export destination is invalid");
+  }
 }
 
 export function diagnosticFileName(now = new Date()): string {
@@ -222,7 +357,7 @@ function safeLogRecord(line: string): Record<string, unknown> | undefined {
         result[key] = value;
       }
     }
-    return redactDiagnosticValue(result) as Record<string, unknown>;
+    return result;
   } catch {
     return undefined;
   }
