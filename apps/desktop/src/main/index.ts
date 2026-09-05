@@ -73,6 +73,7 @@ import {
   createIdentifierCopyIpcGuard,
   createIpcGuard,
   createStartupConfigIpcGuard,
+  parseLocalApiOrigin,
   readInstallationId,
   readMainDeviceBinding,
   resolveAppAssetPath,
@@ -87,8 +88,6 @@ import {
   startTerminalRuntime,
   type TerminalRuntime,
 } from "./terminal-runtime.js";
-
-const DEFAULT_LOCAL_API_ORIGIN = "http://127.0.0.1:31310";
 
 const TERMINAL_CHANNELS = [
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
@@ -228,22 +227,22 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     if (recovery === "reload" && !window.isDestroyed()) {
       window.webContents.reload();
     } else if (recovery === "terminate") {
-      dialog.showErrorBox(
+      reportFatalNotice(
         "Breev stopped safely / توقف Breev بأمان",
         "The application screen failed repeatedly. Restart Breev and provide the incident time to support.\n\nتعطلت شاشة التطبيق بشكل متكرر. أعد تشغيل Breev وقدم وقت الحادث إلى الدعم.",
+        () => app.exit(1),
       );
-      app.exit(1);
     }
   });
   window.webContents.on("preload-error", (_event, _preloadPath, error) => {
     const code = incidentCode(error);
     diagnostics.fatal(code, "preloadError");
     diagnostics.log({ code, event: "preload-failed" });
-    dialog.showErrorBox(
+    reportFatalNotice(
       "Breev could not start / تعذر بدء Breev",
       "The secure desktop bridge failed to load. Restart Breev or contact support.\n\nتعذر تحميل جسر سطح المكتب الآمن. أعد تشغيل Breev أو تواصل مع الدعم.",
+      () => app.exit(1),
     );
-    app.exit(1);
   });
   window.webContents.on("unresponsive", () => {
     diagnostics.log({ event: "renderer-unresponsive" });
@@ -703,11 +702,30 @@ function hardenWebContents(window: BrowserWindow): void {
   );
 }
 
-function readLocalApiOrigin(value: string | undefined): string {
-  return desktopStartupConfigResponseSchema.parse({
-    localApiOrigin: value ?? DEFAULT_LOCAL_API_ORIGIN,
-    role: "main",
-  }).localApiOrigin;
+/**
+ * Fatal notices never use `dialog.showErrorBox`: it spins a nested native
+ * loop on the browser UI thread, Chromium runs no application tasks inside
+ * such a loop, and so an unattended or headless Main freezes with its exit
+ * call unreached, its pending breadcrumbs unwritten, and its debugging
+ * endpoint accepting connections it can never answer. The asynchronous box
+ * keeps the loop live; the exit follows the dismissal or a display failure.
+ */
+function reportFatalNotice(
+  title: string,
+  detail: string,
+  exit: () => void,
+): void {
+  const notice = dialog
+    .showMessageBox({
+      buttons: ["OK"],
+      detail,
+      message: title,
+      noLink: true,
+      title: "Breev",
+      type: "error",
+    })
+    .catch(() => undefined);
+  void Promise.allSettled([notice, diagnostics.flush()]).then(exit);
 }
 
 async function registerAppProtocol(): Promise<void> {
@@ -749,7 +767,7 @@ async function startRoleRuntime(): Promise<{
   });
   if (role === "main") {
     return {
-      localApiOrigin: readLocalApiOrigin(process.env.BREEV_LOCAL_API_URL),
+      localApiOrigin: parseLocalApiOrigin(process.env.BREEV_LOCAL_API_URL),
       role,
     };
   }
@@ -791,11 +809,11 @@ void app.whenReady().then(async () => {
     // spinner.
     const code = incidentCode(error);
     diagnostics.log({ code, event: "startup-failed" });
-    dialog.showErrorBox(
+    reportFatalNotice(
       "Breev cannot start | تعذر تشغيل Breev",
       `Error reference: ${code}\nمرجع الخطأ: ${code}`,
+      () => app.quit(),
     );
-    app.quit();
     return;
   }
   app.on("activate", () => {

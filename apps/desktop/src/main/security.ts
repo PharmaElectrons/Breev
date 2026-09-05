@@ -17,6 +17,7 @@ import {
 import { BRIDGE_TOKEN_HEADER as TERMINAL_BRIDGE_TOKEN_HEADER } from "./terminal-bridge.js";
 
 export const PACKAGED_APP_ENTRY_URL = "breev://app/index.html";
+export const DEFAULT_LOCAL_API_ORIGIN = "http://127.0.0.1:31310";
 
 export const APP_CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
@@ -283,6 +284,19 @@ export function createDesktopStartupConfig(options: {
     localApiOrigin: options.localApiOrigin,
     role: options.role,
   });
+}
+
+/**
+ * Validates the Main-role local API origin on its own. The startup response
+ * schema owns the loopback rule, but parsing the origin through the whole
+ * response object ties this pre-window step to every other required startup
+ * field: when `diagnosticReporting` became required, every packaged Main
+ * start failed before its window existed and stalled on the fatal notice.
+ */
+export function parseLocalApiOrigin(value: string | undefined): string {
+  return desktopStartupConfigResponseSchema.shape.localApiOrigin.parse(
+    value ?? DEFAULT_LOCAL_API_ORIGIN,
+  );
 }
 
 /**

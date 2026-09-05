@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { desktopStartupConfigResponseSchema } from "@breev/contracts/desktop-preload";
 import { describe, expect, it } from "vitest";
 
 import {
   APP_CONTENT_SECURITY_POLICY,
+  DEFAULT_LOCAL_API_ORIGIN,
   addMainDeviceRequestHeaders,
   addTerminalBridgeRequestHeaders,
   createDesktopStartupConfig,
@@ -12,6 +14,7 @@ import {
   createStartupConfigIpcGuard,
   createHardenedWindowOptions,
   normalizeFrameUrl,
+  parseLocalApiOrigin,
   resolveAppAssetPath,
   resolveRendererEntry,
   readMainDeviceBinding,
@@ -234,6 +237,26 @@ describe("startup configuration IPC", () => {
     expect(terminal).toMatchObject({ role: "terminal" });
     expect(main.deviceId).not.toBe(terminal.deviceId);
     expect(main.installationId).toBe("b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4");
+  });
+
+  it("validates the Main API origin without the rest of the startup response", () => {
+    expect(parseLocalApiOrigin(undefined)).toBe(DEFAULT_LOCAL_API_ORIGIN);
+    expect(parseLocalApiOrigin("http://127.0.0.1:4321")).toBe(
+      "http://127.0.0.1:4321",
+    );
+    expect(() => parseLocalApiOrigin("http://attacker.example")).toThrow();
+    expect(() => parseLocalApiOrigin("http://127.0.0.1:4321/api")).toThrow();
+    expect(() => parseLocalApiOrigin("https://127.0.0.1:4321")).toThrow();
+
+    // The response schema requires more than the origin. Parsing the origin
+    // through it coupled Main's pre-window startup to every later required
+    // field and made each packaged Main start fail (PR #149 regression).
+    expect(() =>
+      desktopStartupConfigResponseSchema.parse({
+        localApiOrigin: "http://127.0.0.1:4321",
+        role: "main",
+      }),
+    ).toThrow();
   });
 
   it("denies cyclic payloads that cannot pass the size guard", () => {
