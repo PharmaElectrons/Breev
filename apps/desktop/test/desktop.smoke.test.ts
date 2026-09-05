@@ -356,13 +356,13 @@ async function connectToPackagedDesktop(
   const activePortFile = path.join(userDataDirectory, "DevToolsActivePort");
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    let port: number | undefined;
+    const candidateEndpoints = new Set<string>();
     try {
       const content = await readFile(activePortFile, "utf8");
       const [portString] = content.trim().split("\n");
       const parsedPort = Number.parseInt(portString ?? "", 10);
       if (Number.isInteger(parsedPort) && parsedPort > 0) {
-        port = parsedPort;
+        candidateEndpoints.add(`http://127.0.0.1:${parsedPort}`);
       }
     } catch {
       // Electron 43 can publish the ephemeral endpoint only to stderr when
@@ -370,22 +370,19 @@ async function connectToPackagedDesktop(
       // accepts that trusted loopback endpoint when the file is absent.
     }
 
-    if (port === undefined) {
-      const endpoint = getElectronErrors().match(
-        /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//,
-      );
-      const parsedPort = Number.parseInt(endpoint?.[1] ?? "", 10);
-      if (Number.isInteger(parsedPort) && parsedPort > 0) {
-        port = parsedPort;
-      }
+    const endpoint = getElectronErrors().match(
+      /DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser\/[^\s]+)/,
+    );
+    if (endpoint?.[1] !== undefined) {
+      candidateEndpoints.add(endpoint[1]);
     }
 
-    if (port !== undefined) {
+    for (const endpoint of candidateEndpoints) {
       try {
-        return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+        return await chromium.connectOverCDP(endpoint);
       } catch {
-        // The browser process may have announced the endpoint just before
-        // its HTTP server became ready; retry until the bounded deadline.
+        // The browser process may have announced an endpoint just before
+        // its CDP server became ready; retry until the bounded deadline.
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
