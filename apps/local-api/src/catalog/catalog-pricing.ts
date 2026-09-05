@@ -1,16 +1,39 @@
-import type {
-  PriceRoundingSetting,
-  ProductPricing,
-  ProductPricingInput,
-} from "@breev/contracts/local-rest";
-
 import {
   parseCanonicalInteger,
   parseScaledDecimal,
   roundQuotientToMultiple,
 } from "./catalog-exact.js";
 
-export type CatalogPricingRequest = ProductPricingInput;
+export type PriceRoundingSetting =
+  "nearest-1000-iqd" | "nearest-250-iqd" | "nearest-500-iqd" | "off";
+
+interface CatalogPricingShared {
+  readonly wholesalePriceFils: string | null;
+}
+
+export type CatalogPricingRequest =
+  | (CatalogPricingShared & {
+      readonly method: "by-price";
+      readonly retailPriceFils: string;
+    })
+  | (CatalogPricingShared & {
+      readonly method: "by-percentage";
+      readonly costFils: string;
+      readonly marginPercentage: string;
+      readonly rounding: PriceRoundingSetting;
+    });
+
+export type CatalogPricing =
+  | (CatalogPricingShared & {
+      readonly method: "by-price";
+      readonly retailPriceFils: string;
+    })
+  | (CatalogPricingShared & {
+      readonly method: "by-percentage";
+      readonly marginPercentage: string;
+      readonly retailPriceFils: string;
+      readonly rounding: PriceRoundingSetting;
+    });
 
 export type CatalogPricingProblemCode =
   | "cost-invalid"
@@ -24,7 +47,7 @@ export interface CatalogPricingProblem {
 }
 
 export type CatalogPricingOutcome =
-  | { readonly ok: true; readonly pricing: ProductPricing }
+  | { readonly ok: true; readonly pricing: CatalogPricing }
   | { readonly ok: false; readonly problem: CatalogPricingProblem };
 
 const PERCENTAGE_SCALE = 1_000_000n;

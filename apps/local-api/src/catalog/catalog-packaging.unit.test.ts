@@ -1,11 +1,12 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import type { ProductPackaging } from "@breev/contracts/local-rest";
 
 import {
   composeBaseUnits,
   definePackaging,
   defaultUnitFor,
   describeBaseUnits,
+  type PackagingDefinition,
   recalculateForUnit,
   toBaseUnits,
   type Packaging,
@@ -13,7 +14,7 @@ import {
 } from "./catalog-packaging.js";
 
 /** 1 pack = 4 strips, 1 carton = 48 strips, and a treatment day counts nothing. */
-const DEFINITION: ProductPackaging = {
+const DEFINITION: PackagingDefinition = {
   inventoryUnitName: "Strip",
   packageUnits: [
     { name: "Pack", baseUnitsPerPackage: "4" },
@@ -34,7 +35,7 @@ const CARTON: UnitReference = {
   packageUnitName: "Carton",
 };
 
-function packagingOf(definition: ProductPackaging = DEFINITION): Packaging {
+function packagingOf(definition: PackagingDefinition = DEFINITION): Packaging {
   const outcome = definePackaging(definition);
   if (!outcome.ok) {
     throw new Error(
@@ -313,24 +314,38 @@ describe("catalog packaging unit change", () => {
     });
   });
 
-  it("keeps the base balance whole for every generated count and ratio", () => {
-    // A deterministic sweep instead of a random one, so a failure names values
-    // that reproduce on the next run.
-    for (let ratio = 1n; ratio <= 60n; ratio += 1n) {
-      const packaging = packagingOf({
-        inventoryUnitName: "Strip",
-        packageUnits: [{ name: "Pack", baseUnitsPerPackage: ratio.toString() }],
-        thirdUnit: null,
-        defaultUnits: { count: STRIP, purchase: PACK, sale: STRIP },
-      });
-      for (let packs = 0n; packs <= 7n; packs += 1n) {
-        for (let strips = 0n; strips < ratio; strips += 1n) {
+  it("keeps the base balance whole for arbitrary counts and ratios", () => {
+    const maximum = 9_223_372_036_854_775_807n;
+    const ratioArbitrary = fc.oneof(
+      fc.constantFrom(1n, 2n, maximum - 1n, maximum),
+      fc.bigInt({ min: 1n, max: maximum }),
+    );
+    const countArbitrary = fc.oneof(
+      fc.constantFrom(0n, 1n, maximum - 1n, maximum),
+      fc.bigInt({ min: 0n, max: maximum }),
+    );
+
+    fc.assert(
+      fc.property(
+        ratioArbitrary,
+        countArbitrary,
+        countArbitrary,
+        (ratio, packs, remainderCandidate) => {
+          const strips = remainderCandidate % ratio;
+          const packaging = packagingOf({
+            inventoryUnitName: "Strip",
+            packageUnits: [
+              { name: "Pack", baseUnitsPerPackage: ratio.toString() },
+            ],
+            thirdUnit: null,
+            defaultUnits: { count: STRIP, purchase: PACK, sale: STRIP },
+          });
           const composed = composeBaseUnits(packaging, [
             { unit: PACK, count: packs },
             { unit: STRIP, count: strips },
           ]);
           expect(composed.ok, `${ratio}/${packs}/${strips}`).toBe(true);
-          if (!composed.ok) continue;
+          if (!composed.ok) return;
 
           const baseUnits = composed.baseUnits;
           expect(baseUnits).toBe(packs * ratio + strips);
@@ -366,8 +381,9 @@ describe("catalog packaging unit change", () => {
           } else {
             expect(change.ok, `${ratio}/${packs}/${strips}`).toBe(false);
           }
-        }
-      }
-    }
+        },
+      ),
+      { numRuns: 500, seed: 47 },
+    );
   });
 });

@@ -314,6 +314,30 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       "pharmacy_id",
       "product_id",
     ]);
+    const stockClient = await administrator.connect();
+    try {
+      await stockClient.query("begin");
+      await stockClient.query(
+        `create table catalog_test_stock_movements (
+           product_id uuid not null,
+           unit_id uuid not null,
+           quantity_base_units bigint not null,
+           foreign key (unit_id, product_id)
+             references catalog_product_units(id, product_id)
+         )`,
+      );
+      await expect(
+        stockClient.query(
+          `insert into catalog_test_stock_movements (
+             product_id, unit_id, quantity_base_units
+           ) values ($1, $2, 1)`,
+          [editableProduct.id, third.rows[0]?.product_id],
+        ),
+      ).rejects.toMatchObject({ code: "23503" });
+    } finally {
+      await stockClient.query("rollback").catch(() => undefined);
+      stockClient.release();
+    }
     await expectRejectedWhenDeferredChecksRun(
       `update catalog_products
        set count_default_unit_id = $2, revision = revision + 1,
@@ -345,6 +369,150 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
        ) as allowed`,
     );
     expect(privilege.rows[0]?.allowed).toBe(false);
+  });
+
+  it("rolls back every packaging replacement step with its audit and idempotency result", async () => {
+    await administrator.query(
+      `create table catalog_test_packaging_faults (
+         product_id uuid primary key,
+         step text not null
+       )`,
+    );
+    await administrator.query(
+      `create function reject_catalog_test_unit_write()
+       returns trigger
+       language plpgsql
+       security definer
+       set search_path = pg_catalog, public
+       as $$
+       declare
+         configured_step text;
+         target_product_id uuid;
+       begin
+         if tg_op = 'DELETE' then
+           target_product_id := old.product_id;
+         else
+           target_product_id := new.product_id;
+         end if;
+         select fault.step into configured_step
+         from public.catalog_test_packaging_faults fault
+         where fault.product_id = target_product_id;
+         if tg_op = 'DELETE' and configured_step = 'delete-units' then
+           raise exception 'injected delete-units failure';
+         end if;
+         if tg_op = 'INSERT' then
+           if configured_step = 'insert-inventory' and new.kind = 'inventory' then
+             raise exception 'injected insert-inventory failure';
+           end if;
+           if configured_step = 'insert-package' and new.kind = 'package' then
+             raise exception 'injected insert-package failure';
+           end if;
+         end if;
+         if tg_op = 'DELETE' then return old; end if;
+         return new;
+       end;
+       $$`,
+    );
+    await administrator.query(
+      `create function reject_catalog_test_third_unit_write()
+       returns trigger
+       language plpgsql
+       security definer
+       set search_path = pg_catalog, public
+       as $$
+       declare
+         configured_step text;
+         target_product_id uuid;
+       begin
+         if tg_op = 'DELETE' then
+           target_product_id := old.product_id;
+         else
+           target_product_id := new.product_id;
+         end if;
+         select fault.step into configured_step
+         from public.catalog_test_packaging_faults fault
+         where fault.product_id = target_product_id;
+         if tg_op = 'DELETE' and configured_step = 'delete-third-unit' then
+           raise exception 'injected delete-third-unit failure';
+         end if;
+         if tg_op = 'INSERT' and configured_step = 'insert-third-unit' then
+           raise exception 'injected insert-third-unit failure';
+         end if;
+         if tg_op = 'DELETE' then return old; end if;
+         return new;
+       end;
+       $$`,
+    );
+    await administrator.query(
+      `create trigger catalog_test_reject_unit_write
+       before insert or delete on catalog_product_units
+       for each row execute function reject_catalog_test_unit_write()`,
+    );
+    await administrator.query(
+      `create trigger catalog_test_reject_third_unit_write
+       before insert or delete on catalog_product_third_units
+       for each row execute function reject_catalog_test_third_unit_write()`,
+    );
+
+    try {
+      const before = await request("GET", productPath(editableProduct.id));
+      expect(before.status, failureContext([before])).toBe(200);
+      for (const step of [
+        "delete-units",
+        "delete-third-unit",
+        "insert-inventory",
+        "insert-package",
+        "insert-third-unit",
+      ] as const) {
+        await administrator.query(
+          `insert into catalog_test_packaging_faults (product_id, step)
+           values ($1, $2)
+           on conflict (product_id) do update set step = excluded.step`,
+          [editableProduct.id, step],
+        );
+        const idempotencyKey = createUuidV7();
+        const failed = await request("PUT", productPath(editableProduct.id), {
+          ...medicationRequest(`Rollback ${step}`, []),
+          expectedRevision: editableProduct.revision,
+          idempotencyKey,
+        });
+        expect(failed.status, failureContext([failed])).toBe(500);
+        expect(await request("GET", productPath(editableProduct.id))).toEqual(
+          before,
+        );
+        const terminalFacts = await administrator.query<{
+          audit_count: string;
+          result_count: string;
+        }>(
+          `select
+             (select count(*)::text from posting_audit_records
+              where correlation_id = $1) as audit_count,
+             (select count(*)::text from posting_command_results
+              where idempotency_key = $1) as result_count`,
+          [idempotencyKey],
+        );
+        expect(terminalFacts.rows[0]).toEqual({
+          audit_count: "0",
+          result_count: "0",
+        });
+      }
+    } finally {
+      await administrator.query(
+        "drop trigger if exists catalog_test_reject_unit_write on catalog_product_units",
+      );
+      await administrator.query(
+        "drop trigger if exists catalog_test_reject_third_unit_write on catalog_product_third_units",
+      );
+      await administrator.query(
+        "drop function if exists reject_catalog_test_unit_write()",
+      );
+      await administrator.query(
+        "drop function if exists reject_catalog_test_third_unit_write()",
+      );
+      await administrator.query(
+        "drop table if exists catalog_test_packaging_faults",
+      );
+    }
   });
 
   it("rejects locked pricing fields at their exact API paths without editing the Product", async () => {

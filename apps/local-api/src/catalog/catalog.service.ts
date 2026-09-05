@@ -46,6 +46,7 @@ import {
 } from "./catalog-packaging.js";
 import {
   resolveCatalogPricing,
+  type CatalogPricing,
   type CatalogPricingProblemCode,
 } from "./catalog-pricing.js";
 
@@ -777,7 +778,7 @@ function productWriteValues(
  */
 interface ValidatedAttributes {
   readonly packaging: Packaging;
-  readonly pricing: ProductPricing;
+  readonly pricing: CatalogPricing;
 }
 
 function validateCatalogAttributes(
@@ -873,7 +874,7 @@ function pricingFieldPath(
  * nulls for them is what keeps `catalog_products_pricing_state` satisfied
  * rather than a second statement that could be forgotten.
  */
-function pricingWriteValues(pricing: ProductPricing): readonly unknown[] {
+function pricingWriteValues(pricing: CatalogPricing): readonly unknown[] {
   return pricing.method === "by-percentage"
     ? [
         pricing.method,

@@ -27,16 +27,10 @@
  * the ones that look like whole counts.
  */
 
-import type {
-  InventoryCapableUnit,
-  ProductPackaging,
-  ProductUnitInterface,
-} from "@breev/contracts/local-rest";
-
 import { divideRounded, parseCanonicalInteger } from "./catalog-exact.js";
 
 /** The interfaces that can each start in their own unit. */
-export type UnitInterface = ProductUnitInterface;
+export type UnitInterface = "count" | "purchase" | "sale";
 
 export const UNIT_INTERFACES: readonly UnitInterface[] = [
   "count",
@@ -49,7 +43,23 @@ export const UNIT_INTERFACES: readonly UnitInterface[] = [
  * product's packages by name. There is no third shape, and that absence is what
  * keeps the Third Unit out of every conversion below.
  */
-export type UnitReference = InventoryCapableUnit;
+export type UnitReference =
+  | { readonly kind: "inventory-unit" }
+  | {
+      readonly kind: "package-unit";
+      readonly packageUnitName: string;
+    };
+
+/** Catalog-owned input accepted by the packaging policy. */
+export interface PackagingDefinition {
+  readonly inventoryUnitName: string;
+  readonly packageUnits: readonly {
+    readonly name: string;
+    readonly baseUnitsPerPackage: string;
+  }[];
+  readonly thirdUnit: { readonly name: string } | null;
+  readonly defaultUnits: Readonly<Record<UnitInterface, UnitReference>>;
+}
 
 /**
  * Validated packaging. Only {@link definePackaging} produces one, so every
@@ -131,7 +141,7 @@ export type UnitChangeOutcome =
  * at the first, so a screen can mark all the offending fields at once.
  */
 export function definePackaging(
-  definition: ProductPackaging,
+  definition: PackagingDefinition,
 ): PackagingOutcome {
   const problems: PackagingProblem[] = [];
   const packageUnits: { name: string; baseUnitsPerPackage: bigint }[] = [];
