@@ -364,6 +364,22 @@ async function connectToPackagedDesktop(
         return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
       }
     } catch {
+      // Electron 43 can publish the ephemeral endpoint only to stderr when
+      // launched from a packaged executable on Linux. Keep the normal
+      // DevToolsActivePort-file path, but accept the equivalent trusted
+      // loopback endpoint emitted by Electron when the file is absent.
+      const endpoint = getElectronErrors().match(
+        /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//,
+      );
+      const port = Number.parseInt(endpoint?.[1] ?? "", 10);
+      if (Number.isInteger(port) && port > 0) {
+        try {
+          return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+        } catch {
+          // The browser process may have announced the endpoint just before
+          // its HTTP server became ready; retry until the bounded deadline.
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
