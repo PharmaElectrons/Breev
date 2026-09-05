@@ -9,6 +9,13 @@ create type catalog_price_rounding as enum (
   'off'
 );
 --> statement-breakpoint
+-- Snapshot creation locks its snapshot row before its preparation trigger
+-- reads the Product. Match that order for the whole migration so an older API
+-- process can finish cleanly instead of deadlocking with this upgrade.
+lock table catalog_product_snapshots in access exclusive mode;
+--> statement-breakpoint
+lock table catalog_products in access exclusive mode;
+--> statement-breakpoint
 create table catalog_product_units (
   id uuid primary key default uuidv7(),
   pharmacy_id uuid not null references pharmacies(id),
@@ -79,13 +86,17 @@ alter table catalog_products
   add column margin_percentage numeric,
   add column price_rounding catalog_price_rounding;
 --> statement-breakpoint
--- Backfill: every existing live Product gets one named Inventory Unit and a
--- valid By Price state, per this migration's forward backfill contract.
+-- Backfill every existing Product, including immutable terminal records, with
+-- one named Inventory Unit and a valid By Price state. The locks above prevent
+-- an older API process from writing while the change guard is suspended for
+-- this bounded migration-only update.
 insert into catalog_product_units (
   pharmacy_id, product_id, kind, name, ordinal
 )
 select product_row.pharmacy_id, product_row.id, 'inventory', 'Unit', 0
 from catalog_products product_row;
+--> statement-breakpoint
+alter table catalog_products disable trigger catalog_products_change_guard;
 --> statement-breakpoint
 update catalog_products product_row
 set count_default_unit_id = unit_row.id,
@@ -96,6 +107,8 @@ set count_default_unit_id = unit_row.id,
 from catalog_product_units unit_row
 where unit_row.product_id = product_row.id
   and unit_row.kind = 'inventory';
+--> statement-breakpoint
+alter table catalog_products enable trigger catalog_products_change_guard;
 --> statement-breakpoint
 alter table catalog_products
   alter column count_default_unit_id set not null,
@@ -145,10 +158,19 @@ alter table catalog_product_snapshots
   add column margin_percentage numeric,
   add column price_rounding catalog_price_rounding;
 --> statement-breakpoint
+-- Existing snapshots are immutable application facts. Use the bounded locked
+-- migration path above to add neutral packaging and pricing facts without
+-- weakening their guard after this transaction commits.
+alter table catalog_product_snapshots
+  disable trigger catalog_product_snapshots_immutable;
+--> statement-breakpoint
 update catalog_product_snapshots
 set inventory_unit_name = 'Unit',
     pricing_method = 'by-price',
     retail_price_fils = 0;
+--> statement-breakpoint
+alter table catalog_product_snapshots
+  enable trigger catalog_product_snapshots_immutable;
 --> statement-breakpoint
 alter table catalog_product_snapshots
   alter column inventory_unit_name set not null,
