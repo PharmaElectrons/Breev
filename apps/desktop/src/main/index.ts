@@ -49,7 +49,6 @@ import {
   processGoneReason,
   processType,
   resolveDesktopLogDirectory,
-  terminateOnUnhandledRejection,
 } from "./diagnostics.js";
 import {
   createDiagnosticBundle,
@@ -114,9 +113,9 @@ process.on("uncaughtExceptionMonitor", (error) => {
   diagnostics.fatal(incidentCode(error), "uncaughtException");
 });
 process.on("unhandledRejection", (reason) => {
-  terminateOnUnhandledRejection(diagnostics, reason, (exitCode) =>
-    app.exit(exitCode),
-  );
+  const code = incidentCode(reason);
+  diagnostics.fatal(code, "unhandledRejection");
+  diagnostics.log({ code, event: "main-unhandled-rejection" });
 });
 
 app.on("child-process-gone", (_event, details) => {
