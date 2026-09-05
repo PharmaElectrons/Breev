@@ -1,6 +1,9 @@
 import { FuseState, FuseV1Options, getCurrentFuseWire } from "@electron/fuses";
 import { expect, test } from "@playwright/test";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  PostgreSqlContainer,
+  type StartedPostgreSqlContainer,
+} from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
@@ -15,6 +18,7 @@ import { chromium, type Browser } from "playwright";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "./database-roles.js";
 import { evidencePath } from "./browser/evidence-path.js";
@@ -33,8 +37,7 @@ interface MainDeviceCredentials {
 }
 
 test("the packaged desktop enforces its outer security and health seams", async () => {
-  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-  const databaseRoles = await createSeparatedDatabaseRoles(postgres);
+  const { databaseRoles, postgres } = await prepareDatabase();
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -132,9 +135,13 @@ test("the packaged desktop enforces its outer security and health seams", async 
       preloadKeys: [
         "cancelTerminalPairing",
         "copyIdentifier",
+        "exportDiagnostics",
         "getStartupConfig",
         "getTerminalPairingState",
+        "openSupport",
+        "reportRendererIncident",
         "submitManualEndpoint",
+        "submitDiagnostics",
         "submitPairingInvitation",
       ],
       rawIpc: "undefined",
@@ -180,14 +187,13 @@ test("the packaged desktop enforces its outer security and health seams", async 
     await stopProcess(desktop);
     await closeServer(proxy?.server);
     await stopProcess(api);
-    await postgres.stop().catch(() => undefined);
+    await postgres?.stop().catch(() => undefined);
     await rm(userDataDirectory, { force: true, recursive: true });
   }
 });
 
 test("the packaged desktop commits through its bound Main session offline and after API restart", async () => {
-  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-  const databaseRoles = await createSeparatedDatabaseRoles(postgres);
+  const { databaseRoles, postgres } = await prepareDatabase();
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -320,10 +326,28 @@ test("the packaged desktop commits through its bound Main session offline and af
     await browser?.close();
     await stopProcess(desktop);
     await stopProcess(api);
-    await postgres.stop().catch(() => undefined);
+    await postgres?.stop().catch(() => undefined);
     await rm(userDataDirectory, { force: true, recursive: true });
   }
 });
+
+async function prepareDatabase(): Promise<{
+  readonly databaseRoles: SeparatedDatabaseRoles;
+  readonly postgres?: StartedPostgreSqlContainer;
+}> {
+  const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+  if (administratorUrl !== undefined) {
+    return {
+      databaseRoles:
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl),
+    };
+  }
+  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+  return {
+    databaseRoles: await createSeparatedDatabaseRoles(postgres),
+    postgres,
+  };
+}
 
 async function connectToPackagedDesktop(
   userDataDirectory: string,
@@ -331,23 +355,47 @@ async function connectToPackagedDesktop(
 ): Promise<Browser> {
   const activePortFile = path.join(userDataDirectory, "DevToolsActivePort");
   const deadline = Date.now() + 30_000;
+  let lastConnectionError = "";
   while (Date.now() < deadline) {
+    const candidateEndpoints = new Set<string>();
     try {
       const content = await readFile(activePortFile, "utf8");
       const [portString] = content.trim().split("\n");
-      const port = Number.parseInt(portString ?? "", 10);
-      if (Number.isInteger(port) && port > 0) {
-        return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      const parsedPort = Number.parseInt(portString ?? "", 10);
+      if (Number.isInteger(parsedPort) && parsedPort > 0) {
+        candidateEndpoints.add(`http://127.0.0.1:${parsedPort}`);
       }
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Electron 43 can publish the ephemeral endpoint only to stderr when
+      // launched from a packaged executable on Linux. The fallback below
+      // accepts that trusted loopback endpoint when the file is absent.
     }
+
+    const endpoint = getElectronErrors().match(
+      /DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser\/[^\s]+)/,
+    );
+    if (endpoint?.[1] !== undefined) {
+      candidateEndpoints.add(endpoint[1]);
+    }
+
+    for (const endpoint of candidateEndpoints) {
+      try {
+        return await chromium.connectOverCDP(endpoint);
+      } catch (error) {
+        lastConnectionError =
+          error instanceof Error
+            ? `${error.name}: ${error.message}`
+            : String(error);
+        // The browser process may have announced an endpoint just before
+        // its CDP server became ready; retry until the bounded deadline.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(
-    `The packaged Electron debugging endpoint did not start.\n${getElectronErrors()}`,
+    `The packaged Electron debugging endpoint did not start.\n${getElectronErrors()}\nLast CDP connection error: ${lastConnectionError}`,
   );
 }
-
 async function waitForPackagedWindow(
   browser: Browser,
   getElectronErrors: () => string,

@@ -27,12 +27,44 @@ interface SystemOverviewMessages {
   readonly title: string;
 }
 
+export interface CrashMessage {
+  readonly cancelSubmission: string;
+  readonly confirmSubmission: string;
+  readonly confirmSubmissionDescription: string;
+  readonly confirmSubmissionTitle: string;
+  readonly contactSupport: string;
+  readonly contactFailed: string;
+  readonly contactOpened: string;
+  readonly contactUnavailable: string;
+  readonly copied: string;
+  readonly copyFailed: string;
+  readonly copySummary: string;
+  readonly description: string;
+  readonly exportDiagnostics: string;
+  readonly exportCancelled: string;
+  readonly exportFailed: string;
+  readonly exportSaved: string;
+  readonly incidentLabel: string;
+  readonly manualSupportInstructions: string;
+  readonly privacyNotice: string;
+  readonly reloadTerminal: string;
+  readonly reportReference: string;
+  readonly retryView: string;
+  readonly retryUnavailable: string;
+  readonly submitDiagnostics: string;
+  readonly submitFailed: string;
+  readonly submitted: string;
+  readonly submitUnavailable: string;
+  readonly title: string;
+}
+
 interface Messages {
   readonly apiVersion: string;
   readonly brandDescription: string;
   readonly checkAgain: string;
   readonly checking: string;
   readonly connectionStatus: string;
+  readonly crash: CrashMessage;
   readonly deviceProof: Record<
     "committed" | "denied" | "failed" | "idle" | "running",
     string
@@ -56,6 +88,40 @@ export const messages: Record<Locale, Messages> = {
     checkAgain: "تحقق الآن",
     checking: "جارٍ التحقق",
     connectionStatus: "حالة الاتصال",
+    crash: {
+      cancelSubmission: "إلغاء",
+      confirmSubmission: "تأكيد الإرسال",
+      confirmSubmissionDescription:
+        "سيتم إرسال حزمة تشخيص منقحة فقط. لن تُرسل سجلات المرضى أو الوصفات أو بيانات البيع أو بيانات الاعتماد.",
+      confirmSubmissionTitle: "هل تريد إرسال تقرير التشخيص؟",
+      contactSupport: "الاتصال بالدعم",
+      contactFailed: "تعذر فتح وسيلة الدعم.",
+      contactOpened: "تم فتح وسيلة الدعم. أرفق حزمة التشخيص المصدرة.",
+      contactUnavailable: "لم يتم إعداد وسيلة دعم معتمدة بعد.",
+      copied: "تم نسخ ملخص الخطأ.",
+      copyFailed: "تعذر النسخ. دوّن رمز الخطأ الظاهر.",
+      copySummary: "نسخ ملخص الخطأ",
+      description:
+        "تعذر عرض هذا الجزء من بريف بأمان. لم يغيّر هذا الخطأ السجلات المرحّلة في الخادم المحلي.",
+      exportDiagnostics: "تصدير حزمة التشخيص",
+      exportCancelled: "تم إلغاء التصدير.",
+      exportFailed: "تعذر حفظ حزمة التشخيص.",
+      exportSaved: "تم حفظ حزمة التشخيص. أرفق الملف عند التواصل مع الدعم.",
+      incidentLabel: "رمز الخطأ",
+      manualSupportInstructions:
+        "دوّن رمز الخطأ، ثم صدّر حزمة التشخيص وأرسلها عبر وسيلة الدعم المعتمدة لدى مؤسستك.",
+      privacyNotice:
+        "تتضمن الحزمة حالة Breev والنظام وسجلات أحداث منقحة فقط. لا تتضمن بيانات المرضى أو الوصفات أو المعاملات أو كلمات المرور أو الرموز السرية.",
+      reloadTerminal: "إعادة تحميل نقطة البيع",
+      reportReference: "مرجع التقرير",
+      retryView: "إعادة المحاولة",
+      retryUnavailable: "تعذرت إعادة المحاولة. أعد تحميل نقطة البيع.",
+      submitDiagnostics: "إرسال تقرير التشخيص",
+      submitFailed: "تعذر إرسال التقرير. يمكنك تصدير الحزمة ومشاركتها يدوياً.",
+      submitted: "تم إرسال تقرير تشخيص منقح إلى نظام الدعم المركزي.",
+      submitUnavailable: "إرسال التقارير المركزي غير مفعّل على هذا التثبيت.",
+      title: "حدث خطأ غير متوقع",
+    },
     deviceProof: {
       committed: "تم التحقق من ارتباط هذه الحاسبة والجلسة.",
       denied: "رفض الخادم ارتباط هذه الحاسبة والجلسة.",
@@ -133,6 +199,44 @@ export const messages: Record<Locale, Messages> = {
     checkAgain: "Check now",
     checking: "Checking",
     connectionStatus: "Connection status",
+    crash: {
+      cancelSubmission: "Cancel",
+      confirmSubmission: "Confirm send",
+      confirmSubmissionDescription:
+        "Only a redacted diagnostic package will be sent. Patient, prescription, sales, and credential records are not included.",
+      confirmSubmissionTitle: "Send this diagnostic report?",
+      contactSupport: "Contact support",
+      contactFailed: "The support destination could not be opened.",
+      contactOpened: "Support opened. Attach the exported diagnostic package.",
+      contactUnavailable: "No approved support destination is configured yet.",
+      copied: "Error summary copied.",
+      copyFailed: "Copy failed. Write down the incident code shown here.",
+      copySummary: "Copy error summary",
+      description:
+        "Breev could not safely display this part of the application. This UI error did not alter posted records in the local API.",
+      exportDiagnostics: "Export diagnostic package",
+      exportCancelled: "Export cancelled.",
+      exportFailed: "The diagnostic package could not be saved.",
+      exportSaved:
+        "Diagnostic package saved. Attach the file when contacting support.",
+      incidentLabel: "Incident code",
+      manualSupportInstructions:
+        "Write down the incident code, export the diagnostic package, and send it through your organization's approved support channel.",
+      privacyNotice:
+        "The package contains Breev/system health and redacted event records only. It excludes patient, prescription, transaction, password, and secret data.",
+      reloadTerminal: "Reload terminal",
+      reportReference: "Report reference",
+      retryView: "Try again",
+      retryUnavailable: "Retry failed. Reload the terminal.",
+      submitDiagnostics: "Send diagnostic report",
+      submitFailed:
+        "Report could not be sent. You can export and share the package manually.",
+      submitted:
+        "A redacted diagnostic report was sent to the central support system.",
+      submitUnavailable:
+        "Central reporting is not enabled for this installation.",
+      title: "Something went wrong",
+    },
     deviceProof: {
       committed: "This device and session binding is verified.",
       denied: "The local API denied this device and session binding.",

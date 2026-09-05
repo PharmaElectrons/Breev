@@ -388,12 +388,17 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => pairing,
         copyIdentifier: async () => ({ copied: true as const }),
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
+          diagnosticReporting: "disabled" as const,
           localApiOrigin: origin,
           role: "main" as const,
         }),
         getTerminalPairingState: async () => pairing,
+        openSupport: async () => ({ status: "unavailable" as const }),
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => pairing,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => pairing,
       });
       Object.defineProperty(globalThis, "breevDesktop", { value: desktopApi });

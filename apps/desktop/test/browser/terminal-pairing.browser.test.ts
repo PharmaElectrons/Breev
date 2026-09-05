@@ -302,7 +302,7 @@ test.describe("terminal pairing screen", () => {
     await expect(page.getByLabel("Main Pharmacy Computer address")).toHaveValue(
       "192.168.1.40",
     );
-    await expect(page.getByLabel("Port")).toHaveValue("31311");
+    await expect(page.getByLabel("Port", { exact: true })).toHaveValue("31311");
 
     // An address alone cannot start a ceremony: the invitation carries the
     // session, the join secret, and the authority pin, and nothing here can
@@ -465,16 +465,21 @@ async function openTerminal(
           return current;
         },
         copyIdentifier: async () => ({ copied: true as const }),
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
+          diagnosticReporting: "disabled" as const,
           localApiOrigin: target,
           role: "terminal" as const,
         }),
         getTerminalPairingState: async () => current,
+        openSupport: async () => ({ status: "unavailable" as const }),
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async (request: DesktopManualEndpointRequest) => {
           await record({ ...request, kind: "endpoint" });
           current = joining;
           return current;
         },
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async (
           request: DesktopPairingInvitationRequest,
         ) => {

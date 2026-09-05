@@ -32,6 +32,7 @@ import { Pool } from "pg";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
 import {
@@ -207,12 +208,17 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => unpairedState,
         copyIdentifier: async () => ({ copied: true as const }),
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
+          diagnosticReporting: "disabled" as const,
           localApiOrigin: apiOrigin,
           role: "main" as const,
         }),
         getTerminalPairingState: async () => unpairedState,
+        openSupport: async () => ({ status: "unavailable" as const }),
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => unpairedState,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => unpairedState,
       });
 
@@ -236,7 +242,7 @@ test.describe.serial("Product catalog screens", () => {
   let matrixProduct: Product;
   let mergeProduct: Product;
   let mergeSurvivor: Product;
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
   const evidenceDir = evidencePath("issue-45/after");
   const testResultsDir = path.resolve(
@@ -251,8 +257,14 @@ test.describe.serial("Product catalog screens", () => {
     await mkdir(evidenceDir, { recursive: true });
     await mkdir(adoptionEvidenceDir, { recursive: true });
     await mkdir(testResultsDir, { recursive: true });
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     const apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -980,17 +992,18 @@ test.describe.serial("Product catalog screens", () => {
     await page.goto(`${renderer.origin}#/catalog/products`);
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
 
-    // Navigation is links, not buttons, so the documented shell button order
-    // (language, theme, check) survives the prototype's module bar.
-    const buttons = page.getByRole("button");
-    await expect(buttons.nth(0)).toHaveAttribute(
-      "aria-label",
+    // Navigation is links, not buttons, so it does not disturb the header's
+    // diagnostic, language, and theme control order. Central submission is
+    // intentionally disabled by default (G-16), so it is absent here.
+    const buttons = page.locator(".preference-controls").getByRole("button");
+    for (const [index, label] of [
+      "Export diagnostic package",
+      "Contact support",
       "Switch to Arabic",
-    );
-    await expect(buttons.nth(1)).toHaveAttribute(
-      "aria-label",
       "Use dark theme",
-    );
+    ].entries()) {
+      await expect(buttons.nth(index)).toHaveAttribute("aria-label", label);
+    }
 
     const products = page
       .getByRole("navigation", { name: "Modules" })

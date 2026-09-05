@@ -96,6 +96,7 @@ interface IpcInvocation {
   readonly senderFrame: {
     readonly isMainFrame: boolean;
     readonly origin: string;
+    readonly processId: number;
     readonly url: string;
   } | null;
   readonly senderId: number;
@@ -103,6 +104,7 @@ interface IpcInvocation {
 
 interface StartupConfigIpcGuardOptions {
   readonly now: () => number;
+  readonly trustedProcessId: () => number;
   readonly trustedSenderId: number;
   readonly trustedOrigin?: string;
   readonly trustedUrl?: string;
@@ -135,6 +137,7 @@ export function createIpcGuard<T>({
   name,
   now,
   parse,
+  trustedProcessId,
   trustedSenderId,
   trustedOrigin = "breev://app",
   trustedUrl = "breev://app/index.html",
@@ -147,17 +150,12 @@ export function createIpcGuard<T>({
       invocation.senderId !== trustedSenderId ||
       frame === null ||
       !frame.isMainFrame ||
+      frame.processId !== trustedProcessId() ||
       frame.origin !== trustedOrigin ||
       normalizeFrameUrl(frame.url) !== normalizeFrameUrl(trustedUrl)
     ) {
       throw new Error(`Breev denied ${name} IPC from this frame`);
     }
-
-    const serializedPayload = serializeIpcPayload(payload, name);
-    if (Buffer.byteLength(serializedPayload, "utf8") > maximumPayloadBytes) {
-      throw new Error(`Breev denied an oversized ${name} payload`);
-    }
-    const request = parse(payload);
 
     const currentTime = now();
     acceptedCallTimes = acceptedCallTimes.filter(
@@ -167,6 +165,12 @@ export function createIpcGuard<T>({
       throw new Error(`Breev denied the ${name} IPC rate`);
     }
     acceptedCallTimes.push(currentTime);
+
+    const serializedPayload = serializeIpcPayload(payload, name);
+    if (Buffer.byteLength(serializedPayload, "utf8") > maximumPayloadBytes) {
+      throw new Error(`Breev denied an oversized ${name} payload`);
+    }
+    const request = parse(payload);
 
     return request;
   };
@@ -267,11 +271,13 @@ interface LocalInstallationIdentity {
 }
 
 export function createDesktopStartupConfig(options: {
+  readonly diagnosticReporting: "disabled" | "manual";
   readonly identity?: LocalInstallationIdentity;
   readonly localApiOrigin: string;
   readonly role: DesktopDeviceRole;
 }): DesktopStartupConfig {
   return desktopStartupConfigResponseSchema.parse({
+    diagnosticReporting: options.diagnosticReporting,
     deviceId: options.identity?.deviceId,
     installationId: options.identity?.installationId,
     localApiOrigin: options.localApiOrigin,

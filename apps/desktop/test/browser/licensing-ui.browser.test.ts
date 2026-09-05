@@ -458,10 +458,15 @@ async function installDesktopFake(
           ).navigator.clipboard.writeText(request.identifier);
           return { copied: true as const };
         },
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getTerminalPairingState: async () => pairingState,
+        openSupport: async () => ({ status: "unavailable" as const }),
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => pairingState,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => pairingState,
         getStartupConfig: async () => ({
+          diagnosticReporting: "disabled" as const,
           deviceId,
           installationId,
           localApiOrigin,
