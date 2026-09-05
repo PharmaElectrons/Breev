@@ -2066,6 +2066,358 @@ a:focus-visible,
   flex: 1;
 }
 
+/* The purchase workspace follows the dense invoice layout approved in the
+   client preview. It displays only data that the current purchase-header API
+   owns; purchase lines and posting controls arrive with their own slices. */
+.purchasing-workspace {
+  gap: 0;
+  padding: 0 clamp(0.75rem, 1.5vw, 1.25rem) 1.25rem;
+}
+
+.purchasing-heading {
+  min-block-size: 4.25rem;
+  border: 1px solid var(--border);
+  border-block-end: 0;
+  padding: 0.65rem 0.85rem;
+  background: var(--card);
+}
+
+.purchasing-heading h1 {
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+}
+
+.purchasing-heading p {
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.purchase-view-tabs {
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-block-end: 0;
+  padding-inline: 0.75rem;
+  background: var(--card);
+}
+
+.purchase-view-tab {
+  display: inline-flex;
+  min-block-size: 2.6rem;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  padding-inline: 0.8rem;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.purchase-view-tab:hover,
+.purchase-view-tab:focus-visible,
+.purchase-view-tab[aria-current="page"] {
+  border-block-end-color: var(--primary);
+  color: var(--foreground);
+}
+
+.purchase-tab-count {
+  display: inline-grid;
+  min-inline-size: 1.35rem;
+  block-size: 1.35rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--primary-wash);
+  color: var(--primary);
+  font-family: var(--font-family-mono);
+  font-size: 0.7rem;
+}
+
+.purchasing-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 19rem);
+  border-radius: 0;
+}
+
+.purchase-main {
+  grid-column: 1;
+  grid-row: 1;
+  align-content: start;
+}
+
+.purchase-draft-rail {
+  grid-column: 2;
+  grid-row: 1;
+  min-block-size: 15rem;
+  border-inline: 0;
+  border-inline-start: 1px solid var(--border);
+  padding: 1rem;
+  background: linear-gradient(180deg, var(--card), var(--muted));
+}
+
+.purchase-context-label {
+  margin: 0 0 0.75rem;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.purchase-context-empty {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.purchase-context-empty strong {
+  color: var(--foreground);
+  font-size: 0.9rem;
+}
+
+.purchase-draft-rail h2 {
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.purchase-context-number {
+  margin: 0.2rem 0 1rem;
+  color: var(--muted-foreground);
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+}
+
+.purchase-header-form {
+  gap: 0.7rem;
+  min-block-size: 15rem;
+  border-block-end: 0;
+  padding: 0.85rem;
+}
+
+.purchase-header-form legend {
+  margin-block-end: 0.55rem;
+  font-size: 0.85rem;
+}
+
+.purchase-header-fields {
+  grid-template-columns: repeat(4, minmax(8.5rem, 1fr));
+  gap: 0.55rem;
+}
+
+.purchase-header-fields label {
+  gap: 0.28rem;
+  font-size: 0.72rem;
+}
+
+.purchase-header-fields input,
+.purchase-header-fields select {
+  min-block-size: 2.35rem;
+  border-color: var(--border);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.purchase-header-fields input:hover,
+.purchase-header-fields select:hover,
+.purchase-header-fields input:focus,
+.purchase-header-fields select:focus {
+  border-color: var(--control-border);
+}
+
+.purchase-actions {
+  justify-content: flex-end;
+}
+
+.purchase-actions .primary-button,
+.purchase-actions .danger-button {
+  min-block-size: 2.4rem;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.78rem;
+}
+
+.purchase-snapshot {
+  grid-template-columns: 1fr;
+  gap: 0;
+  border-block-start: 1px solid var(--border);
+}
+
+.purchase-snapshot div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 0;
+  border-block-end: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0.55rem 0;
+  background: transparent;
+}
+
+.purchase-snapshot dd {
+  margin: 0;
+}
+
+.purchase-supplier-drawer {
+  border-block-start: 1px solid var(--border);
+  background: var(--card);
+}
+
+.purchase-supplier-drawer > summary {
+  padding: 0.75rem 0.9rem;
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.purchase-supplier-drawer .supplier-manager {
+  border-block-start: 1px solid var(--border);
+}
+
+.purchase-register {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-block-start: 0;
+  background: var(--card);
+}
+
+.purchase-register-heading {
+  display: flex;
+  min-block-size: 3.25rem;
+  align-items: center;
+  justify-content: space-between;
+  border-block-end: 1px solid var(--border);
+  padding: 0.55rem 0.85rem;
+}
+
+.purchase-register-heading h2,
+.purchase-register-heading p {
+  margin: 0;
+}
+
+.purchase-register-heading h2 {
+  font-size: 0.95rem;
+}
+
+.purchase-register-heading p {
+  margin-block-start: 0.15rem;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+
+.purchase-filters {
+  display: grid;
+  grid-template-columns:
+    minmax(14rem, 2fr) minmax(10rem, 1fr) minmax(12rem, 1fr)
+    auto;
+  align-items: end;
+  gap: 0.55rem;
+  border-block-end: 1px solid var(--border);
+  padding: 0.65rem 0.85rem;
+}
+
+.purchase-filters label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.purchase-filters input,
+.purchase-filters select {
+  inline-size: 100%;
+  min-block-size: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--control);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.purchase-filters input:hover,
+.purchase-filters select:hover,
+.purchase-filters input:focus,
+.purchase-filters select:focus {
+  border-color: var(--control-border);
+}
+
+.purchase-filter-clear {
+  min-block-size: 2.25rem;
+}
+
+.purchase-table-wrap {
+  min-block-size: 12rem;
+  overflow: auto;
+}
+
+.purchase-draft-table {
+  inline-size: 100%;
+  min-inline-size: 64rem;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.purchase-draft-table th,
+.purchase-draft-table td {
+  border-block-end: 1px solid var(--border);
+  padding: 0.55rem 0.65rem;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.purchase-draft-table thead th {
+  position: sticky;
+  z-index: 1;
+  inset-block-start: 0;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.purchase-draft-table tbody tr:hover,
+.purchase-draft-table tbody tr[data-selected="true"] {
+  background: var(--primary-wash);
+}
+
+.purchase-draft-table tbody th {
+  font-family: var(--font-family-mono);
+  font-weight: 800;
+}
+
+.purchase-draft-table td:nth-child(1),
+.purchase-draft-table td:nth-child(6),
+.purchase-draft-table td:nth-child(7) {
+  font-family: var(--font-family-mono);
+}
+
+.purchase-table-empty {
+  block-size: 8rem;
+  color: var(--muted-foreground);
+  text-align: center !important;
+}
+
+.purchase-open-draft {
+  min-block-size: 1.9rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.45rem;
+  padding: 0.25rem 0.55rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.purchase-open-draft:hover {
+  background: var(--primary-wash);
+}
+
 @keyframes status-spin {
   to {
     transform: rotate(1turn);
@@ -2076,6 +2428,33 @@ a:focus-visible,
   50% {
     opacity: 0.48;
     transform: scale(0.94);
+  }
+}
+
+@media (max-width: 72rem) {
+  .purchasing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .purchase-main,
+  .purchase-draft-rail {
+    grid-column: 1;
+  }
+
+  .purchase-main {
+    grid-row: 1;
+  }
+
+  .purchase-draft-rail {
+    grid-row: 2;
+    min-block-size: auto;
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--border);
+  }
+
+  .purchase-header-fields,
+  .purchase-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2177,6 +2556,7 @@ a:focus-visible,
 
   .purchasing-grid,
   .purchase-header-fields,
+  .purchase-filters,
   .supplier-manager-grid,
   .purchase-snapshot {
     grid-template-columns: 1fr;
@@ -2184,7 +2564,17 @@ a:focus-visible,
 
   .purchase-draft-rail {
     border-inline-end: 0;
-    border-block-end: 1px solid var(--border);
+    border-block-start: 1px solid var(--border);
+    border-block-end: 0;
+  }
+
+  .purchasing-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .purchase-view-tabs {
+    overflow-x: auto;
   }
 
   .catalog-rail {

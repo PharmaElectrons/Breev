@@ -60,6 +60,11 @@ export function PurchasingRouteView({
     "cash",
   );
   const [invoiceDate, setInvoiceDate] = useState(today);
+  const [draftQuery, setDraftQuery] = useState("");
+  const [draftDate, setDraftDate] = useState("");
+  const [draftContext, setDraftContext] = useState<"all" | "cash" | "debt">(
+    "all",
+  );
 
   async function reload(): Promise<void> {
     const [supplierResult, draftResult] = await Promise.all([
@@ -82,7 +87,11 @@ export function PurchasingRouteView({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" && activeDraft !== null) {
+      const target = event.target;
+      const isInsideEditor =
+        target instanceof HTMLElement &&
+        target.closest("[data-purchase-editor]") !== null;
+      if (event.key === "Escape" && activeDraft !== null && isInsideEditor) {
         event.preventDefault();
         void confirmDiscard();
       }
@@ -213,6 +222,34 @@ export function PurchasingRouteView({
       ? activeSuppliers
       : [...activeSuppliers, currentInactiveSupplier];
 
+  const normalizedQuery = draftQuery.trim().toLocaleLowerCase(locale);
+  const filteredDrafts = drafts.filter((draft) => {
+    const matchesQuery =
+      normalizedQuery === "" ||
+      draft.supplierInvoiceNumber
+        .toLocaleLowerCase(locale)
+        .includes(normalizedQuery) ||
+      draft.supplierNameSnapshot
+        .toLocaleLowerCase(locale)
+        .includes(normalizedQuery);
+    const matchesDate = draftDate === "" || draft.invoiceDate === draftDate;
+    const matchesContext =
+      draftContext === "all" || draft.settlementContext === draftContext;
+    return matchesQuery && matchesDate && matchesContext;
+  });
+
+  function clearDraftFilters(): void {
+    setDraftQuery("");
+    setDraftDate("");
+    setDraftContext("all");
+  }
+
+  function focusDraftRegister(): void {
+    const heading = document.getElementById("draft-list-title");
+    heading?.scrollIntoView({ block: "start" });
+    heading?.focus();
+  }
+
   return (
     <section
       className="purchasing-workspace"
@@ -220,7 +257,6 @@ export function PurchasingRouteView({
     >
       <header className="purchasing-heading">
         <div>
-          <p className="catalog-kicker">Breev</p>
           <h1 id="purchasing-title">{copy.title}</h1>
           <p>{copy.subtitle}</p>
         </div>
@@ -229,38 +265,62 @@ export function PurchasingRouteView({
         </button>
       </header>
       {loading ? <p role="status">…</p> : null}
-      <div className="purchasing-grid">
-        <aside
-          className="purchase-draft-rail"
-          aria-labelledby="draft-list-title"
+      <div className="purchase-view-tabs" aria-label={copy.title}>
+        <button
+          type="button"
+          className="purchase-view-tab"
+          onClick={() => invoiceRef.current?.focus()}
         >
-          <h2 id="draft-list-title">{copy.drafts}</h2>
-          {drafts.length === 0 ? (
-            <p>{copy.noDrafts}</p>
+          {copy.invoiceWorkspace}
+        </button>
+        <button
+          type="button"
+          className="purchase-view-tab"
+          onClick={focusDraftRegister}
+        >
+          {copy.savedInvoices}
+          <span className="purchase-tab-count">{drafts.length}</span>
+        </button>
+      </div>
+      <div className="purchasing-grid">
+        <aside className="purchase-draft-rail" aria-label={copy.activeInvoice}>
+          <p className="purchase-context-label">{copy.activeInvoice}</p>
+          {activeDraft === null ? (
+            <div className="purchase-context-empty">
+              <strong>{copy.noActiveInvoice}</strong>
+              <span>{copy.noActiveInvoiceHint}</span>
+            </div>
           ) : (
-            <ul>
-              {drafts.map((draft) => (
-                <li key={draft.id}>
-                  <button
-                    type="button"
-                    className="purchase-draft-card"
-                    onClick={() => showDraft(draft)}
-                  >
-                    <strong>{draft.supplierInvoiceNumber}</strong>
-                    <span>{draft.supplierNameSnapshot}</span>
-                    <small>
-                      {copy.version} {draft.version} · {copy.resume}
-                    </small>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <h2>{activeDraft.supplierNameSnapshot}</h2>
+              <p className="purchase-context-number">
+                <bdi>{activeDraft.supplierInvoiceNumber}</bdi>
+              </p>
+              <dl className="purchase-snapshot">
+                <div>
+                  <dt>{copy.snapshot}</dt>
+                  <dd>{activeDraft.allowanceSnapshot.percentage}%</dd>
+                </div>
+                <div>
+                  <dt>{copy.basis}</dt>
+                  <dd>
+                    <bdi>{activeDraft.allowanceSnapshot.basisFils}</bdi>{" "}
+                    {copy.fils}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{copy.version}</dt>
+                  <dd>{activeDraft.version}</dd>
+                </div>
+              </dl>
+            </>
           )}
         </aside>
 
         <div className="purchase-main">
           <form
             className="purchase-header-form"
+            data-purchase-editor
             onSubmit={(event) => void saveDraft(event)}
           >
             <fieldset>
@@ -326,22 +386,6 @@ export function PurchasingRouteView({
                 </label>
               </div>
             </fieldset>
-            {activeDraft === null ? null : (
-              <dl className="purchase-snapshot">
-                <div>
-                  <dt>{copy.snapshot}</dt>
-                  <dd>{activeDraft.allowanceSnapshot.percentage}%</dd>
-                </div>
-                <div>
-                  <dt>{copy.basis}</dt>
-                  <dd>{activeDraft.allowanceSnapshot.basisFils} fils</dd>
-                </div>
-                <div>
-                  <dt>{copy.version}</dt>
-                  <dd>{activeDraft.version}</dd>
-                </div>
-              </dl>
-            )}
             {warning ? (
               <div
                 className="purchase-warning"
@@ -385,16 +429,160 @@ export function PurchasingRouteView({
             ) : null}
           </form>
           {canManageSuppliers ? (
-            <SupplierManager
-              baseUrl={baseUrl}
-              suppliers={suppliers}
-              onChanged={reload}
-            />
+            <details className="purchase-supplier-drawer">
+              <summary>{copy.manageSuppliers}</summary>
+              <SupplierManager
+                baseUrl={baseUrl}
+                suppliers={suppliers}
+                onChanged={reload}
+              />
+            </details>
           ) : null}
         </div>
       </div>
+
+      <section
+        className="purchase-register"
+        id="purchase-draft-register"
+        aria-labelledby="draft-list-title"
+      >
+        <div className="purchase-register-heading">
+          <div>
+            <h2 id="draft-list-title" tabIndex={-1}>
+              {copy.draftRegister}
+            </h2>
+            <p aria-live="polite">
+              {filteredDrafts.length} {copy.results}
+            </p>
+          </div>
+        </div>
+        <div className="purchase-filters">
+          <label className="purchase-search-filter">
+            {copy.searchDrafts}
+            <input
+              type="search"
+              placeholder={copy.searchDraftsHint}
+              value={draftQuery}
+              onChange={(event) => setDraftQuery(event.target.value)}
+            />
+          </label>
+          <label>
+            {copy.filterDate}
+            <input
+              type="date"
+              value={draftDate}
+              onChange={(event) => setDraftDate(event.target.value)}
+            />
+          </label>
+          <label>
+            {copy.filterContext}
+            <select
+              value={draftContext}
+              onChange={(event) =>
+                setDraftContext(event.target.value as "all" | "cash" | "debt")
+              }
+            >
+              <option value="all">{copy.allContexts}</option>
+              <option value="cash">{copy.cash}</option>
+              <option value="debt">{copy.debt}</option>
+            </select>
+          </label>
+          <button
+            className="quiet-button purchase-filter-clear"
+            type="button"
+            disabled={
+              draftQuery === "" && draftDate === "" && draftContext === "all"
+            }
+            onClick={clearDraftFilters}
+          >
+            {copy.clearFilters}
+          </button>
+        </div>
+
+        <div
+          className="purchase-table-wrap"
+          role="group"
+          aria-label={copy.scrollDrafts}
+          tabIndex={0}
+        >
+          <table className="purchase-draft-table">
+            <caption className="visually-hidden">{copy.draftRegister}</caption>
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">{copy.invoiceNumber}</th>
+                <th scope="col">{copy.supplier}</th>
+                <th scope="col">{copy.invoiceDate}</th>
+                <th scope="col">{copy.context}</th>
+                <th scope="col">{copy.snapshot}</th>
+                <th scope="col">{copy.version}</th>
+                <th scope="col">{copy.updatedAt}</th>
+                <th scope="col">{copy.actions}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredDrafts.length === 0 ? (
+                <tr>
+                  <td className="purchase-table-empty" colSpan={9}>
+                    {drafts.length === 0
+                      ? copy.noDrafts
+                      : copy.noMatchingDrafts}
+                  </td>
+                </tr>
+              ) : (
+                filteredDrafts.map((draft, index) => (
+                  <tr
+                    key={draft.id}
+                    data-selected={activeDraft?.id === draft.id}
+                  >
+                    <td>{index + 1}</td>
+                    <th scope="row">
+                      <bdi>{draft.supplierInvoiceNumber}</bdi>
+                    </th>
+                    <td>{draft.supplierNameSnapshot}</td>
+                    <td>
+                      <bdi>{draft.invoiceDate}</bdi>
+                    </td>
+                    <td>{copy[draft.settlementContext]}</td>
+                    <td>{draft.allowanceSnapshot.percentage}%</td>
+                    <td>{draft.version}</td>
+                    <td>
+                      <bdi>{formatDraftTimestamp(draft.updatedAt, locale)}</bdi>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="purchase-open-draft"
+                        aria-current={
+                          activeDraft?.id === draft.id ? "true" : undefined
+                        }
+                        onClick={() => showDraft(draft)}
+                      >
+                        {copy.resume} {draft.supplierInvoiceNumber}
+                        {activeDraft?.id === draft.id ? (
+                          <span className="visually-hidden">
+                            {" "}
+                            · {copy.activeInvoice}
+                          </span>
+                        ) : null}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
   );
+}
+
+function formatDraftTimestamp(value: string, locale: "ar" | "en"): string {
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function SupplierManager({

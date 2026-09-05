@@ -121,7 +121,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.getByRole("heading", { name: "Purchases" }),
     ).toBeVisible();
-    await expect(page.locator("table")).toHaveCount(0);
+    await expect(page.locator(".purchase-draft-table")).toBeVisible();
+    await expect(
+      page.getByRole("columnheader", { name: "Supplier invoice number" }),
+    ).toBeVisible();
 
     const invoice = page.getByLabel("Supplier invoice number");
     await invoice.focus();
@@ -134,21 +137,51 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(supplier).toBeFocused();
     await supplier.selectOption(supplierId);
     await page.keyboard.press("Tab");
-    await expect(page.getByLabel("Cash / debt context")).toBeFocused();
-    await page.getByLabel("Cash / debt context").selectOption("debt");
+    const paymentContext = page.getByRole("combobox", {
+      name: /^Payment context/,
+    });
+    await expect(paymentContext).toBeFocused();
+    await paymentContext.selectOption("debt");
     await page.keyboard.press("Tab");
     await expect(page.getByLabel("Invoice date")).toBeFocused();
     await page.getByLabel("Invoice date").fill("2026-08-15");
-    await page.getByRole("button", { name: "Create durable draft" }).click();
+    await page.getByRole("button", { name: "Save draft" }).click();
 
-    await expect(page.getByText("2.5%", { exact: true })).toBeVisible();
+    await expect(
+      page.locator(".purchase-snapshot").getByText("2.5%", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Draft saved and durable.")).toBeVisible();
     await expect(
       page
         .locator(".purchase-snapshot")
-        .getByText("Draft version", { exact: true })
+        .getByText("Version", { exact: true })
         .locator(".."),
     ).toContainText("1");
+    const search = page.getByRole("searchbox", { name: "Search invoices" });
+    await search.fill("SUP-2026-0042");
+    await expect(
+      page.locator(".purchase-draft-table tbody tr", {
+        hasText: "SUP-2026-0042",
+      }),
+    ).toBeVisible();
+    let filterOpenedDiscard = false;
+    page.once("dialog", async (dialog) => {
+      filterOpenedDiscard = true;
+      await dialog.dismiss();
+    });
+    await search.press("Escape");
+    await page.waitForTimeout(50);
+    expect(filterOpenedDiscard).toBe(false);
+    page.removeAllListeners("dialog");
+    await search.fill("missing invoice");
+    await expect(
+      page.getByText("No drafts match these filters."),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Clear filters" }).click();
+    await page.getByRole("button", { name: /Saved drafts/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "Saved purchase drafts" }),
+    ).toBeFocused();
 
     await stopProcess(api);
     api = startApi(apiPort, databaseRoles, credentials);
@@ -156,21 +189,28 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.reload();
     await page.getByRole("button", { name: /SUP-2026-0042/ }).click();
     await expect(invoice).toHaveValue("SUP-2026-0042");
-    await expect(page.getByText("2.5%", { exact: true })).toBeVisible();
+    await expect(
+      page.locator('.purchase-open-draft[aria-current="true"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator(".purchase-snapshot").getByText("2.5%", { exact: true }),
+    ).toBeVisible();
 
-    await page.getByRole("button", { name: "New draft" }).click();
+    await page.getByRole("button", { name: "New invoice" }).click();
     await invoice.fill("SUP-2026-0042");
     await supplier.selectOption(supplierId);
     await page.getByLabel("Invoice date").fill("2026-08-15");
-    await page.getByRole("button", { name: "Create durable draft" }).click();
+    await page.getByRole("button", { name: "Save draft" }).click();
     const warning = page.getByRole("alert");
-    await expect(warning).toContainText("Warning:");
-    await expect(warning).toContainText("Working default: Warn");
+    await expect(warning).toContainText("already recorded");
+    await expect(warning).toContainText("Current rule: warn");
     await expect(page.getByText("Draft saved and durable.")).toBeVisible();
 
     page.once("dialog", (dialog) => dialog.dismiss());
     await page.keyboard.press("Escape");
-    await expect(page.getByText("2.5%", { exact: true })).toBeVisible();
+    await expect(
+      page.locator(".purchase-snapshot").getByText("2.5%", { exact: true }),
+    ).toBeVisible();
     page.once("dialog", (dialog) => dialog.accept());
     await page.keyboard.press("Escape");
     await expect(
@@ -213,6 +253,41 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     }
   });
 
+  test("contains wide and narrow layouts without document overflow", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+
+    for (const viewport of [
+      { height: 768, width: 1366 },
+      { height: 800, width: 900 },
+      { height: 800, width: 560 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(
+        page.getByRole("heading", { name: "Purchases" }),
+      ).toBeVisible();
+      const dimensions = (await page.evaluate(
+        "({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth })",
+      )) as { clientWidth: number; scrollWidth: number };
+      expect(dimensions.scrollWidth).toBeLessThanOrEqual(
+        dimensions.clientWidth,
+      );
+    }
+
+    const tableRegion = page.getByRole("group", {
+      name: "Scrollable purchase draft table",
+    });
+    expect(
+      await tableRegion.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    ).toBe(true);
+    await tableRegion.focus();
+    await expect(tableRegion).toBeFocused();
+  });
+
   test("retries an uncertain draft creation without creating a duplicate", async ({
     page,
   }) => {
@@ -225,11 +300,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.getByLabel("Invoice date").fill("2026-08-15");
 
     delayNextDraftCreateResponse = true;
-    await page.getByRole("button", { name: "Create durable draft" }).click();
+    await page.getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByText(/The change was not saved/)).toBeVisible({
       timeout: 7_000,
     });
-    await page.getByRole("button", { name: "Create durable draft" }).click();
+    await page.getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByText("Draft saved and durable.")).toBeVisible();
 
     const active = await apiRequest(
@@ -288,7 +363,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       ).status,
     ).toBe(201);
 
-    await page.getByRole("button", { name: "Create durable draft" }).click();
+    await page.getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByText(/The change was not saved/)).toBeVisible();
     await expect(invoice).toHaveValue("INVALID-SUPPLIER-1");
     await expect(supplier).toHaveValue(invalidSupplier.id);
