@@ -356,38 +356,44 @@ async function connectToPackagedDesktop(
   const activePortFile = path.join(userDataDirectory, "DevToolsActivePort");
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
+    let port: number | undefined;
     try {
       const content = await readFile(activePortFile, "utf8");
       const [portString] = content.trim().split("\n");
-      const port = Number.parseInt(portString ?? "", 10);
-      if (Number.isInteger(port) && port > 0) {
-        return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      const parsedPort = Number.parseInt(portString ?? "", 10);
+      if (Number.isInteger(parsedPort) && parsedPort > 0) {
+        port = parsedPort;
       }
     } catch {
       // Electron 43 can publish the ephemeral endpoint only to stderr when
-      // launched from a packaged executable on Linux. Keep the normal
-      // DevToolsActivePort-file path, but accept the equivalent trusted
-      // loopback endpoint emitted by Electron when the file is absent.
+      // launched from a packaged executable on Linux. The fallback below
+      // accepts that trusted loopback endpoint when the file is absent.
+    }
+
+    if (port === undefined) {
       const endpoint = getElectronErrors().match(
         /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//,
       );
-      const port = Number.parseInt(endpoint?.[1] ?? "", 10);
-      if (Number.isInteger(port) && port > 0) {
-        try {
-          return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-        } catch {
-          // The browser process may have announced the endpoint just before
-          // its HTTP server became ready; retry until the bounded deadline.
-        }
+      const parsedPort = Number.parseInt(endpoint?.[1] ?? "", 10);
+      if (Number.isInteger(parsedPort) && parsedPort > 0) {
+        port = parsedPort;
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
     }
+
+    if (port !== undefined) {
+      try {
+        return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      } catch {
+        // The browser process may have announced the endpoint just before
+        // its HTTP server became ready; retry until the bounded deadline.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(
     `The packaged Electron debugging endpoint did not start.\n${getElectronErrors()}`,
   );
 }
-
 async function waitForPackagedWindow(
   browser: Browser,
   getElectronErrors: () => string,
