@@ -355,6 +355,7 @@ async function connectToPackagedDesktop(
 ): Promise<Browser> {
   const activePortFile = path.join(userDataDirectory, "DevToolsActivePort");
   const deadline = Date.now() + 30_000;
+  let lastConnectionError = "";
   while (Date.now() < deadline) {
     const candidateEndpoints = new Set<string>();
     try {
@@ -380,7 +381,11 @@ async function connectToPackagedDesktop(
     for (const endpoint of candidateEndpoints) {
       try {
         return await chromium.connectOverCDP(endpoint);
-      } catch {
+      } catch (error) {
+        lastConnectionError =
+          error instanceof Error
+            ? `${error.name}: ${error.message}`
+            : String(error);
         // The browser process may have announced an endpoint just before
         // its CDP server became ready; retry until the bounded deadline.
       }
@@ -388,7 +393,7 @@ async function connectToPackagedDesktop(
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(
-    `The packaged Electron debugging endpoint did not start.\n${getElectronErrors()}`,
+    `The packaged Electron debugging endpoint did not start.\n${getElectronErrors()}\nLast CDP connection error: ${lastConnectionError}`,
   );
 }
 async function waitForPackagedWindow(
