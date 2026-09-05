@@ -13,6 +13,9 @@ export default defineConfig({
   },
   preload: {
     build: {
+      externalizeDeps: {
+        exclude: ["zod"],
+      },
       rollupOptions: {
         output: {
           entryFileNames: "[name].cjs",
