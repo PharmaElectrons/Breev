@@ -32,6 +32,7 @@ import { Pool } from "pg";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
 import {
@@ -58,6 +59,7 @@ interface RendererServer {
 
 interface DesktopFakeOptions {
   readonly configDelayMs?: number;
+  readonly diagnosticReporting?: "disabled" | "manual";
   readonly locale?: "ar" | "en";
   readonly pairing?: TerminalPairingState;
   readonly role?: DesktopDeviceRole;
@@ -84,12 +86,18 @@ test.describe.serial("bilingual desktop shell", () => {
   let apiPort: number;
   let credentials: MainDeviceCredentials;
   let databaseRoles: SeparatedDatabaseRoles;
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
 
   test.beforeAll(async () => {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -435,10 +443,25 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Export diagnostic package" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Contact support" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Send diagnostic report" }),
+    ).toHaveCount(0);
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(
       page.getByRole("heading", { name: "Sign in to Breev" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Export diagnostic package" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Contact support" }),
+    ).toHaveCount(0);
     await expectIdentityStateMatrix(page, {
       arabicHeading: "تسجيل الدخول إلى بريف",
       englishHeading: "Sign in to Breev",
@@ -487,6 +510,37 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
     await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
+  test("requires explicit confirmation for manually enabled central diagnostics", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      diagnosticReporting: "manual",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Send diagnostic report" }).click();
+    const confirmation = page.getByRole("alertdialog", {
+      name: "Send this diagnostic report?",
+    });
+    await expect(confirmation).toBeVisible();
+    await expect(
+      confirmation.getByRole("button", { name: "Confirm send" }),
+    ).toBeFocused();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(confirmation).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Send diagnostic report" }).click();
+    await confirmation.getByRole("button", { name: "Confirm send" }).click();
+    await expect(
+      page.getByText("Central reporting is not enabled for this installation."),
+    ).toBeVisible();
   });
 
   test("hides unlicensed paid functions while Free Core survives expiry in both locales and themes", async ({
@@ -1953,7 +2007,15 @@ async function installDesktopFake(
   options: DesktopFakeOptions = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({ configDelayMs, locale, origin, pairing, role, theme }) => {
+    ({
+      configDelayMs,
+      diagnosticReporting,
+      locale,
+      origin,
+      pairing,
+      role,
+      theme,
+    }) => {
       try {
         if (
           locale !== undefined &&
@@ -1977,14 +2039,22 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => cancelled,
         copyIdentifier: async () => ({ copied: true as const }),
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getTerminalPairingState: async () => pairing,
+        openSupport: async () => ({ status: "unavailable" as const }),
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => pairing,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => pairing,
         getStartupConfig: async () => {
           if (configDelayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, configDelayMs));
           }
-          return { localApiOrigin: origin, role };
+          return {
+            diagnosticReporting,
+            localApiOrigin: origin,
+            role,
+          };
         },
       });
       Object.defineProperty(globalThis, "breevDesktop", {
@@ -1995,6 +2065,7 @@ async function installDesktopFake(
     },
     {
       configDelayMs: options.configDelayMs ?? 0,
+      diagnosticReporting: options.diagnosticReporting ?? ("disabled" as const),
       locale: options.locale,
       origin: localApiOrigin,
       pairing: options.pairing ?? {

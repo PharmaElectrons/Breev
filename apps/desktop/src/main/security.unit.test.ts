@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { desktopStartupConfigResponseSchema } from "@breev/contracts/desktop-preload";
 import { describe, expect, it } from "vitest";
 
 import {
   APP_CONTENT_SECURITY_POLICY,
+  DEFAULT_LOCAL_API_ORIGIN,
   addMainDeviceRequestHeaders,
   addTerminalBridgeRequestHeaders,
   createDesktopStartupConfig,
@@ -12,6 +14,7 @@ import {
   createStartupConfigIpcGuard,
   createHardenedWindowOptions,
   normalizeFrameUrl,
+  parseLocalApiOrigin,
   resolveAppAssetPath,
   resolveRendererEntry,
   readMainDeviceBinding,
@@ -59,6 +62,7 @@ describe("startup configuration IPC", () => {
     senderFrame: {
       isMainFrame: true,
       origin: "breev://app",
+      processId: 41,
       url: "breev://app/index.html",
     },
     senderId: 7,
@@ -67,6 +71,7 @@ describe("startup configuration IPC", () => {
   it("accepts the empty payload from the packaged main frame", () => {
     const guard = createStartupConfigIpcGuard({
       now: () => 1_000,
+      trustedProcessId: () => 41,
       trustedSenderId: 7,
     });
 
@@ -88,6 +93,7 @@ describe("startup configuration IPC", () => {
   it("accepts only UUID copy requests from the trusted main frame", () => {
     const guard = createIdentifierCopyIpcGuard({
       now: () => 1_000,
+      trustedProcessId: () => 41,
       trustedSenderId: 7,
     });
     const request = {
@@ -98,12 +104,14 @@ describe("startup configuration IPC", () => {
     expect(() =>
       createIdentifierCopyIpcGuard({
         now: () => 1_000,
+        trustedProcessId: () => 41,
         trustedSenderId: 7,
       })(trustedInvocation, { identifier: "not-a-uuid" }),
     ).toThrow();
     expect(() =>
       createIdentifierCopyIpcGuard({
         now: () => 1_000,
+        trustedProcessId: () => 41,
         trustedSenderId: 7,
       })({ ...trustedInvocation, senderId: 8 }, request),
     ).toThrow();
@@ -112,6 +120,7 @@ describe("startup configuration IPC", () => {
   it("accepts invocation from a frame whose URL carries a client hash route", () => {
     const guard = createStartupConfigIpcGuard({
       now: () => 1_000,
+      trustedProcessId: () => 41,
       trustedSenderId: 7,
     });
 
@@ -132,6 +141,13 @@ describe("startup configuration IPC", () => {
   it.each([
     [{ ...trustedInvocation, senderFrame: null }, {}],
     [{ ...trustedInvocation, senderId: 8 }, {}],
+    [
+      {
+        ...trustedInvocation,
+        senderFrame: { ...trustedInvocation.senderFrame, processId: 42 },
+      },
+      {},
+    ],
     [
       {
         ...trustedInvocation,
@@ -177,6 +193,7 @@ describe("startup configuration IPC", () => {
   ])("denies invalid sender or payload information", (invocation, payload) => {
     const guard = createStartupConfigIpcGuard({
       now: () => 1_000,
+      trustedProcessId: () => 41,
       trustedSenderId: 7,
     });
 
@@ -186,6 +203,7 @@ describe("startup configuration IPC", () => {
   it("denies calls above the startup configuration rate", () => {
     const guard = createStartupConfigIpcGuard({
       now: () => 1_000,
+      trustedProcessId: () => 41,
       trustedSenderId: 7,
     });
 
@@ -197,6 +215,7 @@ describe("startup configuration IPC", () => {
 
   it("returns the validated local identifiers for Main and terminal roles", () => {
     const main = createDesktopStartupConfig({
+      diagnosticReporting: "disabled",
       identity: {
         deviceId: "0198dcbb-d7e3-7000-8000-000000000001",
         installationId: "b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4",
@@ -205,6 +224,7 @@ describe("startup configuration IPC", () => {
       role: "main",
     });
     const terminal = createDesktopStartupConfig({
+      diagnosticReporting: "manual",
       identity: {
         deviceId: "0198dcbb-d7e3-7000-8000-000000000002",
         installationId: "0198dcbb-d7e3-7000-8000-000000000003",
@@ -219,9 +239,30 @@ describe("startup configuration IPC", () => {
     expect(main.installationId).toBe("b7b6c3b5-dddf-4d1e-a03a-94a7cd2cfec4");
   });
 
+  it("validates the Main API origin without the rest of the startup response", () => {
+    expect(parseLocalApiOrigin(undefined)).toBe(DEFAULT_LOCAL_API_ORIGIN);
+    expect(parseLocalApiOrigin("http://127.0.0.1:4321")).toBe(
+      "http://127.0.0.1:4321",
+    );
+    expect(() => parseLocalApiOrigin("http://attacker.example")).toThrow();
+    expect(() => parseLocalApiOrigin("http://127.0.0.1:4321/api")).toThrow();
+    expect(() => parseLocalApiOrigin("https://127.0.0.1:4321")).toThrow();
+
+    // The response schema requires more than the origin. Parsing the origin
+    // through it coupled Main's pre-window startup to every later required
+    // field and made each packaged Main start fail (PR #149 regression).
+    expect(() =>
+      desktopStartupConfigResponseSchema.parse({
+        localApiOrigin: "http://127.0.0.1:4321",
+        role: "main",
+      }),
+    ).toThrow();
+  });
+
   it("denies cyclic payloads that cannot pass the size guard", () => {
     const guard = createStartupConfigIpcGuard({
       now: () => 1_000,
+      trustedProcessId: () => 41,
       trustedSenderId: 7,
     });
     const payload: { self?: unknown } = {};
@@ -468,6 +509,7 @@ describe("shared IPC guard", () => {
     senderFrame: {
       isMainFrame: true,
       origin: "breev://app",
+      processId: 41,
       url: "breev://app/index.html",
     },
     senderId: 7,
@@ -480,6 +522,7 @@ describe("shared IPC guard", () => {
       name: "pairing invitation",
       now: () => 1_000,
       parse: (payload: unknown) => payload as { invitation?: string },
+      trustedProcessId: () => 41,
       trustedSenderId: 7,
     });
   }
@@ -503,6 +546,17 @@ describe("shared IPC guard", () => {
     const guard = guardFor();
     expect(guard(trusted, {})).toEqual({});
     expect(guard(trusted, {})).toEqual({});
+    expect(() => guard(trusted, {})).toThrow(/rate/iu);
+  });
+
+  it("counts malformed calls toward the channel rate limit", () => {
+    const guard = guardFor(16);
+    expect(() => guard(trusted, { invitation: "x".repeat(64) })).toThrow(
+      /oversized/iu,
+    );
+    expect(() => guard(trusted, { invitation: "x".repeat(64) })).toThrow(
+      /oversized/iu,
+    );
     expect(() => guard(trusted, {})).toThrow(/rate/iu);
   });
 });

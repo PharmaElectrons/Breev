@@ -4,10 +4,18 @@ import {
   desktopCancelTerminalPairingRequestSchema,
   desktopCopyIdentifierRequestSchema,
   desktopCopyIdentifierResponseSchema,
+  desktopExportDiagnosticsRequestSchema,
+  desktopExportDiagnosticsResponseSchema,
   desktopManualEndpointRequestSchema,
+  desktopOpenSupportRequestSchema,
+  desktopOpenSupportResponseSchema,
   desktopPairingInvitationRequestSchema,
+  desktopReportRendererIncidentRequestSchema,
+  desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigRequestSchema,
   desktopStartupConfigResponseSchema,
+  desktopSubmitDiagnosticsRequestSchema,
+  desktopSubmitDiagnosticsResponseSchema,
   desktopTerminalPairingStateRequestSchema,
   terminalPairingStateResponseSchema,
 } from "./index.js";
@@ -20,6 +28,7 @@ describe("desktop preload contract", () => {
     expect(desktopStartupConfigRequestSchema.parse({})).toEqual({});
     for (const role of ["main", "terminal"] as const) {
       const payload = {
+        diagnosticReporting: "disabled" as const,
         deviceId,
         installationId,
         localApiOrigin: "http://127.0.0.1:31310",
@@ -55,10 +64,12 @@ describe("desktop preload contract", () => {
   it("keeps installation identifiers optional for unpaired and development devices", () => {
     expect(
       desktopStartupConfigResponseSchema.parse({
+        diagnosticReporting: "disabled",
         localApiOrigin: "http://127.0.0.1:31310",
         role: "terminal",
       }),
     ).toEqual({
+      diagnosticReporting: "disabled",
       localApiOrigin: "http://127.0.0.1:31310",
       role: "terminal",
     });
@@ -218,6 +229,106 @@ describe("desktop preload contract", () => {
       invitation: "breev-pair://1/x",
       port: 31_311,
     });
+  });
+
+  it("accepts only a closed, non-sensitive renderer incident summary", () => {
+    expect(
+      desktopReportRendererIncidentRequestSchema.parse({
+        code: "VIEW-0123ABCD",
+        source: "workspace",
+      }),
+    ).toEqual({ code: "VIEW-0123ABCD", source: "workspace" });
+    expect(
+      desktopReportRendererIncidentResponseSchema.parse({ accepted: true }),
+    ).toEqual({ accepted: true });
+  });
+
+  it("keeps diagnostic export pathless and returns no local path", () => {
+    expect(
+      desktopExportDiagnosticsRequestSchema.parse({ locale: "ar" }),
+    ).toEqual({
+      locale: "ar",
+    });
+    expect(
+      desktopExportDiagnosticsRequestSchema.parse({
+        incidentCode: "MAIN-0123ABCD",
+        locale: "en",
+      }),
+    ).toEqual({ incidentCode: "MAIN-0123ABCD", locale: "en" });
+    expect(
+      desktopExportDiagnosticsResponseSchema.parse({
+        status: "saved",
+      }),
+    ).toEqual({ status: "saved" });
+    expect(() =>
+      desktopExportDiagnosticsRequestSchema.parse({
+        locale: "en",
+        path: "C:\\Users\\patient-name-canary\\Desktop",
+      }),
+    ).toThrow();
+    expect(() =>
+      desktopExportDiagnosticsResponseSchema.parse({
+        path: "C:\\Users\\Cashier\\Desktop",
+        status: "saved",
+      }),
+    ).toThrow();
+  });
+
+  it("accepts only a locale and optional safe code for support", () => {
+    expect(
+      desktopOpenSupportRequestSchema.parse({
+        incidentCode: "APP-0123ABCD",
+        locale: "ar",
+      }),
+    ).toEqual({ incidentCode: "APP-0123ABCD", locale: "ar" });
+    expect(
+      desktopOpenSupportResponseSchema.parse({
+        channel: "email",
+        status: "opened",
+      }),
+    ).toEqual({ channel: "email", status: "opened" });
+    expect(() =>
+      desktopOpenSupportRequestSchema.parse({
+        locale: "en",
+        url: "https://attacker.example",
+      }),
+    ).toThrow();
+  });
+
+  it("keeps central submission manual and free of arbitrary payloads", () => {
+    expect(desktopSubmitDiagnosticsRequestSchema.parse({})).toEqual({});
+    expect(
+      desktopSubmitDiagnosticsResponseSchema.parse({
+        reportId: "0123456789abcdef0123456789abcdef",
+        status: "submitted",
+      }),
+    ).toEqual({
+      reportId: "0123456789abcdef0123456789abcdef",
+      status: "submitted",
+    });
+    expect(() =>
+      desktopSubmitDiagnosticsResponseSchema.parse({
+        reportId: "unsafe-reference",
+        status: "submitted",
+      }),
+    ).toThrow();
+    expect(() =>
+      desktopSubmitDiagnosticsRequestSchema.parse({
+        bundle: { patientName: "patient-name-canary" },
+      }),
+    ).toThrow();
+  });
+
+  it.each([
+    { code: "VIEW-0123ABCD", source: "workspace", stack: "patient canary" },
+    { code: "VIEW-0123ABCD", message: "patient canary", source: "workspace" },
+    { code: "view-0123abcd", source: "workspace" },
+    { code: "VIEW-0123ABCD", source: "catalog" },
+    { code: "patient canary", source: "workspace" },
+  ])("rejects a widened renderer incident: %j", (payload) => {
+    expect(() =>
+      desktopReportRendererIncidentRequestSchema.parse(payload),
+    ).toThrow();
   });
 
   it.each([

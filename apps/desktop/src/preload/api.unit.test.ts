@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createBreevDesktopApi } from "./api.js";
 
 const startupConfig = {
+  diagnosticReporting: "disabled" as const,
   localApiOrigin: "http://127.0.0.1:31310",
   role: "main" as const,
 };
@@ -19,9 +20,13 @@ describe("desktop preload API", () => {
     expect(Object.keys(api)).toEqual([
       "cancelTerminalPairing",
       "copyIdentifier",
+      "exportDiagnostics",
       "getStartupConfig",
       "getTerminalPairingState",
+      "openSupport",
+      "reportRendererIncident",
       "submitManualEndpoint",
+      "submitDiagnostics",
       "submitPairingInvitation",
     ]);
     expect(Object.isFrozen(api)).toBe(true);
@@ -33,7 +38,9 @@ describe("desktop preload API", () => {
     const invoke = vi.fn(async (channel: string) =>
       channel === "breev:desktop:copy-identifier"
         ? { copied: true }
-        : pairingState,
+        : channel === "breev:desktop:report-renderer-incident"
+          ? { accepted: true }
+          : pairingState,
     );
     const api = createBreevDesktopApi(invoke);
 
@@ -42,6 +49,10 @@ describe("desktop preload API", () => {
     });
     await api.getTerminalPairingState();
     await api.cancelTerminalPairing();
+    await api.reportRendererIncident({
+      code: "VIEW-0123ABCD",
+      source: "workspace",
+    });
     await api.submitPairingInvitation({ invitation: "breev-pair://1/x" });
     await api.submitManualEndpoint({
       host: "192.168.1.5",
@@ -56,6 +67,10 @@ describe("desktop preload API", () => {
       ],
       ["breev:desktop:get-terminal-pairing-state", {}],
       ["breev:desktop:cancel-terminal-pairing", {}],
+      [
+        "breev:desktop:report-renderer-incident",
+        { code: "VIEW-0123ABCD", source: "workspace" },
+      ],
       [
         "breev:desktop:submit-pairing-invitation",
         { invitation: "breev-pair://1/x" },
@@ -137,6 +152,81 @@ describe("desktop preload API", () => {
       ]),
     ).rejects.toThrow();
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("rejects raw renderer error details before IPC", async () => {
+    const invoke = vi.fn();
+    const api = createBreevDesktopApi(invoke);
+
+    await expect(
+      api.reportRendererIncident({
+        code: "VIEW-0123ABCD",
+        source: "workspace",
+        stack: "patient-name-canary",
+      } as never),
+    ).rejects.toThrow();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("exports diagnostics through a pathless validated request", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      status: "saved",
+    });
+    const api = createBreevDesktopApi(invoke);
+
+    await expect(
+      api.exportDiagnostics({ incidentCode: "VIEW-0123ABCD", locale: "en" }),
+    ).resolves.toEqual({
+      status: "saved",
+    });
+    expect(invoke).toHaveBeenCalledWith("breev:desktop:export-diagnostics", {
+      incidentCode: "VIEW-0123ABCD",
+      locale: "en",
+    });
+    await expect(
+      api.exportDiagnostics({ path: "C:\\outside" } as never),
+    ).rejects.toThrow();
+  });
+
+  it("opens only the main-owned configured support destination", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      channel: "portal",
+      status: "opened",
+    });
+    const api = createBreevDesktopApi(invoke);
+    await expect(api.openSupport({ locale: "en" })).resolves.toEqual({
+      channel: "portal",
+      status: "opened",
+    });
+    expect(invoke).toHaveBeenCalledWith("breev:desktop:open-support", {
+      locale: "en",
+    });
+    await expect(
+      api.openSupport({
+        locale: "en",
+        url: "https://attacker.example",
+      } as never),
+    ).rejects.toThrow();
+  });
+
+  it("submits only a safe incident reference to the central collector", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      reportId: "0123456789abcdef0123456789abcdef",
+      status: "submitted",
+    });
+    const api = createBreevDesktopApi(invoke);
+    await expect(
+      api.submitDiagnostics({ incidentCode: "VIEW-0123ABCD" }),
+    ).resolves.toEqual({
+      reportId: "0123456789abcdef0123456789abcdef",
+      status: "submitted",
+    });
+    expect(invoke).toHaveBeenCalledWith("breev:desktop:submit-diagnostics", {
+      incidentCode: "VIEW-0123ABCD",
+    });
+    await expect(
+      api.submitDiagnostics({ logs: ["patient-name-canary"] } as never),
+    ).rejects.toThrow();
   });
 
   it("rejects an invalid response from main", async () => {
