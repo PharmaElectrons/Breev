@@ -1,6 +1,8 @@
 import {
+  PRICE_ROUNDING_SETTINGS,
   PRODUCT_DEFINITION_MODES,
   PRODUCT_FOOD_TIMINGS,
+  PRODUCT_PRICING_METHODS,
   PRODUCT_STATE_COLORS,
   PRODUCT_STATUSES,
 } from "@breev/contracts/local-rest";
@@ -9,6 +11,7 @@ import {
   bigint,
   boolean,
   check,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -35,6 +38,18 @@ export const catalogProductFoodTiming = pgEnum(
 export const catalogProductStateColour = pgEnum(
   "catalog_product_state_colour",
   PRODUCT_STATE_COLORS,
+);
+export const catalogUnitKind = pgEnum("catalog_unit_kind", [
+  "inventory",
+  "package",
+]);
+export const catalogPricingMethod = pgEnum(
+  "catalog_pricing_method",
+  PRODUCT_PRICING_METHODS,
+);
+export const catalogPriceRounding = pgEnum(
+  "catalog_price_rounding",
+  PRICE_ROUNDING_SETTINGS,
 );
 
 export const catalogProducts = pgTable(
@@ -70,6 +85,16 @@ export const catalogProducts = pgTable(
     coldStorageRequired: boolean("cold_storage_required").notNull(),
     status: catalogProductStatus().default("active").notNull(),
     mergedIntoProductId: uuid("merged_into_product_id"),
+    countDefaultUnitId: uuid("count_default_unit_id").notNull(),
+    purchaseDefaultUnitId: uuid("purchase_default_unit_id").notNull(),
+    saleDefaultUnitId: uuid("sale_default_unit_id").notNull(),
+    pricingMethod: catalogPricingMethod("pricing_method")
+      .default("by-price")
+      .notNull(),
+    retailPriceFils: bigint("retail_price_fils", { mode: "bigint" }).notNull(),
+    wholesalePriceFils: bigint("wholesale_price_fils", { mode: "bigint" }),
+    marginPercentage: numeric("margin_percentage"),
+    priceRounding: catalogPriceRounding("price_rounding"),
     revision: bigint({ mode: "bigint" }).default(1n).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -86,6 +111,26 @@ export const catalogProducts = pgTable(
       table.pharmacyId,
     ),
     check("catalog_products_revision_positive", sql`${table.revision} > 0`),
+    check(
+      "catalog_products_pricing_state",
+      sql`${table.retailPriceFils} >= 0
+          and (${table.wholesalePriceFils} is null or ${table.wholesalePriceFils} >= 0)
+          and (${table.marginPercentage} is null or scale(${table.marginPercentage}) <= 6)
+          and (
+            (
+              ${table.pricingMethod} = 'by-percentage'
+              and ${table.marginPercentage} is not null
+              and ${table.marginPercentage} >= 0
+              and ${table.marginPercentage} < 100
+              and ${table.priceRounding} is not null
+            )
+            or (
+              ${table.pricingMethod} = 'by-price'
+              and ${table.marginPercentage} is null
+              and ${table.priceRounding} is null
+            )
+          )`,
+    ),
   ],
 );
 
@@ -124,6 +169,13 @@ export const catalogProductSnapshots = pgTable(
     productId: uuid("product_id").notNull(),
     displayName: text("display_name").notNull(),
     nameTemplateVersion: smallint("name_template_version").notNull(),
+    inventoryUnitName: text("inventory_unit_name").notNull(),
+    thirdUnitName: text("third_unit_name"),
+    pricingMethod: catalogPricingMethod("pricing_method").notNull(),
+    retailPriceFils: bigint("retail_price_fils", { mode: "bigint" }).notNull(),
+    wholesalePriceFils: bigint("wholesale_price_fils", { mode: "bigint" }),
+    marginPercentage: numeric("margin_percentage"),
+    priceRounding: catalogPriceRounding("price_rounding"),
     postedAt: timestamp("posted_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -132,6 +184,98 @@ export const catalogProductSnapshots = pgTable(
     unique("catalog_product_snapshots_id_pharmacy_unique").on(
       table.id,
       table.pharmacyId,
+    ),
+    check(
+      "catalog_product_snapshots_pricing_state",
+      sql`${table.retailPriceFils} >= 0
+          and (${table.wholesalePriceFils} is null or ${table.wholesalePriceFils} >= 0)
+          and (${table.marginPercentage} is null or scale(${table.marginPercentage}) <= 6)
+          and (
+            (
+              ${table.pricingMethod} = 'by-percentage'
+              and ${table.marginPercentage} is not null
+              and ${table.marginPercentage} >= 0
+              and ${table.marginPercentage} < 100
+              and ${table.priceRounding} is not null
+            )
+            or (
+              ${table.pricingMethod} = 'by-price'
+              and ${table.marginPercentage} is null
+              and ${table.priceRounding} is null
+            )
+          )`,
+    ),
+  ],
+);
+
+export const catalogProductUnits = pgTable(
+  "catalog_product_units",
+  {
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    productId: uuid("product_id").notNull(),
+    kind: catalogUnitKind().notNull(),
+    name: text().notNull(),
+    ordinal: smallint().notNull(),
+    baseUnitsPerPackage: bigint("base_units_per_package", { mode: "bigint" }),
+  },
+  (table) => [
+    unique("catalog_product_units_id_product_unique").on(
+      table.id,
+      table.productId,
+    ),
+    unique("catalog_product_units_product_name_unique").on(
+      table.productId,
+      table.name,
+    ),
+    unique("catalog_product_units_product_ordinal_unique").on(
+      table.productId,
+      table.ordinal,
+    ),
+    uniqueIndex("catalog_product_units_one_inventory_unique")
+      .on(table.productId)
+      .where(sql`${table.kind} = 'inventory'`),
+    check(
+      "catalog_product_units_ordinal_state",
+      sql`(${table.kind} = 'inventory' and ${table.ordinal} = 0)
+          or (${table.kind} = 'package' and ${table.ordinal} > 0)`,
+    ),
+    check(
+      "catalog_product_units_ratio_state",
+      sql`(${table.kind} = 'inventory' and ${table.baseUnitsPerPackage} is null)
+          or (${table.kind} = 'package' and ${table.baseUnitsPerPackage} is not null)`,
+    ),
+    check(
+      "catalog_product_units_ratio_range",
+      sql`${table.baseUnitsPerPackage} is null
+          or ${table.baseUnitsPerPackage} > 0`,
+    ),
+  ],
+);
+
+export const catalogProductThirdUnits = pgTable("catalog_product_third_units", {
+  pharmacyId: uuid("pharmacy_id").notNull(),
+  productId: uuid("product_id").primaryKey(),
+  name: text().notNull(),
+});
+
+export const catalogProductSnapshotPackageUnits = pgTable(
+  "catalog_product_snapshot_package_units",
+  {
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    snapshotId: uuid("snapshot_id").notNull(),
+    name: text().notNull(),
+    baseUnitsPerPackage: bigint("base_units_per_package", {
+      mode: "bigint",
+    }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.snapshotId, table.name] }),
+    check(
+      "catalog_product_snapshot_package_units_ratio_range",
+      sql`${table.baseUnitsPerPackage} > 0`,
     ),
   ],
 );

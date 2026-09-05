@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "10" as const;
-export const LOCAL_SCHEMA_VERSION = "10" as const;
+export const LOCAL_API_VERSION = "11" as const;
+export const LOCAL_SCHEMA_VERSION = "11" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -1424,6 +1424,296 @@ export const productStateColoursSchema = z.strictObject({
 });
 
 /**
+ * Packaging: one Inventory Unit, the larger packages that convert to it, and
+ * the optional Third Unit that converts to nothing.
+ *
+ * The inventory ledger records an integer count of the Inventory Unit, and
+ * every larger package reaches it through an explicit positive integer ratio,
+ * so no conversion can produce a fractional base-unit balance. Two absences
+ * carry the rule rather than a validation message:
+ *
+ * - A package unit carries a ratio; the Third Unit carries only a name. There
+ *   is no number on it for a stock-affecting conversion to reach for, because
+ *   it exists for number-of-days and dosage follow-up alone.
+ * - An interface default is one of exactly two shapes, the base unit or one of
+ *   this product's packages. No third shape names the Third Unit, so a default
+ *   cannot select it however the pharmacy spells it.
+ */
+export const PRODUCT_UNIT_INTERFACES = ["count", "purchase", "sale"] as const;
+export const productUnitInterfaceSchema = z.enum(PRODUCT_UNIT_INTERFACES);
+
+const productUnitNameSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .refine((value) => value === value.trim());
+
+/**
+ * How many Inventory Units one package holds, as a canonical decimal integer
+ * string: no sign, no leading zero, no decimal point, no exponent, ASCII digits
+ * only. The ratio never crosses the wire as a JSON number, because a number is
+ * binary floating point and a ratio is authoritative quantity data.
+ *
+ * At least one, matching the requirement that package ratios are positive.
+ * The upper bound is PostgreSQL's signed `bigint` limit, so every value the
+ * contract accepts can be persisted without a transport-time overflow.
+ */
+const PACKAGE_UNIT_RATIO = /^[1-9][0-9]*$/u;
+const PACKAGE_UNIT_RATIO_MAXIMUM = 9_223_372_036_854_775_807n;
+export const packageUnitRatioSchema = z
+  .string()
+  .min(1)
+  .max(19)
+  .regex(PACKAGE_UNIT_RATIO)
+  .refine((value) => {
+    // Zod runs every check, so the range test re-applies the grammar rather
+    // than trusting that the failing regex above already stopped the value.
+    if (!PACKAGE_UNIT_RATIO.test(value)) return false;
+    const ratio = BigInt(value);
+    return ratio >= 1n && ratio <= PACKAGE_UNIT_RATIO_MAXIMUM;
+  });
+
+export const productPackageUnitSchema = z.strictObject({
+  name: productUnitNameSchema,
+  baseUnitsPerPackage: packageUnitRatioSchema,
+});
+
+/**
+ * The Third Unit: a name for treatment days or dosage follow-up, and nothing
+ * else. It is never an inventory-balance, purchasing, or sales unit.
+ */
+export const productThirdUnitSchema = z.strictObject({
+  name: productUnitNameSchema,
+});
+
+/**
+ * A unit a stock-affecting interface may work in. The base unit needs no name
+ * here — the packaging already names it once — and a package is referenced by
+ * its name rather than by a repeated ratio, so one ratio in the package list
+ * stays the single definition every conversion reads.
+ */
+export const inventoryCapableUnitSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("inventory-unit") }),
+  z.strictObject({
+    kind: z.literal("package-unit"),
+    packageUnitName: productUnitNameSchema,
+  }),
+]);
+
+export const productPackagingSchema = z
+  .strictObject({
+    inventoryUnitName: productUnitNameSchema,
+    packageUnits: z.array(productPackageUnitSchema),
+    thirdUnit: productThirdUnitSchema.nullable(),
+    /**
+     * One default per interface — purchasing typically larger, selling
+     * typically smaller. A transaction may change its unit where permitted;
+     * this is only where the screen starts.
+     */
+    defaultUnits: z.strictObject({
+      count: inventoryCapableUnitSchema,
+      purchase: inventoryCapableUnitSchema,
+      sale: inventoryCapableUnitSchema,
+    }),
+  })
+  .superRefine((packaging, ctx) => {
+    const seen = new Map<string, readonly (string | number)[]>([
+      [packaging.inventoryUnitName, ["inventoryUnitName"]],
+    ]);
+    for (const [index, unit] of packaging.packageUnits.entries()) {
+      const path = ["packageUnits", index, "name"] as const;
+      if (seen.has(unit.name)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [...path],
+          message: "A unit name identifies one unit of this product",
+        });
+      } else {
+        seen.set(unit.name, path);
+      }
+    }
+    if (packaging.thirdUnit !== null) {
+      if (seen.has(packaging.thirdUnit.name)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["thirdUnit", "name"],
+          message: "A unit name identifies one unit of this product",
+        });
+      }
+    }
+
+    const packageNames = new Set(
+      packaging.packageUnits.map((unit) => unit.name),
+    );
+    for (const [interfaceName, unit] of Object.entries(
+      packaging.defaultUnits,
+    )) {
+      if (
+        unit.kind === "package-unit" &&
+        !packageNames.has(unit.packageUnitName)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["defaultUnits", interfaceName, "packageUnitName"],
+          message: "A default unit must be one of this product's package units",
+        });
+      }
+    }
+  });
+
+/**
+ * Pricing: the item's Pricing Method, its prices, and which fields that method
+ * leaves a person free to type in.
+ *
+ * The method decides field locking. In **By Price** the percentage field is
+ * unavailable and the retail price is editable, including on a purchase
+ * invoice. In **By Percentage** the retail price is locked and the percentage
+ * is editable, because the server calculates the price from the approved cost
+ * and the stored percentage. The percentage is **margin on the selling price,
+ * not markup on cost**: cost 80 with a 20% margin gives 100 before rounding.
+ *
+ * The two methods are a discriminated choice rather than one object with
+ * nullable fields, so a locked or unavailable field is absent from the shape
+ * that must not carry it instead of being refused by a rule that could later be
+ * relaxed. `productPricingInputSchema` is what a request may set;
+ * `productPricingSchema` is what is read back, and it adds the calculated
+ * retail price that By Percentage does not accept.
+ */
+export const PRODUCT_PRICING_METHODS = ["by-percentage", "by-price"] as const;
+export const productPricingMethodSchema = z.enum(PRODUCT_PRICING_METHODS);
+
+/**
+ * The method a new item takes when nobody chooses one: selling by price.
+ */
+export const DEFAULT_PRODUCT_PRICING_METHOD = "by-price" as const;
+
+/**
+ * A non-negative price in exact IQD fils (`1 IQD = 1,000 fils`), as a canonical
+ * decimal integer string: no sign, no leading zero, no decimal point, no
+ * exponent, ASCII digits only. Prices never cross this boundary as JSON
+ * numbers, because every JSON number is binary floating point.
+ */
+const POSTGRES_BIGINT_MAXIMUM = 9_223_372_036_854_775_807n;
+export const priceFilsSchema = z
+  .string()
+  .max(19)
+  .regex(/^(?:0|[1-9][0-9]*)$/u)
+  .refine((value) => {
+    if (!/^(?:0|[1-9][0-9]*)$/u.test(value)) return false;
+    return BigInt(value) <= POSTGRES_BIGINT_MAXIMUM;
+  });
+
+/**
+ * Exact margin text with at most six decimal places, at least zero and strictly
+ * below one hundred.
+ *
+ * One hundred percent margin on the selling price would require an infinite
+ * price to recover any cost at all, and more than that is a loss dressed as a
+ * gain, so both are impossible rather than merely unusual. The value stays text
+ * end to end: it is exact decimal data, and reading it as a JS number would
+ * quietly replace it with the nearest binary fraction.
+ */
+export const marginPercentageSchema = z
+  .string()
+  .regex(/^(?:0|[1-9][0-9]?)(?:\.[0-9]{1,6})?$/u);
+
+/**
+ * How a calculated price is rounded after the margin is applied. Rounding is
+ * off unless the pharmacy turns it on, and it acts on whole dinars: 250, 500,
+ * or 1,000 IQD.
+ */
+export const PRICE_ROUNDING_SETTINGS = [
+  "nearest-1000-iqd",
+  "nearest-250-iqd",
+  "nearest-500-iqd",
+  "off",
+] as const;
+export const priceRoundingSettingSchema = z.enum(PRICE_ROUNDING_SETTINGS);
+
+const byPricePricingFields = {
+  method: z.literal("by-price"),
+  retailPriceFils: priceFilsSchema,
+  /**
+   * The wholesale or special price lives in the item record and appears in the
+   * item panel. It is not re-entered on each purchase invoice, and an item that
+   * has none carries null.
+   */
+  wholesalePriceFils: priceFilsSchema.nullable(),
+} as const;
+const byPercentagePricingFields = {
+  method: z.literal("by-percentage"),
+  marginPercentage: marginPercentageSchema,
+  /**
+   * The rounding this item's calculated price was derived under, so the price
+   * on the screen can be reproduced from the cost, the margin, and this field
+   * alone. By Price calculates nothing, so it has no such field.
+   */
+  rounding: priceRoundingSettingSchema,
+  wholesalePriceFils: priceFilsSchema.nullable(),
+} as const;
+
+/**
+ * Pricing as a request may set it: no calculated retail price. A By
+ * Percentage request additionally carries the approved cost the initial
+ * retail price is calculated from. It is transient calculation input only --
+ * the server never stores it, and a Product read-back never returns it.
+ */
+export const productPricingInputSchema = z.discriminatedUnion("method", [
+  z.strictObject(byPricePricingFields),
+  z.strictObject({ ...byPercentagePricingFields, costFils: priceFilsSchema }),
+]);
+
+/** Pricing as it is read back, including the calculated retail price. */
+export const productPricingSchema = z.discriminatedUnion("method", [
+  z.strictObject(byPricePricingFields),
+  z.strictObject({
+    ...byPercentagePricingFields,
+    retailPriceFils: priceFilsSchema,
+  }),
+]);
+
+/**
+ * Field locking published as data, so the item screen, the purchase row, and
+ * every later caller read one table instead of each repeating the rule.
+ *
+ * `unavailable` and `locked` differ on purpose: an unavailable field has no
+ * value under this method and is not shown, while a locked field has a value
+ * that is shown and cannot be typed over.
+ */
+export const PRODUCT_PRICING_FIELDS = [
+  "marginPercentage",
+  "retailPrice",
+  "wholesalePrice",
+] as const;
+export const PRODUCT_PRICING_FIELD_STATES = [
+  "editable",
+  "locked",
+  "unavailable",
+] as const;
+export const PRODUCT_PRICING_FIELD_EDITABILITY: Readonly<
+  Record<
+    (typeof PRODUCT_PRICING_METHODS)[number],
+    Readonly<
+      Record<
+        (typeof PRODUCT_PRICING_FIELDS)[number],
+        (typeof PRODUCT_PRICING_FIELD_STATES)[number]
+      >
+    >
+  >
+> = {
+  "by-percentage": {
+    marginPercentage: "editable",
+    retailPrice: "locked",
+    wholesalePrice: "editable",
+  },
+  "by-price": {
+    marginPercentage: "unavailable",
+    retailPrice: "editable",
+    wholesalePrice: "editable",
+  },
+};
+
+/**
  * Barcodes are stored here and nothing more: suggesting, printing, and matching
  * them is a later slice. A Product may carry none or several.
  */
@@ -1444,6 +1734,8 @@ const productAttributeFields = {
   category: optionalProductTextSchema(96),
   definition: productDefinitionSchema,
   instructions: productInstructionsSchema,
+  packaging: productPackagingSchema,
+  pricing: productPricingInputSchema,
   scientificName: optionalProductTextSchema(160),
   sharing: productSharingControlsSchema,
   stateColours: productStateColoursSchema,
@@ -1465,6 +1757,11 @@ export const productSchema = z.strictObject({
   id: z.uuidv7(),
   mergedIntoProductId: z.uuidv7().nullable(),
   nameTemplateVersion: productNameTemplateVersionSchema,
+  /**
+   * Read-back pricing carries the retail price under both methods, including
+   * the one By Percentage calculates and no request may set.
+   */
+  pricing: productPricingSchema,
   revision: decimalRevisionSchema,
   status: productStatusSchema,
 });
@@ -2034,6 +2331,19 @@ export type ProductSharingControls = z.infer<
   typeof productSharingControlsSchema
 >;
 export type ProductStateColours = z.infer<typeof productStateColoursSchema>;
+export type ProductUnitInterface = z.infer<typeof productUnitInterfaceSchema>;
+export type ProductPackageUnit = z.infer<typeof productPackageUnitSchema>;
+export type ProductThirdUnit = z.infer<typeof productThirdUnitSchema>;
+export type InventoryCapableUnit = z.infer<typeof inventoryCapableUnitSchema>;
+export type ProductPackaging = z.infer<typeof productPackagingSchema>;
+export type ProductPricingMethod = z.infer<typeof productPricingMethodSchema>;
+export type PriceRoundingSetting = z.infer<typeof priceRoundingSettingSchema>;
+export type MarginPercentage = z.infer<typeof marginPercentageSchema>;
+export type ProductPricingInput = z.infer<typeof productPricingInputSchema>;
+export type ProductPricing = z.infer<typeof productPricingSchema>;
+export type ProductPricingField = (typeof PRODUCT_PRICING_FIELDS)[number];
+export type ProductPricingFieldState =
+  (typeof PRODUCT_PRICING_FIELD_STATES)[number];
 export type Product = z.infer<typeof productSchema>;
 export type ProductCreateRequest = z.infer<typeof productCreateRequestSchema>;
 export type ProductEditRequest = z.infer<typeof productEditRequestSchema>;

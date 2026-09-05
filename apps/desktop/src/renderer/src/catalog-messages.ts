@@ -1,10 +1,13 @@
 import type {
   CatalogDenialCode,
   CatalogFieldErrorCode,
+  PriceRoundingSetting,
   ProductDefinitionMode,
   ProductFoodTiming,
+  ProductPricingMethod,
   ProductStateColour,
   ProductStatus,
+  ProductUnitInterface,
 } from "@breev/contracts/local-rest";
 
 import type { Locale } from "./preferences";
@@ -96,14 +99,76 @@ export interface CatalogCopy {
     readonly description: string;
     readonly title: string;
   };
+  readonly packaging: {
+    readonly addPackageUnit: string;
+    readonly baseUnitsPerPackage: string;
+    readonly baseUnitsPerPackagePlaceholder: string;
+    readonly countDefault: string;
+    readonly defaultUnitsDescription: string;
+    readonly defaultUnitsTitle: string;
+    readonly description: string;
+    readonly enableThirdUnit: string;
+    readonly interfaces: Record<ProductUnitInterface, string>;
+    readonly inventoryUnitHelp: string;
+    readonly inventoryUnitName: string;
+    readonly inventoryUnitNamePlaceholder: string;
+    readonly noPackageUnits: string;
+    readonly packageUnitName: string;
+    readonly packageUnitNamePlaceholder: string;
+    readonly packageUnitsTitle: string;
+    readonly purchaseDefault: string;
+    readonly removePackageUnit: string;
+    readonly saleDefault: string;
+    readonly thirdUnitName: string;
+    readonly thirdUnitNamePlaceholder: string;
+    readonly thirdUnitNotice: string;
+    readonly thirdUnitTitle: string;
+    readonly title: string;
+  };
+  readonly pricing: {
+    readonly costFils: string;
+    readonly costFilsHelp: string;
+    readonly costFilsPlaceholder: string;
+    readonly description: string;
+    readonly marginPercentage: string;
+    readonly marginPercentageHelp: string;
+    readonly marginPercentagePlaceholder: string;
+    readonly methodLabel: string;
+    readonly methods: Record<ProductPricingMethod, string>;
+    readonly retailPriceCalculatedPreview: string;
+    readonly retailPriceFils: string;
+    readonly retailPriceLockedNotice: string;
+    readonly retailPricePendingCalculation: string;
+    readonly retailPricePlaceholder: string;
+    readonly rounding: string;
+    readonly roundings: Record<PriceRoundingSetting, string>;
+    readonly title: string;
+    readonly wholesalePriceFils: string;
+    readonly wholesalePriceNotice: string;
+    readonly wholesalePricePlaceholder: string;
+  };
   readonly record: {
+    readonly defaultUnits: string;
     readonly id: string;
+    readonly inventoryUnit: string;
+    readonly marginPercentage: string;
     readonly mergedInto: string;
     readonly nameTemplateVersion: string;
+    readonly noPackageUnits: string;
+    readonly noThirdUnit: string;
+    readonly packagingTitle: string;
+    readonly packageUnits: string;
+    readonly pricingMethod: string;
+    readonly pricingTitle: string;
+    readonly retailPrice: string;
     readonly revision: string;
+    readonly rounding: string;
     readonly status: string;
     readonly statuses: Record<ProductStatus, string>;
+    readonly thirdUnit: string;
     readonly title: string;
+    readonly wholesaleDecisionNotice: string;
+    readonly wholesalePrice: string;
   };
   readonly sharing: {
     readonly aiSharingAllowed: string;
@@ -246,18 +311,103 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
         "تبديل وضع التعريف سيؤدي إلى إزالة حقول الوضع الحالي ولن يتم تضمينها في تعريف المنتج الجديد.",
       title: "تأكيد تبديل وضع التعريف",
     },
+    packaging: {
+      addPackageUnit: "+ إضافة وحدة عبوة",
+      baseUnitsPerPackage: "معامل التحويل (وحدات مخزون لكل عبوة)",
+      baseUnitsPerPackagePlaceholder: "عدد صحيح موجب ≥ 1",
+      countDefault: "الافتراضي للجرد والعد",
+      defaultUnitsDescription:
+        "الوحدة المبدئية التي تبدأ بها كل واجهة (يمكن تغييرها أثناء العملية عند السماح بذلك).",
+      defaultUnitsTitle: "الوحدات الافتراضية للواجهات",
+      description:
+        "وحدة المخزون الأساسية الصحيحة، ومعاملات تحويل العبوات، والوحدة الثالثة للمتابعة، والوحدات الافتراضية لكل واجهة.",
+      enableThirdUnit: "إضافة وحدة ثالثة لمتابعة الأيام أو الجرعات",
+      interfaces: {
+        count: "الجرد والعد",
+        purchase: "المشتريات",
+        sale: "المبيعات",
+      },
+      inventoryUnitHelp:
+        "الوحدة الصحيحة غير القابلة للتجزئة التي تُسجل بها أرصدة المخزون وحركاته. حقل إلزامي.",
+      inventoryUnitName: "وحدة المخزون (الوحدة الأساسية)",
+      inventoryUnitNamePlaceholder: "مثال: شريط، قرص، أمبولة، قطعة",
+      noPackageUnits:
+        "لا توجد وحدات عبوات أكبر مضافة. ستتعامل الواجهات بوحدة المخزون فقط.",
+      packageUnitName: "اسم العبوة",
+      packageUnitNamePlaceholder: "مثال: علبة، باكت، كرتون",
+      packageUnitsTitle: "وحدات العبوات الأكبر",
+      purchaseDefault: "الافتراضي لفواتير الشراء",
+      removePackageUnit: "إزالة وحدة العبوة",
+      saleDefault: "الافتراضي لشاشة البيع",
+      thirdUnitName: "اسم الوحدة الثالثة",
+      thirdUnitNamePlaceholder: "مثال: يوم علاج، كورس، جرعة",
+      thirdUnitNotice:
+        "لمتابعة الأيام أو الجرعات فقط — لا تؤثر على المخزون مطلقاً. مستبعدة بنيوياً من أرصدة المخزون والمشتريات والمبيعات.",
+      thirdUnitTitle: "الوحدة الثالثة (متابعة الأيام والجرعات فقط)",
+      title: "التعبئة والوحدات",
+    },
+    pricing: {
+      costFils: "كلفة الشراء المعتمدة (بالفلس)",
+      costFilsHelp:
+        "مدخل مؤقت للاحتساب. يُستخدم لاحتساب سعر المفرد الأولي ولا يُخزن في بطاقة المادة.",
+      costFilsPlaceholder: "مثال: 80000 (أي 80 د.ع)",
+      description:
+        "طريقة التسعير، وإدخال أو احتساب سعر المفرد، وسعر الجملة الاسترشادي.",
+      marginPercentage: "نسبة هامش الربح (%)",
+      marginPercentageHelp:
+        "هامش ربح من سعر البيع (السعر = الكلفة ÷ (1 − الهامش))، وليس إضافة على التكلفة.",
+      marginPercentagePlaceholder: "مثال: 20",
+      methodLabel: "طريقة التسعير",
+      methods: {
+        "by-percentage": "البيع بالنسبة (هامش ربح من سعر البيع)",
+        "by-price": "البيع بالسعر (تحديد سعر المفرد مباشرة)",
+      },
+      retailPriceCalculatedPreview: "سعر المفرد المحسوب / المخزن",
+      retailPriceFils: "سعر المفرد (بالفلس)",
+      retailPriceLockedNotice:
+        "مغلق — يحتسبه الخادم تلقائياً من كلفة الشراء وهامش الربح من سعر البيع والتقريب.",
+      retailPricePendingCalculation: "(يحتسبه الخادم تلقائياً عند الحفظ)",
+      retailPricePlaceholder: "مثال: 100000 (أي 100 د.ع)",
+      rounding: "مقدار تقريب السعر",
+      roundings: {
+        "nearest-1000-iqd": "لأقرب 1,000 د.ع",
+        "nearest-250-iqd": "لأقرب 250 د.ع",
+        "nearest-500-iqd": "لأقرب 500 د.ع",
+        off: "بدون تقريب (الفلس الدقيق)",
+      },
+      title: "التسعير والحدود التجارية",
+      wholesalePriceFils: "سعر الجملة (بالفلس، اختياري)",
+      wholesalePriceNotice:
+        "إعداد عمل مؤقت (قرار قيد البت): يظهر في لوحة بيانات المادة فقط، ولا يُعتمد لاختيار السعر أثناء البيع.",
+      wholesalePricePlaceholder: "مثال: 85000 (أي 85 د.ع)",
+    },
     record: {
+      defaultUnits: "الافتراضيات للواجهات",
       id: "معرّف المنتج",
+      inventoryUnit: "وحدة المخزون",
+      marginPercentage: "نسبة هامش الربح",
       mergedInto: "مدموج في المنتج",
       nameTemplateVersion: "إصدار قالب التسمية",
+      noPackageUnits: "لا توجد (وحدة المخزون فقط)",
+      noThirdUnit: "لا توجد",
+      packagingTitle: "التعبئة وتحويلات الوحدات",
+      packageUnits: "وحدات العبوات ومعاملاتها",
+      pricingMethod: "طريقة التسعير",
+      pricingTitle: "التسعير والبيانات التجارية",
+      retailPrice: "سعر المفرد",
       revision: "رقم المراجعة",
+      rounding: "إعداد التقريب",
       status: "حالة المنتج",
       statuses: {
         active: "نشط",
         archived: "مؤرشف",
         merged: "مدمج",
       },
+      thirdUnit: "الوحدة الثالثة (لا تؤثر على المخزون)",
       title: "سجل المنتج",
+      wholesaleDecisionNotice:
+        "إعداد عمل مؤقت (قرار قيد البت): يظهر سعر الجملة في لوحة بيانات المادة فقط ولا يُعتمد لاختيار السعر أثناء البيع.",
+      wholesalePrice: "سعر الجملة",
     },
     sharing: {
       aiSharingAllowed:
@@ -411,18 +561,103 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
         "Switching definition mode will remove fields from the current mode and they will not be part of the new definition.",
       title: "Confirm mode switch",
     },
+    packaging: {
+      addPackageUnit: "+ Add package unit",
+      baseUnitsPerPackage: "Ratio (Inventory Units per package)",
+      baseUnitsPerPackagePlaceholder: "Positive integer >= 1",
+      countDefault: "Inventory count default",
+      defaultUnitsDescription:
+        "Starting unit for each interface (can be changed during a transaction where permitted).",
+      defaultUnitsTitle: "Interface Default Units",
+      description:
+        "Integer inventory base unit, larger package conversion ratios, non-stock follow-up third unit, and interface defaults.",
+      enableThirdUnit: "Add Third Unit for days/dosage follow-up",
+      interfaces: {
+        count: "Inventory count",
+        purchase: "Purchasing",
+        sale: "Sales",
+      },
+      inventoryUnitHelp:
+        "The integer unit stock balances and movements are recorded in. Required.",
+      inventoryUnitName: "Inventory Unit (base unit)",
+      inventoryUnitNamePlaceholder: "e.g. Strip, Tablet, Ampoule, Piece",
+      noPackageUnits:
+        "No larger package units defined. All interfaces will operate in the inventory unit.",
+      packageUnitName: "Package Name",
+      packageUnitNamePlaceholder: "e.g. Box, Pack, Carton",
+      packageUnitsTitle: "Larger Package Units",
+      purchaseDefault: "Purchase invoice default",
+      removePackageUnit: "Remove package unit",
+      saleDefault: "Sale screen default",
+      thirdUnitName: "Third Unit Name",
+      thirdUnitNamePlaceholder: "e.g. Treatment Day, Course, Dose",
+      thirdUnitNotice:
+        "Follow-up only — never stock. Structurally excluded from inventory balances, purchasing, and sales.",
+      thirdUnitTitle: "Third Unit (Dosage & Days Follow-up Only)",
+      title: "Packaging & Units",
+    },
+    pricing: {
+      costFils: "Approved cost (fils)",
+      costFilsHelp:
+        "Transient calculation input. Used to derive the initial retail price and never stored on the item master.",
+      costFilsPlaceholder: "e.g. 80000 (80 IQD)",
+      description:
+        "Pricing method, retail price entry or derivation, and panel-only wholesale reference.",
+      marginPercentage: "Profit margin percentage (%)",
+      marginPercentageHelp:
+        "Margin on selling price (price = cost / (1 − margin)), not markup on cost.",
+      marginPercentagePlaceholder: "e.g. 20",
+      methodLabel: "Pricing method",
+      methods: {
+        "by-percentage": "Sell by percentage (margin on selling price)",
+        "by-price": "Sell by price (direct retail entry)",
+      },
+      retailPriceCalculatedPreview: "Stored / calculated retail price",
+      retailPriceFils: "Retail price (fils)",
+      retailPriceLockedNotice:
+        "Locked — calculated by server from approved cost, margin on selling price, and rounding.",
+      retailPricePendingCalculation: "(Calculated on server save)",
+      retailPricePlaceholder: "e.g. 100000 (100 IQD)",
+      rounding: "Price rounding step",
+      roundings: {
+        "nearest-1000-iqd": "Nearest 1,000 IQD",
+        "nearest-250-iqd": "Nearest 250 IQD",
+        "nearest-500-iqd": "Nearest 500 IQD",
+        off: "No rounding (exact fils)",
+      },
+      title: "Pricing & Commercial Terms",
+      wholesalePriceFils: "Wholesale price (fils, optional)",
+      wholesalePriceNotice:
+        "Working default (open decision): Visible only in the item panel; not active for sale-time price selection.",
+      wholesalePricePlaceholder: "e.g. 85000 (85 IQD)",
+    },
     record: {
+      defaultUnits: "Interface Defaults",
       id: "Product ID",
+      inventoryUnit: "Inventory Unit",
+      marginPercentage: "Margin percentage",
       mergedInto: "Merged into product",
       nameTemplateVersion: "Name template version",
+      noPackageUnits: "None (inventory unit only)",
+      noThirdUnit: "None",
+      packagingTitle: "Packaging & Unit Conversions",
+      packageUnits: "Package units & ratios",
+      pricingMethod: "Pricing method",
+      pricingTitle: "Pricing & Commercial Reference",
+      retailPrice: "Retail price",
       revision: "Revision",
+      rounding: "Rounding setting",
       status: "Product status",
       statuses: {
         active: "Active",
         archived: "Archived",
         merged: "Merged",
       },
+      thirdUnit: "Third Unit (non-stock)",
       title: "Product record",
+      wholesaleDecisionNotice:
+        "Working default (open decision): Wholesale price is displayed in the item panel only and is not active for sale-time price selection.",
+      wholesalePrice: "Wholesale price",
     },
     sharing: {
       aiSharingAllowed: "Allow sharing data with AI / external services",

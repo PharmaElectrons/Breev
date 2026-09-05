@@ -1,10 +1,13 @@
 import {
   CATALOG_DENIAL_CODES,
   CATALOG_FIELD_ERROR_CODES,
+  PRICE_ROUNDING_SETTINGS,
   PRODUCT_DEFINITION_MODES,
   PRODUCT_FOOD_TIMINGS,
+  PRODUCT_PRICING_METHODS,
   PRODUCT_STATE_COLORS,
   PRODUCT_STATUSES,
+  PRODUCT_UNIT_INTERFACES,
 } from "@breev/contracts/local-rest";
 import { describe, expect, it } from "vitest";
 
@@ -71,6 +74,36 @@ describe("catalog translations", () => {
     }
   });
 
+  it("translates every product pricing method in both locales", () => {
+    for (const locale of locales) {
+      for (const method of PRODUCT_PRICING_METHODS) {
+        expect(
+          catalogMessages[locale].pricing.methods[method].length,
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("translates every price rounding setting in both locales", () => {
+    for (const locale of locales) {
+      for (const rounding of PRICE_ROUNDING_SETTINGS) {
+        expect(
+          catalogMessages[locale].pricing.roundings[rounding].length,
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("translates every product unit interface in both locales", () => {
+    for (const locale of locales) {
+      for (const iface of PRODUCT_UNIT_INTERFACES) {
+        expect(
+          catalogMessages[locale].packaging.interfaces[iface].length,
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("keeps Arabic and English translations distinct", () => {
     for (const code of CATALOG_DENIAL_CODES) {
       expect(catalogMessages.ar.denials[code]).not.toBe(
@@ -85,6 +118,21 @@ describe("catalog translations", () => {
     for (const mode of PRODUCT_DEFINITION_MODES) {
       expect(catalogMessages.ar.definition.modes[mode]).not.toBe(
         catalogMessages.en.definition.modes[mode],
+      );
+    }
+    for (const method of PRODUCT_PRICING_METHODS) {
+      expect(catalogMessages.ar.pricing.methods[method]).not.toBe(
+        catalogMessages.en.pricing.methods[method],
+      );
+    }
+    for (const rounding of PRICE_ROUNDING_SETTINGS) {
+      expect(catalogMessages.ar.pricing.roundings[rounding]).not.toBe(
+        catalogMessages.en.pricing.roundings[rounding],
+      );
+    }
+    for (const iface of PRODUCT_UNIT_INTERFACES) {
+      expect(catalogMessages.ar.packaging.interfaces[iface]).not.toBe(
+        catalogMessages.en.packaging.interfaces[iface],
       );
     }
   });

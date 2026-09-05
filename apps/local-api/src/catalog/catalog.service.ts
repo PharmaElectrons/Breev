@@ -13,7 +13,10 @@ import {
   type ProductDefinition,
   type ProductEditRequest,
   type ProductMergeRequest,
+  type InventoryCapableUnit,
   type ProductNameTemplateVersion,
+  type ProductPackaging,
+  type ProductPricing,
 } from "@breev/contracts/local-rest";
 import { Injectable } from "@nestjs/common";
 import type { Request } from "express";
@@ -33,6 +36,18 @@ import {
   recordPostingResult,
   type PostingCommandReplay,
 } from "../posting/idempotency.js";
+import {
+  UNIT_INTERFACES,
+  defaultUnitFor,
+  definePackaging,
+  type Packaging,
+  type PackagingProblem,
+  type UnitInterface,
+} from "./catalog-packaging.js";
+import {
+  resolveCatalogPricing,
+  type CatalogPricingProblemCode,
+} from "./catalog-pricing.js";
 
 const CATALOG_PERMISSION = "catalog.item.manage";
 const BARCODE_LOCK_NAMESPACE = 165_308_863;
@@ -64,6 +79,7 @@ interface ProductRow {
   readonly general_target_audience: string | null;
   readonly general_type_of_use: string | null;
   readonly id: string;
+  readonly inventory_unit_name: string;
   readonly manual_state_colour:
     "blue" | "green" | "grey" | "orange" | "purple" | "red" | "yellow" | null;
   readonly medication_dosage_form: string | null;
@@ -72,13 +88,30 @@ interface ProductRow {
   readonly medication_trade_name: string | null;
   readonly merged_into_product_id: string | null;
   readonly name_template_version: number;
+  readonly package_units: readonly {
+    readonly baseUnitsPerPackage: string;
+    readonly name: string;
+  }[];
   readonly pharmacy_id: string;
+  readonly price_rounding:
+    "nearest-1000-iqd" | "nearest-250-iqd" | "nearest-500-iqd" | "off" | null;
+  readonly pricing_method: "by-percentage" | "by-price";
+  readonly margin_percentage: string | null;
+  readonly retail_price_fils: string;
   readonly revision: string;
   readonly scientific_name: string | null;
   readonly status: "active" | "archived" | "merged";
+  readonly third_unit_name: string | null;
+  readonly count_default_kind: "inventory" | "package";
+  readonly count_default_name: string;
+  readonly purchase_default_kind: "inventory" | "package";
+  readonly purchase_default_name: string;
+  readonly sale_default_kind: "inventory" | "package";
+  readonly sale_default_name: string;
   readonly uses_per_day: number | null;
   readonly uses_per_month: number | null;
   readonly uses_per_week: number | null;
+  readonly wholesale_price_fils: string | null;
 }
 
 interface CommandSuccess {
@@ -177,6 +210,7 @@ export class CatalogService {
       requestHash,
       responseStatus: 201,
       work: async (client) => {
+        const validated = validateCatalogAttributes(input);
         await ensureBarcodesAvailable(
           client,
           context.pharmacyId,
@@ -186,6 +220,14 @@ export class CatalogService {
         const displayName = generatedName(
           input.definition,
           CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
+        );
+        const packagingIds = await allocatePackagingIds(
+          client,
+          validated.packaging,
+        );
+        const defaultUnitIds = resolveDefaultUnitIds(
+          validated.packaging,
+          packagingIds,
         );
         const result = await client.query<{ id: string }>(
           `insert into catalog_products (
@@ -198,25 +240,40 @@ export class CatalogService {
              scientific_name, category, uses_per_day, uses_per_week,
              uses_per_month, food_timing, externally_visible,
              ai_sharing_allowed, manual_state_colour, cold_storage_required,
+             count_default_unit_id, purchase_default_unit_id,
+             sale_default_unit_id, pricing_method, retail_price_fils,
+             wholesale_price_fils, margin_percentage, price_rounding,
              created_by, updated_by
            ) values (
              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
              $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
-             $26, $26
+             $26, $27, $28, $29, $30, $31, $32, $33, $34, $34
            ) returning id`,
           [
             ...productWriteValues(
-              context,
+              context.pharmacyId,
               input,
               displayName,
               CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
             ),
+            defaultUnitIds.count,
+            defaultUnitIds.purchase,
+            defaultUnitIds.sale,
+            ...pricingWriteValues(validated.pricing),
+            context.actorId,
           ],
         );
         const productId = result.rows[0]?.id;
         if (productId === undefined) {
           throw new Error("The Catalog Product was not created");
         }
+        await replacePackaging(
+          client,
+          context.pharmacyId,
+          productId,
+          validated.packaging,
+          packagingIds,
+        );
         await replaceBarcodes(client, context, productId, input.barcodes);
         const product = await requiredProduct(
           client,
@@ -254,6 +311,7 @@ export class CatalogService {
       work: async (client) => {
         const before = await lockProduct(client, context.pharmacyId, productId);
         requireEditable(before, productId, input.expectedRevision);
+        const validated = validateCatalogAttributes(input);
         await ensureBarcodesAvailable(
           client,
           context.pharmacyId,
@@ -265,10 +323,18 @@ export class CatalogService {
         );
         const displayName = generatedName(input.definition, templateVersion);
         const values = productWriteValues(
-          context,
+          context.pharmacyId,
           input,
           displayName,
           templateVersion,
+        );
+        const packagingIds = await allocatePackagingIds(
+          client,
+          validated.packaging,
+        );
+        const defaultUnitIds = resolveDefaultUnitIds(
+          validated.packaging,
+          packagingIds,
         );
         const updated = await client.query(
           `update catalog_products
@@ -296,15 +362,38 @@ export class CatalogService {
                ai_sharing_allowed = $23,
                manual_state_colour = $24,
                cold_storage_required = $25,
-               updated_by = $26,
+               count_default_unit_id = $26,
+               purchase_default_unit_id = $27,
+               sale_default_unit_id = $28,
+               pricing_method = $29,
+               retail_price_fils = $30,
+               wholesale_price_fils = $31,
+               margin_percentage = $32,
+               price_rounding = $33,
+               updated_by = $34,
                updated_at = statement_timestamp(),
                revision = revision + 1
-           where id = $27 and pharmacy_id = $1`,
-          [...values, productId],
+           where id = $35 and pharmacy_id = $1`,
+          [
+            ...values,
+            defaultUnitIds.count,
+            defaultUnitIds.purchase,
+            defaultUnitIds.sale,
+            ...pricingWriteValues(validated.pricing),
+            context.actorId,
+            productId,
+          ],
         );
         if (updated.rowCount !== 1) {
           throw new Error("The Catalog Product edit was not applied");
         }
+        await replacePackaging(
+          client,
+          context.pharmacyId,
+          productId,
+          validated.packaging,
+          packagingIds,
+        );
         await replaceBarcodes(client, context, productId, input.barcodes);
         const after = await requiredProduct(
           client,
@@ -644,14 +733,14 @@ export class CatalogService {
 }
 
 function productWriteValues(
-  context: IdentityExecutionContext,
+  pharmacyId: string,
   input: ProductCreateRequest | ProductEditRequest,
   displayName: string,
   templateVersion: ProductNameTemplateVersion,
 ): readonly unknown[] {
   const definition = definitionColumns(input.definition);
   return [
-    context.pharmacyId,
+    pharmacyId,
     input.definition.mode,
     definition.medicationTradeName,
     definition.medicationStrength,
@@ -676,8 +765,251 @@ function productWriteValues(
     input.sharing.aiSharingAllowed,
     input.stateColours.manual,
     input.stateColours.coldStorageRequired,
-    context.actorId,
   ];
+}
+
+/**
+ * The packaging and pricing a command may persist, after the pure Catalog
+ * modules have read the request back rather than trusting that the contract
+ * already checked it. The pricing here is the resolved read-back shape: a By
+ * Percentage request's `costFils` has done its work by this point and is not
+ * among the values any statement below writes.
+ */
+interface ValidatedAttributes {
+  readonly packaging: Packaging;
+  readonly pricing: ProductPricing;
+}
+
+function validateCatalogAttributes(
+  input: ProductCreateRequest | ProductEditRequest,
+): ValidatedAttributes {
+  const packaging = definePackaging(input.packaging);
+  if (!packaging.ok) {
+    throw new CatalogCommandRejected(
+      400,
+      "body-invalid",
+      packaging.problems.map((problem) =>
+        packagingFieldError(input.packaging, problem),
+      ),
+    );
+  }
+  const pricing = resolveCatalogPricing(input.pricing);
+  if (!pricing.ok) {
+    throw new CatalogCommandRejected(400, "body-invalid", [
+      { code: "invalid", path: pricingFieldPath(pricing.problem.code) },
+    ]);
+  }
+  return { packaging: packaging.packaging, pricing: pricing.pricing };
+}
+
+/**
+ * Points a packaging refusal at the field the pharmacist is standing in, so the
+ * screen keeps the value and the focus instead of clearing the form.
+ */
+function packagingFieldError(
+  definition: ProductPackaging,
+  problem: PackagingProblem,
+): CatalogFieldError {
+  const packageIndex = definition.packageUnits.findIndex(
+    (unit) => unit.name === problem.unitName,
+  );
+  if (problem.code === "package-ratio-invalid") {
+    return {
+      code: "invalid",
+      path: ["packaging", "packageUnits", packageIndex, "baseUnitsPerPackage"],
+    };
+  }
+  if (problem.code === "unknown-package-unit") {
+    const unitInterface = UNIT_INTERFACES.find((candidate) => {
+      const unit = definition.defaultUnits[candidate];
+      return (
+        unit.kind === "package-unit" &&
+        unit.packageUnitName === problem.unitName
+      );
+    });
+    return {
+      code: "invalid",
+      path:
+        unitInterface === undefined
+          ? ["packaging", "defaultUnits"]
+          : ["packaging", "defaultUnits", unitInterface, "packageUnitName"],
+    };
+  }
+  if (problem.unitName === definition.inventoryUnitName) {
+    return { code: "invalid", path: ["packaging", "inventoryUnitName"] };
+  }
+  if (packageIndex >= 0) {
+    return {
+      code: "invalid",
+      path: ["packaging", "packageUnits", packageIndex, "name"],
+    };
+  }
+  if (problem.unitName === definition.thirdUnit?.name) {
+    return { code: "invalid", path: ["packaging", "thirdUnit", "name"] };
+  }
+  return { code: "invalid", path: ["packaging"] };
+}
+
+function pricingFieldPath(
+  code: CatalogPricingProblemCode,
+): (string | number)[] {
+  switch (code) {
+    case "cost-invalid":
+      return ["pricing", "costFils"];
+    case "margin-invalid":
+      return ["pricing", "marginPercentage"];
+    case "retail-price-invalid":
+      return ["pricing", "retailPriceFils"];
+    case "rounding-invalid":
+      return ["pricing", "rounding"];
+    case "wholesale-price-invalid":
+      return ["pricing", "wholesalePriceFils"];
+  }
+}
+
+/**
+ * The five pricing columns, in the order both the insert and the update name
+ * them. By Price carries no percentage and no rounding setting, and writing
+ * nulls for them is what keeps `catalog_products_pricing_state` satisfied
+ * rather than a second statement that could be forgotten.
+ */
+function pricingWriteValues(pricing: ProductPricing): readonly unknown[] {
+  return pricing.method === "by-percentage"
+    ? [
+        pricing.method,
+        pricing.retailPriceFils,
+        pricing.wholesalePriceFils,
+        pricing.marginPercentage,
+        pricing.rounding,
+      ]
+    : [
+        pricing.method,
+        pricing.retailPriceFils,
+        pricing.wholesalePriceFils,
+        null,
+        null,
+      ];
+}
+
+/**
+ * The identity of every unit row this command is about to write, keyed the way
+ * a default unit references one.
+ *
+ * The ids are minted by PostgreSQL rather than by Node, so they satisfy the
+ * `uuidv7` check the table carries. They are minted before the Product row is
+ * inserted because `catalog_products` names its three default units as columns,
+ * and its foreign keys to them are deferred exactly so the two inserts can
+ * happen in this order inside one transaction.
+ */
+interface PackagingIds {
+  readonly inventory: string;
+  readonly packages: ReadonlyMap<string, string>;
+}
+
+async function allocatePackagingIds(
+  client: PoolClient,
+  packaging: Packaging,
+): Promise<PackagingIds> {
+  const wanted = packaging.packageUnits.length + 1;
+  const result = await client.query<{ id: string }>(
+    "select uuidv7() as id from generate_series(1, $1::int)",
+    [wanted],
+  );
+  if (result.rows.length !== wanted) {
+    throw new Error("The Catalog Product units were not allocated identities");
+  }
+  const ids = result.rows.map((row) => row.id);
+  return {
+    inventory: ids[0]!,
+    packages: new Map(
+      packaging.packageUnits.map((unit, index) => [unit.name, ids[index + 1]!]),
+    ),
+  };
+}
+
+function resolveDefaultUnitIds(
+  packaging: Packaging,
+  ids: PackagingIds,
+): Readonly<Record<UnitInterface, string>> {
+  const resolve = (unitInterface: UnitInterface): string => {
+    const unit = defaultUnitFor(packaging, unitInterface);
+    if (unit.kind === "inventory-unit") {
+      return ids.inventory;
+    }
+    const id = ids.packages.get(unit.packageUnitName);
+    if (id === undefined) {
+      // definePackaging already refused a default that names no package, so
+      // reaching here means the two disagree rather than that the request did.
+      throw new Error("A Catalog default unit names no unit of this Product");
+    }
+    return id;
+  };
+  return {
+    count: resolve("count"),
+    purchase: resolve("purchase"),
+    sale: resolve("sale"),
+  };
+}
+
+/**
+ * Replaces this Product's unit rows with the ones the command carries.
+ *
+ * An edit deletes the old rows and inserts the new ones in the same
+ * transaction as the `catalog_products` update that points at the new ones.
+ * That is safe only because the three default-unit foreign keys are
+ * `deferrable initially deferred`: the rows a live Product references are gone
+ * for the middle of this function, and the constraint is checked once at
+ * commit, against the finished state. Create takes the same path with nothing
+ * to delete, so there is one way packaging reaches the database.
+ *
+ * The Third Unit lives in its own table with no ratio column and no unit id,
+ * which is why nothing here can offer it to a conversion or to a default.
+ */
+async function replacePackaging(
+  client: PoolClient,
+  pharmacyId: string,
+  productId: string,
+  packaging: Packaging,
+  ids: PackagingIds,
+): Promise<void> {
+  await client.query(
+    "delete from catalog_product_units where pharmacy_id = $1 and product_id = $2",
+    [pharmacyId, productId],
+  );
+  await client.query(
+    `delete from catalog_product_third_units
+     where pharmacy_id = $1 and product_id = $2`,
+    [pharmacyId, productId],
+  );
+  await client.query(
+    `insert into catalog_product_units (
+       id, pharmacy_id, product_id, kind, name, ordinal, base_units_per_package
+     ) values ($1, $2, $3, 'inventory', $4, 0, null)`,
+    [ids.inventory, pharmacyId, productId, packaging.inventoryUnitName],
+  );
+  for (const [index, unit] of packaging.packageUnits.entries()) {
+    await client.query(
+      `insert into catalog_product_units (
+         id, pharmacy_id, product_id, kind, name, ordinal,
+         base_units_per_package
+       ) values ($1, $2, $3, 'package', $4, $5, $6)`,
+      [
+        ids.packages.get(unit.name),
+        pharmacyId,
+        productId,
+        unit.name,
+        index + 1,
+        unit.baseUnitsPerPackage.toString(),
+      ],
+    );
+  }
+  if (packaging.thirdUnitName !== null) {
+    await client.query(
+      `insert into catalog_product_third_units (pharmacy_id, product_id, name)
+       values ($1, $2, $3)`,
+      [pharmacyId, productId, packaging.thirdUnitName],
+    );
+  }
 }
 
 function definitionColumns(definition: ProductDefinition): {
@@ -774,6 +1106,24 @@ function productView(row: ProductRow): Product {
     },
     mergedIntoProductId: row.merged_into_product_id,
     nameTemplateVersion: row.name_template_version,
+    packaging: {
+      defaultUnits: {
+        count: unitReference(row.count_default_kind, row.count_default_name),
+        purchase: unitReference(
+          row.purchase_default_kind,
+          row.purchase_default_name,
+        ),
+        sale: unitReference(row.sale_default_kind, row.sale_default_name),
+      },
+      inventoryUnitName: row.inventory_unit_name,
+      packageUnits: row.package_units.map((unit) => ({
+        baseUnitsPerPackage: unit.baseUnitsPerPackage,
+        name: unit.name,
+      })),
+      thirdUnit:
+        row.third_unit_name === null ? null : { name: row.third_unit_name },
+    },
+    pricing: pricingView(row),
     revision: row.revision,
     scientificName: row.scientific_name,
     sharing: {
@@ -786,6 +1136,41 @@ function productView(row: ProductRow): Product {
     },
     status: row.status,
   });
+}
+
+function unitReference(
+  kind: "inventory" | "package",
+  name: string,
+): InventoryCapableUnit {
+  return kind === "inventory"
+    ? { kind: "inventory-unit" }
+    : { kind: "package-unit", packageUnitName: name };
+}
+
+/**
+ * Pricing as it is read back. By Percentage returns the retail price the server
+ * calculated and stored, never the cost it was calculated from: the cost is
+ * transient calculation input, so there is no column holding it and no shape
+ * here that could carry it back.
+ */
+function pricingView(row: ProductRow): ProductPricing {
+  if (row.pricing_method === "by-percentage") {
+    if (row.margin_percentage === null || row.price_rounding === null) {
+      throw new Error("A By Percentage Catalog Product is missing its pricing");
+    }
+    return {
+      marginPercentage: row.margin_percentage,
+      method: "by-percentage",
+      retailPriceFils: row.retail_price_fils,
+      rounding: row.price_rounding,
+      wholesalePriceFils: row.wholesale_price_fils,
+    };
+  }
+  return {
+    method: "by-price",
+    retailPriceFils: row.retail_price_fils,
+    wholesalePriceFils: row.wholesale_price_fils,
+  };
 }
 
 function requiredText(value: string | null): string {
@@ -978,6 +1363,15 @@ function replayCatalogOutcome(replay: PostingCommandReplay): Product {
   );
 }
 
+/**
+ * One row per Product, with its packaging and pricing already assembled.
+ *
+ * The default units join through `(id, product_id)` — the same pair the
+ * deferred foreign keys use — so a default can only ever resolve to a unit of
+ * this Product. The Third Unit is a left join because it is optional, and it
+ * arrives as a bare name: there is no ratio on it to select, which is what
+ * keeps it out of every conversion downstream.
+ */
 const PRODUCT_SELECT = `select product_row.id,
        product_row.pharmacy_id,
        product_row.definition_mode,
@@ -1008,6 +1402,19 @@ const PRODUCT_SELECT = `select product_row.id,
        product_row.merged_into_product_id,
        product_row.revision::text,
        product_row.created_at,
+       product_row.pricing_method,
+       product_row.retail_price_fils::text as retail_price_fils,
+       product_row.wholesale_price_fils::text as wholesale_price_fils,
+       product_row.margin_percentage::text as margin_percentage,
+       product_row.price_rounding,
+       inventory_unit.name as inventory_unit_name,
+       third_unit.name as third_unit_name,
+       count_unit.kind as count_default_kind,
+       count_unit.name as count_default_name,
+       purchase_unit.kind as purchase_default_kind,
+       purchase_unit.name as purchase_default_name,
+       sale_unit.kind as sale_default_kind,
+       sale_unit.name as sale_default_name,
        array(
          select barcode_row.barcode
          from catalog_product_barcodes barcode_row
@@ -1015,5 +1422,37 @@ const PRODUCT_SELECT = `select product_row.id,
            and barcode_row.pharmacy_id = product_row.pharmacy_id
            and barcode_row.removed_at is null
          order by barcode_row.ordinal
-       ) as barcodes
-from catalog_products product_row`;
+       ) as barcodes,
+       (
+         select coalesce(
+           json_agg(
+             json_build_object(
+               'name', package_row.name,
+               'baseUnitsPerPackage', package_row.base_units_per_package::text
+             )
+             order by package_row.ordinal
+           ),
+           '[]'::json
+         )
+         from catalog_product_units package_row
+         where package_row.product_id = product_row.id
+           and package_row.pharmacy_id = product_row.pharmacy_id
+           and package_row.kind = 'package'
+       ) as package_units
+from catalog_products product_row
+join catalog_product_units inventory_unit
+  on inventory_unit.product_id = product_row.id
+ and inventory_unit.pharmacy_id = product_row.pharmacy_id
+ and inventory_unit.kind = 'inventory'
+join catalog_product_units count_unit
+  on count_unit.id = product_row.count_default_unit_id
+ and count_unit.product_id = product_row.id
+join catalog_product_units purchase_unit
+  on purchase_unit.id = product_row.purchase_default_unit_id
+ and purchase_unit.product_id = product_row.id
+join catalog_product_units sale_unit
+  on sale_unit.id = product_row.sale_default_unit_id
+ and sale_unit.product_id = product_row.id
+left join catalog_product_third_units third_unit
+  on third_unit.product_id = product_row.id
+ and third_unit.pharmacy_id = product_row.pharmacy_id`;

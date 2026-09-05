@@ -799,6 +799,21 @@ function medicationRequest(tradeName: string): ProductCreateRequest {
       usesPerMonth: null,
       usesPerWeek: null,
     },
+    packaging: {
+      defaultUnits: {
+        count: { kind: "inventory-unit" },
+        purchase: { kind: "package-unit", packageUnitName: "Pack" },
+        sale: { kind: "inventory-unit" },
+      },
+      inventoryUnitName: "Capsule",
+      packageUnits: [{ baseUnitsPerPackage: "20", name: "Pack" }],
+      thirdUnit: null,
+    },
+    pricing: {
+      method: "by-price",
+      retailPriceFils: "100000",
+      wholesalePriceFils: null,
+    },
     scientificName: null,
     sharing: { aiSharingAllowed: false, externallyVisible: false },
     stateColours: { coldStorageRequired: false, manual: null },

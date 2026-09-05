@@ -1,4 +1,7 @@
-import type { Product } from "@breev/contracts/local-rest";
+import type {
+  InventoryCapableUnit,
+  Product,
+} from "@breev/contracts/local-rest";
 import { useId, useState } from "react";
 
 import {
@@ -9,6 +12,46 @@ import {
 } from "./catalog-api";
 import { catalogMessages } from "./catalog-messages";
 import { usePreferences } from "./preferences-provider";
+
+function formatBigIntWithCommas(n: bigint): string {
+  const s = n.toString();
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/**
+ * Format integer fils into human IQD display without binary floating-point.
+ * 1 IQD = 1,000 fils.
+ */
+export function formatFilsToIqd(
+  filsStr: string | null | undefined,
+  locale: "ar" | "en" = "en",
+): string {
+  if (!filsStr || !/^(?:0|[1-9]\d*)$/.test(filsStr)) {
+    return "—";
+  }
+  const fils = BigInt(filsStr);
+  const whole = fils / 1000n;
+  const fraction = fils % 1000n;
+  const wholeFormatted = formatBigIntWithCommas(whole);
+  const unit = locale === "ar" ? "د.ع" : "IQD";
+
+  if (fraction === 0n) {
+    return `${wholeFormatted} ${unit}`;
+  }
+
+  const fracStr = fraction.toString().padStart(3, "0").replace(/0+$/, "");
+  return `${wholeFormatted}.${fracStr} ${unit}`;
+}
+
+export function formatDefaultUnit(
+  unit: InventoryCapableUnit,
+  inventoryUnitName: string,
+): string {
+  if (unit.kind === "inventory-unit") {
+    return inventoryUnitName;
+  }
+  return unit.packageUnitName;
+}
 
 export interface ProductRecordProps {
   readonly baseUrl: string;
@@ -363,6 +406,218 @@ export function ProductRecord({
               </div>
             </dl>
           )}
+        </section>
+
+        {/* Packaging & Units Section */}
+        <section
+          aria-labelledby="packaging-units-heading"
+          className="space-y-4"
+          data-testid="product-packaging-section"
+        >
+          <h3
+            id="packaging-units-heading"
+            className="text-base font-bold border-b border-[color:var(--border)] pb-2"
+          >
+            {copy.record.packagingTitle}
+          </h3>
+
+          <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm p-3 rounded-lg border border-[color:var(--border)]">
+            <div>
+              <dt className="text-muted-foreground font-medium">
+                {copy.record.inventoryUnit}
+              </dt>
+              <dd
+                className="font-bold text-base mt-0.5"
+                data-testid="product-inventory-unit"
+              >
+                {product.packaging.inventoryUnitName}
+              </dd>
+            </div>
+
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground font-medium mb-1">
+                {copy.record.packageUnits}
+              </dt>
+              <dd data-testid="product-package-units">
+                {product.packaging.packageUnits.length === 0 ? (
+                  <span className="text-muted-foreground italic">
+                    {copy.record.noPackageUnits}
+                  </span>
+                ) : (
+                  <ul className="flex flex-wrap gap-2 list-none p-0 m-0">
+                    {product.packaging.packageUnits.map((pkg) => (
+                      <li
+                        key={pkg.name}
+                        className="inline-flex items-center gap-2 px-2.5 py-1 rounded border border-[color:var(--control-border)] font-mono text-xs"
+                      >
+                        <span className="font-semibold">{pkg.name}</span>
+                        <span className="text-muted-foreground">=</span>
+                        <span>
+                          {pkg.baseUnitsPerPackage}{" "}
+                          {product.packaging.inventoryUnitName}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </dd>
+            </div>
+
+            <div>
+              <dt className="text-muted-foreground font-medium">
+                {copy.record.thirdUnit}
+              </dt>
+              <dd data-testid="product-third-unit">
+                {product.packaging.thirdUnit ? (
+                  <div>
+                    <span className="font-semibold">
+                      {product.packaging.thirdUnit.name}
+                    </span>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {copy.packaging.thirdUnitNotice}
+                    </p>
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground italic">
+                    {copy.record.noThirdUnit}
+                  </span>
+                )}
+              </dd>
+            </div>
+
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground font-medium mb-1">
+                {copy.record.defaultUnits}
+              </dt>
+              <dd data-testid="product-default-units">
+                <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="p-2 rounded bg-[color:var(--surface)] border border-[color:var(--border)]">
+                    <dt className="text-muted-foreground">
+                      {copy.packaging.countDefault}
+                    </dt>
+                    <dd className="font-semibold mt-0.5">
+                      {formatDefaultUnit(
+                        product.packaging.defaultUnits.count,
+                        product.packaging.inventoryUnitName,
+                      )}
+                    </dd>
+                  </div>
+                  <div className="p-2 rounded bg-[color:var(--surface)] border border-[color:var(--border)]">
+                    <dt className="text-muted-foreground">
+                      {copy.packaging.purchaseDefault}
+                    </dt>
+                    <dd className="font-semibold mt-0.5">
+                      {formatDefaultUnit(
+                        product.packaging.defaultUnits.purchase,
+                        product.packaging.inventoryUnitName,
+                      )}
+                    </dd>
+                  </div>
+                  <div className="p-2 rounded bg-[color:var(--surface)] border border-[color:var(--border)]">
+                    <dt className="text-muted-foreground">
+                      {copy.packaging.saleDefault}
+                    </dt>
+                    <dd className="font-semibold mt-0.5">
+                      {formatDefaultUnit(
+                        product.packaging.defaultUnits.sale,
+                        product.packaging.inventoryUnitName,
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        {/* Pricing & Commercial Reference Section */}
+        <section
+          aria-labelledby="pricing-reference-heading"
+          className="space-y-4"
+          data-testid="product-pricing-section"
+        >
+          <h3
+            id="pricing-reference-heading"
+            className="text-base font-bold border-b border-[color:var(--border)] pb-2"
+          >
+            {copy.record.pricingTitle}
+          </h3>
+
+          <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm p-3 rounded-lg border border-[color:var(--border)]">
+            <div>
+              <dt className="text-muted-foreground font-medium">
+                {copy.record.pricingMethod}
+              </dt>
+              <dd
+                className="font-semibold mt-0.5"
+                data-testid="product-pricing-method"
+              >
+                {copy.pricing.methods[product.pricing.method]}
+              </dd>
+            </div>
+
+            <div>
+              <dt className="text-muted-foreground font-medium">
+                {copy.record.retailPrice}
+              </dt>
+              <dd
+                className="font-bold text-base text-primary mt-0.5"
+                data-testid="product-retail-price"
+              >
+                {formatFilsToIqd(product.pricing.retailPriceFils, locale)}
+              </dd>
+            </div>
+
+            <div>
+              <dt className="text-muted-foreground font-medium">
+                {copy.record.wholesalePrice}
+              </dt>
+              <dd
+                className="font-semibold mt-0.5"
+                data-testid="product-wholesale-price"
+              >
+                {product.pricing.wholesalePriceFils
+                  ? formatFilsToIqd(product.pricing.wholesalePriceFils, locale)
+                  : "—"}
+              </dd>
+            </div>
+
+            {product.pricing.method === "by-percentage" ? (
+              <>
+                <div>
+                  <dt className="text-muted-foreground font-medium">
+                    {copy.record.marginPercentage}
+                  </dt>
+                  <dd
+                    className="font-semibold mt-0.5"
+                    data-testid="product-margin-percentage"
+                  >
+                    {product.pricing.marginPercentage}%
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-muted-foreground font-medium">
+                    {copy.record.rounding}
+                  </dt>
+                  <dd
+                    className="font-semibold mt-0.5"
+                    data-testid="product-rounding"
+                  >
+                    {copy.pricing.roundings[product.pricing.rounding]}
+                  </dd>
+                </div>
+              </>
+            ) : null}
+          </dl>
+
+          <p
+            className="text-xs text-muted-foreground flex items-center gap-1.5"
+            data-testid="wholesale-decision-notice"
+          >
+            <span className="font-semibold">ⓘ</span>
+            <span>{copy.record.wholesaleDecisionNotice}</span>
+          </p>
         </section>
 
         {/* Supporting & Commercial Fields */}

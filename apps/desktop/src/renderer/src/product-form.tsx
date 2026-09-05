@@ -1,18 +1,27 @@
 import {
   CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
+  DEFAULT_PRODUCT_PRICING_METHOD,
+  PRICE_ROUNDING_SETTINGS,
   PRODUCT_DEFINITION_MODES,
-  PRODUCT_NAME_TEMPLATES,
-  composeDisplayName,
   PRODUCT_FOOD_TIMINGS,
+  PRODUCT_NAME_TEMPLATES,
+  PRODUCT_PRICING_FIELD_EDITABILITY,
+  PRODUCT_PRICING_METHODS,
   PRODUCT_STATE_COLORS,
+  composeDisplayName,
   type CatalogFieldError,
   type GeneralItemNameFields,
+  type InventoryCapableUnit,
   type MedicationNameFields,
+  type PriceRoundingSetting,
   type Product,
   type ProductCreateRequest,
   type ProductDefinitionMode,
   type ProductEditRequest,
   type ProductFoodTiming,
+  type ProductPackaging,
+  type ProductPricingInput,
+  type ProductPricingMethod,
   type ProductStateColour,
 } from "@breev/contracts/local-rest";
 import { useCallback, useId, useRef, useState } from "react";
@@ -25,6 +34,153 @@ import {
 } from "./catalog-api";
 import { catalogMessages, type CatalogCopy } from "./catalog-messages";
 import { usePreferences } from "./preferences-provider";
+import { formatFilsToIqd } from "./product-record";
+
+/**
+ * Deterministically map server field error path to the corresponding form input key.
+ * This ensures nested errors on package units, default units, and pricing focus the
+ * exact indexed input instead of collapsing to a shared field name.
+ */
+export function serverPathToFormKey(
+  path: readonly (string | number)[],
+): string {
+  if (path.length >= 3 && path[0] === "definition" && path[1] === "fields") {
+    return String(path[2]);
+  }
+  if (
+    (path.length >= 3 &&
+      path[0] === "packaging" &&
+      path[1] === "defaultUnits") ||
+    (path.length >= 2 && path[0] === "defaultUnits")
+  ) {
+    const interfaceName = path[0] === "packaging" ? path[2] : path[1];
+    return `packaging.defaultUnits.${interfaceName}`;
+  }
+  if (
+    (path.length === 2 && path[0] === "packaging" && path[1] === "thirdUnit") ||
+    (path.length === 1 && path[0] === "thirdUnit")
+  ) {
+    return "packaging.thirdUnit.name";
+  }
+  if (path[0] === "packageUnits") {
+    return `packaging.${path.join(".")}`;
+  }
+  return path.join(".");
+}
+
+/**
+ * Safely revert any default unit selector pointing to a removed package unit
+ * back to the base inventory unit.
+ */
+export function cleanDefaultUnitsOnPackageRemoval(
+  defaultUnits: {
+    readonly count: InventoryCapableUnit;
+    readonly purchase: InventoryCapableUnit;
+    readonly sale: InventoryCapableUnit;
+  },
+  removedPackageName: string,
+): {
+  count: InventoryCapableUnit;
+  purchase: InventoryCapableUnit;
+  sale: InventoryCapableUnit;
+} {
+  const sanitize = (unit: InventoryCapableUnit): InventoryCapableUnit =>
+    unit.kind === "package-unit" && unit.packageUnitName === removedPackageName
+      ? { kind: "inventory-unit" }
+      : unit;
+
+  return {
+    count: sanitize(defaultUnits.count),
+    purchase: sanitize(defaultUnits.purchase),
+    sale: sanitize(defaultUnits.sale),
+  };
+}
+
+/**
+ * Construct contract-compliant packaging payload preserving exact canonical strings.
+ */
+export function buildPackagingPayload({
+  defaultUnits,
+  hasThirdUnit,
+  inventoryUnitName,
+  packageUnits,
+  thirdUnitName,
+}: {
+  readonly defaultUnits: {
+    readonly count: InventoryCapableUnit;
+    readonly purchase: InventoryCapableUnit;
+    readonly sale: InventoryCapableUnit;
+  };
+  readonly hasThirdUnit: boolean;
+  readonly inventoryUnitName: string;
+  readonly packageUnits: readonly {
+    readonly baseUnitsPerPackage: string;
+    readonly name: string;
+  }[];
+  readonly thirdUnitName: string;
+}): ProductPackaging {
+  const normalizedDefault = (
+    unit: InventoryCapableUnit,
+  ): InventoryCapableUnit =>
+    unit.kind === "inventory-unit"
+      ? unit
+      : { kind: "package-unit", packageUnitName: unit.packageUnitName.trim() };
+
+  return {
+    defaultUnits: {
+      count: normalizedDefault(defaultUnits.count),
+      purchase: normalizedDefault(defaultUnits.purchase),
+      sale: normalizedDefault(defaultUnits.sale),
+    },
+    inventoryUnitName: inventoryUnitName.trim(),
+    packageUnits: packageUnits.map((u) => ({
+      baseUnitsPerPackage: u.baseUnitsPerPackage.trim(),
+      name: u.name.trim(),
+    })),
+    thirdUnit:
+      hasThirdUnit && thirdUnitName.trim().length > 0
+        ? { name: thirdUnitName.trim() }
+        : null,
+  };
+}
+
+/**
+ * Construct contract-compliant pricing discriminated union payload.
+ */
+export function buildPricingPayload({
+  costFils,
+  marginPercentage,
+  method,
+  retailPriceFils,
+  rounding,
+  wholesalePriceFils,
+}: {
+  readonly costFils: string;
+  readonly marginPercentage: string;
+  readonly method: ProductPricingMethod;
+  readonly retailPriceFils: string;
+  readonly rounding: PriceRoundingSetting;
+  readonly wholesalePriceFils: string;
+}): ProductPricingInput {
+  const trimmedWholesale = wholesalePriceFils.trim();
+  const wholesale = trimmedWholesale.length > 0 ? trimmedWholesale : null;
+
+  if (method === "by-price") {
+    return {
+      method: "by-price",
+      retailPriceFils: retailPriceFils.trim(),
+      wholesalePriceFils: wholesale,
+    };
+  }
+
+  return {
+    costFils: costFils.trim(),
+    marginPercentage: marginPercentage.trim(),
+    method: "by-percentage",
+    rounding,
+    wholesalePriceFils: wholesale,
+  };
+}
 
 export interface ProductFormProps {
   readonly baseUrl: string;
@@ -325,6 +481,83 @@ export function ProductForm({
     manual: initialProduct?.stateColours.manual ?? "",
   });
 
+  // Packaging State
+  const [inventoryUnitName, setInventoryUnitName] = useState(
+    initialProduct?.packaging.inventoryUnitName ?? "",
+  );
+
+  interface PackageUnitItem {
+    readonly id: string;
+    baseUnitsPerPackage: string;
+    name: string;
+  }
+
+  const [packageUnits, setPackageUnits] = useState<PackageUnitItem[]>(
+    () =>
+      initialProduct?.packaging.packageUnits.map((u) => ({
+        baseUnitsPerPackage: u.baseUnitsPerPackage,
+        id: crypto.randomUUID(),
+        name: u.name,
+      })) ?? [],
+  );
+
+  const [hasThirdUnit, setHasThirdUnit] = useState(
+    Boolean(initialProduct?.packaging.thirdUnit),
+  );
+  const [thirdUnitName, setThirdUnitName] = useState(
+    initialProduct?.packaging.thirdUnit?.name ?? "",
+  );
+
+  const [defaultUnits, setDefaultUnits] = useState<{
+    count: InventoryCapableUnit;
+    purchase: InventoryCapableUnit;
+    sale: InventoryCapableUnit;
+  }>(() => ({
+    count: initialProduct?.packaging.defaultUnits.count ?? {
+      kind: "inventory-unit",
+    },
+    purchase: initialProduct?.packaging.defaultUnits.purchase ?? {
+      kind: "inventory-unit",
+    },
+    sale: initialProduct?.packaging.defaultUnits.sale ?? {
+      kind: "inventory-unit",
+    },
+  }));
+
+  // Pricing State
+  const [pricingMethod, setPricingMethod] = useState<ProductPricingMethod>(
+    initialProduct?.pricing.method ?? DEFAULT_PRODUCT_PRICING_METHOD,
+  );
+
+  const [retailPriceFils, setRetailPriceFils] = useState(
+    initialProduct?.pricing.retailPriceFils ?? "",
+  );
+
+  const [wholesalePriceFils, setWholesalePriceFils] = useState(
+    initialProduct?.pricing.wholesalePriceFils ?? "",
+  );
+
+  // Cost is transient calculation input: begins blank on edit until supplied again
+  const [costFils, setCostFils] = useState("");
+
+  const [marginPercentage, setMarginPercentage] = useState(
+    initialProduct?.pricing.method === "by-percentage"
+      ? initialProduct.pricing.marginPercentage
+      : "",
+  );
+
+  const [rounding, setRounding] = useState<PriceRoundingSetting>(
+    initialProduct?.pricing.method === "by-percentage"
+      ? initialProduct.pricing.rounding
+      : "off",
+  );
+
+  const pricingFieldEditability =
+    PRODUCT_PRICING_FIELD_EDITABILITY[pricingMethod];
+  const isMarginPercentageAvailable =
+    pricingFieldEditability.marginPercentage !== "unavailable";
+  const isRetailPriceLocked = pricingFieldEditability.retailPrice === "locked";
+
   const [pendingModeSwitch, setPendingModeSwitch] =
     useState<ProductDefinitionMode | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -397,15 +630,70 @@ export function ProductForm({
     setBarcodes(barcodes.filter((_, i) => i !== index));
   };
 
+  const handleAddPackageUnit = (): void => {
+    setPackageUnits((prev) => [
+      ...prev,
+      { baseUnitsPerPackage: "", id: crypto.randomUUID(), name: "" },
+    ]);
+  };
+
+  const handleRemovePackageUnit = (index: number): void => {
+    const removedUnit = packageUnits[index];
+    setPackageUnits((prev) => prev.filter((_, i) => i !== index));
+
+    if (removedUnit) {
+      setDefaultUnits((prev) =>
+        cleanDefaultUnitsOnPackageRemoval(prev, removedUnit.name.trim()),
+      );
+    }
+  };
+
+  const handleUpdatePackageUnit = (
+    index: number,
+    field: "name" | "baseUnitsPerPackage",
+    value: string,
+  ): void => {
+    setPackageUnits((prev) => {
+      const oldName = prev[index]?.name;
+      const updated = prev.map((unit, i) => {
+        if (i !== index) return unit;
+        return { ...unit, [field]: value };
+      });
+      if (field === "name" && oldName && oldName !== value) {
+        setDefaultUnits((du) => {
+          const updateName = (u: InventoryCapableUnit): InventoryCapableUnit =>
+            u.kind === "package-unit" && u.packageUnitName === oldName
+              ? { kind: "package-unit", packageUnitName: value.trim() }
+              : u;
+          return {
+            count: updateName(du.count),
+            purchase: updateName(du.purchase),
+            sale: updateName(du.sale),
+          };
+        });
+      }
+      return updated;
+    });
+  };
+
+  const handleDefaultUnitChange = (
+    interfaceName: "count" | "purchase" | "sale",
+    value: string,
+  ): void => {
+    setDefaultUnits((prev) => ({
+      ...prev,
+      [interfaceName]:
+        value === "__inventory_unit__"
+          ? { kind: "inventory-unit" }
+          : { kind: "package-unit", packageUnitName: value },
+    }));
+  };
+
   const mapFieldErrors = useCallback(
     (serverErrors: readonly CatalogFieldError[]): Record<string, string> => {
       const result: Record<string, string> = {};
       for (const err of serverErrors) {
-        const lastPathSegment = err.path[err.path.length - 1];
-        const key =
-          typeof lastPathSegment === "string"
-            ? lastPathSegment
-            : err.path.join(".");
+        const key = serverPathToFormKey(err.path);
         result[key] = copy.fieldErrors[err.code] ?? err.code;
       }
       return result;
@@ -418,15 +706,17 @@ export function ProductForm({
     if (keys.length === 0) {
       return;
     }
-    const firstKey = keys[0];
-    const element =
-      document.querySelector<HTMLElement>(`[name="${firstKey}"]`) ||
-      document.getElementById(`${formId}-${firstKey}`);
-    if (element) {
-      element.focus();
-    } else {
-      errorSummaryRef.current?.focus();
+    for (const key of keys) {
+      const element =
+        document.querySelector<HTMLElement>(`[name="${key}"]`) ||
+        document.getElementById(`${formId}-${key}`) ||
+        document.querySelector<HTMLElement>(`[data-field-key="${key}"]`);
+      if (element) {
+        element.focus();
+        return;
+      }
     }
+    errorSummaryRef.current?.focus();
   };
 
   const handleSubmit = async (
@@ -444,6 +734,26 @@ export function ProductForm({
     } else {
       if (generalItemFields.company.trim().length === 0) {
         localErrors.company = copy.fieldErrors.required;
+      }
+    }
+
+    if (inventoryUnitName.trim().length === 0) {
+      localErrors["packaging.inventoryUnitName"] = copy.fieldErrors.required;
+    }
+    if (hasThirdUnit && thirdUnitName.trim().length === 0) {
+      localErrors["packaging.thirdUnit.name"] = copy.fieldErrors.required;
+    }
+
+    if (pricingMethod === "by-price") {
+      if (retailPriceFils.trim().length === 0) {
+        localErrors["pricing.retailPriceFils"] = copy.fieldErrors.required;
+      }
+    } else {
+      if (costFils.trim().length === 0) {
+        localErrors["pricing.costFils"] = copy.fieldErrors.required;
+      }
+      if (marginPercentage.trim().length === 0) {
+        localErrors["pricing.marginPercentage"] = copy.fieldErrors.required;
       }
     }
 
@@ -485,6 +795,23 @@ export function ProductForm({
       return Number.isNaN(num) ? null : num;
     };
 
+    const packagingPayload = buildPackagingPayload({
+      defaultUnits,
+      hasThirdUnit,
+      inventoryUnitName,
+      packageUnits,
+      thirdUnitName,
+    });
+
+    const pricingPayload = buildPricingPayload({
+      costFils,
+      marginPercentage,
+      method: pricingMethod,
+      retailPriceFils,
+      rounding,
+      wholesalePriceFils,
+    });
+
     const payloadAttributes = {
       arabicSearchName: arabicSearchName.trim() || null,
       barcodes,
@@ -496,6 +823,8 @@ export function ProductForm({
         usesPerMonth: parseFrequency(instructions.usesPerMonth),
         usesPerWeek: parseFrequency(instructions.usesPerWeek),
       },
+      packaging: packagingPayload,
+      pricing: pricingPayload,
       scientificName: scientificName.trim() || null,
       sharing: {
         aiSharingAllowed: sharing.aiSharingAllowed,
@@ -1160,7 +1489,709 @@ export function ProductForm({
             )}
           </fieldset>
 
-          {/* 7. Item Instructions */}
+          {/* 7. Packaging & Units */}
+          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg space-y-4">
+            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
+              {copy.packaging.title}
+            </legend>
+            <p className="field-note">{copy.packaging.description}</p>
+
+            {/* Required Inventory Unit */}
+            <div className="field-label">
+              <label htmlFor={`${formId}-packaging.inventoryUnitName`}>
+                <span>{copy.packaging.inventoryUnitName} *</span>
+              </label>
+              <span className="field-note">
+                {copy.packaging.inventoryUnitHelp}
+              </span>
+              <input
+                id={`${formId}-packaging.inventoryUnitName`}
+                aria-describedby={
+                  fieldErrors["packaging.inventoryUnitName"]
+                    ? `${formId}-packaging.inventoryUnitName-error`
+                    : undefined
+                }
+                aria-invalid={Boolean(
+                  fieldErrors["packaging.inventoryUnitName"],
+                )}
+                aria-required="true"
+                data-field-key="packaging.inventoryUnitName"
+                maxLength={40}
+                name="packaging.inventoryUnitName"
+                placeholder={copy.packaging.inventoryUnitNamePlaceholder}
+                required
+                type="text"
+                value={inventoryUnitName}
+                onChange={(e) => setInventoryUnitName(e.target.value)}
+              />
+              {fieldErrors["packaging.inventoryUnitName"] ? (
+                <p
+                  id={`${formId}-packaging.inventoryUnitName-error`}
+                  className="field-error"
+                  role="alert"
+                >
+                  {fieldErrors["packaging.inventoryUnitName"]}
+                </p>
+              ) : null}
+            </div>
+
+            {/* Repeatable Larger Package Units */}
+            <div className="space-y-3 pt-2 border-t border-[color:var(--border)]">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm text-[color:var(--card-foreground)]">
+                  {copy.packaging.packageUnitsTitle}
+                </h3>
+                <button
+                  className="quiet-button text-xs"
+                  type="button"
+                  onClick={handleAddPackageUnit}
+                >
+                  {copy.packaging.addPackageUnit}
+                </button>
+              </div>
+
+              {packageUnits.length === 0 ? (
+                <p className="field-note">{copy.packaging.noPackageUnits}</p>
+              ) : (
+                <div className="space-y-3">
+                  {packageUnits.map((pkg, idx) => (
+                    <div
+                      key={pkg.id}
+                      className="p-3 rounded-lg border border-[color:var(--control-border)] bg-[color:var(--surface)] space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-mono font-bold text-muted-foreground">
+                          #{idx + 1}
+                        </span>
+                        <button
+                          aria-label={`${copy.packaging.removePackageUnit} #${idx + 1}`}
+                          className="quiet-button text-xs text-[color:var(--danger)]"
+                          type="button"
+                          onClick={() => handleRemovePackageUnit(idx)}
+                        >
+                          {copy.packaging.removePackageUnit}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="field-label">
+                          <label
+                            htmlFor={`${formId}-packaging.packageUnits.${idx}.name`}
+                          >
+                            <span>{copy.packaging.packageUnitName} *</span>
+                          </label>
+                          <input
+                            id={`${formId}-packaging.packageUnits.${idx}.name`}
+                            aria-describedby={
+                              fieldErrors[`packaging.packageUnits.${idx}.name`]
+                                ? `${formId}-packaging.packageUnits.${idx}.name-error`
+                                : undefined
+                            }
+                            aria-invalid={Boolean(
+                              fieldErrors[`packaging.packageUnits.${idx}.name`],
+                            )}
+                            data-field-key={`packaging.packageUnits.${idx}.name`}
+                            maxLength={40}
+                            name={`packaging.packageUnits.${idx}.name`}
+                            placeholder={
+                              copy.packaging.packageUnitNamePlaceholder
+                            }
+                            type="text"
+                            value={pkg.name}
+                            onChange={(e) =>
+                              handleUpdatePackageUnit(
+                                idx,
+                                "name",
+                                e.target.value,
+                              )
+                            }
+                          />
+                          {fieldErrors[`packaging.packageUnits.${idx}.name`] ? (
+                            <p
+                              id={`${formId}-packaging.packageUnits.${idx}.name-error`}
+                              className="field-error"
+                              role="alert"
+                            >
+                              {
+                                fieldErrors[
+                                  `packaging.packageUnits.${idx}.name`
+                                ]
+                              }
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="field-label">
+                          <label
+                            htmlFor={`${formId}-packaging.packageUnits.${idx}.baseUnitsPerPackage`}
+                          >
+                            <span>{copy.packaging.baseUnitsPerPackage} *</span>
+                          </label>
+                          <input
+                            id={`${formId}-packaging.packageUnits.${idx}.baseUnitsPerPackage`}
+                            aria-describedby={
+                              fieldErrors[
+                                `packaging.packageUnits.${idx}.baseUnitsPerPackage`
+                              ]
+                                ? `${formId}-packaging.packageUnits.${idx}.baseUnitsPerPackage-error`
+                                : undefined
+                            }
+                            aria-invalid={Boolean(
+                              fieldErrors[
+                                `packaging.packageUnits.${idx}.baseUnitsPerPackage`
+                              ],
+                            )}
+                            data-field-key={`packaging.packageUnits.${idx}.baseUnitsPerPackage`}
+                            inputMode="numeric"
+                            maxLength={19}
+                            name={`packaging.packageUnits.${idx}.baseUnitsPerPackage`}
+                            placeholder={
+                              copy.packaging.baseUnitsPerPackagePlaceholder
+                            }
+                            type="text"
+                            value={pkg.baseUnitsPerPackage}
+                            onChange={(e) =>
+                              handleUpdatePackageUnit(
+                                idx,
+                                "baseUnitsPerPackage",
+                                e.target.value,
+                              )
+                            }
+                          />
+                          {fieldErrors[
+                            `packaging.packageUnits.${idx}.baseUnitsPerPackage`
+                          ] ? (
+                            <p
+                              id={`${formId}-packaging.packageUnits.${idx}.baseUnitsPerPackage-error`}
+                              className="field-error"
+                              role="alert"
+                            >
+                              {
+                                fieldErrors[
+                                  `packaging.packageUnits.${idx}.baseUnitsPerPackage`
+                                ]
+                              }
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Optional Third Unit (explicitly non-stock) */}
+            <div className="space-y-2 pt-2 border-t border-[color:var(--border)]">
+              <label className="check-row flex items-center gap-2 cursor-pointer">
+                <input
+                  checked={hasThirdUnit}
+                  name="hasThirdUnit"
+                  type="checkbox"
+                  onChange={(e) => {
+                    setHasThirdUnit(e.target.checked);
+                    if (!e.target.checked) {
+                      setThirdUnitName("");
+                    }
+                  }}
+                />
+                <span className="font-semibold text-sm">
+                  {copy.packaging.enableThirdUnit}
+                </span>
+              </label>
+              <p className="field-note">{copy.packaging.thirdUnitNotice}</p>
+
+              {hasThirdUnit ? (
+                <div className="field-label mt-2">
+                  <label htmlFor={`${formId}-packaging.thirdUnit.name`}>
+                    <span>{copy.packaging.thirdUnitName} *</span>
+                  </label>
+                  <input
+                    id={`${formId}-packaging.thirdUnit.name`}
+                    aria-describedby={
+                      fieldErrors["packaging.thirdUnit.name"]
+                        ? `${formId}-packaging.thirdUnit.name-error`
+                        : undefined
+                    }
+                    aria-invalid={Boolean(
+                      fieldErrors["packaging.thirdUnit.name"],
+                    )}
+                    data-field-key="packaging.thirdUnit.name"
+                    maxLength={40}
+                    name="packaging.thirdUnit.name"
+                    placeholder={copy.packaging.thirdUnitNamePlaceholder}
+                    type="text"
+                    value={thirdUnitName}
+                    onChange={(e) => setThirdUnitName(e.target.value)}
+                  />
+                  {fieldErrors["packaging.thirdUnit.name"] ? (
+                    <p
+                      id={`${formId}-packaging.thirdUnit.name-error`}
+                      className="field-error"
+                      role="alert"
+                    >
+                      {fieldErrors["packaging.thirdUnit.name"]}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Interface Default Units */}
+            <div className="space-y-3 pt-2 border-t border-[color:var(--border)]">
+              <div>
+                <h3 className="font-bold text-sm text-[color:var(--card-foreground)]">
+                  {copy.packaging.defaultUnitsTitle}
+                </h3>
+                <p className="field-note">
+                  {copy.packaging.defaultUnitsDescription}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Count Default */}
+                <div className="field-label">
+                  <label htmlFor={`${formId}-packaging.defaultUnits.count`}>
+                    <span>{copy.packaging.countDefault}</span>
+                  </label>
+                  <select
+                    id={`${formId}-packaging.defaultUnits.count`}
+                    aria-describedby={
+                      fieldErrors["packaging.defaultUnits.count"]
+                        ? `${formId}-packaging.defaultUnits.count-error`
+                        : undefined
+                    }
+                    aria-invalid={Boolean(
+                      fieldErrors["packaging.defaultUnits.count"],
+                    )}
+                    data-field-key="packaging.defaultUnits.count"
+                    name="packaging.defaultUnits.count"
+                    value={
+                      defaultUnits.count.kind === "inventory-unit"
+                        ? "__inventory_unit__"
+                        : defaultUnits.count.packageUnitName
+                    }
+                    onChange={(e) =>
+                      handleDefaultUnitChange("count", e.target.value)
+                    }
+                  >
+                    <option value="__inventory_unit__">
+                      {inventoryUnitName.trim() ||
+                        copy.packaging.inventoryUnitName}
+                    </option>
+                    {packageUnits
+                      .filter((u) => u.name.trim().length > 0)
+                      .map((u) => (
+                        <option key={u.id} value={u.name.trim()}>
+                          {u.name.trim()} ({u.baseUnitsPerPackage || "?"}{" "}
+                          {inventoryUnitName.trim() ||
+                            copy.packaging.inventoryUnitName}
+                          )
+                        </option>
+                      ))}
+                  </select>
+                  {fieldErrors["packaging.defaultUnits.count"] ? (
+                    <p
+                      id={`${formId}-packaging.defaultUnits.count-error`}
+                      className="field-error"
+                      role="alert"
+                    >
+                      {fieldErrors["packaging.defaultUnits.count"]}
+                    </p>
+                  ) : null}
+                </div>
+
+                {/* Purchase Default */}
+                <div className="field-label">
+                  <label htmlFor={`${formId}-packaging.defaultUnits.purchase`}>
+                    <span>{copy.packaging.purchaseDefault}</span>
+                  </label>
+                  <select
+                    id={`${formId}-packaging.defaultUnits.purchase`}
+                    aria-describedby={
+                      fieldErrors["packaging.defaultUnits.purchase"]
+                        ? `${formId}-packaging.defaultUnits.purchase-error`
+                        : undefined
+                    }
+                    aria-invalid={Boolean(
+                      fieldErrors["packaging.defaultUnits.purchase"],
+                    )}
+                    data-field-key="packaging.defaultUnits.purchase"
+                    name="packaging.defaultUnits.purchase"
+                    value={
+                      defaultUnits.purchase.kind === "inventory-unit"
+                        ? "__inventory_unit__"
+                        : defaultUnits.purchase.packageUnitName
+                    }
+                    onChange={(e) =>
+                      handleDefaultUnitChange("purchase", e.target.value)
+                    }
+                  >
+                    <option value="__inventory_unit__">
+                      {inventoryUnitName.trim() ||
+                        copy.packaging.inventoryUnitName}
+                    </option>
+                    {packageUnits
+                      .filter((u) => u.name.trim().length > 0)
+                      .map((u) => (
+                        <option key={u.id} value={u.name.trim()}>
+                          {u.name.trim()} ({u.baseUnitsPerPackage || "?"}{" "}
+                          {inventoryUnitName.trim() ||
+                            copy.packaging.inventoryUnitName}
+                          )
+                        </option>
+                      ))}
+                  </select>
+                  {fieldErrors["packaging.defaultUnits.purchase"] ? (
+                    <p
+                      id={`${formId}-packaging.defaultUnits.purchase-error`}
+                      className="field-error"
+                      role="alert"
+                    >
+                      {fieldErrors["packaging.defaultUnits.purchase"]}
+                    </p>
+                  ) : null}
+                </div>
+
+                {/* Sale Default */}
+                <div className="field-label">
+                  <label htmlFor={`${formId}-packaging.defaultUnits.sale`}>
+                    <span>{copy.packaging.saleDefault}</span>
+                  </label>
+                  <select
+                    id={`${formId}-packaging.defaultUnits.sale`}
+                    aria-describedby={
+                      fieldErrors["packaging.defaultUnits.sale"]
+                        ? `${formId}-packaging.defaultUnits.sale-error`
+                        : undefined
+                    }
+                    aria-invalid={Boolean(
+                      fieldErrors["packaging.defaultUnits.sale"],
+                    )}
+                    data-field-key="packaging.defaultUnits.sale"
+                    name="packaging.defaultUnits.sale"
+                    value={
+                      defaultUnits.sale.kind === "inventory-unit"
+                        ? "__inventory_unit__"
+                        : defaultUnits.sale.packageUnitName
+                    }
+                    onChange={(e) =>
+                      handleDefaultUnitChange("sale", e.target.value)
+                    }
+                  >
+                    <option value="__inventory_unit__">
+                      {inventoryUnitName.trim() ||
+                        copy.packaging.inventoryUnitName}
+                    </option>
+                    {packageUnits
+                      .filter((u) => u.name.trim().length > 0)
+                      .map((u) => (
+                        <option key={u.id} value={u.name.trim()}>
+                          {u.name.trim()} ({u.baseUnitsPerPackage || "?"}{" "}
+                          {inventoryUnitName.trim() ||
+                            copy.packaging.inventoryUnitName}
+                          )
+                        </option>
+                      ))}
+                  </select>
+                  {fieldErrors["packaging.defaultUnits.sale"] ? (
+                    <p
+                      id={`${formId}-packaging.defaultUnits.sale-error`}
+                      className="field-error"
+                      role="alert"
+                    >
+                      {fieldErrors["packaging.defaultUnits.sale"]}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          {/* 8. Pricing & Commercial Terms */}
+          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg space-y-4">
+            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
+              {copy.pricing.title}
+            </legend>
+            <p className="field-note">{copy.pricing.description}</p>
+
+            {/* Pricing Method Selector */}
+            <div className="field-label">
+              <label htmlFor={`${formId}-pricing.method`}>
+                <span>{copy.pricing.methodLabel}</span>
+              </label>
+              <select
+                id={`${formId}-pricing.method`}
+                data-field-key="pricing.method"
+                name="pricing.method"
+                value={pricingMethod}
+                onChange={(e) =>
+                  setPricingMethod(e.target.value as ProductPricingMethod)
+                }
+              >
+                {PRODUCT_PRICING_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {copy.pricing.methods[m]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Dynamic Mode Fields using PRODUCT_PRICING_FIELD_EDITABILITY */}
+            {!isMarginPercentageAvailable ? (
+              /* By Price Mode */
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="field-label">
+                  <label htmlFor={`${formId}-pricing.retailPriceFils`}>
+                    <span>{copy.pricing.retailPriceFils} *</span>
+                  </label>
+                  <input
+                    id={`${formId}-pricing.retailPriceFils`}
+                    aria-describedby={
+                      fieldErrors["pricing.retailPriceFils"]
+                        ? `${formId}-pricing.retailPriceFils-error`
+                        : undefined
+                    }
+                    aria-invalid={Boolean(
+                      fieldErrors["pricing.retailPriceFils"],
+                    )}
+                    aria-required="true"
+                    data-field-key="pricing.retailPriceFils"
+                    inputMode="numeric"
+                    maxLength={19}
+                    name="pricing.retailPriceFils"
+                    placeholder={copy.pricing.retailPricePlaceholder}
+                    required
+                    type="text"
+                    value={retailPriceFils}
+                    onChange={(e) => setRetailPriceFils(e.target.value)}
+                  />
+                  {fieldErrors["pricing.retailPriceFils"] ? (
+                    <p
+                      id={`${formId}-pricing.retailPriceFils-error`}
+                      className="field-error"
+                      role="alert"
+                    >
+                      {fieldErrors["pricing.retailPriceFils"]}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="field-label">
+                  <label htmlFor={`${formId}-pricing.wholesalePriceFils`}>
+                    <span>{copy.pricing.wholesalePriceFils}</span>
+                  </label>
+                  <input
+                    id={`${formId}-pricing.wholesalePriceFils`}
+                    aria-describedby={
+                      fieldErrors["pricing.wholesalePriceFils"]
+                        ? `${formId}-pricing.wholesalePriceFils-error`
+                        : undefined
+                    }
+                    aria-invalid={Boolean(
+                      fieldErrors["pricing.wholesalePriceFils"],
+                    )}
+                    data-field-key="pricing.wholesalePriceFils"
+                    inputMode="numeric"
+                    maxLength={19}
+                    name="pricing.wholesalePriceFils"
+                    placeholder={copy.pricing.wholesalePricePlaceholder}
+                    type="text"
+                    value={wholesalePriceFils}
+                    onChange={(e) => setWholesalePriceFils(e.target.value)}
+                  />
+                  {fieldErrors["pricing.wholesalePriceFils"] ? (
+                    <p
+                      id={`${formId}-pricing.wholesalePriceFils-error`}
+                      className="field-error"
+                      role="alert"
+                    >
+                      {fieldErrors["pricing.wholesalePriceFils"]}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              /* By Percentage Mode */
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Transient Cost */}
+                  <div className="field-label">
+                    <label htmlFor={`${formId}-pricing.costFils`}>
+                      <span>{copy.pricing.costFils} *</span>
+                    </label>
+                    <input
+                      id={`${formId}-pricing.costFils`}
+                      aria-describedby={
+                        fieldErrors["pricing.costFils"]
+                          ? `${formId}-pricing.costFils-error`
+                          : undefined
+                      }
+                      aria-invalid={Boolean(fieldErrors["pricing.costFils"])}
+                      aria-required="true"
+                      data-field-key="pricing.costFils"
+                      inputMode="numeric"
+                      maxLength={19}
+                      name="pricing.costFils"
+                      placeholder={copy.pricing.costFilsPlaceholder}
+                      required
+                      type="text"
+                      value={costFils}
+                      onChange={(e) => setCostFils(e.target.value)}
+                    />
+                    <span className="field-note">
+                      {copy.pricing.costFilsHelp}
+                    </span>
+                    {fieldErrors["pricing.costFils"] ? (
+                      <p
+                        id={`${formId}-pricing.costFils-error`}
+                        className="field-error"
+                        role="alert"
+                      >
+                        {fieldErrors["pricing.costFils"]}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {/* Margin Percentage */}
+                  <div className="field-label">
+                    <label htmlFor={`${formId}-pricing.marginPercentage`}>
+                      <span>{copy.pricing.marginPercentage} *</span>
+                    </label>
+                    <input
+                      id={`${formId}-pricing.marginPercentage`}
+                      aria-describedby={
+                        fieldErrors["pricing.marginPercentage"]
+                          ? `${formId}-pricing.marginPercentage-error`
+                          : undefined
+                      }
+                      aria-invalid={Boolean(
+                        fieldErrors["pricing.marginPercentage"],
+                      )}
+                      aria-required="true"
+                      data-field-key="pricing.marginPercentage"
+                      maxLength={10}
+                      name="pricing.marginPercentage"
+                      placeholder={copy.pricing.marginPercentagePlaceholder}
+                      required
+                      type="text"
+                      value={marginPercentage}
+                      onChange={(e) => setMarginPercentage(e.target.value)}
+                    />
+                    <span className="field-note">
+                      {copy.pricing.marginPercentageHelp}
+                    </span>
+                    {fieldErrors["pricing.marginPercentage"] ? (
+                      <p
+                        id={`${formId}-pricing.marginPercentage-error`}
+                        className="field-error"
+                        role="alert"
+                      >
+                        {fieldErrors["pricing.marginPercentage"]}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {/* Rounding Step */}
+                  <div className="field-label">
+                    <label htmlFor={`${formId}-pricing.rounding`}>
+                      <span>{copy.pricing.rounding}</span>
+                    </label>
+                    <select
+                      id={`${formId}-pricing.rounding`}
+                      data-field-key="pricing.rounding"
+                      name="pricing.rounding"
+                      value={rounding}
+                      onChange={(e) =>
+                        setRounding(e.target.value as PriceRoundingSetting)
+                      }
+                    >
+                      {PRICE_ROUNDING_SETTINGS.map((r) => (
+                        <option key={r} value={r}>
+                          {copy.pricing.roundings[r]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Locked Retail Price (calculated by server) */}
+                  <div className="field-label">
+                    <label htmlFor={`${formId}-pricing.retailPrice-locked`}>
+                      <span>{copy.pricing.retailPriceCalculatedPreview}</span>
+                    </label>
+                    <input
+                      id={`${formId}-pricing.retailPrice-locked`}
+                      aria-readonly={isRetailPriceLocked}
+                      className="opacity-70 cursor-not-allowed bg-muted font-mono"
+                      readOnly={isRetailPriceLocked}
+                      type="text"
+                      value={
+                        initialProduct?.pricing.method === "by-percentage"
+                          ? formatFilsToIqd(
+                              initialProduct.pricing.retailPriceFils,
+                              locale,
+                            )
+                          : copy.pricing.retailPricePendingCalculation
+                      }
+                    />
+                    <span className="field-note">
+                      {copy.pricing.retailPriceLockedNotice}
+                    </span>
+                  </div>
+
+                  {/* Optional Wholesale Price */}
+                  <div className="field-label">
+                    <label htmlFor={`${formId}-pricing.wholesalePriceFils`}>
+                      <span>{copy.pricing.wholesalePriceFils}</span>
+                    </label>
+                    <input
+                      id={`${formId}-pricing.wholesalePriceFils`}
+                      aria-describedby={
+                        fieldErrors["pricing.wholesalePriceFils"]
+                          ? `${formId}-pricing.wholesalePriceFils-error`
+                          : undefined
+                      }
+                      aria-invalid={Boolean(
+                        fieldErrors["pricing.wholesalePriceFils"],
+                      )}
+                      data-field-key="pricing.wholesalePriceFils"
+                      inputMode="numeric"
+                      maxLength={19}
+                      name="pricing.wholesalePriceFils"
+                      placeholder={copy.pricing.wholesalePricePlaceholder}
+                      type="text"
+                      value={wholesalePriceFils}
+                      onChange={(e) => setWholesalePriceFils(e.target.value)}
+                    />
+                    {fieldErrors["pricing.wholesalePriceFils"] ? (
+                      <p
+                        id={`${formId}-pricing.wholesalePriceFils-error`}
+                        className="field-error"
+                        role="alert"
+                      >
+                        {fieldErrors["pricing.wholesalePriceFils"]}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Wholesale Open Decision Notice */}
+            <div className="pt-2 border-t border-[color:var(--border)]">
+              <p
+                className="text-xs text-muted-foreground flex items-center gap-1.5"
+                data-testid="pricing-wholesale-notice"
+              >
+                <span className="font-semibold">ⓘ</span>
+                <span>{copy.pricing.wholesalePriceNotice}</span>
+              </p>
+            </div>
+          </fieldset>
+
+          {/* 9. Item Instructions */}
           <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
             <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
               {copy.instructions.title}

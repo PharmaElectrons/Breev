@@ -100,6 +100,21 @@ function sampleMedicationRequest(barcode: string): ProductCreateRequest {
       usesPerMonth: null,
       usesPerWeek: null,
     },
+    packaging: {
+      defaultUnits: {
+        count: { kind: "inventory-unit" },
+        purchase: { kind: "package-unit", packageUnitName: "Pack" },
+        sale: { kind: "inventory-unit" },
+      },
+      inventoryUnitName: "Strip",
+      packageUnits: [{ baseUnitsPerPackage: "4", name: "Pack" }],
+      thirdUnit: { name: "Treatment day" },
+    },
+    pricing: {
+      method: "by-price",
+      retailPriceFils: "100000",
+      wholesalePriceFils: "90000",
+    },
     scientificName: "Paracetamol + Caffeine",
     sharing: {
       aiSharingAllowed: true,
@@ -238,13 +253,13 @@ test.describe.serial("Product catalog screens", () => {
   let mergeSurvivor: Product;
   let postgres: StartedPostgreSqlContainer;
   let renderer: RendererServer;
-  const evidenceDir = evidencePath("issue-45/after");
+  const evidenceDir = evidencePath("issue-47/after");
   const testResultsDir = path.resolve(
     import.meta.dirname,
     "../../../../test-results/desktop-browser",
   );
-  // The prototype-adoption slice keeps its own before/after set so issue 45s
-  // evidence stays about product definition rather than about the re-skin.
+  // The prototype-adoption slice keeps its own before/after set so Catalog
+  // evidence stays about the current product workflow rather than the re-skin.
   const adoptionEvidenceDir = evidencePath("client-prototype-adoption/after");
 
   test.beforeAll(async () => {
@@ -455,21 +470,26 @@ test.describe.serial("Product catalog screens", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByText("5000167000001")).toBeVisible();
 
-    // 8. Instructions (uses per day)
-    await page.keyboard.press("Tab"); // Add barcode button
-    await page.keyboard.press("Tab"); // Remove barcode button
-    await page.keyboard.press("Tab"); // Uses per day
+    // 8. Required quantity and price model
+    const inventoryUnitInput = page.getByLabel("Inventory Unit (base unit) *");
+    await inventoryUnitInput.focus();
+    await page.keyboard.type("Tablet");
+    const retailPriceInput = page.getByLabel("Retail price (fils) *");
+    await retailPriceInput.focus();
+    await page.keyboard.type("100000");
+
+    // 9. Instructions (uses per day)
+    await page.getByLabel("Uses per day").focus();
     await expect(page.getByLabel("Uses per day")).toBeFocused();
     await page.keyboard.type("3");
 
-    // 9. Food Timing
-    await page.keyboard.press("Tab"); // Uses per week
-    await page.keyboard.press("Tab"); // Uses per month
-    await page.keyboard.press("Tab"); // Food timing
-    await expect(page.getByLabel("Food timing")).toBeFocused();
-    await page.getByLabel("Food timing").selectOption("after-food");
+    // 10. Food Timing
+    const foodTiming = page.getByLabel("Food timing");
+    await foodTiming.focus();
+    await expect(foodTiming).toBeFocused();
+    await foodTiming.selectOption("after-food");
 
-    // 10. Submit with keyboard
+    // 11. Submit with keyboard
     const createButton = page.getByRole("button", { name: "Create product" });
     await createButton.focus();
     await page.keyboard.press("Enter");
@@ -482,6 +502,12 @@ test.describe.serial("Product catalog screens", () => {
       "بنادول اكسترا",
     );
     await expect(page.getByTestId("inventory-balance-readonly")).toBeVisible();
+    await expect(page.getByTestId("product-inventory-unit")).toHaveText(
+      "Tablet",
+    );
+    await expect(page.getByTestId("product-retail-price")).toHaveText(
+      "100 IQD",
+    );
 
     // Save evidence screenshot of product form & record
     await page.screenshot({
@@ -549,6 +575,9 @@ test.describe.serial("Product catalog screens", () => {
       "Nivea Men Body Lotion Hydrating Adults 250ml",
     );
 
+    await page.getByLabel("Inventory Unit (base unit) *").fill("Piece");
+    await page.getByLabel("Retail price (fils) *").fill("250000");
+
     // Submit
     const createButton = page.getByRole("button", { name: "Create product" });
     await createButton.focus();
@@ -579,6 +608,8 @@ test.describe.serial("Product catalog screens", () => {
     await strengthInput.fill("500mg");
     const arabicInput = page.getByLabel("Arabic search name");
     await arabicInput.fill("دواء تجريبي");
+    await page.getByLabel("Inventory Unit (base unit) *").fill("Tablet");
+    await page.getByLabel("Retail price (fils) *").fill("100000");
 
     const submitBtn = page.getByRole("button", { name: "Create product" });
     await submitBtn.click();
@@ -600,6 +631,87 @@ test.describe.serial("Product catalog screens", () => {
     // Verifies focus is KEPT on the failing field
     await expect(tradeNameInput).toBeFocused();
     await expect(tradeNameInput).toHaveAttribute("aria-invalid", "true");
+  });
+
+  test("Keyboard packaging and percentage pricing use the real API", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products/new`);
+
+    await page.getByLabel("Trade name *").fill("Exact Margin Product");
+    const inventoryUnit = page.getByLabel("Inventory Unit (base unit) *");
+    await inventoryUnit.focus();
+    await page.keyboard.type("Strip");
+
+    const addPackage = page.getByRole("button", { name: "+ Add package unit" });
+    await addPackage.focus();
+    await page.keyboard.press("Enter");
+    const packageName = page.getByLabel("Package Name *");
+    await packageName.focus();
+    await page.keyboard.type("Pack");
+    const ratio = page.getByLabel("Ratio (Inventory Units per package) *");
+    await ratio.focus();
+    await page.keyboard.type("4");
+    await page.getByLabel("Purchase invoice default").selectOption("Pack");
+
+    const pricingMethod = page.getByLabel("Pricing method");
+    await pricingMethod.selectOption("by-percentage");
+    const cost = page.getByLabel("Approved cost (fils) *");
+    await cost.focus();
+    await page.keyboard.type("80000");
+    const margin = page.getByLabel("Profit margin percentage (%) *");
+    await margin.focus();
+    await page.keyboard.type("20");
+    const rounding = page.getByLabel("Price rounding step");
+    await rounding.selectOption("nearest-250-iqd");
+    await expect(rounding).toHaveValue("nearest-250-iqd");
+    await rounding.selectOption("off");
+
+    await page.getByRole("button", { name: "Create product" }).click();
+    await expect(page.getByTestId("product-package-units")).toContainText(
+      "Pack",
+    );
+    await expect(page.getByTestId("product-package-units")).toContainText("4");
+    await expect(page.getByTestId("product-pricing-method")).toContainText(
+      "Sell by percentage",
+    );
+    await expect(page.getByTestId("product-retail-price")).toHaveText(
+      "100 IQD",
+    );
+    await expect(page.getByTestId("product-margin-percentage")).toHaveText(
+      "20%",
+    );
+    await page.screenshot({
+      fullPage: true,
+      path: path.join(evidenceDir, "units-percentage-pricing-en-light.png"),
+    });
+  });
+
+  test("Invalid package ratio keeps its value and focus", async ({ page }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products/new`);
+    await page.getByLabel("Trade name *").fill("Invalid Ratio Product");
+    await page.getByLabel("Inventory Unit (base unit) *").fill("Strip");
+    await page.getByRole("button", { name: "+ Add package unit" }).click();
+    await page.getByLabel("Package Name *").fill("Pack");
+    const ratio = page.getByLabel("Ratio (Inventory Units per package) *");
+    await ratio.fill("0");
+    await page.getByLabel("Retail price (fils) *").fill("100000");
+
+    await page.getByRole("button", { name: "Create product" }).click();
+    await expect(
+      page.getByText("The submitted product data is invalid."),
+    ).toBeVisible();
+    await expect(ratio).toHaveValue("0");
+    await expect(ratio).toBeFocused();
+    await expect(ratio).toHaveAttribute("aria-invalid", "true");
   });
 
   test("Mode switching displays confirmation dialog with abandoned fields", async ({

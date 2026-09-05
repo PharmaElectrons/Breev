@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   attendanceEventRequestSchema,
@@ -10,6 +11,19 @@ import {
   productCreateContract,
   productCreateRequestSchema,
   productDefinitionSchema,
+  productPackagingSchema,
+  productPricingInputSchema,
+  productPricingSchema,
+  productThirdUnitSchema,
+  inventoryCapableUnitSchema,
+  packageUnitRatioSchema,
+  DEFAULT_PRODUCT_PRICING_METHOD,
+  PRICE_ROUNDING_SETTINGS,
+  PRODUCT_PRICING_FIELDS,
+  PRODUCT_PRICING_FIELD_EDITABILITY,
+  PRODUCT_PRICING_FIELD_STATES,
+  PRODUCT_PRICING_METHODS,
+  PRODUCT_UNIT_INTERFACES,
   productEditContract,
   productEditRequestSchema,
   productInstructionsSchema,
@@ -380,8 +394,8 @@ describe("identity role contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("10");
-    expect(LOCAL_SCHEMA_VERSION).toBe("10");
+    expect(LOCAL_API_VERSION).toBe("11");
+    expect(LOCAL_SCHEMA_VERSION).toBe("11");
   });
 
   it("accepts the healthy handshake", () => {
@@ -839,6 +853,31 @@ const GENERAL_ITEM_DEFINITION = {
   },
 } as const;
 
+/**
+ * One Inventory Unit, two larger package units, and a Third Unit that is
+ * deliberately not reachable from any default: the strip is the base, a pack is
+ * four strips, a carton is forty-eight, and a treatment day counts nothing.
+ */
+const PRODUCT_PACKAGING = {
+  inventoryUnitName: "Strip",
+  packageUnits: [
+    { name: "Pack", baseUnitsPerPackage: "4" },
+    { name: "Carton", baseUnitsPerPackage: "48" },
+  ],
+  thirdUnit: { name: "Treatment day" },
+  defaultUnits: {
+    count: { kind: "inventory-unit" },
+    purchase: { kind: "package-unit", packageUnitName: "Pack" },
+    sale: { kind: "inventory-unit" },
+  },
+} as const;
+
+const PRODUCT_PRICING = {
+  method: "by-price",
+  retailPriceFils: "100000",
+  wholesalePriceFils: null,
+} as const;
+
 const PRODUCT_ATTRIBUTES = {
   arabicSearchName: "بنادول إكسترا",
   barcodes: ["6221033000101"],
@@ -850,6 +889,8 @@ const PRODUCT_ATTRIBUTES = {
     usesPerMonth: null,
     foodTiming: "after-food",
   },
+  packaging: PRODUCT_PACKAGING,
+  pricing: PRODUCT_PRICING,
   scientificName: "Paracetamol",
   sharing: { externallyVisible: true, aiSharingAllowed: false },
   stateColours: { manual: "red", coldStorageRequired: false },
@@ -1175,6 +1216,498 @@ describe("catalog product contracts", () => {
     expect(
       productCreateRequestSchema.safeParse({ ...create, barcodes: [""] })
         .success,
+    ).toBe(false);
+  });
+});
+
+describe("catalog packaging contracts", () => {
+  it("carries every product create and edit body and every product read", () => {
+    const create = { ...PRODUCT_ATTRIBUTES, idempotencyKey: COMMAND_ID };
+    expect(productCreateRequestSchema.parse(create).packaging).toEqual(
+      PRODUCT_PACKAGING,
+    );
+    expect(
+      productEditRequestSchema.parse({
+        ...create,
+        expectedRevision: "4",
+      }).packaging,
+    ).toEqual(PRODUCT_PACKAGING);
+    expect(productSchema.parse(PRODUCT).packaging).toEqual(PRODUCT_PACKAGING);
+
+    // Packaging is product-specific, so a product cannot be defined without it.
+    const withoutPackaging: Record<string, unknown> = { ...create };
+    delete withoutPackaging.packaging;
+    expect(productCreateRequestSchema.safeParse(withoutPackaging).success).toBe(
+      false,
+    );
+  });
+
+  it("names one Inventory Unit and zero or more larger package units", () => {
+    expect(
+      productPackagingSchema.parse({
+        ...PRODUCT_PACKAGING,
+        packageUnits: [],
+        defaultUnits: {
+          count: { kind: "inventory-unit" },
+          purchase: { kind: "inventory-unit" },
+          sale: { kind: "inventory-unit" },
+        },
+      }).packageUnits,
+    ).toEqual([]);
+    expect(
+      Object.keys(productPackagingSchema.shape.inventoryUnitName.def),
+    ).toBeDefined();
+    // There is exactly one base unit and it is a single name, so no product can
+    // declare two competing units for the inventory ledger to record.
+    expect(
+      productPackagingSchema.safeParse({
+        ...PRODUCT_PACKAGING,
+        inventoryUnitName: ["Strip", "Tablet"],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires every package ratio to be an explicit positive integer", () => {
+    for (const ratio of ["0", "-4", "4.5", "04", "1e3", " 4", "", "٤"]) {
+      expect(
+        productPackagingSchema.safeParse({
+          ...PRODUCT_PACKAGING,
+          packageUnits: [{ name: "Pack", baseUnitsPerPackage: ratio }],
+          defaultUnits: {
+            ...PRODUCT_PACKAGING.defaultUnits,
+            purchase: { kind: "inventory-unit" },
+          },
+        }).success,
+        ratio,
+      ).toBe(false);
+    }
+    expect(
+      productPackagingSchema.parse({
+        ...PRODUCT_PACKAGING,
+        packageUnits: [{ name: "Pack", baseUnitsPerPackage: "1" }],
+      }).packageUnits[0]?.baseUnitsPerPackage,
+    ).toBe("1");
+  });
+
+  it("gives each interface its own default, and only an inventory-capable unit can be one", () => {
+    expect(
+      Object.keys(productPackagingSchema.shape.defaultUnits.shape),
+    ).toEqual([...PRODUCT_UNIT_INTERFACES]);
+    expect(
+      productPackagingSchema.parse(PRODUCT_PACKAGING).defaultUnits,
+    ).toEqual(PRODUCT_PACKAGING.defaultUnits);
+
+    // A default may only be the base unit or one of this product's packages.
+    // "Third unit" is not one of the shapes, so no interface default can name
+    // the follow-up unit however it is spelled.
+    expect(
+      inventoryCapableUnitSchema.safeParse({ kind: "third-unit" }).success,
+    ).toBe(false);
+    expect(
+      inventoryCapableUnitSchema.safeParse({
+        kind: "package-unit",
+        packageUnitName: "Pack",
+        baseUnitsPerPackage: "4",
+      }).success,
+    ).toBe(false);
+    expect(
+      productPackagingSchema.safeParse({
+        ...PRODUCT_PACKAGING,
+        defaultUnits: {
+          ...PRODUCT_PACKAGING.defaultUnits,
+          sale: { kind: "package-unit", packageUnitName: "Bundle" },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps the Third Unit separate, optional, and unable to convert anything", () => {
+    const packaging = productPackagingSchema.parse(PRODUCT_PACKAGING);
+    expect(packaging.thirdUnit).toEqual({ name: "Treatment day" });
+    expect(
+      productPackagingSchema.parse({ ...PRODUCT_PACKAGING, thirdUnit: null })
+        .thirdUnit,
+    ).toBeNull();
+
+    // It carries a name and nothing else: no ratio exists for a stock-affecting
+    // conversion to reach for, and it is not in the package list.
+    expect(Object.keys(productThirdUnitSchema.shape)).toEqual(["name"]);
+    expect(
+      productPackagingSchema.safeParse({
+        ...PRODUCT_PACKAGING,
+        thirdUnit: { name: "Treatment day", baseUnitsPerPackage: "30" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("refuses a unit name that would make a conversion ambiguous", () => {
+    for (const packaging of [
+      { ...PRODUCT_PACKAGING, inventoryUnitName: "Pack" },
+      {
+        ...PRODUCT_PACKAGING,
+        packageUnits: [
+          { name: "Pack", baseUnitsPerPackage: "4" },
+          { name: "Pack", baseUnitsPerPackage: "48" },
+        ],
+      },
+      { ...PRODUCT_PACKAGING, thirdUnit: { name: "Pack" } },
+      { ...PRODUCT_PACKAGING, thirdUnit: { name: "Strip" } },
+    ]) {
+      expect(productPackagingSchema.safeParse(packaging).success).toBe(false);
+    }
+    expect(
+      productPackagingSchema.safeParse({
+        ...PRODUCT_PACKAGING,
+        inventoryUnitName: " Strip",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("catalog pricing contracts", () => {
+  const BY_PERCENTAGE_INPUT = {
+    method: "by-percentage",
+    marginPercentage: "20",
+    rounding: "nearest-250-iqd",
+    wholesalePriceFils: "90000",
+    costFils: "80000",
+  } as const;
+
+  it("carries pricing on every product create and edit body and every product read", () => {
+    const create = { ...PRODUCT_ATTRIBUTES, idempotencyKey: COMMAND_ID };
+    expect(productCreateRequestSchema.parse(create).pricing).toEqual(
+      PRODUCT_PRICING,
+    );
+    expect(
+      productEditRequestSchema.parse({ ...create, expectedRevision: "4" })
+        .pricing,
+    ).toEqual(PRODUCT_PRICING);
+    expect(productSchema.parse(PRODUCT).pricing).toEqual(PRODUCT_PRICING);
+
+    const withoutPricing: Record<string, unknown> = { ...create };
+    delete withoutPricing.pricing;
+    expect(productCreateRequestSchema.safeParse(withoutPricing).success).toBe(
+      false,
+    );
+  });
+
+  it("defaults to By Price", () => {
+    expect(DEFAULT_PRODUCT_PRICING_METHOD).toBe("by-price");
+    expect(PRODUCT_PRICING_METHODS).toContain(DEFAULT_PRODUCT_PRICING_METHOD);
+    expect(PRODUCT_PRICING_METHODS).toEqual(["by-percentage", "by-price"]);
+  });
+
+  it("publishes field editability as data rather than as a rule each caller repeats", () => {
+    expect(PRODUCT_PRICING_FIELD_EDITABILITY).toEqual({
+      "by-price": {
+        marginPercentage: "unavailable",
+        retailPrice: "editable",
+        wholesalePrice: "editable",
+      },
+      "by-percentage": {
+        marginPercentage: "editable",
+        retailPrice: "locked",
+        wholesalePrice: "editable",
+      },
+    });
+
+    // Every method and every field has a state, so a purchase row asking about
+    // any pair gets an answer instead of undefined.
+    for (const method of PRODUCT_PRICING_METHODS) {
+      for (const field of PRODUCT_PRICING_FIELDS) {
+        expect(PRODUCT_PRICING_FIELD_STATES, `${method}.${field}`).toContain(
+          PRODUCT_PRICING_FIELD_EDITABILITY[method][field],
+        );
+      }
+    }
+  });
+
+  it("keeps the percentage out of By Price and the retail price out of a By Percentage request", () => {
+    const byPrice = {
+      method: "by-price",
+      retailPriceFils: "100000",
+      wholesalePriceFils: null,
+    };
+    expect(productPricingInputSchema.parse(byPrice)).toEqual(byPrice);
+    expect(
+      productPricingInputSchema.safeParse({
+        ...byPrice,
+        marginPercentage: "20",
+      }).success,
+    ).toBe(false);
+
+    expect(productPricingInputSchema.parse(BY_PERCENTAGE_INPUT)).toEqual(
+      BY_PERCENTAGE_INPUT,
+    );
+    // The retail price is the server's consequence of cost and margin, so the
+    // manual field is absent from the request rather than refused by a rule.
+    expect(
+      productPricingInputSchema.safeParse({
+        ...BY_PERCENTAGE_INPUT,
+        retailPriceFils: "100000",
+      }).success,
+    ).toBe(false);
+
+    // The approved cost is the calculation input the server needs to produce
+    // an initial retail price, so a By Percentage request without it is
+    // refused rather than silently calculating from nothing.
+    const withoutCost: Record<string, unknown> = { ...BY_PERCENTAGE_INPUT };
+    delete withoutCost.costFils;
+    expect(productPricingInputSchema.safeParse(withoutCost).success).toBe(
+      false,
+    );
+    // A By Price request calculates nothing, so it never carries a cost.
+    expect(
+      productPricingInputSchema.safeParse({ ...byPrice, costFils: "80000" })
+        .success,
+    ).toBe(false);
+
+    // It is read back, because the pharmacist still has to see the price. The
+    // cost stays transient calculation input: the server never stores or
+    // returns it, so it is absent from the read-back shape.
+    const byPercentageWithoutCost: Record<string, unknown> = {
+      ...BY_PERCENTAGE_INPUT,
+    };
+    delete byPercentageWithoutCost.costFils;
+    const read = { ...byPercentageWithoutCost, retailPriceFils: "100000" };
+    expect(productPricingSchema.parse(read)).toEqual(read);
+    expect(
+      productPricingSchema.safeParse({ ...read, costFils: "80000" }).success,
+    ).toBe(false);
+    expect(productPricingSchema.safeParse(BY_PERCENTAGE_INPUT).success).toBe(
+      false,
+    );
+  });
+
+  it("refuses an impossible margin on the selling price", () => {
+    for (const margin of [
+      "100",
+      "100.000000",
+      "120",
+      "-20",
+      "-0.5",
+      "20.0000001",
+      "020",
+      "20.",
+      ".2",
+      "2e1",
+      " 20",
+      "",
+      "٢٠",
+    ]) {
+      expect(
+        productPricingInputSchema.safeParse({
+          ...BY_PERCENTAGE_INPUT,
+          marginPercentage: margin,
+        }).success,
+        margin,
+      ).toBe(false);
+    }
+    for (const margin of ["0", "20", "20.5", "99.999999", "0.000001"]) {
+      expect(
+        productPricingInputSchema.safeParse({
+          ...BY_PERCENTAGE_INPUT,
+          marginPercentage: margin,
+        }).success,
+        margin,
+      ).toBe(true);
+    }
+  });
+
+  it("carries retail and optional wholesale prices as canonical decimal integer fils", () => {
+    expect(
+      productPricingInputSchema.parse({
+        method: "by-price",
+        retailPriceFils: "0",
+        wholesalePriceFils: "1",
+      }),
+    ).toMatchObject({ retailPriceFils: "0", wholesalePriceFils: "1" });
+    // The wholesale/special price lives in the item record and may be absent.
+    expect(
+      productPricingInputSchema.parse({
+        ...BY_PERCENTAGE_INPUT,
+        wholesalePriceFils: null,
+      }).wholesalePriceFils,
+    ).toBeNull();
+
+    for (const price of ["-1", "1.5", "01", "1e3", " 1", "", "1,000", "١"]) {
+      expect(
+        productPricingInputSchema.safeParse({
+          method: "by-price",
+          retailPriceFils: price,
+          wholesalePriceFils: null,
+        }).success,
+        price,
+      ).toBe(false);
+    }
+    expect(
+      productPricingInputSchema.safeParse({
+        method: "by-price",
+        retailPriceFils: "9223372036854775807",
+        wholesalePriceFils: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      productPricingInputSchema.safeParse({
+        method: "by-price",
+        retailPriceFils: "9223372036854775808",
+        wholesalePriceFils: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("carries the rounding setting the calculated price was derived under", () => {
+    expect(PRICE_ROUNDING_SETTINGS).toEqual([
+      "nearest-1000-iqd",
+      "nearest-250-iqd",
+      "nearest-500-iqd",
+      "off",
+    ]);
+    for (const rounding of PRICE_ROUNDING_SETTINGS) {
+      expect(
+        productPricingInputSchema.parse({ ...BY_PERCENTAGE_INPUT, rounding }),
+        rounding,
+      ).toEqual({ ...BY_PERCENTAGE_INPUT, rounding });
+    }
+    expect(
+      productPricingInputSchema.safeParse({
+        ...BY_PERCENTAGE_INPUT,
+        rounding: "nearest-100-iqd",
+      }).success,
+    ).toBe(false);
+
+    // By Price calculates nothing, so there is nothing for a rounding setting
+    // to act on and no field to set one.
+    expect(
+      productPricingInputSchema.safeParse({
+        method: "by-price",
+        retailPriceFils: "100000",
+        wholesalePriceFils: null,
+        rounding: "off",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+/**
+ * Collects the JSON-pointer path of every node in a schema that would carry a
+ * JSON number. Reading the published JSON Schema rather than the runtime checks
+ * proves the shape as an outside caller sees it, so a numeric field cannot hide
+ * behind a union branch, an array item, or a nullable wrapper.
+ */
+function numericNodePaths(schema: z.ZodType): readonly string[] {
+  const found: string[] = [];
+  const visit = (node: unknown, path: string): void => {
+    if (Array.isArray(node)) {
+      for (const [index, item] of node.entries()) {
+        visit(item, `${path}/${index}`);
+      }
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    const record = node as Record<string, unknown>;
+    const declared = record["type"];
+    const types = Array.isArray(declared) ? declared : [declared];
+    if (types.includes("number") || types.includes("integer")) {
+      found.push(path);
+    }
+    for (const [key, value] of Object.entries(record)) {
+      visit(value, `${path}/${key}`);
+    }
+  };
+  visit(z.toJSONSchema(schema), "");
+  return found;
+}
+
+describe("catalog authoritative quantity and money values", () => {
+  it("puts no JSON number anywhere a quantity or an amount crosses the wire", () => {
+    for (const [label, schema] of [
+      ["packaging", productPackagingSchema],
+      ["pricing input", productPricingInputSchema],
+      ["pricing", productPricingSchema],
+    ] as const) {
+      expect(numericNodePaths(schema), label).toEqual([]);
+    }
+
+    // In the whole Product family the only numeric nodes left are the ones that
+    // carry neither money nor an inventory quantity: how often an item is used,
+    // and which approved naming template generated its display name.
+    for (const [label, schema] of [
+      ["create", productCreateRequestSchema],
+      ["edit", productEditRequestSchema],
+      ["product", productSchema],
+    ] as const) {
+      for (const path of numericNodePaths(schema)) {
+        expect(path, `${label}${path}`).toMatch(
+          /^\/properties\/(?:instructions\/|nameTemplateVersion)/u,
+        );
+      }
+    }
+  });
+
+  it("refuses an authoritative value that arrives as a JS number", () => {
+    expect(
+      productPricingInputSchema.safeParse({
+        method: "by-price",
+        retailPriceFils: 100_000,
+        wholesalePriceFils: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      productPricingInputSchema.safeParse({
+        method: "by-percentage",
+        marginPercentage: 20,
+        rounding: "off",
+        wholesalePriceFils: null,
+        costFils: "80000",
+      }).success,
+    ).toBe(false);
+    expect(
+      productPricingInputSchema.safeParse({
+        method: "by-percentage",
+        marginPercentage: "20",
+        rounding: "off",
+        wholesalePriceFils: null,
+        costFils: 80_000,
+      }).success,
+    ).toBe(false);
+    expect(
+      productPackagingSchema.safeParse({
+        ...PRODUCT_PACKAGING,
+        packageUnits: [{ name: "Pack", baseUnitsPerPackage: 4 }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts exactly one spelling of every package ratio it accepts at all", () => {
+    // A deterministic sweep rather than a random one: the same ratios are
+    // checked on every run, so a failure names a value that can be reproduced.
+    for (let ratio = 1n; ratio <= 4_096n; ratio *= 2n) {
+      for (const candidate of [ratio, ratio + 1n, ratio - 1n]) {
+        const canonical = candidate.toString(10);
+        const expected = candidate >= 1n;
+        expect(
+          packageUnitRatioSchema.safeParse(canonical).success,
+          canonical,
+        ).toBe(expected);
+        for (const alternative of [
+          `0${canonical}`,
+          `+${canonical}`,
+          `${canonical}.0`,
+          ` ${canonical}`,
+        ]) {
+          expect(
+            packageUnitRatioSchema.safeParse(alternative).success,
+            alternative,
+          ).toBe(false);
+        }
+      }
+    }
+    expect(
+      packageUnitRatioSchema.safeParse("9223372036854775807").success,
+    ).toBe(true);
+    expect(
+      packageUnitRatioSchema.safeParse("9223372036854775808").success,
     ).toBe(false);
   });
 });

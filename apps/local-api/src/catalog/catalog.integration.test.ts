@@ -47,7 +47,14 @@ interface ApiResponse {
 interface SnapshotRow {
   readonly display_name: string;
   readonly id: string;
+  readonly inventory_unit_name: string;
+  readonly margin_percentage: string | null;
+  readonly price_rounding: string | null;
+  readonly pricing_method: string;
   readonly product_id: string;
+  readonly retail_price_fils: string;
+  readonly third_unit_name: string | null;
+  readonly wholesale_price_fils: string | null;
 }
 
 describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
@@ -164,6 +171,8 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       arabicSearchName: "بانادول",
       displayName: "Panadol 500 mg tablet GSK",
       nameTemplateVersion: 1,
+      packaging: body.packaging,
+      pricing: body.pricing,
       status: "active",
     });
     expect(first.body?.displayName).not.toContain("بانادول");
@@ -174,21 +183,270 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       ["Panadol 500 mg tablet GSK"],
     );
     expect(stored.rows[0]?.count).toBe("2");
+
+    expect(await request("GET", productPath(editableProduct.id))).toMatchObject(
+      {
+        status: 200,
+        body: { packaging: body.packaging, pricing: body.pricing },
+      },
+    );
+    expect(await request("GET", "/catalog/products")).toMatchObject({
+      status: 200,
+      body: {
+        products: expect.arrayContaining([
+          expect.objectContaining({ id: editableProduct.id }),
+        ]),
+      },
+    });
+  });
+
+  it("calculates and stores exact percentage pricing for every rounding setting", async () => {
+    const cases = [
+      { rounding: "off", costFils: "80000", retailPriceFils: "100000" },
+      {
+        rounding: "nearest-250-iqd",
+        costFils: "300000",
+        retailPriceFils: "500000",
+      },
+      {
+        rounding: "nearest-500-iqd",
+        costFils: "200000",
+        retailPriceFils: "500000",
+      },
+      {
+        rounding: "nearest-1000-iqd",
+        costFils: "400000",
+        retailPriceFils: "1000000",
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const body: ProductCreateRequest = {
+        ...medicationRequest(`Percentage ${testCase.rounding}`, []),
+        pricing: {
+          costFils: testCase.costFils,
+          marginPercentage: "20",
+          method: "by-percentage",
+          rounding: testCase.rounding,
+          wholesalePriceFils: "75000",
+        },
+      };
+      const created = await request("POST", "/catalog/products", body);
+      expect(created.status, failureContext([created])).toBe(201);
+      expect(created.body?.pricing).toEqual({
+        marginPercentage: "20",
+        method: "by-percentage",
+        retailPriceFils: testCase.retailPriceFils,
+        rounding: testCase.rounding,
+        wholesalePriceFils: "75000",
+      });
+      expect(created.body?.pricing).not.toHaveProperty("costFils");
+
+      const stored = await administrator.query<{
+        retail_price_fils: string;
+        wholesale_price_fils: string | null;
+      }>(
+        `select retail_price_fils::text, wholesale_price_fils::text
+         from catalog_products where id = $1`,
+        [created.body?.id],
+      );
+      expect(stored.rows[0]).toEqual({
+        retail_price_fils: testCase.retailPriceFils,
+        wholesale_price_fils: "75000",
+      });
+    }
+  });
+
+  it("enforces default-unit, ratio, Third Unit, and pricing constraints in PostgreSQL", async () => {
+    const defaults = await administrator.query<{
+      column_name: string;
+      is_nullable: string;
+    }>(
+      `select column_name, is_nullable
+       from information_schema.columns
+       where table_schema = 'public'
+         and table_name = 'catalog_products'
+         and column_name in (
+           'count_default_unit_id',
+           'purchase_default_unit_id',
+           'sale_default_unit_id'
+         )
+       order by column_name`,
+    );
+    expect(defaults.rows).toEqual([
+      { column_name: "count_default_unit_id", is_nullable: "NO" },
+      { column_name: "purchase_default_unit_id", is_nullable: "NO" },
+      { column_name: "sale_default_unit_id", is_nullable: "NO" },
+    ]);
+
+    for (const [index, ratio, code] of [
+      [0, "0", "23514"],
+      [1, "-1", "23514"],
+      [2, "4.5", "22P02"],
+    ] as const) {
+      await expectRejectedInRollback(
+        `insert into catalog_product_units (
+           pharmacy_id, product_id, kind, name, ordinal, base_units_per_package
+         ) values ($1, $2, 'package', $3, 5, $4)`,
+        [pharmacyId, editableProduct.id, `Invalid ${String(index)}`, ratio],
+        code,
+      );
+    }
+
+    // The Third Unit is stored with no unit id and no ratio column at all, so
+    // there is nothing on it for a stock-affecting row or a default unit to
+    // reference. These three assertions prove that structurally rather than by
+    // trusting a flag the application checks.
+    const third = await administrator.query<{ product_id: string }>(
+      "select product_id from catalog_product_third_units where product_id = $1",
+      [editableProduct.id],
+    );
+    expect(third.rows[0]?.product_id).toBe(editableProduct.id);
+    const thirdUnitColumns = await administrator.query<{ column_name: string }>(
+      `select column_name
+       from information_schema.columns
+       where table_schema = 'public'
+         and table_name = 'catalog_product_third_units'
+       order by column_name`,
+    );
+    expect(thirdUnitColumns.rows.map((row) => row.column_name)).toEqual([
+      "name",
+      "pharmacy_id",
+      "product_id",
+    ]);
+    await expectRejectedWhenDeferredChecksRun(
+      `update catalog_products
+       set count_default_unit_id = $2, revision = revision + 1,
+           updated_at = statement_timestamp()
+       where id = $1`,
+      [editableProduct.id, third.rows[0]?.product_id],
+      "23503",
+    );
+    await expectRejectedInRollback(
+      `insert into catalog_product_units (
+         pharmacy_id, product_id, kind, name, ordinal, base_units_per_package
+       ) values ($1, $2, 'third', 'Treatment day', 1, null)`,
+      [pharmacyId, editableProduct.id],
+      "22P02",
+    );
+    await expectRejectedInRollback(
+      `update catalog_products
+       set pricing_method = 'by-percentage',
+           margin_percentage = '20.0000001', price_rounding = 'off',
+           revision = revision + 1, updated_at = statement_timestamp()
+       where id = $1`,
+      [editableProduct.id],
+      "23514",
+    );
+
+    const privilege = await administrator.query<{ allowed: boolean }>(
+      `select has_table_privilege(
+         'breev_app', 'catalog_product_snapshot_package_units', 'insert'
+       ) as allowed`,
+    );
+    expect(privilege.rows[0]?.allowed).toBe(false);
+  });
+
+  it("rejects locked pricing fields at their exact API paths without editing the Product", async () => {
+    const percentageWithRetail = await request(
+      "PUT",
+      productPath(editableProduct.id),
+      {
+        ...medicationRequest("Locked Retail", []),
+        expectedRevision: editableProduct.revision,
+        pricing: {
+          costFils: "80000",
+          marginPercentage: "20",
+          method: "by-percentage",
+          retailPriceFils: "1",
+          rounding: "off",
+          wholesalePriceFils: null,
+        },
+      },
+    );
+    expect(percentageWithRetail).toMatchObject({
+      status: 400,
+      body: {
+        code: "body-invalid",
+        fieldErrors: [
+          { code: "unknown-field", path: ["pricing", "retailPriceFils"] },
+        ],
+      },
+    });
+
+    const priceWithMargin = await request(
+      "PUT",
+      productPath(editableProduct.id),
+      {
+        ...medicationRequest("Unavailable Margin", []),
+        expectedRevision: editableProduct.revision,
+        pricing: {
+          costFils: "80000",
+          marginPercentage: "20",
+          method: "by-price",
+          retailPriceFils: "100000",
+          rounding: "off",
+          wholesalePriceFils: null,
+        },
+      },
+    );
+    expect(priceWithMargin.status).toBe(400);
+    expect(priceWithMargin.body?.fieldErrors).toEqual(
+      expect.arrayContaining([
+        { code: "unknown-field", path: ["pricing", "costFils"] },
+        { code: "unknown-field", path: ["pricing", "marginPercentage"] },
+        { code: "unknown-field", path: ["pricing", "rounding"] },
+      ]),
+    );
+
+    expect(await request("GET", productPath(editableProduct.id))).toMatchObject(
+      {
+        status: 200,
+        body: { displayName: "Panadol 500 mg tablet GSK", revision: "1" },
+      },
+    );
   });
 
   it("editing a field regenerates the current name while the posted snapshot name stays frozen", async () => {
     const snapshot = await insertSnapshot(editableProduct.id);
     immutableSnapshotId = snapshot.id;
     expect(snapshot.display_name).toBe("Panadol 500 mg tablet GSK");
+    expect(snapshot).toMatchObject({
+      inventory_unit_name: "Strip",
+      margin_percentage: null,
+      price_rounding: null,
+      pricing_method: "by-price",
+      retail_price_fils: "100000",
+      third_unit_name: "Treatment day",
+      wholesale_price_fils: "90000",
+    });
+    expect(await snapshotPackageUnits(snapshot.id)).toEqual([
+      { base_units_per_package: "4", name: "Pack" },
+    ]);
 
     const edited = await request("PUT", productPath(editableProduct.id), {
       ...medicationRequest("Panadol Extra", ["5012345678900"]),
       expectedRevision: editableProduct.revision,
+      packaging: {
+        ...editableProduct.packaging,
+        packageUnits: [{ baseUnitsPerPackage: "8", name: "Pack" }],
+      },
+      pricing: {
+        costFils: "80000",
+        marginPercentage: "20",
+        method: "by-percentage",
+        rounding: "off",
+        wholesalePriceFils: "70000",
+      },
     });
     expect(edited.status, failureContext([edited])).toBe(200);
     expect(edited.body).toMatchObject({
       barcodes: ["5012345678900"],
       displayName: "Panadol Extra 500 mg tablet GSK",
+      packaging: {
+        packageUnits: [{ baseUnitsPerPackage: "8", name: "Pack" }],
+      },
+      pricing: { method: "by-percentage", retailPriceFils: "100000" },
       revision: "2",
     });
     editableProduct = edited.body as unknown as Product;
@@ -197,6 +455,9 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       display_name: "Panadol 500 mg tablet GSK",
       product_id: editableProduct.id,
     });
+    expect(await snapshotPackageUnits(snapshot.id)).toEqual([
+      { base_units_per_package: "4", name: "Pack" },
+    ]);
   });
 
   it("rejects an update attempt on a posted Product snapshot", async () => {
@@ -477,7 +738,10 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       `insert into catalog_product_snapshots (
          pharmacy_id, product_id, display_name, name_template_version
        ) values ($1, $2, 'server replaces this', 1)
-       returning id, product_id, display_name`,
+       returning id, product_id, display_name, inventory_unit_name,
+                 third_unit_name, pricing_method, retail_price_fils::text,
+                 wholesale_price_fils::text, margin_percentage::text,
+                 price_rounding`,
       [pharmacyId, productId],
     );
     const snapshot = result.rows[0];
@@ -489,7 +753,10 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
 
   async function snapshotById(snapshotId: string): Promise<SnapshotRow> {
     const result = await administrator.query<SnapshotRow>(
-      `select id, product_id, display_name
+      `select id, product_id, display_name, inventory_unit_name,
+              third_unit_name, pricing_method, retail_price_fils::text,
+              wholesale_price_fils::text, margin_percentage::text,
+              price_rounding
        from catalog_product_snapshots where id = $1`,
       [snapshotId],
     );
@@ -498,6 +765,64 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       throw new Error("The posted Product snapshot is missing");
     }
     return snapshot;
+  }
+
+  async function snapshotPackageUnits(
+    snapshotId: string,
+  ): Promise<readonly { base_units_per_package: string; name: string }[]> {
+    const result = await administrator.query<{
+      base_units_per_package: string;
+      name: string;
+    }>(
+      `select name, base_units_per_package::text
+       from catalog_product_snapshot_package_units
+       where snapshot_id = $1
+       order by name`,
+      [snapshotId],
+    );
+    return result.rows;
+  }
+
+  async function expectRejectedInRollback(
+    sql: string,
+    values: readonly unknown[],
+    code: string,
+  ): Promise<void> {
+    const client = await administrator.connect();
+    try {
+      await client.query("begin");
+      await expect(client.query(sql, [...values])).rejects.toMatchObject({
+        code,
+      });
+    } finally {
+      await client.query("rollback").catch(() => undefined);
+      client.release();
+    }
+  }
+
+  /**
+   * The three default-unit foreign keys are `deferrable initially deferred`, so
+   * a statement that breaks one is accepted and the constraint answers later.
+   * Asserting on the statement itself would therefore prove nothing at all;
+   * this forces the check with `set constraints all immediate` and asserts on
+   * that, which is the same decision the transaction would reach at commit.
+   */
+  async function expectRejectedWhenDeferredChecksRun(
+    sql: string,
+    values: readonly unknown[],
+    code: string,
+  ): Promise<void> {
+    const client = await administrator.connect();
+    try {
+      await client.query("begin");
+      await client.query(sql, [...values]);
+      await expect(
+        client.query("set constraints all immediate"),
+      ).rejects.toMatchObject({ code });
+    } finally {
+      await client.query("rollback").catch(() => undefined);
+      client.release();
+    }
   }
 
   function failureContext(responses: readonly ApiResponse[]): string {
@@ -549,6 +874,21 @@ function medicationRequest(
       usesPerMonth: null,
       usesPerWeek: null,
     },
+    packaging: {
+      defaultUnits: {
+        count: { kind: "inventory-unit" },
+        purchase: { kind: "package-unit", packageUnitName: "Pack" },
+        sale: { kind: "inventory-unit" },
+      },
+      inventoryUnitName: "Strip",
+      packageUnits: [{ baseUnitsPerPackage: "4", name: "Pack" }],
+      thirdUnit: { name: "Treatment day" },
+    },
+    pricing: {
+      method: "by-price",
+      retailPriceFils: "100000",
+      wholesalePriceFils: "90000",
+    },
     scientificName: "Paracetamol",
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: "blue" },
@@ -577,6 +917,21 @@ function generalItemRequest(company: string): ProductCreateRequest {
       usesPerDay: null,
       usesPerMonth: null,
       usesPerWeek: null,
+    },
+    packaging: {
+      defaultUnits: {
+        count: { kind: "inventory-unit" },
+        purchase: { kind: "package-unit", packageUnitName: "Box" },
+        sale: { kind: "inventory-unit" },
+      },
+      inventoryUnitName: "Piece",
+      packageUnits: [{ baseUnitsPerPackage: "12", name: "Box" }],
+      thirdUnit: null,
+    },
+    pricing: {
+      method: "by-price",
+      retailPriceFils: "250000",
+      wholesalePriceFils: null,
     },
     scientificName: null,
     sharing: { aiSharingAllowed: true, externallyVisible: false },
