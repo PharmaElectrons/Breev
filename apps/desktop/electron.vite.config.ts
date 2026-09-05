@@ -4,7 +4,13 @@ import { defineConfig } from "electron-vite";
 import path from "node:path";
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      externalizeDeps: {
+        exclude: ["zod"],
+      },
+    },
+  },
   preload: {
     build: {
       rollupOptions: {
