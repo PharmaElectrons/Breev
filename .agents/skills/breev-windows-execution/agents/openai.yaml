@@ -1,0 +1,4 @@
+interface:
+  display_name: "Breev Windows Execution"
+  short_description: "Safe Breev Windows execution and diagnostics"
+  default_prompt: "Use $breev-windows-execution for this local Windows command, test, or troubleshooting task."
