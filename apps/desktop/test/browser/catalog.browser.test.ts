@@ -993,12 +993,12 @@ test.describe.serial("Product catalog screens", () => {
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
 
     // Navigation is links, not buttons, so it does not disturb the header's
-    // diagnostic, language, and theme control order.
+    // diagnostic, language, and theme control order. Central submission is
+    // intentionally disabled by default (G-16), so it is absent here.
     const buttons = page.locator(".preference-controls").getByRole("button");
     for (const [index, label] of [
       "Export diagnostic package",
       "Contact support",
-      "Send diagnostic report",
       "Switch to Arabic",
       "Use dark theme",
     ].entries()) {
