@@ -569,11 +569,12 @@ test.describe.serial("Product catalog screens", () => {
   });
 
   test("Instant English, Arabic, and scanner search announces counts in both directions and themes", async ({
-    page,
+    browser,
   }) => {
     for (const locale of ["en", "ar"] as const) {
       for (const theme of ["light", "dark"] as const) {
-        await page.context().clearCookies();
+        const context = await browser.newContext();
+        const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, { locale, theme });
         await page.goto(`${renderer.origin}#/catalog/products`);
         const label =
@@ -602,9 +603,12 @@ test.describe.serial("Product catalog screens", () => {
             `catalog-search-${locale}-${theme}.png`,
           ),
         });
+        await context.close();
       }
     }
 
+    const context = await browser.newContext();
+    const page = await context.newPage();
     await installDesktopFake(page, renderer.origin, {
       locale: "en",
       theme: "light",
@@ -618,6 +622,7 @@ test.describe.serial("Product catalog screens", () => {
     await expect(page).toHaveURL(
       `${renderer.origin}/#/catalog/products/${inventoryProduct.id}`,
     );
+    await context.close();
   });
 
   test("Search failure retains scanner value and focus; barcode suggest, print, and matching work without a mouse", async ({
