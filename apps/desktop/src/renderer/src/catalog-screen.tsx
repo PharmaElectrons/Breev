@@ -332,8 +332,11 @@ function ProductRail({
           searching: "Searching…",
         };
 
-  const performSearch = async (selectSingle: boolean): Promise<void> => {
-    const normalizedQuery = query.trim();
+  const performSearch = async (
+    selectSingle: boolean,
+    requestedQuery = query,
+  ): Promise<void> => {
+    const normalizedQuery = requestedQuery.trim();
     const sequence = ++requestSequence.current;
     if (normalizedQuery.length === 0) {
       setSearchResponse(null);
@@ -481,7 +484,7 @@ function ProductRail({
                 window.clearTimeout(searchTimer.current);
                 searchTimer.current = null;
               }
-              void performSearch(true);
+              void performSearch(true, event.currentTarget.value);
             }
           }}
         />
