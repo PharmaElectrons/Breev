@@ -215,12 +215,12 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     const searchable = await request(
       "POST",
       "/catalog/products",
-      medicationRequest("Panadol Extra", ["5012345678900", "5012345678901"]),
+      medicationRequest("Panadol Extra", ["7012345678900", "7012345678901"]),
     );
     expect(searchable.status, failureContext([searchable])).toBe(201);
     expect(searchable.body?.barcodes).toEqual([
-      { kind: "product", source: "provided", value: "5012345678900" },
-      { kind: "product", source: "provided", value: "5012345678901" },
+      { kind: "product", source: "provided", value: "7012345678900" },
+      { kind: "product", source: "provided", value: "7012345678901" },
     ]);
 
     const ordered = await request(
@@ -253,7 +253,7 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     expect(arabic.body?.resultCount).toEqual(expect.any(Number));
     expect(Number(arabic.body?.resultCount)).toBeGreaterThan(0);
 
-    for (const barcode of ["5012345678900", "5012345678901"]) {
+    for (const barcode of ["7012345678900", "7012345678901"]) {
       const exact = await request("GET", productSearchPath({ query: barcode }));
       expect(exact.body).toMatchObject({
         resultCount: 1,
@@ -481,7 +481,7 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       const startedAt = performance.now();
       const response = await request(
         "GET",
-        productSearchPath({ query: "5012345678900" }),
+        productSearchPath({ query: "7012345678900" }),
       );
       barcodeDurations.push(performance.now() - startedAt);
       expect(response.body).toMatchObject({
