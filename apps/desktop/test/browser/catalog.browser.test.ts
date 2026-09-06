@@ -151,8 +151,7 @@ async function startRendererServer(
 
       if (
         request.url?.startsWith("/identity/") ||
-        request.url === "/catalog/products" ||
-        request.url?.startsWith("/catalog/products/")
+        request.url?.startsWith("/catalog/")
       ) {
         const body = await readRequestBody(request);
         const upstream = await fetch(`${apiOrigin}${request.url}`, {

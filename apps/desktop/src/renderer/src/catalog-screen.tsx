@@ -299,7 +299,6 @@ function ProductRail({
   const { locale } = usePreferences();
   const inputRef = useRef<HTMLInputElement>(null);
   const requestSequence = useRef(0);
-  const searchTimer = useRef<number | null>(null);
   const [query, setQuery] = useState("");
   const [searchResponse, setSearchResponse] =
     useState<ProductSearchResponse | null>(null);
@@ -332,11 +331,8 @@ function ProductRail({
           searching: "Searching…",
         };
 
-  const performSearch = async (
-    selectSingle: boolean,
-    requestedQuery = query,
-  ): Promise<void> => {
-    const normalizedQuery = requestedQuery.trim();
+  const performSearch = async (selectSingle: boolean): Promise<void> => {
+    const normalizedQuery = query.trim();
     const sequence = ++requestSequence.current;
     if (normalizedQuery.length === 0) {
       setSearchResponse(null);
@@ -371,14 +367,9 @@ function ProductRail({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      searchTimer.current = null;
       void performSearch(false);
     }, 100);
-    searchTimer.current = timer;
-    return () => {
-      window.clearTimeout(timer);
-      if (searchTimer.current === timer) searchTimer.current = null;
-    };
+    return () => window.clearTimeout(timer);
   }, [baseUrl, query]);
 
   const matches =
@@ -480,11 +471,7 @@ function ProductRail({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              if (searchTimer.current !== null) {
-                window.clearTimeout(searchTimer.current);
-                searchTimer.current = null;
-              }
-              void performSearch(true, event.currentTarget.value);
+              void performSearch(true);
             }
           }}
         />
