@@ -755,20 +755,17 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager" }),
     ).toBeVisible();
-    // The built-in manager role is seeded with role administration and
-    // nothing else: the role editor is offered, user management is not, and
-    // the permission summary names the one permission in plain words.
+    // The built-in manager role is seeded with role administration and Product
+    // search: the role editor is offered and user management is not.
     await expect(
       page.getByRole("heading", { name: "User management" }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Configure role permissions" }),
     ).toBeVisible();
-    await expect(
-      page
-        .locator(".permission-summary")
-        .getByText("Manage roles and permissions", { exact: true }),
-    ).toBeVisible();
+    await expect(page.locator(".permission-summary p")).toHaveText(
+      "Manage roles and permissions · Search products",
+    );
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
         headers: { Accept: "application/json" },

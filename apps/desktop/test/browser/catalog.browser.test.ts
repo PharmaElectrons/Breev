@@ -517,6 +517,8 @@ test.describe.serial("Product catalog screens", () => {
 
     // 7. Barcode entry
     await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Barcode kind")).toBeFocused();
+    await page.keyboard.press("Tab");
     const barcodeInput = page.getByPlaceholder("Enter barcode");
     await expect(barcodeInput).toBeFocused();
     await page.keyboard.type("5000167000001");
