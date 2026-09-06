@@ -13,6 +13,7 @@
 export type ImplementedPermissionId =
   | "attendance.record"
   | "catalog.item.manage"
+  | "catalog.item.search"
   | "devices.pair"
   | "identity.roles.manage"
   | "identity.users.manage"
@@ -37,7 +38,10 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       "pharmacy.settings.manage",
     ],
   },
-  { id: "products", permissions: ["catalog.item.manage"] },
+  {
+    id: "products",
+    permissions: ["catalog.item.manage", "catalog.item.search"],
+  },
   { id: "attendance", permissions: ["attendance.record"] },
   {
     id: "devices-licensing",

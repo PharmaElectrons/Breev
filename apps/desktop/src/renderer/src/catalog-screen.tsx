@@ -1,11 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { catalogMessages, type CatalogCopy } from "./catalog-messages";
-import { requestProduct, requestProductList } from "./catalog-api";
+import {
+  approveCatalogMatchingSuggestion,
+  newIdempotencyKey,
+  openCatalogMatchingBatch,
+  requestProduct,
+  requestProductList,
+  searchProducts,
+} from "./catalog-api";
 import { usePreferences } from "./preferences-provider";
 import { ProductForm } from "./product-form";
 import { ProductRecord } from "./product-record";
-import type { Product } from "@breev/contracts/local-rest";
+import type {
+  CatalogMatchingBatch,
+  Product,
+  ProductSearchResponse,
+} from "@breev/contracts/local-rest";
 
 /**
  * The Catalog workspace in the client prototype's master-detail shape: a narrow
@@ -121,10 +132,15 @@ export function CatalogRouteView({
     <div className="catalog-workspace" aria-label={copy.titles.productCatalog}>
       <ProductRail
         activeProductId={productId}
+        baseUrl={baseUrl}
         copy={copy}
         error={listError}
         loading={listLoading}
         products={productList}
+        onProductChanged={(next) => {
+          setProduct((current) => (current?.id === next.id ? next : current));
+          refreshList();
+        }}
       />
       <div className="catalog-canvas">
         <CatalogCanvas
@@ -236,6 +252,7 @@ function CatalogCanvas({
           window.location.hash = `#/catalog/products/${next.id}/edit`;
         }}
         onMergeSuccess={onProductChanged}
+        onProductChanged={onProductChanged}
       />
     );
   }
@@ -264,24 +281,175 @@ function CatalogCanvas({
  */
 function ProductRail({
   activeProductId,
+  baseUrl,
   copy,
   error,
   loading,
+  onProductChanged,
   products,
 }: {
   readonly activeProductId: string | null;
+  readonly baseUrl: string;
   readonly copy: CatalogCopy;
   readonly error: string | null;
   readonly loading: boolean;
+  readonly onProductChanged: (product: Product) => void;
   readonly products: readonly Product[];
 }): React.JSX.Element {
-  const matches = products;
+  const { locale } = usePreferences();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const requestSequence = useRef(0);
+  const [query, setQuery] = useState("");
+  const [searchResponse, setSearchResponse] =
+    useState<ProductSearchResponse | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [matchingBatch, setMatchingBatch] =
+    useState<CatalogMatchingBatch | null>(null);
+  const [matchingBusy, setMatchingBusy] = useState(false);
+  const [matchingError, setMatchingError] = useState<string | null>(null);
+  const labels =
+    locale === "ar"
+      ? {
+          approve: "اعتماد",
+          close: "إغلاق",
+          count: (count: number) => `عدد نتائج البحث: ${count}`,
+          matching: "قائمة المطابقة اليومية",
+          matchingEmpty: "لا توجد اقتراحات غير مكتملة لليوم.",
+          matchingTitle: "اقتراحات الباركود اليومية",
+          search: "ابحث بالاسم العربي أو الإنجليزي أو الباركود",
+          searching: "جارٍ البحث…",
+        }
+      : {
+          approve: "Approve",
+          close: "Close",
+          count: (count: number) => `Search results: ${count}`,
+          matching: "Daily matching list",
+          matchingEmpty: "There are no incomplete suggestions for today.",
+          matchingTitle: "Daily barcode suggestions",
+          search: "Search Arabic name, English name, or barcode",
+          searching: "Searching…",
+        };
+
+  const performSearch = async (selectSingle: boolean): Promise<void> => {
+    const normalizedQuery = query.trim();
+    const sequence = ++requestSequence.current;
+    if (normalizedQuery.length === 0) {
+      setSearchResponse(null);
+      setSearchError(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const response = await searchProducts(baseUrl, {
+        limit: "50",
+        query: normalizedQuery,
+      });
+      if (sequence !== requestSequence.current) return;
+      setSearchResponse(response);
+      if (selectSingle && response.results.length === 1) {
+        window.location.hash = `#/catalog/products/${response.results[0]!.product.id}`;
+      }
+    } catch (searchFailure) {
+      if (sequence !== requestSequence.current) return;
+      setSearchError(
+        searchFailure instanceof Error
+          ? searchFailure.message
+          : String(searchFailure),
+      );
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } finally {
+      if (sequence === requestSequence.current) setSearching(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void performSearch(false);
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [baseUrl, query]);
+
+  const matches =
+    searchResponse === null
+      ? products
+      : searchResponse.results.map((result) => result.product);
+  const resultCount =
+    query.trim().length === 0
+      ? products.length
+      : (searchResponse?.resultCount ?? 0);
+
+  const openMatching = async (): Promise<void> => {
+    setMatchingBusy(true);
+    setMatchingError(null);
+    try {
+      setMatchingBatch(
+        await openCatalogMatchingBatch(baseUrl, {
+          idempotencyKey: newIdempotencyKey(),
+        }),
+      );
+    } catch (matchingFailure) {
+      setMatchingError(
+        matchingFailure instanceof Error
+          ? matchingFailure.message
+          : String(matchingFailure),
+      );
+    } finally {
+      setMatchingBusy(false);
+    }
+  };
+
+  const approveSuggestion = async (
+    suggestionId: string,
+    expectedRevision: string,
+  ): Promise<void> => {
+    setMatchingBusy(true);
+    setMatchingError(null);
+    try {
+      const updated = await approveCatalogMatchingSuggestion(
+        baseUrl,
+        suggestionId,
+        { expectedRevision, idempotencyKey: newIdempotencyKey() },
+      );
+      onProductChanged(updated);
+      setMatchingBatch((current) =>
+        current === null
+          ? null
+          : {
+              ...current,
+              suggestions: current.suggestions.filter(
+                (suggestion) => suggestion.id !== suggestionId,
+              ),
+            },
+      );
+    } catch (matchingFailure) {
+      setMatchingError(
+        matchingFailure instanceof Error
+          ? matchingFailure.message
+          : String(matchingFailure),
+      );
+    } finally {
+      setMatchingBusy(false);
+    }
+  };
 
   return (
     <div className="catalog-rail">
       <div className="catalog-rail-head">
         <div className="catalog-rail-title">
           <h2>{`${copy.rail.count} (${products.length})`}</h2>
+          <button
+            aria-label={labels.matching}
+            className="quiet-button"
+            disabled={matchingBusy}
+            title={labels.matching}
+            type="button"
+            onClick={() => void openMatching()}
+          >
+            ≋
+          </button>
           <a
             aria-label={copy.list.newProduct}
             className="primary-button catalog-rail-new"
@@ -290,9 +458,33 @@ function ProductRail({
             {copy.rail.newShort}
           </a>
         </div>
+        <input
+          ref={inputRef}
+          aria-label={labels.search}
+          autoComplete="off"
+          className="catalog-rail-search"
+          dir="auto"
+          placeholder={labels.search}
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void performSearch(true);
+            }
+          }}
+        />
+        <p className="sr-only" aria-live="polite" role="status">
+          {searching ? labels.searching : labels.count(resultCount)}
+        </p>
       </div>
 
-      {loading ? (
+      {searchError !== null ? (
+        <p className="catalog-rail-empty" role="alert">
+          {searchError}
+        </p>
+      ) : loading && query.trim().length === 0 ? (
         <p className="catalog-rail-empty" role="status">
           {copy.list.loading}
         </p>
@@ -300,7 +492,7 @@ function ProductRail({
         <p className="catalog-rail-empty" role="alert">
           {error}
         </p>
-      ) : products.length === 0 ? (
+      ) : matches.length === 0 ? (
         <p className="catalog-rail-empty">{copy.list.empty}</p>
       ) : (
         <ul className="catalog-rail-list">
@@ -330,6 +522,56 @@ function ProductRail({
             </li>
           ))}
         </ul>
+      )}
+      {matchingBatch === null ? null : (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            aria-labelledby="catalog-matching-title"
+            aria-modal="true"
+            className="step-up-dialog identity-card"
+            role="dialog"
+          >
+            <h3 id="catalog-matching-title">{labels.matchingTitle}</h3>
+            <p>{matchingBatch.businessDate}</p>
+            {matchingError === null ? null : (
+              <p className="denial-alert" role="alert">
+                {matchingError}
+              </p>
+            )}
+            {matchingBatch.suggestions.length === 0 ? (
+              <p>{labels.matchingEmpty}</p>
+            ) : (
+              <ul className="catalog-matching-list">
+                {matchingBatch.suggestions.map((suggestion) => (
+                  <li key={suggestion.id}>
+                    <span>{suggestion.product.displayName}</span>
+                    <code>{suggestion.proposedBarcode.value}</code>
+                    <button
+                      className="primary-button"
+                      disabled={matchingBusy}
+                      type="button"
+                      onClick={() =>
+                        void approveSuggestion(
+                          suggestion.id,
+                          suggestion.product.revision,
+                        )
+                      }
+                    >
+                      {labels.approve}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              className="quiet-button"
+              type="button"
+              onClick={() => setMatchingBatch(null)}
+            >
+              {labels.close}
+            </button>
+          </section>
+        </div>
       )}
     </div>
   );

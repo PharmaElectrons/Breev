@@ -112,6 +112,11 @@ const permissionLabels: Record<
       description: "إضافة سجلات الأصناف وتعديل أسمائها وباركوداتها وتعبئتها.",
       name: "إدارة الأصناف",
     },
+    "catalog.item.search": {
+      description:
+        "البحث الفوري عن الأصناف بالاسم العربي أو الإنجليزي أو الباركود.",
+      name: "البحث عن الأصناف",
+    },
     "devices.pair": {
       description: "إضافة نقاط بيع إضافية وإبطالها واعتماد تحرير المقاعد.",
       name: "إقران نقاط البيع وإدارتها",
@@ -144,6 +149,11 @@ const permissionLabels: Record<
       description:
         "Add and edit product records, names, barcodes, and packaging.",
       name: "Manage products",
+    },
+    "catalog.item.search": {
+      description:
+        "Instantly find products by Arabic name, English name, or barcode.",
+      name: "Search products",
     },
     "devices.pair": {
       description:

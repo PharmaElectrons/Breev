@@ -1,5 +1,8 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
+import type {
+  BreevDesktopApi,
+  DesktopBarcodePrintRequest,
+} from "@breev/contracts/desktop-preload";
 import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
@@ -83,7 +86,7 @@ interface ApiResponse {
 function sampleMedicationRequest(barcode: string): ProductCreateRequest {
   return {
     arabicSearchName: "بنادول اكسترا باراسيتامول وكافيين",
-    barcodes: [barcode],
+    barcodes: [{ kind: "product", value: barcode }],
     category: "Analgesic",
     definition: {
       fields: {
@@ -223,6 +226,13 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => unpairedState,
         copyIdentifier: async () => ({ copied: true as const }),
+        printBarcodeLabel: async (request: DesktopBarcodePrintRequest) => {
+          localStorage.setItem(
+            "breev.test.lastBarcodePrint",
+            JSON.stringify(request),
+          );
+          return { status: "handed-off" as const };
+        },
         exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
           diagnosticReporting: "disabled" as const,
@@ -253,13 +263,16 @@ test.describe.serial("Product catalog screens", () => {
   let apiOrigin: string;
   let credentials: MainDeviceCredentials;
   let databaseRoles: SeparatedDatabaseRoles;
+  let dailyMatchingProduct: Product;
   let inventoryProduct: Product;
+  let matchingProduct: Product;
   let matrixProduct: Product;
   let mergeProduct: Product;
   let mergeSurvivor: Product;
   let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
   const evidenceDir = evidencePath("issue-47/after");
+  const searchEvidenceDir = evidencePath("issue-48/after");
   const testResultsDir = path.resolve(
     import.meta.dirname,
     "../../../../test-results/desktop-browser",
@@ -270,6 +283,7 @@ test.describe.serial("Product catalog screens", () => {
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
+    await mkdir(searchEvidenceDir, { recursive: true });
     await mkdir(adoptionEvidenceDir, { recursive: true });
     await mkdir(testResultsDir, { recursive: true });
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
@@ -381,6 +395,33 @@ test.describe.serial("Product catalog screens", () => {
       credentials,
       sampleMedicationRequest("5000167000101"),
     );
+    matchingProduct = await createCatalogProduct(apiOrigin, credentials, {
+      ...sampleMedicationRequest("5000167000199"),
+      barcodes: [],
+      definition: {
+        fields: {
+          dosageForm: "Tablet",
+          manufacturer: "GSK",
+          strength: "500mg",
+          tradeName: "Matching Candidate",
+        },
+        mode: "medication",
+      },
+    });
+    dailyMatchingProduct = await createCatalogProduct(apiOrigin, credentials, {
+      ...sampleMedicationRequest("5000167000198"),
+      barcodes: [],
+      definition: {
+        fields: {
+          dosageForm: "Tablet",
+          manufacturer: "Breev Labs",
+          strength: "10mg",
+          tradeName: "Daily Matching Candidate",
+        },
+        mode: "medication",
+      },
+    });
+    expect(dailyMatchingProduct.barcodes).toEqual([]);
     mergeProduct = await createCatalogProduct(
       apiOrigin,
       credentials,
@@ -524,6 +565,108 @@ test.describe.serial("Product catalog screens", () => {
     // Save evidence screenshot of product form & record
     await page.screenshot({
       path: path.join(evidenceDir, "keyboard-medication-record.png"),
+    });
+  });
+
+  test("Instant English, Arabic, and scanner search announces counts in both directions and themes", async ({
+    page,
+  }) => {
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        await page.context().clearCookies();
+        await installDesktopFake(page, renderer.origin, { locale, theme });
+        await page.goto(`${renderer.origin}#/catalog/products`);
+        const label =
+          locale === "ar"
+            ? "ابحث بالاسم العربي أو الإنجليزي أو الباركود"
+            : "Search Arabic name, English name, or barcode";
+        const search = page.getByRole("searchbox", { name: label });
+        await search.fill("panadol gs");
+        await expect(page.locator(".catalog-rail-item").first()).toContainText(
+          "Panadol Extra",
+        );
+        await expect(
+          page.getByRole("status").filter({
+            hasText: locale === "ar" ? "عدد نتائج البحث:" : "Search results:",
+          }),
+        ).toBeAttached();
+
+        await search.fill("بنادول اكسترا");
+        await expect(page.locator(".catalog-rail-item").first()).toContainText(
+          "Panadol Extra",
+        );
+        await expect(search).toBeFocused();
+        await page.screenshot({
+          path: path.join(
+            searchEvidenceDir,
+            `catalog-search-${locale}-${theme}.png`,
+          ),
+        });
+      }
+    }
+
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    const scanner = page.getByRole("searchbox", {
+      name: "Search Arabic name, English name, or barcode",
+    });
+    await scanner.fill("5000167000101");
+    await scanner.press("Enter");
+    await expect(page).toHaveURL(
+      `${renderer.origin}/#/catalog/products/${inventoryProduct.id}`,
+    );
+  });
+
+  test("Search failure retains scanner value and focus; barcode suggest, print, and matching work without a mouse", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    const search = page.getByRole("searchbox", {
+      name: "Search Arabic name, English name, or barcode",
+    });
+    await page.route("**/catalog/product-search?*", (route) => route.abort());
+    await search.fill("kept scanner value");
+    await search.press("Enter");
+    await expect(search).toHaveValue("kept scanner value");
+    await expect(search).toBeFocused();
+    await page.unroute("**/catalog/product-search?*");
+
+    await page.goto(
+      `${renderer.origin}#/catalog/products/${matchingProduct.id}`,
+    );
+    await page
+      .getByRole("button", { name: "Suggest internal barcode" })
+      .press("Enter");
+    const internalCode = page.getByText(/^BRV-[0-9]{12}/u);
+    await expect(internalCode).toBeVisible();
+    await page.getByRole("button", { name: "Print" }).press("Enter");
+    await expect
+      .poll(async () =>
+        page.evaluate(() =>
+          localStorage.getItem("breev.test.lastBarcodePrint"),
+        ),
+      )
+      .not.toBeNull();
+
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    await page
+      .getByRole("button", { name: "Daily matching list" })
+      .press("Enter");
+    await expect(
+      page.getByRole("dialog", { name: "Daily barcode suggestions" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Approve" }).first(),
+    ).toBeVisible();
+    await page.screenshot({
+      path: path.join(searchEvidenceDir, "catalog-matching-en-light.png"),
     });
   });
 

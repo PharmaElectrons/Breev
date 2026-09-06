@@ -24,6 +24,7 @@ describe("desktop preload API", () => {
       "getStartupConfig",
       "getTerminalPairingState",
       "openSupport",
+      "printBarcodeLabel",
       "reportRendererIncident",
       "submitManualEndpoint",
       "submitDiagnostics",
@@ -80,6 +81,32 @@ describe("desktop preload API", () => {
         { host: "192.168.1.5", invitation: "breev-pair://1/x", port: 31_311 },
       ],
     ]);
+  });
+
+  it("hands only a validated printable barcode label to Electron", async () => {
+    const invoke = vi.fn().mockResolvedValue({ status: "handed-off" });
+    const api = createBreevDesktopApi(invoke);
+    const request = {
+      barcode: {
+        kind: "product" as const,
+        source: "breev-internal" as const,
+        value: "BRV-000000000001",
+      },
+      displayName: "Panadol Extra GSK",
+      jobId: "0192f0a0-1c2d-7e3f-8a4b-5c6d7e8f9a0c",
+      locale: "en" as const,
+      quantity: 2,
+    };
+    await expect(api.printBarcodeLabel(request)).resolves.toEqual({
+      status: "handed-off",
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      "breev:desktop:print-barcode-label",
+      request,
+    );
+    await expect(
+      api.printBarcodeLabel({ ...request, quantity: 0 }),
+    ).rejects.toThrow();
   });
 
   it.each([
