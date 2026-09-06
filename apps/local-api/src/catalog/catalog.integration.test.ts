@@ -308,6 +308,15 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       quantity: 2,
     });
 
+    const matchingCandidate = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Daily Matching Candidate", []),
+    );
+    expect(matchingCandidate.status, failureContext([matchingCandidate])).toBe(
+      201,
+    );
+
     const openingBody = { idempotencyKey: createUuidV7() };
     const opened = await request(
       "POST",
@@ -325,7 +334,13 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     };
     expect(batch.suggestions.length).toBeGreaterThan(0);
     expect(batch.suggestions.length).toBeLessThanOrEqual(10);
-    const approved = batch.suggestions[0]!;
+    const approved = batch.suggestions.find(
+      ({ product }) => product.id === matchingCandidate.body?.id,
+    );
+    expect(approved).toBeDefined();
+    if (approved === undefined) {
+      throw new Error("The dedicated matching candidate was not proposed");
+    }
     const approval = await request(
       "POST",
       catalogMatchingApprovalPath(approved.id),
@@ -404,17 +419,17 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
            count_default_unit_id, purchase_default_unit_id,
            sale_default_unit_id, pricing_method, retail_price_fils
          )
-         select product_id, $1, ''medication'',
-                ''Reference '' || lpad(ordinal::text, 5, ''0''),
-                ''Volume Lab'',
+         select product_id, $1, 'medication',
+                'Reference ' || lpad(ordinal::text, 5, '0'),
+                'Volume Lab',
                 case when ordinal = 9999
-                  then ''Volume Reference Special 09999 Volume Lab''
-                  else ''Reference '' || lpad(ordinal::text, 5, ''0'') || '' Volume Lab''
+                  then 'Volume Reference Special 09999 Volume Lab'
+                  else 'Reference ' || lpad(ordinal::text, 5, '0') || ' Volume Lab'
                 end,
                 1,
-                case when ordinal = 9998 then ''مرجع الحجم الخاص'' else null end,
+                case when ordinal = 9998 then 'مرجع الحجم الخاص' else null end,
                 false, false, false, $2, $2,
-                unit_id, unit_id, unit_id, ''by-price'', 0
+                unit_id, unit_id, unit_id, 'by-price', 0
          from catalog_volume_seed`,
         [pharmacyId, actorId],
       );
@@ -422,7 +437,7 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
         `insert into catalog_product_units (
            id, pharmacy_id, product_id, kind, name, ordinal
          )
-         select unit_id, $1, product_id, ''inventory'', ''Unit'', 0
+         select unit_id, $1, product_id, 'inventory', 'Unit', 0
          from catalog_volume_seed`,
         [pharmacyId],
       );
