@@ -662,18 +662,37 @@ test.describe.serial("Product catalog screens", () => {
       .not.toBeNull();
 
     await page.goto(`${renderer.origin}#/catalog/products`);
-    await page
-      .getByRole("button", { name: "Daily matching list" })
-      .press("Enter");
-    await expect(
-      page.getByRole("dialog", { name: "Daily barcode suggestions" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Approve" }).first(),
-    ).toBeVisible();
+    const matchingButton = page.getByRole("button", {
+      name: "Daily matching list",
+    });
+    await page.route("**/catalog/matching-batches/current/openings", (route) =>
+      route.abort(),
+    );
+    await matchingButton.press("Enter");
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(matchingButton).toBeFocused();
+    await page.unroute("**/catalog/matching-batches/current/openings");
+
+    await matchingButton.press("Enter");
+    const matchingDialog = page.getByRole("dialog", {
+      name: "Daily barcode suggestions",
+    });
+    await expect(matchingDialog).toBeVisible();
+    await expect(matchingDialog.locator(":focus")).toHaveCount(1);
+    const approve = page.getByRole("button", { name: "Approve" }).first();
+    const close = page.getByRole("button", { name: "Close" });
+    await expect(approve).toBeVisible();
+    await close.focus();
+    await close.press("Tab");
+    await expect(approve).toBeFocused();
+    await approve.press("Shift+Tab");
+    await expect(close).toBeFocused();
     await page.screenshot({
       path: path.join(searchEvidenceDir, "catalog-matching-en-light.png"),
     });
+    await page.keyboard.press("Escape");
+    await expect(matchingDialog).toBeHidden();
+    await expect(matchingButton).toBeFocused();
   });
 
   test("Keyboard-only entry of a full general item", async ({ page }) => {

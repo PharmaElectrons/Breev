@@ -109,7 +109,6 @@ create table catalog_matching_suggestions (
   approved_at timestamptz,
   approved_by uuid,
   unique (id, pharmacy_id),
-  unique (pharmacy_id, product_id),
   unique (pharmacy_id, proposed_barcode),
   foreign key (product_id, pharmacy_id)
     references catalog_products(id, pharmacy_id),
@@ -127,6 +126,10 @@ create table catalog_matching_suggestions (
     (approved_at is null) = (approved_by is null)
   )
 );
+--> statement-breakpoint
+create unique index catalog_matching_suggestions_active_product_unique
+  on catalog_matching_suggestions (pharmacy_id, product_id)
+  where approved_at is null;
 --> statement-breakpoint
 revoke all on table
   catalog_internal_barcode_sequences,

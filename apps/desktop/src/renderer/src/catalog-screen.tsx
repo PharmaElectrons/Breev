@@ -270,8 +270,8 @@ function CatalogCanvas({
 /**
  * The prototype's product rail.
  *
- * It carries **no search box**, though the prototype's does. Breev's approved
- * search is a specific contract — ordered query parts matched in sequence
+ * Its search box uses Breev's approved server-authoritative contract — ordered
+ * query parts matched in sequence
  * across Arabic names, English names, and barcodes, with the acceptance example
  * "panadol gs" returning "Panadol Extra GSK" (docs/domain.md §Catalog) — and it
  * is server-authoritative work with a p95 budget over 10,000 products
@@ -298,6 +298,8 @@ function ProductRail({
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const inputRef = useRef<HTMLInputElement>(null);
+  const matchingButtonRef = useRef<HTMLButtonElement>(null);
+  const matchingDialogRef = useRef<HTMLDivElement>(null);
   const requestSequence = useRef(0);
   const [query, setQuery] = useState("");
   const [searchResponse, setSearchResponse] =
@@ -385,20 +387,33 @@ function ProductRail({
     setMatchingBusy(true);
     setMatchingError(null);
     try {
-      setMatchingBatch(
-        await openCatalogMatchingBatch(baseUrl, {
-          idempotencyKey: newIdempotencyKey(),
-        }),
-      );
+      const opened = await openCatalogMatchingBatch(baseUrl, {
+        idempotencyKey: newIdempotencyKey(),
+      });
+      setMatchingBatch(opened);
+      requestAnimationFrame(() => {
+        matchingDialogRef.current
+          ?.querySelector<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          )
+          ?.focus();
+      });
     } catch (matchingFailure) {
       setMatchingError(
         matchingFailure instanceof Error
           ? matchingFailure.message
           : String(matchingFailure),
       );
+      requestAnimationFrame(() => matchingButtonRef.current?.focus());
     } finally {
       setMatchingBusy(false);
     }
+  };
+
+  const closeMatching = (): void => {
+    setMatchingBatch(null);
+    setMatchingError(null);
+    requestAnimationFrame(() => matchingButtonRef.current?.focus());
   };
 
   const approveSuggestion = async (
@@ -424,6 +439,11 @@ function ProductRail({
               ),
             },
       );
+      requestAnimationFrame(() => {
+        matchingDialogRef.current
+          ?.querySelector<HTMLElement>("button:not([disabled])")
+          ?.focus();
+      });
     } catch (matchingFailure) {
       setMatchingError(
         matchingFailure instanceof Error
@@ -441,6 +461,7 @@ function ProductRail({
         <div className="catalog-rail-title">
           <h2>{`${copy.rail.count} (${products.length})`}</h2>
           <button
+            ref={matchingButtonRef}
             aria-label={labels.matching}
             className="quiet-button"
             disabled={matchingBusy}
@@ -480,6 +501,11 @@ function ProductRail({
         </p>
       </div>
 
+      {matchingBatch === null && matchingError !== null ? (
+        <p className="catalog-rail-empty" role="alert">
+          {matchingError}
+        </p>
+      ) : null}
       {searchError !== null ? (
         <p className="catalog-rail-empty" role="alert">
           {searchError}
@@ -524,13 +550,36 @@ function ProductRail({
         </ul>
       )}
       {matchingBatch === null ? null : (
-        <div className="dialog-backdrop" role="presentation">
-          <section
-            aria-labelledby="catalog-matching-title"
-            aria-modal="true"
-            className="step-up-dialog identity-card"
-            role="dialog"
-          >
+        <div
+          ref={matchingDialogRef}
+          aria-labelledby="catalog-matching-title"
+          aria-modal="true"
+          className="dialog-backdrop"
+          role="dialog"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closeMatching();
+              return;
+            }
+            if (event.key !== "Tab") return;
+            const focusable =
+              matchingDialogRef.current?.querySelectorAll<HTMLElement>(
+                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+              );
+            if (focusable === undefined || focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first?.focus();
+            }
+          }}
+        >
+          <section className="step-up-dialog identity-card">
             <h3 id="catalog-matching-title">{labels.matchingTitle}</h3>
             <p>{matchingBatch.businessDate}</p>
             {matchingError === null ? null : (
@@ -566,7 +615,7 @@ function ProductRail({
             <button
               className="quiet-button"
               type="button"
-              onClick={() => setMatchingBatch(null)}
+              onClick={closeMatching}
             >
               {labels.close}
             </button>

@@ -5,6 +5,7 @@ import {
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   catalogMatchingApprovalPath,
+  productBarcodeAddPath,
   productBarcodePrintPath,
   productBarcodeSuggestPath,
   productSearchPath,
@@ -211,7 +212,7 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     });
   });
 
-  it("searches ordered subsequences and barcodes, suggests and prints an internal code, and keeps one daily matching batch across restart", async () => {
+  it("searches ordered subsequences and barcodes, suggests and prints an internal code, and keeps daily matching eligible across restart and day boundaries", async () => {
     const searchable = await request(
       "POST",
       "/catalog/products",
@@ -316,6 +317,20 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     expect(matchingCandidate.status, failureContext([matchingCandidate])).toBe(
       201,
     );
+    const matchingFillerIds = new Set<string>();
+    for (let index = 0; index < 12; index += 1) {
+      const filler = await request(
+        "POST",
+        "/catalog/products",
+        medicationRequest(`Daily Matching Filler ${String(index)}`, []),
+      );
+      expect(filler.status, failureContext([filler])).toBe(201);
+      matchingFillerIds.add(String(filler.body?.id));
+    }
+    await administrator.query(
+      "update pharmacies set business_time_zone = 'Etc/GMT+12' where id = $1",
+      [pharmacyId],
+    );
 
     const openingBody = { idempotencyKey: createUuidV7() };
     const opened = await request(
@@ -332,8 +347,7 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
         proposedBarcode: { value: string };
       }[];
     };
-    expect(batch.suggestions.length).toBeGreaterThan(0);
-    expect(batch.suggestions.length).toBeLessThanOrEqual(10);
+    expect(batch.suggestions).toHaveLength(10);
     const approved = batch.suggestions.find(
       ({ product }) => product.id === matchingCandidate.body?.id,
     );
@@ -341,6 +355,23 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     if (approved === undefined) {
       throw new Error("The dedicated matching candidate was not proposed");
     }
+    const completedWithAnotherBarcode = batch.suggestions.find(({ product }) =>
+      matchingFillerIds.has(product.id),
+    );
+    expect(completedWithAnotherBarcode).toBeDefined();
+    if (completedWithAnotherBarcode === undefined) {
+      throw new Error("The matching batch did not contain a second candidate");
+    }
+    const completed = await request(
+      "POST",
+      productBarcodeAddPath(completedWithAnotherBarcode.product.id),
+      {
+        barcode: { kind: "product", value: "7012345678999" },
+        expectedRevision: completedWithAnotherBarcode.product.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(completed.status, failureContext([completed])).toBe(201);
     const approval = await request(
       "POST",
       catalogMatchingApprovalPath(approved.id),
@@ -355,6 +386,19 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
         ({ value }) => value,
       ),
     ).toContain(approved.proposedBarcode.value);
+    const barcodeRemovedAgain = await request(
+      "PUT",
+      productPath(String(matchingCandidate.body?.id)),
+      {
+        ...medicationRequest("Daily Matching Candidate", []),
+        expectedRevision: approval.body?.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(
+      barcodeRemovedAgain.status,
+      failureContext([barcodeRemovedAgain]),
+    ).toBe(200);
 
     await stopProcess(api);
     apiOutput = "";
@@ -367,21 +411,18 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     );
     expect(reopened.status, failureContext([reopened])).toBe(201);
     expect(reopened.body?.businessDate).toBe(batch.businessDate);
+    const sameDaySuggestions = reopened.body?.suggestions as {
+      id: string;
+      product: Product;
+      proposedBarcode: { value: string };
+    }[];
+    expect(sameDaySuggestions).toHaveLength(8);
+    expect(sameDaySuggestions.map(({ id }) => id)).not.toContain(approved.id);
+    expect(sameDaySuggestions.map(({ id }) => id)).not.toContain(
+      completedWithAnotherBarcode.id,
+    );
     expect(
-      (
-        reopened.body?.suggestions as {
-          id: string;
-          proposedBarcode: { value: string };
-        }[]
-      ).map(({ id }) => id),
-    ).not.toContain(approved.id);
-    expect(
-      (
-        reopened.body?.suggestions as {
-          id: string;
-          proposedBarcode: { value: string };
-        }[]
-      ).every((item) =>
+      sameDaySuggestions.every((item) =>
         batch.suggestions.some(
           (original) =>
             original.id === item.id &&
@@ -389,6 +430,41 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
         ),
       ),
     ).toBe(true);
+    await administrator.query(
+      "update pharmacies set business_time_zone = 'Pacific/Kiritimati' where id = $1",
+      [pharmacyId],
+    );
+    const nextDay = await request(
+      "POST",
+      "/catalog/matching-batches/current/openings",
+      { idempotencyKey: createUuidV7() },
+    );
+    expect(nextDay.status, failureContext([nextDay])).toBe(201);
+    expect(nextDay.body?.businessDate).not.toBe(batch.businessDate);
+    const nextDaySuggestions = nextDay.body?.suggestions as {
+      id: string;
+      product: Product;
+    }[];
+    expect(nextDaySuggestions).toHaveLength(10);
+    expect(
+      sameDaySuggestions.every((carried) =>
+        nextDaySuggestions.some(({ id }) => id === carried.id),
+      ),
+    ).toBe(true);
+    const resuggested = nextDaySuggestions.find(
+      ({ product }) => product.id === matchingCandidate.body?.id,
+    );
+    expect(resuggested).toBeDefined();
+    expect(resuggested?.id).not.toBe(approved.id);
+    expect(
+      nextDaySuggestions.some(
+        ({ id }) => id === completedWithAnotherBarcode.id,
+      ),
+    ).toBe(false);
+    await administrator.query(
+      "update pharmacies set business_time_zone = 'Asia/Baghdad' where id = $1",
+      [pharmacyId],
+    );
   }, 120_000);
 
   it("records search p95 below 200 ms on more than 10,000 real PostgreSQL Products", async () => {

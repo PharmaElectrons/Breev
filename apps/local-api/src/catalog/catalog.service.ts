@@ -1846,8 +1846,19 @@ async function fillMatchingBatch(
 ): Promise<void> {
   const existing = await client.query<{ count: string }>(
     `select count(*)::text as count
-     from catalog_matching_suggestions
-     where pharmacy_id = $1 and approved_at is null`,
+     from catalog_matching_suggestions suggestion_row
+     join catalog_products product_row
+       on product_row.id = suggestion_row.product_id
+      and product_row.pharmacy_id = suggestion_row.pharmacy_id
+     where suggestion_row.pharmacy_id = $1
+       and suggestion_row.approved_at is null
+       and product_row.status = 'active'
+       and not exists (
+         select 1 from catalog_product_barcodes barcode_row
+         where barcode_row.pharmacy_id = product_row.pharmacy_id
+           and barcode_row.product_id = product_row.id
+           and barcode_row.removed_at is null
+       )`,
     [context.pharmacyId],
   );
   const remaining = Math.max(0, 10 - Number(existing.rows[0]?.count ?? "0"));
@@ -1867,6 +1878,7 @@ async function fillMatchingBatch(
          select 1 from catalog_matching_suggestions suggestion_row
          where suggestion_row.pharmacy_id = product_row.pharmacy_id
            and suggestion_row.product_id = product_row.id
+           and suggestion_row.approved_at is null
        )
      order by product_row.created_at, product_row.id
      limit $2
@@ -1899,11 +1911,23 @@ async function readMatchingBatch(
     product_id: string;
     proposed_barcode: string;
   }>(
-    `select id, product_id, proposed_barcode,
-            first_offered_business_date::text
-     from catalog_matching_suggestions
-     where pharmacy_id = $1 and approved_at is null
-     order by first_offered_business_date, id
+    `select suggestion_row.id, suggestion_row.product_id,
+            suggestion_row.proposed_barcode,
+            suggestion_row.first_offered_business_date::text
+     from catalog_matching_suggestions suggestion_row
+     join catalog_products product_row
+       on product_row.id = suggestion_row.product_id
+      and product_row.pharmacy_id = suggestion_row.pharmacy_id
+     where suggestion_row.pharmacy_id = $1
+       and suggestion_row.approved_at is null
+       and product_row.status = 'active'
+       and not exists (
+         select 1 from catalog_product_barcodes barcode_row
+         where barcode_row.pharmacy_id = product_row.pharmacy_id
+           and barcode_row.product_id = product_row.id
+           and barcode_row.removed_at is null
+       )
+     order by suggestion_row.first_offered_business_date, suggestion_row.id
      limit 10`,
     [pharmacyId],
   );

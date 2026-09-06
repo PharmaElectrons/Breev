@@ -217,10 +217,9 @@ export const catalogMatchingSuggestions = pgTable(
       table.id,
       table.pharmacyId,
     ),
-    unique("catalog_matching_suggestions_pharmacy_product_unique").on(
-      table.pharmacyId,
-      table.productId,
-    ),
+    uniqueIndex("catalog_matching_suggestions_active_product_unique")
+      .on(table.pharmacyId, table.productId)
+      .where(sql`${table.approvedAt} is null`),
     unique("catalog_matching_suggestions_pharmacy_barcode_unique").on(
       table.pharmacyId,
       table.proposedBarcode,
