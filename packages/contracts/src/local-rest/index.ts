@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "11" as const;
-export const LOCAL_SCHEMA_VERSION = "11" as const;
+export const LOCAL_API_VERSION = "12" as const;
+export const LOCAL_SCHEMA_VERSION = "12" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -1713,15 +1713,34 @@ export const PRODUCT_PRICING_FIELD_EDITABILITY: Readonly<
   },
 };
 
-/**
- * Barcodes are stored here and nothing more: suggesting, printing, and matching
- * them is a later slice. A Product may carry none or several.
- */
-const productBarcodeSchema = z
+export const PRODUCT_BARCODE_KINDS = ["package", "product"] as const;
+export const productBarcodeKindSchema = z.enum(PRODUCT_BARCODE_KINDS);
+export const PRODUCT_BARCODE_SOURCES = ["breev-internal", "provided"] as const;
+export const productBarcodeSourceSchema = z.enum(PRODUCT_BARCODE_SOURCES);
+export const productBarcodeValueSchema = z
   .string()
   .min(1)
   .max(64)
   .refine((value) => value === value.trim());
+
+/**
+ * A caller records whether a code identifies the Product or one of its
+ * packages. Unit resolution is intentionally absent: the current requirement
+ * records the kind but does not make a scan choose a unit.
+ */
+export const productBarcodeInputSchema = z.strictObject({
+  kind: productBarcodeKindSchema,
+  value: productBarcodeValueSchema,
+});
+
+/**
+ * Read-back also identifies Breev-reserved internal codes. `provided` makes no
+ * GS1/GTIN claim; it only means the pharmacy supplied the value.
+ */
+export const productBarcodeSchema = z.strictObject({
+  ...productBarcodeInputSchema.shape,
+  source: productBarcodeSourceSchema,
+});
 
 /**
  * Everything a pharmacist may set on a Product. Create and edit share it
@@ -1730,7 +1749,7 @@ const productBarcodeSchema = z
  */
 const productAttributeFields = {
   arabicSearchName: optionalProductTextSchema(160),
-  barcodes: z.array(productBarcodeSchema).max(32),
+  barcodes: z.array(productBarcodeInputSchema).max(32),
   category: optionalProductTextSchema(96),
   definition: productDefinitionSchema,
   instructions: productInstructionsSchema,
@@ -1747,6 +1766,7 @@ const productAttributeFields = {
  */
 export const productSchema = z.strictObject({
   ...productAttributeFields,
+  barcodes: z.array(productBarcodeSchema).max(32),
   displayName: z
     .string()
     .min(1)
@@ -1823,8 +1843,11 @@ export const catalogFieldErrorSchema = z.strictObject({
  * exactly as every other module's routes do.
  */
 export const CATALOG_DENIAL_CODES = [
+  "barcode-already-present",
+  "barcode-not-found",
   "body-invalid",
   "idempotency-conflict",
+  "matching-suggestion-not-found",
   "merge-into-self",
   "merge-survivor-not-mergeable",
   "product-archived",
@@ -1894,24 +1917,177 @@ export const productMergeContract = {
   responses: { 201: productSchema, ...catalogCommandDenialResponses },
 } as const;
 
+const productSearchLimitSchema = z
+  .string()
+  .regex(/^(?:[1-9]|[1-9][0-9]|100)$/u);
+export const productSearchRequestSchema = z.strictObject({
+  limit: productSearchLimitSchema.optional(),
+  query: z
+    .string()
+    .min(1)
+    .max(160)
+    .refine((value) => value === value.trim()),
+});
+export const PRODUCT_SEARCH_MATCH_FIELDS = [
+  "arabic-name",
+  "barcode",
+  "english-name",
+] as const;
+export const productSearchMatchFieldSchema = z.enum(
+  PRODUCT_SEARCH_MATCH_FIELDS,
+);
+export const productSearchResultSchema = z.strictObject({
+  matchedBarcode: productBarcodeSchema.nullable(),
+  matchedField: productSearchMatchFieldSchema,
+  product: productSchema,
+});
+export const productSearchResponseSchema = z.strictObject({
+  hasMore: z.boolean(),
+  query: z.string().min(1).max(160),
+  resultCount: z.number().int().min(0),
+  results: z.array(productSearchResultSchema).max(100),
+});
+export const productSearchContract = {
+  method: "GET",
+  path: "/catalog/product-search",
+  request: { query: productSearchRequestSchema },
+  responses: {
+    200: productSearchResponseSchema,
+    ...catalogReadDenialResponses,
+    400: catalogDenialSchema,
+  },
+} as const;
+
+const productRevisionCommandFields = {
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+} as const;
+export const productBarcodeAddRequestSchema = z.strictObject({
+  ...productRevisionCommandFields,
+  barcode: productBarcodeInputSchema,
+});
+export const productBarcodeSuggestRequestSchema = z.strictObject({
+  ...productRevisionCommandFields,
+  kind: productBarcodeKindSchema,
+});
+export const productBarcodeSuggestionResponseSchema = z.strictObject({
+  barcode: productBarcodeSchema,
+  product: productSchema,
+});
+export const productBarcodePrintRequestSchema = z.strictObject({
+  barcode: productBarcodeValueSchema,
+  idempotencyKey: z.uuid(),
+  locale: z.enum(["ar", "en"]),
+  quantity: z.number().int().min(1).max(100),
+});
+export const barcodePrintHandoffSchema = z.strictObject({
+  barcode: productBarcodeSchema,
+  displayName: z.string().min(1).max(726),
+  jobId: z.uuidv7(),
+  locale: z.enum(["ar", "en"]),
+  quantity: z.number().int().min(1).max(100),
+});
+export const productBarcodeAddContract = {
+  method: "POST",
+  path: "/catalog/products/:productId/barcodes",
+  request: { body: productBarcodeAddRequestSchema },
+  responses: { 201: productSchema, ...catalogCommandDenialResponses },
+} as const;
+export const productBarcodeSuggestContract = {
+  method: "POST",
+  path: "/catalog/products/:productId/barcode-suggestions",
+  request: { body: productBarcodeSuggestRequestSchema },
+  responses: {
+    201: productBarcodeSuggestionResponseSchema,
+    ...catalogCommandDenialResponses,
+  },
+} as const;
+export const productBarcodePrintContract = {
+  method: "POST",
+  path: "/catalog/products/:productId/barcode-print-jobs",
+  request: { body: productBarcodePrintRequestSchema },
+  responses: {
+    201: barcodePrintHandoffSchema,
+    ...catalogCommandDenialResponses,
+  },
+} as const;
+
+const businessDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
+export const catalogMatchingSuggestionSchema = z.strictObject({
+  firstOfferedBusinessDate: businessDateSchema,
+  id: z.uuidv7(),
+  product: productSchema,
+  proposedBarcode: productBarcodeSchema,
+});
+export const catalogMatchingBatchSchema = z.strictObject({
+  businessDate: businessDateSchema,
+  suggestions: z.array(catalogMatchingSuggestionSchema).max(10),
+});
+export const catalogMatchingBatchOpenRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+});
+export const catalogMatchingApprovalRequestSchema = z.strictObject({
+  ...productRevisionCommandFields,
+});
+export const catalogMatchingBatchOpenContract = {
+  method: "POST",
+  path: "/catalog/matching-batches/current/openings",
+  request: { body: catalogMatchingBatchOpenRequestSchema },
+  responses: {
+    201: catalogMatchingBatchSchema,
+    ...catalogCommandDenialResponses,
+  },
+} as const;
+export const catalogMatchingApprovalContract = {
+  method: "POST",
+  path: "/catalog/matching-suggestions/:suggestionId/approvals",
+  request: { body: catalogMatchingApprovalRequestSchema },
+  responses: { 201: productSchema, ...catalogCommandDenialResponses },
+} as const;
+
 export const productPath = (productId: string): string =>
   `/catalog/products/${productId}`;
 export const productArchivePath = (productId: string): string =>
   `/catalog/products/${productId}/archivals`;
 export const productMergePath = (productId: string): string =>
   `/catalog/products/${productId}/merges`;
+export const productBarcodeAddPath = (productId: string): string =>
+  `/catalog/products/${productId}/barcodes`;
+export const productBarcodeSuggestPath = (productId: string): string =>
+  `/catalog/products/${productId}/barcode-suggestions`;
+export const productBarcodePrintPath = (productId: string): string =>
+  `/catalog/products/${productId}/barcode-print-jobs`;
+export const catalogMatchingApprovalPath = (suggestionId: string): string =>
+  `/catalog/matching-suggestions/${suggestionId}/approvals`;
+export function productSearchPath(input: {
+  readonly limit?: string;
+  readonly query: string;
+}): string {
+  const query = `query=${encodeURIComponent(input.query)}`;
+  const limit =
+    input.limit === undefined
+      ? ""
+      : `&limit=${encodeURIComponent(input.limit)}`;
+  return `${productSearchContract.path}?${query}${limit}`;
+}
 
 /**
  * Every Catalog route, so a test can walk the whole family and prove what is
  * not there: no delete, no cleanup, and no repair path around the back.
  */
 export const CATALOG_CONTRACTS = [
+  catalogMatchingApprovalContract,
+  catalogMatchingBatchOpenContract,
+  productBarcodeAddContract,
+  productBarcodePrintContract,
+  productBarcodeSuggestContract,
   productArchiveContract,
   productCreateContract,
   productEditContract,
   productListContract,
   productMergeContract,
   productReadContract,
+  productSearchContract,
 ] as const;
 
 const supplierNameSchema = z
@@ -2344,11 +2520,44 @@ export type ProductPricing = z.infer<typeof productPricingSchema>;
 export type ProductPricingField = (typeof PRODUCT_PRICING_FIELDS)[number];
 export type ProductPricingFieldState =
   (typeof PRODUCT_PRICING_FIELD_STATES)[number];
+export type ProductBarcodeKind = z.infer<typeof productBarcodeKindSchema>;
+export type ProductBarcodeSource = z.infer<typeof productBarcodeSourceSchema>;
+export type ProductBarcodeInput = z.infer<typeof productBarcodeInputSchema>;
+export type ProductBarcode = z.infer<typeof productBarcodeSchema>;
 export type Product = z.infer<typeof productSchema>;
 export type ProductCreateRequest = z.infer<typeof productCreateRequestSchema>;
 export type ProductEditRequest = z.infer<typeof productEditRequestSchema>;
 export type ProductArchiveRequest = z.infer<typeof productArchiveRequestSchema>;
 export type ProductMergeRequest = z.infer<typeof productMergeRequestSchema>;
+export type ProductSearchRequest = z.infer<typeof productSearchRequestSchema>;
+export type ProductSearchMatchField = z.infer<
+  typeof productSearchMatchFieldSchema
+>;
+export type ProductSearchResult = z.infer<typeof productSearchResultSchema>;
+export type ProductSearchResponse = z.infer<typeof productSearchResponseSchema>;
+export type ProductBarcodeAddRequest = z.infer<
+  typeof productBarcodeAddRequestSchema
+>;
+export type ProductBarcodeSuggestRequest = z.infer<
+  typeof productBarcodeSuggestRequestSchema
+>;
+export type ProductBarcodeSuggestionResponse = z.infer<
+  typeof productBarcodeSuggestionResponseSchema
+>;
+export type ProductBarcodePrintRequest = z.infer<
+  typeof productBarcodePrintRequestSchema
+>;
+export type BarcodePrintHandoff = z.infer<typeof barcodePrintHandoffSchema>;
+export type CatalogMatchingSuggestion = z.infer<
+  typeof catalogMatchingSuggestionSchema
+>;
+export type CatalogMatchingBatch = z.infer<typeof catalogMatchingBatchSchema>;
+export type CatalogMatchingBatchOpenRequest = z.infer<
+  typeof catalogMatchingBatchOpenRequestSchema
+>;
+export type CatalogMatchingApprovalRequest = z.infer<
+  typeof catalogMatchingApprovalRequestSchema
+>;
 export type CatalogFieldErrorCode = z.infer<typeof catalogFieldErrorCodeSchema>;
 export type CatalogFieldError = z.infer<typeof catalogFieldErrorSchema>;
 export type CatalogDenialCode = z.infer<typeof catalogDenialCodeSchema>;

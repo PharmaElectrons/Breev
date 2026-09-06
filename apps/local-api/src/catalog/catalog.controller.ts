@@ -1,4 +1,16 @@
 import {
+  catalogMatchingApprovalContract,
+  catalogMatchingApprovalRequestSchema,
+  catalogMatchingBatchOpenContract,
+  catalogMatchingBatchOpenRequestSchema,
+  catalogMatchingBatchSchema,
+  productBarcodeAddContract,
+  productBarcodeAddRequestSchema,
+  productBarcodePrintContract,
+  productBarcodePrintRequestSchema,
+  productBarcodeSuggestContract,
+  productBarcodeSuggestRequestSchema,
+  productBarcodeSuggestionResponseSchema,
   productArchiveContract,
   productArchiveRequestSchema,
   productCreateContract,
@@ -9,9 +21,17 @@ import {
   productMergeContract,
   productMergeRequestSchema,
   productReadContract,
+  productSearchContract,
+  productSearchRequestSchema,
+  productSearchResponseSchema,
   productSchema,
+  type BarcodePrintHandoff,
+  type CatalogMatchingBatch,
   type CatalogFieldError,
   type Product,
+  type ProductBarcodeInput,
+  type ProductBarcodeSuggestionResponse,
+  type ProductSearchResponse,
 } from "@breev/contracts/local-rest";
 import {
   Body,
@@ -22,6 +42,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
 } from "@nestjs/common";
 import type { Request } from "express";
@@ -53,6 +74,28 @@ export class CatalogController {
         );
       }
       return await this.catalog.read(request, id.data);
+    });
+  }
+
+  @Get(productSearchContract.path)
+  public async search(
+    @Query() query: unknown,
+    @Req() request: Request,
+  ): Promise<ProductSearchResponse> {
+    return await translateCatalogDenial(async () => {
+      const input = productSearchRequestSchema.safeParse(query);
+      if (!input.success) {
+        return await this.catalog.rejectInvalidBody(
+          request,
+          "catalog.product.search",
+          fieldErrors(input.error),
+          undefined,
+          "catalog.item.search",
+        );
+      }
+      return productSearchResponseSchema.parse(
+        await this.catalog.search(request, input.data),
+      );
     });
   }
 
@@ -162,6 +205,129 @@ export class CatalogController {
       return await this.catalog.merge(request, id.data, input.data);
     });
   }
+
+  @Post(productBarcodeAddContract.path)
+  @HttpCode(201)
+  public async addBarcode(
+    @Param("productId") productId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<Product> {
+    return await translateCatalogDenial(async () => {
+      const id = productSchema.shape.id.safeParse(productId);
+      const input = productBarcodeAddRequestSchema.safeParse(body);
+      if (!id.success || !input.success) {
+        return await this.catalog.rejectInvalidBody(
+          request,
+          "catalog.barcode.add",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["productId"] }],
+          id.success ? id.data : undefined,
+        );
+      }
+      return await this.catalog.addBarcode(request, id.data, input.data);
+    });
+  }
+
+  @Post(productBarcodeSuggestContract.path)
+  @HttpCode(201)
+  public async suggestBarcode(
+    @Param("productId") productId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<ProductBarcodeSuggestionResponse> {
+    return await translateCatalogDenial(async () => {
+      const id = productSchema.shape.id.safeParse(productId);
+      const input = productBarcodeSuggestRequestSchema.safeParse(body);
+      if (!id.success || !input.success) {
+        return await this.catalog.rejectInvalidBody(
+          request,
+          "catalog.barcode.suggest",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["productId"] }],
+          id.success ? id.data : undefined,
+        );
+      }
+      return productBarcodeSuggestionResponseSchema.parse(
+        await this.catalog.suggestBarcode(request, id.data, input.data),
+      );
+    });
+  }
+
+  @Post(productBarcodePrintContract.path)
+  @HttpCode(201)
+  public async printBarcode(
+    @Param("productId") productId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<BarcodePrintHandoff> {
+    return await translateCatalogDenial(async () => {
+      const id = productSchema.shape.id.safeParse(productId);
+      const input = productBarcodePrintRequestSchema.safeParse(body);
+      if (!id.success || !input.success) {
+        return await this.catalog.rejectInvalidBody(
+          request,
+          "catalog.barcode.print",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["productId"] }],
+          id.success ? id.data : undefined,
+        );
+      }
+      return await this.catalog.printBarcode(request, id.data, input.data);
+    });
+  }
+
+  @Post(catalogMatchingBatchOpenContract.path)
+  @HttpCode(201)
+  public async openMatchingBatch(
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<CatalogMatchingBatch> {
+    return await translateCatalogDenial(async () => {
+      const input = catalogMatchingBatchOpenRequestSchema.safeParse(body);
+      if (!input.success) {
+        return await this.catalog.rejectInvalidBody(
+          request,
+          "catalog.matching.open",
+          fieldErrors(input.error),
+        );
+      }
+      return catalogMatchingBatchSchema.parse(
+        await this.catalog.openMatchingBatch(request, input.data),
+      );
+    });
+  }
+
+  @Post(catalogMatchingApprovalContract.path)
+  @HttpCode(201)
+  public async approveMatchingSuggestion(
+    @Param("suggestionId") suggestionId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<Product> {
+    return await translateCatalogDenial(async () => {
+      const id = productSchema.shape.id.safeParse(suggestionId);
+      const input = catalogMatchingApprovalRequestSchema.safeParse(body);
+      if (!id.success || !input.success) {
+        return await this.catalog.rejectInvalidBody(
+          request,
+          "catalog.matching.approve",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["suggestionId"] }],
+          id.success ? id.data : undefined,
+        );
+      }
+      return await this.catalog.approveMatchingSuggestion(
+        request,
+        id.data,
+        input.data,
+      );
+    });
+  }
 }
 
 async function translateCatalogDenial<T>(work: () => Promise<T>): Promise<T> {
@@ -176,15 +342,15 @@ async function translateCatalogDenial<T>(work: () => Promise<T>): Promise<T> {
 }
 
 function duplicateBarcodeErrors(
-  barcodes: readonly string[],
+  barcodes: readonly ProductBarcodeInput[],
 ): CatalogFieldError[] {
   const firstIndex = new Map<string, number>();
   const errors: CatalogFieldError[] = [];
   for (const [index, barcode] of barcodes.entries()) {
-    if (firstIndex.has(barcode)) {
-      errors.push({ code: "invalid", path: ["barcodes", index] });
+    if (firstIndex.has(barcode.value)) {
+      errors.push({ code: "invalid", path: ["barcodes", index, "value"] });
     } else {
-      firstIndex.set(barcode, index);
+      firstIndex.set(barcode.value, index);
     }
   }
   return errors;

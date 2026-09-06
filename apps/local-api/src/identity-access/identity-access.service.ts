@@ -529,6 +529,18 @@ export class IdentityAccessService {
         [pharmacyId, ownerId],
       );
       await client.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         select $1, id, ''catalog.item.search'', $2
+         from pharmacy_roles
+         where pharmacy_id = $1
+           and role_key in (
+             ''manager'', ''pharmacist'', ''sales_employee'',
+             ''purchasing_employee'', ''inventory_employee''
+           )`,
+        [pharmacyId, ownerId],
+      );
+      await client.query(
         `insert into pharmacy_settings
            (pharmacy_id, attendance_enabled, updated_by)
          values ($1, false, $2)`,
@@ -2684,6 +2696,18 @@ export class IdentityAccessService {
       client,
       expected,
       "licensing.manage",
+    );
+  }
+
+  public async revalidateCatalogManagement(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "catalog.item.manage",
     );
   }
 

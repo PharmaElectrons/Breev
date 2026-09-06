@@ -3,6 +3,9 @@ import {
   BREEV_CSRF_VALUE,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  catalogMatchingApprovalPath,
+  productBarcodeAddPath,
+  productSearchPath,
   productPath,
   type Product,
   type ProductCreateRequest,
@@ -38,6 +41,7 @@ vi.mock("../licensing/licence-keys.js", async () => {
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
 import { DevicesService } from "../devices/devices.service.js";
@@ -103,12 +107,21 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
   let ownerId = "";
   let pharmacistId = "";
   let pharmacyId = "";
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
+  let barcodeProduct: Product;
+  let matchingProduct: Product;
+  let matchingSuggestionId = "";
   let product: Product;
 
   beforeAll(async () => {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${String(apiPort)}`;
@@ -140,6 +153,24 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
     );
     expect(created.status, failureContext([created])).toBe(201);
     product = created.body as unknown as Product;
+    const barcodeCandidate = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Authorization Barcode Candidate"),
+    );
+    expect(barcodeCandidate.status, failureContext([barcodeCandidate])).toBe(
+      201,
+    );
+    barcodeProduct = barcodeCandidate.body as unknown as Product;
+    const matchingCandidate = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Authorization Matching Candidate"),
+    );
+    expect(matchingCandidate.status, failureContext([matchingCandidate])).toBe(
+      201,
+    );
+    matchingProduct = matchingCandidate.body as unknown as Product;
 
     const challenge = await request(
       "POST",
@@ -193,6 +224,66 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
     product = edited.body as unknown as Product;
   });
 
+  it("allows search-only visibility but denies and audits barcode edits and matching approval without item management", async () => {
+    await loginAs(OWNER_USERNAME, OWNER_PASSWORD);
+    const opened = await request(
+      "POST",
+      "/catalog/matching-batches/current/openings",
+      { idempotencyKey: createUuidV7() },
+    );
+    expect(opened.status, failureContext([opened])).toBe(201);
+    const suggestion = (
+      opened.body?.suggestions as { id: string; product: Product }[] | undefined
+    )?.find(({ product: candidate }) => candidate.id === matchingProduct.id);
+    expect(suggestion).toBeDefined();
+    matchingSuggestionId = suggestion!.id;
+
+    await loginAs(PHARMACIST_USERNAME, PHARMACIST_PASSWORD);
+    const visible = await request(
+      "GET",
+      productSearchPath({ query: "allowed owner" }),
+    );
+    expect(visible.status, failureContext([visible])).toBe(200);
+    expect(visible.body?.resultCount).toBe(1);
+
+    const barcodeDenied = await request(
+      "POST",
+      productBarcodeAddPath(barcodeProduct.id),
+      {
+        barcode: { kind: "product", value: "AUTH-0001" },
+        expectedRevision: barcodeProduct.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(barcodeDenied.status, failureContext([barcodeDenied])).toBe(403);
+    expect(barcodeDenied.body).toMatchObject({
+      code: "permission-denied",
+      requiredPermission: "catalog.item.manage",
+      status: "denied",
+    });
+
+    const approvalDenied = await request(
+      "POST",
+      catalogMatchingApprovalPath(suggestion!.id),
+      {
+        expectedRevision: suggestion!.product.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(approvalDenied.status, failureContext([approvalDenied])).toBe(403);
+    expect(approvalDenied.body).toMatchObject({
+      code: "permission-denied",
+      requiredPermission: "catalog.item.manage",
+      status: "denied",
+    });
+    const audits = await administrator.query<{ id: string }>(
+      `select id from identity_audit_records where id = any($1::uuid[])
+       order by id`,
+      [[barcodeDenied.body?.requestId, approvalDenied.body?.requestId]],
+    );
+    expect(audits.rows).toHaveLength(2);
+  });
+
   it("denies an unauthorized user by default and makes the permission denial auditable", async () => {
     await loginAs(PHARMACIST_USERNAME, PHARMACIST_PASSWORD);
     const body = editBody("Denied Pharmacist Edit", product.revision, {
@@ -235,6 +326,17 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
   it("allows an active authorized user and denies the same user when locked", async () => {
     const active = await request("GET", productPath(product.id));
     expect(active.status, failureContext([active])).toBe(200);
+    const barcodeAllowed = await request(
+      "POST",
+      productBarcodeAddPath(barcodeProduct.id),
+      {
+        barcode: { kind: "product", value: "AUTH-ACTIVE-0001" },
+        expectedRevision: barcodeProduct.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(barcodeAllowed.status, failureContext([barcodeAllowed])).toBe(201);
+    barcodeProduct = barcodeAllowed.body as unknown as Product;
 
     await administrator.query(
       "update identity_users set status = 'locked' where id = $1",
@@ -256,6 +358,20 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
       [locked.body?.requestId],
     );
     expect(audit.rows).toHaveLength(1);
+    const lockedBarcode = await request(
+      "POST",
+      productBarcodeAddPath(barcodeProduct.id),
+      {
+        barcode: { kind: "package", value: "AUTH-LOCKED-0002" },
+        expectedRevision: barcodeProduct.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(lockedBarcode.status, failureContext([lockedBarcode])).toBe(401);
+    expect(lockedBarcode.body).toMatchObject({
+      code: "session-revoked",
+      status: "denied",
+    });
     await administrator.query(
       "update identity_users set status = 'active' where id = $1",
       [pharmacistId],
@@ -292,6 +408,21 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
       [denied.body?.requestId],
     );
     expect(audit.rows).toHaveLength(1);
+    const invalidBarcode = await requestWith(
+      invalidCredentials,
+      "POST",
+      productBarcodeAddPath(barcodeProduct.id),
+      {
+        barcode: { kind: "package", value: "AUTH-DEVICE-0003" },
+        expectedRevision: barcodeProduct.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(invalidBarcode.status, failureContext([invalidBarcode])).toBe(401);
+    expect(invalidBarcode.body).toMatchObject({
+      code: "binding-invalid",
+      status: "denied",
+    });
   });
 
   it("allows the context pharmacy and denies a Product outside that tenant-scoped resource set", async () => {
@@ -318,6 +449,20 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
       action: "catalog.product.read",
       id: denied.body?.requestId,
       target_id: otherTenantProductId,
+    });
+    const barcodeDenied = await request(
+      "POST",
+      productBarcodeAddPath(otherTenantProductId),
+      {
+        barcode: { kind: "product", value: "AUTH-TENANT-0004" },
+        expectedRevision: "1",
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(barcodeDenied.status, failureContext([barcodeDenied])).toBe(404);
+    expect(barcodeDenied.body).toMatchObject({
+      code: "product-not-found",
+      status: "denied",
     });
   });
 
@@ -348,6 +493,21 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
       sharing: { aiSharingAllowed: true, externallyVisible: true },
     });
     product = allowed.body as unknown as Product;
+    const matchingAllowed = await request(
+      "POST",
+      catalogMatchingApprovalPath(matchingSuggestionId),
+      {
+        expectedRevision: matchingProduct.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(matchingAllowed.status, failureContext([matchingAllowed])).toBe(201);
+    expect(matchingAllowed.body?.barcodes).toEqual([
+      expect.objectContaining({
+        source: "breev-internal",
+        value: expect.stringMatching(/^BRV-[0-9]{12}$/u),
+      }),
+    ]);
 
     const licensingAudit = await administrator.query<{
       capability: string;
@@ -497,14 +657,20 @@ describe.sequential("Catalog Additional POS entitlement boundary", () => {
   let ownerId = "";
   let pharmacyCa: PharmacyCaService;
   let pharmacyId = "";
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
   let product: Product;
   let security: MainDeviceSecurityService;
   let server: Server;
 
   beforeAll(async () => {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     deviceSecret = randomBytes(32).toString("base64url");
     deviceSession = randomBytes(32).toString("base64url");
     process.env.DATABASE_URL = databaseRoles.applicationUrl;
