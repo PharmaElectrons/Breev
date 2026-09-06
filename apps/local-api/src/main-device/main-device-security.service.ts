@@ -1,5 +1,10 @@
 import {
   attendanceEventContract,
+  catalogMatchingApprovalContract,
+  catalogMatchingBatchOpenContract,
+  productBarcodeAddContract,
+  productBarcodePrintContract,
+  productBarcodeSuggestContract,
   deviceRevocationContract,
   productArchiveContract,
   productCreateContract,
@@ -709,6 +714,26 @@ const CORS_MUTATION_ROUTES = [
   dynamicMutation(productEditContract.method, productEditContract.path),
   dynamicMutation(productArchiveContract.method, productArchiveContract.path),
   dynamicMutation(productMergeContract.method, productMergeContract.path),
+  dynamicMutation(
+    productBarcodeAddContract.method,
+    productBarcodeAddContract.path,
+  ),
+  dynamicMutation(
+    productBarcodeSuggestContract.method,
+    productBarcodeSuggestContract.path,
+  ),
+  dynamicMutation(
+    productBarcodePrintContract.method,
+    productBarcodePrintContract.path,
+  ),
+  exactMutation(
+    catalogMatchingBatchOpenContract.method,
+    catalogMatchingBatchOpenContract.path,
+  ),
+  dynamicMutation(
+    catalogMatchingApprovalContract.method,
+    catalogMatchingApprovalContract.path,
+  ),
 ] as const;
 
 function exactMutation(method: string, path: string): MutationRoute {

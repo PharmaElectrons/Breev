@@ -531,12 +531,12 @@ export class IdentityAccessService {
       await client.query(
         `insert into role_permission_grants
            (pharmacy_id, role_id, permission_name, granted_by)
-         select $1, id, ''catalog.item.search'', $2
+         select $1, id, 'catalog.item.search', $2
          from pharmacy_roles
          where pharmacy_id = $1
            and role_key in (
-             ''manager'', ''pharmacist'', ''sales_employee'',
-             ''purchasing_employee'', ''inventory_employee''
+             'manager', 'pharmacist', 'sales_employee',
+             'purchasing_employee', 'inventory_employee'
            )`,
         [pharmacyId, ownerId],
       );
