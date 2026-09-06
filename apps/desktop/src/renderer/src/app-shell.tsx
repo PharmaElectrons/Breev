@@ -39,9 +39,9 @@ export type StartupConnection = ReturnType<typeof useStartupConnection>;
  * the brand lockup, the module tab bar, the language and theme controls, and
  * the clock, over the workspace for the addressed module.
  *
- * The connection status the startup handshake owns stays on screen. Once the
- * Main Pharmacy Computer is Ready it collapses into a strip so the workspace,
- * not the handshake, is what the pharmacist looks at.
+ * Purchasing puts Ready connection details in a header disclosure to preserve
+ * the client's invoice canvas. Other modules keep the status strip; startup
+ * and recovery states keep their full connection details.
  */
 export function AppShell({
   startup,
@@ -128,8 +128,75 @@ export function AppShell({
     }
   }, [authenticated, moduleAllowed]);
 
+  const purchaseWorkspace =
+    state === "ready" && authenticated && activeModuleId === "purchases";
+  const connectionCard = (
+    <Card className="status-card" data-state={state}>
+      <CardHeader className="status-header">
+        <StatusIcon state={state} />
+        <div className="status-copy" role="status" aria-live="polite">
+          <p className="status-kicker">{copy.connectionStatus}</p>
+          <CardTitle data-testid="shell-state">{status.title}</CardTitle>
+          <CardDescription>{status.description}</CardDescription>
+        </div>
+      </CardHeader>
+
+      <CardContent className="status-content">
+        {state === "ready" && handshake !== null ? (
+          <dl className="version-list">
+            <div>
+              <dt>{copy.apiVersion}</dt>
+              <dd>{handshake.apiVersion}</dd>
+            </div>
+            <div>
+              <dt>{copy.schemaVersion}</dt>
+              <dd>{handshake.schemaVersion}</dd>
+            </div>
+          </dl>
+        ) : null}
+
+        <div className="status-actions">
+          <p className="last-checked">
+            {lastCheckedAt === null
+              ? " "
+              : `${copy.lastChecked}: ${formatDateTime(lastCheckedAt, locale)}`}
+          </p>
+          <div className="status-buttons">
+            <button
+              ref={checkButtonRef}
+              className="primary-button"
+              type="button"
+              disabled={isChecking}
+              onClick={checkNow}
+            >
+              {isChecking ? copy.checking : copy.checkAgain}
+            </button>
+            {state === "ready" ? (
+              <button
+                className="quiet-button"
+                type="button"
+                disabled={deviceProof === "running"}
+                onClick={() => void runDeviceProof()}
+              >
+                {copy.deviceProofAction}
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {deviceProof === "idle" ? null : (
+          <p className="device-proof-status" role="status" aria-live="polite">
+            {copy.deviceProof[deviceProof]}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+
   return (
-    <main className="shell-page">
+    <main
+      className="shell-page"
+      data-purchase-workspace={purchaseWorkspace || undefined}
+    >
       <header className="shell-header" aria-label="Breev">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
@@ -137,17 +204,35 @@ export function AppShell({
           </span>
           <span>
             <strong className="brand-name">Breev</strong>
-            <span className="brand-description">
-              {modules.length > 0
-                ? navigationCopy.modules[activeModuleId].label
-                : copy.brandDescription}
-            </span>
+            {purchaseWorkspace ? (
+              <h1 className="brand-description">
+                {navigationCopy.modules.purchases.label}
+              </h1>
+            ) : (
+              <span className="brand-description">
+                {modules.length > 0
+                  ? navigationCopy.modules[activeModuleId].label
+                  : copy.brandDescription}
+              </span>
+            )}
           </span>
         </div>
 
         <ModuleNavigation activeModuleId={activeModuleId} modules={modules} />
 
         <div className="preference-controls">
+          {purchaseWorkspace ? (
+            <details
+              className="purchase-connection"
+              aria-label={copy.connectionStatus}
+            >
+              <summary>
+                <StatusIcon state={state} />
+                <span className="visually-hidden">{copy.connectionStatus}</span>
+              </summary>
+              {connectionCard}
+            </details>
+          ) : null}
           <button
             className="quiet-button"
             type="button"
@@ -171,73 +256,14 @@ export function AppShell({
             <span>{theme === "light" ? copy.themeLight : copy.themeDark}</span>
           </button>
         </div>
+        {purchaseWorkspace ? <PurchaseClock locale={locale} /> : null}
       </header>
 
-      <section className="status-region" aria-label={copy.connectionStatus}>
-        <Card className="status-card" data-state={state}>
-          <CardHeader className="status-header">
-            <StatusIcon state={state} />
-            <div className="status-copy" role="status" aria-live="polite">
-              <p className="status-kicker">{copy.connectionStatus}</p>
-              <CardTitle data-testid="shell-state">{status.title}</CardTitle>
-              <CardDescription>{status.description}</CardDescription>
-            </div>
-          </CardHeader>
-
-          <CardContent className="status-content">
-            {state === "ready" && handshake !== null ? (
-              <dl className="version-list">
-                <div>
-                  <dt>{copy.apiVersion}</dt>
-                  <dd>{handshake.apiVersion}</dd>
-                </div>
-                <div>
-                  <dt>{copy.schemaVersion}</dt>
-                  <dd>{handshake.schemaVersion}</dd>
-                </div>
-              </dl>
-            ) : null}
-
-            <div className="status-actions">
-              <p className="last-checked">
-                {lastCheckedAt === null
-                  ? " "
-                  : `${copy.lastChecked}: ${formatDateTime(lastCheckedAt, locale)}`}
-              </p>
-              <div className="status-buttons">
-                <button
-                  ref={checkButtonRef}
-                  className="primary-button"
-                  type="button"
-                  disabled={isChecking}
-                  onClick={checkNow}
-                >
-                  {isChecking ? copy.checking : copy.checkAgain}
-                </button>
-                {state === "ready" ? (
-                  <button
-                    className="quiet-button"
-                    type="button"
-                    disabled={deviceProof === "running"}
-                    onClick={() => void runDeviceProof()}
-                  >
-                    {copy.deviceProofAction}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            {deviceProof === "idle" ? null : (
-              <p
-                className="device-proof-status"
-                role="status"
-                aria-live="polite"
-              >
-                {copy.deviceProof[deviceProof]}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </section>
+      {purchaseWorkspace ? null : (
+        <section className="status-region" aria-label={copy.connectionStatus}>
+          {connectionCard}
+        </section>
+      )}
 
       {state === "unpaired" ? (
         <TerminalPairingScreen
@@ -270,7 +296,9 @@ export function AppShell({
         )
       ) : null}
 
-      <footer className="shell-footer">Breev</footer>
+      {purchaseWorkspace ? null : (
+        <footer className="shell-footer">Breev</footer>
+      )}
     </main>
   );
 }
@@ -349,5 +377,32 @@ function ThemeIcon({ theme }: { theme: "dark" | "light" }): React.JSX.Element {
         <path d="M20 15.3A8.5 8.5 0 0 1 8.7 4 8.5 8.5 0 1 0 20 15.3Z" />
       )}
     </svg>
+  );
+}
+
+function PurchaseClock({
+  locale,
+}: {
+  readonly locale: "ar" | "en";
+}): React.JSX.Element {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <time className="purchase-clock" dateTime={now.toISOString()}>
+      <span>
+        {new Intl.DateTimeFormat("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(now)}
+      </span>
+      <span>
+        {new Intl.DateTimeFormat(locale === "ar" ? "ar-IQ" : "en-GB", {
+          dateStyle: "medium",
+        }).format(now)}
+      </span>
+    </time>
   );
 }

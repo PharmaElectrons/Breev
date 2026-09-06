@@ -29,6 +29,7 @@ import {
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_PASSWORD = "purchasing browser owner password stays in this test";
 let delayNextDraftCreateResponse = false;
+let apiStartupOutput = "";
 
 interface Credentials {
   readonly deviceId: string;
@@ -52,7 +53,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   let supplierId = "";
   const evidenceDir = path.resolve(
     import.meta.dirname,
-    "../../../../evidence/issue-15/after",
+    "../../../../evidence/purchases-prototype-alignment/after",
   );
 
   test.beforeAll(async () => {
@@ -121,11 +122,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.getByRole("heading", { name: "Purchases" }),
     ).toBeVisible();
-    await expect(page.locator(".purchase-draft-table")).toBeVisible();
+    await expect(page.locator(".purchase-lines-table")).toBeVisible();
+    await expect(page.locator(".purchase-draft-table")).toBeHidden();
     await expect(
-      page.getByRole("columnheader", { name: "Supplier invoice number" }),
+      page.getByRole("columnheader", { name: "Item name" }),
     ).toBeVisible();
 
+    await page.getByLabel("Invoice date").fill("2026-08-15");
     const invoice = page.getByLabel("Supplier invoice number");
     await invoice.focus();
     await page.keyboard.type("SUP-2026-0042");
@@ -136,15 +139,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     });
     await expect(supplier).toBeFocused();
     await supplier.selectOption(supplierId);
-    await page.keyboard.press("Tab");
     const paymentContext = page.getByRole("combobox", {
       name: /^Payment context/,
     });
-    await expect(paymentContext).toBeFocused();
+    await paymentContext.focus();
     await paymentContext.selectOption("debt");
     await page.keyboard.press("Tab");
-    await expect(page.getByLabel("Invoice date")).toBeFocused();
-    await page.getByLabel("Invoice date").fill("2026-08-15");
+    await expect(
+      page.getByRole("button", { name: "Save draft" }),
+    ).toBeFocused();
     await page.getByRole("button", { name: "Save draft" }).click();
 
     await expect(
@@ -157,6 +160,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         .getByText("Version", { exact: true })
         .locator(".."),
     ).toContainText("1");
+    await page
+      .getByRole("button", { name: "Search invoices", exact: true })
+      .click();
     const search = page.getByRole("searchbox", { name: "Search invoices" });
     await search.fill("SUP-2026-0042");
     await expect(
@@ -170,14 +176,19 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       await dialog.dismiss();
     });
     await search.press("Escape");
+    await expect(search).toHaveValue("");
+    await search.press("Escape");
     await page.waitForTimeout(50);
     expect(filterOpenedDiscard).toBe(false);
     page.removeAllListeners("dialog");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await page.getByRole("button", { name: /Saved drafts/ }).click();
     await search.fill("missing invoice");
     await expect(
       page.getByText("No drafts match these filters."),
     ).toBeVisible();
     await page.getByRole("button", { name: "Clear filters" }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: /Saved drafts/ }).click();
     await expect(
       page.getByRole("heading", { name: "Saved purchase drafts" }),
@@ -187,11 +198,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     api = startApi(apiPort, databaseRoles, credentials);
     await waitForHealth(apiOrigin);
     await page.reload();
+    await page.getByRole("button", { name: /Saved drafts/ }).click();
     await page.getByRole("button", { name: /SUP-2026-0042/ }).click();
     await expect(invoice).toHaveValue("SUP-2026-0042");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await page.getByRole("button", { name: /Saved drafts/ }).click();
     await expect(
       page.locator('.purchase-open-draft[aria-current="true"]'),
     ).toBeVisible();
+    await page.getByRole("button", { name: "Close", exact: true }).click();
     await expect(
       page.locator(".purchase-snapshot").getByText("2.5%", { exact: true }),
     ).toBeVisible();
@@ -223,7 +238,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   }) => {
     for (const locale of ["en", "ar"] as const) {
       for (const theme of ["light", "dark"] as const) {
-        const context = await browser.newContext();
+        const context = await browser.newContext({
+          viewport: { width: 1366, height: 768 },
+        });
         const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, locale, theme);
         await page.goto(`${renderer.origin}#/purchases`);
@@ -237,9 +254,22 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             name: locale === "ar" ? "المشتريات" : "Purchases",
           }),
         ).toBeVisible();
+        await expect
+          .poll(() =>
+            page.evaluate<boolean>(
+              "['IBM Plex Sans Arabic', 'JetBrains Mono'].every(family => Array.from(document.fonts).some(font => font.family.includes(family) && font.status === 'loaded'))",
+            ),
+          )
+          .toBe(true);
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
+        await expect(
+          page.getByRole("button", {
+            name: locale === "ar" ? "حفظ المسودة" : "Save draft",
+            exact: true,
+          }),
+        ).toBeInViewport();
         await page.screenshot({
           animations: "disabled",
           fullPage: true,
@@ -248,9 +278,93 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             `purchase-header-${locale}-${theme}.png`,
           ),
         });
+        await page
+          .getByRole("button", { name: /Saved drafts|المسودات المحفوظة/ })
+          .click();
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        await page.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: path.join(
+            evidenceDir,
+            `purchase-register-${locale}-${theme}.png`,
+          ),
+        });
+        await page.getByRole("button", { name: /SUP-2026-0042/ }).click();
+        await expect(page.locator(".purchase-snapshot")).toBeVisible();
+        await expect(
+          page.getByRole("button", {
+            name: locale === "ar" ? "حفظ التغييرات" : "Save changes",
+            exact: true,
+          }),
+        ).toBeInViewport();
+        await page.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: path.join(
+            evidenceDir,
+            `purchase-selected-${locale}-${theme}.png`,
+          ),
+        });
+        await page
+          .getByRole("button", {
+            name: locale === "ar" ? "الموردون" : "Suppliers",
+            exact: true,
+          })
+          .click();
+        await expect(page.locator("#purchase-invoice-view")).toBeHidden();
+        await expect(page.locator(".supplier-manager")).toBeVisible();
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        await page.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: path.join(
+            evidenceDir,
+            `purchase-suppliers-${locale}-${theme}.png`,
+          ),
+        });
         await context.close();
       }
     }
+  });
+
+  test("switches to suppliers and back without losing either form", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByLabel("Supplier invoice number").fill("UNSAVED-HEADER");
+    await page
+      .getByRole("combobox", { name: "Supplier", exact: true })
+      .selectOption(supplierId);
+    const suppliersView = page.getByRole("button", {
+      name: "Suppliers",
+      exact: true,
+    });
+    await suppliersView.focus();
+    await page.keyboard.press("Enter");
+    await expect(suppliersView).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByLabel("Supplier invoice number")).toBeHidden();
+    await page
+      .getByLabel("Supplier name", { exact: true })
+      .fill("Unfinished supplier");
+    await page
+      .getByRole("button", { name: "Purchase invoice", exact: true })
+      .click();
+    await expect(page.getByLabel("Supplier invoice number")).toHaveValue(
+      "UNSAVED-HEADER",
+    );
+    await expect(
+      page.getByRole("combobox", { name: "Supplier", exact: true }),
+    ).toHaveValue(supplierId);
+    await suppliersView.click();
+    await expect(page.getByLabel("Supplier name", { exact: true })).toHaveValue(
+      "Unfinished supplier",
+    );
   });
 
   test("contains wide and narrow layouts without document overflow", async ({
@@ -268,16 +382,19 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       await expect(
         page.getByRole("heading", { name: "Purchases" }),
       ).toBeVisible();
-      const dimensions = (await page.evaluate(
+      const dimensions = await page.evaluate<{
+        scrollWidth: number;
+        clientWidth: number;
+      }>(
         "({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth })",
-      )) as { clientWidth: number; scrollWidth: number };
+      );
       expect(dimensions.scrollWidth).toBeLessThanOrEqual(
         dimensions.clientWidth,
       );
     }
 
     const tableRegion = page.getByRole("group", {
-      name: "Scrollable purchase draft table",
+      name: "Scrollable invoice items table",
     });
     expect(
       await tableRegion.evaluate(
@@ -286,6 +403,44 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBe(true);
     await tableRegion.focus();
     await expect(tableRegion).toBeFocused();
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.evaluate("document.documentElement.style.fontSize = '200%'");
+    expect(
+      await page.evaluate<boolean>(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+      ),
+    ).toBe(true);
+    await page
+      .getByRole("button", { name: "Save draft", exact: true })
+      .scrollIntoViewIfNeeded();
+    await expect(
+      page.getByRole("button", { name: "Save draft", exact: true }),
+    ).toBeInViewport();
+  });
+
+  test("keeps connection details reachable and hides unentitled OCR", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await expect(page.getByLabel("Supplier invoice number")).toBeVisible();
+    await expect(page.getByTestId("shell-state")).toBeHidden();
+    const statusToggle = page.locator(".purchase-connection > summary");
+    await statusToggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+    await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
+    await statusToggle.press("Enter");
+    await expect(page.getByTestId("shell-state")).toBeHidden();
+    await expect(
+      page.getByRole("button", { name: "Import from image" }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Barcode / item search")).toBeDisabled();
+    await expect(
+      page
+        .locator(".purchase-actions")
+        .getByRole("button", { name: "Print invoice", exact: true }),
+    ).toBeDisabled();
   });
 
   test("retries an uncertain draft creation without creating a duplicate", async ({
@@ -482,7 +637,8 @@ function startApi(
   roles: SeparatedDatabaseRoles,
   credentials: Credentials,
 ): ChildProcessWithoutNullStreams {
-  return spawn(
+  apiStartupOutput = "";
+  const api = spawn(
     process.execPath,
     [path.resolve(import.meta.dirname, "../../../local-api/dist/main.js")],
     {
@@ -499,6 +655,21 @@ function startApi(
       },
     },
   );
+  const capture = (chunk: Buffer): void => {
+    let output = chunk.toString();
+    for (const secret of [
+      roles.applicationUrl,
+      roles.migrationUrl,
+      credentials.deviceSecret,
+      credentials.sessionToken,
+    ]) {
+      output = output.replaceAll(secret, "[redacted]");
+    }
+    apiStartupOutput = (apiStartupOutput + output).slice(-8000);
+  };
+  api.stdout.on("data", capture);
+  api.stderr.on("data", capture);
+  return api;
 }
 
 async function apiRequest(
@@ -562,7 +733,7 @@ async function readBody(
 }
 
 async function waitForHealth(origin: string): Promise<void> {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     try {
       if ((await fetch(`${origin}/health`)).ok) return;
@@ -571,7 +742,9 @@ async function waitForHealth(origin: string): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`Local API did not become healthy at ${origin}`);
+  throw new Error(
+    `Local API did not become healthy at ${origin}\n${apiStartupOutput}`,
+  );
 }
 
 async function reservePort(): Promise<number> {
