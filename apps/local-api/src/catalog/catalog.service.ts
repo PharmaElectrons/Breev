@@ -619,7 +619,7 @@ export class CatalogService {
     }>(
       `select id, display_name, arabic_search_name
        from catalog_products
-       where pharmacy_id = $1 and status = ''active''
+       where pharmacy_id = $1 and status = 'active'
        order by created_at, id`,
       [context.pharmacyId],
     );
@@ -1730,7 +1730,7 @@ async function replaceBarcodes(
     await client.query(
       `insert into catalog_product_barcodes (
          pharmacy_id, product_id, barcode, kind, source, ordinal, recorded_by
-       ) values ($1, $2, $3, $4, ''provided'', $5, $6)
+       ) values ($1, $2, $3, $4, 'provided', $5, $6)
        on conflict (product_id, barcode) do update
        set ordinal = excluded.ordinal,
            kind = excluded.kind,
@@ -1856,7 +1856,7 @@ async function fillMatchingBatch(
     `select product_row.id
      from catalog_products product_row
      where product_row.pharmacy_id = $1
-       and product_row.status = ''active''
+       and product_row.status = 'active'
        and not exists (
          select 1 from catalog_product_barcodes barcode_row
          where barcode_row.pharmacy_id = product_row.pharmacy_id
@@ -2072,13 +2072,13 @@ const PRODUCT_SELECT = `select product_row.id,
          select coalesce(
            json_agg(
              json_build_object(
-               ''value'', barcode_row.barcode,
-               ''kind'', barcode_row.kind,
-               ''source'', barcode_row.source
+               'value', barcode_row.barcode,
+               'kind', barcode_row.kind,
+               'source', barcode_row.source
              )
              order by barcode_row.ordinal
            ),
-           ''[]''::json
+           '[]'::json
          )
          from catalog_product_barcodes barcode_row
          where barcode_row.product_id = product_row.id
