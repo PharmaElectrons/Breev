@@ -25,6 +25,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@breev/contracts": "workspace:*",
+    "@electron/asar": "4.3.0",
     "@electron/fuses": "2.1.3",
     "@electron/packager": "20.3.0",
     "@peculiar/asn1-csr": "2.9.4",

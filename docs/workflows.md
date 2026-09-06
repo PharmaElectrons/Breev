@@ -19,6 +19,16 @@ These workflows are user-visible contracts. The local API controls every busines
 4. Repair runs the same role-specific readiness sequence. A failed repair records failure while preserving Main data and CA state or Terminal pairing state. It never converts a machine between roles.
 5. A genuine uninstall removes the application, active Main-only services/rules, and all `%ProgramData%\Breev` machine data, including the role, Main database/CA, or Terminal pairing state. It recreates no lifecycle record, so a later assisted install presents the role selection again and a later silent install must supply the intended `/ROLE`. During repair or update, electron-builder marks old-version removal with `--updated`; only that path uses the data-preserving lifecycle and restores the installed role without prompting.
 
+## Prepare and publish a stable Windows release
+
+1. Ordinary development and feature integration stay on the default `dev` branch. When a milestone is stable, an approved pull request merges `dev` into protected `main`; the ordinary verification workflow must pass on the exact `main` commit.
+2. The release change sets the same stable SemVer in the root and desktop `package.json` files and moves the client-facing entries from `[Unreleased]` into a dated `CHANGELOG.md` section. Every correction uses a higher version; no one moves an existing release tag.
+3. An authorized release manager creates a protected annotated `vMAJOR.MINOR.PATCH` tag on that exact `main` commit. A direct push to `main` does not release anything. Manual workflow recovery selects and names the same existing tag; it cannot choose a branch or invent a second version.
+4. Until production signing custody is selected, CI builds an unsigned development installer without secrets, verifies the packaged version, payload lock, Electron fuses, hashes, and provenance, and marks its metadata `development-test` and `publishable: false`. Windows unknown-publisher warnings are expected. Production distribution remains blocked by G-07 signing and signer-verification evidence.
+5. CI creates a draft GitHub prerelease containing `BreevSetup.exe`, its blockmap, `SHA256SUMS.txt`, fuse evidence, release metadata, and build provenance. It refuses to overwrite an existing Release or asset. An unsigned draft is internal flow-validation evidence and must not be published as a stable client release.
+6. For a later signed production candidate, QA, release, security, and support complete the applicable G-05/G-06/G-07/G-16 evidence against those exact hashes. The release manager curates the generated notes against `CHANGELOG.md` and publishes the existing draft; promotion never rebuilds or replaces the installer.
+7. Published stable assets are immutable. A defect is corrected by a forward release with a new SemVer and tag, not by moving the tag, replacing assets, or promising a blind binary/database downgrade. In-app update manifests and Pilot/Internal/Emergency automation remain disabled until G-07 closes their policy and safety evidence.
+
 ## Start and connect
 
 1. Electron loads only the packaged UI and shows `Starting`, `Connecting`, `Ready`, `Main unavailable`, `Incompatible version`, or `Repair required`. It never silently falls back to a second datastore.
