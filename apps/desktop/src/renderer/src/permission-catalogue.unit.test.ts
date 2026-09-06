@@ -17,6 +17,7 @@ import {
 const SERVER_IMPLEMENTED_PERMISSIONS = [
   "attendance.record",
   "catalog.item.manage",
+  "catalog.item.search",
   "devices.pair",
   "identity.roles.manage",
   "identity.users.manage",

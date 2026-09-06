@@ -238,11 +238,15 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       },
     },
     denials: {
+      "barcode-already-present": "هذا المنتج لديه هذا الباركود بالفعل.",
+      "barcode-not-found": "الباركود المطلوب غير مرتبط بهذا المنتج.",
       "body-invalid": "بيانات المنتج المدخلة غير صالحة.",
       "idempotency-conflict": "تمت معالجة عملية متعارضة بهذا المفتاح مسبقاً.",
       "merge-into-self": "لا يمكن دمج المنتج مع نفسه.",
       "merge-survivor-not-mergeable":
         "المنتج البديل مؤرشف أو مدمج ولا يمكن الدمج فيه.",
+      "matching-suggestion-not-found":
+        "اقتراح المطابقة غير موجود أو تم اعتماده بالفعل.",
       "product-archived": "المنتج مؤرشف ولا يمكن تعديله.",
       "product-merged": "المنتج مدمج بالفعل ولا يمكن تعديله.",
       "product-not-found": "المنتج المطلوب غير موجود في الفهرس.",
@@ -485,12 +489,17 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       },
     },
     denials: {
+      "barcode-already-present": "This product already has that barcode.",
+      "barcode-not-found":
+        "The requested barcode is not attached to this product.",
       "body-invalid": "The submitted product data is invalid.",
       "idempotency-conflict":
         "A conflicting operation with this key was already processed.",
       "merge-into-self": "A product cannot be merged into itself.",
       "merge-survivor-not-mergeable":
         "The survivor product is archived or merged and cannot accept merges.",
+      "matching-suggestion-not-found":
+        "The matching suggestion was not found or was already approved.",
       "product-archived": "The product is archived and cannot be modified.",
       "product-merged": "The product is already merged and cannot be modified.",
       "product-not-found":

@@ -938,6 +938,65 @@ a:focus-visible,
   text-align: center;
 }
 
+.catalog-matching-list {
+  display: grid;
+  gap: 0.6rem;
+  max-block-size: 55vh;
+  overflow-y: auto;
+  margin: 0.75rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-matching-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 0.65rem;
+}
+
+.catalog-matching-list code {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.barcode-print-label {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .barcode-print-label,
+  .barcode-print-label * {
+    visibility: visible;
+  }
+
+  .barcode-print-label {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 0.35rem;
+    color: #000;
+    background: #fff;
+    text-align: center;
+  }
+
+  .barcode-print-label code {
+    direction: ltr;
+    font-size: 1.4rem;
+    letter-spacing: 0.12em;
+    unicode-bidi: isolate;
+  }
+}
+
 .catalog-canvas {
   display: grid;
   min-inline-size: 0;

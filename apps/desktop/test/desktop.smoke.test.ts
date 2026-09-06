@@ -167,6 +167,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
         "getStartupConfig",
         "getTerminalPairingState",
         "openSupport",
+        "printBarcodeLabel",
         "reportRendererIncident",
         "submitManualEndpoint",
         "submitDiagnostics",

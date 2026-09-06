@@ -5,6 +5,7 @@ import {
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
+  DESKTOP_PRINT_BARCODE_LABEL_CHANNEL,
   DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
@@ -18,6 +19,8 @@ import {
   desktopOpenSupportRequestSchema,
   desktopOpenSupportResponseSchema,
   desktopPairingInvitationRequestSchema,
+  desktopBarcodePrintRequestSchema,
+  desktopBarcodePrintResponseSchema,
   desktopReportRendererIncidentRequestSchema,
   desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigRequestSchema,
@@ -89,6 +92,15 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         await invoke(
           DESKTOP_OPEN_SUPPORT_CHANNEL,
           desktopOpenSupportRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
+    printBarcodeLabel: async (...arguments_: unknown[]) => {
+      assertSingleArgument("printBarcodeLabel", arguments_);
+      return desktopBarcodePrintResponseSchema.parse(
+        await invoke(
+          DESKTOP_PRINT_BARCODE_LABEL_CHANNEL,
+          desktopBarcodePrintRequestSchema.parse(arguments_[0]),
         ),
       );
     },

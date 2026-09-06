@@ -5,6 +5,7 @@ import {
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
+  DESKTOP_PRINT_BARCODE_LABEL_CHANNEL,
   DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
   DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
@@ -17,6 +18,8 @@ import {
   desktopOpenSupportRequestSchema,
   desktopOpenSupportResponseSchema,
   desktopPairingInvitationRequestSchema,
+  desktopBarcodePrintRequestSchema,
+  desktopBarcodePrintResponseSchema,
   desktopReportRendererIncidentRequestSchema,
   desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigResponseSchema,
@@ -188,6 +191,7 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     rendererEntry.origin,
     rendererEntry.url,
   );
+  registerBarcodePrintHandler(window, rendererEntry.origin, rendererEntry.url);
   registerRendererIncidentHandler(
     window,
     rendererEntry.origin,
@@ -254,6 +258,7 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
       mainWindow = undefined;
       ipcMain.removeHandler(DESKTOP_STARTUP_CONFIG_CHANNEL);
       ipcMain.removeHandler(DESKTOP_COPY_IDENTIFIER_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_PRINT_BARCODE_LABEL_CHANNEL);
       ipcMain.removeHandler(DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL);
       ipcMain.removeHandler(DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL);
       ipcMain.removeHandler(DESKTOP_OPEN_SUPPORT_CHANNEL);
@@ -286,6 +291,53 @@ function registerIdentifierCopyHandler(
     clipboard.writeText(request.identifier);
     return desktopCopyIdentifierResponseSchema.parse({ copied: true });
   });
+}
+
+function registerBarcodePrintHandler(
+  window: BrowserWindow,
+  trustedOrigin: string,
+  trustedUrl: string,
+): void {
+  ipcMain.removeHandler(DESKTOP_PRINT_BARCODE_LABEL_CHANNEL);
+  const guard = createIpcGuard({
+    maximumCalls: 8,
+    maximumPayloadBytes: 2_048,
+    name: "barcode label print",
+    now: Date.now,
+    parse: (payload) => desktopBarcodePrintRequestSchema.parse(payload),
+    trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
+    trustedSenderId: window.webContents.id,
+    trustedUrl,
+  });
+  ipcMain.handle(
+    DESKTOP_PRINT_BARCODE_LABEL_CHANNEL,
+    async (event, payload: unknown) => {
+      const request = guard(toIpcInvocation(event), payload);
+      return await new Promise((resolve) => {
+        window.webContents.print(
+          {
+            copies: request.quantity,
+            printBackground: true,
+            silent: false,
+          },
+          (success, failureReason) => {
+            resolve(
+              desktopBarcodePrintResponseSchema.parse(
+                success
+                  ? { status: "handed-off" }
+                  : {
+                      message:
+                        failureReason || "The print adapter rejected the job",
+                      status: "failed",
+                    },
+              ),
+            );
+          },
+        );
+      });
+    },
+  );
 }
 
 function registerCentralDiagnosticHandler(

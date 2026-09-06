@@ -755,20 +755,17 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager" }),
     ).toBeVisible();
-    // The built-in manager role is seeded with role administration and
-    // nothing else: the role editor is offered, user management is not, and
-    // the permission summary names the one permission in plain words.
+    // The built-in manager role is seeded with role administration and Product
+    // search: the role editor is offered and user management is not.
     await expect(
       page.getByRole("heading", { name: "User management" }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Configure role permissions" }),
     ).toBeVisible();
-    await expect(
-      page
-        .locator(".permission-summary")
-        .getByText("Manage roles and permissions", { exact: true }),
-    ).toBeVisible();
+    await expect(page.locator(".permission-summary p")).toHaveText(
+      "Manage roles and permissions · Search products",
+    );
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
         headers: { Accept: "application/json" },
@@ -1042,7 +1039,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectNoRawPermissionIds(editor, permissionSummary);
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await expect(
-      roleList.getByRole("button", { name: "Owner 7 of 7 permissions" }),
+      roleList.getByRole("button", { name: "Owner 8 of 8 permissions" }),
     ).toBeVisible();
 
     // Keyboard-only creation: Enter on Add role focuses the name field.
@@ -1065,7 +1062,7 @@ test.describe.serial("bilingual desktop shell", () => {
     // The new role is selected, shows exactly the chosen grant, and Save
     // stays disabled until something changes.
     const customRoleButton = roleList.getByRole("button", {
-      name: /^Senior cashier Custom 1 of 7 permissions$/,
+      name: /^Senior cashier Custom 1 of 8 permissions$/,
     });
     await expect(customRoleButton).toBeFocused();
     await expect(customRoleButton.locator(".role-badge")).toHaveText("Custom");
@@ -1085,7 +1082,7 @@ test.describe.serial("bilingual desktop shell", () => {
     ).toBeDisabled();
     await expect(
       roleList.getByRole("button", {
-        name: "Senior cashier Custom 1 of 7 permissions",
+        name: "Senior cashier Custom 1 of 8 permissions",
       }),
     ).toBeVisible();
 
@@ -1249,7 +1246,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await roleList
-      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .getByRole("button", { name: "Manager 2 of 8 permissions" })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
     await managerRole.getByLabel("Record attendance", { exact: true }).check();
@@ -1304,7 +1301,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await page
       .getByRole("navigation", { name: "Roles" })
-      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .getByRole("button", { name: "Manager 2 of 8 permissions" })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
     const attendance = managerRole.getByLabel("Record attendance", {
@@ -1346,7 +1343,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await page
       .getByRole("navigation", { name: "Roles" })
-      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .getByRole("button", { name: "Manager 2 of 8 permissions" })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
     const attendance = managerRole.getByLabel("Record attendance", {
@@ -1392,21 +1389,21 @@ test.describe.serial("bilingual desktop shell", () => {
 
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await expect(
-      roleList.getByRole("button", { name: "Owner 7 of 7 permissions" }),
+      roleList.getByRole("button", { name: "Owner 8 of 8 permissions" }),
     ).toBeVisible();
     await expect(
       roleList.getByRole("button", {
-        name: "Local support 0 of 7 permissions",
+        name: "Local support 0 of 8 permissions",
       }),
     ).toBeVisible();
     await expect(
       roleList.getByRole("button", {
-        name: "Senior cashier Custom 1 of 7 permissions",
+        name: "Senior cashier Custom 1 of 8 permissions",
       }),
     ).toBeVisible();
 
     await roleList
-      .getByRole("button", { name: "Owner 7 of 7 permissions" })
+      .getByRole("button", { name: "Owner 8 of 8 permissions" })
       .click();
     const ownerRole = page.getByRole("region", { name: "Owner" });
     const ownerFloor =
@@ -1425,7 +1422,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await roleList
       .getByRole("button", {
-        name: "Local support 0 of 7 permissions",
+        name: "Local support 0 of 8 permissions",
       })
       .click();
     const supportRole = page.getByRole("region", { name: "Local support" });
@@ -1459,7 +1456,7 @@ test.describe.serial("bilingual desktop shell", () => {
       const roleList = page.getByRole("navigation", { name: "Roles" });
       await expect(roleList).toBeVisible();
       await roleList
-        .getByRole("button", { name: "Owner 7 of 7 permissions" })
+        .getByRole("button", { name: "Owner 8 of 8 permissions" })
         .click();
       await expect(
         page
@@ -2039,6 +2036,7 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => cancelled,
         copyIdentifier: async () => ({ copied: true as const }),
+        printBarcodeLabel: async () => ({ status: "handed-off" as const }),
         exportDiagnostics: async () => ({ status: "saved" as const }),
         getTerminalPairingState: async () => pairing,
         openSupport: async () => ({ status: "unavailable" as const }),

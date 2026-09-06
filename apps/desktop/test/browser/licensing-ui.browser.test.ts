@@ -458,6 +458,7 @@ async function installDesktopFake(
           ).navigator.clipboard.writeText(request.identifier);
           return { copied: true as const };
         },
+        printBarcodeLabel: async () => ({ status: "handed-off" as const }),
         exportDiagnostics: async () => ({ status: "saved" as const }),
         getTerminalPairingState: async () => pairingState,
         openSupport: async () => ({ status: "unavailable" as const }),

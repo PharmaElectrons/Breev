@@ -62,6 +62,7 @@ describe("identity authorization", () => {
     expect(PERMISSION_NAMES).toEqual([
       "attendance.record",
       "catalog.item.manage",
+      "catalog.item.search",
       "devices.pair",
       "draft.price.override",
       "identity.roles.manage",
@@ -84,6 +85,7 @@ describe("identity authorization", () => {
     expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
       "attendance.record",
       "catalog.item.manage",
+      "catalog.item.search",
       "devices.pair",
       "identity.roles.manage",
       "identity.users.manage",

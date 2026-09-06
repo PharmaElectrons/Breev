@@ -14,6 +14,8 @@ export const DESKTOP_OPEN_SUPPORT_CHANNEL =
   "breev:desktop:open-support" as const;
 export const DESKTOP_PAIRING_INVITATION_CHANNEL =
   "breev:desktop:submit-pairing-invitation" as const;
+export const DESKTOP_PRINT_BARCODE_LABEL_CHANNEL =
+  "breev:desktop:print-barcode-label" as const;
 export const DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL =
   "breev:desktop:report-renderer-incident" as const;
 export const DESKTOP_STARTUP_CONFIG_CHANNEL =
@@ -36,6 +38,29 @@ export const desktopCopyIdentifierRequestSchema = z.strictObject({
 export const desktopCopyIdentifierResponseSchema = z.strictObject({
   copied: z.literal(true),
 });
+
+export const desktopBarcodePrintRequestSchema = z.strictObject({
+  barcode: z.strictObject({
+    kind: z.enum(["package", "product"]),
+    source: z.enum(["breev-internal", "provided"]),
+    value: z.string().min(1).max(64),
+  }),
+  displayName: z.string().min(1).max(726),
+  jobId: z.uuidv7(),
+  locale: z.enum(["ar", "en"]),
+  quantity: z.number().int().min(1).max(100),
+});
+
+export const desktopBarcodePrintResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.strictObject({ status: z.literal("handed-off") }),
+    z.strictObject({
+      message: z.string().min(1).max(512),
+      status: z.literal("failed"),
+    }),
+  ],
+);
 
 /**
  * A terminal reaches the Main installation through a loopback bridge that
@@ -271,6 +296,12 @@ export type DesktopCopyIdentifierRequest = z.infer<
 export type DesktopCopyIdentifierResponse = z.infer<
   typeof desktopCopyIdentifierResponseSchema
 >;
+export type DesktopBarcodePrintRequest = z.infer<
+  typeof desktopBarcodePrintRequestSchema
+>;
+export type DesktopBarcodePrintResponse = z.infer<
+  typeof desktopBarcodePrintResponseSchema
+>;
 export type DesktopStartupConfigRequest = z.infer<
   typeof desktopStartupConfigRequestSchema
 >;
@@ -331,6 +362,9 @@ export type DesktopReportRendererIncidentResponse = z.infer<
 >;
 
 export interface BreevDesktopApi {
+  printBarcodeLabel(
+    request: DesktopBarcodePrintRequest,
+  ): Promise<DesktopBarcodePrintResponse>;
   cancelTerminalPairing(): Promise<TerminalPairingState>;
   copyIdentifier(
     request: DesktopCopyIdentifierRequest,

@@ -1,6 +1,7 @@
 export const PERMISSION_NAMES = [
   "attendance.record",
   "catalog.item.manage",
+  "catalog.item.search",
   "devices.pair",
   "draft.price.override",
   "identity.roles.manage",
@@ -29,6 +30,7 @@ export type PermissionName = (typeof PERMISSION_NAMES)[number];
 export const IMPLEMENTED_PERMISSION_NAMES = [
   "attendance.record",
   "catalog.item.manage",
+  "catalog.item.search",
   "devices.pair",
   "identity.roles.manage",
   "identity.users.manage",

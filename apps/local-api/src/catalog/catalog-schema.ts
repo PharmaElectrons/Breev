@@ -1,6 +1,8 @@
 import {
   PRICE_ROUNDING_SETTINGS,
   PRODUCT_DEFINITION_MODES,
+  PRODUCT_BARCODE_KINDS,
+  PRODUCT_BARCODE_SOURCES,
   PRODUCT_FOOD_TIMINGS,
   PRODUCT_PRICING_METHODS,
   PRODUCT_STATE_COLORS,
@@ -11,6 +13,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   numeric,
   pgEnum,
   pgTable,
@@ -50,6 +53,14 @@ export const catalogPricingMethod = pgEnum(
 export const catalogPriceRounding = pgEnum(
   "catalog_price_rounding",
   PRICE_ROUNDING_SETTINGS,
+);
+export const catalogBarcodeKind = pgEnum(
+  "catalog_barcode_kind",
+  PRODUCT_BARCODE_KINDS,
+);
+export const catalogBarcodeSource = pgEnum(
+  "catalog_barcode_source",
+  PRODUCT_BARCODE_SOURCES,
 );
 
 export const catalogProducts = pgTable(
@@ -140,6 +151,7 @@ export const catalogProductBarcodes = pgTable(
     pharmacyId: uuid("pharmacy_id").notNull(),
     productId: uuid("product_id").notNull(),
     barcode: text().notNull(),
+    kind: catalogBarcodeKind().notNull(),
     ordinal: smallint().notNull(),
     recordedAt: timestamp("recorded_at", { withTimezone: true })
       .defaultNow()
@@ -147,6 +159,7 @@ export const catalogProductBarcodes = pgTable(
     recordedBy: uuid("recorded_by").notNull(),
     removedAt: timestamp("removed_at", { withTimezone: true }),
     removedBy: uuid("removed_by"),
+    source: catalogBarcodeSource().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.productId, table.barcode] }),
@@ -156,6 +169,61 @@ export const catalogProductBarcodes = pgTable(
     uniqueIndex("catalog_product_barcodes_active_ordinal_unique")
       .on(table.productId, table.ordinal)
       .where(sql`${table.removedAt} is null`),
+  ],
+);
+
+export const catalogInternalBarcodeSequences = pgTable(
+  "catalog_internal_barcode_sequences",
+  {
+    pharmacyId: uuid("pharmacy_id").primaryKey(),
+    nextValue: bigint("next_value", { mode: "bigint" }).default(1n).notNull(),
+  },
+  (table) => [
+    check(
+      "catalog_internal_barcode_sequences_next_positive",
+      sql`${table.nextValue} > 0`,
+    ),
+  ],
+);
+
+export const catalogMatchingBatches = pgTable(
+  "catalog_matching_batches",
+  {
+    businessDate: date("business_date").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    openedBy: uuid("opened_by").notNull(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.pharmacyId, table.businessDate] })],
+);
+
+export const catalogMatchingSuggestions = pgTable(
+  "catalog_matching_suggestions",
+  {
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedBy: uuid("approved_by"),
+    firstOfferedBusinessDate: date("first_offered_business_date").notNull(),
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    productId: uuid("product_id").notNull(),
+    proposedBarcode: text("proposed_barcode").notNull(),
+  },
+  (table) => [
+    unique("catalog_matching_suggestions_id_pharmacy_unique").on(
+      table.id,
+      table.pharmacyId,
+    ),
+    uniqueIndex("catalog_matching_suggestions_active_product_unique")
+      .on(table.pharmacyId, table.productId)
+      .where(sql`${table.approvedAt} is null`),
+    unique("catalog_matching_suggestions_pharmacy_barcode_unique").on(
+      table.pharmacyId,
+      table.proposedBarcode,
+    ),
   ],
 );
 

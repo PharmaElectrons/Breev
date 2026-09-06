@@ -99,6 +99,13 @@
       "when": 1788710400000,
       "tag": "0013_catalog_packaging_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788796800000,
+      "tag": "0014_catalog_search_barcodes_matching",
+      "breakpoints": true
     }
   ]
 }
