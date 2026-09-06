@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   PurchaseDraft,
+  PurchaseDraftDetail,
   PurchaseDraftResult,
   Supplier,
 } from "@breev/contracts/local-rest";
+import { PurchaseRowEntry } from "./purchase-row-entry";
 import { useIdentityState } from "./identity-state-provider";
 import {
   archiveSupplier,
@@ -15,6 +17,7 @@ import {
   PurchasingApiDenied,
   purchasingCommandAttempt,
   requestPurchaseDrafts,
+  requestPurchaseDraft,
   requestSuppliers,
   updatePurchaseDraft,
   type PurchasingCommandAttempt,
@@ -45,7 +48,9 @@ export function PurchasingRouteView({
     identity.allowedPermissions.includes("suppliers.manage");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [drafts, setDrafts] = useState<PurchaseDraft[]>([]);
-  const [activeDraft, setActiveDraft] = useState<PurchaseDraft | null>(null);
+  const [activeDraft, setActiveDraft] = useState<PurchaseDraftDetail | null>(
+    null,
+  );
   const [warning, setWarning] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,17 +105,22 @@ export function PurchasingRouteView({
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  function showDraft(draft: PurchaseDraft): void {
+  async function showDraft(draft: PurchaseDraft): Promise<void> {
     draftCommandAttempt.current = null;
-    setActiveDraft(draft);
-    setSupplierInvoiceNumber(draft.supplierInvoiceNumber);
-    setSupplierId(draft.supplierId);
-    setSettlementContext(draft.settlementContext);
-    setInvoiceDate(draft.invoiceDate);
-    setWarning(false);
-    setError(null);
-    setStatus(null);
-    queueMicrotask(() => invoiceRef.current?.focus());
+    try {
+      const detail = await requestPurchaseDraft(baseUrl, draft.id);
+      setActiveDraft(detail);
+      setSupplierInvoiceNumber(detail.supplierInvoiceNumber);
+      setSupplierId(detail.supplierId);
+      setSettlementContext(detail.settlementContext);
+      setInvoiceDate(detail.invoiceDate);
+      setWarning(false);
+      setError(null);
+      setStatus(null);
+      queueMicrotask(() => invoiceRef.current?.focus());
+    } catch {
+      setError(copy.error);
+    }
   }
 
   function newDraft(): void {
@@ -164,7 +174,8 @@ export function PurchasingRouteView({
               idempotencyKey: attempt.idempotencyKey,
             });
       draftCommandAttempt.current = null;
-      setActiveDraft(result.draft);
+      const detail = await requestPurchaseDraft(baseUrl, result.draft.id);
+      setActiveDraft(detail);
       setWarning(result.warnings.length > 0);
       setStatus(copy.saved);
       await reload();
@@ -428,6 +439,20 @@ export function PurchasingRouteView({
               <p role="status">{copy.noSuppliers}</p>
             ) : null}
           </form>
+          {activeDraft === null ? null : (
+            <PurchaseRowEntry
+              baseUrl={baseUrl}
+              draft={activeDraft}
+              onDraftChanged={(nextDraft) => {
+                setActiveDraft(nextDraft);
+                setDrafts((current) =>
+                  current.map((draft) =>
+                    draft.id === nextDraft.id ? nextDraft : draft,
+                  ),
+                );
+              }}
+            />
+          )}
           {canManageSuppliers ? (
             <details className="purchase-supplier-drawer">
               <summary>{copy.manageSuppliers}</summary>
@@ -556,7 +581,7 @@ export function PurchasingRouteView({
                         aria-current={
                           activeDraft?.id === draft.id ? "true" : undefined
                         }
-                        onClick={() => showDraft(draft)}
+                        onClick={() => void showDraft(draft)}
                       >
                         {copy.resume} {draft.supplierInvoiceNumber}
                         {activeDraft?.id === draft.id ? (

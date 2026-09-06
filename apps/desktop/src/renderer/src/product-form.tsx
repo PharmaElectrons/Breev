@@ -186,6 +186,7 @@ export function buildPricingPayload({
 
 export interface ProductFormProps {
   readonly baseUrl: string;
+  readonly initialBarcode?: string;
   readonly initialProduct?: Product | null;
   readonly onCancel?: () => void;
   readonly onSuccess?: (product: Product) => void;
@@ -376,6 +377,7 @@ export function ModeSwitchConfirmationDialog({
 
 export function ProductForm({
   baseUrl,
+  initialBarcode,
   initialProduct,
   onCancel,
   onSuccess,
@@ -445,7 +447,10 @@ export function ProductForm({
   const [category, setCategory] = useState(initialProduct?.category ?? "");
 
   const [barcodes, setBarcodes] = useState<ProductBarcodeInput[]>(
-    initialProduct?.barcodes.map(({ kind, value }) => ({ kind, value })) ?? [],
+    initialProduct?.barcodes.map(({ kind, value }) => ({ kind, value })) ??
+      (initialBarcode === undefined
+        ? []
+        : [{ kind: "product", value: initialBarcode }]),
   );
   const [newBarcode, setNewBarcode] = useState("");
   const [newBarcodeKind, setNewBarcodeKind] =

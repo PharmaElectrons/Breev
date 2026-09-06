@@ -4,7 +4,9 @@ import {
   allowancePercentageSchema,
   purchaseDraftCreateRequestSchema,
   purchaseDraftDiscardRequestSchema,
+  purchaseDraftRowCommitRequestSchema,
   purchaseDraftResultSchema,
+  purchaseEntryPreferencesSchema,
   supplierCreateRequestSchema,
 } from "./index.js";
 
@@ -87,10 +89,98 @@ describe("supplier and purchase draft contracts", () => {
   });
 
   it("has no supplier or draft hard-delete route", () => {
-    expect(PURCHASING_CONTRACTS).toHaveLength(10);
+    expect(PURCHASING_CONTRACTS).toHaveLength(13);
     expect(
       PURCHASING_CONTRACTS.map((contract) => contract.method),
     ).not.toContain("DELETE");
+  });
+
+  it("requires a version and idempotency key on each row commit", () => {
+    const row = {
+      costFils: "80000",
+      enteredQuantity: "2",
+      expectedVersion: "3",
+      expiryDate: "2028-10-31",
+      idempotencyKey: COMMAND_ID,
+      itemId: "018f9999-9999-7999-8999-999999999999",
+      lotNumber: "LOT-7",
+      notes: null,
+      pricing: { method: "by-price", retailPriceFils: "120000" },
+      unit: { kind: "package-unit", packageUnitName: "Pack" },
+    } as const;
+    expect(purchaseDraftRowCommitRequestSchema.parse(row)).toEqual(row);
+    expect(
+      purchaseDraftRowCommitRequestSchema.safeParse({
+        ...row,
+        expectedVersion: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      purchaseDraftRowCommitRequestSchema.safeParse({
+        ...row,
+        idempotencyKey: undefined,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("makes pricing-mode locking structural at the wire boundary", () => {
+    const shared = {
+      costFils: "80000",
+      enteredQuantity: "1",
+      expectedVersion: "1",
+      expiryDate: null,
+      idempotencyKey: COMMAND_ID,
+      itemId: "018f9999-9999-7999-8999-999999999999",
+      lotNumber: null,
+      notes: null,
+      unit: { kind: "inventory-unit" },
+    } as const;
+    expect(
+      purchaseDraftRowCommitRequestSchema.safeParse({
+        ...shared,
+        pricing: {
+          marginPercentage: "20",
+          method: "by-price",
+          retailPriceFils: "100000",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      purchaseDraftRowCommitRequestSchema.safeParse({
+        ...shared,
+        pricing: {
+          marginPercentage: "20",
+          method: "by-percentage",
+          retailPriceFils: "100000",
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires every configured column once and keeps Item visible", () => {
+    const preferences = {
+      afterCommit: "new-row",
+      columns: [
+        { field: "item", visible: true },
+        { field: "quantity", visible: true },
+        { field: "cost", visible: true },
+        { field: "selling-price", visible: false },
+        { field: "expiry", visible: true },
+      ],
+      detailsPanelFields: ["packaging", "wholesale-price"],
+      revision: "1",
+    } as const;
+    expect(purchaseEntryPreferencesSchema.parse(preferences)).toEqual(
+      preferences,
+    );
+    expect(
+      purchaseEntryPreferencesSchema.safeParse({
+        ...preferences,
+        columns: preferences.columns.map((column) =>
+          column.field === "item" ? { ...column, visible: false } : column,
+        ),
+      }).success,
+    ).toBe(false);
   });
 
   it("requires an effective date on every supplier default", () => {
