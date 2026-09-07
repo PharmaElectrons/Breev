@@ -32,10 +32,10 @@ interface PurchaseRowEntryProps {
 }
 
 const FIELD_COPY = {
-  cost: "cost",
-  expiry: "expiry",
+  cost: "rowCost",
+  expiry: "rowExpiry",
   item: "itemBarcode",
-  quantity: "quantity",
+  quantity: "rowQuantity",
   "selling-price": "sellingPrice",
 } as const;
 const PANEL_COPY = {
@@ -557,7 +557,7 @@ export function PurchaseRowEntry({
         <summary>{copy.optionalControls}</summary>
         <div>
           <label>
-            {copy.unit}
+            {copy.rowUnit}
             <select
               ref={optionalUnitRef}
               value={unitKey}
@@ -569,7 +569,7 @@ export function PurchaseRowEntry({
           </label>
           {product?.pricing.method === "by-percentage" ? (
             <label>
-              {copy.margin}
+              {copy.rowMargin}
               <input
                 value={marginPercentage}
                 onChange={(event) => {
@@ -663,7 +663,7 @@ export function PurchaseRowEntry({
         return (
           <input
             {...common}
-            aria-label={copy.quantity}
+            aria-label={copy.rowQuantity}
             inputMode="numeric"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
@@ -673,7 +673,7 @@ export function PurchaseRowEntry({
         return (
           <input
             {...common}
-            aria-label={copy.cost}
+            aria-label={copy.rowCost}
             inputMode="numeric"
             value={costFils}
             onChange={(event) => {
@@ -708,7 +708,7 @@ export function PurchaseRowEntry({
         return (
           <input
             {...common}
-            aria-label={copy.expiry}
+            aria-label={copy.rowExpiry}
             type="date"
             value={expiryDate}
             onChange={(event) => setExpiryDate(event.target.value)}
