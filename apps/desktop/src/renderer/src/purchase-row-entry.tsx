@@ -663,7 +663,7 @@ export function PurchaseRowEntry({
         return (
           <input
             {...common}
-            aria-label={copy.quantity}
+            aria-label={copy.rowQuantity}
             inputMode="numeric"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
@@ -673,7 +673,7 @@ export function PurchaseRowEntry({
         return (
           <input
             {...common}
-            aria-label={copy.cost}
+            aria-label={copy.rowCost}
             inputMode="numeric"
             value={costFils}
             onChange={(event) => {
@@ -708,7 +708,7 @@ export function PurchaseRowEntry({
         return (
           <input
             {...common}
-            aria-label={copy.expiry}
+            aria-label={copy.rowExpiry}
             type="date"
             value={expiryDate}
             onChange={(event) => setExpiryDate(event.target.value)}
