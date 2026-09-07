@@ -569,26 +569,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, locale, theme);
         await page.goto(`${renderer.origin}#/purchases`);
-        await page
-          .getByRole("button", {
-            name: /Saved drafts|المسودات المحفوظة/,
-          })
-          .click();
-        await page.getByRole("button", { name: /ROWS-49/ }).click();
         await expect(page.locator("html")).toHaveAttribute(
           "dir",
           locale === "ar" ? "rtl" : "ltr",
         );
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-        const entryFields = page.locator(
-          ".purchase-entry-row [data-enter-field]",
-        );
-        await expect(entryFields).toHaveCount(5);
-        expect(
-          await entryFields.evaluateAll((elements) =>
-            elements.map((element) => element.getAttribute("data-enter-field")),
-          ),
-        ).toEqual(["item", "quantity", "cost", "selling-price", "expiry"]);
         await expect(
           page.getByRole("heading", {
             name: locale === "ar" ? "المشتريات" : "Purchases",
@@ -634,6 +619,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         });
         await page.getByRole("button", { name: /SUP-2026-0042/ }).click();
         await expect(page.locator(".purchase-snapshot")).toBeVisible();
+        const entryFields = page.locator(
+          ".purchase-entry-row [data-enter-field]",
+        );
+        await expect(entryFields).toHaveCount(5);
+        expect(
+          await entryFields.evaluateAll((elements) =>
+            elements.map((element) => element.getAttribute("data-enter-field")),
+          ),
+        ).toEqual(["item", "quantity", "cost", "selling-price", "expiry"]);
         await expect(
           page.getByRole("button", {
             name: locale === "ar" ? "حفظ التغييرات" : "Save changes",
