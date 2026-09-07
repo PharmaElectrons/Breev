@@ -67,6 +67,7 @@ export interface IdentityCopy {
   readonly role: string;
   readonly roleList: string;
   readonly roleName: string;
+  readonly roleDescriptions: Readonly<Record<PharmacyRoleKey, string>>;
   readonly roles: Readonly<Record<PharmacyRoleKey, string>>;
   readonly resetPassword: string;
   readonly save: string;
@@ -139,6 +140,16 @@ const permissionLabels: Record<
         "تفعيل تسجيل الحضور أو إيقافه وتغيير إعدادات الصيدلية الأخرى.",
       name: "تغيير إعدادات الصيدلية",
     },
+    "purchases.drafts.manage": {
+      description:
+        "إنشاء مسودات المشتريات واستئنافها وتحديثها واستبعادها وإدخال بنودها.",
+      name: "إدارة مسودات المشتريات",
+    },
+    "suppliers.manage": {
+      description:
+        "إنشاء سجلات الموردين وتعديلها وأرشفتها ودمجها وإدارة شروطها.",
+      name: "إدارة الموردين",
+    },
   },
   en: {
     "attendance.record": {
@@ -178,6 +189,47 @@ const permissionLabels: Record<
         "Turn attendance on or off and change other pharmacy settings.",
       name: "Change pharmacy settings",
     },
+    "purchases.drafts.manage": {
+      description:
+        "Create, resume, update, and discard purchase drafts and enter their rows.",
+      name: "Manage purchase drafts",
+    },
+    "suppliers.manage": {
+      description:
+        "Create, edit, archive, and merge supplier records and maintain their terms.",
+      name: "Manage suppliers",
+    },
+  },
+};
+
+const roleDescriptions: Record<
+  Locale,
+  Readonly<Record<PharmacyRoleKey, string>>
+> = {
+  ar: {
+    owner: "الإدارة الكاملة للصيدلية عبر جميع عمليات بريف المتاحة.",
+    manager: "الإشراف على أدوار الموظفين وعمليات الصيدلية المفوضة.",
+    pharmacist: "العمل على صرف الأدوية ومهام الصيدلة السريرية.",
+    sales_employee: "العمل على نقطة البيع ومهام مبيعات العملاء.",
+    purchasing_employee: "إنشاء مسودات المشتريات للمخزون الوارد ومتابعتها.",
+    inventory_employee: "العمل على سجلات المخزون والجرد وحركات المخزون.",
+    accountant: "العمل على الحسابات والمراجعة المالية للصيدلية.",
+    support: "تقديم الدعم التشغيلي المحلي بالصلاحيات الممنوحة صراحة فقط.",
+  },
+  en: {
+    owner:
+      "Full pharmacy administration across every implemented Breev operation.",
+    manager: "Oversees staff roles and delegated pharmacy operations.",
+    pharmacist: "Works with dispensing and clinical pharmacy workflows.",
+    sales_employee: "Works with checkout and customer sales workflows.",
+    purchasing_employee:
+      "Creates and maintains purchase drafts for incoming stock.",
+    inventory_employee:
+      "Works with stock records, counts, and inventory movement workflows.",
+    accountant:
+      "Works with pharmacy accounting and financial review workflows.",
+    support:
+      "Provides local operational support with only explicitly granted access.",
   },
 };
 
@@ -259,6 +311,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       attendance: "الحضور",
       "devices-licensing": "الأجهزة والترخيص",
       products: "الأصناف",
+      purchasing: "المشتريات والموردون",
     },
     permissionLabels: permissionLabels.ar,
     permissions: "الصلاحيات الممنوحة",
@@ -274,6 +327,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     role: "الدور",
     roleList: "الأدوار",
     roleName: "اسم الدور",
+    roleDescriptions: roleDescriptions.ar,
     roles: PHARMACY_ROLE_DISPLAY_NAMES.ar,
     resetPassword: "إعادة تعيين كلمة المرور",
     save: "حفظ",
@@ -378,6 +432,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       attendance: "Attendance",
       "devices-licensing": "Devices and licensing",
       products: "Products",
+      purchasing: "Purchasing and suppliers",
     },
     permissionLabels: permissionLabels.en,
     permissions: "Granted permissions",
@@ -393,6 +448,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
     role: "Role",
     roleList: "Roles",
     roleName: "Role name",
+    roleDescriptions: roleDescriptions.en,
     roles: PHARMACY_ROLE_DISPLAY_NAMES.en,
     resetPassword: "Reset password",
     save: "Save",

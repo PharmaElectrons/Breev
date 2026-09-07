@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "12" as const;
-export const LOCAL_SCHEMA_VERSION = "12" as const;
+export const LOCAL_API_VERSION = "13" as const;
+export const LOCAL_SCHEMA_VERSION = "13" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -83,6 +83,25 @@ export const CAPABILITY_NAMES = [
 export const capabilityNameSchema = z.enum(CAPABILITY_NAMES);
 export const paidCapabilityNameSchema = z.enum(PAID_CAPABILITY_NAMES);
 export const pharmacyRoleKeySchema = z.enum(PHARMACY_ROLE_KEYS);
+/**
+ * Permissions backed by a live local operation and therefore grantable in the
+ * role editor. Keep presentation metadata in the renderer; this shared list is
+ * the authority boundary both the local API and desktop must agree on.
+ */
+export const IMPLEMENTED_PERMISSION_NAMES = [
+  "attendance.record",
+  "catalog.item.manage",
+  "catalog.item.search",
+  "devices.pair",
+  "identity.roles.manage",
+  "identity.users.manage",
+  "licensing.manage",
+  "pharmacy.settings.manage",
+  "purchases.drafts.manage",
+  "suppliers.manage",
+] as const;
+export type ImplementedPermissionName =
+  (typeof IMPLEMENTED_PERMISSION_NAMES)[number];
 export const permissionNameSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/u)

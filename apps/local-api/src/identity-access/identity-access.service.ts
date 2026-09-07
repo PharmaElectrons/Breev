@@ -508,7 +508,7 @@ export class IdentityAccessService {
       // Only the implemented permissions are granted here. A name with no
       // live operation behind it stays out of the owner's grants until the
       // change that lands its operation grants it — see
-      // `IMPLEMENTED_PERMISSION_NAMES` in authorization.ts.
+      // the shared `IMPLEMENTED_PERMISSION_NAMES` contract registry.
       await client.query(
         `insert into role_permission_grants
            (pharmacy_id, role_id, permission_name, granted_by)
@@ -538,6 +538,16 @@ export class IdentityAccessService {
              'manager', 'pharmacist', 'sales_employee',
              'purchasing_employee', 'inventory_employee'
            )`,
+        [pharmacyId, ownerId],
+      );
+      // Purchasing employees can perform their core draft-entry workflow by
+      // default. Supplier master-data changes stay separately grantable.
+      await client.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         select $1, id, 'purchases.drafts.manage', $2
+         from pharmacy_roles
+         where pharmacy_id = $1 and role_key = 'purchasing_employee'`,
         [pharmacyId, ownerId],
       );
       await client.query(
