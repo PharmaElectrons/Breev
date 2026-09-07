@@ -58,6 +58,7 @@ import {
   identityUpdateRolePermissionsRequestSchema,
   identityUpdateUserRequestSchema,
   identityUserSchema,
+  IMPLEMENTED_PERMISSION_NAMES,
   PHARMACY_ROLE_KEYS,
   PHARMACY_ROLE_DISPLAY_NAMES,
   deviceInventoryContract,
@@ -401,8 +402,20 @@ describe("identity role contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("12");
-    expect(LOCAL_SCHEMA_VERSION).toBe("12");
+    expect(LOCAL_API_VERSION).toBe("13");
+    expect(LOCAL_SCHEMA_VERSION).toBe("13");
+    expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
+      "attendance.record",
+      "catalog.item.manage",
+      "catalog.item.search",
+      "devices.pair",
+      "identity.roles.manage",
+      "identity.users.manage",
+      "licensing.manage",
+      "pharmacy.settings.manage",
+      "purchases.drafts.manage",
+      "suppliers.manage",
+    ]);
   });
 
   it("accepts the healthy handshake", () => {

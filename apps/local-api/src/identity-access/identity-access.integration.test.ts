@@ -132,7 +132,12 @@ describe.sequential("identity/access PostgreSQL seam", () => {
 
     const roles = await request(credentials, "GET", "/identity/roles");
     expect(roles.status, failureContext([roles])).toBe(200);
-    expect(roles.body?.roles as unknown[] | undefined).toHaveLength(8);
+    const roleRows = roles.body?.roles as
+      { grants: string[]; key: string }[] | undefined;
+    expect(roleRows).toHaveLength(8);
+    expect(
+      roleRows?.find(({ key }) => key === "purchasing_employee")?.grants,
+    ).toEqual(["catalog.item.search", "purchases.drafts.manage"]);
     const databaseState = await administrator.query<{
       pharmacy_count: string;
       role_count: string;
