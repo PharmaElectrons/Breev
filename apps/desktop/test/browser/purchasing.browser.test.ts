@@ -276,37 +276,56 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.getByLabel("Invoice date").fill("2026-09-07");
     await page.getByRole("button", { name: "Save draft" }).click();
 
-    const item = page.getByLabel("Item / Barcode");
+    const item = page.getByRole("textbox", {
+      name: "Item / Barcode",
+      exact: true,
+    });
+    const quantity = page.getByRole("textbox", {
+      name: "Quantity",
+      exact: true,
+    });
+    const cost = page.getByRole("textbox", {
+      name: "Primary cost",
+      exact: true,
+    });
+    const sellingPrice = page.getByRole("textbox", {
+      name: "Selling price",
+      exact: true,
+    });
+    const expiry = page.getByRole("textbox", {
+      name: "Expiry",
+      exact: true,
+    });
     await expect(item).toBeFocused();
     await item.fill("5012345678949");
     await item.press("Enter");
-    await expect(page.getByLabel("Quantity")).toBeFocused();
+    await expect(quantity).toBeFocused();
     await expect(
       page.getByText(purchaseProduct.displayName, { exact: true }).last(),
     ).toBeVisible();
 
-    await page.getByLabel("Quantity").fill("0");
-    await page.getByLabel("Quantity").press("Enter");
-    await expect(page.getByLabel("Quantity")).toBeFocused();
+    await quantity.fill("0");
+    await quantity.press("Enter");
+    await expect(quantity).toBeFocused();
     await expect(page.getByRole("alert")).toContainText(
       "positive whole quantity",
     );
-    await page.getByLabel("Quantity").fill("2");
-    await page.getByLabel("Quantity").press("Enter");
-    await expect(page.getByLabel("Primary cost")).toBeFocused();
-    await page.getByLabel("Primary cost").fill("80000");
-    await page.getByLabel("Primary cost").press("Enter");
-    await expect(page.getByLabel("Selling price")).toBeFocused();
-    await page.getByLabel("Selling price").fill("120000");
-    await page.getByLabel("Selling price").press("Enter");
-    await expect(page.getByLabel("Expiry")).toBeFocused();
+    await quantity.fill("2");
+    await quantity.press("Enter");
+    await expect(cost).toBeFocused();
+    await cost.fill("80000");
+    await cost.press("Enter");
+    await expect(sellingPrice).toBeFocused();
+    await sellingPrice.fill("120000");
+    await sellingPrice.press("Enter");
+    await expect(expiry).toBeFocused();
     let postRequests = 0;
     page.on("request", (request) => {
       if (/\/post(?:ings)?$/u.test(new URL(request.url()).pathname))
         postRequests += 1;
     });
-    await page.getByLabel("Expiry").fill("2028-10-31");
-    await page.getByLabel("Expiry").press("Enter");
+    await expiry.fill("2028-10-31");
+    await expiry.press("Enter");
     await expect(
       page.getByText("Row committed and saved durably."),
     ).toBeVisible();
@@ -323,16 +342,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.getByText(percentageProduct.displayName).last(),
     ).toBeVisible();
-    await page.getByLabel("Quantity").press("Enter");
-    await page.getByLabel("Primary cost").fill("80000");
-    await page.getByLabel("Primary cost").press("Enter");
-    await expect(page.getByLabel("Expiry")).toBeFocused();
-    await expect(page.getByLabel("Selling price")).toHaveJSProperty(
-      "readOnly",
-      true,
-    );
-    await expect(page.getByLabel("Selling price")).toHaveValue("100000");
-    await page.getByLabel("Expiry").press("Enter");
+    await quantity.press("Enter");
+    await cost.fill("80000");
+    await cost.press("Enter");
+    await expect(expiry).toBeFocused();
+    await expect(sellingPrice).toHaveJSProperty("readOnly", true);
+    await expect(sellingPrice).toHaveValue("100000");
+    await expiry.press("Enter");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(3);
 
     await item.fill("UNKNOWN PRODUCT");
@@ -358,12 +374,12 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(item).toBeFocused();
     await expect(item).toHaveValue("Quick Purchase Product");
     await item.press("Enter");
-    await page.getByLabel("Quantity").fill("1");
-    await page.getByLabel("Quantity").press("Enter");
-    await page.getByLabel("Primary cost").fill("100000");
-    await page.getByLabel("Primary cost").press("Enter");
-    await page.getByLabel("Selling price").press("Enter");
-    await page.getByLabel("Expiry").press("Enter");
+    await quantity.fill("1");
+    await quantity.press("Enter");
+    await cost.fill("100000");
+    await cost.press("Enter");
+    await sellingPrice.press("Enter");
+    await expiry.press("Enter");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(4);
 
     const settings = page.locator(".purchase-entry-settings");
@@ -398,16 +414,19 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.reload();
     await page.getByRole("button", { name: /ROWS-49/ }).click();
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(4);
-    await expect(page.getByLabel("Quantity")).toBeFocused();
-    await page.getByLabel("Quantity").press("Enter");
-    const resumedItem = page.getByLabel("Item / Barcode");
+    await expect(quantity).toBeFocused();
+    await quantity.press("Enter");
+    const resumedItem = page.getByRole("textbox", {
+      name: "Item / Barcode",
+      exact: true,
+    });
     await expect(resumedItem).toBeFocused();
     await resumedItem.fill("5012345678949");
     await resumedItem.press("Enter");
-    await expect(page.getByLabel("Expiry")).toBeFocused();
-    await page.getByLabel("Expiry").press("Enter");
-    await expect(page.getByLabel("Primary cost")).toBeFocused();
-    await page.getByLabel("Primary cost").press("Enter");
+    await expect(expiry).toBeFocused();
+    await expiry.press("Enter");
+    await expect(cost).toBeFocused();
+    await cost.press("Enter");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(5);
     await expect(resumedItem).toBeFocused();
 
@@ -468,14 +487,14 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           locale === "ar" ? "rtl" : "ltr",
         );
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        const entryFields = page.locator(
+          ".purchase-entry-row [data-enter-field]",
+        );
+        await expect(entryFields).toHaveCount(5);
         expect(
-          await page
-            .locator(".purchase-entry-row [data-enter-field]")
-            .evaluateAll((elements) =>
-              elements.map((element) =>
-                element.getAttribute("data-enter-field"),
-              ),
-            ),
+          await entryFields.evaluateAll((elements) =>
+            elements.map((element) => element.getAttribute("data-enter-field")),
+          ),
         ).toEqual(["item", "quantity", "cost", "selling-price", "expiry"]);
         await expect(
           page.getByRole("heading", {

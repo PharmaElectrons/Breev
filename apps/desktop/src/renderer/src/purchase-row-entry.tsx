@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   PRODUCT_PRICING_FIELD_EDITABILITY,
   type Product,
@@ -64,6 +70,10 @@ export function PurchaseRowEntry({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [focusRequest, setFocusRequest] = useState<{
+    field: PurchaseEntryColumnField;
+    sequence: number;
+  } | null>(null);
   const [entryEpoch, setEntryEpoch] = useState(1);
   const fieldRefs = useRef<
     Partial<Record<PurchaseEntryColumnField, HTMLElement | null>>
@@ -72,6 +82,7 @@ export function PurchaseRowEntry({
   const rowAttempt = useRef<PurchasingCommandAttempt | null>(null);
   const preferencesAttempt = useRef<PurchasingCommandAttempt | null>(null);
   const initialFocusDone = useRef(false);
+  const focusSequence = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -95,8 +106,22 @@ export function PurchaseRowEntry({
     return () => window.clearTimeout(timer);
   }, [preferences]);
 
+  useEffect(() => {
+    if (busy || focusRequest === null) return;
+    const element = fieldRefs.current[focusRequest.field];
+    if (
+      element === null ||
+      element === undefined ||
+      element.matches(":disabled")
+    )
+      return;
+    element.focus();
+    setFocusRequest(null);
+  }, [busy, focusRequest]);
+
   function focusField(field: PurchaseEntryColumnField): void {
-    window.setTimeout(() => fieldRefs.current[field]?.focus(), 0);
+    focusSequence.current += 1;
+    setFocusRequest({ field, sequence: focusSequence.current });
   }
 
   function attachProduct(next: Product, returnToItem = false): void {
@@ -133,15 +158,16 @@ export function PurchaseRowEntry({
       const selected = exactBarcode?.product ?? result.results[0]?.product;
       if (selected === undefined) {
         setQuickCreateValue(query);
+        setBusy(false);
         return;
       }
       attachProduct(selected);
+      setBusy(false);
       focusNext("item", selected);
     } catch {
       setError(copy.apiUnavailable);
-      focusField("item");
-    } finally {
       setBusy(false);
+      focusField("item");
     }
   }
 
@@ -306,6 +332,7 @@ export function PurchaseRowEntry({
     <section
       className="purchase-row-workspace"
       aria-labelledby="purchase-row-title"
+      data-purchase-editor
     >
       <div className="purchase-row-heading">
         <div>
@@ -725,13 +752,21 @@ function QuickProductDialog({
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
   const dialogRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const cancelOnEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onCancel();
+    };
+    window.addEventListener("keydown", cancelOnEscape, true);
     const dialog = dialogRef.current;
     const focusable = dialog?.querySelector<HTMLElement>(
       "input:not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled])",
     );
     focusable?.focus();
-  }, []);
+    return () => window.removeEventListener("keydown", cancelOnEscape, true);
+  }, [onCancel]);
   return (
     <div
       className="dialog-backdrop purchase-product-dialog"
@@ -740,12 +775,6 @@ function QuickProductDialog({
       aria-labelledby="quick-product-title"
       ref={dialogRef}
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          onCancel();
-          return;
-        }
         if (event.key !== "Tab") return;
         const controls = [
           ...(dialogRef.current?.querySelectorAll<HTMLElement>(
