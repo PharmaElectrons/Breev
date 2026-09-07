@@ -1,13 +1,23 @@
 import {
+  purchaseDraftDetailSchema,
+  purchaseDraftRowCommitResultSchema,
+  purchaseDraftRowSchema,
   purchaseDraftResultSchema,
   purchaseDraftSchema,
+  purchaseEntryPreferencesSchema,
   purchasingDenialSchema,
   supplierSchema,
   type PurchaseDraft,
+  type PurchaseDraftDetail,
+  type PurchaseDraftRow,
+  type PurchaseDraftRowCommitRequest,
+  type PurchaseDraftRowCommitResult,
   type PurchaseDraftCreateRequest,
   type PurchaseDraftDiscardRequest,
   type PurchaseDraftResult,
   type PurchaseDraftUpdateRequest,
+  type PurchaseEntryPreferences,
+  type PurchaseEntryPreferencesUpdateRequest,
   type PurchasingDenial,
   type PurchasingDenialCode,
   type PurchasingFieldError,
@@ -20,6 +30,7 @@ import {
 import { Injectable } from "@nestjs/common";
 import type { Request } from "express";
 import type { PoolClient } from "pg";
+import { resolveCatalogPurchaseProduct } from "../catalog/catalog-purchase.js";
 import {
   IdentityAccessService,
   type IdentityExecutionContext,
@@ -32,10 +43,13 @@ import {
   PostingIdempotencyConflict,
   beginPostingIdempotency,
   recordPostingResult,
+  type PostingCommandReplay,
 } from "../posting/idempotency.js";
+import { preparePurchaseRow } from "./purchase-row.js";
 
 const SUPPLIER_PERMISSION = "suppliers.manage";
 const DRAFT_PERMISSION = "purchases.drafts.manage";
+const POSTGRES_BIGINT_MAXIMUM = 9_223_372_036_854_775_807n;
 const COMMANDS = {
   supplierArchive: "supplier.archive",
   supplierCreate: "supplier.create",
@@ -44,7 +58,28 @@ const COMMANDS = {
   draftCreate: "purchase.draft.create",
   draftUpdate: "purchase.draft.update",
   draftDiscard: "purchase.draft.discard",
+  draftRowCommit: "purchase.draft.row.commit",
+  entryPreferencesUpdate: "purchase.entry-preferences.update",
 } as const;
+
+const DEFAULT_ENTRY_PREFERENCES: PurchaseEntryPreferences =
+  purchaseEntryPreferencesSchema.parse({
+    afterCommit: "new-row",
+    columns: [
+      { field: "item", visible: true },
+      { field: "quantity", visible: true },
+      { field: "cost", visible: true },
+      { field: "selling-price", visible: true },
+      { field: "expiry", visible: true },
+    ],
+    detailsPanelFields: [
+      "scientific-name",
+      "category",
+      "packaging",
+      "wholesale-price",
+    ],
+    revision: "1",
+  });
 
 interface SupplierRow {
   allowance_effective_from: string;
@@ -346,6 +381,161 @@ function draftView(row: DraftRow): PurchaseDraft {
   });
 }
 
+interface DraftRowRecord {
+  base_units_per_entered_unit: string;
+  created_at: Date;
+  entered_package_unit_name: string | null;
+  entered_quantity: string;
+  entered_unit_kind: "inventory-unit" | "package-unit";
+  expiry_date: string | null;
+  id: string;
+  inventory_unit_name: string;
+  inventory_unit_quantity: string;
+  item_display_name: string;
+  lot_number: string | null;
+  margin_percentage: string | null;
+  notes: string | null;
+  ordinal: number;
+  primary_supplier_cost_fils: string;
+  pricing_method: "by-percentage" | "by-price";
+  product_id: string;
+  retail_price_fils: string;
+}
+
+const DRAFT_ROW_SELECT = `select row_record.id, row_record.ordinal,
+  row_record.product_id, row_record.item_display_name,
+  row_record.inventory_unit_name, row_record.entered_unit_kind,
+  row_record.entered_package_unit_name,
+  row_record.base_units_per_entered_unit::text,
+  row_record.entered_quantity::text, row_record.inventory_unit_quantity::text,
+  row_record.primary_supplier_cost_fils::text, row_record.pricing_method,
+  row_record.retail_price_fils::text, row_record.margin_percentage::text,
+  row_record.expiry_date::text, row_record.lot_number, row_record.notes,
+  row_record.created_at
+from purchase_draft_rows row_record`;
+
+function purchaseRowView(row: DraftRowRecord): PurchaseDraftRow {
+  return purchaseDraftRowSchema.parse({
+    baseUnitsPerEnteredUnit: row.base_units_per_entered_unit,
+    costFils: row.primary_supplier_cost_fils,
+    createdAt: row.created_at.toISOString(),
+    enteredQuantity: row.entered_quantity,
+    expiryDate: row.expiry_date,
+    id: row.id,
+    inventoryUnitName: row.inventory_unit_name,
+    inventoryUnitQuantity: row.inventory_unit_quantity,
+    itemDisplayName: row.item_display_name,
+    itemId: row.product_id,
+    lotNumber: row.lot_number,
+    marginPercentage:
+      row.margin_percentage === null
+        ? null
+        : normalizedPercentage(row.margin_percentage),
+    notes: row.notes,
+    ordinal: row.ordinal,
+    pricingMethod: row.pricing_method,
+    retailPriceFils: row.retail_price_fils,
+    unit:
+      row.entered_unit_kind === "inventory-unit"
+        ? { kind: "inventory-unit" }
+        : {
+            kind: "package-unit",
+            packageUnitName: row.entered_package_unit_name,
+          },
+  });
+}
+
+async function draftDetail(
+  client: PoolClient,
+  pharmacyId: string,
+  draft: PurchaseDraft,
+): Promise<PurchaseDraftDetail> {
+  const result = await client.query<DraftRowRecord>(
+    `${DRAFT_ROW_SELECT}
+     where row_record.pharmacy_id = $1 and row_record.draft_id = $2
+     order by row_record.ordinal`,
+    [pharmacyId, draft.id],
+  );
+  const rows = result.rows.map(purchaseRowView);
+  const gross = rows.reduce(
+    (total, row) => total + BigInt(row.costFils) * BigInt(row.enteredQuantity),
+    0n,
+  );
+  const allowance = calculateAllowance(
+    gross,
+    draft.allowanceSnapshot.percentage,
+  );
+  const net = gross - allowance;
+  const warnings = new Set<
+    "missing-expiry" | "missing-lot" | "posting-not-available"
+  >(["posting-not-available"]);
+  if (rows.some((row) => row.expiryDate === null))
+    warnings.add("missing-expiry");
+  if (rows.some((row) => row.lotNumber === null)) warnings.add("missing-lot");
+  return purchaseDraftDetailSchema.parse({
+    ...draft,
+    review: {
+      allowanceFils: allowance.toString(),
+      batches: rows.map((row) => ({
+        expiryDate: row.expiryDate,
+        itemDisplayName: row.itemDisplayName,
+        lotNumber: row.lotNumber,
+      })),
+      grossFils: gross.toString(),
+      netFils: net.toString(),
+      settlementEffect:
+        draft.settlementContext === "cash"
+          ? { context: "cash", tenderFils: net.toString() }
+          : { context: "debt", payableFils: net.toString() },
+      warnings: [...warnings],
+    },
+    rows,
+  });
+}
+
+function calculateAllowance(grossFils: bigint, percentage: string): bigint {
+  const [whole = "0", fraction = ""] = percentage.split(".");
+  const scaled = BigInt(`${whole}${fraction.padEnd(6, "0")}`);
+  const denominator = 100_000_000n;
+  const numerator = grossFils * scaled;
+  const quotient = numerator / denominator;
+  const remainder = numerator % denominator;
+  return quotient + (remainder * 2n >= denominator ? 1n : 0n);
+}
+
+interface EntryPreferencesRow {
+  after_commit: "new-row" | "return-to-item";
+  columns: unknown;
+  details_panel_fields: unknown;
+  revision: string;
+}
+
+function entryPreferencesView(
+  row: EntryPreferencesRow,
+): PurchaseEntryPreferences {
+  return purchaseEntryPreferencesSchema.parse({
+    afterCommit: row.after_commit,
+    columns: row.columns,
+    detailsPanelFields: row.details_panel_fields,
+    revision: row.revision,
+  });
+}
+
+async function selectEntryPreferences(
+  client: PoolClient,
+  pharmacyId: string,
+  userId: string,
+  lock = false,
+): Promise<EntryPreferencesRow | undefined> {
+  const result = await client.query<EntryPreferencesRow>(
+    `select columns, after_commit, details_panel_fields, revision::text
+     from purchase_entry_preferences
+     where pharmacy_id = $1 and user_id = $2${lock ? " for update" : ""}`,
+    [pharmacyId, userId],
+  );
+  return result.rows[0];
+}
+
 function normalizedPercentage(value: string): string {
   return value.includes(".")
     ? value.replace(/0+$/u, "").replace(/\.$/u, "")
@@ -415,7 +605,12 @@ interface ResolvedSupplier {
   name: string;
   percentage: string;
 }
-type CommandValue = PurchaseDraft | PurchaseDraftResult | Supplier;
+type CommandValue =
+  | PurchaseDraft
+  | PurchaseDraftResult
+  | PurchaseDraftRowCommitResult
+  | PurchaseEntryPreferences
+  | Supplier;
 interface CommandSuccess<T extends CommandValue> {
   afterState: Record<string, boolean | number | string | null>;
   beforeState?: Record<string, boolean | number | string | null>;
@@ -427,6 +622,7 @@ interface CommandExecution<T extends CommandValue> {
   context: IdentityExecutionContext;
   idempotencyKey: string;
   parser: { parse(payload: unknown): T };
+  permission: typeof DRAFT_PERMISSION | typeof SUPPLIER_PERMISSION;
   requestHash: Buffer;
   responseStatus: 200 | 201;
   targetId?: string;
@@ -441,6 +637,19 @@ export class PurchasingDenied extends Error {
     super(denial.code);
     this.name = "PurchasingDenied";
   }
+}
+
+function replayPurchasingOutcome<T extends CommandValue>(
+  replay: PostingCommandReplay,
+  parser: { parse(payload: unknown): T },
+): T {
+  if (replay.responseStatus === 200 || replay.responseStatus === 201) {
+    return parser.parse(replay.responseBody);
+  }
+  throw new PurchasingDenied(
+    replay.responseStatus as 400 | 404 | 409,
+    purchasingDenialSchema.parse(replay.responseBody),
+  );
 }
 class PurchasingCommandRejected extends Error {
   public constructor(
@@ -492,6 +701,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: supplierSchema,
+      permission: SUPPLIER_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.supplierCreate, input),
       responseStatus: 201,
       work: async (client) => {
@@ -529,6 +739,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: supplierSchema,
+      permission: SUPPLIER_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.supplierEdit, {
         supplierId,
         input,
@@ -600,6 +811,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: supplierSchema,
+      permission: SUPPLIER_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.supplierArchive, {
         supplierId,
         input,
@@ -646,6 +858,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: supplierSchema,
+      permission: SUPPLIER_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.supplierMerge, {
         supplierId,
         input,
@@ -720,23 +933,302 @@ export class PurchasingService {
   public async readDraft(
     request: Request,
     draftId: string,
-  ): Promise<PurchaseDraft> {
+  ): Promise<PurchaseDraftDetail> {
     const context = await this.identity.requirePermission(
       request,
       DRAFT_PERMISSION,
     );
-    const row = await selectDraft(
-      this.localDatabase.requirePool(),
-      context.pharmacyId,
-      draftId,
-    );
-    if (row !== undefined) return draftView(row);
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      const row = await selectDraft(client, context.pharmacyId, draftId);
+      if (row !== undefined)
+        return await draftDetail(client, context.pharmacyId, draftView(row));
+    } finally {
+      client.release();
+    }
     throw await this.readDenial(
       context,
       "purchase.draft.read",
       "draft-not-found",
       draftId,
     );
+  }
+
+  public async readEntryPreferences(
+    request: Request,
+  ): Promise<PurchaseEntryPreferences> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      const row = await selectEntryPreferences(
+        client,
+        context.pharmacyId,
+        context.actorId,
+      );
+      return row === undefined
+        ? DEFAULT_ENTRY_PREFERENCES
+        : entryPreferencesView(row);
+    } finally {
+      client.release();
+    }
+  }
+
+  public async updateEntryPreferences(
+    request: Request,
+    input: PurchaseEntryPreferencesUpdateRequest,
+  ): Promise<PurchaseEntryPreferences> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    return await this.executeCommand({
+      commandName: COMMANDS.entryPreferencesUpdate,
+      context,
+      idempotencyKey: input.idempotencyKey,
+      parser: purchaseEntryPreferencesSchema,
+      permission: DRAFT_PERMISSION,
+      requestHash: canonicalRequestHash(COMMANDS.entryPreferencesUpdate, input),
+      responseStatus: 200,
+      targetId: context.actorId,
+      work: async (client) => {
+        const before = await selectEntryPreferences(
+          client,
+          context.pharmacyId,
+          context.actorId,
+          true,
+        );
+        const prior =
+          before === undefined
+            ? DEFAULT_ENTRY_PREFERENCES
+            : entryPreferencesView(before);
+        if (prior.revision !== input.expectedRevision) {
+          throw new PurchasingCommandRejected(
+            409,
+            "version-conflict",
+            [],
+            context.actorId,
+          );
+        }
+        if (before === undefined) {
+          await client.query(
+            `insert into purchase_entry_preferences (
+               pharmacy_id, user_id, columns, after_commit,
+               details_panel_fields, updated_by
+             ) values ($1, $2, $3::jsonb, $4, $5::jsonb, $2)`,
+            [
+              context.pharmacyId,
+              context.actorId,
+              JSON.stringify(input.columns),
+              input.afterCommit,
+              JSON.stringify(input.detailsPanelFields),
+            ],
+          );
+        } else {
+          await client.query(
+            `update purchase_entry_preferences
+             set columns = $3::jsonb, after_commit = $4,
+                 details_panel_fields = $5::jsonb, revision = revision + 1,
+                 updated_at = statement_timestamp(), updated_by = $2
+             where pharmacy_id = $1 and user_id = $2`,
+            [
+              context.pharmacyId,
+              context.actorId,
+              JSON.stringify(input.columns),
+              input.afterCommit,
+              JSON.stringify(input.detailsPanelFields),
+            ],
+          );
+        }
+        const saved = await selectEntryPreferences(
+          client,
+          context.pharmacyId,
+          context.actorId,
+        );
+        if (saved === undefined)
+          throw new Error("The Purchase entry preferences were not saved");
+        const value = entryPreferencesView(saved);
+        return {
+          afterState: {
+            afterCommit: value.afterCommit,
+            revision: value.revision,
+            visibleColumnCount: value.columns.filter(({ visible }) => visible)
+              .length,
+          },
+          beforeState: {
+            afterCommit: prior.afterCommit,
+            revision: prior.revision,
+            visibleColumnCount: prior.columns.filter(({ visible }) => visible)
+              .length,
+          },
+          targetId: context.actorId,
+          value,
+        };
+      },
+    });
+  }
+
+  public async commitDraftRow(
+    request: Request,
+    draftId: string,
+    input: PurchaseDraftRowCommitRequest,
+  ): Promise<PurchaseDraftRowCommitResult> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    return await this.executeCommand({
+      commandName: COMMANDS.draftRowCommit,
+      context,
+      idempotencyKey: input.idempotencyKey,
+      parser: purchaseDraftRowCommitResultSchema,
+      permission: DRAFT_PERMISSION,
+      requestHash: canonicalRequestHash(COMMANDS.draftRowCommit, {
+        draftId,
+        input,
+      }),
+      responseStatus: 201,
+      targetId: draftId,
+      work: async (client) => {
+        const before = await lockDraft(client, context.pharmacyId, draftId);
+        requireEditableDraft(before, draftId, input.expectedVersion);
+        const product = await resolveCatalogPurchaseProduct(
+          client,
+          context.pharmacyId,
+          input.itemId,
+        );
+        if (product === undefined || product === null) {
+          throw new PurchasingCommandRejected(
+            product === undefined ? 404 : 409,
+            product === undefined ? "item-not-found" : "item-unavailable",
+            [{ code: "invalid", path: ["itemId"] }],
+            input.itemId,
+          );
+        }
+        const prepared = preparePurchaseRow(product, input);
+        if (!prepared.ok) {
+          const mapping = {
+            "cost-invalid": ["costFils"],
+            "money-overflow": ["costFils"],
+            "pricing-mode-conflict": ["pricing"],
+            "quantity-invalid": ["enteredQuantity"],
+            "unit-invalid": ["unit"],
+          } as const;
+          throw new PurchasingCommandRejected(
+            409,
+            prepared.problem === "quantity-invalid" ||
+              prepared.problem === "cost-invalid"
+              ? "body-invalid"
+              : prepared.problem,
+            [{ code: "invalid", path: [...mapping[prepared.problem]] }],
+            draftId,
+          );
+        }
+        const lineTotal =
+          BigInt(prepared.facts.costFils) *
+          BigInt(prepared.facts.enteredQuantity);
+        if (
+          BigInt(before!.allowance_basis_fils) + lineTotal >
+          POSTGRES_BIGINT_MAXIMUM
+        ) {
+          throw new PurchasingCommandRejected(
+            409,
+            "money-overflow",
+            [{ code: "out-of-range", path: ["costFils"] }],
+            draftId,
+          );
+        }
+        const ordinalResult = await client.query<{ ordinal: number }>(
+          `select coalesce(max(ordinal), 0) + 1 as ordinal
+           from purchase_draft_rows
+           where pharmacy_id = $1 and draft_id = $2`,
+          [context.pharmacyId, draftId],
+        );
+        const ordinal = ordinalResult.rows[0]?.ordinal;
+        if (ordinal === undefined)
+          throw new Error("The next row ordinal is missing");
+        const inserted = await client.query<{ id: string }>(
+          `insert into purchase_draft_rows (
+             pharmacy_id, draft_id, ordinal, product_id, item_display_name,
+             inventory_unit_name, entered_unit_kind, entered_package_unit_name,
+             base_units_per_entered_unit, entered_quantity,
+             inventory_unit_quantity, primary_supplier_cost_fils,
+             pricing_method, retail_price_fils, margin_percentage,
+             expiry_date, lot_number, notes, created_by
+           ) values (
+             $1, $2, $3, $4, $5, $6, $7, $8, $9::bigint, $10::bigint,
+             $11::bigint, $12::bigint, $13, $14::bigint, $15::numeric,
+             $16, $17, $18, $19
+           ) returning id`,
+          [
+            context.pharmacyId,
+            draftId,
+            ordinal,
+            product.id,
+            product.displayName,
+            prepared.facts.inventoryUnitName,
+            prepared.facts.unit.kind,
+            prepared.facts.unit.kind === "package-unit"
+              ? prepared.facts.unit.packageUnitName
+              : null,
+            prepared.facts.baseUnitsPerEnteredUnit,
+            prepared.facts.enteredQuantity,
+            prepared.facts.inventoryUnitQuantity,
+            prepared.facts.costFils,
+            prepared.facts.pricingMethod,
+            prepared.facts.retailPriceFils,
+            prepared.facts.marginPercentage,
+            input.expiryDate,
+            input.lotNumber,
+            input.notes,
+            context.actorId,
+          ],
+        );
+        const rowId = inserted.rows[0]?.id;
+        if (rowId === undefined)
+          throw new Error("The Purchase row was not created");
+        await client.query(
+          `update purchase_drafts
+           set allowance_basis_fils = allowance_basis_fils + $3::bigint,
+               version = version + 1, updated_at = statement_timestamp(),
+               updated_by = $4
+           where pharmacy_id = $1 and id = $2`,
+          [context.pharmacyId, draftId, lineTotal.toString(), context.actorId],
+        );
+        const rowResult = await client.query<DraftRowRecord>(
+          `${DRAFT_ROW_SELECT}
+           where row_record.pharmacy_id = $1 and row_record.id = $2`,
+          [context.pharmacyId, rowId],
+        );
+        const rowRecord = rowResult.rows[0];
+        if (rowRecord === undefined)
+          throw new Error("The committed Purchase row disappeared");
+        const row = purchaseRowView(rowRecord);
+        const updatedDraft = draftView(
+          await requiredDraft(client, context.pharmacyId, draftId),
+        );
+        const value = purchaseDraftRowCommitResultSchema.parse({
+          draft: await draftDetail(client, context.pharmacyId, updatedDraft),
+          row,
+        });
+        return {
+          afterState: {
+            draftVersion: updatedDraft.version,
+            inventoryUnitQuantity: row.inventoryUnitQuantity,
+            itemId: row.itemId,
+            ordinal: row.ordinal,
+          },
+          beforeState: {
+            draftVersion: before!.version,
+            rowCount: ordinal - 1,
+          },
+          targetId: draftId,
+          value,
+        };
+      },
+    });
   }
 
   public async createDraft(
@@ -752,6 +1244,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: purchaseDraftResultSchema,
+      permission: DRAFT_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.draftCreate, input),
       responseStatus: 201,
       work: async (client) => {
@@ -808,6 +1301,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: purchaseDraftResultSchema,
+      permission: DRAFT_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.draftUpdate, {
         draftId,
         input,
@@ -877,6 +1371,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: purchaseDraftSchema,
+      permission: DRAFT_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.draftDiscard, {
         draftId,
         input,
@@ -958,7 +1453,12 @@ export class PurchasingService {
       try {
         await client.query("begin");
         transactionOpen = true;
-        let replay;
+        await this.identity.revalidatePurchasingManagement(
+          client,
+          input.context,
+          input.permission,
+        );
+        let replay: PostingCommandReplay | undefined;
         try {
           replay = await beginPostingIdempotency(client, {
             commandName: input.commandName,
@@ -987,7 +1487,7 @@ export class PurchasingService {
         if (replay !== undefined) {
           await client.query("commit");
           transactionOpen = false;
-          return input.parser.parse(replay.responseBody);
+          return replayPurchasingOutcome(replay, input.parser);
         }
         let success: CommandSuccess<T>;
         try {

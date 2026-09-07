@@ -5,7 +5,11 @@ import {
   LOCAL_DEVICE_SESSION_HEADER,
   purchaseDraftDiscardPath,
   purchaseDraftHeaderPath,
+  purchaseDraftRowsPath,
+  type Product,
+  type ProductCreateRequest,
   type PurchaseDraft,
+  type PurchaseDraftDetail,
   type Supplier,
 } from "@breev/contracts/local-rest";
 import {
@@ -261,6 +265,109 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
     });
   });
 
+  it("commits exact rows once, resolves concurrent versions, and resumes them after restart", async () => {
+    const productResponse = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Keyboard Purchase"),
+    );
+    expect(productResponse.status, diagnostics(productResponse)).toBe(201);
+    const product = productResponse.body as unknown as Product;
+    const idempotencyKey = uuidV7();
+    const firstInput = {
+      costFils: "80000",
+      enteredQuantity: "2",
+      expectedVersion: draft.version,
+      expiryDate: "2028-10-31",
+      idempotencyKey,
+      itemId: product.id,
+      lotNumber: "LOT-49",
+      notes: "keyboard row",
+      pricing: { method: "by-price", retailPriceFils: "120000" },
+      unit: { kind: "package-unit", packageUnitName: "Pack" },
+    } as const;
+    const committed = await request(
+      "POST",
+      purchaseDraftRowsPath(draft.id),
+      firstInput,
+    );
+    expect(committed.status, diagnostics(committed)).toBe(201);
+    expect(committed.body?.row).toMatchObject({
+      baseUnitsPerEnteredUnit: "4",
+      enteredQuantity: "2",
+      inventoryUnitQuantity: "8",
+    });
+    expect(committed.body?.draft).toMatchObject({
+      allowanceSnapshot: { basisFils: "160000" },
+      review: {
+        allowanceFils: "4000",
+        grossFils: "160000",
+        netFils: "156000",
+      },
+    });
+    expect(
+      await request("POST", purchaseDraftRowsPath(draft.id), firstInput),
+    ).toEqual(committed);
+    const rejectedInput = {
+      ...firstInput,
+      idempotencyKey: uuidV7(),
+    };
+    const rejected = await request(
+      "POST",
+      purchaseDraftRowsPath(draft.id),
+      rejectedInput,
+    );
+    expect(rejected).toMatchObject({
+      status: 409,
+      body: { code: "version-conflict" },
+    });
+    expect(
+      await request("POST", purchaseDraftRowsPath(draft.id), rejectedInput),
+    ).toEqual(rejected);
+    draft = committed.body?.draft as unknown as PurchaseDraft;
+
+    const concurrentVersion = draft.version;
+    const concurrent = await Promise.all([
+      request("POST", purchaseDraftRowsPath(draft.id), {
+        ...firstInput,
+        enteredQuantity: "1",
+        expectedVersion: concurrentVersion,
+        idempotencyKey: uuidV7(),
+        lotNumber: "LOT-A",
+      }),
+      request("POST", purchaseDraftRowsPath(draft.id), {
+        ...firstInput,
+        enteredQuantity: "3",
+        expectedVersion: concurrentVersion,
+        idempotencyKey: uuidV7(),
+        lotNumber: "LOT-B",
+      }),
+    ]);
+    expect(concurrent.map(({ status }) => status).sort()).toEqual([201, 409]);
+    const winner = concurrent.find(({ status }) => status === 201);
+    draft = winner?.body?.draft as unknown as PurchaseDraft;
+
+    await stopProcess(api);
+    apiOutput = "";
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    const resumed = await request("GET", `/purchases/drafts/${draft.id}`);
+    expect(resumed.status, diagnostics(resumed)).toBe(200);
+    const detail = resumed.body as unknown as PurchaseDraftDetail;
+    expect(detail.rows).toHaveLength(2);
+    expect(detail.rows[0]).toMatchObject({
+      inventoryUnitQuantity: "8",
+      notes: "keyboard row",
+    });
+    expect(detail.version).toBe(draft.version);
+    await expect(
+      administrator.query(
+        `update purchase_draft_rows set notes = 'rewritten' where id = $1`,
+        [detail.rows[0]?.id],
+      ),
+    ).rejects.toMatchObject({ code: "55000" });
+  });
+
   it("archives or merges suppliers without rewriting existing draft references", async () => {
     const survivorResponse = await request(
       "POST",
@@ -510,6 +617,47 @@ function draftBody(
     settlementContext: "debt" as const,
     supplierId,
     supplierInvoiceNumber,
+  };
+}
+function medicationRequest(tradeName: string): ProductCreateRequest {
+  return {
+    arabicSearchName: "اختبار الشراء",
+    barcodes: [{ kind: "product", value: "5012345678949" }],
+    category: "Pain relief",
+    definition: {
+      fields: {
+        dosageForm: "tablet",
+        manufacturer: "GSK",
+        strength: "500 mg",
+        tradeName,
+      },
+      mode: "medication",
+    },
+    idempotencyKey: uuidV7(),
+    instructions: {
+      foodTiming: "after-food",
+      usesPerDay: 3,
+      usesPerMonth: null,
+      usesPerWeek: null,
+    },
+    packaging: {
+      defaultUnits: {
+        count: { kind: "inventory-unit" },
+        purchase: { kind: "package-unit", packageUnitName: "Pack" },
+        sale: { kind: "inventory-unit" },
+      },
+      inventoryUnitName: "Strip",
+      packageUnits: [{ baseUnitsPerPackage: "4", name: "Pack" }],
+      thirdUnit: { name: "Treatment day" },
+    },
+    pricing: {
+      method: "by-price",
+      retailPriceFils: "100000",
+      wholesalePriceFils: "90000",
+    },
+    scientificName: "Paracetamol",
+    sharing: { aiSharingAllowed: false, externallyVisible: true },
+    stateColours: { coldStorageRequired: false, manual: "blue" },
   };
 }
 function headers(

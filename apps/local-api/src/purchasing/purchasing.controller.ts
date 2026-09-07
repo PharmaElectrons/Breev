@@ -5,9 +5,14 @@ import {
   purchaseDraftDiscardRequestSchema,
   purchaseDraftListContract,
   purchaseDraftReadContract,
+  purchaseDraftRowCommitContract,
+  purchaseDraftRowCommitRequestSchema,
   purchaseDraftSchema,
   purchaseDraftUpdateContract,
   purchaseDraftUpdateRequestSchema,
+  purchaseEntryPreferencesReadContract,
+  purchaseEntryPreferencesUpdateContract,
+  purchaseEntryPreferencesUpdateRequestSchema,
   supplierArchiveContract,
   supplierArchiveRequestSchema,
   supplierCreateContract,
@@ -19,7 +24,10 @@ import {
   supplierMergeRequestSchema,
   supplierSchema,
   type PurchaseDraft,
+  type PurchaseDraftDetail,
+  type PurchaseDraftRowCommitResult,
   type PurchaseDraftResult,
+  type PurchaseEntryPreferences,
   type PurchasingFieldError,
   type Supplier,
 } from "@breev/contracts/local-rest";
@@ -158,7 +166,7 @@ export class PurchasingController {
   public async readDraft(
     @Param("draftId") draftId: string,
     @Req() request: Request,
-  ): Promise<PurchaseDraft> {
+  ): Promise<PurchaseDraftDetail> {
     return await translatePurchasingDenial(async () => {
       const id = purchaseDraftSchema.shape.id.safeParse(draftId);
       if (!id.success)
@@ -169,6 +177,57 @@ export class PurchasingController {
           "draft-not-found",
         );
       return await this.purchasing.readDraft(request, id.data);
+    });
+  }
+
+  @Get(purchaseEntryPreferencesReadContract.path)
+  public async readEntryPreferences(
+    @Req() request: Request,
+  ): Promise<PurchaseEntryPreferences> {
+    return await translatePurchasingDenial(() =>
+      this.purchasing.readEntryPreferences(request),
+    );
+  }
+
+  @Put(purchaseEntryPreferencesUpdateContract.path)
+  public async updateEntryPreferences(
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchaseEntryPreferences> {
+    return await translatePurchasingDenial(async () => {
+      const input = purchaseEntryPreferencesUpdateRequestSchema.safeParse(body);
+      if (!input.success)
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.entry-preferences.update",
+          "purchases.drafts.manage",
+          fieldErrors(input.error),
+        );
+      return await this.purchasing.updateEntryPreferences(request, input.data);
+    });
+  }
+
+  @Post(purchaseDraftRowCommitContract.path)
+  @HttpCode(201)
+  public async commitDraftRow(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchaseDraftRowCommitResult> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchaseDraftSchema.shape.id.safeParse(draftId);
+      const input = purchaseDraftRowCommitRequestSchema.safeParse(body);
+      if (!id.success || !input.success)
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.draft.row.commit",
+          "purchases.drafts.manage",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["draftId"] }],
+          id.success ? id.data : undefined,
+        );
+      return await this.purchasing.commitDraftRow(request, id.data, input.data);
     });
   }
 

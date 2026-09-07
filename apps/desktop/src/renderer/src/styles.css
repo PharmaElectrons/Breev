@@ -2979,3 +2979,162 @@ a:focus-visible,
     grid-template-columns: 1fr;
   }
 }
+
+.purchase-row-workspace {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.purchase-row-heading,
+.purchase-row-layout,
+.purchase-review-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.purchase-row-layout {
+  align-items: stretch;
+}
+
+.purchase-row-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.purchase-row-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.purchase-row-table th,
+.purchase-row-table td {
+  padding: 0.55rem;
+  text-align: start;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.purchase-entry-row {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.purchase-entry-row input {
+  min-width: 8.5rem;
+}
+
+.purchase-entry-row input[data-enter-field="item"] {
+  min-width: 15rem;
+}
+
+.purchase-item-panel {
+  flex: 0 0 min(18rem, 32%);
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.purchase-item-panel dl,
+.purchase-review dl {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.purchase-item-panel dl > div,
+.purchase-review dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.purchase-entry-settings {
+  max-width: 34rem;
+}
+
+.purchase-entry-settings-body,
+.purchase-optional-controls > div {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.purchase-entry-settings ol {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-inline-start: 1.5rem;
+}
+
+.purchase-entry-settings li {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.purchase-optional-controls > div {
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.purchase-optional-controls label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.purchase-review {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.purchase-review dl {
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+
+.purchase-review dl > div {
+  display: grid;
+  padding: 0.75rem;
+  border-radius: calc(var(--radius) * 0.75);
+  background: var(--surface);
+}
+
+.purchase-product-dialog {
+  overflow: auto;
+  padding: 1rem;
+}
+
+.purchase-product-dialog-card {
+  width: min(72rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 1.5rem 4rem var(--shadow);
+}
+
+@media (max-width: 900px) {
+  .purchase-row-layout {
+    flex-direction: column;
+  }
+
+  .purchase-item-panel {
+    width: 100%;
+    flex-basis: auto;
+  }
+}

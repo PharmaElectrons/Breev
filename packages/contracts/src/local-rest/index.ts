@@ -2162,6 +2162,159 @@ export const purchaseDraftSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
   version: decimalRevisionSchema,
 });
+
+export const PURCHASE_ENTRY_COLUMN_FIELDS = [
+  "item",
+  "quantity",
+  "cost",
+  "selling-price",
+  "expiry",
+] as const;
+export const purchaseEntryColumnFieldSchema = z.enum(
+  PURCHASE_ENTRY_COLUMN_FIELDS,
+);
+export const purchaseEntryColumnSchema = z.strictObject({
+  field: purchaseEntryColumnFieldSchema,
+  visible: z.boolean(),
+});
+export const PURCHASE_DETAILS_PANEL_FIELDS = [
+  "category",
+  "packaging",
+  "scientific-name",
+  "wholesale-price",
+] as const;
+export const purchaseDetailsPanelFieldSchema = z.enum(
+  PURCHASE_DETAILS_PANEL_FIELDS,
+);
+export const purchaseEntryPreferencesSchema = z
+  .strictObject({
+    afterCommit: z.enum(["new-row", "return-to-item"]),
+    columns: z
+      .array(purchaseEntryColumnSchema)
+      .length(PURCHASE_ENTRY_COLUMN_FIELDS.length),
+    detailsPanelFields: z.array(purchaseDetailsPanelFieldSchema),
+    revision: decimalRevisionSchema,
+  })
+  .superRefine((preferences, ctx) => {
+    const fields = preferences.columns.map((column) => column.field);
+    if (
+      new Set(fields).size !== PURCHASE_ENTRY_COLUMN_FIELDS.length ||
+      PURCHASE_ENTRY_COLUMN_FIELDS.some((field) => !fields.includes(field))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["columns"],
+        message: "Each purchase-entry field must occur exactly once",
+      });
+    }
+    if (
+      !preferences.columns.some(
+        ({ field, visible }) => field === "item" && visible,
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["columns"],
+        message: "The Item/Barcode column must remain visible",
+      });
+    }
+    if (
+      new Set(preferences.detailsPanelFields).size !==
+      preferences.detailsPanelFields.length
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["detailsPanelFields"],
+        message: "A details-panel field may occur only once",
+      });
+    }
+  });
+export const purchaseEntryPreferencesUpdateRequestSchema = z.strictObject({
+  afterCommit: purchaseEntryPreferencesSchema.shape.afterCommit,
+  columns: purchaseEntryPreferencesSchema.shape.columns,
+  detailsPanelFields: purchaseEntryPreferencesSchema.shape.detailsPanelFields,
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+
+const nullableTrimmedPurchaseText = (maximum: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maximum)
+    .refine((value) => value === value.trim())
+    .nullable();
+export const purchaseRowPricingInputSchema = z.discriminatedUnion("method", [
+  z.strictObject({
+    method: z.literal("by-price"),
+    retailPriceFils: priceFilsSchema,
+  }),
+  z.strictObject({
+    marginPercentage: marginPercentageSchema,
+    method: z.literal("by-percentage"),
+  }),
+]);
+export const purchaseDraftRowCommitRequestSchema = z.strictObject({
+  costFils: priceFilsSchema,
+  enteredQuantity: packageUnitRatioSchema,
+  expectedVersion: decimalRevisionSchema,
+  expiryDate: z.iso.date().nullable(),
+  idempotencyKey: z.uuid(),
+  itemId: z.uuidv7(),
+  lotNumber: nullableTrimmedPurchaseText(120),
+  notes: nullableTrimmedPurchaseText(1_000),
+  pricing: purchaseRowPricingInputSchema,
+  unit: inventoryCapableUnitSchema,
+});
+export const purchaseDraftRowSchema = z.strictObject({
+  baseUnitsPerEnteredUnit: packageUnitRatioSchema,
+  costFils: priceFilsSchema,
+  createdAt: z.iso.datetime(),
+  enteredQuantity: packageUnitRatioSchema,
+  expiryDate: z.iso.date().nullable(),
+  id: z.uuidv7(),
+  inventoryUnitName: productUnitNameSchema,
+  inventoryUnitQuantity: packageUnitRatioSchema,
+  itemDisplayName: z.string().min(1).max(726),
+  itemId: z.uuidv7(),
+  lotNumber: nullableTrimmedPurchaseText(120),
+  marginPercentage: marginPercentageSchema.nullable(),
+  notes: nullableTrimmedPurchaseText(1_000),
+  ordinal: z.number().int().positive(),
+  pricingMethod: productPricingMethodSchema,
+  retailPriceFils: priceFilsSchema,
+  unit: inventoryCapableUnitSchema,
+});
+export const purchaseDraftReviewSchema = z.strictObject({
+  allowanceFils: priceFilsSchema,
+  batches: z.array(
+    z.strictObject({
+      expiryDate: z.iso.date().nullable(),
+      itemDisplayName: z.string().min(1).max(726),
+      lotNumber: nullableTrimmedPurchaseText(120),
+    }),
+  ),
+  grossFils: priceFilsSchema,
+  netFils: priceFilsSchema,
+  settlementEffect: z.discriminatedUnion("context", [
+    z.strictObject({ context: z.literal("cash"), tenderFils: priceFilsSchema }),
+    z.strictObject({
+      context: z.literal("debt"),
+      payableFils: priceFilsSchema,
+    }),
+  ]),
+  warnings: z.array(
+    z.enum(["missing-expiry", "missing-lot", "posting-not-available"]),
+  ),
+});
+export const purchaseDraftDetailSchema = purchaseDraftSchema.extend({
+  review: purchaseDraftReviewSchema,
+  rows: z.array(purchaseDraftRowSchema),
+});
+export const purchaseDraftRowCommitResultSchema = z.strictObject({
+  draft: purchaseDraftDetailSchema,
+  row: purchaseDraftRowSchema,
+});
 export const purchaseDraftWarningSchema = z.strictObject({
   code: z.literal("duplicate-supplier-invoice-number"),
   existingDraftIds: z.array(z.uuidv7()).min(1),
@@ -2205,6 +2358,11 @@ export const PURCHASING_DENIAL_CODES = [
   "draft-discarded",
   "draft-not-found",
   "idempotency-conflict",
+  "item-not-found",
+  "item-unavailable",
+  "money-overflow",
+  "pricing-mode-conflict",
+  "unit-invalid",
   "merge-into-self",
   "merge-survivor-not-mergeable",
   "allowance-rate-date-conflict",
@@ -2275,9 +2433,35 @@ export const purchaseDraftReadContract = {
   method: "GET",
   path: "/purchases/drafts/:draftId",
   responses: {
-    200: purchaseDraftSchema,
+    200: purchaseDraftDetailSchema,
     ...purchasingReadDenialResponses,
     404: purchasingDenialSchema,
+  },
+} as const;
+export const purchaseEntryPreferencesReadContract = {
+  method: "GET",
+  path: "/purchases/entry-preferences",
+  responses: {
+    200: purchaseEntryPreferencesSchema,
+    ...purchasingReadDenialResponses,
+  },
+} as const;
+export const purchaseEntryPreferencesUpdateContract = {
+  method: "PUT",
+  path: "/purchases/entry-preferences",
+  request: { body: purchaseEntryPreferencesUpdateRequestSchema },
+  responses: {
+    200: purchaseEntryPreferencesSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseDraftRowCommitContract = {
+  method: "POST",
+  path: "/purchases/drafts/:draftId/rows",
+  request: { body: purchaseDraftRowCommitRequestSchema },
+  responses: {
+    201: purchaseDraftRowCommitResultSchema,
+    ...purchasingCommandDenialResponses,
   },
 } as const;
 export const purchaseDraftCreateContract = {
@@ -2320,6 +2504,8 @@ export const purchaseDraftHeaderPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/header`;
 export const purchaseDraftDiscardPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/discards`;
+export const purchaseDraftRowsPath = (draftId: string): string =>
+  `/purchases/drafts/${draftId}/rows`;
 
 export const PURCHASING_CONTRACTS = [
   supplierArchiveContract,
@@ -2331,7 +2517,10 @@ export const PURCHASING_CONTRACTS = [
   purchaseDraftDiscardContract,
   purchaseDraftListContract,
   purchaseDraftReadContract,
+  purchaseDraftRowCommitContract,
   purchaseDraftUpdateContract,
+  purchaseEntryPreferencesReadContract,
+  purchaseEntryPreferencesUpdateContract,
 ] as const;
 
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
@@ -2574,6 +2763,23 @@ export type PurchaseSettlementContext = z.infer<
   typeof purchaseSettlementContextSchema
 >;
 export type PurchaseDraft = z.infer<typeof purchaseDraftSchema>;
+export type PurchaseDraftDetail = z.infer<typeof purchaseDraftDetailSchema>;
+export type PurchaseDraftRow = z.infer<typeof purchaseDraftRowSchema>;
+export type PurchaseDraftRowCommitRequest = z.infer<
+  typeof purchaseDraftRowCommitRequestSchema
+>;
+export type PurchaseDraftRowCommitResult = z.infer<
+  typeof purchaseDraftRowCommitResultSchema
+>;
+export type PurchaseEntryColumnField = z.infer<
+  typeof purchaseEntryColumnFieldSchema
+>;
+export type PurchaseEntryPreferences = z.infer<
+  typeof purchaseEntryPreferencesSchema
+>;
+export type PurchaseEntryPreferencesUpdateRequest = z.infer<
+  typeof purchaseEntryPreferencesUpdateRequestSchema
+>;
 export type PurchaseDraftWarning = z.infer<typeof purchaseDraftWarningSchema>;
 export type PurchaseDraftResult = z.infer<typeof purchaseDraftResultSchema>;
 export type PurchaseDraftCreateRequest = z.infer<
