@@ -43,6 +43,7 @@ import {
   PostingIdempotencyConflict,
   beginPostingIdempotency,
   recordPostingResult,
+  type PostingCommandReplay,
 } from "../posting/idempotency.js";
 import { preparePurchaseRow } from "./purchase-row.js";
 
@@ -621,6 +622,7 @@ interface CommandExecution<T extends CommandValue> {
   context: IdentityExecutionContext;
   idempotencyKey: string;
   parser: { parse(payload: unknown): T };
+  permission: typeof DRAFT_PERMISSION | typeof SUPPLIER_PERMISSION;
   requestHash: Buffer;
   responseStatus: 200 | 201;
   targetId?: string;
@@ -635,6 +637,19 @@ export class PurchasingDenied extends Error {
     super(denial.code);
     this.name = "PurchasingDenied";
   }
+}
+
+function replayPurchasingOutcome<T extends CommandValue>(
+  replay: PostingCommandReplay,
+  parser: { parse(payload: unknown): T },
+): T {
+  if (replay.responseStatus === 200 || replay.responseStatus === 201) {
+    return parser.parse(replay.responseBody);
+  }
+  throw new PurchasingDenied(
+    replay.responseStatus as 400 | 404 | 409,
+    purchasingDenialSchema.parse(replay.responseBody),
+  );
 }
 class PurchasingCommandRejected extends Error {
   public constructor(
@@ -686,6 +701,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: supplierSchema,
+      permission: SUPPLIER_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.supplierCreate, input),
       responseStatus: 201,
       work: async (client) => {
@@ -723,6 +739,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: supplierSchema,
+      permission: SUPPLIER_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.supplierEdit, {
         supplierId,
         input,
@@ -794,6 +811,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: supplierSchema,
+      permission: SUPPLIER_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.supplierArchive, {
         supplierId,
         input,
@@ -840,6 +858,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: supplierSchema,
+      permission: SUPPLIER_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.supplierMerge, {
         supplierId,
         input,
@@ -970,6 +989,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: purchaseEntryPreferencesSchema,
+      permission: DRAFT_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.entryPreferencesUpdate, input),
       responseStatus: 200,
       targetId: context.actorId,
@@ -1064,6 +1084,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: purchaseDraftRowCommitResultSchema,
+      permission: DRAFT_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.draftRowCommit, {
         draftId,
         input,
@@ -1223,6 +1244,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: purchaseDraftResultSchema,
+      permission: DRAFT_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.draftCreate, input),
       responseStatus: 201,
       work: async (client) => {
@@ -1279,6 +1301,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: purchaseDraftResultSchema,
+      permission: DRAFT_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.draftUpdate, {
         draftId,
         input,
@@ -1348,6 +1371,7 @@ export class PurchasingService {
       context,
       idempotencyKey: input.idempotencyKey,
       parser: purchaseDraftSchema,
+      permission: DRAFT_PERMISSION,
       requestHash: canonicalRequestHash(COMMANDS.draftDiscard, {
         draftId,
         input,
@@ -1429,7 +1453,12 @@ export class PurchasingService {
       try {
         await client.query("begin");
         transactionOpen = true;
-        let replay;
+        await this.identity.revalidatePurchasingManagement(
+          client,
+          input.context,
+          input.permission,
+        );
+        let replay: PostingCommandReplay | undefined;
         try {
           replay = await beginPostingIdempotency(client, {
             commandName: input.commandName,
@@ -1458,7 +1487,7 @@ export class PurchasingService {
         if (replay !== undefined) {
           await client.query("commit");
           transactionOpen = false;
-          return input.parser.parse(replay.responseBody);
+          return replayPurchasingOutcome(replay, input.parser);
         }
         let success: CommandSuccess<T>;
         try {

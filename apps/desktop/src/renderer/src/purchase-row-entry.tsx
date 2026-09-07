@@ -179,7 +179,7 @@ export function PurchaseRowEntry({
     const index = fields.indexOf(current);
     const next = fields[index + 1];
     if (next === undefined) {
-      void commitRow(current);
+      void commitRow(current, selectedProduct);
     } else {
       focusField(next);
     }
@@ -211,8 +211,11 @@ export function PurchaseRowEntry({
     focusNext(field);
   }
 
-  async function commitRow(lastField: PurchaseEntryColumnField): Promise<void> {
-    if (product === null) {
+  async function commitRow(
+    lastField: PurchaseEntryColumnField,
+    selectedProduct = product,
+  ): Promise<void> {
+    if (selectedProduct === null) {
       setError(copy.itemRequired);
       focusField("item");
       return;
@@ -229,7 +232,7 @@ export function PurchaseRowEntry({
     }
     const unit = keyToUnit(unitKey);
     const pricing =
-      product.pricing.method === "by-price"
+      selectedProduct.pricing.method === "by-price"
         ? ({ method: "by-price", retailPriceFils } as const)
         : ({ marginPercentage, method: "by-percentage" } as const);
     const body = {
@@ -237,7 +240,7 @@ export function PurchaseRowEntry({
       enteredQuantity: quantity,
       expectedVersion: draft.version,
       expiryDate: expiryDate === "" ? null : expiryDate,
-      itemId: product.id,
+      itemId: selectedProduct.id,
       lotNumber: lotNumber.trim() === "" ? null : lotNumber.trim(),
       notes: notes.trim() === "" ? null : notes.trim(),
       pricing,

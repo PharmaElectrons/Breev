@@ -449,6 +449,66 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           {
             afterCommit: "new-row",
             columns: [
+              { field: "quantity", visible: true },
+              { field: "cost", visible: true },
+              { field: "selling-price", visible: true },
+              { field: "expiry", visible: true },
+              { field: "item", visible: true },
+            ],
+            detailsPanelFields: [
+              "scientific-name",
+              "category",
+              "packaging",
+              "wholesale-price",
+            ],
+            expectedRevision: revision,
+            idempotencyKey: uuidV7(),
+          },
+        )
+      ).status,
+    ).toBe(200);
+    await page.reload();
+    await page.getByRole("button", { name: /ROWS-49/ }).click();
+    await expect(page.locator(".purchase-row-table thead th")).toHaveText([
+      "#",
+      "Quantity",
+      "Primary cost",
+      "Selling price",
+      "Expiry",
+      "Item / Barcode",
+      "Inventory Units",
+    ]);
+    await expect(quantity).toBeFocused();
+    await quantity.press("Enter");
+    await cost.press("Enter");
+    await sellingPrice.fill("120000");
+    await sellingPrice.press("Enter");
+    await expiry.press("Enter");
+    await expect(resumedItem).toBeFocused();
+    await resumedItem.fill("5012345678949");
+    await resumedItem.press("Enter");
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(6);
+    await expect(quantity).toBeFocused();
+
+    const itemLastPreferences = await apiRequest(
+      apiOrigin,
+      credentials,
+      "GET",
+      "/purchases/entry-preferences",
+    );
+    const itemLastRevision = String(
+      (itemLastPreferences.body as { revision: string }).revision,
+    );
+    expect(
+      (
+        await apiRequest(
+          apiOrigin,
+          credentials,
+          "PUT",
+          "/purchases/entry-preferences",
+          {
+            afterCommit: "new-row",
+            columns: [
               { field: "item", visible: true },
               { field: "quantity", visible: true },
               { field: "cost", visible: true },
@@ -461,7 +521,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
               "packaging",
               "wholesale-price",
             ],
-            expectedRevision: revision,
+            expectedRevision: itemLastRevision,
             idempotencyKey: uuidV7(),
           },
         )

@@ -2711,6 +2711,19 @@ export class IdentityAccessService {
     );
   }
 
+  public async revalidatePurchasingManagement(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+    permission: "purchases.drafts.manage" | "suppliers.manage",
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      permission,
+    );
+  }
+
   /**
    * The device-administration equivalent of the licence path: take the
    * per-pharmacy write lock, then re-read the session, the grants, and the

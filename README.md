@@ -20,7 +20,7 @@ The current application implements the local core and the first catalog and purc
 - Arabic RTL and English LTR layouts
 - Light and dark themes
 
-Purchase rows and posting, inventory operations, sales, accounting, patients, and cloud features are still planned. The files under [`docs/`](docs/README.md) define those requirements, but they are not testable screens yet.
+Purchase draft rows now support keyboard-first entry, durable exact-money totals, configurable columns, and quick Product creation. Purchase posting, inventory operations, sales, accounting, patients, and cloud features are still planned. The files under [`docs/`](docs/README.md) define those later requirements, but they are not testable screens yet.
 
 ## Run Breev
 

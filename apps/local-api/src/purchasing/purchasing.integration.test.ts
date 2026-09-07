@@ -308,6 +308,22 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
     expect(
       await request("POST", purchaseDraftRowsPath(draft.id), firstInput),
     ).toEqual(committed);
+    const rejectedInput = {
+      ...firstInput,
+      idempotencyKey: uuidV7(),
+    };
+    const rejected = await request(
+      "POST",
+      purchaseDraftRowsPath(draft.id),
+      rejectedInput,
+    );
+    expect(rejected).toMatchObject({
+      status: 409,
+      body: { code: "version-conflict" },
+    });
+    expect(
+      await request("POST", purchaseDraftRowsPath(draft.id), rejectedInput),
+    ).toEqual(rejected);
     draft = committed.body?.draft as unknown as PurchaseDraft;
 
     const concurrentVersion = draft.version;
