@@ -432,6 +432,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ]);
 
     await page.reload();
+    await page
+      .getByRole("button", { name: "Saved drafts", exact: true })
+      .click();
     await page.getByRole("button", { name: /ROWS-49/ }).click();
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(4);
     await expect(quantity).toBeFocused();
@@ -488,6 +491,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       ).status,
     ).toBe(200);
     await page.reload();
+    await page
+      .getByRole("button", { name: "Saved drafts", exact: true })
+      .click();
     await page.getByRole("button", { name: /ROWS-49/ }).click();
     await expect(page.locator(".purchase-row-table thead th")).toHaveText([
       "#",
@@ -563,6 +569,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, locale, theme);
         await page.goto(`${renderer.origin}#/purchases`);
+        await page
+          .getByRole("button", {
+            name: /Saved drafts|المسودات المحفوظة/,
+          })
+          .click();
         await page.getByRole("button", { name: /ROWS-49/ }).click();
         await expect(page.locator("html")).toHaveAttribute(
           "dir",
