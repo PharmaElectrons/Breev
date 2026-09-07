@@ -8,8 +8,17 @@ import {
   purchaseDraftDiscardPath,
   purchaseDraftHeaderPath,
   purchaseDraftListContract,
+  purchaseDraftPath,
+  purchaseDraftDetailSchema,
+  purchaseDraftReadContract,
   purchaseDraftResultSchema,
+  purchaseDraftRowCommitContract,
+  purchaseDraftRowCommitResultSchema,
+  purchaseDraftRowsPath,
   purchaseDraftSchema,
+  purchaseEntryPreferencesReadContract,
+  purchaseEntryPreferencesSchema,
+  purchaseEntryPreferencesUpdateContract,
   purchasingDenialSchema,
   supplierArchiveContract,
   supplierArchivePath,
@@ -21,10 +30,15 @@ import {
   supplierPath,
   supplierSchema,
   type PurchaseDraft,
+  type PurchaseDraftDetail,
   type PurchaseDraftCreateRequest,
   type PurchaseDraftDiscardRequest,
   type PurchaseDraftResult,
+  type PurchaseDraftRowCommitRequest,
+  type PurchaseDraftRowCommitResult,
   type PurchaseDraftUpdateRequest,
+  type PurchaseEntryPreferences,
+  type PurchaseEntryPreferencesUpdateRequest,
   type PurchasingDenial,
   type Supplier,
   type SupplierArchiveRequest,
@@ -117,6 +131,52 @@ export const requestPurchaseDrafts = async (
     "GET",
     200,
     purchaseDraftListContract.responses[200],
+  );
+export const requestPurchaseDraft = async (
+  baseUrl: string,
+  id: string,
+): Promise<PurchaseDraftDetail> =>
+  await requestJson(
+    baseUrl,
+    purchaseDraftPath(id),
+    purchaseDraftReadContract.method,
+    200,
+    purchaseDraftDetailSchema,
+  );
+export const requestPurchaseEntryPreferences = async (
+  baseUrl: string,
+): Promise<PurchaseEntryPreferences> =>
+  await requestJson(
+    baseUrl,
+    purchaseEntryPreferencesReadContract.path,
+    purchaseEntryPreferencesReadContract.method,
+    200,
+    purchaseEntryPreferencesSchema,
+  );
+export const updatePurchaseEntryPreferences = async (
+  baseUrl: string,
+  body: PurchaseEntryPreferencesUpdateRequest,
+): Promise<PurchaseEntryPreferences> =>
+  await requestJson(
+    baseUrl,
+    purchaseEntryPreferencesUpdateContract.path,
+    purchaseEntryPreferencesUpdateContract.method,
+    200,
+    purchaseEntryPreferencesSchema,
+    body,
+  );
+export const commitPurchaseDraftRow = async (
+  baseUrl: string,
+  id: string,
+  body: PurchaseDraftRowCommitRequest,
+): Promise<PurchaseDraftRowCommitResult> =>
+  await requestJson(
+    baseUrl,
+    purchaseDraftRowsPath(id),
+    purchaseDraftRowCommitContract.method,
+    201,
+    purchaseDraftRowCommitResultSchema,
+    body,
   );
 export const createPurchaseDraft = async (
   baseUrl: string,

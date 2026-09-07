@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "11" as const;
-export const LOCAL_SCHEMA_VERSION = "11" as const;
+export const LOCAL_API_VERSION = "13" as const;
+export const LOCAL_SCHEMA_VERSION = "13" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -83,6 +83,25 @@ export const CAPABILITY_NAMES = [
 export const capabilityNameSchema = z.enum(CAPABILITY_NAMES);
 export const paidCapabilityNameSchema = z.enum(PAID_CAPABILITY_NAMES);
 export const pharmacyRoleKeySchema = z.enum(PHARMACY_ROLE_KEYS);
+/**
+ * Permissions backed by a live local operation and therefore grantable in the
+ * role editor. Keep presentation metadata in the renderer; this shared list is
+ * the authority boundary both the local API and desktop must agree on.
+ */
+export const IMPLEMENTED_PERMISSION_NAMES = [
+  "attendance.record",
+  "catalog.item.manage",
+  "catalog.item.search",
+  "devices.pair",
+  "identity.roles.manage",
+  "identity.users.manage",
+  "licensing.manage",
+  "pharmacy.settings.manage",
+  "purchases.drafts.manage",
+  "suppliers.manage",
+] as const;
+export type ImplementedPermissionName =
+  (typeof IMPLEMENTED_PERMISSION_NAMES)[number];
 export const permissionNameSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/u)
@@ -1713,15 +1732,34 @@ export const PRODUCT_PRICING_FIELD_EDITABILITY: Readonly<
   },
 };
 
-/**
- * Barcodes are stored here and nothing more: suggesting, printing, and matching
- * them is a later slice. A Product may carry none or several.
- */
-const productBarcodeSchema = z
+export const PRODUCT_BARCODE_KINDS = ["package", "product"] as const;
+export const productBarcodeKindSchema = z.enum(PRODUCT_BARCODE_KINDS);
+export const PRODUCT_BARCODE_SOURCES = ["breev-internal", "provided"] as const;
+export const productBarcodeSourceSchema = z.enum(PRODUCT_BARCODE_SOURCES);
+export const productBarcodeValueSchema = z
   .string()
   .min(1)
   .max(64)
   .refine((value) => value === value.trim());
+
+/**
+ * A caller records whether a code identifies the Product or one of its
+ * packages. Unit resolution is intentionally absent: the current requirement
+ * records the kind but does not make a scan choose a unit.
+ */
+export const productBarcodeInputSchema = z.strictObject({
+  kind: productBarcodeKindSchema,
+  value: productBarcodeValueSchema,
+});
+
+/**
+ * Read-back also identifies Breev-reserved internal codes. `provided` makes no
+ * GS1/GTIN claim; it only means the pharmacy supplied the value.
+ */
+export const productBarcodeSchema = z.strictObject({
+  ...productBarcodeInputSchema.shape,
+  source: productBarcodeSourceSchema,
+});
 
 /**
  * Everything a pharmacist may set on a Product. Create and edit share it
@@ -1730,7 +1768,7 @@ const productBarcodeSchema = z
  */
 const productAttributeFields = {
   arabicSearchName: optionalProductTextSchema(160),
-  barcodes: z.array(productBarcodeSchema).max(32),
+  barcodes: z.array(productBarcodeInputSchema).max(32),
   category: optionalProductTextSchema(96),
   definition: productDefinitionSchema,
   instructions: productInstructionsSchema,
@@ -1747,6 +1785,7 @@ const productAttributeFields = {
  */
 export const productSchema = z.strictObject({
   ...productAttributeFields,
+  barcodes: z.array(productBarcodeSchema).max(32),
   displayName: z
     .string()
     .min(1)
@@ -1823,8 +1862,11 @@ export const catalogFieldErrorSchema = z.strictObject({
  * exactly as every other module's routes do.
  */
 export const CATALOG_DENIAL_CODES = [
+  "barcode-already-present",
+  "barcode-not-found",
   "body-invalid",
   "idempotency-conflict",
+  "matching-suggestion-not-found",
   "merge-into-self",
   "merge-survivor-not-mergeable",
   "product-archived",
@@ -1894,24 +1936,177 @@ export const productMergeContract = {
   responses: { 201: productSchema, ...catalogCommandDenialResponses },
 } as const;
 
+const productSearchLimitSchema = z
+  .string()
+  .regex(/^(?:[1-9]|[1-9][0-9]|100)$/u);
+export const productSearchRequestSchema = z.strictObject({
+  limit: productSearchLimitSchema.optional(),
+  query: z
+    .string()
+    .min(1)
+    .max(160)
+    .refine((value) => value === value.trim()),
+});
+export const PRODUCT_SEARCH_MATCH_FIELDS = [
+  "arabic-name",
+  "barcode",
+  "english-name",
+] as const;
+export const productSearchMatchFieldSchema = z.enum(
+  PRODUCT_SEARCH_MATCH_FIELDS,
+);
+export const productSearchResultSchema = z.strictObject({
+  matchedBarcode: productBarcodeSchema.nullable(),
+  matchedField: productSearchMatchFieldSchema,
+  product: productSchema,
+});
+export const productSearchResponseSchema = z.strictObject({
+  hasMore: z.boolean(),
+  query: z.string().min(1).max(160),
+  resultCount: z.number().int().min(0),
+  results: z.array(productSearchResultSchema).max(100),
+});
+export const productSearchContract = {
+  method: "GET",
+  path: "/catalog/product-search",
+  request: { query: productSearchRequestSchema },
+  responses: {
+    200: productSearchResponseSchema,
+    ...catalogReadDenialResponses,
+    400: catalogDenialSchema,
+  },
+} as const;
+
+const productRevisionCommandFields = {
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+} as const;
+export const productBarcodeAddRequestSchema = z.strictObject({
+  ...productRevisionCommandFields,
+  barcode: productBarcodeInputSchema,
+});
+export const productBarcodeSuggestRequestSchema = z.strictObject({
+  ...productRevisionCommandFields,
+  kind: productBarcodeKindSchema,
+});
+export const productBarcodeSuggestionResponseSchema = z.strictObject({
+  barcode: productBarcodeSchema,
+  product: productSchema,
+});
+export const productBarcodePrintRequestSchema = z.strictObject({
+  barcode: productBarcodeValueSchema,
+  idempotencyKey: z.uuid(),
+  locale: z.enum(["ar", "en"]),
+  quantity: z.number().int().min(1).max(100),
+});
+export const barcodePrintHandoffSchema = z.strictObject({
+  barcode: productBarcodeSchema,
+  displayName: z.string().min(1).max(726),
+  jobId: z.uuidv7(),
+  locale: z.enum(["ar", "en"]),
+  quantity: z.number().int().min(1).max(100),
+});
+export const productBarcodeAddContract = {
+  method: "POST",
+  path: "/catalog/products/:productId/barcodes",
+  request: { body: productBarcodeAddRequestSchema },
+  responses: { 201: productSchema, ...catalogCommandDenialResponses },
+} as const;
+export const productBarcodeSuggestContract = {
+  method: "POST",
+  path: "/catalog/products/:productId/barcode-suggestions",
+  request: { body: productBarcodeSuggestRequestSchema },
+  responses: {
+    201: productBarcodeSuggestionResponseSchema,
+    ...catalogCommandDenialResponses,
+  },
+} as const;
+export const productBarcodePrintContract = {
+  method: "POST",
+  path: "/catalog/products/:productId/barcode-print-jobs",
+  request: { body: productBarcodePrintRequestSchema },
+  responses: {
+    201: barcodePrintHandoffSchema,
+    ...catalogCommandDenialResponses,
+  },
+} as const;
+
+const businessDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
+export const catalogMatchingSuggestionSchema = z.strictObject({
+  firstOfferedBusinessDate: businessDateSchema,
+  id: z.uuidv7(),
+  product: productSchema,
+  proposedBarcode: productBarcodeSchema,
+});
+export const catalogMatchingBatchSchema = z.strictObject({
+  businessDate: businessDateSchema,
+  suggestions: z.array(catalogMatchingSuggestionSchema).max(10),
+});
+export const catalogMatchingBatchOpenRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+});
+export const catalogMatchingApprovalRequestSchema = z.strictObject({
+  ...productRevisionCommandFields,
+});
+export const catalogMatchingBatchOpenContract = {
+  method: "POST",
+  path: "/catalog/matching-batches/current/openings",
+  request: { body: catalogMatchingBatchOpenRequestSchema },
+  responses: {
+    201: catalogMatchingBatchSchema,
+    ...catalogCommandDenialResponses,
+  },
+} as const;
+export const catalogMatchingApprovalContract = {
+  method: "POST",
+  path: "/catalog/matching-suggestions/:suggestionId/approvals",
+  request: { body: catalogMatchingApprovalRequestSchema },
+  responses: { 201: productSchema, ...catalogCommandDenialResponses },
+} as const;
+
 export const productPath = (productId: string): string =>
   `/catalog/products/${productId}`;
 export const productArchivePath = (productId: string): string =>
   `/catalog/products/${productId}/archivals`;
 export const productMergePath = (productId: string): string =>
   `/catalog/products/${productId}/merges`;
+export const productBarcodeAddPath = (productId: string): string =>
+  `/catalog/products/${productId}/barcodes`;
+export const productBarcodeSuggestPath = (productId: string): string =>
+  `/catalog/products/${productId}/barcode-suggestions`;
+export const productBarcodePrintPath = (productId: string): string =>
+  `/catalog/products/${productId}/barcode-print-jobs`;
+export const catalogMatchingApprovalPath = (suggestionId: string): string =>
+  `/catalog/matching-suggestions/${suggestionId}/approvals`;
+export function productSearchPath(input: {
+  readonly limit?: string;
+  readonly query: string;
+}): string {
+  const query = `query=${encodeURIComponent(input.query)}`;
+  const limit =
+    input.limit === undefined
+      ? ""
+      : `&limit=${encodeURIComponent(input.limit)}`;
+  return `${productSearchContract.path}?${query}${limit}`;
+}
 
 /**
  * Every Catalog route, so a test can walk the whole family and prove what is
  * not there: no delete, no cleanup, and no repair path around the back.
  */
 export const CATALOG_CONTRACTS = [
+  catalogMatchingApprovalContract,
+  catalogMatchingBatchOpenContract,
+  productBarcodeAddContract,
+  productBarcodePrintContract,
+  productBarcodeSuggestContract,
   productArchiveContract,
   productCreateContract,
   productEditContract,
   productListContract,
   productMergeContract,
   productReadContract,
+  productSearchContract,
 ] as const;
 
 const supplierNameSchema = z
@@ -1986,6 +2181,159 @@ export const purchaseDraftSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
   version: decimalRevisionSchema,
 });
+
+export const PURCHASE_ENTRY_COLUMN_FIELDS = [
+  "item",
+  "quantity",
+  "cost",
+  "selling-price",
+  "expiry",
+] as const;
+export const purchaseEntryColumnFieldSchema = z.enum(
+  PURCHASE_ENTRY_COLUMN_FIELDS,
+);
+export const purchaseEntryColumnSchema = z.strictObject({
+  field: purchaseEntryColumnFieldSchema,
+  visible: z.boolean(),
+});
+export const PURCHASE_DETAILS_PANEL_FIELDS = [
+  "category",
+  "packaging",
+  "scientific-name",
+  "wholesale-price",
+] as const;
+export const purchaseDetailsPanelFieldSchema = z.enum(
+  PURCHASE_DETAILS_PANEL_FIELDS,
+);
+export const purchaseEntryPreferencesSchema = z
+  .strictObject({
+    afterCommit: z.enum(["new-row", "return-to-item"]),
+    columns: z
+      .array(purchaseEntryColumnSchema)
+      .length(PURCHASE_ENTRY_COLUMN_FIELDS.length),
+    detailsPanelFields: z.array(purchaseDetailsPanelFieldSchema),
+    revision: decimalRevisionSchema,
+  })
+  .superRefine((preferences, ctx) => {
+    const fields = preferences.columns.map((column) => column.field);
+    if (
+      new Set(fields).size !== PURCHASE_ENTRY_COLUMN_FIELDS.length ||
+      PURCHASE_ENTRY_COLUMN_FIELDS.some((field) => !fields.includes(field))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["columns"],
+        message: "Each purchase-entry field must occur exactly once",
+      });
+    }
+    if (
+      !preferences.columns.some(
+        ({ field, visible }) => field === "item" && visible,
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["columns"],
+        message: "The Item/Barcode column must remain visible",
+      });
+    }
+    if (
+      new Set(preferences.detailsPanelFields).size !==
+      preferences.detailsPanelFields.length
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["detailsPanelFields"],
+        message: "A details-panel field may occur only once",
+      });
+    }
+  });
+export const purchaseEntryPreferencesUpdateRequestSchema = z.strictObject({
+  afterCommit: purchaseEntryPreferencesSchema.shape.afterCommit,
+  columns: purchaseEntryPreferencesSchema.shape.columns,
+  detailsPanelFields: purchaseEntryPreferencesSchema.shape.detailsPanelFields,
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+
+const nullableTrimmedPurchaseText = (maximum: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maximum)
+    .refine((value) => value === value.trim())
+    .nullable();
+export const purchaseRowPricingInputSchema = z.discriminatedUnion("method", [
+  z.strictObject({
+    method: z.literal("by-price"),
+    retailPriceFils: priceFilsSchema,
+  }),
+  z.strictObject({
+    marginPercentage: marginPercentageSchema,
+    method: z.literal("by-percentage"),
+  }),
+]);
+export const purchaseDraftRowCommitRequestSchema = z.strictObject({
+  costFils: priceFilsSchema,
+  enteredQuantity: packageUnitRatioSchema,
+  expectedVersion: decimalRevisionSchema,
+  expiryDate: z.iso.date().nullable(),
+  idempotencyKey: z.uuid(),
+  itemId: z.uuidv7(),
+  lotNumber: nullableTrimmedPurchaseText(120),
+  notes: nullableTrimmedPurchaseText(1_000),
+  pricing: purchaseRowPricingInputSchema,
+  unit: inventoryCapableUnitSchema,
+});
+export const purchaseDraftRowSchema = z.strictObject({
+  baseUnitsPerEnteredUnit: packageUnitRatioSchema,
+  costFils: priceFilsSchema,
+  createdAt: z.iso.datetime(),
+  enteredQuantity: packageUnitRatioSchema,
+  expiryDate: z.iso.date().nullable(),
+  id: z.uuidv7(),
+  inventoryUnitName: productUnitNameSchema,
+  inventoryUnitQuantity: packageUnitRatioSchema,
+  itemDisplayName: z.string().min(1).max(726),
+  itemId: z.uuidv7(),
+  lotNumber: nullableTrimmedPurchaseText(120),
+  marginPercentage: marginPercentageSchema.nullable(),
+  notes: nullableTrimmedPurchaseText(1_000),
+  ordinal: z.number().int().positive(),
+  pricingMethod: productPricingMethodSchema,
+  retailPriceFils: priceFilsSchema,
+  unit: inventoryCapableUnitSchema,
+});
+export const purchaseDraftReviewSchema = z.strictObject({
+  allowanceFils: priceFilsSchema,
+  batches: z.array(
+    z.strictObject({
+      expiryDate: z.iso.date().nullable(),
+      itemDisplayName: z.string().min(1).max(726),
+      lotNumber: nullableTrimmedPurchaseText(120),
+    }),
+  ),
+  grossFils: priceFilsSchema,
+  netFils: priceFilsSchema,
+  settlementEffect: z.discriminatedUnion("context", [
+    z.strictObject({ context: z.literal("cash"), tenderFils: priceFilsSchema }),
+    z.strictObject({
+      context: z.literal("debt"),
+      payableFils: priceFilsSchema,
+    }),
+  ]),
+  warnings: z.array(
+    z.enum(["missing-expiry", "missing-lot", "posting-not-available"]),
+  ),
+});
+export const purchaseDraftDetailSchema = purchaseDraftSchema.extend({
+  review: purchaseDraftReviewSchema,
+  rows: z.array(purchaseDraftRowSchema),
+});
+export const purchaseDraftRowCommitResultSchema = z.strictObject({
+  draft: purchaseDraftDetailSchema,
+  row: purchaseDraftRowSchema,
+});
 export const purchaseDraftWarningSchema = z.strictObject({
   code: z.literal("duplicate-supplier-invoice-number"),
   existingDraftIds: z.array(z.uuidv7()).min(1),
@@ -2029,6 +2377,11 @@ export const PURCHASING_DENIAL_CODES = [
   "draft-discarded",
   "draft-not-found",
   "idempotency-conflict",
+  "item-not-found",
+  "item-unavailable",
+  "money-overflow",
+  "pricing-mode-conflict",
+  "unit-invalid",
   "merge-into-self",
   "merge-survivor-not-mergeable",
   "allowance-rate-date-conflict",
@@ -2099,9 +2452,35 @@ export const purchaseDraftReadContract = {
   method: "GET",
   path: "/purchases/drafts/:draftId",
   responses: {
-    200: purchaseDraftSchema,
+    200: purchaseDraftDetailSchema,
     ...purchasingReadDenialResponses,
     404: purchasingDenialSchema,
+  },
+} as const;
+export const purchaseEntryPreferencesReadContract = {
+  method: "GET",
+  path: "/purchases/entry-preferences",
+  responses: {
+    200: purchaseEntryPreferencesSchema,
+    ...purchasingReadDenialResponses,
+  },
+} as const;
+export const purchaseEntryPreferencesUpdateContract = {
+  method: "PUT",
+  path: "/purchases/entry-preferences",
+  request: { body: purchaseEntryPreferencesUpdateRequestSchema },
+  responses: {
+    200: purchaseEntryPreferencesSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseDraftRowCommitContract = {
+  method: "POST",
+  path: "/purchases/drafts/:draftId/rows",
+  request: { body: purchaseDraftRowCommitRequestSchema },
+  responses: {
+    201: purchaseDraftRowCommitResultSchema,
+    ...purchasingCommandDenialResponses,
   },
 } as const;
 export const purchaseDraftCreateContract = {
@@ -2144,6 +2523,8 @@ export const purchaseDraftHeaderPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/header`;
 export const purchaseDraftDiscardPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/discards`;
+export const purchaseDraftRowsPath = (draftId: string): string =>
+  `/purchases/drafts/${draftId}/rows`;
 
 export const PURCHASING_CONTRACTS = [
   supplierArchiveContract,
@@ -2155,7 +2536,10 @@ export const PURCHASING_CONTRACTS = [
   purchaseDraftDiscardContract,
   purchaseDraftListContract,
   purchaseDraftReadContract,
+  purchaseDraftRowCommitContract,
   purchaseDraftUpdateContract,
+  purchaseEntryPreferencesReadContract,
+  purchaseEntryPreferencesUpdateContract,
 ] as const;
 
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
@@ -2344,11 +2728,44 @@ export type ProductPricing = z.infer<typeof productPricingSchema>;
 export type ProductPricingField = (typeof PRODUCT_PRICING_FIELDS)[number];
 export type ProductPricingFieldState =
   (typeof PRODUCT_PRICING_FIELD_STATES)[number];
+export type ProductBarcodeKind = z.infer<typeof productBarcodeKindSchema>;
+export type ProductBarcodeSource = z.infer<typeof productBarcodeSourceSchema>;
+export type ProductBarcodeInput = z.infer<typeof productBarcodeInputSchema>;
+export type ProductBarcode = z.infer<typeof productBarcodeSchema>;
 export type Product = z.infer<typeof productSchema>;
 export type ProductCreateRequest = z.infer<typeof productCreateRequestSchema>;
 export type ProductEditRequest = z.infer<typeof productEditRequestSchema>;
 export type ProductArchiveRequest = z.infer<typeof productArchiveRequestSchema>;
 export type ProductMergeRequest = z.infer<typeof productMergeRequestSchema>;
+export type ProductSearchRequest = z.infer<typeof productSearchRequestSchema>;
+export type ProductSearchMatchField = z.infer<
+  typeof productSearchMatchFieldSchema
+>;
+export type ProductSearchResult = z.infer<typeof productSearchResultSchema>;
+export type ProductSearchResponse = z.infer<typeof productSearchResponseSchema>;
+export type ProductBarcodeAddRequest = z.infer<
+  typeof productBarcodeAddRequestSchema
+>;
+export type ProductBarcodeSuggestRequest = z.infer<
+  typeof productBarcodeSuggestRequestSchema
+>;
+export type ProductBarcodeSuggestionResponse = z.infer<
+  typeof productBarcodeSuggestionResponseSchema
+>;
+export type ProductBarcodePrintRequest = z.infer<
+  typeof productBarcodePrintRequestSchema
+>;
+export type BarcodePrintHandoff = z.infer<typeof barcodePrintHandoffSchema>;
+export type CatalogMatchingSuggestion = z.infer<
+  typeof catalogMatchingSuggestionSchema
+>;
+export type CatalogMatchingBatch = z.infer<typeof catalogMatchingBatchSchema>;
+export type CatalogMatchingBatchOpenRequest = z.infer<
+  typeof catalogMatchingBatchOpenRequestSchema
+>;
+export type CatalogMatchingApprovalRequest = z.infer<
+  typeof catalogMatchingApprovalRequestSchema
+>;
 export type CatalogFieldErrorCode = z.infer<typeof catalogFieldErrorCodeSchema>;
 export type CatalogFieldError = z.infer<typeof catalogFieldErrorSchema>;
 export type CatalogDenialCode = z.infer<typeof catalogDenialCodeSchema>;
@@ -2365,6 +2782,23 @@ export type PurchaseSettlementContext = z.infer<
   typeof purchaseSettlementContextSchema
 >;
 export type PurchaseDraft = z.infer<typeof purchaseDraftSchema>;
+export type PurchaseDraftDetail = z.infer<typeof purchaseDraftDetailSchema>;
+export type PurchaseDraftRow = z.infer<typeof purchaseDraftRowSchema>;
+export type PurchaseDraftRowCommitRequest = z.infer<
+  typeof purchaseDraftRowCommitRequestSchema
+>;
+export type PurchaseDraftRowCommitResult = z.infer<
+  typeof purchaseDraftRowCommitResultSchema
+>;
+export type PurchaseEntryColumnField = z.infer<
+  typeof purchaseEntryColumnFieldSchema
+>;
+export type PurchaseEntryPreferences = z.infer<
+  typeof purchaseEntryPreferencesSchema
+>;
+export type PurchaseEntryPreferencesUpdateRequest = z.infer<
+  typeof purchaseEntryPreferencesUpdateRequestSchema
+>;
 export type PurchaseDraftWarning = z.infer<typeof purchaseDraftWarningSchema>;
 export type PurchaseDraftResult = z.infer<typeof purchaseDraftResultSchema>;
 export type PurchaseDraftCreateRequest = z.infer<

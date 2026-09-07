@@ -32,6 +32,7 @@ import { Pool } from "pg";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
 import {
@@ -58,6 +59,7 @@ interface RendererServer {
 
 interface DesktopFakeOptions {
   readonly configDelayMs?: number;
+  readonly diagnosticReporting?: "disabled" | "manual";
   readonly locale?: "ar" | "en";
   readonly pairing?: TerminalPairingState;
   readonly role?: DesktopDeviceRole;
@@ -84,12 +86,18 @@ test.describe.serial("bilingual desktop shell", () => {
   let apiPort: number;
   let credentials: MainDeviceCredentials;
   let databaseRoles: SeparatedDatabaseRoles;
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
 
   test.beforeAll(async () => {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -435,10 +443,25 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Export diagnostic package" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Contact support" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Send diagnostic report" }),
+    ).toHaveCount(0);
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(
       page.getByRole("heading", { name: "Sign in to Breev" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Export diagnostic package" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Contact support" }),
+    ).toHaveCount(0);
     await expectIdentityStateMatrix(page, {
       arabicHeading: "تسجيل الدخول إلى بريف",
       englishHeading: "Sign in to Breev",
@@ -487,6 +510,37 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
     await page.getByRole("button", { name: "Use light theme" }).click();
+  });
+
+  test("requires explicit confirmation for manually enabled central diagnostics", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      diagnosticReporting: "manual",
+    });
+    await page.goto(renderer.origin);
+    await expect(
+      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Send diagnostic report" }).click();
+    const confirmation = page.getByRole("alertdialog", {
+      name: "Send this diagnostic report?",
+    });
+    await expect(confirmation).toBeVisible();
+    await expect(
+      confirmation.getByRole("button", { name: "Confirm send" }),
+    ).toBeFocused();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(confirmation).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Send diagnostic report" }).click();
+    await confirmation.getByRole("button", { name: "Confirm send" }).click();
+    await expect(
+      page.getByText("Central reporting is not enabled for this installation."),
+    ).toBeVisible();
   });
 
   test("hides unlicensed paid functions while Free Core survives expiry in both locales and themes", async ({
@@ -701,20 +755,17 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager" }),
     ).toBeVisible();
-    // The built-in manager role is seeded with role administration and
-    // nothing else: the role editor is offered, user management is not, and
-    // the permission summary names the one permission in plain words.
+    // The built-in manager role is seeded with role administration and Product
+    // search: the role editor is offered and user management is not.
     await expect(
       page.getByRole("heading", { name: "User management" }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Configure role permissions" }),
     ).toBeVisible();
-    await expect(
-      page
-        .locator(".permission-summary")
-        .getByText("Manage roles and permissions", { exact: true }),
-    ).toBeVisible();
+    await expect(page.locator(".permission-summary p")).toHaveText(
+      "Manage roles and permissions · Search products",
+    );
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
         headers: { Accept: "application/json" },
@@ -988,7 +1039,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expectNoRawPermissionIds(editor, permissionSummary);
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await expect(
-      roleList.getByRole("button", { name: "Owner 7 of 7 permissions" }),
+      roleList.getByRole("button", { name: "Owner 10 of 10 permissions" }),
     ).toBeVisible();
 
     // Keyboard-only creation: Enter on Add role focuses the name field.
@@ -997,6 +1048,25 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.keyboard.press("Enter");
     const newRole = page.getByRole("region", { name: "New role" });
     await expect(newRole.getByLabel("Role name")).toBeFocused();
+    await expect(
+      newRole.getByRole("group", { name: "Purchasing and suppliers" }),
+    ).toBeVisible();
+    await expect(
+      newRole.getByLabel("Manage purchase drafts", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      newRole.getByText(
+        "Create, resume, update, and discard purchase drafts and enter their rows.",
+      ),
+    ).toBeVisible();
+    await expect(
+      newRole.getByLabel("Manage suppliers", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      newRole.getByText(
+        "Create, edit, archive, and merge supplier records and maintain their terms.",
+      ),
+    ).toBeVisible();
     await page.keyboard.type("Senior cashier");
     await newRole.getByLabel("Manage products", { exact: true }).check();
     const createRole = newRole.getByRole("button", { name: "Create role" });
@@ -1011,7 +1081,7 @@ test.describe.serial("bilingual desktop shell", () => {
     // The new role is selected, shows exactly the chosen grant, and Save
     // stays disabled until something changes.
     const customRoleButton = roleList.getByRole("button", {
-      name: /^Senior cashier Custom 1 of 7 permissions$/,
+      name: /^Senior cashier Custom 1 of 10 permissions$/,
     });
     await expect(customRoleButton).toBeFocused();
     await expect(customRoleButton.locator(".role-badge")).toHaveText("Custom");
@@ -1031,7 +1101,7 @@ test.describe.serial("bilingual desktop shell", () => {
     ).toBeDisabled();
     await expect(
       roleList.getByRole("button", {
-        name: "Senior cashier Custom 1 of 7 permissions",
+        name: "Senior cashier Custom 1 of 10 permissions",
       }),
     ).toBeVisible();
 
@@ -1092,6 +1162,17 @@ test.describe.serial("bilingual desktop shell", () => {
     ).toHaveText("مخصص");
     await expect(
       page.getByRole("region", { name: "Senior cashier" }),
+    ).toBeVisible();
+    await expect(
+      page.getByLabel("إدارة مسودات المشتريات", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "إنشاء مسودات المشتريات واستئنافها وتحديثها واستبعادها وإدخال بنودها.",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByLabel("إدارة الموردين", { exact: true }),
     ).toBeVisible();
     await expect(
       managerRow.getByText("browser.manager · Senior cashier"),
@@ -1195,7 +1276,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await roleList
-      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .getByRole("button", { name: "Manager 2 of 10 permissions" })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
     await managerRole.getByLabel("Record attendance", { exact: true }).check();
@@ -1250,7 +1331,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await page
       .getByRole("navigation", { name: "Roles" })
-      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .getByRole("button", { name: "Manager 2 of 10 permissions" })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
     const attendance = managerRole.getByLabel("Record attendance", {
@@ -1292,7 +1373,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await page
       .getByRole("navigation", { name: "Roles" })
-      .getByRole("button", { name: "Manager 1 of 7 permissions" })
+      .getByRole("button", { name: "Manager 2 of 10 permissions" })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
     const attendance = managerRole.getByLabel("Record attendance", {
@@ -1338,23 +1419,28 @@ test.describe.serial("bilingual desktop shell", () => {
 
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await expect(
-      roleList.getByRole("button", { name: "Owner 7 of 7 permissions" }),
+      roleList.getByRole("button", { name: "Owner 10 of 10 permissions" }),
     ).toBeVisible();
     await expect(
       roleList.getByRole("button", {
-        name: "Local support 0 of 7 permissions",
+        name: "Local support 0 of 10 permissions",
       }),
     ).toBeVisible();
     await expect(
       roleList.getByRole("button", {
-        name: "Senior cashier Custom 1 of 7 permissions",
+        name: "Senior cashier Custom 1 of 10 permissions",
       }),
     ).toBeVisible();
 
     await roleList
-      .getByRole("button", { name: "Owner 7 of 7 permissions" })
+      .getByRole("button", { name: "Owner 10 of 10 permissions" })
       .click();
     const ownerRole = page.getByRole("region", { name: "Owner" });
+    await expect(
+      ownerRole.getByText(
+        "Full pharmacy administration across every implemented Breev operation.",
+      ),
+    ).toBeVisible();
     const ownerFloor =
       "The owner role must keep role and user management permissions.";
     for (const permission of ["Manage users", "Manage roles and permissions"]) {
@@ -1371,7 +1457,7 @@ test.describe.serial("bilingual desktop shell", () => {
 
     await roleList
       .getByRole("button", {
-        name: "Local support 0 of 7 permissions",
+        name: "Local support 0 of 10 permissions",
       })
       .click();
     const supportRole = page.getByRole("region", { name: "Local support" });
@@ -1405,7 +1491,7 @@ test.describe.serial("bilingual desktop shell", () => {
       const roleList = page.getByRole("navigation", { name: "Roles" });
       await expect(roleList).toBeVisible();
       await roleList
-        .getByRole("button", { name: "Owner 7 of 7 permissions" })
+        .getByRole("button", { name: "Owner 10 of 10 permissions" })
         .click();
       await expect(
         page
@@ -1953,7 +2039,15 @@ async function installDesktopFake(
   options: DesktopFakeOptions = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({ configDelayMs, locale, origin, pairing, role, theme }) => {
+    ({
+      configDelayMs,
+      diagnosticReporting,
+      locale,
+      origin,
+      pairing,
+      role,
+      theme,
+    }) => {
       try {
         if (
           locale !== undefined &&
@@ -1977,14 +2071,23 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => cancelled,
         copyIdentifier: async () => ({ copied: true as const }),
+        printBarcodeLabel: async () => ({ status: "handed-off" as const }),
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getTerminalPairingState: async () => pairing,
+        openSupport: async () => ({ status: "unavailable" as const }),
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => pairing,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => pairing,
         getStartupConfig: async () => {
           if (configDelayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, configDelayMs));
           }
-          return { localApiOrigin: origin, role };
+          return {
+            diagnosticReporting,
+            localApiOrigin: origin,
+            role,
+          };
         },
       });
       Object.defineProperty(globalThis, "breevDesktop", {
@@ -1995,6 +2098,7 @@ async function installDesktopFake(
     },
     {
       configDelayMs: options.configDelayMs ?? 0,
+      diagnosticReporting: options.diagnosticReporting ?? ("disabled" as const),
       locale: options.locale,
       origin: localApiOrigin,
       pairing: options.pairing ?? {

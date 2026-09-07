@@ -1,10 +1,14 @@
 import { FuseState, FuseV1Options, getCurrentFuseWire } from "@electron/fuses";
 import { expect, test } from "@playwright/test";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  PostgreSqlContainer,
+  type StartedPostgreSqlContainer,
+} from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { builtinModules } from "node:module";
 import {
   createServer as createTcpServer,
   type Server as NetServer,
@@ -15,6 +19,7 @@ import { chromium, type Browser } from "playwright";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "./database-roles.js";
 import { evidencePath } from "./browser/evidence-path.js";
@@ -26,6 +31,33 @@ import {
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
+/**
+ * Packaging excludes node_modules, so every bare import left in the packaged
+ * Main and Preload must resolve inside Electron itself. Main can reach
+ * Electron and any Node built-in; a sandboxed preload can reach only the
+ * modules Electron's require polyfill provides. Anything else must be bundled
+ * or the packaged start breaks (an externalized `zod` failed Main with
+ * ERR_MODULE_NOT_FOUND and would have failed Preload with a preload-error).
+ */
+const MAIN_PROCESS_MODULES: ReadonlySet<string> = new Set([
+  "electron",
+  "electron/common",
+  "electron/main",
+  ...builtinModules,
+  ...builtinModules.map((name) => `node:${name}`),
+]);
+const SANDBOXED_PRELOAD_MODULES: ReadonlySet<string> = new Set([
+  "electron",
+  "electron/common",
+  "electron/renderer",
+  "events",
+  "node:events",
+  "timers",
+  "node:timers",
+  "url",
+  "node:url",
+]);
+
 interface MainDeviceCredentials {
   readonly deviceId: string;
   readonly deviceSecret: string;
@@ -33,8 +65,7 @@ interface MainDeviceCredentials {
 }
 
 test("the packaged desktop enforces its outer security and health seams", async () => {
-  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-  const databaseRoles = await createSeparatedDatabaseRoles(postgres);
+  const { databaseRoles, postgres } = await prepareDatabase();
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -132,9 +163,14 @@ test("the packaged desktop enforces its outer security and health seams", async 
       preloadKeys: [
         "cancelTerminalPairing",
         "copyIdentifier",
+        "exportDiagnostics",
         "getStartupConfig",
         "getTerminalPairingState",
+        "openSupport",
+        "printBarcodeLabel",
+        "reportRendererIncident",
         "submitManualEndpoint",
+        "submitDiagnostics",
         "submitPairingInvitation",
       ],
       rawIpc: "undefined",
@@ -180,14 +216,13 @@ test("the packaged desktop enforces its outer security and health seams", async 
     await stopProcess(desktop);
     await closeServer(proxy?.server);
     await stopProcess(api);
-    await postgres.stop().catch(() => undefined);
+    await postgres?.stop().catch(() => undefined);
     await rm(userDataDirectory, { force: true, recursive: true });
   }
 });
 
 test("the packaged desktop commits through its bound Main session offline and after API restart", async () => {
-  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-  const databaseRoles = await createSeparatedDatabaseRoles(postgres);
+  const { databaseRoles, postgres } = await prepareDatabase();
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -320,10 +355,49 @@ test("the packaged desktop commits through its bound Main session offline and af
     await browser?.close();
     await stopProcess(desktop);
     await stopProcess(api);
-    await postgres.stop().catch(() => undefined);
+    await postgres?.stop().catch(() => undefined);
     await rm(userDataDirectory, { force: true, recursive: true });
   }
 });
+
+test("the packaged Main and Preload bundles import no unresolved runtime package", async () => {
+  const asarPath = packagedAsarPath();
+  await access(asarPath);
+  const archive = await readFile(asarPath);
+  const mainSource = readPackagedFile(archive, ["out", "main", "index.js"]);
+  const preloadSource = readPackagedFile(archive, [
+    "out",
+    "preload",
+    "index.cjs",
+  ]);
+
+  expect(mainSource.length).toBeGreaterThan(0);
+  expect(preloadSource.length).toBeGreaterThan(0);
+  expect(unresolvedRuntimeImports(mainSource, MAIN_PROCESS_MODULES)).toEqual(
+    [],
+  );
+  expect(
+    unresolvedRuntimeImports(preloadSource, SANDBOXED_PRELOAD_MODULES),
+  ).toEqual([]);
+});
+
+async function prepareDatabase(): Promise<{
+  readonly databaseRoles: SeparatedDatabaseRoles;
+  readonly postgres?: StartedPostgreSqlContainer;
+}> {
+  const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+  if (administratorUrl !== undefined) {
+    return {
+      databaseRoles:
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl),
+    };
+  }
+  const postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+  return {
+    databaseRoles: await createSeparatedDatabaseRoles(postgres),
+    postgres,
+  };
+}
 
 async function connectToPackagedDesktop(
   userDataDirectory: string,
@@ -533,11 +607,15 @@ function requestHeader(
   )?.[1];
 }
 
-function packagedExecutablePath(): string {
-  const artifact = path.resolve(
+function packagedArtifactDirectory(): string {
+  return path.resolve(
     import.meta.dirname,
     `../../../artifacts/Breev-${process.platform}-${process.arch}`,
   );
+}
+
+function packagedExecutablePath(): string {
+  const artifact = packagedArtifactDirectory();
   if (process.platform === "win32") {
     return path.join(artifact, "Breev.exe");
   }
@@ -545,6 +623,80 @@ function packagedExecutablePath(): string {
     return path.join(artifact, "Breev.app", "Contents", "MacOS", "Breev");
   }
   return path.join(artifact, "Breev");
+}
+
+function packagedAsarPath(): string {
+  const artifact = packagedArtifactDirectory();
+  if (process.platform === "darwin") {
+    return path.join(
+      artifact,
+      "Breev.app",
+      "Contents",
+      "Resources",
+      "app.asar",
+    );
+  }
+  return path.join(artifact, "resources", "app.asar");
+}
+
+type AsarEntry =
+  | { readonly files: Readonly<Record<string, AsarEntry>> }
+  | { readonly offset: string; readonly size: number };
+
+/**
+ * Reads one file out of the packaged archive without extracting it. The asar
+ * layout is a pickle-framed JSON header followed by the concatenated file
+ * bodies: bytes 4-7 hold the header pickle size, bytes 12-15 the JSON length,
+ * and each entry's offset counts from the first byte after the header.
+ */
+function readPackagedFile(
+  archive: Buffer,
+  segments: readonly string[],
+): string {
+  const headerSize = archive.readUInt32LE(4);
+  const headerLength = archive.readUInt32LE(12);
+  const dataStart = 8 + headerSize;
+  let entry = JSON.parse(
+    archive.toString("utf8", 16, 16 + headerLength),
+  ) as AsarEntry;
+  for (const segment of segments) {
+    const next = "files" in entry ? entry.files[segment] : undefined;
+    if (next === undefined) {
+      throw new Error(`The packaged archive lacks ${segments.join("/")}`);
+    }
+    entry = next;
+  }
+  if (!("offset" in entry)) {
+    throw new Error(`${segments.join("/")} is a packaged directory`);
+  }
+  const start = dataStart + Number(entry.offset);
+  return archive.toString("utf8", start, start + entry.size);
+}
+
+function unresolvedRuntimeImports(
+  source: string,
+  resolvable: ReadonlySet<string>,
+): string[] {
+  const patterns = [
+    /\b(?:import|export)\b[^;"'`]*?\bfrom\s*["']([^"']+)["']/gu,
+    /\bimport\s*["']([^"']+)["']/gu,
+    /\b(?:require|import)\s*\(\s*["']([^"']+)["']\s*\)/gu,
+  ];
+  const unresolved = new Set<string>();
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const specifier = match[1];
+      if (
+        specifier !== undefined &&
+        !specifier.startsWith(".") &&
+        !specifier.startsWith("/") &&
+        !resolvable.has(specifier)
+      ) {
+        unresolved.add(specifier);
+      }
+    }
+  }
+  return [...unresolved].sort();
 }
 
 async function reservePort(): Promise<number> {

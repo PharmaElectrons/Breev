@@ -1,6 +1,15 @@
+import {
+  IMPLEMENTED_PERMISSION_NAMES,
+  type ImplementedPermissionName,
+} from "@breev/contracts/local-rest";
+
+export { IMPLEMENTED_PERMISSION_NAMES };
+export type { ImplementedPermissionName };
+
 export const PERMISSION_NAMES = [
   "attendance.record",
   "catalog.item.manage",
+  "catalog.item.search",
   "devices.pair",
   "draft.price.override",
   "identity.roles.manage",
@@ -26,21 +35,6 @@ export type PermissionName = (typeof PERMISSION_NAMES)[number];
  * references); this is the narrower set the API and the renderer are allowed
  * to show as grantable.
  */
-export const IMPLEMENTED_PERMISSION_NAMES = [
-  "attendance.record",
-  "catalog.item.manage",
-  "devices.pair",
-  "identity.roles.manage",
-  "identity.users.manage",
-  "licensing.manage",
-  "pharmacy.settings.manage",
-  "purchases.drafts.manage",
-  "suppliers.manage",
-] as const satisfies readonly PermissionName[];
-
-export type ImplementedPermissionName =
-  (typeof IMPLEMENTED_PERMISSION_NAMES)[number];
-
 export const STEP_UP_ACTIONS = {
   "devices.pairing.start": "devices.pair",
   "devices.revoke": "devices.pair",

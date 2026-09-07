@@ -1,3 +1,5 @@
+import type { ImplementedPermissionName } from "@breev/contracts/local-rest";
+
 /**
  * The permissions the renderer can name, grouped by the task they belong to.
  *
@@ -7,20 +9,17 @@
  * localized name and description from `identity-messages.ts`, and a group
  * heading — so that no internal id ever appears as user-facing copy. An id
  * the server offers but this catalogue does not know is not shown at all
- * rather than shown raw; the local API test pins the seven implemented names,
- * and the unit test beside this file pins the same seven here.
+ * rather than shown raw. The grantable ids come from the shared local contract,
+ * and the unit test beside this file requires each id to appear exactly once.
  */
-export type ImplementedPermissionId =
-  | "attendance.record"
-  | "catalog.item.manage"
-  | "devices.pair"
-  | "identity.roles.manage"
-  | "identity.users.manage"
-  | "licensing.manage"
-  | "pharmacy.settings.manage";
+export type ImplementedPermissionId = ImplementedPermissionName;
 
 export type PermissionGroupId =
-  "administration" | "attendance" | "devices-licensing" | "products";
+  | "administration"
+  | "attendance"
+  | "devices-licensing"
+  | "products"
+  | "purchasing";
 
 export interface PermissionGroup {
   readonly id: PermissionGroupId;
@@ -37,7 +36,14 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       "pharmacy.settings.manage",
     ],
   },
-  { id: "products", permissions: ["catalog.item.manage"] },
+  {
+    id: "products",
+    permissions: ["catalog.item.manage", "catalog.item.search"],
+  },
+  {
+    id: "purchasing",
+    permissions: ["purchases.drafts.manage", "suppliers.manage"],
+  },
   { id: "attendance", permissions: ["attendance.record"] },
   {
     id: "devices-licensing",

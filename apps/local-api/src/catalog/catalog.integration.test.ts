@@ -4,6 +4,11 @@ import {
   CATALOG_CONTRACTS,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  catalogMatchingApprovalPath,
+  productBarcodeAddPath,
+  productBarcodePrintPath,
+  productBarcodeSuggestPath,
+  productSearchPath,
   productArchivePath,
   productMergePath,
   productPath,
@@ -23,6 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
 import { CatalogService } from "./catalog.service.js";
@@ -69,11 +75,17 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
   let editableProduct: Product;
   let immutableSnapshotId = "";
   let pharmacyId = "";
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
 
   beforeAll(async () => {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${String(apiPort)}`;
@@ -199,6 +211,376 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
       },
     });
   });
+
+  it("searches ordered subsequences and barcodes, suggests and prints an internal code, and keeps daily matching eligible across restart and day boundaries", async () => {
+    const searchable = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Panadol Extra", ["7012345678900", "7012345678901"]),
+    );
+    expect(searchable.status, failureContext([searchable])).toBe(201);
+    expect(searchable.body?.barcodes).toEqual([
+      { kind: "product", source: "provided", value: "7012345678900" },
+      { kind: "product", source: "provided", value: "7012345678901" },
+    ]);
+
+    const ordered = await request(
+      "GET",
+      productSearchPath({ query: "panadol gs" }),
+    );
+    expect(ordered.status, failureContext([ordered])).toBe(200);
+    expect(
+      (ordered.body?.results as { product: Product }[]).map(
+        ({ product }) => product.displayName,
+      ),
+    ).toContain("Panadol Extra 500 mg tablet GSK");
+    const reversed = await request(
+      "GET",
+      productSearchPath({ query: "gs panadol" }),
+    );
+    expect(reversed.body?.resultCount).toBe(0);
+
+    const extra = await request("GET", productSearchPath({ query: "extra" }));
+    expect(extra.status, failureContext([extra])).toBe(200);
+    expect(
+      (extra.body?.results as { product: Product }[]).every(({ product }) =>
+        product.displayName.toLowerCase().includes("extra"),
+      ),
+    ).toBe(true);
+    const arabic = await request(
+      "GET",
+      productSearchPath({ query: "بانادول" }),
+    );
+    expect(arabic.body?.resultCount).toEqual(expect.any(Number));
+    expect(Number(arabic.body?.resultCount)).toBeGreaterThan(0);
+
+    for (const barcode of ["7012345678900", "7012345678901"]) {
+      const exact = await request("GET", productSearchPath({ query: barcode }));
+      expect(exact.body).toMatchObject({
+        resultCount: 1,
+        results: [
+          {
+            matchedBarcode: { value: barcode },
+            matchedField: "barcode",
+            product: { id: searchable.body?.id },
+          },
+        ],
+      });
+    }
+    const absent = await request(
+      "GET",
+      productSearchPath({ query: "999999999999999999" }),
+    );
+    expect(absent.body).toMatchObject({ resultCount: 0, results: [] });
+
+    const withoutBarcode = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Internal Label Candidate", []),
+    );
+    const suggestion = await request(
+      "POST",
+      productBarcodeSuggestPath(String(withoutBarcode.body?.id)),
+      {
+        expectedRevision: withoutBarcode.body?.revision,
+        idempotencyKey: createUuidV7(),
+        kind: "product",
+      },
+    );
+    expect(suggestion.status, failureContext([suggestion])).toBe(201);
+    expect(suggestion.body?.barcode).toMatchObject({
+      kind: "product",
+      source: "breev-internal",
+      value: expect.stringMatching(/^BRV-[0-9]{12}$/u),
+    });
+    const print = await request(
+      "POST",
+      productBarcodePrintPath(String(withoutBarcode.body?.id)),
+      {
+        barcode: (suggestion.body?.barcode as { value: string }).value,
+        idempotencyKey: createUuidV7(),
+        locale: "en",
+        quantity: 2,
+      },
+    );
+    expect(print.status, failureContext([print])).toBe(201);
+    expect(print.body).toMatchObject({
+      displayName: "Internal Label Candidate 500 mg tablet GSK",
+      quantity: 2,
+    });
+
+    const matchingCandidate = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Daily Matching Candidate", []),
+    );
+    expect(matchingCandidate.status, failureContext([matchingCandidate])).toBe(
+      201,
+    );
+    const matchingFillerIds = new Set<string>();
+    for (let index = 0; index < 12; index += 1) {
+      const filler = await request(
+        "POST",
+        "/catalog/products",
+        medicationRequest(`Daily Matching Filler ${String(index)}`, []),
+      );
+      expect(filler.status, failureContext([filler])).toBe(201);
+      matchingFillerIds.add(String(filler.body?.id));
+    }
+    await administrator.query(
+      "update pharmacies set business_time_zone = 'Etc/GMT+12' where id = $1",
+      [pharmacyId],
+    );
+
+    const openingBody = { idempotencyKey: createUuidV7() };
+    const opened = await request(
+      "POST",
+      "/catalog/matching-batches/current/openings",
+      openingBody,
+    );
+    expect(opened.status, failureContext([opened])).toBe(201);
+    const batch = opened.body as unknown as {
+      businessDate: string;
+      suggestions: {
+        id: string;
+        product: Product;
+        proposedBarcode: { value: string };
+      }[];
+    };
+    expect(batch.suggestions).toHaveLength(10);
+    const approved = batch.suggestions.find(
+      ({ product }) => product.id === matchingCandidate.body?.id,
+    );
+    expect(approved).toBeDefined();
+    if (approved === undefined) {
+      throw new Error("The dedicated matching candidate was not proposed");
+    }
+    const completedWithAnotherBarcode = batch.suggestions.find(({ product }) =>
+      matchingFillerIds.has(product.id),
+    );
+    expect(completedWithAnotherBarcode).toBeDefined();
+    if (completedWithAnotherBarcode === undefined) {
+      throw new Error("The matching batch did not contain a second candidate");
+    }
+    const completed = await request(
+      "POST",
+      productBarcodeAddPath(completedWithAnotherBarcode.product.id),
+      {
+        barcode: { kind: "product", value: "7012345678999" },
+        expectedRevision: completedWithAnotherBarcode.product.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(completed.status, failureContext([completed])).toBe(201);
+    const approval = await request(
+      "POST",
+      catalogMatchingApprovalPath(approved.id),
+      {
+        expectedRevision: approved.product.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(approval.status, failureContext([approval])).toBe(201);
+    expect(
+      (approval.body?.barcodes as { value: string }[]).map(
+        ({ value }) => value,
+      ),
+    ).toContain(approved.proposedBarcode.value);
+    const barcodeRemovedAgain = await request(
+      "PUT",
+      productPath(String(matchingCandidate.body?.id)),
+      {
+        ...medicationRequest("Daily Matching Candidate", []),
+        expectedRevision: approval.body?.revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(
+      barcodeRemovedAgain.status,
+      failureContext([barcodeRemovedAgain]),
+    ).toBe(200);
+
+    await stopProcess(api);
+    apiOutput = "";
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    const reopened = await request(
+      "POST",
+      "/catalog/matching-batches/current/openings",
+      { idempotencyKey: createUuidV7() },
+    );
+    expect(reopened.status, failureContext([reopened])).toBe(201);
+    expect(reopened.body?.businessDate).toBe(batch.businessDate);
+    const sameDaySuggestions = reopened.body?.suggestions as {
+      id: string;
+      product: Product;
+      proposedBarcode: { value: string };
+    }[];
+    expect(sameDaySuggestions).toHaveLength(8);
+    expect(sameDaySuggestions.map(({ id }) => id)).not.toContain(approved.id);
+    expect(sameDaySuggestions.map(({ id }) => id)).not.toContain(
+      completedWithAnotherBarcode.id,
+    );
+    expect(
+      sameDaySuggestions.every((item) =>
+        batch.suggestions.some(
+          (original) =>
+            original.id === item.id &&
+            original.proposedBarcode.value === item.proposedBarcode.value,
+        ),
+      ),
+    ).toBe(true);
+    await administrator.query(
+      "update pharmacies set business_time_zone = 'Pacific/Kiritimati' where id = $1",
+      [pharmacyId],
+    );
+    const nextDay = await request(
+      "POST",
+      "/catalog/matching-batches/current/openings",
+      { idempotencyKey: createUuidV7() },
+    );
+    expect(nextDay.status, failureContext([nextDay])).toBe(201);
+    expect(nextDay.body?.businessDate).not.toBe(batch.businessDate);
+    const nextDaySuggestions = nextDay.body?.suggestions as {
+      id: string;
+      product: Product;
+    }[];
+    expect(nextDaySuggestions).toHaveLength(10);
+    expect(
+      sameDaySuggestions.every((carried) =>
+        nextDaySuggestions.some(({ id }) => id === carried.id),
+      ),
+    ).toBe(true);
+    const resuggested = nextDaySuggestions.find(
+      ({ product }) => product.id === matchingCandidate.body?.id,
+    );
+    expect(resuggested).toBeDefined();
+    expect(resuggested?.id).not.toBe(approved.id);
+    expect(
+      nextDaySuggestions.some(
+        ({ id }) => id === completedWithAnotherBarcode.id,
+      ),
+    ).toBe(false);
+    await administrator.query(
+      "update pharmacies set business_time_zone = 'Asia/Baghdad' where id = $1",
+      [pharmacyId],
+    );
+  }, 120_000);
+
+  it("records search p95 below 200 ms on more than 10,000 real PostgreSQL Products", async () => {
+    const actor = await administrator.query<{ id: string }>(
+      `select id from identity_users
+       where pharmacy_id = $1 and username = $2`,
+      [pharmacyId, OWNER_USERNAME],
+    );
+    const actorId = actor.rows[0]?.id;
+    expect(actorId).toMatch(UUID_V7_PATTERN);
+
+    const seedClient = await administrator.connect();
+    try {
+      await seedClient.query("begin");
+      await seedClient.query("set constraints all deferred");
+      await seedClient.query(
+        `create temporary table catalog_volume_seed
+         on commit drop as
+         select uuidv7() as product_id, uuidv7() as unit_id, value as ordinal
+         from generate_series(1, 10000) as value`,
+      );
+      await seedClient.query(
+        `insert into catalog_products (
+           id, pharmacy_id, definition_mode, medication_trade_name,
+           medication_manufacturer, display_name, name_template_version,
+           arabic_search_name, externally_visible, ai_sharing_allowed,
+           cold_storage_required, created_by, updated_by,
+           count_default_unit_id, purchase_default_unit_id,
+           sale_default_unit_id, pricing_method, retail_price_fils
+         )
+         select product_id, $1, 'medication',
+                'Reference ' || lpad(ordinal::text, 5, '0'),
+                'Volume Lab',
+                case when ordinal = 9999
+                  then 'Volume Reference Special 09999 Volume Lab'
+                  else 'Reference ' || lpad(ordinal::text, 5, '0') || ' Volume Lab'
+                end,
+                1,
+                case when ordinal = 9998 then 'مرجع الحجم الخاص' else null end,
+                false, false, false, $2, $2,
+                unit_id, unit_id, unit_id, 'by-price', 0
+         from catalog_volume_seed`,
+        [pharmacyId, actorId],
+      );
+      await seedClient.query(
+        `insert into catalog_product_units (
+           id, pharmacy_id, product_id, kind, name, ordinal
+         )
+         select unit_id, $1, product_id, 'inventory', 'Unit', 0
+         from catalog_volume_seed`,
+        [pharmacyId],
+      );
+      await seedClient.query("commit");
+    } catch (error) {
+      await seedClient.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      seedClient.release();
+    }
+
+    await request("GET", productSearchPath({ query: "volume special" }));
+    const durations: number[] = [];
+    for (let sample = 0; sample < 40; sample += 1) {
+      const startedAt = performance.now();
+      const response = await request(
+        "GET",
+        productSearchPath({ query: "volume special" }),
+      );
+      durations.push(performance.now() - startedAt);
+      expect(response.status, failureContext([response])).toBe(200);
+      expect(response.body?.resultCount).toBe(1);
+    }
+    durations.sort((left, right) => left - right);
+    const p95 = durations[Math.ceil(durations.length * 0.95) - 1]!;
+    console.info(
+      JSON.stringify({
+        dataset: "10,000 generated Products plus functional fixtures",
+        hardware: `${process.platform}-${process.arch}`,
+        locale: "en",
+        metric: "catalog-product-search-p95-ms",
+        p95: Number(p95.toFixed(2)),
+        samples: durations.length,
+        theme: "API seam (theme independent)",
+      }),
+    );
+    expect(p95).toBeLessThanOrEqual(200);
+
+    const barcodeDurations: number[] = [];
+    for (let sample = 0; sample < 40; sample += 1) {
+      const startedAt = performance.now();
+      const response = await request(
+        "GET",
+        productSearchPath({ query: "7012345678900" }),
+      );
+      barcodeDurations.push(performance.now() - startedAt);
+      expect(response.body).toMatchObject({
+        resultCount: 1,
+        results: [{ matchedField: "barcode" }],
+      });
+    }
+    barcodeDurations.sort((left, right) => left - right);
+    const barcodeP95 =
+      barcodeDurations[Math.ceil(barcodeDurations.length * 0.95) - 1]!;
+    console.info(
+      JSON.stringify({
+        dataset: "10,000 generated Products plus functional fixtures",
+        hardware: `${process.platform}-${process.arch}`,
+        locale: "exact barcode (locale independent)",
+        metric: "catalog-barcode-to-product-p95-ms",
+        p95: Number(barcodeP95.toFixed(2)),
+        samples: barcodeDurations.length,
+        theme: "API seam (theme independent)",
+      }),
+    );
+    expect(barcodeP95).toBeLessThanOrEqual(300);
+  }, 120_000);
 
   it("calculates and stores exact percentage pricing for every rounding setting", async () => {
     const cases = [
@@ -609,7 +991,9 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     });
     expect(edited.status, failureContext([edited])).toBe(200);
     expect(edited.body).toMatchObject({
-      barcodes: ["5012345678900"],
+      barcodes: [
+        { kind: "product", source: "provided", value: "5012345678900" },
+      ],
       displayName: "Panadol Extra 500 mg tablet GSK",
       packaging: {
         packageUnits: [{ baseUnitsPerPackage: "8", name: "Pack" }],
@@ -1024,7 +1408,7 @@ function medicationRequest(
 ): ProductCreateRequest {
   return {
     arabicSearchName: "بانادول",
-    barcodes: [...barcodes],
+    barcodes: barcodes.map((value) => ({ kind: "product", value })),
     category: "Pain relief",
     definition: {
       fields: {
@@ -1066,7 +1450,7 @@ function medicationRequest(
 function generalItemRequest(company: string): ProductCreateRequest {
   return {
     arabicSearchName: "بيوديرما أتوديرم",
-    barcodes: ["3401399372926"],
+    barcodes: [{ kind: "product", value: "3401399372926" }],
     category: "Dermocosmetic",
     definition: {
       fields: {

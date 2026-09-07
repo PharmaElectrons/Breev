@@ -15,6 +15,8 @@ import {
   type MedicationNameFields,
   type PriceRoundingSetting,
   type Product,
+  type ProductBarcodeInput,
+  type ProductBarcodeKind,
   type ProductCreateRequest,
   type ProductDefinitionMode,
   type ProductEditRequest,
@@ -184,6 +186,7 @@ export function buildPricingPayload({
 
 export interface ProductFormProps {
   readonly baseUrl: string;
+  readonly initialBarcode?: string;
   readonly initialProduct?: Product | null;
   readonly onCancel?: () => void;
   readonly onSuccess?: (product: Product) => void;
@@ -374,6 +377,7 @@ export function ModeSwitchConfirmationDialog({
 
 export function ProductForm({
   baseUrl,
+  initialBarcode,
   initialProduct,
   onCancel,
   onSuccess,
@@ -442,10 +446,15 @@ export function ProductForm({
   );
   const [category, setCategory] = useState(initialProduct?.category ?? "");
 
-  const [barcodes, setBarcodes] = useState<string[]>(
-    initialProduct?.barcodes ?? [],
+  const [barcodes, setBarcodes] = useState<ProductBarcodeInput[]>(
+    initialProduct?.barcodes.map(({ kind, value }) => ({ kind, value })) ??
+      (initialBarcode === undefined
+        ? []
+        : [{ kind: "product", value: initialBarcode }]),
   );
   const [newBarcode, setNewBarcode] = useState("");
+  const [newBarcodeKind, setNewBarcodeKind] =
+    useState<ProductBarcodeKind>("product");
 
   const [instructions, setInstructions] = useState({
     foodTiming: (initialProduct?.instructions.foodTiming ?? "") as
@@ -620,8 +629,11 @@ export function ProductForm({
 
   const handleAddBarcode = (): void => {
     const trimmed = newBarcode.trim();
-    if (trimmed.length > 0 && !barcodes.includes(trimmed)) {
-      setBarcodes([...barcodes, trimmed]);
+    if (
+      trimmed.length > 0 &&
+      !barcodes.some((barcode) => barcode.value === trimmed)
+    ) {
+      setBarcodes([...barcodes, { kind: newBarcodeKind, value: trimmed }]);
       setNewBarcode("");
     }
   };
@@ -1440,6 +1452,21 @@ export function ProductForm({
               {copy.barcodes.label}
             </legend>
             <div className="flex gap-2 mb-3">
+              <select
+                aria-label={locale === "ar" ? "نوع الباركود" : "Barcode kind"}
+                className="min-h-[2.5rem] px-2 border border-[color:var(--control-border)] rounded-lg bg-background"
+                value={newBarcodeKind}
+                onChange={(event) =>
+                  setNewBarcodeKind(event.target.value as ProductBarcodeKind)
+                }
+              >
+                <option value="product">
+                  {locale === "ar" ? "منتج" : "Product"}
+                </option>
+                <option value="package">
+                  {locale === "ar" ? "عبوة" : "Package"}
+                </option>
+              </select>
               <input
                 aria-label={copy.barcodes.label}
                 className="flex-1 min-h-[2.5rem] px-3 border border-[color:var(--control-border)] rounded-lg bg-background"
@@ -1469,14 +1496,23 @@ export function ProductForm({
               <p className="field-note">{copy.barcodes.empty}</p>
             ) : (
               <ul className="flex flex-wrap gap-2 list-none p-0 m-0">
-                {barcodes.map((bc, idx) => (
+                {barcodes.map((barcode, idx) => (
                   <li
-                    key={bc}
+                    key={barcode.value}
                     className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[color:var(--border)] font-mono text-sm"
                   >
-                    <span>{bc}</span>
+                    <span>{barcode.value}</span>
+                    <span className="text-muted-foreground">
+                      {barcode.kind === "product"
+                        ? locale === "ar"
+                          ? "منتج"
+                          : "Product"
+                        : locale === "ar"
+                          ? "عبوة"
+                          : "Package"}
+                    </span>
                     <button
-                      aria-label={`${copy.barcodes.remove} ${bc}`}
+                      aria-label={`${copy.barcodes.remove} ${barcode.value}`}
                       className="font-bold px-1 text-[color:var(--danger)]"
                       type="button"
                       onClick={() => handleRemoveBarcode(idx)}

@@ -28,6 +28,14 @@ The current public name is **Breev**. Use `breev` and `@breev/*` for new impleme
 - Create an ADR only for a consequential decision that is hard to reverse and has real alternatives. Explicitly update or supersede the ADR when the decision changes.
 - Documentation changes must reconcile their requirement families in [`docs/traceability.md`](docs/traceability.md). Never silently weaken, invent, or promote a requirement.
 
+## Local Windows execution
+
+- For PowerShell-heavy work or Windows environment failures, follow [`.agents/skills/breev-windows-execution/SKILL.md`](.agents/skills/breev-windows-execution/SKILL.md). Classify product failures separately from prerequisites, host limitations, sandbox/tool failures, policy denials, and shell mistakes.
+- The maintained Windows workstation uses a local PostgreSQL Windows service, not Docker, as its default database seam. Before declaring database-backed tests blocked, check the local service and whether `BREEV_TEST_POSTGRES_ADMIN_URL` is configured without printing its value. Use only a disposable test database; never guess credentials or target live pharmacy data. Use Testcontainers only when a compatible container runtime is actually available or explicitly required.
+- Treat `CryptUnprotectData` failures raised before repository access as Codex sandbox/DPAPI failures, distinct from Breev CNG test failures. A sandbox or account limitation does not authorize weakening CNG, DPAPI, certificate, key, ACL, or encryption behavior. Use narrowly scoped escalation when appropriate, then rely on supported Windows CI or physical-profile evidence if the local profile still cannot prove the requirement.
+- Auto-review denial is a security boundary. Do not retry the equivalent action through another shell or encoding. Choose a materially safer alternative or ask for direction. Electron debugging must remain loopback-only; never bind DevTools to `0.0.0.0`.
+- Prefer `apply_patch` for source edits. If the Windows sandbox fails before the patch is applied, verify that no partial edit occurred. Do not replace it with unchecked multi-line PowerShell string rewriting. Avoid protected PowerShell variables such as `$PID`, `$HOME`, and `$PWD`; use task-specific names, preserve native exit codes, and inspect redirected process logs explicitly.
+
 ## Local issue tracking
 
 Issues live in `.scratch/<feature-slug>/` and use `spec.md`, an optional `map.md`, and `issues/<NN>-<slug>.md`. Start numbering at `01`. A task includes a user story, source requirements, dependencies (`Blocked by: NN`), acceptance scenarios, test scope, risks, and completion evidence. An epic is a gated outcome. Do not execute it as one change.

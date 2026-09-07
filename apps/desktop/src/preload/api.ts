@@ -1,17 +1,32 @@
 import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_COPY_IDENTIFIER_CHANNEL,
+  DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
+  DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
+  DESKTOP_PRINT_BARCODE_LABEL_CHANNEL,
+  DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
   DESKTOP_STARTUP_CONFIG_CHANNEL,
+  DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
   DESKTOP_TERMINAL_PAIRING_STATE_CHANNEL,
   desktopCancelTerminalPairingRequestSchema,
   desktopCopyIdentifierRequestSchema,
   desktopCopyIdentifierResponseSchema,
+  desktopExportDiagnosticsRequestSchema,
+  desktopExportDiagnosticsResponseSchema,
   desktopManualEndpointRequestSchema,
+  desktopOpenSupportRequestSchema,
+  desktopOpenSupportResponseSchema,
   desktopPairingInvitationRequestSchema,
+  desktopBarcodePrintRequestSchema,
+  desktopBarcodePrintResponseSchema,
+  desktopReportRendererIncidentRequestSchema,
+  desktopReportRendererIncidentResponseSchema,
   desktopStartupConfigRequestSchema,
   desktopStartupConfigResponseSchema,
+  desktopSubmitDiagnosticsRequestSchema,
+  desktopSubmitDiagnosticsResponseSchema,
   desktopTerminalPairingStateRequestSchema,
   terminalPairingStateResponseSchema,
   type BreevDesktopApi,
@@ -44,6 +59,15 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         ),
       );
     },
+    exportDiagnostics: async (...arguments_: unknown[]) => {
+      assertSingleArgument("exportDiagnostics", arguments_);
+      return desktopExportDiagnosticsResponseSchema.parse(
+        await invoke(
+          DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
+          desktopExportDiagnosticsRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
     getStartupConfig: async (...arguments_: unknown[]) => {
       assertNoArguments("getStartupConfig", arguments_);
       return desktopStartupConfigResponseSchema.parse(
@@ -62,12 +86,48 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         ),
       );
     },
+    openSupport: async (...arguments_: unknown[]) => {
+      assertSingleArgument("openSupport", arguments_);
+      return desktopOpenSupportResponseSchema.parse(
+        await invoke(
+          DESKTOP_OPEN_SUPPORT_CHANNEL,
+          desktopOpenSupportRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
+    printBarcodeLabel: async (...arguments_: unknown[]) => {
+      assertSingleArgument("printBarcodeLabel", arguments_);
+      return desktopBarcodePrintResponseSchema.parse(
+        await invoke(
+          DESKTOP_PRINT_BARCODE_LABEL_CHANNEL,
+          desktopBarcodePrintRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
+    reportRendererIncident: async (...arguments_: unknown[]) => {
+      assertSingleArgument("reportRendererIncident", arguments_);
+      return desktopReportRendererIncidentResponseSchema.parse(
+        await invoke(
+          DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL,
+          desktopReportRendererIncidentRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
     submitManualEndpoint: async (...arguments_: unknown[]) => {
       assertSingleArgument("submitManualEndpoint", arguments_);
       return terminalPairingStateResponseSchema.parse(
         await invoke(
           DESKTOP_MANUAL_ENDPOINT_CHANNEL,
           desktopManualEndpointRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
+    submitDiagnostics: async (...arguments_: unknown[]) => {
+      assertSingleArgument("submitDiagnostics", arguments_);
+      return desktopSubmitDiagnosticsResponseSchema.parse(
+        await invoke(
+          DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL,
+          desktopSubmitDiagnosticsRequestSchema.parse(arguments_[0]),
         ),
       );
     },

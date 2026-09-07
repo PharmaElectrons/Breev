@@ -125,7 +125,9 @@ function listen(server: Server, port: number, host: string): Promise<void> {
   });
 }
 
-void bootstrap().catch(() => {
-  process.stderr.write("The Breev local API could not start.\n");
+void bootstrap().catch((error: unknown) => {
+  const details =
+    error instanceof Error ? (error.stack ?? error.message) : String(error);
+  process.stderr.write(`The Breev local API could not start: ${details}\n`);
   process.exitCode = 1;
 });

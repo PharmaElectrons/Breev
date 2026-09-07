@@ -5,6 +5,13 @@ import {
   attendanceEventRequestSchema,
   catalogDenialCodeSchema,
   catalogDenialSchema,
+  catalogMatchingApprovalRequestSchema,
+  catalogMatchingBatchOpenRequestSchema,
+  productBarcodeAddRequestSchema,
+  productBarcodePrintRequestSchema,
+  productBarcodeSuggestRequestSchema,
+  productSearchRequestSchema,
+  productSearchResponseSchema,
   productArchiveContract,
   productArchivePath,
   productArchiveRequestSchema,
@@ -51,6 +58,7 @@ import {
   identityUpdateRolePermissionsRequestSchema,
   identityUpdateUserRequestSchema,
   identityUserSchema,
+  IMPLEMENTED_PERMISSION_NAMES,
   PHARMACY_ROLE_KEYS,
   PHARMACY_ROLE_DISPLAY_NAMES,
   deviceInventoryContract,
@@ -394,8 +402,20 @@ describe("identity role contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("11");
-    expect(LOCAL_SCHEMA_VERSION).toBe("11");
+    expect(LOCAL_API_VERSION).toBe("13");
+    expect(LOCAL_SCHEMA_VERSION).toBe("13");
+    expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
+      "attendance.record",
+      "catalog.item.manage",
+      "catalog.item.search",
+      "devices.pair",
+      "identity.roles.manage",
+      "identity.users.manage",
+      "licensing.manage",
+      "pharmacy.settings.manage",
+      "purchases.drafts.manage",
+      "suppliers.manage",
+    ]);
   });
 
   it("accepts the healthy handshake", () => {
@@ -880,7 +900,7 @@ const PRODUCT_PRICING = {
 
 const PRODUCT_ATTRIBUTES = {
   arabicSearchName: "بنادول إكسترا",
-  barcodes: ["6221033000101"],
+  barcodes: [{ kind: "product", value: "6221033000101" }],
   category: "Analgesics",
   definition: MEDICATION_DEFINITION,
   instructions: {
@@ -898,6 +918,13 @@ const PRODUCT_ATTRIBUTES = {
 
 const PRODUCT = {
   ...PRODUCT_ATTRIBUTES,
+  barcodes: [
+    {
+      kind: "product",
+      source: "provided",
+      value: "6221033000101",
+    },
+  ],
   displayName: "Panadol Extra 500 mg Tablet GSK",
   id: PRODUCT_ID,
   mergedIntoProductId: null,
@@ -1081,7 +1108,7 @@ describe("catalog product contracts", () => {
         /delete|remove|purge|cleanup|repair|destroy/u,
       );
     }
-    expect(CATALOG_CONTRACTS).toHaveLength(6);
+    expect(CATALOG_CONTRACTS).toHaveLength(12);
     expect(Object.keys(productSchema.shape)).not.toContain("deleted");
     expect(Object.keys(productSchema.shape)).not.toContain("deletedAt");
   });
@@ -1210,13 +1237,98 @@ describe("catalog product contracts", () => {
     expect(
       productCreateRequestSchema.parse({
         ...create,
-        barcodes: ["6221033000101", "6221033000118"],
+        barcodes: [
+          { kind: "product", value: "6221033000101" },
+          { kind: "package", value: "6221033000118" },
+        ],
       }).barcodes,
     ).toHaveLength(2);
     expect(
-      productCreateRequestSchema.safeParse({ ...create, barcodes: [""] })
-        .success,
+      productCreateRequestSchema.safeParse({
+        ...create,
+        barcodes: [{ kind: "product", value: "" }],
+      }).success,
     ).toBe(false);
+  });
+});
+
+describe("catalog search, barcode, and matching contracts", () => {
+  it("validates one reusable search request and response shape", () => {
+    expect(
+      productSearchRequestSchema.parse({ limit: "50", query: "panadol gs" }),
+    ).toEqual({ limit: "50", query: "panadol gs" });
+    expect(
+      productSearchResponseSchema.parse({
+        hasMore: false,
+        query: "6221033000101",
+        resultCount: 1,
+        results: [
+          {
+            matchedBarcode: PRODUCT.barcodes[0],
+            matchedField: "barcode",
+            product: PRODUCT,
+          },
+        ],
+      }).results[0]?.product.id,
+    ).toBe(PRODUCT_ID);
+    const invalid = productSearchRequestSchema.safeParse({
+      limit: "0",
+      query: " panadol ",
+    });
+    expect(invalid.success).toBe(false);
+    if (!invalid.success) {
+      expect(invalid.error.issues.map(({ path }) => path)).toEqual(
+        expect.arrayContaining([["limit"], ["query"]]),
+      );
+    }
+  });
+
+  it("returns field paths for invalid add, suggest, print, and approval commands", () => {
+    const invalidInputs = [
+      [
+        productBarcodeAddRequestSchema,
+        {
+          barcode: { kind: "unit", value: "" },
+          expectedRevision: "0",
+          idempotencyKey: "not-a-uuid",
+        },
+      ],
+      [
+        productBarcodeSuggestRequestSchema,
+        {
+          expectedRevision: "1",
+          idempotencyKey: COMMAND_ID,
+          kind: "unit",
+        },
+      ],
+      [
+        productBarcodePrintRequestSchema,
+        {
+          barcode: "6221033000101",
+          idempotencyKey: COMMAND_ID,
+          locale: "en",
+          quantity: 0,
+        },
+      ],
+      [
+        catalogMatchingApprovalRequestSchema,
+        { expectedRevision: "0", idempotencyKey: COMMAND_ID },
+      ],
+    ] as const;
+    for (const [schema, value] of invalidInputs) {
+      const parsed = schema.safeParse(value);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.every(({ path }) => path.length > 0)).toBe(
+          true,
+        );
+      }
+    }
+    expect(
+      catalogMatchingBatchOpenRequestSchema.parse({
+        idempotencyKey: COMMAND_ID,
+      }),
+    ).toEqual({ idempotencyKey: COMMAND_ID });
   });
 });
 

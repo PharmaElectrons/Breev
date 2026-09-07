@@ -99,6 +99,27 @@
       "when": 1788710400000,
       "tag": "0013_catalog_packaging_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788796800000,
+      "tag": "0014_catalog_search_barcodes_matching",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788883200000,
+      "tag": "0015_purchase_draft_rows",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788969600000,
+      "tag": "0016_purchasing_role_default",
+      "breakpoints": true
     }
   ]
 }

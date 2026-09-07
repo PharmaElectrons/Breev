@@ -4,6 +4,18 @@ import {
   catalogDenialSchema,
   identityDenialSchema,
   licensingDenialSchema,
+  barcodePrintHandoffSchema,
+  catalogMatchingApprovalContract,
+  catalogMatchingApprovalPath,
+  catalogMatchingBatchOpenContract,
+  catalogMatchingBatchSchema,
+  productBarcodeAddContract,
+  productBarcodeAddPath,
+  productBarcodePrintContract,
+  productBarcodePrintPath,
+  productBarcodeSuggestContract,
+  productBarcodeSuggestPath,
+  productBarcodeSuggestionResponseSchema,
   productArchiveContract,
   productArchivePath,
   productCreateContract,
@@ -13,13 +25,26 @@ import {
   productMergePath,
   productPath,
   productReadContract,
+  productSearchContract,
+  productSearchPath,
+  productSearchResponseSchema,
   productSchema,
   type CatalogDenial,
+  type BarcodePrintHandoff,
+  type CatalogMatchingApprovalRequest,
+  type CatalogMatchingBatch,
+  type CatalogMatchingBatchOpenRequest,
   type Product,
+  type ProductBarcodeAddRequest,
+  type ProductBarcodePrintRequest,
+  type ProductBarcodeSuggestRequest,
+  type ProductBarcodeSuggestionResponse,
   type ProductArchiveRequest,
   type ProductCreateRequest,
   type ProductEditRequest,
   type ProductMergeRequest,
+  type ProductSearchRequest,
+  type ProductSearchResponse,
 } from "@breev/contracts/local-rest";
 
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
@@ -116,6 +141,96 @@ export async function mergeProduct(
     baseUrl,
     productMergePath(productId),
     productMergeContract.method,
+    201,
+    productSchema,
+    body,
+  );
+}
+
+export async function searchProducts(
+  baseUrl: string,
+  input: ProductSearchRequest,
+): Promise<ProductSearchResponse> {
+  return await requestJson(
+    baseUrl,
+    productSearchPath({
+      query: input.query,
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+    }),
+    productSearchContract.method,
+    200,
+    productSearchResponseSchema,
+  );
+}
+
+export async function addProductBarcode(
+  baseUrl: string,
+  productId: string,
+  body: ProductBarcodeAddRequest,
+): Promise<Product> {
+  return await requestJson(
+    baseUrl,
+    productBarcodeAddPath(productId),
+    productBarcodeAddContract.method,
+    201,
+    productSchema,
+    body,
+  );
+}
+
+export async function suggestProductBarcode(
+  baseUrl: string,
+  productId: string,
+  body: ProductBarcodeSuggestRequest,
+): Promise<ProductBarcodeSuggestionResponse> {
+  return await requestJson(
+    baseUrl,
+    productBarcodeSuggestPath(productId),
+    productBarcodeSuggestContract.method,
+    201,
+    productBarcodeSuggestionResponseSchema,
+    body,
+  );
+}
+
+export async function requestBarcodePrint(
+  baseUrl: string,
+  productId: string,
+  body: ProductBarcodePrintRequest,
+): Promise<BarcodePrintHandoff> {
+  return await requestJson(
+    baseUrl,
+    productBarcodePrintPath(productId),
+    productBarcodePrintContract.method,
+    201,
+    barcodePrintHandoffSchema,
+    body,
+  );
+}
+
+export async function openCatalogMatchingBatch(
+  baseUrl: string,
+  body: CatalogMatchingBatchOpenRequest,
+): Promise<CatalogMatchingBatch> {
+  return await requestJson(
+    baseUrl,
+    catalogMatchingBatchOpenContract.path,
+    catalogMatchingBatchOpenContract.method,
+    201,
+    catalogMatchingBatchSchema,
+    body,
+  );
+}
+
+export async function approveCatalogMatchingSuggestion(
+  baseUrl: string,
+  suggestionId: string,
+  body: CatalogMatchingApprovalRequest,
+): Promise<Product> {
+  return await requestJson(
+    baseUrl,
+    catalogMatchingApprovalPath(suggestionId),
+    catalogMatchingApprovalContract.method,
     201,
     productSchema,
     body,

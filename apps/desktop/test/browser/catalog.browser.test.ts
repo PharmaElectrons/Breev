@@ -1,5 +1,8 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import type { BreevDesktopApi } from "@breev/contracts/desktop-preload";
+import type {
+  BreevDesktopApi,
+  DesktopBarcodePrintRequest,
+} from "@breev/contracts/desktop-preload";
 import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
@@ -32,6 +35,7 @@ import { Pool } from "pg";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
 import {
@@ -82,7 +86,7 @@ interface ApiResponse {
 function sampleMedicationRequest(barcode: string): ProductCreateRequest {
   return {
     arabicSearchName: "بنادول اكسترا باراسيتامول وكافيين",
-    barcodes: [barcode],
+    barcodes: [{ kind: "product", value: barcode }],
     category: "Analgesic",
     definition: {
       fields: {
@@ -147,8 +151,7 @@ async function startRendererServer(
 
       if (
         request.url?.startsWith("/identity/") ||
-        request.url === "/catalog/products" ||
-        request.url?.startsWith("/catalog/products/")
+        request.url?.startsWith("/catalog/")
       ) {
         const body = await readRequestBody(request);
         const upstream = await fetch(`${apiOrigin}${request.url}`, {
@@ -222,12 +225,24 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => unpairedState,
         copyIdentifier: async () => ({ copied: true as const }),
+        printBarcodeLabel: async (request: DesktopBarcodePrintRequest) => {
+          localStorage.setItem(
+            "breev.test.lastBarcodePrint",
+            JSON.stringify(request),
+          );
+          return { status: "handed-off" as const };
+        },
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
+          diagnosticReporting: "disabled" as const,
           localApiOrigin: apiOrigin,
           role: "main" as const,
         }),
         getTerminalPairingState: async () => unpairedState,
+        openSupport: async () => ({ status: "unavailable" as const }),
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => unpairedState,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => unpairedState,
       });
 
@@ -247,13 +262,16 @@ test.describe.serial("Product catalog screens", () => {
   let apiOrigin: string;
   let credentials: MainDeviceCredentials;
   let databaseRoles: SeparatedDatabaseRoles;
+  let dailyMatchingProduct: Product;
   let inventoryProduct: Product;
+  let matchingProduct: Product;
   let matrixProduct: Product;
   let mergeProduct: Product;
   let mergeSurvivor: Product;
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
   const evidenceDir = evidencePath("issue-47/after");
+  const searchEvidenceDir = evidencePath("issue-48/after");
   const testResultsDir = path.resolve(
     import.meta.dirname,
     "../../../../test-results/desktop-browser",
@@ -264,10 +282,17 @@ test.describe.serial("Product catalog screens", () => {
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
+    await mkdir(searchEvidenceDir, { recursive: true });
     await mkdir(adoptionEvidenceDir, { recursive: true });
     await mkdir(testResultsDir, { recursive: true });
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     const apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
@@ -369,6 +394,33 @@ test.describe.serial("Product catalog screens", () => {
       credentials,
       sampleMedicationRequest("5000167000101"),
     );
+    matchingProduct = await createCatalogProduct(apiOrigin, credentials, {
+      ...sampleMedicationRequest("5000167000199"),
+      barcodes: [],
+      definition: {
+        fields: {
+          dosageForm: "Tablet",
+          manufacturer: "GSK",
+          strength: "500mg",
+          tradeName: "Matching Candidate",
+        },
+        mode: "medication",
+      },
+    });
+    dailyMatchingProduct = await createCatalogProduct(apiOrigin, credentials, {
+      ...sampleMedicationRequest("5000167000198"),
+      barcodes: [],
+      definition: {
+        fields: {
+          dosageForm: "Tablet",
+          manufacturer: "Breev Labs",
+          strength: "10mg",
+          tradeName: "Daily Matching Candidate",
+        },
+        mode: "medication",
+      },
+    });
+    expect(dailyMatchingProduct.barcodes).toEqual([]);
     mergeProduct = await createCatalogProduct(
       apiOrigin,
       credentials,
@@ -464,6 +516,8 @@ test.describe.serial("Product catalog screens", () => {
 
     // 7. Barcode entry
     await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Barcode kind")).toBeFocused();
+    await page.keyboard.press("Tab");
     const barcodeInput = page.getByPlaceholder("Enter barcode");
     await expect(barcodeInput).toBeFocused();
     await page.keyboard.type("5000167000001");
@@ -513,6 +567,132 @@ test.describe.serial("Product catalog screens", () => {
     await page.screenshot({
       path: path.join(evidenceDir, "keyboard-medication-record.png"),
     });
+  });
+
+  test("Instant English, Arabic, and scanner search announces counts in both directions and themes", async ({
+    browser,
+  }) => {
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, { locale, theme });
+        await page.goto(`${renderer.origin}#/catalog/products`);
+        const label =
+          locale === "ar"
+            ? "ابحث بالاسم العربي أو الإنجليزي أو الباركود"
+            : "Search Arabic name, English name, or barcode";
+        const search = page.getByRole("searchbox", { name: label });
+        await search.fill("panadol gs");
+        await expect(page.locator(".catalog-rail-item").first()).toContainText(
+          "Panadol Extra",
+        );
+        await expect(
+          page.getByRole("status").filter({
+            hasText: locale === "ar" ? "عدد نتائج البحث:" : "Search results:",
+          }),
+        ).toBeAttached();
+
+        await search.fill("بنادول اكسترا");
+        await expect(page.locator(".catalog-rail-item").first()).toContainText(
+          "Panadol Extra",
+        );
+        await expect(search).toBeFocused();
+        await page.screenshot({
+          path: path.join(
+            searchEvidenceDir,
+            `catalog-search-${locale}-${theme}.png`,
+          ),
+        });
+        await context.close();
+      }
+    }
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    const scanner = page.getByRole("searchbox", {
+      name: "Search Arabic name, English name, or barcode",
+    });
+    await scanner.fill("5000167000101");
+    await scanner.press("Enter");
+    await expect(page).toHaveURL(
+      `${renderer.origin}/#/catalog/products/${inventoryProduct.id}`,
+    );
+    await context.close();
+  });
+
+  test("Search failure retains scanner value and focus; barcode suggest, print, and matching work without a mouse", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    const search = page.getByRole("searchbox", {
+      name: "Search Arabic name, English name, or barcode",
+    });
+    await page.route("**/catalog/product-search?*", (route) => route.abort());
+    await search.fill("kept scanner value");
+    await search.press("Enter");
+    await expect(search).toHaveValue("kept scanner value");
+    await expect(search).toBeFocused();
+    await page.unroute("**/catalog/product-search?*");
+
+    await page.goto(
+      `${renderer.origin}#/catalog/products/${matchingProduct.id}`,
+    );
+    await page
+      .getByRole("button", { name: "Suggest internal barcode" })
+      .press("Enter");
+    const internalCode = page.getByText(/^BRV-[0-9]{12}/u);
+    await expect(internalCode).toBeVisible();
+    await page.getByRole("button", { name: "Print" }).press("Enter");
+    await expect
+      .poll(async () =>
+        page.evaluate(() =>
+          localStorage.getItem("breev.test.lastBarcodePrint"),
+        ),
+      )
+      .not.toBeNull();
+
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    const matchingButton = page.getByRole("button", {
+      name: "Daily matching list",
+    });
+    await page.route("**/catalog/matching-batches/current/openings", (route) =>
+      route.abort(),
+    );
+    await matchingButton.press("Enter");
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(matchingButton).toBeFocused();
+    await page.unroute("**/catalog/matching-batches/current/openings");
+
+    await matchingButton.press("Enter");
+    const matchingDialog = page.getByRole("dialog", {
+      name: "Daily barcode suggestions",
+    });
+    await expect(matchingDialog).toBeVisible();
+    await expect(matchingDialog.locator(":focus")).toHaveCount(1);
+    const approve = page.getByRole("button", { name: "Approve" }).first();
+    const close = page.getByRole("button", { name: "Close" });
+    await expect(approve).toBeVisible();
+    await close.focus();
+    await close.press("Tab");
+    await expect(approve).toBeFocused();
+    await approve.press("Shift+Tab");
+    await expect(close).toBeFocused();
+    await page.screenshot({
+      path: path.join(searchEvidenceDir, "catalog-matching-en-light.png"),
+    });
+    await page.keyboard.press("Escape");
+    await expect(matchingDialog).toBeHidden();
+    await expect(matchingButton).toBeFocused();
   });
 
   test("Keyboard-only entry of a full general item", async ({ page }) => {
@@ -1092,17 +1272,18 @@ test.describe.serial("Product catalog screens", () => {
     await page.goto(`${renderer.origin}#/catalog/products`);
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
 
-    // Navigation is links, not buttons, so the documented shell button order
-    // (language, theme, check) survives the prototype's module bar.
-    const buttons = page.getByRole("button");
-    await expect(buttons.nth(0)).toHaveAttribute(
-      "aria-label",
+    // Navigation is links, not buttons, so it does not disturb the header's
+    // diagnostic, language, and theme control order. Central submission is
+    // intentionally disabled by default (G-16), so it is absent here.
+    const buttons = page.locator(".preference-controls").getByRole("button");
+    for (const [index, label] of [
+      "Export diagnostic package",
+      "Contact support",
       "Switch to Arabic",
-    );
-    await expect(buttons.nth(1)).toHaveAttribute(
-      "aria-label",
       "Use dark theme",
-    );
+    ].entries()) {
+      await expect(buttons.nth(index)).toHaveAttribute("aria-label", label);
+    }
 
     const products = page
       .getByRole("navigation", { name: "Modules" })

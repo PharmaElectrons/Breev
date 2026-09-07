@@ -1,4 +1,8 @@
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/breev-windows-execution/
+!.agents/skills/breev-windows-execution/**
 .claude/
 .delegate/
 .scratch/

@@ -308,6 +308,11 @@ export function RoleEditor({
                 ? copy.builtInRole
                 : copy.customRole}
             </p>
+            {selected.kind === "built-in" ? (
+              <p className="role-description">
+                {copy.roleDescriptions[selected.key]}
+              </p>
+            ) : null}
             {selected.kind === "custom" ? (
               <form
                 className="role-rename-form"

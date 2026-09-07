@@ -235,7 +235,7 @@ const MACHINE_KEY_SCRIPT = `
   }
   $entropy = [System.Text.Encoding]::UTF8.GetBytes('breev-recovery-kek:' + $keyId)
   $keyFile = Join-Path $target ($keyId + '.dat')
-  if (-not (Test-Path -LiteralPath $keyFile)) {
+  if (-not (Test-Path -LiteralPath $keyFile) -or (Get-Item -LiteralPath $keyFile).Length -eq 0) {
     New-Item -ItemType File -Path $keyFile -Force | Out-Null
     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
     $acl = Get-Acl -LiteralPath $keyFile

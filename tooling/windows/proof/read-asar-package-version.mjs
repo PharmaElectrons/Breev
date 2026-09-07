@@ -1,10 +1,10 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 
-const forgeRequire = createRequire(
-  path.resolve(import.meta.dirname, "../forge-comparison/package.json"),
+const desktopRequire = createRequire(
+  path.resolve(import.meta.dirname, "../../../apps/desktop/package.json"),
 );
-const { extractFile } = forgeRequire("@electron/asar");
+const { extractFile } = desktopRequire("@electron/asar");
 
 const asarPath = path.resolve(readArgument("--asar"));
 const packageJson = JSON.parse(

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   PurchaseDraft,
+  PurchaseDraftDetail,
   PurchaseDraftResult,
   Supplier,
 } from "@breev/contracts/local-rest";
+import { PurchaseRowEntry } from "./purchase-row-entry";
 import { useIdentityState } from "./identity-state-provider";
 import {
   createPurchaseDraft,
@@ -11,6 +13,7 @@ import {
   PurchasingApiDenied,
   purchasingCommandAttempt,
   requestPurchaseDrafts,
+  requestPurchaseDraft,
   requestSuppliers,
   updatePurchaseDraft,
   type PurchasingCommandAttempt,
@@ -42,7 +45,9 @@ export function PurchasingRouteView({
     identity.allowedPermissions.includes("suppliers.manage");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [drafts, setDrafts] = useState<PurchaseDraft[]>([]);
-  const [activeDraft, setActiveDraft] = useState<PurchaseDraft | null>(null);
+  const [activeDraft, setActiveDraft] = useState<PurchaseDraftDetail | null>(
+    null,
+  );
   const [warning, setWarning] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,19 +104,25 @@ export function PurchasingRouteView({
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  function showDraft(draft: PurchaseDraft): void {
+  async function showDraft(draft: PurchaseDraft): Promise<void> {
     registerRef.current?.close();
     setView("invoice");
+
     draftCommandAttempt.current = null;
-    setActiveDraft(draft);
-    setSupplierInvoiceNumber(draft.supplierInvoiceNumber);
-    setSupplierId(draft.supplierId);
-    setSettlementContext(draft.settlementContext);
-    setInvoiceDate(draft.invoiceDate);
-    setWarning(false);
-    setError(null);
-    setStatus(null);
-    queueMicrotask(() => invoiceRef.current?.focus());
+    try {
+      const detail = await requestPurchaseDraft(baseUrl, draft.id);
+      setActiveDraft(detail);
+      setSupplierInvoiceNumber(detail.supplierInvoiceNumber);
+      setSupplierId(detail.supplierId);
+      setSettlementContext(detail.settlementContext);
+      setInvoiceDate(detail.invoiceDate);
+      setWarning(false);
+      setError(null);
+      setStatus(null);
+      queueMicrotask(() => invoiceRef.current?.focus());
+    } catch {
+      setError(copy.error);
+    }
   }
 
   function newDraft(): void {
@@ -166,7 +177,8 @@ export function PurchasingRouteView({
               idempotencyKey: attempt.idempotencyKey,
             });
       draftCommandAttempt.current = null;
-      setActiveDraft(result.draft);
+      const detail = await requestPurchaseDraft(baseUrl, result.draft.id);
+      setActiveDraft(detail);
       setWarning(result.warnings.length > 0);
       setStatus(copy.saved);
       await reload();
@@ -428,41 +440,56 @@ export function PurchasingRouteView({
           ) : null}
         </form>
 
-        <div
-          className="purchase-lines-wrap"
-          role="group"
-          aria-label={copy.scrollLines}
-          tabIndex={0}
-        >
-          <table className="purchase-lines-table">
-            <caption className="visually-hidden">{copy.invoiceItems}</caption>
-            <colgroup>
-              <col className="purchase-line-number" />
-              <col className="purchase-line-name" />
-              {columns.slice(1).map((column) => (
-                <col key={column} />
-              ))}
-            </colgroup>
-            <thead>
-              <tr>
-                <th scope="col">#</th>
-                {columns.map((column) => (
-                  <th scope="col" key={column}>
-                    {column}
-                  </th>
+        {activeDraft === null ? (
+          <div
+            className="purchase-lines-wrap"
+            role="group"
+            aria-label={copy.scrollLines}
+            tabIndex={0}
+          >
+            <table className="purchase-lines-table">
+              <caption className="visually-hidden">{copy.invoiceItems}</caption>
+              <colgroup>
+                <col className="purchase-line-number" />
+                <col className="purchase-line-name" />
+                {columns.slice(1).map((column) => (
+                  <col key={column} />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td colSpan={12} className="purchase-lines-empty">
-                  <p>{copy.noItems}</p>
-                  <p id="purchase-lines-state">{copy.lineEntryUnavailable}</p>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  {columns.map((column) => (
+                    <th scope="col" key={column}>
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={12} className="purchase-lines-empty">
+                    <p>{copy.noItems}</p>
+                    <p id="purchase-lines-state">{copy.lineEntryUnavailable}</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <PurchaseRowEntry
+            baseUrl={baseUrl}
+            draft={activeDraft}
+            onDraftChanged={(nextDraft) => {
+              setActiveDraft(nextDraft);
+              setDrafts((current) =>
+                current.map((draft) =>
+                  draft.id === nextDraft.id ? nextDraft : draft,
+                ),
+              );
+            }}
+          />
+        )}
 
         <footer className="purchase-footer" data-purchase-editor>
           <div className="purchase-totals" aria-label={copy.invoiceTotals}>
@@ -535,7 +562,7 @@ export function PurchasingRouteView({
               }
               onClick={() => {
                 const draft = drafts[activeIndex + 1];
-                if (draft) showDraft(draft);
+                if (draft) void showDraft(draft);
               }}
             >
               <span aria-hidden="true">‹</span> {copy.previous}
@@ -546,7 +573,7 @@ export function PurchasingRouteView({
               disabled={activeIndex < 0}
               onClick={() => {
                 const draft = drafts[activeIndex - 1];
-                if (draft) showDraft(draft);
+                if (draft) void showDraft(draft);
                 else newDraft();
               }}
             >
@@ -776,7 +803,7 @@ export function PurchasingRouteView({
                           aria-current={
                             activeDraft?.id === draft.id ? "true" : undefined
                           }
-                          onClick={() => showDraft(draft)}
+                          onClick={() => void showDraft(draft)}
                         >
                           {copy.resume} {draft.supplierInvoiceNumber}
                           {activeDraft?.id === draft.id ? (

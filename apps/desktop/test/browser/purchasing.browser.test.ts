@@ -6,6 +6,8 @@ import {
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   supplierSchema,
+  type Product,
+  type ProductCreateRequest,
   type PurchaseDraft,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Page } from "@playwright/test";
@@ -51,13 +53,20 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
   let supplierId = "";
+  let purchaseProduct: Product;
+  let percentageProduct: Product;
   const evidenceDir = path.resolve(
     import.meta.dirname,
     "../../../../evidence/purchases-prototype-alignment/after",
   );
+  const rowEvidenceDir = path.resolve(
+    import.meta.dirname,
+    "../../../../evidence/issue-18/after",
+  );
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
+    await mkdir(rowEvidenceDir, { recursive: true });
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
     if (administratorUrl === undefined) {
       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
@@ -105,6 +114,37 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
     expect(supplier.status).toBe(201);
     supplierId = supplierSchema.parse(supplier.body).id;
+    const product = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/catalog/products",
+      medicationRequest("Keyboard Purchase", "5012345678949"),
+    );
+    expect(product.status).toBe(201);
+    purchaseProduct = product.body as Product;
+    const percentageRequest = medicationRequest(
+      "Percentage Purchase",
+      "5012345678956",
+    );
+    const percentage = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/catalog/products",
+      {
+        ...percentageRequest,
+        pricing: {
+          costFils: "80000",
+          marginPercentage: "20",
+          method: "by-percentage",
+          rounding: "off",
+          wholesalePriceFils: "90000",
+        },
+      },
+    );
+    expect(percentage.status).toBe(201);
+    percentageProduct = percentage.body as Product;
     renderer = await startRendererServer(apiOrigin, credentials);
   });
 
@@ -233,6 +273,285 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
   });
 
+  test("enters durable rows by scanner and Enter, quick-creates a Product, and follows persisted column order", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      recordVideo: {
+        dir: path.resolve(
+          import.meta.dirname,
+          "../../../../test-results/issue-18-video",
+        ),
+        size: { height: 768, width: 1024 },
+      },
+    });
+    const page = await context.newPage();
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByRole("button", { name: "New invoice" }).click();
+    await page.getByLabel("Supplier invoice number").fill("ROWS-49");
+    await page
+      .getByRole("combobox", { name: "Supplier", exact: true })
+      .selectOption(supplierId);
+    await page.getByLabel("Invoice date").fill("2026-09-07");
+    await page.getByRole("button", { name: "Save draft" }).click();
+
+    const item = page.getByRole("textbox", {
+      name: "Item / Barcode",
+      exact: true,
+    });
+    const quantity = page.getByRole("textbox", {
+      name: "Quantity",
+      exact: true,
+    });
+    const cost = page.getByRole("textbox", {
+      name: "Primary cost",
+      exact: true,
+    });
+    const sellingPrice = page.getByRole("textbox", {
+      name: "Selling price",
+      exact: true,
+    });
+    const expiry = page.getByRole("textbox", {
+      name: "Expiry",
+      exact: true,
+    });
+    await expect(item).toBeFocused();
+    await item.fill("5012345678949");
+    await item.press("Enter");
+    await expect(quantity).toBeFocused();
+    await expect(
+      page.getByText(purchaseProduct.displayName, { exact: true }).last(),
+    ).toBeVisible();
+
+    await quantity.fill("0");
+    await quantity.press("Enter");
+    await expect(quantity).toBeFocused();
+    await expect(page.getByRole("alert")).toContainText(
+      "positive whole quantity",
+    );
+    await quantity.fill("2");
+    await quantity.press("Enter");
+    await expect(cost).toBeFocused();
+    await cost.fill("80000");
+    await cost.press("Enter");
+    await expect(sellingPrice).toBeFocused();
+    await sellingPrice.fill("120000");
+    await sellingPrice.press("Enter");
+    await expect(expiry).toBeFocused();
+    let postRequests = 0;
+    page.on("request", (request) => {
+      if (/\/post(?:ings)?$/u.test(new URL(request.url()).pathname))
+        postRequests += 1;
+    });
+    await expiry.fill("2028-10-31");
+    await expiry.press("Enter");
+    await expect(
+      page.getByText("Row committed and saved durably."),
+    ).toBeVisible();
+    await expect(item).toBeFocused();
+    expect(postRequests).toBe(0);
+    await expect(
+      page.getByRole("button", { name: "Post purchase" }),
+    ).toBeDisabled();
+    await expect(page.locator(".purchase-review")).toContainText("160000");
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+
+    await item.fill("5012345678956");
+    await item.press("Enter");
+    await expect(
+      page.getByText(percentageProduct.displayName).last(),
+    ).toBeVisible();
+    await quantity.press("Enter");
+    await cost.fill("80000");
+    await cost.press("Enter");
+    await expect(expiry).toBeFocused();
+    await expect(sellingPrice).toHaveJSProperty("readOnly", true);
+    await expect(sellingPrice).toHaveValue("100000");
+    await expiry.press("Enter");
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(3);
+
+    await item.fill("UNKNOWN PRODUCT");
+    await item.press("Enter");
+    const quickDialog = page.getByRole("dialog", {
+      name: "Quick Product creation",
+    });
+    await expect(quickDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(quickDialog).toBeHidden();
+    await expect(item).toBeFocused();
+    await expect(item).toHaveValue("UNKNOWN PRODUCT");
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(3);
+
+    await item.fill("5901234123457");
+    await item.press("Enter");
+    await expect(quickDialog).toBeVisible();
+    await quickDialog.getByLabel("Trade name *").fill("Quick Purchase Product");
+    await quickDialog.getByLabel("Inventory Unit (base unit) *").fill("Piece");
+    await quickDialog.getByLabel("Retail price (fils) *").fill("250000");
+    await quickDialog.getByRole("button", { name: "Create product" }).click();
+    await expect(quickDialog).toBeHidden();
+    await expect(item).toBeFocused();
+    await expect(item).toHaveValue("Quick Purchase Product");
+    await item.press("Enter");
+    await quantity.fill("1");
+    await quantity.press("Enter");
+    await cost.fill("100000");
+    await cost.press("Enter");
+    await sellingPrice.press("Enter");
+    await expiry.press("Enter");
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(4);
+
+    const settings = page.locator(".purchase-entry-settings");
+    await settings.locator("summary").click();
+    const sellingSetting = settings.locator("li", { hasText: "Selling price" });
+    await sellingSetting.getByRole("checkbox").uncheck();
+    await settings
+      .getByRole("button", { name: "Move earlier: Expiry" })
+      .click();
+    await settings
+      .getByRole("button", { name: "Move earlier: Quantity" })
+      .click();
+    await settings
+      .getByRole("radio", { name: "Return to Item / Barcode" })
+      .check();
+    await settings
+      .getByRole("button", { name: "Move earlier: Expiry" })
+      .click();
+    await settings.getByRole("button", { name: "Save entry settings" }).click();
+    await expect(
+      page.getByText("Purchase entry settings saved."),
+    ).toBeVisible();
+    await expect(page.locator(".purchase-row-table thead th")).toHaveText([
+      "#",
+      "Quantity",
+      "Item / Barcode",
+      "Expiry",
+      "Primary cost",
+      "Inventory Units",
+    ]);
+
+    await page.reload();
+    await page.getByRole("button", { name: /ROWS-49/ }).click();
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(4);
+    await expect(quantity).toBeFocused();
+    await quantity.press("Enter");
+    const resumedItem = page.getByRole("textbox", {
+      name: "Item / Barcode",
+      exact: true,
+    });
+    await expect(resumedItem).toBeFocused();
+    await resumedItem.fill("5012345678949");
+    await resumedItem.press("Enter");
+    await expect(expiry).toBeFocused();
+    await expiry.press("Enter");
+    await expect(cost).toBeFocused();
+    await cost.press("Enter");
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(5);
+    await expect(resumedItem).toBeFocused();
+
+    const currentPreferences = await apiRequest(
+      apiOrigin,
+      credentials,
+      "GET",
+      "/purchases/entry-preferences",
+    );
+    const revision = String(
+      (currentPreferences.body as { revision: string }).revision,
+    );
+    expect(
+      (
+        await apiRequest(
+          apiOrigin,
+          credentials,
+          "PUT",
+          "/purchases/entry-preferences",
+          {
+            afterCommit: "new-row",
+            columns: [
+              { field: "quantity", visible: true },
+              { field: "cost", visible: true },
+              { field: "selling-price", visible: true },
+              { field: "expiry", visible: true },
+              { field: "item", visible: true },
+            ],
+            detailsPanelFields: [
+              "scientific-name",
+              "category",
+              "packaging",
+              "wholesale-price",
+            ],
+            expectedRevision: revision,
+            idempotencyKey: uuidV7(),
+          },
+        )
+      ).status,
+    ).toBe(200);
+    await page.reload();
+    await page.getByRole("button", { name: /ROWS-49/ }).click();
+    await expect(page.locator(".purchase-row-table thead th")).toHaveText([
+      "#",
+      "Quantity",
+      "Primary cost",
+      "Selling price",
+      "Expiry",
+      "Item / Barcode",
+      "Inventory Units",
+    ]);
+    await expect(quantity).toBeFocused();
+    await quantity.press("Enter");
+    await cost.press("Enter");
+    await sellingPrice.fill("120000");
+    await sellingPrice.press("Enter");
+    await expiry.press("Enter");
+    await expect(resumedItem).toBeFocused();
+    await resumedItem.fill("5012345678949");
+    await resumedItem.press("Enter");
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(6);
+    await expect(quantity).toBeFocused();
+
+    const itemLastPreferences = await apiRequest(
+      apiOrigin,
+      credentials,
+      "GET",
+      "/purchases/entry-preferences",
+    );
+    const itemLastRevision = String(
+      (itemLastPreferences.body as { revision: string }).revision,
+    );
+    expect(
+      (
+        await apiRequest(
+          apiOrigin,
+          credentials,
+          "PUT",
+          "/purchases/entry-preferences",
+          {
+            afterCommit: "new-row",
+            columns: [
+              { field: "item", visible: true },
+              { field: "quantity", visible: true },
+              { field: "cost", visible: true },
+              { field: "selling-price", visible: true },
+              { field: "expiry", visible: true },
+            ],
+            detailsPanelFields: [
+              "scientific-name",
+              "category",
+              "packaging",
+              "wholesale-price",
+            ],
+            expectedRevision: itemLastRevision,
+            idempotencyKey: uuidV7(),
+          },
+        )
+      ).status,
+    ).toBe(200);
+    const video = page.video();
+    await context.close();
+    await video?.saveAs(path.join(rowEvidenceDir, "keyboard-row-loop.webm"));
+  });
+
   test("is accessible in Arabic RTL and English LTR in both themes", async ({
     browser,
   }) => {
@@ -244,11 +563,21 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, locale, theme);
         await page.goto(`${renderer.origin}#/purchases`);
+        await page.getByRole("button", { name: /ROWS-49/ }).click();
         await expect(page.locator("html")).toHaveAttribute(
           "dir",
           locale === "ar" ? "rtl" : "ltr",
         );
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        const entryFields = page.locator(
+          ".purchase-entry-row [data-enter-field]",
+        );
+        await expect(entryFields).toHaveCount(5);
+        expect(
+          await entryFields.evaluateAll((elements) =>
+            elements.map((element) => element.getAttribute("data-enter-field")),
+          ),
+        ).toEqual(["item", "quantity", "cost", "selling-price", "expiry"]);
         await expect(
           page.getByRole("heading", {
             name: locale === "ar" ? "المشتريات" : "Purchases",
@@ -544,6 +873,7 @@ async function startRendererServer(
       }
       if (
         request.url?.startsWith("/identity/") ||
+        request.url?.startsWith("/catalog/") ||
         request.url?.startsWith("/suppliers") ||
         request.url?.startsWith("/purchases/")
       ) {
@@ -604,6 +934,51 @@ async function startRendererServer(
   return { origin: `http://127.0.0.1:${port}`, server };
 }
 
+function medicationRequest(
+  tradeName: string,
+  barcode: string,
+): ProductCreateRequest {
+  return {
+    arabicSearchName: "اختبار الشراء",
+    barcodes: [{ kind: "product", value: barcode }],
+    category: "Pain relief",
+    definition: {
+      fields: {
+        dosageForm: "tablet",
+        manufacturer: "GSK",
+        strength: "500 mg",
+        tradeName,
+      },
+      mode: "medication",
+    },
+    idempotencyKey: uuidV7(),
+    instructions: {
+      foodTiming: "after-food",
+      usesPerDay: 3,
+      usesPerMonth: null,
+      usesPerWeek: null,
+    },
+    packaging: {
+      defaultUnits: {
+        count: { kind: "inventory-unit" },
+        purchase: { kind: "package-unit", packageUnitName: "Pack" },
+        sale: { kind: "inventory-unit" },
+      },
+      inventoryUnitName: "Strip",
+      packageUnits: [{ baseUnitsPerPackage: "4", name: "Pack" }],
+      thirdUnit: { name: "Treatment day" },
+    },
+    pricing: {
+      method: "by-price",
+      retailPriceFils: "100000",
+      wholesalePriceFils: "90000",
+    },
+    scientificName: "Paracetamol",
+    sharing: { aiSharingAllowed: false, externallyVisible: true },
+    stateColours: { coldStorageRequired: false, manual: "blue" },
+  };
+}
+
 async function installDesktopFake(
   page: Page,
   apiOrigin: string,
@@ -618,12 +993,18 @@ async function installDesktopFake(
       const desktopApi: BreevDesktopApi = Object.freeze({
         cancelTerminalPairing: async () => pairing,
         copyIdentifier: async () => ({ copied: true as const }),
+        printBarcodeLabel: async () => ({ status: "handed-off" as const }),
+        exportDiagnostics: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
+          diagnosticReporting: "disabled" as const,
           localApiOrigin: origin,
           role: "main" as const,
         }),
         getTerminalPairingState: async () => pairing,
+        openSupport: async () => ({ status: "unavailable" as const }),
+        reportRendererIncident: async () => ({ accepted: true as const }),
         submitManualEndpoint: async () => pairing,
+        submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitPairingInvitation: async () => pairing,
       });
       Object.defineProperty(globalThis, "breevDesktop", { value: desktopApi });

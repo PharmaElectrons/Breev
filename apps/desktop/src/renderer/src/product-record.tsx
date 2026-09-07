@@ -1,14 +1,18 @@
 import type {
   InventoryCapableUnit,
   Product,
+  ProductBarcodeKind,
 } from "@breev/contracts/local-rest";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import {
   archiveProduct,
+  addProductBarcode,
   CatalogApiDenied,
   mergeProduct,
   newIdempotencyKey,
+  requestBarcodePrint,
+  suggestProductBarcode,
 } from "./catalog-api";
 import { catalogMessages } from "./catalog-messages";
 import { usePreferences } from "./preferences-provider";
@@ -59,6 +63,7 @@ export interface ProductRecordProps {
   readonly onBack?: () => void;
   readonly onEdit?: (product: Product) => void;
   readonly onMergeSuccess?: (product: Product) => void;
+  readonly onProductChanged?: (product: Product) => void;
   readonly product: Product;
 }
 
@@ -68,11 +73,13 @@ export function ProductRecord({
   onBack,
   onEdit,
   onMergeSuccess,
+  onProductChanged,
   product,
 }: ProductRecordProps): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = catalogMessages[locale];
   const mergeInputId = useId();
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
@@ -80,10 +87,87 @@ export function ProductRecord({
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [newBarcode, setNewBarcode] = useState("");
+  const [newBarcodeKind, setNewBarcodeKind] =
+    useState<ProductBarcodeKind>("product");
+  const [printLabel, setPrintLabel] = useState<Awaited<
+    ReturnType<typeof requestBarcodePrint>
+  > | null>(null);
 
   const isArchived = product.status === "archived";
   const isMerged = product.status === "merged";
   const canModify = !isArchived && !isMerged;
+
+  const barcodeError = (failure: unknown): string =>
+    failure instanceof CatalogApiDenied
+      ? copy.denials[failure.denial.code]
+      : failure instanceof Error
+        ? failure.message
+        : String(failure);
+
+  const handleAddBarcode = async (): Promise<void> => {
+    const value = newBarcode.trim();
+    if (value.length === 0) {
+      barcodeInputRef.current?.focus();
+      return;
+    }
+    setBusy(true);
+    setErrorBanner(null);
+    try {
+      const updated = await addProductBarcode(baseUrl, product.id, {
+        barcode: { kind: newBarcodeKind, value },
+        expectedRevision: product.revision,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      setNewBarcode("");
+      onProductChanged?.(updated);
+    } catch (failure) {
+      setErrorBanner(barcodeError(failure));
+      requestAnimationFrame(() => barcodeInputRef.current?.focus());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSuggestBarcode = async (): Promise<void> => {
+    setBusy(true);
+    setErrorBanner(null);
+    try {
+      const response = await suggestProductBarcode(baseUrl, product.id, {
+        expectedRevision: product.revision,
+        idempotencyKey: newIdempotencyKey(),
+        kind: "product",
+      });
+      onProductChanged?.(response.product);
+    } catch (failure) {
+      setErrorBanner(barcodeError(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePrintBarcode = async (value: string): Promise<void> => {
+    setBusy(true);
+    setErrorBanner(null);
+    try {
+      const handoff = await requestBarcodePrint(baseUrl, product.id, {
+        barcode: value,
+        idempotencyKey: newIdempotencyKey(),
+        locale,
+        quantity: 1,
+      });
+      setPrintLabel(handoff);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const result = await window.breevDesktop.printBarcodeLabel(handoff);
+      if (result.status === "failed") throw new Error(result.message);
+    } catch (failure) {
+      setErrorBanner(barcodeError(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleArchiveConfirm = async (): Promise<void> => {
     setBusy(true);
@@ -647,6 +731,63 @@ export function ProductRecord({
                 {copy.barcodes.label}
               </dt>
               <dd>
+                {canModify ? (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <select
+                      aria-label={
+                        locale === "ar" ? "نوع الباركود" : "Barcode kind"
+                      }
+                      className="min-h-[2.5rem] px-2 border border-[color:var(--control-border)] rounded-lg bg-background"
+                      value={newBarcodeKind}
+                      onChange={(event) =>
+                        setNewBarcodeKind(
+                          event.target.value as ProductBarcodeKind,
+                        )
+                      }
+                    >
+                      <option value="product">
+                        {locale === "ar" ? "منتج" : "Product"}
+                      </option>
+                      <option value="package">
+                        {locale === "ar" ? "عبوة" : "Package"}
+                      </option>
+                    </select>
+                    <input
+                      ref={barcodeInputRef}
+                      aria-label={copy.barcodes.placeholder}
+                      className="min-h-[2.5rem] flex-1 px-3 border border-[color:var(--control-border)] rounded-lg bg-background"
+                      maxLength={64}
+                      value={newBarcode}
+                      onChange={(event) => setNewBarcode(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleAddBarcode();
+                        }
+                      }}
+                    />
+                    <button
+                      className="quiet-button"
+                      disabled={busy}
+                      type="button"
+                      onClick={() => void handleAddBarcode()}
+                    >
+                      {copy.barcodes.add}
+                    </button>
+                    {product.barcodes.length === 0 ? (
+                      <button
+                        className="primary-button"
+                        disabled={busy}
+                        type="button"
+                        onClick={() => void handleSuggestBarcode()}
+                      >
+                        {locale === "ar"
+                          ? "اقتراح باركود داخلي"
+                          : "Suggest internal barcode"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {product.barcodes.length === 0 ? (
                   <span className="text-muted-foreground italic">
                     {copy.barcodes.empty}
@@ -655,10 +796,25 @@ export function ProductRecord({
                   <ul className="flex flex-wrap gap-2 list-none p-0 m-0">
                     {product.barcodes.map((bc) => (
                       <li
-                        key={bc}
+                        key={bc.value}
                         className="px-2.5 py-1 rounded border border-[color:var(--control-border)] font-mono text-xs"
                       >
-                        {bc}
+                        {bc.value} ·{" "}
+                        {bc.kind === "product"
+                          ? locale === "ar"
+                            ? "منتج"
+                            : "Product"
+                          : locale === "ar"
+                            ? "عبوة"
+                            : "Package"}
+                        <button
+                          className="quiet-button ms-2"
+                          disabled={busy}
+                          type="button"
+                          onClick={() => void handlePrintBarcode(bc.value)}
+                        >
+                          {locale === "ar" ? "طباعة" : "Print"}
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -667,6 +823,22 @@ export function ProductRecord({
             </div>
           </dl>
         </section>
+
+        {printLabel === null ? null : (
+          <section className="barcode-print-label" aria-hidden="true">
+            <strong>{printLabel.displayName}</strong>
+            <code>{printLabel.barcode.value}</code>
+            <span>
+              {printLabel.barcode.source === "breev-internal"
+                ? locale === "ar"
+                  ? "رمز داخلي من Breev — ليس GTIN"
+                  : "Breev internal code — not a GTIN"
+                : locale === "ar"
+                  ? "باركود مقدم من الصيدلية"
+                  : "Pharmacy-provided barcode"}
+            </span>
+          </section>
+        )}
 
         {/* Item Instructions */}
         <section aria-labelledby="instructions-heading" className="space-y-3">

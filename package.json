@@ -24,6 +24,7 @@
     "build": "turbo run build",
     "check:licence-artifact": "node tooling/licensing/check-artifact.mjs",
     "check:licence-signing-key": "node tooling/licensing/check-signing-key.mjs",
+    "check:release-version": "node tooling/release/verify-version.mjs",
     "check:boundaries": "node tooling/boundaries/check.mjs",
     "dev": "pnpm start:local",
     "dev:main": "node tooling/dev.mjs main",
@@ -42,8 +43,9 @@
     "test:dev-launcher": "node --test tooling/dev-launcher.test.mjs",
     "test:integration": "turbo run test:integration --filter=@breev/local-api",
     "test:licence-generator": "pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts src/licensing/dev-licence-generator.unit.test.ts && pnpm --filter @breev/desktop exec playwright test test/browser/licence-generator.browser.test.ts --config playwright.browser.config.ts",
+    "test:release-tooling": "node --test tooling/release/verify-version.test.mjs",
     "test:smoke": "pnpm build && pnpm --filter @breev/desktop test:smoke",
-    "test:unit": "turbo run test:unit && pnpm test:boundaries && pnpm test:dev-launcher",
+    "test:unit": "turbo run test:unit && pnpm test:boundaries && pnpm test:dev-launcher && pnpm test:release-tooling",
     "typecheck": "turbo run typecheck",
     "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm check:licence-artifact && pnpm test:unit && pnpm test:integration && pnpm test:browser && pnpm test:smoke"
   },

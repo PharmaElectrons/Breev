@@ -9,6 +9,10 @@ import {
 } from "@/components/ui/card";
 
 import { CatalogRouteView } from "./catalog-screen";
+import {
+  DiagnosticSubmissionConfirmation,
+  WorkspaceErrorBoundary,
+} from "./error-boundary";
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityShell } from "./identity-shell";
 import { messages } from "./messages";
@@ -80,6 +84,57 @@ export function AppShell({
   const [currentHash, setCurrentHash] = useState(() =>
     typeof window === "undefined" ? "" : window.location.hash,
   );
+  const [diagnosticAction, setDiagnosticAction] = useState<
+    "cancelled" | "failed" | "idle" | "saved" | "saving"
+  >("idle");
+  const [supportAction, setSupportAction] = useState<
+    "failed" | "idle" | "opened" | "opening" | "unavailable"
+  >("idle");
+  const [submissionAction, setSubmissionAction] = useState<
+    | "confirming"
+    | "failed"
+    | "idle"
+    | "submitted"
+    | "submitting"
+    | "unavailable"
+  >("idle");
+  const [submissionReportId, setSubmissionReportId] = useState<string | null>(
+    null,
+  );
+
+  const exportDiagnostics = async (): Promise<void> => {
+    setDiagnosticAction("saving");
+    try {
+      const result = await window.breevDesktop.exportDiagnostics({ locale });
+      setDiagnosticAction(result.status);
+    } catch {
+      setDiagnosticAction("failed");
+    }
+  };
+
+  const openSupport = async (): Promise<void> => {
+    setSupportAction("opening");
+    try {
+      const result = await window.breevDesktop.openSupport({ locale });
+      setSupportAction(result.status);
+    } catch {
+      setSupportAction("failed");
+    }
+  };
+
+  const submitDiagnostics = async (): Promise<void> => {
+    setSubmissionAction("submitting");
+    setSubmissionReportId(null);
+    try {
+      const result = await window.breevDesktop.submitDiagnostics({});
+      setSubmissionAction(result.status);
+      if (result.status === "submitted") {
+        setSubmissionReportId(result.reportId);
+      }
+    } catch {
+      setSubmissionAction("failed");
+    }
+  };
 
   useEffect(() => {
     const handleHashChange = (): void => {
@@ -92,6 +147,8 @@ export function AppShell({
   const requestedModuleId = moduleIdForHash(currentHash);
   const authenticated =
     identityState !== null && identityState.state === "authenticated";
+  const centralSubmissionEnabled =
+    startupConfig?.diagnosticReporting === "manual";
   const modules: readonly NavigationModule[] = authenticated
     ? navigationModules({
         allowedPermissions: identityState.allowedPermissions,
@@ -221,6 +278,42 @@ export function AppShell({
         <ModuleNavigation activeModuleId={activeModuleId} modules={modules} />
 
         <div className="preference-controls">
+          {authenticated ? (
+            <>
+              <button
+                className="quiet-button"
+                type="button"
+                aria-label={copy.crash.exportDiagnostics}
+                disabled={diagnosticAction === "saving"}
+                onClick={() => void exportDiagnostics()}
+              >
+                <DiagnosticsIcon />
+                <span>{copy.crash.exportDiagnostics}</span>
+              </button>
+              <button
+                className="quiet-button"
+                type="button"
+                aria-label={copy.crash.contactSupport}
+                disabled={supportAction === "opening"}
+                onClick={() => void openSupport()}
+              >
+                <SupportIcon />
+                <span>{copy.crash.contactSupport}</span>
+              </button>
+              {centralSubmissionEnabled ? (
+                <button
+                  className="quiet-button"
+                  type="button"
+                  aria-label={copy.crash.submitDiagnostics}
+                  disabled={submissionAction === "submitting"}
+                  onClick={() => setSubmissionAction("confirming")}
+                >
+                  <SendIcon />
+                  <span>{copy.crash.submitDiagnostics}</span>
+                </button>
+              ) : null}
+            </>
+          ) : null}
           {purchaseWorkspace ? (
             <details
               className="purchase-connection"
@@ -259,9 +352,101 @@ export function AppShell({
         {purchaseWorkspace ? <PurchaseClock locale={locale} /> : null}
       </header>
 
+      {submissionAction === "confirming" ? (
+        <DiagnosticSubmissionConfirmation
+          copy={copy.crash}
+          onCancel={() => setSubmissionAction("idle")}
+          onConfirm={() => void submitDiagnostics()}
+        />
+      ) : null}
+
+      <p className="support-action-status" role="status" aria-live="polite">
+        {diagnosticAction === "saved"
+          ? copy.crash.exportSaved
+          : diagnosticAction === "failed"
+            ? copy.crash.exportFailed
+            : diagnosticAction === "cancelled"
+              ? copy.crash.exportCancelled
+              : supportAction === "opened"
+                ? copy.crash.contactOpened
+                : supportAction === "failed"
+                  ? copy.crash.contactFailed
+                  : supportAction === "unavailable"
+                    ? `${copy.crash.contactUnavailable} ${copy.crash.manualSupportInstructions}`
+                    : submissionAction === "submitted"
+                      ? `${copy.crash.submitted} ${copy.crash.reportReference}: ${submissionReportId ?? ""}`
+                      : submissionAction === "failed"
+                        ? copy.crash.submitFailed
+                        : submissionAction === "unavailable"
+                          ? copy.crash.submitUnavailable
+                          : ""}
+      </p>
+
       {purchaseWorkspace ? null : (
         <section className="status-region" aria-label={copy.connectionStatus}>
-          {connectionCard}
+          <Card className="status-card" data-state={state}>
+            <CardHeader className="status-header">
+              <StatusIcon state={state} />
+              <div className="status-copy" role="status" aria-live="polite">
+                <p className="status-kicker">{copy.connectionStatus}</p>
+                <CardTitle data-testid="shell-state">{status.title}</CardTitle>
+                <CardDescription>{status.description}</CardDescription>
+              </div>
+            </CardHeader>
+
+            <CardContent className="status-content">
+              {state === "ready" && handshake !== null ? (
+                <dl className="version-list">
+                  <div>
+                    <dt>{copy.apiVersion}</dt>
+                    <dd>{handshake.apiVersion}</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.schemaVersion}</dt>
+                    <dd>{handshake.schemaVersion}</dd>
+                  </div>
+                </dl>
+              ) : null}
+
+              <div className="status-actions">
+                <p className="last-checked">
+                  {lastCheckedAt === null
+                    ? " "
+                    : `${copy.lastChecked}: ${formatDateTime(lastCheckedAt, locale)}`}
+                </p>
+                <div className="status-buttons">
+                  <button
+                    ref={checkButtonRef}
+                    className="primary-button"
+                    type="button"
+                    disabled={isChecking}
+                    onClick={checkNow}
+                  >
+                    {isChecking ? copy.checking : copy.checkAgain}
+                  </button>
+                  {state === "ready" ? (
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      disabled={deviceProof === "running"}
+                      onClick={() => void runDeviceProof()}
+                    >
+                      {copy.deviceProofAction}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              {deviceProof === "idle" ? null : (
+                <p
+                  className="device-proof-status"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {copy.deviceProof[deviceProof]}
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </section>
       )}
 
@@ -275,25 +460,38 @@ export function AppShell({
       ) : null}
 
       {state === "ready" && localApiOrigin !== null ? (
-        !authenticated ? (
-          // IdentityShell owns loading, bootstrap, login, expiry, and revocation.
-          <IdentityShell baseUrl={localApiOrigin} />
-        ) : activeModuleId === "dashboard" &&
-          handshake !== null &&
-          startupConfig !== null ? (
-          <SystemOverview handshake={handshake} startupConfig={startupConfig} />
-        ) : !moduleImplemented(activeModuleId) ? (
-          <UnavailableSurface moduleId={activeModuleId} />
-        ) : activeModuleId === "products" ? (
-          <CatalogRouteView
-            baseUrl={localApiOrigin}
-            hash={catalogHash(currentHash)}
-          />
-        ) : activeModuleId === "purchases" ? (
-          <PurchasingRouteView baseUrl={localApiOrigin} />
-        ) : (
-          <IdentityShell baseUrl={localApiOrigin} />
-        )
+        <WorkspaceErrorBoundary
+          actionsEnabled={authenticated}
+          centralSubmissionEnabled={centralSubmissionEnabled}
+          resetKey={
+            activeModuleId +
+            ":" +
+            (activeModuleId === "products" ? catalogHash(currentHash) : "")
+          }
+        >
+          {!authenticated ? (
+            // IdentityShell owns loading, bootstrap, login, expiry, and revocation.
+            <IdentityShell baseUrl={localApiOrigin} />
+          ) : activeModuleId === "dashboard" &&
+            handshake !== null &&
+            startupConfig !== null ? (
+            <SystemOverview
+              handshake={handshake}
+              startupConfig={startupConfig}
+            />
+          ) : !moduleImplemented(activeModuleId) ? (
+            <UnavailableSurface moduleId={activeModuleId} />
+          ) : activeModuleId === "products" ? (
+            <CatalogRouteView
+              baseUrl={localApiOrigin}
+              hash={catalogHash(currentHash)}
+            />
+          ) : activeModuleId === "purchases" ? (
+            <PurchasingRouteView baseUrl={localApiOrigin} />
+          ) : (
+            <IdentityShell baseUrl={localApiOrigin} />
+          )}
+        </WorkspaceErrorBoundary>
       ) : null}
 
       {purchaseWorkspace ? null : (
@@ -404,5 +602,50 @@ function PurchaseClock({
         }).format(now)}
       </span>
     </time>
+  );
+}
+
+function DiagnosticsIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+      <path
+        d="M5 3h10l4 4v14H5zM15 3v5h4M8 13h8M8 17h5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function SupportIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+      <path
+        d="M4 13v-2a8 8 0 0 1 16 0v2M4 13a2 2 0 0 0 2 2h1v-5H6a2 2 0 0 0-2 2v1Zm16 0a2 2 0 0 1-2 2h-1v-5h1a2 2 0 0 1 2 2v1ZM17 17c0 2-2 3-5 3"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function SendIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+      <path
+        d="m3 11 17-8-7 18-2-7-8-3Zm8 3 9-11"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
   );
 }

@@ -1,3 +1,4 @@
+import { IMPLEMENTED_PERMISSION_NAMES } from "@breev/contracts/local-rest";
 import { describe, expect, it } from "vitest";
 
 import { identityMessages } from "./identity-messages";
@@ -8,30 +9,32 @@ import {
   permissionGroupsFor,
 } from "./permission-catalogue";
 
-/**
- * The seven permissions the local API implements today. This list is pinned
- * in apps/local-api/src/identity-access/authorization.unit.test.ts as
- * IMPLEMENTED_PERMISSION_NAMES; the renderer cannot import it across the
- * workspace boundary, so both sides pin the same seven names.
- */
-const SERVER_IMPLEMENTED_PERMISSIONS = [
-  "attendance.record",
-  "catalog.item.manage",
-  "devices.pair",
-  "identity.roles.manage",
-  "identity.users.manage",
-  "licensing.manage",
-  "pharmacy.settings.manage",
-] as const;
-
 describe("permission catalogue", () => {
   it("names every implemented permission exactly once", () => {
-    expect([...IMPLEMENTED_PERMISSION_IDS].sort()).toEqual([
-      ...SERVER_IMPLEMENTED_PERMISSIONS,
-    ]);
-    expect(new Set(IMPLEMENTED_PERMISSION_IDS).size).toBe(
-      IMPLEMENTED_PERMISSION_IDS.length,
+    const grouped = PERMISSION_GROUPS.flatMap((group) => group.permissions);
+    expect([...grouped].sort()).toEqual(
+      [...IMPLEMENTED_PERMISSION_NAMES].sort(),
     );
+    expect(new Set(grouped).size).toBe(grouped.length);
+    expect(IMPLEMENTED_PERMISSION_IDS).toEqual(grouped);
+  });
+
+  it("represents every built-in role in both languages", () => {
+    for (const locale of ["ar", "en"] as const) {
+      const copy = identityMessages[locale];
+      for (const role of Object.keys(
+        copy.roles,
+      ) as (keyof typeof copy.roles)[]) {
+        expect(
+          copy.roles[role].trim().length,
+          `${locale} ${role} name`,
+        ).toBeGreaterThan(0);
+        expect(
+          copy.roleDescriptions[role].trim().length,
+          `${locale} ${role} description`,
+        ).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("carries a localized name, description, and group heading in both languages", () => {
