@@ -2176,7 +2176,12 @@ export const purchaseDraftSchema = z.strictObject({
   }),
   createdAt: z.iso.datetime(),
   id: z.uuidv7(),
-  status: z.enum(["active", "discarded"]),
+  /**
+   * `posted` is terminal in the same way `discarded` is: the draft keeps its
+   * committed rows as the evidence of what was posted, and no later command
+   * may edit, extend, or discard it.
+   */
+  status: z.enum(["active", "discarded", "posted"]),
   supplierNameSnapshot: supplierNameSchema,
   updatedAt: z.iso.datetime(),
   version: decimalRevisionSchema,
@@ -2322,9 +2327,7 @@ export const purchaseDraftReviewSchema = z.strictObject({
       payableFils: priceFilsSchema,
     }),
   ]),
-  warnings: z.array(
-    z.enum(["missing-expiry", "missing-lot", "posting-not-available"]),
-  ),
+  warnings: z.array(z.enum(["missing-expiry", "missing-lot"])),
 });
 export const purchaseDraftDetailSchema = purchaseDraftSchema.extend({
   review: purchaseDraftReviewSchema,
@@ -2358,6 +2361,222 @@ export const purchaseDraftDiscardRequestSchema = z.strictObject({
   idempotencyKey: z.uuid(),
 });
 
+/**
+ * Posting a Purchase Draft.
+ *
+ * The request carries nothing the server could take from the draft itself: the
+ * command names the draft it expects to post and the version it read, and the
+ * server recalculates every fact from current authoritative state
+ * (docs/domain.md §"Shared transaction model"). A body that could restate a
+ * cost, a quantity, or a price would be a second, unauthoritative source for
+ * facts the draft already owns.
+ */
+export const purchasePostRequestSchema = z.strictObject({
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+
+/**
+ * The `P` human number of a posted purchase, as its parts rather than as one
+ * printed string. The per-pharmacy, per-year sequence and its series letter are
+ * settled (docs/domain.md §"Shared transaction model"); the final printed
+ * presentation is still accountant/legal-gated under G-01, so the wire carries
+ * the facts and the renderer composes what it shows.
+ */
+export const postedDocumentNumberSchema = z.strictObject({
+  series: z.literal("P"),
+  value: decimalRevisionSchema,
+  year: z.number().int().min(1970).max(9999),
+});
+
+/**
+ * How the posted row captured its retail price, per the item's pricing method
+ * (docs/domain.md §"Sales, prices, settlement, and corrections", first bullet).
+ * `by-price-propagated` means the invoice's approved retail price also became
+ * the item's current price; `by-percentage-calculated` means the server
+ * recalculated the price from the approved cost and the stored percentage and
+ * left the item record alone.
+ */
+export const PURCHASE_PRICE_CAPTURES = [
+  "by-percentage-calculated",
+  "by-price-propagated",
+] as const;
+export const purchasePriceCaptureSchema = z.enum(PURCHASE_PRICE_CAPTURES);
+
+export const postedPurchaseRowSchema = z.strictObject({
+  baseUnitsPerEnteredUnit: packageUnitRatioSchema,
+  batchId: z.uuidv7(),
+  /** The informational share of this line after the invoice's allowance. */
+  costAfterDiscountFils: priceFilsSchema,
+  enteredQuantity: packageUnitRatioSchema,
+  expiryDate: z.iso.date().nullable(),
+  id: z.uuidv7(),
+  inventoryUnitName: productUnitNameSchema,
+  inventoryUnitQuantity: packageUnitRatioSchema,
+  itemDisplayName: z.string().min(1).max(726),
+  itemId: z.uuidv7(),
+  /**
+   * The line's full nominal value before the allowance, frozen on the movement
+   * as its Carrying Amount. This — never the Cost After Discount above — is
+   * what the batch, the movement, and the WAC state are valued at.
+   */
+  linePrimarySupplierCostFils: priceFilsSchema,
+  lotNumber: nullableTrimmedPurchaseText(120),
+  marginPercentage: marginPercentageSchema.nullable(),
+  movementId: z.uuidv7(),
+  notes: nullableTrimmedPurchaseText(1_000),
+  ordinal: z.number().int().positive(),
+  priceCapture: purchasePriceCaptureSchema,
+  pricingMethod: productPricingMethodSchema,
+  /** Primary Supplier Cost of one entered unit. */
+  primarySupplierCostFils: priceFilsSchema,
+  retailPriceFils: priceFilsSchema,
+  unit: inventoryCapableUnitSchema,
+});
+
+/**
+ * The accounts a purchase posting template may touch. A finite closed set, not
+ * a user-authored rules engine (docs/domain.md §"Exact quantities, money, and
+ * accounting"). The codes are stable identifiers; the pharmacy-facing account
+ * names and their chart classification stay a client decision in
+ * docs/open-decisions.md.
+ *
+ * There is no allowance account here, and its absence is the rule rather than
+ * an omission. The Primary Supplier Cost is the basis for the supplier's
+ * primary accounting balance, so an invoice posts at its full nominal cost on
+ * both sides; the allowance becomes a real posting only at settlement, as its
+ * own transaction (docs/domain.md: an allowance at settlement "is a separate
+ * transaction type, never a purchase return"). A closed set with nothing to
+ * spend the allowance on is what makes booking it at invoice time unspellable.
+ */
+export const PURCHASE_POSTING_ACCOUNT_CODES = [
+  "cash",
+  "inventory",
+  "supplier-payable",
+] as const;
+export const purchasePostingAccountCodeSchema = z.enum(
+  PURCHASE_POSTING_ACCOUNT_CODES,
+);
+
+export const postedPurchaseJournalLineSchema = z.strictObject({
+  accountCode: purchasePostingAccountCodeSchema,
+  creditFils: priceFilsSchema,
+  debitFils: priceFilsSchema,
+  ordinal: z.number().int().positive(),
+  /** Set only on a line that moves one supplier's own balance. */
+  supplierId: z.uuidv7().nullable(),
+});
+
+/**
+ * The journal a versioned posting template produced. Balance is part of the
+ * contract, not a downstream check: an unbalanced entry cannot be spelled here,
+ * cannot be written by the database, and cannot be produced by UI or report
+ * code at all.
+ */
+export const postedPurchaseJournalSchema = z
+  .strictObject({
+    entryId: z.uuidv7(),
+    lines: z.array(postedPurchaseJournalLineSchema).min(2),
+    templateId: z.literal("purchase.invoice"),
+    templateVersion: z.number().int().positive(),
+  })
+  .superRefine((journal, ctx) => {
+    let debits = 0n;
+    let credits = 0n;
+    for (const line of journal.lines) {
+      debits += BigInt(line.debitFils);
+      credits += BigInt(line.creditFils);
+      if (line.debitFils !== "0" && line.creditFils !== "0") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["lines"],
+          message: "A journal line is either a debit or a credit, never both",
+        });
+      }
+    }
+    if (debits !== credits) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["lines"],
+        message: "Journal debits must equal journal credits",
+      });
+    }
+  });
+
+/**
+ * The immutable Posted Document. Every value it reports is a stored fact of the
+ * posting, never a re-read of current master data (docs/domain.md §"Shared
+ * transaction model": historical views use stored snapshots).
+ */
+export const postedPurchaseSchema = z.strictObject({
+  /**
+   * The invoice's calculated allowance, from the snapshot percentage. Stored
+   * and displayed, never posted: the allowance becomes a transaction only at
+   * settlement, where the actual allowance and any Allowance Difference are
+   * recorded against it.
+   */
+  allowanceFils: priceFilsSchema,
+  allowanceSnapshot: z.strictObject({
+    basisFils: priceFilsSchema,
+    percentage: allowancePercentageSchema,
+  }),
+  /**
+   * Informational total after the allowance. Never a valuation basis and never
+   * a journal amount -- it appears on the invoice, the review, and the supplier
+   * statement, and nowhere in the posting.
+   */
+  costAfterDiscountFils: priceFilsSchema,
+  draftId: z.uuidv7(),
+  id: z.uuidv7(),
+  invoiceDate: z.iso.date(),
+  journal: postedPurchaseJournalSchema,
+  number: postedDocumentNumberSchema,
+  postedAt: z.iso.datetime(),
+  postedBy: z.uuidv7(),
+  /**
+   * The sole basis for valuation, average item cost, later COGS, and the
+   * supplier's primary accounting balance (docs/domain.md §"Exact quantities,
+   * money, and accounting").
+   */
+  primarySupplierCostFils: priceFilsSchema,
+  rows: z.array(postedPurchaseRowSchema).min(1),
+  settlementContext: purchaseSettlementContextSchema,
+  /**
+   * What the posting put on the supplier's balance or took from cash. Both
+   * carry the Primary Supplier Cost, because that is the basis the supplier's
+   * balance is kept on: a settlement then clears it with a payment plus the
+   * actual allowance, and posts the gap from the calculated allowance as an
+   * Allowance Difference.
+   */
+  settlementEffect: z.discriminatedUnion("context", [
+    z.strictObject({ context: z.literal("cash"), tenderFils: priceFilsSchema }),
+    z.strictObject({
+      context: z.literal("debt"),
+      payableFils: priceFilsSchema,
+    }),
+  ]),
+  supplierId: z.uuidv7(),
+  supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
+  supplierNameSnapshot: supplierNameSchema,
+});
+
+/**
+ * A duplicate supplier invoice number never blocks a post. The working default
+ * recorded in docs/open-decisions.md is **warn**, and it is not an approved
+ * decision: `operationalRule` says so on the wire so no caller can mistake the
+ * current behaviour for a settled one.
+ */
+export const purchasePostingWarningSchema = z.strictObject({
+  code: z.literal("duplicate-supplier-invoice-number"),
+  existingPostingIds: z.array(z.uuidv7()).min(1),
+  operationalRule: z.literal("warn-open-decision"),
+});
+
+export const purchasePostResultSchema = z.strictObject({
+  posted: postedPurchaseSchema,
+  warnings: z.array(purchasePostingWarningSchema),
+});
+
 export const PURCHASING_FIELD_ERROR_CODES = [
   "invalid",
   "out-of-range",
@@ -2365,17 +2584,42 @@ export const PURCHASING_FIELD_ERROR_CODES = [
   "too-long",
   "unknown-field",
 ] as const;
+/**
+ * The domain rules a purchasing rejection can name, as stable identifiers.
+ *
+ * A rejection has to identify "the field/rule" (docs/workflows.md §"Purchase
+ * and receive", step 6) precisely enough for the renderer to put focus back on
+ * the offending cell and announce why. `path` locates the field; `rule` names
+ * the rule that refused it, which is not always recoverable from the denial
+ * code alone — one `body-invalid` post can fail for a missing expiry on row 3
+ * and a missing lot on row 5.
+ */
+export const PURCHASING_RULE_IDS = [
+  "purchase.post.draft-empty",
+  "purchase.post.item-unavailable",
+  "purchase.post.lot-required-at-receipt",
+  "purchase.post.expiry-required-at-receipt",
+  "purchase.post.packaging-unit-unavailable",
+  "purchase.post.pricing-mode-changed",
+  "purchase.post.money-overflow",
+] as const;
+export const purchasingRuleIdSchema = z.enum(PURCHASING_RULE_IDS);
 export const purchasingFieldErrorSchema = z.strictObject({
   code: z.enum(PURCHASING_FIELD_ERROR_CODES),
   path: z
     .array(z.union([z.string().min(1), z.number().int().min(0)]))
     .min(1)
     .max(8),
+  rule: purchasingRuleIdSchema.optional(),
 });
 export const PURCHASING_DENIAL_CODES = [
   "body-invalid",
   "draft-discarded",
+  "draft-empty",
   "draft-not-found",
+  "draft-posted",
+  "expiry-required",
+  "lot-required",
   "idempotency-conflict",
   "item-not-found",
   "item-unavailable",
@@ -2510,6 +2754,21 @@ export const purchaseDraftDiscardContract = {
     ...purchasingCommandDenialResponses,
   },
 } as const;
+/**
+ * Posting is a separate explicit action on its own sub-resource, never a state
+ * field on the draft header (docs/workflows.md §"Purchase and receive", step 4:
+ * "Posting requires a separate explicit action"). Creating a posting is a POST
+ * that returns the created immutable document.
+ */
+export const purchasePostContract = {
+  method: "POST",
+  path: "/purchases/drafts/:draftId/postings",
+  request: { body: purchasePostRequestSchema },
+  responses: {
+    201: purchasePostResultSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
 
 export const supplierPath = (supplierId: string): string =>
   `/suppliers/${supplierId}`;
@@ -2525,6 +2784,8 @@ export const purchaseDraftDiscardPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/discards`;
 export const purchaseDraftRowsPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/rows`;
+export const purchaseDraftPostingsPath = (draftId: string): string =>
+  `/purchases/drafts/${draftId}/postings`;
 
 export const PURCHASING_CONTRACTS = [
   supplierArchiveContract,
@@ -2540,6 +2801,7 @@ export const PURCHASING_CONTRACTS = [
   purchaseDraftUpdateContract,
   purchaseEntryPreferencesReadContract,
   purchaseEntryPreferencesUpdateContract,
+  purchasePostContract,
 ] as const;
 
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
@@ -2811,8 +3073,25 @@ export type PurchaseDraftDiscardRequest = z.infer<
   typeof purchaseDraftDiscardRequestSchema
 >;
 export type PurchasingFieldError = z.infer<typeof purchasingFieldErrorSchema>;
+export type PurchasingRuleId = z.infer<typeof purchasingRuleIdSchema>;
 export type PurchasingDenial = z.infer<typeof purchasingDenialSchema>;
 export type PurchasingDenialCode = PurchasingDenial["code"];
+export type PurchasePostRequest = z.infer<typeof purchasePostRequestSchema>;
+export type PostedDocumentNumber = z.infer<typeof postedDocumentNumberSchema>;
+export type PurchasePriceCapture = z.infer<typeof purchasePriceCaptureSchema>;
+export type PurchasePostingAccountCode = z.infer<
+  typeof purchasePostingAccountCodeSchema
+>;
+export type PostedPurchaseJournalLine = z.infer<
+  typeof postedPurchaseJournalLineSchema
+>;
+export type PostedPurchaseJournal = z.infer<typeof postedPurchaseJournalSchema>;
+export type PostedPurchaseRow = z.infer<typeof postedPurchaseRowSchema>;
+export type PostedPurchase = z.infer<typeof postedPurchaseSchema>;
+export type PurchasePostingWarning = z.infer<
+  typeof purchasePostingWarningSchema
+>;
+export type PurchasePostResult = z.infer<typeof purchasePostResultSchema>;
 
 /**
  * The approved product naming templates, and the total function that applies
