@@ -1,12 +1,16 @@
 import {
+  postedPurchaseRowSchema,
   purchaseDraftDetailSchema,
   purchaseDraftRowCommitResultSchema,
   purchaseDraftRowSchema,
   purchaseDraftResultSchema,
   purchaseDraftSchema,
   purchaseEntryPreferencesSchema,
+  purchasePostResultSchema,
   purchasingDenialSchema,
   supplierSchema,
+  type PostedPurchaseJournalLine,
+  type PostedPurchaseRow,
   type PurchaseDraft,
   type PurchaseDraftDetail,
   type PurchaseDraftRow,
@@ -18,9 +22,12 @@ import {
   type PurchaseDraftUpdateRequest,
   type PurchaseEntryPreferences,
   type PurchaseEntryPreferencesUpdateRequest,
+  type PurchasePostRequest,
+  type PurchasePostResult,
   type PurchasingDenial,
   type PurchasingDenialCode,
   type PurchasingFieldError,
+  type PurchasingRuleId,
   type Supplier,
   type SupplierArchiveRequest,
   type SupplierCreateRequest,
@@ -30,11 +37,35 @@ import {
 import { Injectable } from "@nestjs/common";
 import type { Request } from "express";
 import type { PoolClient } from "pg";
-import { resolveCatalogPurchaseProduct } from "../catalog/catalog-purchase.js";
+import {
+  applyPurchaseSettlementEffect,
+  postPurchaseInvoiceJournal,
+} from "../accounting/accounting-persistence.js";
+import {
+  definePackaging,
+  toBaseUnits,
+  type UnitReference,
+} from "../catalog/catalog-packaging.js";
+import { applyPurchasePriceUpdate } from "../catalog/catalog-purchase-price-update.js";
+import {
+  resolveCatalogPurchaseProduct,
+  type CatalogPurchaseProduct,
+} from "../catalog/catalog-purchase.js";
 import {
   IdentityAccessService,
   type IdentityExecutionContext,
 } from "../identity-access/identity-access.service.js";
+import {
+  applyReceiptToValuation,
+  receiveBatch,
+  recordPurchaseReceiptMovement,
+  resolveReceiptClassRuleSet,
+} from "../inventory/inventory-persistence.js";
+import {
+  checkReceiptEvidence,
+  receiptRuleFor,
+  type InventoryReceiptRuleSet,
+} from "../inventory/inventory-receipt-rules.js";
 import { LocalDatabaseService } from "../local-database.service.js";
 import { writePostingAudit } from "../posting/audit-writer.js";
 import { canonicalRequestHash } from "../posting/canonical-hash.js";
@@ -45,6 +76,24 @@ import {
   recordPostingResult,
   type PostingCommandReplay,
 } from "../posting/idempotency.js";
+import { assertLockStageProgression } from "../posting/lock-order.js";
+import {
+  allocateDocumentNumber,
+  markNumberIssued,
+} from "../posting/number-sequences.js";
+import {
+  CURRENT_ENVELOPE_VERSIONS,
+  POSTING_EVENT_TYPES,
+  appendOutboxEntry,
+} from "../posting/outbox.js";
+import {
+  calculatePurchaseCosts,
+  type PurchaseLineCosts,
+} from "./purchase-costs.js";
+import {
+  capturePurchaseRetailPrice,
+  type PurchasePriceCaptureResult,
+} from "./purchase-price-capture.js";
 import { preparePurchaseRow } from "./purchase-row.js";
 
 const SUPPLIER_PERMISSION = "suppliers.manage";
@@ -60,6 +109,7 @@ const COMMANDS = {
   draftDiscard: "purchase.draft.discard",
   draftRowCommit: "purchase.draft.row.commit",
   entryPreferencesUpdate: "purchase.entry-preferences.update",
+  purchasePost: "purchase.post",
 } as const;
 
 const DEFAULT_ENTRY_PREFERENCES: PurchaseEntryPreferences =
@@ -299,6 +349,8 @@ function requireEditableDraft(
     throw new PurchasingCommandRejected(404, "draft-not-found", [], draftId);
   if (row.status === "discarded")
     throw new PurchasingCommandRejected(409, "draft-discarded", [], draftId);
+  if (row.status === "posted")
+    throw new PurchasingCommandRejected(409, "draft-posted", [], draftId);
   if (row.version !== expectedVersion)
     throw new PurchasingCommandRejected(409, "version-conflict", [], draftId);
 }
@@ -466,9 +518,7 @@ async function draftDetail(
     draft.allowanceSnapshot.percentage,
   );
   const net = gross - allowance;
-  const warnings = new Set<
-    "missing-expiry" | "missing-lot" | "posting-not-available"
-  >(["posting-not-available"]);
+  const warnings = new Set<"missing-expiry" | "missing-lot">();
   if (rows.some((row) => row.expiryDate === null))
     warnings.add("missing-expiry");
   if (rows.some((row) => row.lotNumber === null)) warnings.add("missing-lot");
@@ -483,10 +533,14 @@ async function draftDetail(
       })),
       grossFils: gross.toString(),
       netFils: net.toString(),
+      // The settlement effect stands on the gross Primary Supplier Cost, the
+      // same basis the accounting posting and the supplier's balance use
+      // (docs/domain.md §"Exact quantities, money, and accounting"): the
+      // allowance becomes a real posting only at settlement, never here.
       settlementEffect:
         draft.settlementContext === "cash"
-          ? { context: "cash", tenderFils: net.toString() }
-          : { context: "debt", payableFils: net.toString() },
+          ? { context: "cash", tenderFils: gross.toString() }
+          : { context: "debt", payableFils: gross.toString() },
       warnings: [...warnings],
     },
     rows,
@@ -593,7 +647,7 @@ interface DraftRow {
   invoice_date: string;
   pharmacy_id: string;
   settlement_context: "cash" | "debt";
-  status: "active" | "discarded";
+  status: "active" | "discarded" | "posted";
   supplier_id: string;
   supplier_invoice_number: string;
   supplier_name_snapshot: string;
@@ -610,6 +664,7 @@ type CommandValue =
   | PurchaseDraftResult
   | PurchaseDraftRowCommitResult
   | PurchaseEntryPreferences
+  | PurchasePostResult
   | Supplier;
 interface CommandSuccess<T extends CommandValue> {
   afterState: Record<string, boolean | number | string | null>;
@@ -661,6 +716,220 @@ class PurchasingCommandRejected extends Error {
     super(code);
     this.name = "PurchasingCommandRejected";
   }
+}
+
+function rowFieldError(
+  ordinal: number,
+  field: string,
+  code: PurchasingFieldError["code"],
+  rule?: PurchasingRuleId,
+): PurchasingFieldError {
+  return {
+    code,
+    path: ["rows", ordinal - 1, field],
+    ...(rule === undefined ? {} : { rule }),
+  };
+}
+
+interface PreparedPostRow {
+  readonly capture: PurchasePriceCaptureResult;
+  readonly product: CatalogPurchaseProduct;
+}
+
+/**
+ * Reauthorizes and recalculates one committed Purchase Draft row against
+ * current authoritative Catalog and Inventory-configuration state
+ * (docs/domain.md §"Shared transaction model"). The row's own entered
+ * quantity, unit, and cost are already immutable committed facts; what can
+ * still have moved since the row was committed is the product's packaging,
+ * pricing method, and receipt-evidence class, so those are exactly what this
+ * re-reads and re-validates. Every problem is reported through the
+ * committed `PURCHASING_RULE_IDS` at the row's own field path.
+ */
+async function preparePostedRow(
+  client: PoolClient,
+  pharmacyId: string,
+  row: DraftRowRecord,
+  receiptRules: InventoryReceiptRuleSet,
+): Promise<PreparedPostRow> {
+  const product = await resolveCatalogPurchaseProduct(
+    client,
+    pharmacyId,
+    row.product_id,
+  );
+  if (product === undefined || product === null) {
+    throw new PurchasingCommandRejected(
+      product === undefined ? 404 : 409,
+      product === undefined ? "item-not-found" : "item-unavailable",
+      [
+        rowFieldError(
+          row.ordinal,
+          "itemId",
+          "invalid",
+          product === null ? "purchase.post.item-unavailable" : undefined,
+        ),
+      ],
+      row.product_id,
+    );
+  }
+
+  const packaging = definePackaging(product.packaging);
+  const unit: UnitReference =
+    row.entered_unit_kind === "inventory-unit"
+      ? { kind: "inventory-unit" }
+      : {
+          kind: "package-unit",
+          packageUnitName: row.entered_package_unit_name ?? "",
+        };
+  const converted = packaging.ok
+    ? toBaseUnits(packaging.packaging, unit, BigInt(row.entered_quantity))
+    : { ok: false as const };
+  if (!converted.ok) {
+    throw new PurchasingCommandRejected(
+      409,
+      "unit-invalid",
+      [
+        rowFieldError(
+          row.ordinal,
+          "unit",
+          "invalid",
+          "purchase.post.packaging-unit-unavailable",
+        ),
+      ],
+      row.id,
+    );
+  }
+
+  const rule = receiptRuleFor(product, receiptRules);
+  const problem = checkReceiptEvidence(rule, {
+    expiryDate: row.expiry_date,
+    lotNumber: row.lot_number,
+  });
+  if (problem === "expiry-required") {
+    throw new PurchasingCommandRejected(
+      409,
+      "expiry-required",
+      [
+        rowFieldError(
+          row.ordinal,
+          "expiryDate",
+          "required",
+          "purchase.post.expiry-required-at-receipt",
+        ),
+      ],
+      row.id,
+    );
+  }
+  if (problem === "lot-required") {
+    throw new PurchasingCommandRejected(
+      409,
+      "lot-required",
+      [
+        rowFieldError(
+          row.ordinal,
+          "lotNumber",
+          "required",
+          "purchase.post.lot-required-at-receipt",
+        ),
+      ],
+      row.id,
+    );
+  }
+
+  const captured = capturePurchaseRetailPrice(product.pricing, {
+    costFils: row.primary_supplier_cost_fils,
+    marginPercentage: row.margin_percentage,
+    method: row.pricing_method,
+    retailPriceFils: row.retail_price_fils,
+  });
+  if (!captured.ok) {
+    if (captured.problem !== "pricing-mode-changed") {
+      throw new Error(
+        `A committed Purchase row could not be repriced at posting: ${captured.problem}`,
+      );
+    }
+    throw new PurchasingCommandRejected(
+      409,
+      "pricing-mode-conflict",
+      [
+        rowFieldError(
+          row.ordinal,
+          "pricing",
+          "invalid",
+          "purchase.post.pricing-mode-changed",
+        ),
+      ],
+      row.id,
+    );
+  }
+
+  return { capture: captured.result, product };
+}
+
+/** Duplicate supplier invoice numbers among already-posted purchases warn and
+ * never block (docs/domain.md §"Catalog, purchasing, and inventory"). */
+async function postedPurchaseWarnings(
+  client: PoolClient,
+  pharmacyId: string,
+  supplierId: string,
+  supplierInvoiceNumber: string,
+): Promise<string[]> {
+  const duplicate = await client.query<{ id: string }>(
+    `with recursive ancestry(id, merged_into_supplier_id) as (
+       select supplier_row.id, supplier_row.merged_into_supplier_id
+       from suppliers supplier_row
+       where supplier_row.pharmacy_id = $1 and supplier_row.id = $2
+       union all
+       select parent.id, parent.merged_into_supplier_id
+       from suppliers parent
+       join ancestry on parent.id = ancestry.merged_into_supplier_id
+       where parent.pharmacy_id = $1
+     ), canonical(id) as (
+       select id from ancestry where merged_into_supplier_id is null limit 1
+     ), aliases(id) as (
+       select id from canonical
+       union
+       select supplier_row.id from suppliers supplier_row
+       join aliases on supplier_row.merged_into_supplier_id = aliases.id
+       where supplier_row.pharmacy_id = $1
+     )
+     select posted_row.id from posted_purchases posted_row
+     where posted_row.pharmacy_id = $1 and posted_row.supplier_id in (select id from aliases)
+       and posted_row.supplier_invoice_number = $3
+     order by posted_row.posted_at, posted_row.id`,
+    [pharmacyId, supplierId, supplierInvoiceNumber],
+  );
+  return duplicate.rows.map((row) => row.id);
+}
+
+function postedJournalView(
+  entryId: string,
+  lines: readonly {
+    readonly accountCode: "cash" | "inventory" | "supplier-payable";
+    readonly creditFils: bigint;
+    readonly debitFils: bigint;
+    readonly ordinal: number;
+    readonly supplierId: string | null;
+  }[],
+  templateVersion: number,
+): {
+  entryId: string;
+  lines: PostedPurchaseJournalLine[];
+  templateId: "purchase.invoice";
+  templateVersion: number;
+} {
+  return {
+    entryId,
+    lines: lines.map((line) => ({
+      accountCode: line.accountCode,
+      creditFils: line.creditFils.toString(),
+      debitFils: line.debitFils.toString(),
+      ordinal: line.ordinal,
+      supplierId: line.supplierId,
+    })),
+    templateId: "purchase.invoice",
+    templateVersion,
+  };
 }
 
 @Injectable()
@@ -1399,6 +1668,467 @@ export class PurchasingService {
         };
       },
     });
+  }
+
+  /**
+   * `Purchasing.postPurchase` owns purchase posting orchestration and its
+   * business transaction (docs/architecture.md §"Local module ownership").
+   * The permission, idempotency, audit, retry, and commit machinery is the
+   * same generic `executeCommand` every other Purchasing command already
+   * uses; only `work` below is specific to posting.
+   */
+  public async postPurchase(
+    request: Request,
+    draftId: string,
+    input: PurchasePostRequest,
+  ): Promise<PurchasePostResult> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    return await this.executeCommand({
+      commandName: COMMANDS.purchasePost,
+      context,
+      idempotencyKey: input.idempotencyKey,
+      parser: purchasePostResultSchema,
+      permission: DRAFT_PERMISSION,
+      requestHash: canonicalRequestHash(COMMANDS.purchasePost, {
+        draftId,
+        input,
+      }),
+      responseStatus: 201,
+      targetId: draftId,
+      work: (client) => this.postPurchaseWork(client, context, draftId, input),
+    });
+  }
+
+  private async postPurchaseWork(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    draftId: string,
+    input: PurchasePostRequest,
+  ): Promise<CommandSuccess<PurchasePostResult>> {
+    // Lock stage 1 of 5: draft. Locking the draft first, before anything
+    // else, is what lets two concurrent commands aimed at the same draft
+    // serialize against each other before either touches shared
+    // infrastructure (posting/lock-order.ts).
+    const before = await lockDraft(client, context.pharmacyId, draftId);
+    requireEditableDraft(before, draftId, input.expectedVersion);
+    const draft = before!;
+
+    const rowsResult = await client.query<DraftRowRecord>(
+      `${DRAFT_ROW_SELECT}
+       where row_record.pharmacy_id = $1 and row_record.draft_id = $2
+       order by row_record.ordinal`,
+      [context.pharmacyId, draftId],
+    );
+    const draftRows = rowsResult.rows;
+    if (draftRows.length === 0) {
+      throw new PurchasingCommandRejected(
+        409,
+        "draft-empty",
+        [
+          {
+            code: "invalid",
+            path: ["rows"],
+            rule: "purchase.post.draft-empty",
+          },
+        ],
+        draftId,
+      );
+    }
+
+    const costs = calculatePurchaseCosts(
+      draftRows.map((row) => ({
+        enteredQuantity: BigInt(row.entered_quantity),
+        primarySupplierCostFils: BigInt(row.primary_supplier_cost_fils),
+      })),
+      draft.allowance_percentage_snapshot,
+    );
+    if (!costs.ok) {
+      if (costs.problem !== "money-overflow") {
+        throw new Error(
+          `The committed Purchase Draft costs are invalid at posting: ${costs.problem}`,
+        );
+      }
+      throw new PurchasingCommandRejected(
+        409,
+        "money-overflow",
+        [
+          {
+            code: "out-of-range",
+            path: ["rows"],
+            rule: "purchase.post.money-overflow",
+          },
+        ],
+        draftId,
+      );
+    }
+
+    const receiptRules = await resolveReceiptClassRuleSet(
+      client,
+      context.pharmacyId,
+    );
+    const prepared: {
+      readonly capture: PurchasePriceCaptureResult;
+      readonly lineCosts: PurchaseLineCosts;
+      readonly product: CatalogPurchaseProduct;
+      readonly row: DraftRowRecord;
+    }[] = [];
+    for (const [index, row] of draftRows.entries()) {
+      const lineCosts = costs.costs.lines[index];
+      if (lineCosts === undefined) {
+        throw new Error("A committed Purchase line cost is missing");
+      }
+      const { product, capture } = await preparePostedRow(
+        client,
+        context.pharmacyId,
+        row,
+        receiptRules,
+      );
+      prepared.push({ capture, lineCosts, product, row });
+    }
+
+    // Lock stage 2 of 5: number sequence. Period (stage 3) is skipped: no
+    // period table exists yet (docs/architecture.md publishes the order as
+    // draft, number sequence, period, batch/stock, valuation; a command may
+    // skip a stage it does not touch but may never go back).
+    assertLockStageProgression("draft", "number-sequence");
+    const clock = await client.query<{ posted_at: Date; year: number }>(
+      `select statement_timestamp() as posted_at,
+              extract(year from statement_timestamp())::int as year`,
+    );
+    const postingClock = clock.rows[0];
+    if (postingClock === undefined) {
+      throw new Error("The posting clock could not be read");
+    }
+    const postingYear = postingClock.year;
+
+    // #09's exceptional two-phase allocator: phase one commits the number on
+    // its own connection so it survives this transaction's rollback as an
+    // audited gap. It is marked issued only below, inside this successful
+    // transaction, and only once every row above has already passed.
+    const allocation = await allocateDocumentNumber(
+      this.localDatabase.requirePool(),
+      {
+        actorUserId: context.actorId,
+        correlationId: input.idempotencyKey,
+        device: context,
+        documentType: "purchase-invoice",
+        identitySessionId: context.sessionId,
+        pharmacyId: context.pharmacyId,
+        year: postingYear,
+      },
+    );
+
+    // The journal and the posted header are created before the batch/stock
+    // and valuation stages because a movement's `source_document_id` must
+    // name the Posted Purchase it belongs to, and Accounting's journal does
+    // not depend on Inventory at all (docs/architecture.md §"Local module
+    // ownership": each module writes only its own tables). Neither insert
+    // acquires a row any concurrent command contends for, so creating them
+    // here does not skip or reorder the published lock stages.
+    const journal = await postPurchaseInvoiceJournal(client, {
+      facts: {
+        allowanceFils: costs.costs.allowanceFils,
+        costAfterDiscountFils: costs.costs.costAfterDiscountFils,
+        primarySupplierCostFils: costs.costs.primarySupplierCostFils,
+        settlementContext: draft.settlement_context,
+        supplierId: draft.supplier_id,
+      },
+      pharmacyId: context.pharmacyId,
+      postedBy: context.actorId,
+    });
+
+    // Accounting's own AP or Cash Box balance state, separate from the
+    // journal lines that explain it (docs/architecture.md §"Local module
+    // ownership": "Accounting | ... AP/AR/Cash Box, balanced
+    // journals/periods"). Always the gross Primary Supplier Cost; Cost After
+    // Discount never reaches this balance or the WAC state above it.
+    await applyPurchaseSettlementEffect(client, {
+      pharmacyId: context.pharmacyId,
+      primarySupplierCostFils: costs.costs.primarySupplierCostFils,
+      settlementContext: draft.settlement_context,
+      supplierId:
+        draft.settlement_context === "debt" ? draft.supplier_id : null,
+    });
+
+    const existingPostingIds = await postedPurchaseWarnings(
+      client,
+      context.pharmacyId,
+      draft.supplier_id,
+      draft.supplier_invoice_number,
+    );
+
+    const inserted = await client.query<{ id: string; posted_at: Date }>(
+      `insert into posted_purchases (
+         pharmacy_id, draft_id, supplier_id, supplier_name_snapshot,
+         supplier_invoice_number, invoice_date, settlement_context,
+         allowance_percentage_snapshot, allowance_basis_fils, allowance_fils,
+         cost_after_discount_fils, primary_supplier_cost_fils, number_value,
+         number_year, journal_entry_id, posted_by, posted_at
+       ) values (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+       ) returning id, posted_at`,
+      [
+        context.pharmacyId,
+        draftId,
+        draft.supplier_id,
+        draft.supplier_name_snapshot,
+        draft.supplier_invoice_number,
+        draft.invoice_date,
+        draft.settlement_context,
+        draft.allowance_percentage_snapshot,
+        costs.costs.primarySupplierCostFils.toString(),
+        costs.costs.allowanceFils.toString(),
+        costs.costs.costAfterDiscountFils.toString(),
+        costs.costs.primarySupplierCostFils.toString(),
+        allocation.value.toString(),
+        postingYear,
+        journal.entryId,
+        context.actorId,
+        postingClock.posted_at,
+      ],
+    );
+    const postedRow = inserted.rows[0];
+    if (postedRow === undefined) {
+      throw new Error("The Posted Purchase was not created");
+    }
+    const postedPurchaseId = postedRow.id;
+
+    await markNumberIssued(client, {
+      allocationId: allocation.allocationId,
+      correlationId: input.idempotencyKey,
+      documentId: postedPurchaseId,
+      documentType: "purchase-invoice",
+      pharmacyId: context.pharmacyId,
+      year: postingYear,
+    });
+
+    // Lock stage 4 of 5: batch/stock.
+    assertLockStageProgression("number-sequence", "batch-stock");
+    const rowOutcomes: {
+      readonly batchId: string;
+      readonly movementId: string;
+    }[] = [];
+    for (const item of prepared) {
+      if (item.capture.itemPriceUpdateFils !== null) {
+        await applyPurchasePriceUpdate(
+          client,
+          context.pharmacyId,
+          item.product.id,
+          item.capture.itemPriceUpdateFils,
+          context.actorId,
+        );
+      }
+      const { batchId } = await receiveBatch(client, {
+        actorId: context.actorId,
+        expiryDate: item.row.expiry_date,
+        lotNumber: item.row.lot_number,
+        pharmacyId: context.pharmacyId,
+        productId: item.product.id,
+        quantity: BigInt(item.row.inventory_unit_quantity),
+      });
+      const { movementId } = await recordPurchaseReceiptMovement(client, {
+        actorId: context.actorId,
+        batchId,
+        carryingAmountFils: item.lineCosts.linePrimarySupplierCostFils,
+        pharmacyId: context.pharmacyId,
+        productId: item.product.id,
+        quantity: BigInt(item.row.inventory_unit_quantity),
+        sourceDocumentId: postedPurchaseId,
+        sourceRowOrdinal: item.row.ordinal,
+      });
+      rowOutcomes.push({ batchId, movementId });
+    }
+
+    // Lock stage 5 of 5: valuation.
+    assertLockStageProgression("batch-stock", "valuation");
+    for (const item of prepared) {
+      await applyReceiptToValuation(
+        client,
+        context.pharmacyId,
+        item.product.id,
+        {
+          carryingAmountFils: item.lineCosts.linePrimarySupplierCostFils,
+          quantity: BigInt(item.row.inventory_unit_quantity),
+        },
+      );
+    }
+
+    const rows: PostedPurchaseRow[] = [];
+    for (const [index, item] of prepared.entries()) {
+      const outcome = rowOutcomes[index];
+      if (outcome === undefined) {
+        throw new Error("A Posted Purchase row outcome is missing");
+      }
+      const insertedRow = await client.query<{ id: string }>(
+        `insert into posted_purchase_rows (
+           pharmacy_id, posted_purchase_id, draft_row_id, ordinal, product_id,
+           item_display_name, inventory_unit_name, entered_unit_kind,
+           entered_package_unit_name, base_units_per_entered_unit,
+           entered_quantity, inventory_unit_quantity, primary_supplier_cost_fils,
+           line_primary_supplier_cost_fils, cost_after_discount_fils,
+           pricing_method, retail_price_fils, margin_percentage, price_capture,
+           expiry_date, lot_number, notes, batch_id, movement_id
+         ) values (
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::bigint, $11::bigint,
+           $12::bigint, $13::bigint, $14::bigint, $15::bigint, $16, $17::bigint,
+           $18::numeric, $19, $20, $21, $22, $23, $24
+         ) returning id`,
+        [
+          context.pharmacyId,
+          postedPurchaseId,
+          item.row.id,
+          item.row.ordinal,
+          item.product.id,
+          item.product.displayName,
+          item.row.inventory_unit_name,
+          item.row.entered_unit_kind,
+          item.row.entered_package_unit_name,
+          item.row.base_units_per_entered_unit,
+          item.row.entered_quantity,
+          item.row.inventory_unit_quantity,
+          item.row.primary_supplier_cost_fils,
+          item.lineCosts.linePrimarySupplierCostFils.toString(),
+          item.lineCosts.costAfterDiscountFils.toString(),
+          item.row.pricing_method,
+          item.capture.retailPriceFils,
+          item.capture.marginPercentage,
+          item.capture.capture,
+          item.row.expiry_date,
+          item.row.lot_number,
+          item.row.notes,
+          outcome.batchId,
+          outcome.movementId,
+        ],
+      );
+      const rowId = insertedRow.rows[0]?.id;
+      if (rowId === undefined) {
+        throw new Error("The Posted Purchase row was not created");
+      }
+      rows.push(
+        postedPurchaseRowSchema.parse({
+          baseUnitsPerEnteredUnit: item.row.base_units_per_entered_unit,
+          batchId: outcome.batchId,
+          costAfterDiscountFils:
+            item.lineCosts.costAfterDiscountFils.toString(),
+          enteredQuantity: item.row.entered_quantity,
+          expiryDate: item.row.expiry_date,
+          id: rowId,
+          inventoryUnitName: item.row.inventory_unit_name,
+          inventoryUnitQuantity: item.row.inventory_unit_quantity,
+          itemDisplayName: item.product.displayName,
+          itemId: item.product.id,
+          linePrimarySupplierCostFils:
+            item.lineCosts.linePrimarySupplierCostFils.toString(),
+          lotNumber: item.row.lot_number,
+          marginPercentage:
+            item.capture.marginPercentage === null
+              ? null
+              : normalizedPercentage(item.capture.marginPercentage),
+          movementId: outcome.movementId,
+          notes: item.row.notes,
+          ordinal: item.row.ordinal,
+          priceCapture: item.capture.capture,
+          pricingMethod: item.row.pricing_method,
+          primarySupplierCostFils: item.row.primary_supplier_cost_fils,
+          retailPriceFils: item.capture.retailPriceFils,
+          unit:
+            item.row.entered_unit_kind === "inventory-unit"
+              ? { kind: "inventory-unit" }
+              : {
+                  kind: "package-unit",
+                  packageUnitName: item.row.entered_package_unit_name,
+                },
+        }),
+      );
+    }
+
+    await client.query(
+      `update purchase_drafts
+       set status = 'posted', version = version + 1,
+           updated_at = statement_timestamp(), updated_by = $3
+       where pharmacy_id = $1 and id = $2`,
+      [context.pharmacyId, draftId, context.actorId],
+    );
+
+    await appendOutboxEntry(client, {
+      correlationId: input.idempotencyKey,
+      envelopeVersion: CURRENT_ENVELOPE_VERSIONS["purchase.invoice.posted"],
+      eventType: POSTING_EVENT_TYPES.purchaseInvoicePosted,
+      occurredAt: postingClock.posted_at,
+      payload: {
+        pharmacyId: context.pharmacyId,
+        postedPurchaseId,
+        primarySupplierCostFils: costs.costs.primarySupplierCostFils.toString(),
+        settlementContext: draft.settlement_context,
+        supplierId: draft.supplier_id,
+      },
+      pharmacyId: context.pharmacyId,
+    });
+
+    const primarySupplierCostFils =
+      costs.costs.primarySupplierCostFils.toString();
+    const value = purchasePostResultSchema.parse({
+      posted: {
+        allowanceFils: costs.costs.allowanceFils.toString(),
+        allowanceSnapshot: {
+          basisFils: primarySupplierCostFils,
+          percentage: normalizedPercentage(draft.allowance_percentage_snapshot),
+        },
+        costAfterDiscountFils: costs.costs.costAfterDiscountFils.toString(),
+        draftId,
+        id: postedPurchaseId,
+        invoiceDate: draft.invoice_date,
+        journal: postedJournalView(
+          journal.entryId,
+          journal.lines,
+          journal.templateVersion,
+        ),
+        number: {
+          series: "P",
+          value: allocation.value.toString(),
+          year: postingYear,
+        },
+        postedAt: postedRow.posted_at.toISOString(),
+        postedBy: context.actorId,
+        primarySupplierCostFils,
+        rows,
+        settlementContext: draft.settlement_context,
+        settlementEffect:
+          draft.settlement_context === "cash"
+            ? { context: "cash", tenderFils: primarySupplierCostFils }
+            : { context: "debt", payableFils: primarySupplierCostFils },
+        supplierId: draft.supplier_id,
+        supplierInvoiceNumber: draft.supplier_invoice_number,
+        supplierNameSnapshot: draft.supplier_name_snapshot,
+      },
+      warnings:
+        existingPostingIds.length === 0
+          ? []
+          : [
+              {
+                code: "duplicate-supplier-invoice-number",
+                existingPostingIds,
+                operationalRule: "warn-open-decision",
+              },
+            ],
+    });
+
+    return {
+      afterState: {
+        allowanceFils: value.posted.allowanceFils,
+        numberValue: value.posted.number.value,
+        numberYear: value.posted.number.year,
+        primarySupplierCostFils: value.posted.primarySupplierCostFils,
+        rowCount: rows.length,
+        status: "posted",
+      },
+      beforeState: draftAuditState(draftView(draft), 0),
+      targetId: postedPurchaseId,
+      value,
+    };
   }
 
   public async rejectInvalidBody(

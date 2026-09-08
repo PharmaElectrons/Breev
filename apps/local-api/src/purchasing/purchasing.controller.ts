@@ -13,6 +13,8 @@ import {
   purchaseEntryPreferencesReadContract,
   purchaseEntryPreferencesUpdateContract,
   purchaseEntryPreferencesUpdateRequestSchema,
+  purchasePostContract,
+  purchasePostRequestSchema,
   supplierArchiveContract,
   supplierArchiveRequestSchema,
   supplierCreateContract,
@@ -28,6 +30,7 @@ import {
   type PurchaseDraftRowCommitResult,
   type PurchaseDraftResult,
   type PurchaseEntryPreferences,
+  type PurchasePostResult,
   type PurchasingFieldError,
   type Supplier,
 } from "@breev/contracts/local-rest";
@@ -294,6 +297,30 @@ export class PurchasingController {
           id.success ? id.data : undefined,
         );
       return await this.purchasing.discardDraft(request, id.data, input.data);
+    });
+  }
+
+  @Post(purchasePostContract.path)
+  @HttpCode(201)
+  public async postPurchase(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchasePostResult> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchaseDraftSchema.shape.id.safeParse(draftId);
+      const input = purchasePostRequestSchema.safeParse(body);
+      if (!id.success || !input.success)
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.post",
+          "purchases.drafts.manage",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["draftId"] }],
+          id.success ? id.data : undefined,
+        );
+      return await this.purchasing.postPurchase(request, id.data, input.data);
     });
   }
 }

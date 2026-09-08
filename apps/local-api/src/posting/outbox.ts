@@ -9,6 +9,7 @@ import type { JsonObject } from "./canonical-hash.js";
  */
 export const POSTING_EVENT_TYPES = {
   pharmacySettingsChanged: "pharmacy.settings.changed",
+  purchaseInvoicePosted: "purchase.invoice.posted",
 } as const;
 
 export type PostingEventType =
@@ -28,6 +29,7 @@ export const POSTING_ENVELOPE_VERSIONS: {
   readonly [Type in PostingEventType]: readonly number[];
 } = {
   "pharmacy.settings.changed": [1],
+  "purchase.invoice.posted": [1],
 };
 
 /** The version a writer produces today for each event type. */
@@ -35,6 +37,7 @@ export const CURRENT_ENVELOPE_VERSIONS: {
   readonly [Type in PostingEventType]: number;
 } = {
   "pharmacy.settings.changed": 1,
+  "purchase.invoice.posted": 1,
 };
 
 export class PostingEnvelopeVersionError extends Error {

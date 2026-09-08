@@ -14,15 +14,18 @@ describe("posting outbox envelope rules", () => {
   it("publishes the event type names domain readers depend on", () => {
     expect(POSTING_EVENT_TYPES).toEqual({
       pharmacySettingsChanged: "pharmacy.settings.changed",
+      purchaseInvoicePosted: "purchase.invoice.posted",
     });
   });
 
   it("registers exactly the envelope versions that exist today", () => {
     expect(POSTING_ENVELOPE_VERSIONS).toEqual({
       "pharmacy.settings.changed": [1],
+      "purchase.invoice.posted": [1],
     });
     expect(CURRENT_ENVELOPE_VERSIONS).toEqual({
       "pharmacy.settings.changed": 1,
+      "purchase.invoice.posted": 1,
     });
   });
 
@@ -47,6 +50,12 @@ describe("posting outbox envelope rules", () => {
     expect(() =>
       assertSupportedEnvelope(POSTING_EVENT_TYPES.pharmacySettingsChanged, 1),
     ).not.toThrow();
+    expect(
+      isSupportedEnvelope(POSTING_EVENT_TYPES.purchaseInvoicePosted, 1),
+    ).toBe(true);
+    expect(() =>
+      assertSupportedEnvelope(POSTING_EVENT_TYPES.purchaseInvoicePosted, 1),
+    ).not.toThrow();
   });
 
   it.each([
@@ -69,6 +78,11 @@ describe("posting outbox envelope rules", () => {
       label: "a fractional version",
       eventType: "pharmacy.settings.changed",
       version: 1.5,
+    },
+    {
+      label: "a future version of purchase.invoice.posted",
+      eventType: "purchase.invoice.posted",
+      version: 2,
     },
     {
       label: "an unknown event type",

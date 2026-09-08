@@ -213,6 +213,20 @@ describe("renderPurchaseInvoiceJournal", () => {
       ),
     ).toThrow(TypeError);
   });
+
+  it("keeps a zero-cost receipt balanced without inventing money", () => {
+    const lines = renderPurchaseInvoiceJournal(
+      facts({
+        allowanceFils: 0n,
+        costAfterDiscountFils: 0n,
+        primarySupplierCostFils: 0n,
+      }),
+    );
+    expect(lines).toHaveLength(2);
+    expect(lines.every((line) => line.debitFils === 0n)).toBe(true);
+    expect(lines.every((line) => line.creditFils === 0n)).toBe(true);
+    expect(() => assertBalanced(lines)).not.toThrow();
+  });
 });
 
 describe("assertBalanced", () => {
