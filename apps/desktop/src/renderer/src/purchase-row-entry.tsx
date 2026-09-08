@@ -11,6 +11,7 @@ import {
   type PurchaseDraftDetail,
   type PurchaseEntryColumnField,
   type PurchaseEntryPreferences,
+  type PurchasingDenial,
 } from "@breev/contracts/local-rest";
 import { searchProducts } from "./catalog-api";
 import { ProductForm } from "./product-form";
@@ -29,6 +30,9 @@ interface PurchaseRowEntryProps {
   readonly baseUrl: string;
   readonly draft: PurchaseDraftDetail;
   readonly onDraftChanged: (draft: PurchaseDraftDetail) => void;
+  readonly onPost: () => Promise<void>;
+  readonly postDenial: PurchasingDenial | null;
+  readonly posting: boolean;
 }
 
 const FIELD_COPY = {
@@ -49,6 +53,9 @@ export function PurchaseRowEntry({
   baseUrl,
   draft,
   onDraftChanged,
+  onPost,
+  postDenial,
+  posting,
 }: PurchaseRowEntryProps): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
@@ -118,6 +125,18 @@ export function PurchaseRowEntry({
     element.focus();
     setFocusRequest(null);
   }, [busy, focusRequest]);
+
+  useEffect(() => {
+    const fieldError = postDenial?.fieldErrors[0];
+    if (fieldError === undefined) return;
+    const rowIndex = fieldError.path[0] === "rows" ? fieldError.path[1] : null;
+    const field = fieldError.path[0] === "rows" ? fieldError.path[2] : null;
+    if (typeof rowIndex !== "number" || typeof field !== "string") return;
+    const target = document.querySelector<HTMLElement>(
+      `[data-post-row="${rowIndex}"][data-post-field="${field}"]`,
+    );
+    target?.focus();
+  }, [postDenial]);
 
   function focusField(field: PurchaseEntryColumnField): void {
     focusSequence.current += 1;
@@ -477,11 +496,23 @@ export function PurchaseRowEntry({
               </tr>
             </thead>
             <tbody>
-              {draft.rows.map((row) => (
+              {draft.rows.map((row, rowIndex) => (
                 <tr key={row.id}>
                   <th scope="row">{row.ordinal}</th>
                   {visibleColumns.map(({ field }) => (
-                    <td key={field}>{committedValue(field, row, copy)}</td>
+                    <td
+                      key={field}
+                      data-post-row={rowIndex}
+                      data-post-field={POST_FIELD[field]}
+                      data-post-error={isPostFieldError(
+                        postDenial,
+                        rowIndex,
+                        POST_FIELD[field],
+                      )}
+                      tabIndex={-1}
+                    >
+                      {committedValue(field, row, copy)}
+                    </td>
                   ))}
                   <td>
                     <bdi>{row.inventoryUnitQuantity}</bdi>{" "}
@@ -617,7 +648,12 @@ export function PurchaseRowEntry({
         </p>
       )}
 
-      <PurchaseReview draft={draft} />
+      <PurchaseReview
+        draft={draft}
+        onPost={onPost}
+        postDenial={postDenial}
+        posting={posting}
+      />
       {quickCreateValue === null ? null : (
         <QuickProductDialog
           baseUrl={baseUrl}
@@ -811,8 +847,14 @@ function QuickProductDialog({
 
 function PurchaseReview({
   draft,
+  onPost,
+  postDenial,
+  posting,
 }: {
   readonly draft: PurchaseDraftDetail;
+  readonly onPost: () => Promise<void>;
+  readonly postDenial: PurchasingDenial | null;
+  readonly posting: boolean;
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
@@ -879,25 +921,65 @@ function PurchaseReview({
             <li key={warning}>
               {warning === "missing-expiry"
                 ? copy.missingExpiryWarning
-                : warning === "missing-lot"
-                  ? copy.missingLotWarning
-                  : copy.postingUnavailableWarning}
+                : copy.missingLotWarning}
             </li>
           ))}
         </ul>
       </div>
+      {postDenial === null ? null : (
+        <p
+          className="form-error purchase-post-denial"
+          id="purchase-post-denial"
+          role="alert"
+          aria-live="assertive"
+        >
+          {copy.postRejected} <bdi>{postDenial.code}</bdi>
+          {postDenial.fieldErrors[0]?.rule === undefined ? null : (
+            <>
+              {" "}
+              <bdi>{postDenial.fieldErrors[0].rule}</bdi>
+            </>
+          )}
+        </p>
+      )}
       <div className="purchase-review-actions">
         <button
           type="button"
           className="primary-button"
-          disabled
-          aria-describedby="purchase-post-pending"
+          disabled={draft.rows.length === 0 || posting}
+          aria-describedby={
+            postDenial === null ? undefined : "purchase-post-denial"
+          }
+          onClick={() => void onPost()}
         >
-          {copy.post}
+          {posting ? copy.posting : copy.post}
         </button>
-        <p id="purchase-post-pending">{copy.postPending}</p>
+        <p>{copy.postExplicitHint}</p>
       </div>
     </section>
+  );
+}
+
+const POST_FIELD: Record<PurchaseEntryColumnField, string> = {
+  cost: "primarySupplierCostFils",
+  expiry: "expiryDate",
+  item: "itemId",
+  quantity: "enteredQuantity",
+  "selling-price": "pricing",
+};
+
+function isPostFieldError(
+  denial: PurchasingDenial | null,
+  rowIndex: number,
+  field: string,
+): boolean {
+  return (
+    denial?.fieldErrors.some(
+      (error) =>
+        error.path[0] === "rows" &&
+        error.path[1] === rowIndex &&
+        error.path[2] === field,
+    ) ?? false
   );
 }
 

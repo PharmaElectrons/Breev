@@ -10,6 +10,7 @@ import {
   purchaseDraftListContract,
   purchaseDraftPath,
   purchaseDraftDetailSchema,
+  purchaseDraftPostingsPath,
   purchaseDraftReadContract,
   purchaseDraftResultSchema,
   purchaseDraftRowCommitContract,
@@ -19,6 +20,9 @@ import {
   purchaseEntryPreferencesReadContract,
   purchaseEntryPreferencesSchema,
   purchaseEntryPreferencesUpdateContract,
+  purchasePostContract,
+  purchasePostRequestSchema,
+  purchasePostResultSchema,
   purchasingDenialSchema,
   supplierArchiveContract,
   supplierArchivePath,
@@ -39,6 +43,8 @@ import {
   type PurchaseDraftUpdateRequest,
   type PurchaseEntryPreferences,
   type PurchaseEntryPreferencesUpdateRequest,
+  type PurchasePostRequest,
+  type PurchasePostResult,
   type PurchasingDenial,
   type Supplier,
   type SupplierArchiveRequest,
@@ -217,6 +223,20 @@ export const discardPurchaseDraft = async (
     body,
   );
 
+export const postPurchase = async (
+  baseUrl: string,
+  draftId: string,
+  body: PurchasePostRequest,
+): Promise<PurchasePostResult> =>
+  await requestJson(
+    baseUrl,
+    purchaseDraftPostingsPath(draftId),
+    purchasePostContract.method,
+    201,
+    purchasePostResultSchema,
+    body,
+  );
+
 export function newPurchasingIdempotencyKey(): string {
   return crypto.randomUUID();
 }
@@ -224,6 +244,70 @@ export function newPurchasingIdempotencyKey(): string {
 export interface PurchasingCommandAttempt {
   readonly fingerprint: string;
   readonly idempotencyKey: string;
+}
+
+export interface PendingPurchasePost {
+  readonly draftId: string;
+  readonly expectedVersion: string;
+  readonly idempotencyKey: string;
+}
+
+interface PurchasingAttemptAddress {
+  readonly hash: string;
+  replace(hash: string): void;
+}
+
+const PURCHASE_POST_ATTEMPT_PREFIX = "#/purchases/posting/";
+
+export function readPendingPurchasePost(
+  address: PurchasingAttemptAddress,
+): PendingPurchasePost | null {
+  if (!address.hash.startsWith(PURCHASE_POST_ATTEMPT_PREFIX)) return null;
+  const [draftId, expectedVersion, ...extra] = address.hash
+    .slice(PURCHASE_POST_ATTEMPT_PREFIX.length)
+    .split("/");
+  const request = purchasePostRequestSchema.safeParse({
+    expectedVersion,
+    idempotencyKey: draftId,
+  });
+  if (
+    extra.length > 0 ||
+    typeof draftId !== "string" ||
+    !purchaseDraftSchema.shape.id.safeParse(draftId).success ||
+    !request.success
+  ) {
+    address.replace("#/purchases");
+    return null;
+  }
+  return {
+    draftId,
+    expectedVersion: request.data.expectedVersion,
+    idempotencyKey: request.data.idempotencyKey,
+  };
+}
+
+export function rememberPurchasePost(
+  address: PurchasingAttemptAddress,
+  draftId: string,
+  expectedVersion: string,
+): PendingPurchasePost {
+  const pending = readPendingPurchasePost(address);
+  if (pending !== null) return pending;
+  const next = purchasePostRequestSchema.parse({
+    expectedVersion,
+    idempotencyKey: draftId,
+  });
+  const value = { draftId, ...next };
+  address.replace(
+    `${PURCHASE_POST_ATTEMPT_PREFIX}${draftId}/${next.expectedVersion}`,
+  );
+  return value;
+}
+
+export function clearPendingPurchasePost(
+  address: PurchasingAttemptAddress,
+): void {
+  address.replace("#/purchases");
 }
 
 export function purchasingCommandAttempt(

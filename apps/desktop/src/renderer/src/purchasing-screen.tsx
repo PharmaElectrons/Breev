@@ -3,15 +3,21 @@ import type {
   PurchaseDraft,
   PurchaseDraftDetail,
   PurchaseDraftResult,
+  PurchasePostResult,
+  PurchasingDenial,
   Supplier,
 } from "@breev/contracts/local-rest";
 import { PurchaseRowEntry } from "./purchase-row-entry";
 import { useIdentityState } from "./identity-state-provider";
 import {
+  clearPendingPurchasePost,
   createPurchaseDraft,
   discardPurchaseDraft,
+  postPurchase,
   PurchasingApiDenied,
   purchasingCommandAttempt,
+  readPendingPurchasePost,
+  rememberPurchasePost,
   requestPurchaseDrafts,
   requestPurchaseDraft,
   requestSuppliers,
@@ -48,6 +54,10 @@ export function PurchasingRouteView({
   const [activeDraft, setActiveDraft] = useState<PurchaseDraftDetail | null>(
     null,
   );
+  const [postedPurchase, setPostedPurchase] =
+    useState<PurchasePostResult | null>(null);
+  const [postDenial, setPostDenial] = useState<PurchasingDenial | null>(null);
+  const [posting, setPosting] = useState(false);
   const [warning, setWarning] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +67,7 @@ export function PurchasingRouteView({
   const registerRef = useRef<HTMLDialogElement>(null);
   const supplierRef = useRef<HTMLSelectElement>(null);
   const draftCommandAttempt = useRef<PurchasingCommandAttempt | null>(null);
+  const postRecoveryStarted = useRef(false);
 
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -90,6 +101,14 @@ export function PurchasingRouteView({
   }, [baseUrl, copy.error]);
 
   useEffect(() => {
+    if (postRecoveryStarted.current) return;
+    postRecoveryStarted.current = true;
+    const pending = readPendingPurchasePost(purchasePostAddress());
+    if (pending === null) return;
+    void performPost(pending);
+  }, [baseUrl]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target;
       const isInsideEditor =
@@ -117,6 +136,8 @@ export function PurchasingRouteView({
       setSettlementContext(detail.settlementContext);
       setInvoiceDate(detail.invoiceDate);
       setWarning(false);
+      setPostedPurchase(null);
+      setPostDenial(null);
       setError(null);
       setStatus(null);
       queueMicrotask(() => invoiceRef.current?.focus());
@@ -127,6 +148,12 @@ export function PurchasingRouteView({
 
   function newDraft(): void {
     setView("invoice");
+    resetDraftFields();
+    setPostedPurchase(null);
+    queueMicrotask(() => invoiceRef.current?.focus());
+  }
+
+  function resetDraftFields(): void {
     draftCommandAttempt.current = null;
     setActiveDraft(null);
     setSupplierInvoiceNumber("");
@@ -134,9 +161,50 @@ export function PurchasingRouteView({
     setSettlementContext("cash");
     setInvoiceDate(today());
     setWarning(false);
+    setPostDenial(null);
     setError(null);
     setStatus(null);
-    queueMicrotask(() => invoiceRef.current?.focus());
+  }
+
+  async function requestPost(): Promise<void> {
+    if (activeDraft === null || posting || activeDraft.rows.length === 0)
+      return;
+    const attempt = rememberPurchasePost(
+      purchasePostAddress(),
+      activeDraft.id,
+      activeDraft.version,
+    );
+    await performPost(attempt);
+  }
+
+  async function performPost(attempt: {
+    readonly draftId: string;
+    readonly expectedVersion: string;
+    readonly idempotencyKey: string;
+  }): Promise<void> {
+    setPosting(true);
+    setPostDenial(null);
+    setError(null);
+    setStatus(null);
+    try {
+      const result = await postPurchase(baseUrl, attempt.draftId, {
+        expectedVersion: attempt.expectedVersion,
+        idempotencyKey: attempt.idempotencyKey,
+      });
+      clearPendingPurchasePost(purchasePostAddress());
+      resetDraftFields();
+      setPostedPurchase(result);
+      void reload().catch(() => setError(copy.error));
+    } catch (caught) {
+      if (caught instanceof PurchasingApiDenied) {
+        clearPendingPurchasePost(purchasePostAddress());
+        setPostDenial(caught.denial);
+      } else {
+        setError(copy.postRetryPending);
+      }
+    } finally {
+      setPosting(false);
+    }
   }
 
   async function saveDraft(event: React.FormEvent): Promise<void> {
@@ -480,7 +548,11 @@ export function PurchasingRouteView({
           <PurchaseRowEntry
             baseUrl={baseUrl}
             draft={activeDraft}
+            onPost={requestPost}
+            postDenial={postDenial}
+            posting={posting}
             onDraftChanged={(nextDraft) => {
+              setPostDenial(null);
               setActiveDraft(nextDraft);
               setDrafts((current) =>
                 current.map((draft) =>
@@ -649,6 +721,16 @@ export function PurchasingRouteView({
             </div>
           </div>
         </footer>
+        {postedPurchase === null ? null : (
+          <PostedPurchaseResult
+            result={postedPurchase}
+            onContinue={() => {
+              setPostedPurchase(null);
+              setStatus(null);
+              queueMicrotask(() => invoiceRef.current?.focus());
+            }}
+          />
+        )}
       </div>
       {canManageSuppliers ? (
         <div id="purchase-suppliers-view" hidden={view !== "suppliers"}>
@@ -824,6 +906,216 @@ export function PurchasingRouteView({
       </dialog>
     </section>
   );
+}
+
+function PostedPurchaseResult({
+  result,
+  onContinue,
+}: {
+  readonly result: PurchasePostResult;
+  readonly onContinue: () => void;
+}): React.JSX.Element {
+  const { locale } = usePreferences();
+  const copy = purchasingMessages[locale];
+  const { posted } = result;
+  const settlementAmount =
+    posted.settlementEffect.context === "cash"
+      ? posted.settlementEffect.tenderFils
+      : posted.settlementEffect.payableFils;
+  return (
+    <section
+      className="posted-purchase-result"
+      aria-labelledby="posted-purchase-title"
+    >
+      <header className="posted-purchase-heading">
+        <div>
+          <p className="purchase-context-label">{copy.postedSuccess}</p>
+          <h2 id="posted-purchase-title">{copy.postedPurchase}</h2>
+          <p>
+            {posted.supplierNameSnapshot} · {copy.supplierInvoice}{" "}
+            <bdi>{posted.supplierInvoiceNumber}</bdi>
+          </p>
+        </div>
+        <button className="primary-button" type="button" onClick={onContinue}>
+          {copy.dismissPosted}
+        </button>
+      </header>
+
+      <div className="posted-purchase-number" aria-label={copy.documentNumber}>
+        <strong>{copy.documentNumber}</strong>
+        <dl>
+          <div>
+            <dt>{copy.documentSeries}</dt>
+            <dd>{posted.number.series}</dd>
+          </div>
+          <div>
+            <dt>{copy.documentSequence}</dt>
+            <dd>
+              <bdi>{posted.number.value}</bdi>
+            </dd>
+          </div>
+          <div>
+            <dt>{copy.documentYear}</dt>
+            <dd>
+              <bdi>{posted.number.year}</bdi>
+            </dd>
+          </div>
+          <div>
+            <dt>{copy.postedAt}</dt>
+            <dd>
+              <bdi>{formatDraftTimestamp(posted.postedAt, locale)}</bdi>
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      {result.warnings.length === 0 ? null : (
+        <div className="purchase-warning" role="status">
+          <strong>{copy.duplicatePostWarning}</strong>
+          <span>
+            {result.warnings
+              .flatMap((warning) => warning.existingPostingIds)
+              .map((id) => (
+                <bdi key={id}>{id}</bdi>
+              ))}
+          </span>
+        </div>
+      )}
+
+      <dl className="posted-purchase-totals">
+        <div>
+          <dt>{copy.primarySupplierCost}</dt>
+          <dd>
+            <bdi>{posted.primarySupplierCostFils}</bdi> {copy.fils}
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.allowanceAmount}</dt>
+          <dd>
+            <bdi>{posted.allowanceFils}</bdi> {copy.fils}
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.costAfterDiscount}</dt>
+          <dd>
+            <bdi>{posted.costAfterDiscountFils}</bdi> {copy.fils}
+          </dd>
+        </div>
+        <div>
+          <dt>
+            {posted.settlementEffect.context === "cash"
+              ? copy.tenderEffect
+              : copy.payableEffect}
+          </dt>
+          <dd>
+            <bdi>{settlementAmount}</bdi> {copy.fils}
+          </dd>
+        </div>
+      </dl>
+
+      <div
+        className="posted-purchase-table-wrap"
+        role="group"
+        aria-label={copy.postedRows}
+        tabIndex={0}
+      >
+        <h3>{copy.postedRows}</h3>
+        <table className="posted-purchase-table">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">{copy.itemBarcode}</th>
+              <th scope="col">{copy.quantity}</th>
+              <th scope="col">{copy.primarySupplierCost}</th>
+              <th scope="col">{copy.costAfterDiscount}</th>
+              <th scope="col">{copy.batchId}</th>
+              <th scope="col">{copy.movementId}</th>
+              <th scope="col">{copy.priceCapture}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {posted.rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row">{row.ordinal}</th>
+                <td>{row.itemDisplayName}</td>
+                <td>
+                  <bdi>{row.inventoryUnitQuantity}</bdi> {row.inventoryUnitName}
+                </td>
+                <td>
+                  <bdi>{row.linePrimarySupplierCostFils}</bdi>
+                </td>
+                <td>
+                  <bdi>{row.costAfterDiscountFils}</bdi>
+                </td>
+                <td>
+                  <bdi>{row.batchId}</bdi>
+                </td>
+                <td>
+                  <bdi>{row.movementId}</bdi>
+                </td>
+                <td>
+                  <bdi>{row.priceCapture}</bdi>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        className="posted-purchase-table-wrap"
+        role="group"
+        aria-label={copy.journal}
+        tabIndex={0}
+      >
+        <h3>{copy.journal}</h3>
+        <p>
+          {copy.journalTemplate}: <bdi>{posted.journal.templateId}</bdi> ·{" "}
+          {copy.version} <bdi>{posted.journal.templateVersion}</bdi>
+        </p>
+        <table className="posted-purchase-table posted-purchase-journal">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">{copy.account}</th>
+              <th scope="col">{copy.debit}</th>
+              <th scope="col">{copy.credit}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {posted.journal.lines.map((line) => (
+              <tr key={line.ordinal}>
+                <th scope="row">{line.ordinal}</th>
+                <td>
+                  <bdi>{line.accountCode}</bdi>
+                </td>
+                <td>
+                  <bdi>{line.debitFils}</bdi>
+                </td>
+                <td>
+                  <bdi>{line.creditFils}</bdi>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function purchasePostAddress(): {
+  readonly hash: string;
+  replace(hash: string): void;
+} {
+  return {
+    get hash() {
+      return window.location.hash;
+    },
+    replace(hash) {
+      window.history.replaceState(null, "", hash);
+    },
+  };
 }
 
 function formatDraftTimestamp(value: string, locale: "ar" | "en"): string {
