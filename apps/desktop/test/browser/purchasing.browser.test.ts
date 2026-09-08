@@ -33,6 +33,8 @@ const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_PASSWORD = "purchasing browser owner password stays in this test";
 let delayNextDraftCreateResponse = false;
 let delayNextPurchasePostResponse = false;
+let denyNextSupplierCreateAsInvalid = false;
+let failNextSupplierListResponse = false;
 let apiStartupOutput = "";
 
 interface Credentials {
@@ -708,6 +710,89 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
   });
 
+  test("creates a debt supplier from the Arabic supplier workspace", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "ar", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByRole("button", { name: "الموردون", exact: true }).click();
+    await page.getByRole("button", { name: "إضافة", exact: true }).click();
+    await page.getByLabel("اسم المورد", { exact: true }).fill("مورد 1");
+    await page.getByLabel("رقم الهاتف", { exact: true }).fill("01092346077");
+    await page.getByLabel("الموقع / العنوان", { exact: true }).fill("أسيوط");
+    await page
+      .getByLabel("نسبة السماح الافتراضية %", { exact: true })
+      .fill("10");
+    await page
+      .getByLabel("حد الدين الأقصى (د.ع)", { exact: true })
+      .fill("500000");
+    await page.getByLabel("فترة الاستحقاق (يوم)", { exact: true }).fill("30");
+    await page
+      .getByLabel("نافذة تنبيه الاستحقاق (يوم)", { exact: true })
+      .fill("7");
+    await page.getByRole("button", { name: "حفظ", exact: true }).click();
+    await expect(
+      page.getByText("تم حفظ المورد.", { exact: true }),
+    ).toBeVisible();
+  });
+
+  test("does not report a completed supplier save as failed when refresh fails", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByRole("button", { name: "Suppliers", exact: true }).click();
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page
+      .getByLabel("Supplier name", { exact: true })
+      .fill("Refresh failure supplier");
+
+    failNextSupplierListResponse = true;
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+
+    await expect(
+      page.getByText(
+        "Supplier saved, but the list could not be refreshed. Reopen Purchases to refresh it.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText("The change was not saved.", { exact: false }),
+    ).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(
+      page.getByText("Supplier saved.", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".supplier-tile", { hasText: "Refresh failure supplier" }),
+    ).toHaveCount(1);
+  });
+
+  test("shows the supplier denial instead of the generic draft error", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "ar", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByRole("button", { name: "الموردون", exact: true }).click();
+    await page.getByRole("button", { name: "إضافة", exact: true }).click();
+    await page
+      .getByLabel("اسم المورد", { exact: true })
+      .fill("مورد بقيمة مرفوضة");
+
+    denyNextSupplierCreateAsInvalid = true;
+    await page.getByRole("button", { name: "حفظ", exact: true }).click();
+
+    await expect(
+      page.getByText("لم يتم حفظ المورد لأن إحدى القيم غير صالحة.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("لم يتم حفظ التغيير.", { exact: false }),
+    ).toHaveCount(0);
+  });
+
   test("contains wide and narrow layouts without document overflow", async ({
     page,
   }) => {
@@ -1094,6 +1179,33 @@ async function startRendererServer(
         request.url?.startsWith("/purchases/")
       ) {
         const body = await readBody(request);
+        if (
+          denyNextSupplierCreateAsInvalid &&
+          request.method === "POST" &&
+          request.url === "/suppliers"
+        ) {
+          denyNextSupplierCreateAsInvalid = false;
+          response.writeHead(400, { "content-type": "application/json" }).end(
+            JSON.stringify({
+              code: "body-invalid",
+              fieldErrors: [{ code: "invalid", path: ["name"] }],
+              requestId: uuidV7(),
+              status: "denied",
+            }),
+          );
+          return;
+        }
+        if (
+          failNextSupplierListResponse &&
+          request.method === "GET" &&
+          request.url === "/suppliers"
+        ) {
+          failNextSupplierListResponse = false;
+          response
+            .writeHead(502, { "content-type": "application/json" })
+            .end("{}");
+          return;
+        }
         const upstream = await fetch(`${apiOrigin}${request.url}`, {
           ...(body.length === 0 ? {} : { body }),
           headers: requestHeaders(credentials, body.length > 0),
