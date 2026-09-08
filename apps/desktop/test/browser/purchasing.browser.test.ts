@@ -5,6 +5,7 @@ import {
   BREEV_CSRF_VALUE,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  supplierListContract,
   supplierSchema,
   type Product,
   type ProductCreateRequest,
@@ -732,8 +733,24 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       .fill("7");
     await page.getByRole("button", { name: "حفظ", exact: true }).click();
     await expect(
-      page.getByText("تم حفظ المورد.", { exact: true }),
+      page.getByText(
+        /^(تم حفظ المورد\.|تم حفظ المورد، لكن تعذر تحديث القائمة\. أعد فتح المشتريات لتحديثها\.)$/,
+      ),
     ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const response = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          "/suppliers",
+        );
+        if (response.status !== 200) return false;
+        return supplierListContract.responses[200]
+          .parse(response.body)
+          .suppliers.some((supplier) => supplier.name === "مورد 1");
+      })
+      .toBe(true);
   });
 
   test("does not report a completed supplier save as failed when refresh fails", async ({

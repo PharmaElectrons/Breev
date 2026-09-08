@@ -126,7 +126,6 @@ export function SuppliersWorkspace({
       setDuePeriodDays(details.duePeriodDays);
       setAlertWindowDays(details.alertWindowDays);
       setSurvivorId("");
-      setMessage(null);
     } else {
       setName("");
       setPhone("");
@@ -137,9 +136,7 @@ export function SuppliersWorkspace({
       setDuePeriodDays(30);
       setAlertWindowDays(7);
       setSurvivorId("");
-      setMessage(null);
     }
-    supplierCommandAttempt.current = null;
   }, [selected]);
 
   const supplierDrafts = useMemo(
@@ -216,6 +213,7 @@ export function SuppliersWorkspace({
   };
 
   const chooseNew = () => {
+    supplierCommandAttempt.current = null;
     setSelectedId(null);
     setName(isAr ? "مذخر جديد" : "New supplier");
     setPhone("");
@@ -227,6 +225,12 @@ export function SuppliersWorkspace({
     setAlertWindowDays(7);
     setSurvivorId("");
     setMessage(null);
+  };
+
+  const chooseSupplier = (id: string) => {
+    supplierCommandAttempt.current = null;
+    setMessage(null);
+    setSelectedId(id);
   };
 
   const save = async (event?: React.FormEvent) => {
@@ -384,7 +388,7 @@ export function SuppliersWorkspace({
                 key={s.id}
                 type="button"
                 aria-pressed={isSel}
-                onClick={() => setSelectedId(s.id)}
+                onClick={() => chooseSupplier(s.id)}
                 className={`supplier-tile w-full text-start px-3 py-2 border-b border-border/50 transition hover:bg-primary/10 ${
                   isSel
                     ? "bg-primary/15 border-inline-start-4 border-inline-start-primary"
