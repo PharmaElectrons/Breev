@@ -21,6 +21,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
+import { Pool } from "pg";
 
 import {
   createSeparatedDatabaseRoles,
@@ -31,6 +32,7 @@ import {
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_PASSWORD = "purchasing browser owner password stays in this test";
 let delayNextDraftCreateResponse = false;
+let delayNextPurchasePostResponse = false;
 let apiStartupOutput = "";
 
 interface Credentials {
@@ -63,10 +65,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     import.meta.dirname,
     "../../../../evidence/issue-18/after",
   );
+  const postingEvidenceDir = path.resolve(
+    import.meta.dirname,
+    "../../../../evidence/issue-50/after",
+  );
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
     await mkdir(rowEvidenceDir, { recursive: true });
+    await mkdir(postingEvidenceDir, { recursive: true });
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
     if (administratorUrl === undefined) {
       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
@@ -353,7 +360,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     expect(postRequests).toBe(0);
     await expect(
       page.getByRole("button", { name: "Post purchase" }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     await expect(page.locator(".purchase-review")).toContainText("160000");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
 
@@ -810,6 +817,140 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toHaveLength(1);
   });
 
+  test("posts only from the explicit action and shows the immutable server result", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "POST-ATOMIC-1",
+      "2029-05-31",
+    );
+
+    const post = page.getByRole("button", { name: "Post purchase" });
+    await expect(post).toBeEnabled();
+    await post.focus();
+    await page.keyboard.press("Enter");
+
+    const receipt = page.locator(".posted-purchase-result");
+    await expect(
+      receipt.getByRole("heading", { name: "Posted purchase" }),
+    ).toBeVisible();
+    await expect(receipt).toContainText("POST-ATOMIC-1");
+    await expect(receipt).toContainText("purchase.invoice");
+    await expect(receipt).toContainText("inventory");
+    await expect(receipt).toContainText("cash");
+    await expect(receipt).toContainText("Batch ID");
+    await expect(receipt).toContainText("Movement ID");
+    await expect(page.getByLabel("Supplier invoice number")).toHaveValue("");
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.join(postingEvidenceDir, "posted-purchase-en-light.png"),
+    });
+  });
+
+  test("replays the same posting after a timeout and renderer reload exactly once", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "ar", "dark");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "POST-RELOAD-1",
+      "2029-06-30",
+      "ar",
+    );
+
+    delayNextPurchasePostResponse = true;
+    await page.getByRole("button", { name: "ترحيل الشراء" }).click();
+    await expect(page.getByText(/تعذر تأكيد النتيجة/)).toBeVisible({
+      timeout: 7_000,
+    });
+    await page.reload();
+
+    const receipt = page.locator(".posted-purchase-result");
+    await expect(
+      receipt.getByRole("heading", { name: "شراء مُرحّل" }),
+    ).toBeVisible();
+    await expect(receipt).toContainText("POST-RELOAD-1");
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    const administrator = new Pool({
+      connectionString: databaseRoles.migrationUrl,
+    });
+    try {
+      const counts = await administrator.query<{
+        batches: string;
+        journals: string;
+        movements: string;
+        postings: string;
+      }>(
+        `select
+           count(distinct posted.id)::text as postings,
+           count(distinct batch.id)::text as batches,
+           count(distinct movement.id)::text as movements,
+           count(distinct journal.id)::text as journals
+         from posted_purchases posted
+         join posted_purchase_rows posted_row on posted_row.posted_purchase_id = posted.id
+         join inventory_batches batch on batch.id = posted_row.batch_id
+         join inventory_movements movement on movement.id = posted_row.movement_id
+         join accounting_journal_entries journal on journal.id = posted.journal_entry_id
+         where posted.supplier_invoice_number = $1`,
+        ["POST-RELOAD-1"],
+      );
+      expect(counts.rows[0]).toEqual({
+        batches: "1",
+        journals: "1",
+        movements: "1",
+        postings: "1",
+      });
+    } finally {
+      await administrator.end();
+    }
+
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      fullPage: true,
+      path: path.join(postingEvidenceDir, "posted-purchase-ar-dark.png"),
+    });
+  });
+
+  test("keeps a rejected draft and focuses the named receipt-rule field", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "POST-REJECTED-1",
+      "",
+    );
+
+    await page.getByRole("button", { name: "Post purchase" }).click();
+    const alert = page.locator("#purchase-post-denial");
+    await expect(alert).toContainText("expiry-required");
+    await expect(alert).toContainText(
+      "purchase.post.expiry-required-at-receipt",
+    );
+    const expiryCell = page.locator(
+      '[data-post-row="0"][data-post-field="expiryDate"]',
+    );
+    await expect(expiryCell).toHaveAttribute("data-post-error", "true");
+    await expect(expiryCell).toBeFocused();
+    await expect(page.getByLabel("Supplier invoice number")).toHaveValue(
+      "POST-REJECTED-1",
+    );
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+  });
+
   test("preserves an invalid Supplier header and returns focus for correction", async ({
     page,
   }) => {
@@ -860,6 +1001,76 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   });
 });
 
+async function createPurchaseWithOneRow(
+  page: Page,
+  rendererOrigin: string,
+  supplierId: string,
+  invoiceNumber: string,
+  expiryDate: string,
+  locale: "ar" | "en" = "en",
+): Promise<void> {
+  const labels =
+    locale === "ar"
+      ? {
+          cost: "الكلفة الأساسية",
+          expiry: "تاريخ الانتهاء",
+          invoice: "رقم فاتورة المورد",
+          item: "الصنف / الباركود",
+          quantity: "الكمية",
+          save: "حفظ المسودة",
+          saved: "تم حفظ المسودة بشكل دائم.",
+          sellingPrice: "سعر البيع",
+          supplier: "اسم المورد",
+        }
+      : {
+          cost: "Primary cost",
+          expiry: "Expiry",
+          invoice: "Supplier invoice number",
+          item: "Item / Barcode",
+          quantity: "Quantity",
+          save: "Save draft",
+          saved: "Draft saved and durable.",
+          sellingPrice: "Selling price",
+          supplier: "Supplier",
+        };
+  await page.goto(`${rendererOrigin}#/purchases`);
+  await page.getByLabel(labels.invoice).fill(invoiceNumber);
+  await page
+    .getByRole("combobox", { name: labels.supplier, exact: true })
+    .selectOption(supplierId);
+  await page
+    .getByLabel(locale === "ar" ? "تاريخ الفاتورة" : "Invoice date")
+    .fill("2026-09-08");
+  await page.getByRole("button", { name: labels.save }).click();
+  await expect(page.getByText(labels.saved)).toBeVisible();
+
+  const item = page.getByRole("textbox", { name: labels.item, exact: true });
+  const quantity = page.getByRole("textbox", {
+    name: labels.quantity,
+    exact: true,
+  });
+  const cost = page.getByRole("textbox", { name: labels.cost, exact: true });
+  const sellingPrice = page.getByRole("textbox", {
+    name: labels.sellingPrice,
+    exact: true,
+  });
+  const expiry = page.getByRole("textbox", {
+    name: labels.expiry,
+    exact: true,
+  });
+  await item.fill("5012345678949");
+  await item.press("Enter");
+  await quantity.fill("2");
+  await quantity.press("Enter");
+  await cost.fill("80000");
+  await cost.press("Enter");
+  await sellingPrice.fill("120000");
+  await sellingPrice.press("Enter");
+  if (expiryDate !== "") await expiry.fill(expiryDate);
+  await expiry.press("Enter");
+  await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+}
+
 async function startRendererServer(
   apiOrigin: string,
   credentials: Credentials,
@@ -895,6 +1106,14 @@ async function startRendererServer(
           request.url === "/purchases/drafts"
         ) {
           delayNextDraftCreateResponse = false;
+          await new Promise((resolve) => setTimeout(resolve, 5_500));
+        }
+        if (
+          delayNextPurchasePostResponse &&
+          request.method === "POST" &&
+          /\/purchases\/drafts\/[^/]+\/postings$/u.test(request.url)
+        ) {
+          delayNextPurchasePostResponse = false;
           await new Promise((resolve) => setTimeout(resolve, 5_500));
         }
         response.writeHead(upstream.status, {

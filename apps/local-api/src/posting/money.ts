@@ -20,12 +20,18 @@
  * the column that first persists money owns its range check, so an oversized
  * amount is rejected by the schema instead of being silently truncated here.
  *
- * Deliberately absent, and not an oversight: multiplication, division,
- * rounding, and remainder allocation. Those need the accountant-approved
- * rounding and remainder-allocation policy that docs/domain.md defers to G-01,
- * and they arrive with weighted-average cost in issue #50. This module offers
- * only the operations that are exact by construction -- comparison, addition,
- * and negation -- so that no caller can round before that policy exists.
+ * Multiplication, division, rounding, and remainder allocation arrive here
+ * with the first posting that produces them. They are gathered in this one
+ * module on purpose: docs/domain.md defers exact decimal precision, rounding,
+ * and remainder allocation to gate G-01, and this is the only module that
+ * decides either. Callers ask for a rounded quotient or an allocated total and
+ * never implement one, so when the accountant settles the gate the work is
+ * bounded to this file -- rewriting {@link divideExactRounded} or
+ * {@link allocateFilsProportionally}, renaming {@link ROUNDING_RULE} or
+ * {@link REMAINDER_ALLOCATION_RULE} to whatever was approved, and updating the
+ * tests that pin the current behaviour. The constants are labels for the
+ * policy, not switches that implement it; changing one alone would only
+ * mislabel the algorithm. Until the gate closes both are engineering defaults.
  */
 
 /**
@@ -194,6 +200,189 @@ export function equalsQuantity(
     assertExactInteger(left, QUANTITY_LABEL) ===
     assertExactInteger(right, QUANTITY_LABEL)
   );
+}
+
+/**
+ * The number of decimal places an exact rate keeps. A supplier allowance
+ * percentage and a pricing margin are both stored as `numeric(9,6)`, so six
+ * places is the precision the database already holds and the wire already
+ * transports.
+ */
+export const RATE_SCALE = 6;
+
+const RATE_UNIT = 10n ** BigInt(RATE_SCALE);
+
+/**
+ * A percentage or other rate as an exact integer scaled by `10 ** RATE_SCALE`:
+ * `"2.5"` is `2_500_000n`. Branded for the same reason money is -- a rate that
+ * arrived through `Number("2.5")` is already the nearest binary fraction to
+ * two and a half, and a discount computed from it is not the discount the
+ * supplier agreed.
+ */
+export type ScaledRate = bigint & { readonly brand: "scaled-rate" };
+
+/** `100%` as a {@link ScaledRate}: the denominator of every percentage. */
+export const ONE_HUNDRED_PERCENT = (100n * RATE_UNIT) as ScaledRate;
+
+const RATE_WIRE = /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/u;
+const RATE_LABEL = "A rate";
+
+/**
+ * The halfway behaviour every rounding in a posting applies: **away from
+ * zero**, so an exact 2.5 fils becomes 3 and -2.5 becomes -3. Deterministic,
+ * symmetric about zero, and independent of the order values are processed in.
+ *
+ * An engineering default pending G-01 (docs/open-decisions.md).
+ */
+export const ROUNDING_RULE = "half-away-from-zero" as const;
+
+/**
+ * How a rounded total is split across the lines that produced it: give every
+ * line its exact floor, then hand the remaining fils out one at a time to the
+ * lines with the largest dropped fraction, breaking a tie by line order.
+ *
+ * The property that matters is that the parts always add back up to the total
+ * that was split, so a per-line figure and its invoice total can never
+ * disagree by a fils.
+ *
+ * An engineering default pending G-01 (docs/open-decisions.md).
+ */
+export const REMAINDER_ALLOCATION_RULE =
+  "largest-remainder-then-line-order" as const;
+
+/** Reads an exact rate from its decimal text form. */
+export function parseRateString(wire: string): ScaledRate {
+  if (typeof wire !== "string") {
+    throw new TypeError(
+      `${RATE_LABEL} must arrive as exact decimal text, received ${typeof wire}`,
+    );
+  }
+  if (!RATE_WIRE.test(wire)) {
+    throw new TypeError(
+      `${RATE_LABEL} must be canonical decimal text with at most ${String(RATE_SCALE)} decimal places, received ${previewWire(wire)}`,
+    );
+  }
+  const [whole = "0", fraction = ""] = wire.split(".");
+  return BigInt(`${whole}${fraction.padEnd(RATE_SCALE, "0")}`) as ScaledRate;
+}
+
+/**
+ * Multiplies a fils amount by an exact integer count -- a line's unit cost by
+ * its quantity. Integer multiplication is exact at any magnitude, so nothing
+ * is rounded and no intermediate loses a fils.
+ */
+export function multiplyFils(amount: IqdFils, factor: bigint): IqdFils {
+  const product =
+    assertExactInteger(amount, FILS_LABEL) *
+    assertExactInteger(factor, "A multiplier");
+  return product as IqdFils;
+}
+
+/**
+ * Divides exactly and rounds the result to whole fils by {@link ROUNDING_RULE}.
+ *
+ * Both arguments are plain `bigint` rather than `IqdFils`, because the
+ * numerator of a percentage is fils times a scaled rate and the denominator is
+ * a scale -- neither is itself an amount of money. Only the result is.
+ */
+export function divideFilsRounded(
+  numerator: bigint,
+  denominator: bigint,
+): IqdFils {
+  return divideExactRounded(numerator, denominator) as IqdFils;
+}
+
+/**
+ * The exact `rate` share of `amount`, rounded once to whole fils.
+ *
+ * The rate is applied to the amount before any division, so the only rounding
+ * is the final one: computing a per-unit share first and multiplying it back
+ * up would round twice and drift by a fils per line.
+ */
+export function rateOfFils(amount: IqdFils, rate: ScaledRate): IqdFils {
+  assertExactInteger(rate, RATE_LABEL);
+  return divideFilsRounded(
+    assertExactInteger(amount, FILS_LABEL) * rate,
+    ONE_HUNDRED_PERCENT,
+  );
+}
+
+/**
+ * Splits `total` across `weights` under {@link REMAINDER_ALLOCATION_RULE}. The
+ * returned shares always sum to exactly `total`.
+ *
+ * Weights are non-negative and are usually line values. When every weight is
+ * zero there is no proportion to split by, so the whole total goes to the
+ * first line rather than being silently dropped -- a zero-value invoice with a
+ * non-zero allowance is a data problem the caller should see, not one this
+ * function should hide by returning less money than it was given.
+ */
+export function allocateFilsProportionally(
+  total: IqdFils,
+  weights: readonly bigint[],
+): IqdFils[] {
+  assertExactInteger(total, FILS_LABEL);
+  if (weights.length === 0) {
+    throw new RangeError("An allocation needs at least one line");
+  }
+  let weightTotal = 0n;
+  for (const weight of weights) {
+    if (assertExactInteger(weight, "An allocation weight") < 0n) {
+      throw new RangeError("An allocation weight cannot be negative");
+    }
+    weightTotal += weight;
+  }
+  if (weightTotal === 0n) {
+    return weights.map((_, index) => (index === 0 ? total : 0n)) as IqdFils[];
+  }
+
+  const negative = total < 0n;
+  const absoluteTotal = negative ? -total : total;
+  const shares: bigint[] = [];
+  const remainders: { index: number; remainder: bigint }[] = [];
+  let assigned = 0n;
+  for (const [index, weight] of weights.entries()) {
+    const numerator = absoluteTotal * weight;
+    const share = numerator / weightTotal;
+    shares.push(share);
+    remainders.push({ index, remainder: numerator % weightTotal });
+    assigned += share;
+  }
+
+  remainders.sort((left, right) =>
+    left.remainder === right.remainder
+      ? left.index - right.index
+      : left.remainder > right.remainder
+        ? -1
+        : 1,
+  );
+  let leftover = absoluteTotal - assigned;
+  for (const target of remainders) {
+    if (leftover === 0n) break;
+    shares[target.index] = (shares[target.index] ?? 0n) + 1n;
+    leftover -= 1n;
+  }
+  if (leftover !== 0n) {
+    throw new RangeError("An allocation remainder exceeded its line count");
+  }
+  return shares.map((share) => (negative ? -share : share)) as IqdFils[];
+}
+
+function divideExactRounded(numerator: bigint, denominator: bigint): bigint {
+  assertExactInteger(numerator, "A numerator");
+  assertExactInteger(denominator, "A denominator");
+  if (denominator === 0n) {
+    throw new RangeError("An exact quotient cannot divide by zero");
+  }
+  const negative = numerator < 0n !== denominator < 0n;
+  const absoluteNumerator = numerator < 0n ? -numerator : numerator;
+  const absoluteDenominator = denominator < 0n ? -denominator : denominator;
+  const quotient = absoluteNumerator / absoluteDenominator;
+  const remainder = absoluteNumerator % absoluteDenominator;
+  // Away from zero on the exact half, so the comparison is `>=`.
+  const rounded =
+    2n * remainder >= absoluteDenominator ? quotient + 1n : quotient;
+  return negative ? -rounded : rounded;
 }
 
 /**

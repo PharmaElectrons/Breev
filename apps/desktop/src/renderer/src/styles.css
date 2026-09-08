@@ -3105,6 +3105,16 @@ a:focus-visible,
   min-width: 15rem;
 }
 
+.purchase-row-table td[data-post-error="true"] {
+  outline: 0.2rem solid var(--danger);
+  outline-offset: -0.2rem;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+}
+
+.purchase-row-table td[data-post-error="true"]:focus {
+  outline-width: 0.3rem;
+}
+
 .purchase-item-panel {
   flex: 0 0 min(18rem, 32%);
   padding: 1rem;
@@ -3124,6 +3134,91 @@ a:focus-visible,
   display: flex;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.purchase-post-denial bdi {
+  font-family: var(--font-mono);
+}
+
+.posted-purchase-result {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-inline-start: 0.35rem solid var(--ready);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.posted-purchase-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.posted-purchase-heading h2,
+.posted-purchase-heading p,
+.posted-purchase-table-wrap h3,
+.posted-purchase-table-wrap p {
+  margin: 0;
+}
+
+.posted-purchase-number,
+.posted-purchase-totals {
+  padding: 0.9rem;
+  border-radius: calc(var(--radius) * 0.75);
+  background: var(--surface);
+}
+
+.posted-purchase-number dl,
+.posted-purchase-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0 0;
+}
+
+.posted-purchase-number dl > div,
+.posted-purchase-totals > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.posted-purchase-number dt,
+.posted-purchase-totals dt {
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+
+.posted-purchase-number dd,
+.posted-purchase-totals dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.posted-purchase-table-wrap {
+  display: grid;
+  gap: 0.65rem;
+  overflow-x: auto;
+}
+
+.posted-purchase-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.posted-purchase-table th,
+.posted-purchase-table td {
+  padding: 0.6rem;
+  text-align: start;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.posted-purchase-table bdi {
+  font-variant-numeric: tabular-nums;
 }
 
 .purchase-entry-settings {
@@ -3207,5 +3302,9 @@ a:focus-visible,
   .purchase-item-panel {
     width: 100%;
     flex-basis: auto;
+  }
+
+  .posted-purchase-heading {
+    flex-direction: column;
   }
 }

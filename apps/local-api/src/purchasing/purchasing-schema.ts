@@ -27,6 +27,7 @@ export const purchaseSettlementContext = pgEnum("purchase_settlement_context", [
 export const purchaseDraftStatus = pgEnum("purchase_draft_status", [
   "active",
   "discarded",
+  "posted",
 ]);
 export const purchaseEnteredUnitKind = pgEnum("purchase_entered_unit_kind", [
   "inventory-unit",
@@ -169,6 +170,112 @@ export const purchaseDraftRows = pgTable(
     ),
     unique("purchase_draft_rows_draft_ordinal_unique").on(
       table.draftId,
+      table.ordinal,
+    ),
+  ],
+);
+
+export const postedPurchases = pgTable(
+  "posted_purchases",
+  {
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    draftId: uuid("draft_id").notNull(),
+    supplierId: uuid("supplier_id").notNull(),
+    supplierNameSnapshot: text("supplier_name_snapshot").notNull(),
+    supplierInvoiceNumber: text("supplier_invoice_number").notNull(),
+    invoiceDate: date("invoice_date").notNull(),
+    settlementContext:
+      purchaseSettlementContext("settlement_context").notNull(),
+    allowancePercentageSnapshot: numeric("allowance_percentage_snapshot", {
+      precision: 9,
+      scale: 6,
+    }).notNull(),
+    allowanceBasisFils: bigint("allowance_basis_fils", {
+      mode: "bigint",
+    }).notNull(),
+    allowanceFils: bigint("allowance_fils", { mode: "bigint" }).notNull(),
+    costAfterDiscountFils: bigint("cost_after_discount_fils", {
+      mode: "bigint",
+    }).notNull(),
+    primarySupplierCostFils: bigint("primary_supplier_cost_fils", {
+      mode: "bigint",
+    }).notNull(),
+    numberValue: bigint("number_value", { mode: "bigint" }).notNull(),
+    numberYear: integer("number_year").notNull(),
+    journalEntryId: uuid("journal_entry_id").notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    postedBy: uuid("posted_by").notNull(),
+  },
+  (table) => [
+    unique("posted_purchases_id_pharmacy_unique").on(
+      table.id,
+      table.pharmacyId,
+    ),
+    unique("posted_purchases_draft_unique").on(table.draftId),
+    unique("posted_purchases_number_unique").on(
+      table.pharmacyId,
+      table.numberYear,
+      table.numberValue,
+    ),
+  ],
+);
+
+export const postedPurchaseRows = pgTable(
+  "posted_purchase_rows",
+  {
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    postedPurchaseId: uuid("posted_purchase_id").notNull(),
+    draftRowId: uuid("draft_row_id").notNull(),
+    ordinal: integer().notNull(),
+    productId: uuid("product_id").notNull(),
+    itemDisplayName: text("item_display_name").notNull(),
+    inventoryUnitName: text("inventory_unit_name").notNull(),
+    enteredUnitKind: purchaseEnteredUnitKind("entered_unit_kind").notNull(),
+    enteredPackageUnitName: text("entered_package_unit_name"),
+    baseUnitsPerEnteredUnit: bigint("base_units_per_entered_unit", {
+      mode: "bigint",
+    }).notNull(),
+    enteredQuantity: bigint("entered_quantity", { mode: "bigint" }).notNull(),
+    inventoryUnitQuantity: bigint("inventory_unit_quantity", {
+      mode: "bigint",
+    }).notNull(),
+    primarySupplierCostFils: bigint("primary_supplier_cost_fils", {
+      mode: "bigint",
+    }).notNull(),
+    linePrimarySupplierCostFils: bigint("line_primary_supplier_cost_fils", {
+      mode: "bigint",
+    }).notNull(),
+    costAfterDiscountFils: bigint("cost_after_discount_fils", {
+      mode: "bigint",
+    }).notNull(),
+    pricingMethod: catalogPricingMethod("pricing_method").notNull(),
+    retailPriceFils: bigint("retail_price_fils", { mode: "bigint" }).notNull(),
+    marginPercentage: numeric("margin_percentage", { precision: 9, scale: 6 }),
+    priceCapture: text("price_capture").notNull(),
+    expiryDate: date("expiry_date"),
+    lotNumber: text("lot_number"),
+    notes: text(),
+    batchId: uuid("batch_id").notNull(),
+    movementId: uuid("movement_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("posted_purchase_rows_id_pharmacy_unique").on(
+      table.id,
+      table.pharmacyId,
+    ),
+    unique("posted_purchase_rows_purchase_ordinal_unique").on(
+      table.postedPurchaseId,
       table.ordinal,
     ),
   ],

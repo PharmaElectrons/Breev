@@ -4,8 +4,10 @@ import * as moneyModule from "./money.js";
 import {
   addFils,
   addQuantity,
+  allocateFilsProportionally,
   compareFils,
   compareQuantity,
+  divideFilsRounded,
   equalsFils,
   equalsQuantity,
   FILS_PER_IQD,
@@ -13,12 +15,19 @@ import {
   formatQuantityString,
   inventoryQuantity,
   iqdFils,
+  multiplyFils,
   negateFils,
   negateQuantity,
+  ONE_HUNDRED_PERCENT,
   parseFilsString,
   parseQuantityString,
+  parseRateString,
+  rateOfFils,
+  REMAINDER_ALLOCATION_RULE,
+  ROUNDING_RULE,
   type InventoryQuantity,
   type IqdFils,
+  type ScaledRate,
 } from "./money.js";
 
 /** Wire values that must survive a byte-exact round trip in both directions. */
@@ -454,13 +463,211 @@ describe("quantity arithmetic", () => {
   });
 });
 
-describe("excluded scope", () => {
-  it("exposes no multiplication, division, rounding, or allocation", () => {
-    // Those need the accountant-approved rounding and remainder policy that
-    // docs/domain.md defers to G-01; they arrive with weighted-average cost in
-    // issue #50. Until then no caller can round an authoritative value here.
+describe("parseRateString", () => {
+  it("reads exact decimal text into a scaled integer", () => {
+    expect(parseRateString("0")).toBe(0n);
+    expect(parseRateString("2.5")).toBe(2_500_000n);
+    expect(parseRateString("2.500000")).toBe(2_500_000n);
+    expect(parseRateString("100")).toBe(100_000_000n);
+    expect(parseRateString("0.000001")).toBe(1n);
+    expect(ONE_HUNDRED_PERCENT).toBe(parseRateString("100"));
+  });
+
+  it("keeps a tenth exactly a tenth", () => {
+    // 0.1 has no finite binary expansion, so Number("0.1") * 1e6 is 100000.00000000001.
+    expect(parseRateString("0.1")).toBe(100_000n);
+    expect(parseRateString("0.3") - parseRateString("0.1")).toBe(
+      parseRateString("0.2"),
+    );
+  });
+
+  it("rejects every non-canonical or floating point spelling", () => {
+    for (const rejected of [
+      "",
+      " 2",
+      "2 ",
+      "+2",
+      "-2",
+      "02",
+      "2.",
+      ".5",
+      "2.0000001",
+      "2e1",
+      "0x2",
+      "NaN",
+      "Infinity",
+      "٢",
+    ]) {
+      expect(() => parseRateString(rejected), rejected).toThrow(TypeError);
+    }
+    expect(() => parseRateString(2.5 as unknown as string)).toThrow(TypeError);
+  });
+});
+
+describe("multiplyFils", () => {
+  it("multiplies a unit cost by its quantity exactly", () => {
+    expect(multiplyFils(iqdFils(80_000n), 2n)).toBe(160_000n);
+    expect(multiplyFils(iqdFils(0n), 9n)).toBe(0n);
+    expect(multiplyFils(iqdFils(-7n), 3n)).toBe(-21n);
+  });
+
+  it("stays exact past double precision", () => {
+    expect(multiplyFils(iqdFils(9_007_199_254_740_993n), 3n)).toBe(
+      27_021_597_764_222_979n,
+    );
+  });
+
+  it("rejects a forged floating point operand", () => {
+    expect(() => multiplyFils(2.5 as unknown as IqdFils, 2n)).toThrow(
+      TypeError,
+    );
+    expect(() => multiplyFils(iqdFils(2n), 2.5 as unknown as bigint)).toThrow(
+      TypeError,
+    );
+  });
+});
+
+describe("divideFilsRounded", () => {
+  it("rounds an exact half away from zero", () => {
+    expect(ROUNDING_RULE).toBe("half-away-from-zero");
+    expect(divideFilsRounded(5n, 2n)).toBe(3n);
+    expect(divideFilsRounded(-5n, 2n)).toBe(-3n);
+    expect(divideFilsRounded(5n, -2n)).toBe(-3n);
+    expect(divideFilsRounded(-5n, -2n)).toBe(3n);
+  });
+
+  it("leaves an exact quotient alone and rounds the rest to nearest", () => {
+    expect(divideFilsRounded(160_000n, 4n)).toBe(40_000n);
+    expect(divideFilsRounded(7n, 3n)).toBe(2n);
+    expect(divideFilsRounded(8n, 3n)).toBe(3n);
+    expect(divideFilsRounded(-8n, 3n)).toBe(-3n);
+  });
+
+  it("refuses a zero denominator instead of inventing a value", () => {
+    expect(() => divideFilsRounded(1n, 0n)).toThrow(RangeError);
+  });
+});
+
+describe("rateOfFils", () => {
+  it("takes the supplier allowance share of an invoice", () => {
+    expect(rateOfFils(iqdFils(160_000n), parseRateString("2.5"))).toBe(4_000n);
+    expect(rateOfFils(iqdFils(1_000_000n), parseRateString("1"))).toBe(10_000n);
+    expect(rateOfFils(iqdFils(5_000n), parseRateString("7"))).toBe(350n);
+    expect(rateOfFils(iqdFils(160_000n), parseRateString("0"))).toBe(0n);
+    expect(rateOfFils(iqdFils(160_000n), ONE_HUNDRED_PERCENT)).toBe(160_000n);
+  });
+
+  it("rounds once, on the exact product rather than on a per-unit share", () => {
+    // 3 fils at 50% is exactly 1.5 and rounds away from zero to 2. Taking half
+    // of one fils first (1) and multiplying by three would give 3.
+    expect(rateOfFils(iqdFils(3n), parseRateString("50"))).toBe(2n);
+    expect(rateOfFils(iqdFils(1n), parseRateString("50"))).toBe(1n);
+    expect(rateOfFils(iqdFils(1n), parseRateString("0.000001"))).toBe(0n);
+  });
+
+  it("rejects a forged floating point amount or rate", () => {
+    expect(() =>
+      rateOfFils(2.5 as unknown as IqdFils, parseRateString("1")),
+    ).toThrow(TypeError);
+    expect(() => rateOfFils(iqdFils(2n), 2.5 as unknown as ScaledRate)).toThrow(
+      TypeError,
+    );
+  });
+});
+
+describe("allocateFilsProportionally", () => {
+  it("gives every fils of the total to some line", () => {
+    expect(REMAINDER_ALLOCATION_RULE).toBe("largest-remainder-then-line-order");
+    for (const [total, weights] of [
+      [100n, [1n, 1n, 1n]],
+      [4_000n, [80_000n, 40_000n, 39_999n]],
+      [350n, [1_000n, 2_000n, 1_999n, 1n]],
+      [1n, [1n, 1n, 1n, 1n, 1n]],
+      [0n, [5n, 3n]],
+    ] as const) {
+      const shares = allocateFilsProportionally(iqdFils(total), weights);
+      expect(shares, `${String(total)} over ${weights.length}`).toHaveLength(
+        weights.length,
+      );
+      expect(shares.reduce((sum, share) => sum + share, 0n)).toBe(total);
+    }
+  });
+
+  it("hands the leftover to the largest remainder, then to the earlier line", () => {
+    // Three equal weights split 100 as 33.33 each: three floors of 33 leave
+    // one fils, and equal remainders break to the first line.
+    expect(allocateFilsProportionally(iqdFils(100n), [1n, 1n, 1n])).toEqual([
+      34n,
+      33n,
+      33n,
+    ]);
+    expect(allocateFilsProportionally(iqdFils(101n), [1n, 1n, 1n])).toEqual([
+      34n,
+      34n,
+      33n,
+    ]);
+    // 10 over weights 2:1 is 6.67 and 3.33; the larger dropped fraction wins.
+    expect(allocateFilsProportionally(iqdFils(10n), [2n, 1n])).toEqual([
+      7n,
+      3n,
+    ]);
+  });
+
+  it("splits a negative total symmetrically", () => {
+    expect(allocateFilsProportionally(iqdFils(-10n), [2n, 1n])).toEqual([
+      -7n,
+      -3n,
+    ]);
+    expect(allocateFilsProportionally(iqdFils(-100n), [1n, 1n, 1n])).toEqual([
+      -34n,
+      -33n,
+      -33n,
+    ]);
+  });
+
+  it("keeps the money when there is no proportion to split by", () => {
+    expect(allocateFilsProportionally(iqdFils(5n), [0n, 0n])).toEqual([5n, 0n]);
+    expect(allocateFilsProportionally(iqdFils(0n), [0n])).toEqual([0n]);
+  });
+
+  it("refuses an empty or negatively weighted allocation", () => {
+    expect(() => allocateFilsProportionally(iqdFils(1n), [])).toThrow(
+      RangeError,
+    );
+    expect(() => allocateFilsProportionally(iqdFils(1n), [1n, -1n])).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      allocateFilsProportionally(iqdFils(1n), [0.5 as unknown as bigint]),
+    ).toThrow(TypeError);
+  });
+
+  it("stays exact past double precision", () => {
+    const total = iqdFils(9_007_199_254_740_993n);
+    const shares = allocateFilsProportionally(total, [
+      9_007_199_254_740_993n,
+      1n,
+    ]);
+    expect(shares.reduce((sum, share) => sum + share, 0n)).toBe(total);
+    expect(shares[1]).toBe(1n);
+  });
+});
+
+describe("rounding policy scope", () => {
+  it("labels the two engineering defaults its behaviour implements", () => {
+    // docs/domain.md defers exact decimal precision, rounding, and remainder
+    // allocation to G-01. The guard is no longer "this module cannot round" --
+    // posting needs to -- but "this module is the only place that decides how".
+    // These constants name the current policy; the behavioural suites above are
+    // what pin it, and closing G-01 means changing those and this label
+    // together.
+    expect(ROUNDING_RULE).toBe("half-away-from-zero");
+    expect(REMAINDER_ALLOCATION_RULE).toBe("largest-remainder-then-line-order");
+  });
+
+  it("still offers no escape into binary floating point", () => {
     const forbidden = Object.keys(moneyModule).filter((name) =>
-      /multiply|divide|round|allocat|percent|ratio|float|toNumber/i.test(name),
+      /float|toNumber|asNumber|parseFloat/i.test(name),
     );
     expect(forbidden).toEqual([]);
   });

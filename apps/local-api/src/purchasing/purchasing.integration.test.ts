@@ -5,6 +5,7 @@ import {
   LOCAL_DEVICE_SESSION_HEADER,
   purchaseDraftDiscardPath,
   purchaseDraftHeaderPath,
+  purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
   type Product,
   type ProductCreateRequest,
@@ -55,6 +56,7 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
   let postgres: StartedPostgreSqlContainer | undefined;
   let pharmacyId = "";
   let ownerId = "";
+  let product: Product;
   let supplier: Supplier;
 
   beforeAll(async () => {
@@ -272,7 +274,7 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       medicationRequest("Keyboard Purchase"),
     );
     expect(productResponse.status, diagnostics(productResponse)).toBe(201);
-    const product = productResponse.body as unknown as Product;
+    product = productResponse.body as unknown as Product;
     const idempotencyKey = uuidV7();
     const firstInput = {
       costFils: "80000",
@@ -475,6 +477,47 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
   });
 
   it("default-denies both supplier and draft commands and audits the denials", async () => {
+    const postingSupplierResponse = await request(
+      "POST",
+      "/suppliers",
+      supplierBody("Posting Permission Supplier", "1", "2026-01-01"),
+    );
+    expect(
+      postingSupplierResponse.status,
+      diagnostics(postingSupplierResponse),
+    ).toBe(201);
+    const postingSupplier = postingSupplierResponse.body as unknown as Supplier;
+    const postingDraftResponse = await request(
+      "POST",
+      "/purchases/drafts",
+      draftBody(postingSupplier.id, "DENIED-POST", "2026-06-15"),
+    );
+    expect(postingDraftResponse.status, diagnostics(postingDraftResponse)).toBe(
+      201,
+    );
+    let postingDraft = postingDraftResponse.body
+      ?.draft as unknown as PurchaseDraft;
+    const postingRowResponse = await request(
+      "POST",
+      purchaseDraftRowsPath(postingDraft.id),
+      {
+        costFils: "1000",
+        enteredQuantity: "1",
+        expectedVersion: postingDraft.version,
+        expiryDate: "2028-10-31",
+        idempotencyKey: uuidV7(),
+        itemId: product.id,
+        lotNumber: "DENIED-LOT",
+        notes: null,
+        pricing: { method: "by-price", retailPriceFils: "120000" },
+        unit: { kind: "inventory-unit" },
+      },
+    );
+    expect(postingRowResponse.status, diagnostics(postingRowResponse)).toBe(
+      201,
+    );
+    postingDraft = postingRowResponse.body?.draft as unknown as PurchaseDraft;
+
     const role = await administrator.query<{ id: string }>(
       `select id from pharmacy_roles where pharmacy_id = $1 and role_key = 'pharmacist'`,
       [pharmacyId],
@@ -524,6 +567,14 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       "/purchases/drafts",
       draftBody(supplier.id, "DENIED", "2026-06-15"),
     );
+    const postDenied = await request(
+      "POST",
+      purchaseDraftPostingsPath(postingDraft.id),
+      {
+        expectedVersion: postingDraft.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
     expect(supplierDenied).toMatchObject({
       status: 403,
       body: {
@@ -538,13 +589,20 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
         requiredPermission: "purchases.drafts.manage",
       },
     });
+    expect(postDenied).toMatchObject({
+      status: 403,
+      body: {
+        code: "permission-denied",
+        requiredPermission: "purchases.drafts.manage",
+      },
+    });
     const audits = await administrator.query<{ count: string }>(
       `select count(*)::text as count from identity_audit_records
        where pharmacy_id = $1 and actor_user_id <> $2
          and action = 'identity.authorization' and outcome = 'denied'`,
       [pharmacyId, ownerId],
     );
-    expect(audits.rows[0]?.count).toBe("2");
+    expect(audits.rows[0]?.count).toBe("3");
   });
 
   function startApi(): ChildProcessWithoutNullStreams {

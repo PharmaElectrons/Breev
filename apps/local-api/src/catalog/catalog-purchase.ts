@@ -1,3 +1,4 @@
+import type { ProductDefinitionMode } from "@breev/contracts/local-rest";
 import type { PoolClient } from "pg";
 import type {
   PackagingDefinition,
@@ -6,6 +7,8 @@ import type {
 import type { PriceRoundingSetting } from "./catalog-pricing.js";
 
 export interface CatalogPurchaseProduct {
+  readonly coldStorageRequired: boolean;
+  readonly definitionMode: ProductDefinitionMode;
   readonly displayName: string;
   readonly id: string;
   readonly packaging: PackagingDefinition;
@@ -25,7 +28,9 @@ export interface CatalogPurchaseProduct {
 }
 
 interface ProductRow {
+  cold_storage_required: boolean;
   count_default_unit_id: string;
+  definition_mode: ProductDefinitionMode;
   display_name: string;
   id: string;
   margin_percentage: string | null;
@@ -63,7 +68,7 @@ export async function resolveCatalogPurchaseProduct(
      select id, display_name, count_default_unit_id, purchase_default_unit_id,
             sale_default_unit_id, pricing_method, retail_price_fils::text,
             wholesale_price_fils::text, margin_percentage::text, price_rounding,
-            status
+            status, cold_storage_required, definition_mode
      from product_chain
      where merged_into_product_id is null
      limit 1`,
@@ -76,7 +81,7 @@ export async function resolveCatalogPurchaseProduct(
     `select id, display_name, count_default_unit_id, purchase_default_unit_id,
             sale_default_unit_id, pricing_method, retail_price_fils::text,
             wholesale_price_fils::text, margin_percentage::text, price_rounding,
-            status
+            status, cold_storage_required, definition_mode
      from catalog_products
      where pharmacy_id = $1 and id = $2
      for share`,
@@ -137,6 +142,8 @@ export async function resolveCatalogPurchaseProduct(
 
   if (product.pricing_method === "by-price") {
     return {
+      coldStorageRequired: product.cold_storage_required,
+      definitionMode: product.definition_mode,
       displayName: product.display_name,
       id: product.id,
       packaging,
@@ -151,6 +158,8 @@ export async function resolveCatalogPurchaseProduct(
     throw new Error("The By Percentage Catalog Product is incomplete");
   }
   return {
+    coldStorageRequired: product.cold_storage_required,
+    definitionMode: product.definition_mode,
     displayName: product.display_name,
     id: product.id,
     packaging,
