@@ -81,10 +81,25 @@ jobs:
 
       - name: Install browser test dependencies
         run: |
-          # Playwright downloads its own Chromium. Keep an unrelated branded
-          # Chrome repository from making apt dependency installation fail.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list.save
+          # Playwright downloads its own Chromium. Discover the unrelated branded
+          # Chrome repository without assuming which apt source format is active.
+          mapfile -t chrome_sources < <(
+            grep -RIl \
+              "dl.google.com/linux/chrome-stable/deb" \
+              /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null || true
+          )
+          for source in "${chrome_sources[@]}"; do
+            case "$source" in
+              /etc/apt/sources.list.d/*)
+                echo "Removing unrelated Chrome apt source: $source"
+                sudo rm -f -- "$source"
+                ;;
+              *)
+                echo "::error::Unexpected Chrome apt source: $source"
+                exit 1
+                ;;
+            esac
+          done
           pnpm --filter @breev/desktop exec playwright install --with-deps chromium
 
       - name: Verify renderer browser seam
