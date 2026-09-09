@@ -42,6 +42,18 @@ Issues live in `.scratch/<feature-slug>/` and use `spec.md`, an optional `map.md
 
 Use `Type: epic|research|prototype|grilling|task` and one of these statuses: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, `claimed`, or `resolved`. `ready-for-agent` still requires explicit initiation. Resolve by adding `## Answer`, setting `Status: resolved`, and updating the map. Append discussion under `## Comments`.
 
+## Pre-flight verification and CI failure prevention
+
+Follow [`.agents/skills/ci-failure-prevention/SKILL.md`](.agents/skills/ci-failure-prevention/SKILL.md) before pushing to remote or opening a Pull Request. CI executes `pnpm format:check` first; pushing unformatted code is prohibited.
+- Never push without locally verifying: `pnpm format:write && pnpm format:check && pnpm lint && pnpm typecheck`. Run the relevant test seams (`pnpm test:unit`, `pnpm test:integration`, `pnpm test:browser`).
+- When modifying database migrations or granting role permissions, calculate the monotonic revision increments (`1` per role-modifying SQL statement) and update `apps/local-api/src/identity-access/custom-roles-migration.integration.test.ts`.
+- Every runtime dependency imported in desktop Main or Preload must be declared in `apps/desktop/electron.vite.config.ts` under `externalizeDeps.exclude` so it is bundled into `app.asar`. Never leave bare imports unbundled; verify against `desktop.smoke.test.ts`.
+- Never use synchronous modal dialogs (`dialog.showErrorBox`, `dialog.showMessageBoxSync`) in Electron code paths. In headless CI (`xvfb-run`), synchronous dialogs freeze the main thread and deadlock CDP connections. Always use asynchronous `dialog.showMessageBox()`.
+- Respect cross-platform file operations: open descriptors with `r+` when calling `fsyncSync` (Windows `FlushFileBuffers` rejects read-only descriptors with `EPERM`). Guard POSIX permission bit assertions (`mode & 0o077`) with `if (process.platform !== "win32")`.
+- Dynamic desktop item views and scrollable canvases must include `overflow: auto` and `min-block-size: 0` (or `min-height: 0`) so action bars remain in the 1280x800 viewport for Playwright `toBeInViewport()` assertions.
+- Any method added to `apps/desktop/src/preload/api.ts` must be declared in `packages/contracts` and added to the allowlist in `apps/desktop/test/desktop.smoke.test.ts`.
+
 ## Completion
 
 Apply [`docs/quality.md`](docs/quality.md) to every change. A compiling happy path is not enough. Also test the relevant permissions, entitlements, tenant/device boundaries, transaction failures, offline/restart states, and Arabic/English accessibility. All must pass, and the change must include completion evidence.
+

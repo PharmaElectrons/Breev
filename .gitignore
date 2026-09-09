@@ -29,3 +29,7 @@ notes.md
 
 !.agents/skills/pr-review-remediate/
 !.agents/skills/pr-review-remediate/**
+!.agents/skills/ci-failure-prevention/
+!.agents/skills/ci-failure-prevention/**
+!.agents/rules/
+!.agents/rules/**
