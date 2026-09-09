@@ -1,4 +1,6 @@
 import {
+  purchasePostedDetailSchema,
+  purchasePostedListResponseSchema,
   postedPurchaseRowSchema,
   purchaseDraftDetailSchema,
   purchaseDraftRowCommitResultSchema,
@@ -24,6 +26,10 @@ import {
   type PurchaseEntryPreferencesUpdateRequest,
   type PurchasePostRequest,
   type PurchasePostResult,
+  type PurchasePostedCostVisibility,
+  type PurchasePostedDetail,
+  type PurchasePostedListRequest,
+  type PurchasePostedListResponse,
   type PurchasingDenial,
   type PurchasingDenialCode,
   type PurchasingFieldError,
@@ -98,6 +104,8 @@ import { preparePurchaseRow } from "./purchase-row.js";
 
 const SUPPLIER_PERMISSION = "suppliers.manage";
 const DRAFT_PERMISSION = "purchases.drafts.manage";
+const POSTED_PERMISSION = "purchases.posted.view";
+const COST_PERMISSION = "purchases.costs.view";
 const POSTGRES_BIGINT_MAXIMUM = 9_223_372_036_854_775_807n;
 const COMMANDS = {
   supplierArchive: "supplier.archive",
@@ -163,6 +171,110 @@ const DRAFT_SELECT = `select draft_row.id, draft_row.pharmacy_id,
   draft_row.allowance_basis_fils::text, draft_row.status,
   draft_row.version::text, draft_row.created_at, draft_row.updated_at
 from purchase_drafts draft_row`;
+
+/** Snapshot-only by construction: neither query names a live master table. */
+export const POSTED_PURCHASE_LIST_SELECT = `select posted_row.id,
+  posted_row.supplier_name_snapshot, posted_row.supplier_invoice_number,
+  posted_row.invoice_date::text, posted_row.settlement_context,
+  posted_row.primary_supplier_cost_fils::text,
+  posted_row.cost_after_discount_fils::text, posted_row.number_value::text,
+  posted_row.number_year, posted_row.posted_at,
+  (select count(*)::integer from posted_purchase_rows snapshot_row
+   where snapshot_row.pharmacy_id = posted_row.pharmacy_id
+     and snapshot_row.posted_purchase_id = posted_row.id) as item_count
+from posted_purchases posted_row`;
+
+export const POSTED_PURCHASE_DETAIL_SELECT = `with ordered_purchase as (
+  select posted_row.*,
+    lag(posted_row.id) over (
+      order by posted_row.number_year, posted_row.number_value, posted_row.id
+    ) as previous_id,
+    lead(posted_row.id) over (
+      order by posted_row.number_year, posted_row.number_value, posted_row.id
+    ) as next_id,
+    row_number() over (
+      order by posted_row.number_year, posted_row.number_value, posted_row.id
+    )::integer as position,
+    count(*) over ()::integer as total
+  from posted_purchases posted_row
+  where posted_row.pharmacy_id = $1
+)
+select id, supplier_id, supplier_name_snapshot, supplier_invoice_number,
+  invoice_date::text, settlement_context, allowance_percentage_snapshot::text,
+  allowance_fils::text, cost_after_discount_fils::text,
+  primary_supplier_cost_fils::text, number_value::text, number_year,
+  posted_at, posted_by, previous_id, next_id, position, total
+from ordered_purchase where id = $2`;
+
+export const POSTED_PURCHASE_ROWS_SELECT = `select snapshot_row.id,
+  snapshot_row.ordinal, snapshot_row.product_id,
+  snapshot_row.item_display_name, snapshot_row.inventory_unit_name,
+  snapshot_row.entered_unit_kind, snapshot_row.entered_package_unit_name,
+  snapshot_row.base_units_per_entered_unit::text,
+  snapshot_row.entered_quantity::text,
+  snapshot_row.inventory_unit_quantity::text,
+  snapshot_row.primary_supplier_cost_fils::text,
+  snapshot_row.line_primary_supplier_cost_fils::text,
+  snapshot_row.cost_after_discount_fils::text,
+  snapshot_row.retail_price_fils::text, snapshot_row.expiry_date::text,
+  snapshot_row.lot_number
+from posted_purchase_rows snapshot_row
+where snapshot_row.pharmacy_id = $1 and snapshot_row.posted_purchase_id = $2
+order by snapshot_row.ordinal`;
+
+interface PostedPurchaseListRow {
+  cost_after_discount_fils: string;
+  id: string;
+  invoice_date: string;
+  item_count: number;
+  number_value: string;
+  number_year: number;
+  posted_at: Date;
+  primary_supplier_cost_fils: string;
+  settlement_context: "cash" | "debt";
+  supplier_invoice_number: string;
+  supplier_name_snapshot: string;
+}
+
+interface PostedPurchaseDetailRow {
+  allowance_fils: string;
+  allowance_percentage_snapshot: string;
+  cost_after_discount_fils: string;
+  id: string;
+  invoice_date: string;
+  next_id: string | null;
+  number_value: string;
+  number_year: number;
+  position: number;
+  posted_at: Date;
+  posted_by: string;
+  previous_id: string | null;
+  primary_supplier_cost_fils: string;
+  settlement_context: "cash" | "debt";
+  supplier_id: string;
+  supplier_invoice_number: string;
+  supplier_name_snapshot: string;
+  total: number;
+}
+
+interface PostedPurchaseSnapshotRow {
+  base_units_per_entered_unit: string;
+  cost_after_discount_fils: string;
+  entered_package_unit_name: string | null;
+  entered_quantity: string;
+  entered_unit_kind: "inventory-unit" | "package-unit";
+  expiry_date: string | null;
+  id: string;
+  inventory_unit_name: string;
+  inventory_unit_quantity: string;
+  item_display_name: string;
+  line_primary_supplier_cost_fils: string;
+  lot_number: string | null;
+  ordinal: number;
+  primary_supplier_cost_fils: string;
+  product_id: string;
+  retail_price_fils: string;
+}
 
 async function insertAllowanceRate(
   client: PoolClient,
@@ -590,6 +702,49 @@ async function selectEntryPreferences(
   return result.rows[0];
 }
 
+async function postedPurchaseCostVisibility(
+  client: PoolClient,
+  context: IdentityExecutionContext,
+): Promise<PurchasePostedCostVisibility> {
+  if (!context.permissions.includes(COST_PERMISSION)) {
+    return "hidden-by-permission";
+  }
+  const stored = await selectEntryPreferences(
+    client,
+    context.pharmacyId,
+    context.actorId,
+  );
+  if (stored === undefined) return "visible";
+  const preferences = entryPreferencesView(stored);
+  return preferences.columns.some(
+    (column) => column.field === "cost" && column.visible,
+  )
+    ? "visible"
+    : "hidden-by-setting";
+}
+
+function postedPurchaseOrder(
+  input: PurchasePostedListRequest,
+  costsVisible: boolean,
+): string {
+  const direction = input.direction === "ascending" ? "asc" : "desc";
+  const sort =
+    input.sort === "primary-cost" && !costsVisible
+      ? "number"
+      : (input.sort ?? "number");
+  const suffix = `posted_row.number_year ${direction}, posted_row.number_value ${direction}, posted_row.id ${direction}`;
+  switch (sort) {
+    case "invoice-date":
+      return `posted_row.invoice_date ${direction}, ${suffix}`;
+    case "primary-cost":
+      return `posted_row.primary_supplier_cost_fils ${direction}, ${suffix}`;
+    case "supplier":
+      return `lower(posted_row.supplier_name_snapshot) ${direction}, ${suffix}`;
+    case "number":
+      return suffix;
+  }
+}
+
 function normalizedPercentage(value: string): string {
   return value.includes(".")
     ? value.replace(/0+$/u, "").replace(/\.$/u, "")
@@ -957,6 +1112,30 @@ export class PurchasingService {
     return { suppliers: result.rows.map(supplierView) };
   }
 
+  public async readSupplier(
+    request: Request,
+    supplierId: string,
+  ): Promise<Supplier> {
+    const context = await this.identity.requirePermission(
+      request,
+      SUPPLIER_PERMISSION,
+    );
+    const result = await this.localDatabase
+      .requirePool()
+      .query<SupplierRow>(
+        `${SUPPLIER_SELECT} where supplier_row.pharmacy_id = $1 and supplier_row.id = $2`,
+        [context.pharmacyId, supplierId],
+      );
+    const supplier = result.rows[0];
+    if (supplier !== undefined) return supplierView(supplier);
+    throw await this.readDenial(
+      context,
+      "supplier.read",
+      "supplier-not-found",
+      supplierId,
+    );
+  }
+
   public async createSupplier(
     request: Request,
     input: SupplierCreateRequest,
@@ -1240,6 +1419,161 @@ export class PurchasingService {
       return row === undefined
         ? DEFAULT_ENTRY_PREFERENCES
         : entryPreferencesView(row);
+    } finally {
+      client.release();
+    }
+  }
+
+  public async listPostedPurchases(
+    request: Request,
+    input: PurchasePostedListRequest,
+  ): Promise<PurchasePostedListResponse> {
+    const context = await this.identity.requirePermission(
+      request,
+      POSTED_PERMISSION,
+    );
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      const costVisibility = await postedPurchaseCostVisibility(
+        client,
+        context,
+      );
+      const costsVisible = costVisibility === "visible";
+      const query = input.query || null;
+      const result = await client.query<PostedPurchaseListRow>(
+        `${POSTED_PURCHASE_LIST_SELECT}
+         where posted_row.pharmacy_id = $1
+           and ($2::text is null
+             or posted_row.supplier_name_snapshot ilike '%' || $2 || '%'
+             or posted_row.supplier_invoice_number ilike '%' || $2 || '%'
+             or ('P' || posted_row.number_value::text || '/'
+                 || posted_row.number_year::text) ilike '%' || $2 || '%')
+           and ($3::date is null or posted_row.invoice_date >= $3::date)
+           and ($4::date is null or posted_row.invoice_date <= $4::date)
+         order by ${postedPurchaseOrder(input, costsVisible)}`,
+        [context.pharmacyId, query, input.from ?? null, input.to ?? null],
+      );
+      return purchasePostedListResponseSchema.parse({
+        costVisibility,
+        purchases: result.rows.map((row) => ({
+          costAfterDiscountFils: costsVisible
+            ? row.cost_after_discount_fils
+            : null,
+          id: row.id,
+          invoiceDate: row.invoice_date,
+          itemCount: row.item_count,
+          number: {
+            series: "P",
+            value: row.number_value,
+            year: row.number_year,
+          },
+          postedAt: row.posted_at.toISOString(),
+          primarySupplierCostFils: costsVisible
+            ? row.primary_supplier_cost_fils
+            : null,
+          settlementContext: row.settlement_context,
+          supplierInvoiceNumber: row.supplier_invoice_number,
+          supplierNameSnapshot: row.supplier_name_snapshot,
+        })),
+      });
+    } finally {
+      client.release();
+    }
+  }
+
+  public async readPostedPurchase(
+    request: Request,
+    purchaseId: string,
+  ): Promise<PurchasePostedDetail> {
+    const context = await this.identity.requirePermission(
+      request,
+      POSTED_PERMISSION,
+    );
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      const costVisibility = await postedPurchaseCostVisibility(
+        client,
+        context,
+      );
+      const headerResult = await client.query<PostedPurchaseDetailRow>(
+        POSTED_PURCHASE_DETAIL_SELECT,
+        [context.pharmacyId, purchaseId],
+      );
+      const header = headerResult.rows[0];
+      if (header === undefined) {
+        throw await this.readDenial(
+          context,
+          "purchase.posted.read",
+          "posted-purchase-not-found",
+          purchaseId,
+        );
+      }
+      const rowResult = await client.query<PostedPurchaseSnapshotRow>(
+        POSTED_PURCHASE_ROWS_SELECT,
+        [context.pharmacyId, purchaseId],
+      );
+      const costsVisible = costVisibility === "visible";
+      return purchasePostedDetailSchema.parse({
+        allowanceFils: costsVisible ? header.allowance_fils : null,
+        allowancePercentageSnapshot: costsVisible
+          ? normalizedPercentage(header.allowance_percentage_snapshot)
+          : null,
+        costAfterDiscountFils: costsVisible
+          ? header.cost_after_discount_fils
+          : null,
+        costVisibility,
+        id: header.id,
+        invoiceDate: header.invoice_date,
+        navigation: {
+          nextId: header.next_id,
+          position: header.position,
+          previousId: header.previous_id,
+          total: header.total,
+        },
+        number: {
+          series: "P",
+          value: header.number_value,
+          year: header.number_year,
+        },
+        postedAt: header.posted_at.toISOString(),
+        postedBy: header.posted_by,
+        primarySupplierCostFils: costsVisible
+          ? header.primary_supplier_cost_fils
+          : null,
+        rows: rowResult.rows.map((row) => ({
+          baseUnitsPerEnteredUnit: row.base_units_per_entered_unit,
+          costAfterDiscountFils: costsVisible
+            ? row.cost_after_discount_fils
+            : null,
+          enteredQuantity: row.entered_quantity,
+          expiryDate: row.expiry_date,
+          id: row.id,
+          inventoryUnitName: row.inventory_unit_name,
+          inventoryUnitQuantity: row.inventory_unit_quantity,
+          itemDisplayName: row.item_display_name,
+          itemId: row.product_id,
+          linePrimarySupplierCostFils: costsVisible
+            ? row.line_primary_supplier_cost_fils
+            : null,
+          lotNumber: row.lot_number,
+          ordinal: row.ordinal,
+          primarySupplierCostFils: costsVisible
+            ? row.primary_supplier_cost_fils
+            : null,
+          retailPriceFils: row.retail_price_fils,
+          unit:
+            row.entered_unit_kind === "inventory-unit"
+              ? { kind: "inventory-unit" }
+              : {
+                  kind: "package-unit",
+                  packageUnitName: row.entered_package_unit_name,
+                },
+        })),
+        settlementContext: header.settlement_context,
+        supplierId: header.supplier_id,
+        supplierInvoiceNumber: header.supplier_invoice_number,
+        supplierNameSnapshot: header.supplier_name_snapshot,
+      });
     } finally {
       client.release();
     }
@@ -2134,7 +2468,10 @@ export class PurchasingService {
   public async rejectInvalidBody(
     request: Request,
     action: string,
-    permission: typeof DRAFT_PERMISSION | typeof SUPPLIER_PERMISSION,
+    permission:
+      | typeof DRAFT_PERMISSION
+      | typeof POSTED_PERMISSION
+      | typeof SUPPLIER_PERMISSION,
     fieldErrors: readonly PurchasingFieldError[],
     targetId?: string,
   ): Promise<never> {
@@ -2166,8 +2503,12 @@ export class PurchasingService {
   public async rejectMissing(
     request: Request,
     action: string,
-    permission: typeof DRAFT_PERMISSION | typeof SUPPLIER_PERMISSION,
-    code: "draft-not-found" | "supplier-not-found",
+    permission:
+      | typeof DRAFT_PERMISSION
+      | typeof POSTED_PERMISSION
+      | typeof SUPPLIER_PERMISSION,
+    code:
+      "draft-not-found" | "posted-purchase-not-found" | "supplier-not-found",
     targetId?: string,
   ): Promise<never> {
     const context = await this.identity.requirePermission(request, permission);
@@ -2298,7 +2639,8 @@ export class PurchasingService {
   private async readDenial(
     context: IdentityExecutionContext,
     action: string,
-    code: "draft-not-found" | "supplier-not-found",
+    code:
+      "draft-not-found" | "posted-purchase-not-found" | "supplier-not-found",
     targetId?: string,
   ): Promise<PurchasingDenied> {
     const client = await this.localDatabase.requirePool().connect();

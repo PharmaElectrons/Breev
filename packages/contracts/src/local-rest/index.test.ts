@@ -413,7 +413,9 @@ describe("local REST health contract", () => {
       "identity.users.manage",
       "licensing.manage",
       "pharmacy.settings.manage",
+      "purchases.costs.view",
       "purchases.drafts.manage",
+      "purchases.posted.view",
       "suppliers.manage",
     ]);
   });

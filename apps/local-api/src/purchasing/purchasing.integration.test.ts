@@ -562,6 +562,14 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       "/suppliers",
       supplierBody("Denied", "1", "2026-01-01"),
     );
+    const supplierReadDenied = await request(
+      "GET",
+      `/suppliers/${supplier.id}`,
+    );
+    const itemReadDenied = await request(
+      "GET",
+      `/catalog/products/${product.id}`,
+    );
     const draftDenied = await request(
       "POST",
       "/purchases/drafts",
@@ -575,11 +583,26 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
         idempotencyKey: uuidV7(),
       },
     );
+    const postedReviewDenied = await request("GET", "/purchases/posted");
     expect(supplierDenied).toMatchObject({
       status: 403,
       body: {
         code: "permission-denied",
         requiredPermission: "suppliers.manage",
+      },
+    });
+    expect(supplierReadDenied).toMatchObject({
+      status: 403,
+      body: {
+        code: "permission-denied",
+        requiredPermission: "suppliers.manage",
+      },
+    });
+    expect(itemReadDenied).toMatchObject({
+      status: 403,
+      body: {
+        code: "permission-denied",
+        requiredPermission: "catalog.item.manage",
       },
     });
     expect(draftDenied).toMatchObject({
@@ -596,13 +619,20 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
         requiredPermission: "purchases.drafts.manage",
       },
     });
+    expect(postedReviewDenied).toMatchObject({
+      status: 403,
+      body: {
+        code: "permission-denied",
+        requiredPermission: "purchases.posted.view",
+      },
+    });
     const audits = await administrator.query<{ count: string }>(
       `select count(*)::text as count from identity_audit_records
        where pharmacy_id = $1 and actor_user_id <> $2
          and action = 'identity.authorization' and outcome = 'denied'`,
       [pharmacyId, ownerId],
     );
-    expect(audits.rows[0]?.count).toBe("3");
+    expect(audits.rows[0]?.count).toBe("6");
   });
 
   function startApi(): ChildProcessWithoutNullStreams {

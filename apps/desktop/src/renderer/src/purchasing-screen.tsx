@@ -26,6 +26,7 @@ import {
 } from "./purchasing-api";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
+import { PostedPurchaseReview } from "./posted-purchase-review";
 import { SuppliersWorkspace } from "./suppliers-workspace";
 
 const today = (): string => {
@@ -49,6 +50,9 @@ export function PurchasingRouteView({
   const canManageSuppliers =
     identity?.state === "authenticated" &&
     identity.allowedPermissions.includes("suppliers.manage");
+  const canManageDrafts =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("purchases.drafts.manage");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [drafts, setDrafts] = useState<PurchaseDraft[]>([]);
   const [activeDraft, setActiveDraft] = useState<PurchaseDraftDetail | null>(
@@ -63,6 +67,9 @@ export function PurchasingRouteView({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"invoice" | "suppliers">("invoice");
+  const [postedReviewOpen, setPostedReviewOpen] = useState(() =>
+    window.location.hash.startsWith("#/purchases/posted/"),
+  );
   const invoiceRef = useRef<HTMLInputElement>(null);
   const registerRef = useRef<HTMLDialogElement>(null);
   const supplierRef = useRef<HTMLSelectElement>(null);
@@ -82,6 +89,11 @@ export function PurchasingRouteView({
   );
 
   async function reload(): Promise<void> {
+    if (!canManageDrafts) {
+      setSuppliers([]);
+      setDrafts([]);
+      return;
+    }
     const [supplierResult, draftResult] = await Promise.all([
       requestSuppliers(baseUrl),
       requestPurchaseDrafts(baseUrl),
@@ -98,7 +110,13 @@ export function PurchasingRouteView({
     return () => {
       live = false;
     };
-  }, [baseUrl, copy.error]);
+  }, [baseUrl, canManageDrafts, copy.error]);
+
+  useEffect(() => {
+    if (identity?.state === "authenticated" && !canManageDrafts) {
+      setPostedReviewOpen(true);
+    }
+  }, [canManageDrafts, identity?.state]);
 
   useEffect(() => {
     if (postRecoveryStarted.current) return;
@@ -363,13 +381,23 @@ export function PurchasingRouteView({
         >
           <span aria-hidden="true">🧾</span> {copy.invoiceWorkspace}
         </button>
+        {canManageDrafts ? (
+          <button
+            type="button"
+            className="purchase-view-tab"
+            onClick={focusDraftRegister}
+            aria-haspopup="dialog"
+          >
+            <span aria-hidden="true">📂</span> {copy.savedInvoices}
+          </button>
+        ) : null}
         <button
           type="button"
           className="purchase-view-tab"
-          onClick={focusDraftRegister}
+          onClick={() => setPostedReviewOpen(true)}
           aria-haspopup="dialog"
         >
-          <span aria-hidden="true">📑</span> {copy.savedInvoices}
+          <span aria-hidden="true">🔍</span> {copy.postedInvoices}
         </button>
         <button
           type="button"
@@ -904,6 +932,11 @@ export function PurchasingRouteView({
           </div>
         </section>
       </dialog>
+      <PostedPurchaseReview
+        baseUrl={baseUrl}
+        open={postedReviewOpen}
+        onClose={() => setPostedReviewOpen(false)}
+      />
     </section>
   );
 }

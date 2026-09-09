@@ -11,6 +11,8 @@ import {
   type ProductCreateRequest,
   type PurchaseDraft,
   type PurchasePostResult,
+  type PurchasePostedDetail,
+  type PurchasePostedListResponse,
   type Supplier,
 } from "@breev/contracts/local-rest";
 import {
@@ -399,6 +401,232 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       status: 409,
       body: { code: "draft-posted" },
     });
+  });
+
+  it("searches stable posted numbers and reads immutable snapshots separately from current master records", async () => {
+    const supplierResponse = await request(
+      "POST",
+      "/suppliers",
+      supplierBody("Review Snapshot Supplier", "10", "2026-01-01"),
+    );
+    expect(supplierResponse.status, diagnostics(supplierResponse)).toBe(201);
+    const supplier = supplierResponse.body as unknown as Supplier;
+    const productResponse = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Review Snapshot Item", false),
+    );
+    expect(productResponse.status, diagnostics(productResponse)).toBe(201);
+    const product = productResponse.body as unknown as Product;
+
+    const firstDraft = await createPostableDraft(
+      supplier.id,
+      "INV-REVIEW-STABLE-A",
+      "debt",
+      [{ costFils: "1200", enteredQuantity: "2", itemId: product.id }],
+    );
+    const firstResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(firstDraft.id),
+      { expectedVersion: firstDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(firstResponse.status, diagnostics(firstResponse)).toBe(201);
+    const first = (firstResponse.body as unknown as PurchasePostResult).posted;
+
+    const secondDraft = await createPostableDraft(
+      supplier.id,
+      "INV-REVIEW-STABLE-B",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "1", itemId: product.id }],
+    );
+    const secondResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(secondDraft.id),
+      { expectedVersion: secondDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(secondResponse.status, diagnostics(secondResponse)).toBe(201);
+    const second = (secondResponse.body as unknown as PurchasePostResult)
+      .posted;
+
+    const baselineDetailResponse = await request(
+      "GET",
+      `/purchases/posted/${first.id}`,
+    );
+    expect(
+      baselineDetailResponse.status,
+      diagnostics(baselineDetailResponse),
+    ).toBe(200);
+    const baselineDetail =
+      baselineDetailResponse.body as unknown as PurchasePostedDetail;
+
+    await administrator.query(
+      `update suppliers set name = 'Current Supplier Changed', revision = revision + 1
+       where pharmacy_id = $1 and id = $2`,
+      [pharmacyId, supplier.id],
+    );
+    await administrator.query(
+      `update catalog_products
+       set display_name = 'Current Item Changed', retail_price_fils = 333333,
+           revision = revision + 1
+       where pharmacy_id = $1 and id = $2`,
+      [pharmacyId, product.id],
+    );
+    await administrator.query(
+      `insert into supplier_allowance_rates (
+         pharmacy_id, supplier_id, effective_from, allowance_percentage, recorded_by
+       )
+       select pharmacy_id, id, '2026-09-01', 22.5, created_by
+       from suppliers where pharmacy_id = $1 and id = $2`,
+      [pharmacyId, supplier.id],
+    );
+
+    const registerResponse = await request(
+      "GET",
+      "/purchases/posted?query=REVIEW-STABLE&from=2026-06-15&to=2026-06-15&sort=number&direction=ascending",
+    );
+    expect(registerResponse.status, diagnostics(registerResponse)).toBe(200);
+    const register =
+      registerResponse.body as unknown as PurchasePostedListResponse;
+    expect(register.costVisibility).toBe("visible");
+    expect(register.purchases.map((purchase) => purchase.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+    expect(register.purchases[0]).toMatchObject({
+      costAfterDiscountFils: "2160",
+      itemCount: 1,
+      primarySupplierCostFils: "2400",
+      supplierNameSnapshot: "Review Snapshot Supplier",
+    });
+
+    const firstDetailResponse = await request(
+      "GET",
+      `/purchases/posted/${first.id}`,
+    );
+    expect(firstDetailResponse.status, diagnostics(firstDetailResponse)).toBe(
+      200,
+    );
+    const firstDetail =
+      firstDetailResponse.body as unknown as PurchasePostedDetail;
+    expect(firstDetail).toEqual(baselineDetail);
+    expect(firstDetail).toMatchObject({
+      allowanceFils: "240",
+      allowancePercentageSnapshot: "10",
+      costAfterDiscountFils: "2160",
+      costVisibility: "visible",
+      primarySupplierCostFils: "2400",
+      supplierNameSnapshot: "Review Snapshot Supplier",
+    });
+    expect(firstDetail.rows[0]).toMatchObject({
+      itemDisplayName: product.displayName,
+      linePrimarySupplierCostFils: "2400",
+    });
+    expect(firstDetail.navigation.nextId).toBe(second.id);
+
+    const secondDetailResponse = await request(
+      "GET",
+      `/purchases/posted/${second.id}`,
+    );
+    expect(secondDetailResponse.status, diagnostics(secondDetailResponse)).toBe(
+      200,
+    );
+    const secondDetail =
+      secondDetailResponse.body as unknown as PurchasePostedDetail;
+    expect(secondDetail.navigation.previousId).toBe(first.id);
+    expect(secondDetail.navigation.position).toBe(
+      firstDetail.navigation.position + 1,
+    );
+
+    const currentSupplier = await request("GET", `/suppliers/${supplier.id}`);
+    expect(currentSupplier.body).toMatchObject({
+      defaultAllowancePercentage: "22.5",
+      name: "Current Supplier Changed",
+    });
+    const currentProduct = await request(
+      "GET",
+      `/catalog/products/${product.id}`,
+    );
+    expect(currentProduct.body).toMatchObject({
+      displayName: "Current Item Changed",
+      pricing: { retailPriceFils: "333333" },
+    });
+
+    const preferencesResponse = await request(
+      "GET",
+      "/purchases/entry-preferences",
+    );
+    expect(preferencesResponse.status, diagnostics(preferencesResponse)).toBe(
+      200,
+    );
+    const preferences = preferencesResponse.body as unknown as {
+      afterCommit: "new-row" | "return-to-item";
+      columns: { field: string; visible: boolean }[];
+      detailsPanelFields: string[];
+      revision: string;
+    };
+    const hiddenPreferenceResponse = await request(
+      "PUT",
+      "/purchases/entry-preferences",
+      {
+        afterCommit: preferences.afterCommit,
+        columns: preferences.columns.map((column) =>
+          column.field === "cost" ? { ...column, visible: false } : column,
+        ),
+        detailsPanelFields: preferences.detailsPanelFields,
+        expectedRevision: preferences.revision,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(
+      hiddenPreferenceResponse.status,
+      diagnostics(hiddenPreferenceResponse),
+    ).toBe(200);
+
+    const hiddenRegister = (
+      await request("GET", "/purchases/posted?query=REVIEW-STABLE")
+    ).body as unknown as PurchasePostedListResponse;
+    expect(hiddenRegister.costVisibility).toBe("hidden-by-setting");
+    expect(hiddenRegister.purchases[0]).toMatchObject({
+      costAfterDiscountFils: null,
+      primarySupplierCostFils: null,
+    });
+    const hiddenDetail = (await request("GET", `/purchases/posted/${first.id}`))
+      .body as unknown as PurchasePostedDetail;
+    expect(hiddenDetail).toMatchObject({
+      allowanceFils: null,
+      allowancePercentageSnapshot: null,
+      costAfterDiscountFils: null,
+      costVisibility: "hidden-by-setting",
+      primarySupplierCostFils: null,
+    });
+    expect(hiddenDetail.rows[0]).toMatchObject({
+      costAfterDiscountFils: null,
+      linePrimarySupplierCostFils: null,
+      primarySupplierCostFils: null,
+    });
+
+    const missingId = uuidV7();
+    const missing = await request("GET", `/purchases/posted/${missingId}`);
+    expect(missing).toMatchObject({
+      status: 404,
+      body: { code: "posted-purchase-not-found" },
+    });
+    const missingAudit = await administrator.query<{ count: string }>(
+      `select count(*)::text as count from posting_audit_records
+       where pharmacy_id = $1 and action = 'purchase.posted.read'
+         and outcome = 'posted-purchase-not-found' and target_id = $2`,
+      [pharmacyId, missingId],
+    );
+    expect(missingAudit.rows[0]?.count).toBe("1");
+
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
+      const mutation = await request(method, `/purchases/posted/${first.id}`, {
+        attemptedMutation: true,
+      });
+      expect(mutation.status, `${method} unexpectedly reached a route`).toBe(
+        404,
+      );
+    }
   });
 
   it("posts a cash purchase that changes only the Cash Box balance, never a supplier payable", async () => {
@@ -1201,7 +1429,7 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
   }
 
   async function request(
-    method: "DELETE" | "GET" | "POST" | "PUT",
+    method: "DELETE" | "GET" | "PATCH" | "POST" | "PUT",
     route: string,
     body?: unknown,
   ): Promise<ApiResponse> {

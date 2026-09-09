@@ -70,7 +70,9 @@ describe("identity authorization", () => {
       "licensing.manage",
       "pharmacy.settings.manage",
       "pricing.below_cost",
+      "purchases.costs.view",
       "purchases.drafts.manage",
+      "purchases.posted.view",
       "sales.invoice.reverse",
       "sales.return.post",
       "suppliers.manage",
@@ -91,7 +93,9 @@ describe("identity authorization", () => {
       "identity.users.manage",
       "licensing.manage",
       "pharmacy.settings.manage",
+      "purchases.costs.view",
       "purchases.drafts.manage",
+      "purchases.posted.view",
       "suppliers.manage",
     ]);
     for (const permission of IMPLEMENTED_PERMISSION_NAMES) {

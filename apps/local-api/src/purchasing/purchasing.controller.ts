@@ -13,6 +13,10 @@ import {
   purchaseEntryPreferencesReadContract,
   purchaseEntryPreferencesUpdateContract,
   purchaseEntryPreferencesUpdateRequestSchema,
+  purchasePostedDetailSchema,
+  purchasePostedListContract,
+  purchasePostedListRequestSchema,
+  purchasePostedReadContract,
   purchasePostContract,
   purchasePostRequestSchema,
   supplierArchiveContract,
@@ -22,6 +26,7 @@ import {
   supplierEditContract,
   supplierEditRequestSchema,
   supplierListContract,
+  supplierReadContract,
   supplierMergeContract,
   supplierMergeRequestSchema,
   supplierSchema,
@@ -31,6 +36,8 @@ import {
   type PurchaseDraftResult,
   type PurchaseEntryPreferences,
   type PurchasePostResult,
+  type PurchasePostedDetail,
+  type PurchasePostedListResponse,
   type PurchasingFieldError,
   type Supplier,
 } from "@breev/contracts/local-rest";
@@ -43,6 +50,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
 } from "@nestjs/common";
 import type { Request } from "express";
@@ -60,6 +68,24 @@ export class PurchasingController {
     return await translatePurchasingDenial(() =>
       this.purchasing.listSuppliers(request),
     );
+  }
+
+  @Get(supplierReadContract.path)
+  public async readSupplier(
+    @Param("supplierId") supplierId: string,
+    @Req() request: Request,
+  ): Promise<Supplier> {
+    return await translatePurchasingDenial(async () => {
+      const id = supplierSchema.shape.id.safeParse(supplierId);
+      if (!id.success)
+        return await this.purchasing.rejectMissing(
+          request,
+          "supplier.read",
+          "suppliers.manage",
+          "supplier-not-found",
+        );
+      return await this.purchasing.readSupplier(request, id.data);
+    });
   }
 
   @Post(supplierCreateContract.path)
@@ -321,6 +347,42 @@ export class PurchasingController {
           id.success ? id.data : undefined,
         );
       return await this.purchasing.postPurchase(request, id.data, input.data);
+    });
+  }
+
+  @Get(purchasePostedListContract.path)
+  public async listPostedPurchases(
+    @Query() query: unknown,
+    @Req() request: Request,
+  ): Promise<PurchasePostedListResponse> {
+    return await translatePurchasingDenial(async () => {
+      const input = purchasePostedListRequestSchema.safeParse(query);
+      if (!input.success)
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.posted.list",
+          "purchases.posted.view",
+          fieldErrors(input.error),
+        );
+      return await this.purchasing.listPostedPurchases(request, input.data);
+    });
+  }
+
+  @Get(purchasePostedReadContract.path)
+  public async readPostedPurchase(
+    @Param("purchaseId") purchaseId: string,
+    @Req() request: Request,
+  ): Promise<PurchasePostedDetail> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchasePostedDetailSchema.shape.id.safeParse(purchaseId);
+      if (!id.success)
+        return await this.purchasing.rejectMissing(
+          request,
+          "purchase.posted.read",
+          "purchases.posted.view",
+          "posted-purchase-not-found",
+        );
+      return await this.purchasing.readPostedPurchase(request, id.data);
     });
   }
 }

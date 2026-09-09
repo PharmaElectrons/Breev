@@ -3,6 +3,10 @@ import {
   PURCHASE_POSTING_ACCOUNT_CODES,
   PURCHASING_CONTRACTS,
   allowancePercentageSchema,
+  purchasePostedDetailSchema,
+  purchasePostedListRequestSchema,
+  purchasePostedListResponseSchema,
+  purchasePostedPath,
   postedPurchaseJournalSchema,
   postedPurchaseSchema,
   purchaseDraftCreateRequestSchema,
@@ -168,7 +172,7 @@ describe("supplier and purchase draft contracts", () => {
   });
 
   it("has no supplier, draft, or posting hard-delete route", () => {
-    expect(PURCHASING_CONTRACTS).toHaveLength(14);
+    expect(PURCHASING_CONTRACTS).toHaveLength(17);
     expect(
       PURCHASING_CONTRACTS.map((contract) => contract.method),
     ).not.toContain("DELETE");
@@ -452,5 +456,142 @@ describe("supplier and purchase draft contracts", () => {
         terms: "Net 30",
       }),
     ).toMatchObject({ defaultAllowancePercentage: "3.25" });
+  });
+
+  it("keeps posted purchase review routes read-only", () => {
+    const reviewContracts = PURCHASING_CONTRACTS.filter((contract) =>
+      contract.path.startsWith("/purchases/posted"),
+    );
+    expect(reviewContracts.map((contract) => contract.method)).toEqual([
+      "GET",
+      "GET",
+    ]);
+    expect(purchasePostedPath(POSTING_ID)).toBe(
+      `/purchases/posted/${POSTING_ID}`,
+    );
+  });
+
+  it("rejects transformed or unknown posted purchase search input", () => {
+    expect(
+      purchasePostedListRequestSchema.parse({
+        direction: "descending",
+        from: "2026-01-01",
+        query: "INV-100",
+        sort: "number",
+        to: "2026-12-31",
+      }),
+    ).toEqual({
+      direction: "descending",
+      from: "2026-01-01",
+      query: "INV-100",
+      sort: "number",
+      to: "2026-12-31",
+    });
+    expect(
+      purchasePostedListRequestSchema.safeParse({ query: " INV-100 " }).success,
+    ).toBe(false);
+    expect(
+      purchasePostedListRequestSchema.safeParse({ extra: "unsupported" })
+        .success,
+    ).toBe(false);
+    expect(
+      purchasePostedListRequestSchema.safeParse({
+        from: "2026-12-31",
+        to: "2026-01-01",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("makes server-side cost visibility structural in posted review", () => {
+    const posted = postedPurchase();
+    const listItem = {
+      costAfterDiscountFils: posted.costAfterDiscountFils,
+      id: posted.id,
+      invoiceDate: posted.invoiceDate,
+      itemCount: posted.rows.length,
+      number: posted.number,
+      postedAt: posted.postedAt,
+      primarySupplierCostFils: posted.primarySupplierCostFils,
+      settlementContext: posted.settlementContext,
+      supplierInvoiceNumber: posted.supplierInvoiceNumber,
+      supplierNameSnapshot: posted.supplierNameSnapshot,
+    } as const;
+    expect(
+      purchasePostedListResponseSchema.parse({
+        costVisibility: "visible",
+        purchases: [listItem],
+      }).purchases,
+    ).toHaveLength(1);
+    expect(
+      purchasePostedListResponseSchema.safeParse({
+        costVisibility: "hidden-by-permission",
+        purchases: [listItem],
+      }).success,
+    ).toBe(false);
+    expect(
+      purchasePostedListResponseSchema.parse({
+        costVisibility: "hidden-by-permission",
+        purchases: [
+          {
+            ...listItem,
+            costAfterDiscountFils: null,
+            primarySupplierCostFils: null,
+          },
+        ],
+      }).purchases[0],
+    ).toMatchObject({
+      costAfterDiscountFils: null,
+      primarySupplierCostFils: null,
+    });
+  });
+
+  it("validates an immutable posted detail snapshot without live master fields", () => {
+    const posted = postedPurchase();
+    const detail = {
+      allowanceFils: posted.allowanceFils,
+      allowancePercentageSnapshot: posted.allowanceSnapshot.percentage,
+      costAfterDiscountFils: posted.costAfterDiscountFils,
+      costVisibility: "visible",
+      id: posted.id,
+      invoiceDate: posted.invoiceDate,
+      navigation: {
+        nextId: null,
+        position: 1,
+        previousId: null,
+        total: 1,
+      },
+      number: posted.number,
+      postedAt: posted.postedAt,
+      postedBy: posted.postedBy,
+      primarySupplierCostFils: posted.primarySupplierCostFils,
+      rows: posted.rows.map((row) => ({
+        baseUnitsPerEnteredUnit: row.baseUnitsPerEnteredUnit,
+        costAfterDiscountFils: row.costAfterDiscountFils,
+        enteredQuantity: row.enteredQuantity,
+        expiryDate: row.expiryDate,
+        id: row.id,
+        inventoryUnitName: row.inventoryUnitName,
+        inventoryUnitQuantity: row.inventoryUnitQuantity,
+        itemDisplayName: row.itemDisplayName,
+        itemId: row.itemId,
+        linePrimarySupplierCostFils: row.linePrimarySupplierCostFils,
+        lotNumber: row.lotNumber,
+        ordinal: row.ordinal,
+        primarySupplierCostFils: row.primarySupplierCostFils,
+        retailPriceFils: row.retailPriceFils,
+        unit: row.unit,
+      })),
+      settlementContext: posted.settlementContext,
+      supplierId: posted.supplierId,
+      supplierInvoiceNumber: posted.supplierInvoiceNumber,
+      supplierNameSnapshot: posted.supplierNameSnapshot,
+    } as const;
+    expect(purchasePostedDetailSchema.parse(detail)).toEqual(detail);
+    expect(
+      purchasePostedDetailSchema.safeParse({
+        ...detail,
+        costVisibility: "hidden-by-setting",
+      }).success,
+    ).toBe(false);
   });
 });

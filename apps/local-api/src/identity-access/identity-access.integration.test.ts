@@ -137,7 +137,12 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(roleRows).toHaveLength(8);
     expect(
       roleRows?.find(({ key }) => key === "purchasing_employee")?.grants,
-    ).toEqual(["catalog.item.search", "purchases.drafts.manage"]);
+    ).toEqual([
+      "catalog.item.search",
+      "purchases.costs.view",
+      "purchases.drafts.manage",
+      "purchases.posted.view",
+    ]);
     const databaseState = await administrator.query<{
       pharmacy_count: string;
       role_count: string;

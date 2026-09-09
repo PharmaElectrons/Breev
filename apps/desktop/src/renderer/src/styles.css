@@ -3221,6 +3221,130 @@ a:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+.posted-purchase-dialog {
+  inline-size: min(96vw, 88rem);
+  max-block-size: 92vh;
+  padding: 1rem;
+  overflow: auto;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 1.5rem 4rem var(--shadow);
+}
+
+.posted-purchase-dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.posted-review-heading,
+.posted-detail-toolbar,
+.posted-correction-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.posted-review-heading h2,
+.posted-review-heading p,
+.posted-purchase-review header h3,
+.posted-purchase-review header p {
+  margin: 0;
+}
+
+.posted-review-boundary {
+  padding: 0.75rem 1rem;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-inline-start: 0.25rem solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.posted-purchase-filters {
+  grid-template-columns: minmax(13rem, 2fr) repeat(4, minmax(8rem, 1fr)) auto;
+}
+
+.posted-purchase-list {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.posted-purchase-list th,
+.posted-purchase-list td {
+  padding: 0.65rem;
+  text-align: start;
+  border-bottom: 1px solid var(--border);
+}
+
+.posted-purchase-review,
+.posted-correction-stage,
+.posted-current-record {
+  display: grid;
+  gap: 1rem;
+}
+
+.posted-detail-toolbar {
+  justify-content: flex-start;
+}
+
+.posted-detail-toolbar p {
+  min-inline-size: 4rem;
+  margin: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.posted-current-record dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.posted-current-record dl div {
+  padding: 0.75rem;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.posted-current-record dt {
+  color: var(--muted-foreground);
+}
+
+.posted-current-record dd {
+  margin: 0.3rem 0 0;
+}
+
+.posted-correction-stage {
+  max-inline-size: 42rem;
+  margin-inline: auto;
+  padding: 2rem;
+  text-align: center;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+@media (max-width: 72rem) {
+  .posted-purchase-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 37rem) {
+  .posted-purchase-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .posted-detail-toolbar,
+  .posted-correction-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .purchase-entry-settings {
   max-width: 34rem;
 }

@@ -31,7 +31,7 @@ interface ModuleDefinition {
    * allowed navigation (docs/workflows.md §Start and connect step 4); the local
    * API still authorizes every request independently.
    */
-  readonly requiredPermission: string | null;
+  readonly requiredPermissionsAny: readonly string[];
 }
 
 /** Tab order follows the client prototype's own module bar. */
@@ -40,73 +40,76 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
     hash: "#/dashboard",
     id: "dashboard",
     implemented: true,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/sales",
     id: "sales",
     implemented: false,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/purchases",
     id: "purchases",
     implemented: true,
-    requiredPermission: "purchases.drafts.manage",
+    requiredPermissionsAny: [
+      "purchases.drafts.manage",
+      "purchases.posted.view",
+    ],
   },
   {
     hash: "#/inventory",
     id: "inventory",
     implemented: false,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/catalog/products",
     id: "products",
     implemented: true,
-    requiredPermission: "catalog.item.manage",
+    requiredPermissionsAny: ["catalog.item.manage"],
   },
   {
     hash: "#/patients",
     id: "patients",
     implemented: false,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/messages",
     id: "messages",
     implemented: false,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/basket",
     id: "basket",
     implemented: false,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/reports",
     id: "reports",
     implemented: false,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/accounts",
     id: "accounts",
     implemented: false,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/administration",
     id: "administration",
     implemented: true,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
   {
     hash: "#/settings",
     id: "settings",
     implemented: false,
-    requiredPermission: null,
+    requiredPermissionsAny: [],
   },
 ] as const;
 
@@ -163,8 +166,10 @@ export function navigationModules(
       return false;
     }
     return (
-      definition.requiredPermission === null ||
-      permissions.has(definition.requiredPermission)
+      definition.requiredPermissionsAny.length === 0 ||
+      definition.requiredPermissionsAny.some((permission) =>
+        permissions.has(permission),
+      )
     );
   }).map((definition) => ({
     availability: definition.implemented ? "available" : "unavailable",
