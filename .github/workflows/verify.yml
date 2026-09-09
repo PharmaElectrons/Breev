@@ -80,7 +80,27 @@ jobs:
         run: pnpm test:integration
 
       - name: Install browser test dependencies
-        run: pnpm --filter @breev/desktop exec playwright install --with-deps chromium
+        run: |
+          # Playwright downloads its own Chromium. Discover the unrelated branded
+          # Chrome repository without assuming which apt source format is active.
+          mapfile -t chrome_sources < <(
+            grep -RIl \
+              "dl.google.com/linux/chrome-stable/deb" \
+              /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null || true
+          )
+          for source in "${chrome_sources[@]}"; do
+            case "$source" in
+              /etc/apt/sources.list.d/*)
+                echo "Removing unrelated Chrome apt source: $source"
+                sudo rm -f -- "$source"
+                ;;
+              *)
+                echo "::error::Unexpected Chrome apt source: $source"
+                exit 1
+                ;;
+            esac
+          done
+          pnpm --filter @breev/desktop exec playwright install --with-deps chromium
 
       - name: Verify renderer browser seam
         run: pnpm test:browser

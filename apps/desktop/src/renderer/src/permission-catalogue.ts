@@ -42,7 +42,12 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
   },
   {
     id: "purchasing",
-    permissions: ["purchases.drafts.manage", "suppliers.manage"],
+    permissions: [
+      "purchases.drafts.manage",
+      "purchases.posted.view",
+      "purchases.costs.view",
+      "suppliers.manage",
+    ],
   },
   { id: "attendance", permissions: ["attendance.record"] },
   {

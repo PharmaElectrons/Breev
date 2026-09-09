@@ -26,6 +26,7 @@ import {
 } from "./purchasing-api";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
+import { PostedPurchaseReview } from "./posted-purchase-review";
 import { SuppliersWorkspace } from "./suppliers-workspace";
 
 const today = (): string => {
@@ -49,6 +50,9 @@ export function PurchasingRouteView({
   const canManageSuppliers =
     identity?.state === "authenticated" &&
     identity.allowedPermissions.includes("suppliers.manage");
+  const canManageDrafts =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("purchases.drafts.manage");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [drafts, setDrafts] = useState<PurchaseDraft[]>([]);
   const [activeDraft, setActiveDraft] = useState<PurchaseDraftDetail | null>(
@@ -63,6 +67,9 @@ export function PurchasingRouteView({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"invoice" | "suppliers">("invoice");
+  const [postedReviewOpen, setPostedReviewOpen] = useState(() =>
+    window.location.hash.startsWith("#/purchases/posted/"),
+  );
   const invoiceRef = useRef<HTMLInputElement>(null);
   const registerRef = useRef<HTMLDialogElement>(null);
   const supplierRef = useRef<HTMLSelectElement>(null);
@@ -82,6 +89,11 @@ export function PurchasingRouteView({
   );
 
   async function reload(): Promise<void> {
+    if (!canManageDrafts) {
+      setSuppliers([]);
+      setDrafts([]);
+      return;
+    }
     const [supplierResult, draftResult] = await Promise.all([
       requestSuppliers(baseUrl),
       requestPurchaseDrafts(baseUrl),
@@ -98,7 +110,13 @@ export function PurchasingRouteView({
     return () => {
       live = false;
     };
-  }, [baseUrl, copy.error]);
+  }, [baseUrl, canManageDrafts, copy.error]);
+
+  useEffect(() => {
+    if (identity?.state === "authenticated" && !canManageDrafts) {
+      setPostedReviewOpen(true);
+    }
+  }, [canManageDrafts, identity?.state]);
 
   useEffect(() => {
     if (postRecoveryStarted.current) return;
@@ -354,31 +372,45 @@ export function PurchasingRouteView({
   return (
     <section className="purchasing-workspace" aria-label={copy.title}>
       <div className="purchase-view-tabs" aria-label={copy.title}>
+        {canManageDrafts ? (
+          <button
+            type="button"
+            className="purchase-view-tab"
+            aria-pressed={view === "invoice"}
+            aria-controls="purchase-invoice-view"
+            onClick={() => setView("invoice")}
+          >
+            <span aria-hidden="true">🧾</span> {copy.invoiceWorkspace}
+          </button>
+        ) : null}
+        {canManageDrafts ? (
+          <button
+            type="button"
+            className="purchase-view-tab"
+            onClick={focusDraftRegister}
+            aria-haspopup="dialog"
+          >
+            <span aria-hidden="true">📂</span> {copy.savedInvoices}
+          </button>
+        ) : null}
         <button
           type="button"
           className="purchase-view-tab"
-          aria-pressed={view === "invoice"}
-          aria-controls="purchase-invoice-view"
-          onClick={() => setView("invoice")}
-        >
-          <span aria-hidden="true">🧾</span> {copy.invoiceWorkspace}
-        </button>
-        <button
-          type="button"
-          className="purchase-view-tab"
-          onClick={focusDraftRegister}
+          onClick={() => setPostedReviewOpen(true)}
           aria-haspopup="dialog"
         >
-          <span aria-hidden="true">📑</span> {copy.savedInvoices}
+          <span aria-hidden="true">🔍</span> {copy.postedInvoices}
         </button>
-        <button
-          type="button"
-          className="purchase-view-tab"
-          disabled
-          title={copy.unavailable}
-        >
-          <span aria-hidden="true">↩</span> {copy.returnInvoice}
-        </button>
+        {canManageDrafts ? (
+          <button
+            type="button"
+            className="purchase-view-tab"
+            disabled
+            title={copy.unavailable}
+          >
+            <span aria-hidden="true">↩</span> {copy.returnInvoice}
+          </button>
+        ) : null}
         {canManageSuppliers ? (
           <button
             type="button"
@@ -390,35 +422,41 @@ export function PurchasingRouteView({
             <span aria-hidden="true">🏬</span> {copy.suppliers}
           </button>
         ) : null}
-        <div className="purchase-document-actions">
-          <button
-            type="button"
-            className="purchase-return-button"
-            disabled
-            title={copy.unavailable}
-          >
-            {copy.returnInvoice}
-          </button>
-          <button
-            type="button"
-            className="quiet-button"
-            disabled
-            title={copy.unavailable}
-            aria-label={copy.print}
-          >
-            <span aria-hidden="true">🖨</span>
-          </button>
-          <button
-            type="button"
-            className="purchase-adjust-button"
-            disabled
-            title={copy.unavailable}
-          >
-            {copy.adjustInvoice}
-          </button>
-        </div>
+        {canManageDrafts ? (
+          <div className="purchase-document-actions">
+            <button
+              type="button"
+              className="purchase-return-button"
+              disabled
+              title={copy.unavailable}
+            >
+              {copy.returnInvoice}
+            </button>
+            <button
+              type="button"
+              className="quiet-button"
+              disabled
+              title={copy.unavailable}
+              aria-label={copy.print}
+            >
+              <span aria-hidden="true">🖨</span>
+            </button>
+            <button
+              type="button"
+              className="purchase-adjust-button"
+              disabled
+              title={copy.unavailable}
+            >
+              {copy.adjustInvoice}
+            </button>
+          </div>
+        ) : null}
       </div>
-      <div id="purchase-invoice-view" hidden={view !== "invoice"}>
+      {!canManageDrafts ? <p role="status">{copy.postedReviewOnly}</p> : null}
+      <div
+        id="purchase-invoice-view"
+        hidden={!canManageDrafts || view !== "invoice"}
+      >
         <form
           id="purchase-header-form"
           className="purchase-header-form"
@@ -904,6 +942,11 @@ export function PurchasingRouteView({
           </div>
         </section>
       </dialog>
+      <PostedPurchaseReview
+        baseUrl={baseUrl}
+        open={postedReviewOpen}
+        onClose={() => setPostedReviewOpen(false)}
+      />
     </section>
   );
 }

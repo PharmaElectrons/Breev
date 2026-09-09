@@ -23,6 +23,11 @@ import {
   purchasePostContract,
   purchasePostRequestSchema,
   purchasePostResultSchema,
+  purchasePostedDetailSchema,
+  purchasePostedListContract,
+  purchasePostedListResponseSchema,
+  purchasePostedPath,
+  purchasePostedReadContract,
   purchasingDenialSchema,
   supplierArchiveContract,
   supplierArchivePath,
@@ -32,6 +37,7 @@ import {
   supplierMergeContract,
   supplierMergePath,
   supplierPath,
+  supplierReadContract,
   supplierSchema,
   type PurchaseDraft,
   type PurchaseDraftDetail,
@@ -45,6 +51,9 @@ import {
   type PurchaseEntryPreferencesUpdateRequest,
   type PurchasePostRequest,
   type PurchasePostResult,
+  type PurchasePostedDetail,
+  type PurchasePostedListRequest,
+  type PurchasePostedListResponse,
   type PurchasingDenial,
   type Supplier,
   type SupplierArchiveRequest,
@@ -76,6 +85,17 @@ export const requestSuppliers = async (
     "GET",
     200,
     supplierListContract.responses[200],
+  );
+export const requestSupplier = async (
+  baseUrl: string,
+  id: string,
+): Promise<Supplier> =>
+  await requestJson(
+    baseUrl,
+    supplierPath(id),
+    supplierReadContract.method,
+    200,
+    supplierSchema,
   );
 export const createSupplier = async (
   baseUrl: string,
@@ -235,6 +255,36 @@ export const postPurchase = async (
     201,
     purchasePostResultSchema,
     body,
+  );
+
+export const requestPostedPurchases = async (
+  baseUrl: string,
+  input: PurchasePostedListRequest = {},
+): Promise<PurchasePostedListResponse> => {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined) query.set(key, value);
+  }
+  const suffix = query.size === 0 ? "" : `?${query.toString()}`;
+  return await requestJson(
+    baseUrl,
+    `${purchasePostedListContract.path}${suffix}`,
+    purchasePostedListContract.method,
+    200,
+    purchasePostedListResponseSchema,
+  );
+};
+
+export const requestPostedPurchase = async (
+  baseUrl: string,
+  id: string,
+): Promise<PurchasePostedDetail> =>
+  await requestJson(
+    baseUrl,
+    purchasePostedPath(id),
+    purchasePostedReadContract.method,
+    200,
+    purchasePostedDetailSchema,
   );
 
 export function newPurchasingIdempotencyKey(): string {

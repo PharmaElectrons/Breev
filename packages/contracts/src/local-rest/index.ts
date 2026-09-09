@@ -97,7 +97,9 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "identity.users.manage",
   "licensing.manage",
   "pharmacy.settings.manage",
+  "purchases.costs.view",
   "purchases.drafts.manage",
+  "purchases.posted.view",
   "suppliers.manage",
 ] as const;
 export type ImplementedPermissionName =
@@ -2577,6 +2579,155 @@ export const purchasePostResultSchema = z.strictObject({
   warnings: z.array(purchasePostingWarningSchema),
 });
 
+export const purchasePostedListRequestSchema = z
+  .strictObject({
+    direction: z.enum(["ascending", "descending"]).optional(),
+    from: z.iso.date().optional(),
+    query: z
+      .string()
+      .max(160)
+      .refine((value) => value === value.trim(), {
+        message: "Search query must not have surrounding whitespace",
+      })
+      .optional(),
+    sort: z
+      .enum(["invoice-date", "number", "primary-cost", "supplier"])
+      .optional(),
+    to: z.iso.date().optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (
+      input.from !== undefined &&
+      input.to !== undefined &&
+      input.from > input.to
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "From date must not be after to date",
+        path: ["from"],
+      });
+    }
+  });
+
+export const purchasePostedCostVisibilitySchema = z.enum([
+  "visible",
+  "hidden-by-permission",
+  "hidden-by-setting",
+]);
+
+const nullableReviewCostSchema = priceFilsSchema.nullable();
+export const purchasePostedListItemSchema = z.strictObject({
+  costAfterDiscountFils: nullableReviewCostSchema,
+  id: z.uuidv7(),
+  invoiceDate: z.iso.date(),
+  itemCount: z.number().int().positive(),
+  number: postedDocumentNumberSchema,
+  postedAt: z.iso.datetime(),
+  primarySupplierCostFils: nullableReviewCostSchema,
+  settlementContext: purchaseSettlementContextSchema,
+  supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
+  supplierNameSnapshot: supplierNameSchema,
+});
+
+export const purchasePostedListResponseSchema = z
+  .strictObject({
+    costVisibility: purchasePostedCostVisibilitySchema,
+    purchases: z.array(purchasePostedListItemSchema),
+  })
+  .superRefine((response, ctx) => {
+    const costsAreVisible = response.costVisibility === "visible";
+    response.purchases.forEach((purchase, index) => {
+      for (const field of [
+        "costAfterDiscountFils",
+        "primarySupplierCostFils",
+      ] as const) {
+        if ((purchase[field] !== null) !== costsAreVisible) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Review costs must follow the server visibility decision",
+            path: ["purchases", index, field],
+          });
+        }
+      }
+    });
+  });
+
+export const purchasePostedDetailRowSchema = z.strictObject({
+  baseUnitsPerEnteredUnit: packageUnitRatioSchema,
+  costAfterDiscountFils: nullableReviewCostSchema,
+  enteredQuantity: packageUnitRatioSchema,
+  expiryDate: z.iso.date().nullable(),
+  id: z.uuidv7(),
+  inventoryUnitName: productUnitNameSchema,
+  inventoryUnitQuantity: packageUnitRatioSchema,
+  itemDisplayName: z.string().min(1).max(726),
+  itemId: z.uuidv7(),
+  linePrimarySupplierCostFils: nullableReviewCostSchema,
+  lotNumber: nullableTrimmedPurchaseText(120),
+  ordinal: z.number().int().positive(),
+  primarySupplierCostFils: nullableReviewCostSchema,
+  retailPriceFils: priceFilsSchema,
+  unit: inventoryCapableUnitSchema,
+});
+
+export const purchasePostedDetailSchema = z
+  .strictObject({
+    allowanceFils: nullableReviewCostSchema,
+    allowancePercentageSnapshot: allowancePercentageSchema.nullable(),
+    costAfterDiscountFils: nullableReviewCostSchema,
+    costVisibility: purchasePostedCostVisibilitySchema,
+    id: z.uuidv7(),
+    invoiceDate: z.iso.date(),
+    navigation: z.strictObject({
+      nextId: z.uuidv7().nullable(),
+      position: z.number().int().positive(),
+      previousId: z.uuidv7().nullable(),
+      total: z.number().int().positive(),
+    }),
+    number: postedDocumentNumberSchema,
+    postedAt: z.iso.datetime(),
+    postedBy: z.uuidv7(),
+    primarySupplierCostFils: nullableReviewCostSchema,
+    rows: z.array(purchasePostedDetailRowSchema).min(1),
+    settlementContext: purchaseSettlementContextSchema,
+    supplierId: z.uuidv7(),
+    supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
+    supplierNameSnapshot: supplierNameSchema,
+  })
+  .superRefine((purchase, ctx) => {
+    const costsAreVisible = purchase.costVisibility === "visible";
+    const headerCosts = [
+      "allowanceFils",
+      "allowancePercentageSnapshot",
+      "costAfterDiscountFils",
+      "primarySupplierCostFils",
+    ] as const;
+    for (const field of headerCosts) {
+      if ((purchase[field] !== null) !== costsAreVisible) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Review costs must follow the server visibility decision",
+          path: [field],
+        });
+      }
+    }
+    purchase.rows.forEach((row, index) => {
+      for (const field of [
+        "costAfterDiscountFils",
+        "linePrimarySupplierCostFils",
+        "primarySupplierCostFils",
+      ] as const) {
+        if ((row[field] !== null) !== costsAreVisible) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Review costs must follow the server visibility decision",
+            path: ["rows", index, field],
+          });
+        }
+      }
+    });
+  });
+
 export const PURCHASING_FIELD_ERROR_CODES = [
   "invalid",
   "out-of-range",
@@ -2625,6 +2776,7 @@ export const PURCHASING_DENIAL_CODES = [
   "item-unavailable",
   "money-overflow",
   "pricing-mode-conflict",
+  "posted-purchase-not-found",
   "unit-invalid",
   "merge-into-self",
   "merge-survivor-not-mergeable",
@@ -2658,6 +2810,15 @@ export const supplierListContract = {
   responses: {
     200: z.strictObject({ suppliers: z.array(supplierSchema) }),
     ...purchasingReadDenialResponses,
+  },
+} as const;
+export const supplierReadContract = {
+  method: "GET",
+  path: "/suppliers/:supplierId",
+  responses: {
+    200: supplierSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
   },
 } as const;
 export const supplierCreateContract = {
@@ -2769,6 +2930,24 @@ export const purchasePostContract = {
     ...purchasingCommandDenialResponses,
   },
 } as const;
+export const purchasePostedListContract = {
+  method: "GET",
+  path: "/purchases/posted",
+  request: { query: purchasePostedListRequestSchema },
+  responses: {
+    200: purchasePostedListResponseSchema,
+    ...purchasingReadDenialResponses,
+  },
+} as const;
+export const purchasePostedReadContract = {
+  method: "GET",
+  path: "/purchases/posted/:purchaseId",
+  responses: {
+    200: purchasePostedDetailSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
+  },
+} as const;
 
 export const supplierPath = (supplierId: string): string =>
   `/suppliers/${supplierId}`;
@@ -2786,6 +2965,8 @@ export const purchaseDraftRowsPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/rows`;
 export const purchaseDraftPostingsPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/postings`;
+export const purchasePostedPath = (purchaseId: string): string =>
+  `/purchases/posted/${purchaseId}`;
 
 export const PURCHASING_CONTRACTS = [
   supplierArchiveContract,
@@ -2793,6 +2974,7 @@ export const PURCHASING_CONTRACTS = [
   supplierEditContract,
   supplierListContract,
   supplierMergeContract,
+  supplierReadContract,
   purchaseDraftCreateContract,
   purchaseDraftDiscardContract,
   purchaseDraftListContract,
@@ -2802,6 +2984,8 @@ export const PURCHASING_CONTRACTS = [
   purchaseEntryPreferencesReadContract,
   purchaseEntryPreferencesUpdateContract,
   purchasePostContract,
+  purchasePostedListContract,
+  purchasePostedReadContract,
 ] as const;
 
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
@@ -3092,6 +3276,22 @@ export type PurchasePostingWarning = z.infer<
   typeof purchasePostingWarningSchema
 >;
 export type PurchasePostResult = z.infer<typeof purchasePostResultSchema>;
+export type PurchasePostedListRequest = z.infer<
+  typeof purchasePostedListRequestSchema
+>;
+export type PurchasePostedCostVisibility = z.infer<
+  typeof purchasePostedCostVisibilitySchema
+>;
+export type PurchasePostedListItem = z.infer<
+  typeof purchasePostedListItemSchema
+>;
+export type PurchasePostedListResponse = z.infer<
+  typeof purchasePostedListResponseSchema
+>;
+export type PurchasePostedDetailRow = z.infer<
+  typeof purchasePostedDetailRowSchema
+>;
+export type PurchasePostedDetail = z.infer<typeof purchasePostedDetailSchema>;
 
 /**
  * The approved product naming templates, and the total function that applies

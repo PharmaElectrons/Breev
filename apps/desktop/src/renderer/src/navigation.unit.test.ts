@@ -58,6 +58,15 @@ describe("navigationModules", () => {
     expect(idsFor(FREE_CORE_ACCESS)).toContain("products");
   });
 
+  it("allows posted-purchase reviewers into purchases without draft access", () => {
+    expect(
+      idsFor({
+        allowedPermissions: ["purchases.posted.view"],
+        capabilities: [],
+      }),
+    ).toContain("purchases");
+  });
+
   it("marks implemented workspaces available and unbuilt required surfaces unavailable", () => {
     const modules = navigationModules(FREE_CORE_ACCESS);
     const availability = new Map(

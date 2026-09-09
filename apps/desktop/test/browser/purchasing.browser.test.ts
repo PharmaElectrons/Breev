@@ -5,10 +5,13 @@ import {
   BREEV_CSRF_VALUE,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  purchaseDraftPostingsPath,
+  purchaseDraftRowsPath,
   supplierSchema,
   type Product,
   type ProductCreateRequest,
   type PurchaseDraft,
+  type PurchasePostResult,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -33,6 +36,8 @@ const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_PASSWORD = "purchasing browser owner password stays in this test";
 let delayNextDraftCreateResponse = false;
 let delayNextPurchasePostResponse = false;
+let denyNextPostedListResponse = false;
+let failNextPostedListResponse = false;
 let apiStartupOutput = "";
 
 interface Credentials {
@@ -69,11 +74,16 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     import.meta.dirname,
     "../../../../evidence/issue-50/after",
   );
+  const reviewEvidenceDir = path.resolve(
+    import.meta.dirname,
+    "../../../../evidence/issue-51/after",
+  );
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
     await mkdir(rowEvidenceDir, { recursive: true });
     await mkdir(postingEvidenceDir, { recursive: true });
+    await mkdir(reviewEvidenceDir, { recursive: true });
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
     if (administratorUrl === undefined) {
       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
@@ -152,6 +162,20 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
     expect(percentage.status).toBe(201);
     percentageProduct = percentage.body as Product;
+    await postPurchaseForReview(
+      apiOrigin,
+      credentials,
+      supplierId,
+      purchaseProduct.id,
+      "BROWSER-REVIEW-A",
+    );
+    await postPurchaseForReview(
+      apiOrigin,
+      credentials,
+      supplierId,
+      purchaseProduct.id,
+      "BROWSER-REVIEW-B",
+    );
     renderer = await startRendererServer(apiOrigin, credentials);
   });
 
@@ -175,7 +199,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       page.getByRole("columnheader", { name: "Item name" }),
     ).toBeVisible();
 
-    await page.getByLabel("Invoice date").fill("2026-08-15");
+    await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
     const invoice = page.getByLabel("Supplier invoice number");
     await invoice.focus();
     await page.keyboard.type("SUP-2026-0042");
@@ -261,7 +285,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.getByRole("button", { name: "New invoice" }).click();
     await invoice.fill("SUP-2026-0042");
     await supplier.selectOption(supplierId);
-    await page.getByLabel("Invoice date").fill("2026-08-15");
+    await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
     await page.getByRole("button", { name: "Save draft" }).click();
     const warning = page.getByRole("alert");
     await expect(warning).toContainText("already recorded");
@@ -300,7 +324,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page
       .getByRole("combobox", { name: "Supplier", exact: true })
       .selectOption(supplierId);
-    await page.getByLabel("Invoice date").fill("2026-09-07");
+    await page.getByLabel("Invoice date", { exact: true }).fill("2026-09-07");
     await page.getByRole("button", { name: "Save draft" }).click();
 
     const item = page.getByRole("textbox", {
@@ -793,7 +817,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page
       .getByRole("combobox", { name: "Supplier", exact: true })
       .selectOption(supplierId);
-    await page.getByLabel("Invoice date").fill("2026-08-15");
+    await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
 
     delayNextDraftCreateResponse = true;
     await page.getByRole("button", { name: "Save draft" }).click();
@@ -922,6 +946,271 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     });
   });
 
+  test("searches and reviews immutable purchases entirely by keyboard", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    const opener = page.getByRole("button", { name: "Posted invoices" });
+    await opener.focus();
+    await page.keyboard.press("Enter");
+
+    const dialog = page.getByRole("dialog", {
+      name: "Posted purchase invoices",
+    });
+    await expect(dialog).toBeVisible();
+    const search = dialog.getByRole("searchbox", {
+      name: "Search posted purchases",
+    });
+    await expect(search).toBeFocused();
+    await page.keyboard.type("BROWSER-REVIEW");
+    await page.keyboard.press("Enter");
+    await expect(dialog.locator(".posted-purchase-list tbody tr")).toHaveCount(
+      2,
+    );
+    await expect(
+      dialog.getByRole("columnheader", { name: "Primary Supplier Cost" }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("columnheader", { name: "Cost After Discount" }),
+    ).toBeVisible();
+
+    const openNewest = dialog
+      .getByRole("button", { name: /Open invoice P/u })
+      .first();
+    await openNewest.focus();
+    await page.keyboard.press("Enter");
+    const newestHeading = await dialog
+      .locator("#posted-detail-title")
+      .textContent();
+    const detail = dialog.locator(".posted-purchase-review");
+    await expect(
+      detail.locator("header").getByText("Historical snapshot"),
+    ).toBeVisible();
+    await expect(detail).toContainText(purchaseProduct.displayName);
+    await expect(
+      detail.locator("dt").getByText("Primary Supplier Cost"),
+    ).toBeVisible();
+    await expect(
+      detail.locator("dt").getByText("Cost After Discount"),
+    ).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /delete/iu })).toHaveCount(
+      0,
+    );
+
+    const next = dialog.getByRole("button", { name: /Next/u });
+    for (let step = 0; step < 10; step += 1) {
+      if ((await next.getAttribute("aria-disabled")) === "true") break;
+      const currentNumber = await dialog
+        .locator("#posted-detail-title")
+        .textContent();
+      await next.focus();
+      await page.keyboard.press("Enter");
+      await expect(dialog.locator("#posted-detail-title")).not.toHaveText(
+        currentNumber ?? "",
+      );
+    }
+    await expect(next).toHaveAttribute("aria-disabled", "true");
+    await next.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      dialog.getByText("This is the last posted purchase invoice."),
+    ).toBeAttached();
+    const previous = dialog.getByRole("button", { name: /Previous/u });
+    await previous.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog.locator("#posted-detail-title")).not.toHaveText(
+      newestHeading ?? "",
+    );
+
+    const supplierDrilldown = dialog.getByRole("button", {
+      name: "Open current supplier record",
+    });
+    await supplierDrilldown.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      dialog.getByRole("heading", { name: "Al-Nahrain Medical" }),
+    ).toBeVisible();
+    const supplierBack = dialog.getByRole("button", {
+      name: "Back to invoice",
+    });
+    await supplierBack.focus();
+    await page.keyboard.press("Enter");
+    await expect(supplierDrilldown).toBeFocused();
+
+    const itemDrilldown = dialog.getByRole("button", {
+      name: new RegExp(
+        `Open current item record ${purchaseProduct.displayName}`,
+        "u",
+      ),
+    });
+    await itemDrilldown.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByText("Current master record")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(itemDrilldown).toBeFocused();
+
+    const adjustment = dialog.getByRole("button", { name: "Edit Invoice" });
+    await adjustment.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/adjustment$/u);
+    await expect(
+      dialog.getByRole("heading", {
+        name: "Purchase Invoice Adjustment draft",
+      }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(adjustment).toBeFocused();
+    const purchaseReturn = dialog.getByRole("button", {
+      name: "Purchase Return",
+    });
+    await purchaseReturn.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/return$/u);
+    await expect(
+      dialog.getByText("The original invoice remains read-only:"),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    expect(
+      (await new AxeBuilder({ page }).include("dialog").analyze()).violations,
+    ).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+  });
+
+  test("renders explicit denied and recoverable unavailable register states", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    denyNextPostedListResponse = true;
+    await page.getByRole("button", { name: "Posted invoices" }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "Posted purchase invoices",
+    });
+    await expect(dialog.getByRole("alert")).toContainText(
+      "Access denied. Audit request:",
+    );
+    await dialog.getByRole("button", { name: "Retry" }).click();
+    await expect(
+      dialog.locator(".posted-purchase-list tbody tr").first(),
+    ).toBeVisible();
+    await dialog.getByRole("button", { name: "Close" }).click();
+
+    failNextPostedListResponse = true;
+    await page.getByRole("button", { name: "Posted invoices" }).click();
+    await expect(dialog.getByRole("alert")).toContainText(
+      "The local API is unavailable.",
+    );
+    await dialog.getByRole("button", { name: "Retry" }).click();
+    await expect(
+      dialog.locator(".posted-purchase-list tbody tr").first(),
+    ).toBeVisible();
+  });
+
+  test("keeps posted-review-only roles out of the purchase draft workspace", async ({
+    page,
+  }) => {
+    await page.route("**/identity/state", async (route) => {
+      const response = await route.fetch();
+      const identity = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        response,
+        json: {
+          ...identity,
+          allowedPermissions: ["purchases.posted.view"],
+        },
+      });
+    });
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+
+    const dialog = page.getByRole("dialog", {
+      name: "Posted purchase invoices",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Close" }).click();
+
+    await expect(
+      page.getByText(
+        "Your role can review posted purchases. Purchase draft entry is hidden because this role does not have draft-management permission.",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Posted invoices" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Purchase invoice" }),
+    ).toHaveCount(0);
+    await expect(page.locator("#purchase-invoice-view")).toBeHidden();
+  });
+
+  test("captures bilingual list and detail evidence in both themes", async ({
+    page,
+  }) => {
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        await page.goto("about:blank");
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/purchases`);
+        await page
+          .getByRole("button", {
+            name: locale === "en" ? "Posted invoices" : "الفواتير المُرحّلة",
+          })
+          .click();
+        const dialog = page.getByRole("dialog", {
+          name:
+            locale === "en"
+              ? "Posted purchase invoices"
+              : "فواتير الشراء المُرحّلة",
+        });
+        const search = dialog.getByRole("searchbox", {
+          name:
+            locale === "en"
+              ? "Search posted purchases"
+              : "البحث في المشتريات المُرحّلة",
+        });
+        await search.fill("BROWSER-REVIEW");
+        await search.press("Enter");
+        await expect(
+          dialog.locator(".posted-purchase-list tbody tr"),
+        ).toHaveCount(2);
+        await dialog.screenshot({
+          animations: "disabled",
+          path: path.join(
+            reviewEvidenceDir,
+            `posted-purchase-list-${locale}-${theme}.png`,
+          ),
+        });
+        await dialog
+          .getByRole("button", {
+            name: locale === "en" ? /Open invoice P/u : /فتح الفاتورة P/u,
+          })
+          .first()
+          .click();
+        await expect(dialog.locator("#posted-detail-title")).toBeVisible();
+        expect(
+          (await new AxeBuilder({ page }).include("dialog").analyze())
+            .violations,
+        ).toEqual([]);
+        await dialog.screenshot({
+          animations: "disabled",
+          path: path.join(
+            reviewEvidenceDir,
+            `posted-purchase-detail-${locale}-${theme}.png`,
+          ),
+        });
+        await dialog
+          .getByRole("button", {
+            name: locale === "en" ? "Close" : "إغلاق",
+          })
+          .click();
+      }
+    }
+  });
+
   test("keeps a rejected draft and focuses the named receipt-rule field", async ({
     page,
   }) => {
@@ -977,7 +1266,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     });
     await invoice.fill("INVALID-SUPPLIER-1");
     await supplier.selectOption(invalidSupplier.id);
-    await page.getByLabel("Invoice date").fill("2026-08-15");
+    await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
     expect(
       (
         await apiRequest(
@@ -1039,7 +1328,9 @@ async function createPurchaseWithOneRow(
     .getByRole("combobox", { name: labels.supplier, exact: true })
     .selectOption(supplierId);
   await page
-    .getByLabel(locale === "ar" ? "تاريخ الفاتورة" : "Invoice date")
+    .getByLabel(locale === "ar" ? "تاريخ الفاتورة" : "Invoice date", {
+      exact: true,
+    })
     .fill("2026-09-08");
   await page.getByRole("button", { name: labels.save }).click();
   await expect(page.getByText(labels.saved)).toBeVisible();
@@ -1071,6 +1362,59 @@ async function createPurchaseWithOneRow(
   await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
 }
 
+async function postPurchaseForReview(
+  apiOrigin: string,
+  credentials: Credentials,
+  supplierId: string,
+  productId: string,
+  invoiceNumber: string,
+): Promise<PurchasePostResult> {
+  const created = await apiRequest(
+    apiOrigin,
+    credentials,
+    "POST",
+    "/purchases/drafts",
+    {
+      idempotencyKey: uuidV7(),
+      invoiceDate: "2026-09-08",
+      settlementContext: "debt",
+      supplierId,
+      supplierInvoiceNumber: invoiceNumber,
+    },
+  );
+  expect(created.status).toBe(201);
+  let draft = (created.body as { draft: PurchaseDraft }).draft;
+  const committed = await apiRequest(
+    apiOrigin,
+    credentials,
+    "POST",
+    purchaseDraftRowsPath(draft.id),
+    {
+      costFils: "80000",
+      enteredQuantity: "2",
+      expectedVersion: draft.version,
+      expiryDate: "2029-05-31",
+      idempotencyKey: uuidV7(),
+      itemId: productId,
+      lotNumber: "REVIEW-LOT",
+      notes: null,
+      pricing: { method: "by-price", retailPriceFils: "120000" },
+      unit: { kind: "inventory-unit" },
+    },
+  );
+  expect(committed.status).toBe(201);
+  draft = (committed.body as { draft: PurchaseDraft }).draft;
+  const posted = await apiRequest(
+    apiOrigin,
+    credentials,
+    "POST",
+    purchaseDraftPostingsPath(draft.id),
+    { expectedVersion: draft.version, idempotencyKey: uuidV7() },
+  );
+  expect(posted.status).toBe(201);
+  return posted.body as PurchasePostResult;
+}
+
 async function startRendererServer(
   apiOrigin: string,
   credentials: Credentials,
@@ -1093,6 +1437,33 @@ async function startRendererServer(
         request.url?.startsWith("/suppliers") ||
         request.url?.startsWith("/purchases/")
       ) {
+        if (
+          request.method === "GET" &&
+          request.url.startsWith("/purchases/posted") &&
+          denyNextPostedListResponse
+        ) {
+          denyNextPostedListResponse = false;
+          response.writeHead(403, { "content-type": "application/json" }).end(
+            JSON.stringify({
+              code: "permission-denied",
+              requestId: "018fa000-0000-7000-8000-000000000051",
+              requiredPermission: "purchases.posted.view",
+              status: "denied",
+            }),
+          );
+          return;
+        }
+        if (
+          request.method === "GET" &&
+          request.url.startsWith("/purchases/posted") &&
+          failNextPostedListResponse
+        ) {
+          failNextPostedListResponse = false;
+          response
+            .writeHead(503, { "content-type": "application/json" })
+            .end("{}");
+          return;
+        }
         const body = await readBody(request);
         const upstream = await fetch(`${apiOrigin}${request.url}`, {
           ...(body.length === 0 ? {} : { body }),

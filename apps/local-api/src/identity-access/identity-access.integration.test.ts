@@ -32,6 +32,9 @@ const ACCOUNTANT_PASSWORD = "test password for accountant user";
 const SELF_CHANGE_OLD_PASSWORD = "idempotent user password stays private";
 const SELF_CHANGE_NEW_PASSWORD = "rotated self password stays private";
 const ADMIN_RESET_PASSWORD = "administrator reset password stays private";
+const TEST_AUTH_RATE_LIMIT = 5;
+const TEST_AUTH_RATE_WINDOW_SECONDS = 60;
+const TEST_AUTH_RATE_WINDOW_GUARD_SECONDS = 5;
 
 interface MainDeviceCredentials {
   readonly deviceId: string;
@@ -137,7 +140,12 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     expect(roleRows).toHaveLength(8);
     expect(
       roleRows?.find(({ key }) => key === "purchasing_employee")?.grants,
-    ).toEqual(["catalog.item.search", "purchases.drafts.manage"]);
+    ).toEqual([
+      "catalog.item.search",
+      "purchases.costs.view",
+      "purchases.drafts.manage",
+      "purchases.posted.view",
+    ]);
     const databaseState = await administrator.query<{
       pharmacy_count: string;
       role_count: string;
@@ -867,6 +875,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
 
   it("counts wrong current passwords and keeps the shared device budget after a success", async () => {
     const changeDevice = await registerDevice();
+    await waitForStableAuthRateWindow();
     await login(ownerUsername, ownerPassword, changeDevice, true);
     const ownerState = await request(changeDevice, "GET", "/identity/state");
     const expectedRevision = String(
@@ -2641,6 +2650,8 @@ describe.sequential("identity/access PostgreSQL seam", () => {
           BREEV_MAIN_DEVICE_ID: credentials.deviceId,
           BREEV_MAIN_DEVICE_SECRET: credentials.deviceSecret,
           BREEV_MAIN_DEVICE_SESSION: credentials.sessionToken,
+          BREEV_AUTH_RATE_LIMIT: String(TEST_AUTH_RATE_LIMIT),
+          BREEV_AUTH_RATE_WINDOW_SECONDS: String(TEST_AUTH_RATE_WINDOW_SECONDS),
           DATABASE_MIGRATION_URL: databaseRoles.migrationUrl,
           DATABASE_URL: databaseRoles.applicationUrl,
           HTTPS_PROXY: "http://127.0.0.1:1",
@@ -2669,6 +2680,25 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       [device.deviceId, hashMainDeviceSecret(device.sessionToken)],
     );
     return device;
+  }
+
+  async function waitForStableAuthRateWindow(): Promise<void> {
+    await administrator.query(
+      `with clock as (
+         select $1::numeric
+                  - mod(extract(epoch from clock_timestamp()), $1::numeric)
+                as seconds_remaining
+       )
+       select pg_sleep(
+         case
+           when seconds_remaining < $2::numeric
+             then (seconds_remaining + 0.1)::double precision
+           else 0
+         end
+       )
+       from clock`,
+      [TEST_AUTH_RATE_WINDOW_SECONDS, TEST_AUTH_RATE_WINDOW_GUARD_SECONDS],
+    );
   }
 
   async function login(

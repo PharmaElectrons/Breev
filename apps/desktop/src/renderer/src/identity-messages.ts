@@ -145,6 +145,15 @@ const permissionLabels: Record<
         "إنشاء مسودات المشتريات واستئنافها وتحديثها واستبعادها وإدخال بنودها.",
       name: "إدارة مسودات المشتريات",
     },
+    "purchases.posted.view": {
+      description: "البحث في فواتير الشراء المُرحّلة وفتح نسخها التاريخية.",
+      name: "عرض المشتريات المُرحّلة",
+    },
+    "purchases.costs.view": {
+      description:
+        "عرض تكلفة المورد الأساسية والتكلفة بعد الخصم في سجل المشتريات.",
+      name: "عرض تكاليف المشتريات",
+    },
     "suppliers.manage": {
       description:
         "إنشاء سجلات الموردين وتعديلها وأرشفتها ودمجها وإدارة شروطها.",
@@ -193,6 +202,16 @@ const permissionLabels: Record<
       description:
         "Create, resume, update, and discard purchase drafts and enter their rows.",
       name: "Manage purchase drafts",
+    },
+    "purchases.posted.view": {
+      description:
+        "Search posted purchase invoices and open historical copies.",
+      name: "View posted purchases",
+    },
+    "purchases.costs.view": {
+      description:
+        "View Primary Supplier Cost and Cost After Discount in purchase history.",
+      name: "View purchase costs",
     },
     "suppliers.manage": {
       description:

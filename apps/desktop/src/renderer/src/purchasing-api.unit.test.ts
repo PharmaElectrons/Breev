@@ -5,6 +5,8 @@ import {
   postPurchase,
   purchasingCommandAttempt,
   readPendingPurchasePost,
+  requestPostedPurchase,
+  requestPostedPurchases,
   rememberPurchasePost,
   requestSuppliers,
 } from "./purchasing-api";
@@ -185,5 +187,95 @@ describe("Purchasing REST client", () => {
     };
     expect(readPendingPurchasePost(address)).toBeNull();
     expect(address.hash).toBe("#/purchases");
+  });
+
+  it("encodes posted purchase filters on the read-only register route", async () => {
+    const result = { costVisibility: "visible", purchases: [] } as const;
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      requestPostedPurchases("http://127.0.0.1:3000", {
+        direction: "ascending",
+        from: "2026-01-01",
+        query: "INV-100",
+        sort: "supplier",
+        to: "2026-12-31",
+      }),
+    ).resolves.toEqual(result);
+    const [url, init] = fetch.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe("/purchases/posted");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      direction: "ascending",
+      from: "2026-01-01",
+      query: "INV-100",
+      sort: "supplier",
+      to: "2026-12-31",
+    });
+    expect(init.method).toBe("GET");
+  });
+
+  it("reads one posted purchase without exposing a mutation method", async () => {
+    const id = "018fa000-0000-7000-8000-000000000002";
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          allowanceFils: null,
+          allowancePercentageSnapshot: null,
+          costAfterDiscountFils: null,
+          costVisibility: "hidden-by-permission",
+          id,
+          invoiceDate: "2026-09-08",
+          navigation: {
+            nextId: null,
+            position: 1,
+            previousId: null,
+            total: 1,
+          },
+          number: { series: "P", value: "1", year: 2026 },
+          postedAt: "2026-09-08T10:00:00.000Z",
+          postedBy: "018fa000-0000-7000-8000-000000000005",
+          primarySupplierCostFils: null,
+          rows: [
+            {
+              baseUnitsPerEnteredUnit: "1",
+              costAfterDiscountFils: null,
+              enteredQuantity: "1",
+              expiryDate: null,
+              id: "018fa000-0000-7000-8000-000000000007",
+              inventoryUnitName: "Strip",
+              inventoryUnitQuantity: "1",
+              itemDisplayName: "Panadol snapshot",
+              itemId: "018fa000-0000-7000-8000-000000000008",
+              linePrimarySupplierCostFils: null,
+              lotNumber: null,
+              ordinal: 1,
+              primarySupplierCostFils: null,
+              retailPriceFils: "1500",
+              unit: { kind: "inventory-unit" },
+            },
+          ],
+          settlementContext: "debt",
+          supplierId: "018fa000-0000-7000-8000-000000000004",
+          supplierInvoiceNumber: "SUP-1",
+          supplierNameSnapshot: "Supplier snapshot",
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      requestPostedPurchase("http://127.0.0.1:3000", id),
+    ).resolves.toMatchObject({ id, costVisibility: "hidden-by-permission" });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(`/purchases/posted/${id}`, "http://127.0.0.1:3000"),
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 });

@@ -540,14 +540,21 @@ export class IdentityAccessService {
            )`,
         [pharmacyId, ownerId],
       );
-      // Purchasing employees can perform their core draft-entry workflow by
-      // default. Supplier master-data changes stay separately grantable.
+      // Purchasing employees can perform their core draft and posted-review
+      // workflows by default. Supplier master-data changes stay separately
+      // grantable, and costs remain a distinct permission for custom roles.
       await client.query(
         `insert into role_permission_grants
            (pharmacy_id, role_id, permission_name, granted_by)
-         select $1, id, 'purchases.drafts.manage', $2
-         from pharmacy_roles
-         where pharmacy_id = $1 and role_key = 'purchasing_employee'`,
+         select $1, role_row.id, permission_name.name, $2
+         from pharmacy_roles role_row
+         cross join (values
+           ('purchases.drafts.manage'),
+           ('purchases.posted.view'),
+           ('purchases.costs.view')
+         ) as permission_name(name)
+         where role_row.pharmacy_id = $1
+           and role_row.role_key = 'purchasing_employee'`,
         [pharmacyId, ownerId],
       );
       await client.query(

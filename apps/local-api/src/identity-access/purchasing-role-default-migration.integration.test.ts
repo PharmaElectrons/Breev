@@ -35,7 +35,7 @@ interface JournalEntry {
   readonly tag: string;
 }
 
-describe.sequential("migration 0016: purchasing role default", () => {
+describe.sequential("purchasing role default migrations", () => {
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -133,7 +133,7 @@ describe.sequential("migration 0016: purchasing role default", () => {
       "catalog.item.search",
       "suppliers.manage",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "1", role: "1" });
+    expect(await revisions()).toEqual({ pharmacy: "2", role: "1" });
 
     // Recreate the exact legacy default and execute the migration body to
     // prove the eligible path independently of Drizzle's migration journal.
@@ -152,14 +152,29 @@ describe.sequential("migration 0016: purchasing role default", () => {
       "catalog.item.search",
       "purchases.drafts.manage",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "2", role: "2" });
+    expect(await revisions()).toEqual({ pharmacy: "3", role: "2" });
 
-    await administrator.query(migrationSql);
+    const reviewMigrationSql = await readFile(
+      path.join(MIGRATIONS_FOLDER, "0018_review_posted_purchases.sql"),
+      "utf8",
+    );
+    await administrator.query(reviewMigrationSql);
     expect(await purchasingGrants()).toEqual([
       "catalog.item.search",
+      "purchases.costs.view",
       "purchases.drafts.manage",
+      "purchases.posted.view",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "2", role: "2" });
+    expect(await revisions()).toEqual({ pharmacy: "4", role: "3" });
+
+    await administrator.query(reviewMigrationSql);
+    expect(await purchasingGrants()).toEqual([
+      "catalog.item.search",
+      "purchases.costs.view",
+      "purchases.drafts.manage",
+      "purchases.posted.view",
+    ]);
+    expect(await revisions()).toEqual({ pharmacy: "4", role: "3" });
   }, 120_000);
 
   async function purchasingGrants(): Promise<string[]> {
