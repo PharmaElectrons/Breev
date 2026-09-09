@@ -26,3 +26,6 @@ test-results
 .terminal-state/
 skills-lock.json
 notes.md
+
+!.agents/skills/pr-review-remediate/
+!.agents/skills/pr-review-remediate/**
