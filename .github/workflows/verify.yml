@@ -80,7 +80,12 @@ jobs:
         run: pnpm test:integration
 
       - name: Install browser test dependencies
-        run: pnpm --filter @breev/desktop exec playwright install --with-deps chromium
+        run: |
+          # Playwright downloads its own Chromium. Keep an unrelated branded
+          # Chrome repository from making apt dependency installation fail.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list.save
+          pnpm --filter @breev/desktop exec playwright install --with-deps chromium
 
       - name: Verify renderer browser seam
         run: pnpm test:browser
