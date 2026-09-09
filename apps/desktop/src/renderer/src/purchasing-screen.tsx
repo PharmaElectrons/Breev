@@ -372,15 +372,17 @@ export function PurchasingRouteView({
   return (
     <section className="purchasing-workspace" aria-label={copy.title}>
       <div className="purchase-view-tabs" aria-label={copy.title}>
-        <button
-          type="button"
-          className="purchase-view-tab"
-          aria-pressed={view === "invoice"}
-          aria-controls="purchase-invoice-view"
-          onClick={() => setView("invoice")}
-        >
-          <span aria-hidden="true">🧾</span> {copy.invoiceWorkspace}
-        </button>
+        {canManageDrafts ? (
+          <button
+            type="button"
+            className="purchase-view-tab"
+            aria-pressed={view === "invoice"}
+            aria-controls="purchase-invoice-view"
+            onClick={() => setView("invoice")}
+          >
+            <span aria-hidden="true">🧾</span> {copy.invoiceWorkspace}
+          </button>
+        ) : null}
         {canManageDrafts ? (
           <button
             type="button"
@@ -399,14 +401,16 @@ export function PurchasingRouteView({
         >
           <span aria-hidden="true">🔍</span> {copy.postedInvoices}
         </button>
-        <button
-          type="button"
-          className="purchase-view-tab"
-          disabled
-          title={copy.unavailable}
-        >
-          <span aria-hidden="true">↩</span> {copy.returnInvoice}
-        </button>
+        {canManageDrafts ? (
+          <button
+            type="button"
+            className="purchase-view-tab"
+            disabled
+            title={copy.unavailable}
+          >
+            <span aria-hidden="true">↩</span> {copy.returnInvoice}
+          </button>
+        ) : null}
         {canManageSuppliers ? (
           <button
             type="button"
@@ -418,35 +422,41 @@ export function PurchasingRouteView({
             <span aria-hidden="true">🏬</span> {copy.suppliers}
           </button>
         ) : null}
-        <div className="purchase-document-actions">
-          <button
-            type="button"
-            className="purchase-return-button"
-            disabled
-            title={copy.unavailable}
-          >
-            {copy.returnInvoice}
-          </button>
-          <button
-            type="button"
-            className="quiet-button"
-            disabled
-            title={copy.unavailable}
-            aria-label={copy.print}
-          >
-            <span aria-hidden="true">🖨</span>
-          </button>
-          <button
-            type="button"
-            className="purchase-adjust-button"
-            disabled
-            title={copy.unavailable}
-          >
-            {copy.adjustInvoice}
-          </button>
-        </div>
+        {canManageDrafts ? (
+          <div className="purchase-document-actions">
+            <button
+              type="button"
+              className="purchase-return-button"
+              disabled
+              title={copy.unavailable}
+            >
+              {copy.returnInvoice}
+            </button>
+            <button
+              type="button"
+              className="quiet-button"
+              disabled
+              title={copy.unavailable}
+              aria-label={copy.print}
+            >
+              <span aria-hidden="true">🖨</span>
+            </button>
+            <button
+              type="button"
+              className="purchase-adjust-button"
+              disabled
+              title={copy.unavailable}
+            >
+              {copy.adjustInvoice}
+            </button>
+          </div>
+        ) : null}
       </div>
-      <div id="purchase-invoice-view" hidden={view !== "invoice"}>
+      {!canManageDrafts ? <p role="status">{copy.postedReviewOnly}</p> : null}
+      <div
+        id="purchase-invoice-view"
+        hidden={!canManageDrafts || view !== "invoice"}
+      >
         <form
           id="purchase-header-form"
           className="purchase-header-form"

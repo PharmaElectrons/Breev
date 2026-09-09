@@ -218,6 +218,8 @@ export const purchasingMessages = {
     missingExpiryWarning: "One or more rows have no expiry date.",
     missingLotWarning: "One or more rows have no lot number.",
     postedInvoices: "Posted invoices",
+    postedReviewOnly:
+      "Your role can review posted purchases. Purchase draft entry is hidden because this role does not have draft-management permission.",
     postedPurchaseRegister: "Posted purchase invoices",
     historicalSnapshot: "Historical snapshot",
     snapshotBoundary:
@@ -476,6 +478,8 @@ export const purchasingMessages = {
     missingExpiryWarning: "يوجد بند واحد أو أكثر بلا تاريخ انتهاء.",
     missingLotWarning: "يوجد بند واحد أو أكثر بلا رقم تشغيلة.",
     postedInvoices: "الفواتير المُرحّلة",
+    postedReviewOnly:
+      "يمكن لدورك مراجعة المشتريات المُرحّلة. أُخفي إدخال مسودات الشراء لأن هذا الدور لا يملك صلاحية إدارتها.",
     postedPurchaseRegister: "فواتير الشراء المُرحّلة",
     historicalSnapshot: "لقطة تاريخية",
     snapshotBoundary:

@@ -1110,6 +1110,43 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
   });
 
+  test("keeps posted-review-only roles out of the purchase draft workspace", async ({
+    page,
+  }) => {
+    await page.route("**/identity/state", async (route) => {
+      const response = await route.fetch();
+      const identity = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        response,
+        json: {
+          ...identity,
+          allowedPermissions: ["purchases.posted.view"],
+        },
+      });
+    });
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+
+    const dialog = page.getByRole("dialog", {
+      name: "Posted purchase invoices",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Close" }).click();
+
+    await expect(
+      page.getByText(
+        "Your role can review posted purchases. Purchase draft entry is hidden because this role does not have draft-management permission.",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Posted invoices" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Purchase invoice" }),
+    ).toHaveCount(0);
+    await expect(page.locator("#purchase-invoice-view")).toBeHidden();
+  });
+
   test("captures bilingual list and detail evidence in both themes", async ({
     page,
   }) => {
