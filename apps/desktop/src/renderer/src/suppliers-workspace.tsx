@@ -6,9 +6,11 @@ import {
   createSupplier,
   editSupplier,
   mergeSupplier,
+  PurchasingApiDenied,
   purchasingCommandAttempt,
   type PurchasingCommandAttempt,
 } from "./purchasing-api";
+import { IdentityApiDenied } from "./identity-api";
 import { purchasingMessages } from "./purchasing-messages";
 
 interface SupplierExtraDetails {
@@ -124,7 +126,6 @@ export function SuppliersWorkspace({
       setDuePeriodDays(details.duePeriodDays);
       setAlertWindowDays(details.alertWindowDays);
       setSurvivorId("");
-      setMessage(null);
     } else {
       setName("");
       setPhone("");
@@ -135,9 +136,7 @@ export function SuppliersWorkspace({
       setDuePeriodDays(30);
       setAlertWindowDays(7);
       setSurvivorId("");
-      setMessage(null);
     }
-    supplierCommandAttempt.current = null;
   }, [selected]);
 
   const supplierDrafts = useMemo(
@@ -177,7 +176,44 @@ export function SuppliersWorkspace({
     });
   };
 
+  const supplierSaveFailure = (cause: unknown): string => {
+    if (cause instanceof IdentityApiDenied) {
+      if (cause.denial.code === "permission-denied")
+        return copy.supplierSavePermissionDenied;
+      if (
+        cause.denial.code === "session-expired" ||
+        cause.denial.code === "session-missing" ||
+        cause.denial.code === "session-revoked"
+      )
+        return copy.supplierSaveSessionEnded;
+    }
+    if (cause instanceof PurchasingApiDenied) {
+      if (cause.denial.code === "body-invalid") return copy.supplierSaveInvalid;
+      if (
+        cause.denial.code === "allowance-rate-date-conflict" ||
+        cause.denial.code === "idempotency-conflict" ||
+        cause.denial.code === "supplier-archived" ||
+        cause.denial.code === "supplier-merged" ||
+        cause.denial.code === "supplier-not-found" ||
+        cause.denial.code === "version-conflict"
+      )
+        return copy.supplierSaveConflict;
+    }
+    return copy.supplierSaveUnavailable;
+  };
+
+  const refreshAfterSupplierChange = async (): Promise<boolean> => {
+    try {
+      await onChanged();
+      return true;
+    } catch {
+      setMessage(copy.supplierSavedRefreshFailed);
+      return false;
+    }
+  };
+
   const chooseNew = () => {
+    supplierCommandAttempt.current = null;
     setSelectedId(null);
     setName(isAr ? "مذخر جديد" : "New supplier");
     setPhone("");
@@ -189,6 +225,12 @@ export function SuppliersWorkspace({
     setAlertWindowDays(7);
     setSurvivorId("");
     setMessage(null);
+  };
+
+  const chooseSupplier = (id: string) => {
+    supplierCommandAttempt.current = null;
+    setMessage(null);
+    setSelectedId(id);
   };
 
   const save = async (event?: React.FormEvent) => {
@@ -239,9 +281,10 @@ export function SuppliersWorkspace({
             });
       setSelectedId(saved.id);
       setMessage(copy.supplierSaved);
-      await onChanged();
-    } catch {
-      setMessage(copy.error);
+      if (await refreshAfterSupplierChange())
+        supplierCommandAttempt.current = null;
+    } catch (cause) {
+      setMessage(supplierSaveFailure(cause));
     } finally {
       setBusy(false);
     }
@@ -267,9 +310,10 @@ export function SuppliersWorkspace({
       });
       setSelectedId(null);
       setMessage(copy.supplierSaved);
-      await onChanged();
-    } catch {
-      setMessage(copy.error);
+      if (await refreshAfterSupplierChange())
+        supplierCommandAttempt.current = null;
+    } catch (cause) {
+      setMessage(supplierSaveFailure(cause));
     } finally {
       setBusy(false);
     }
@@ -296,9 +340,10 @@ export function SuppliersWorkspace({
       });
       setSelectedId(null);
       setMessage(copy.supplierSaved);
-      await onChanged();
-    } catch {
-      setMessage(copy.error);
+      if (await refreshAfterSupplierChange())
+        supplierCommandAttempt.current = null;
+    } catch (cause) {
+      setMessage(supplierSaveFailure(cause));
     } finally {
       setBusy(false);
     }
@@ -343,7 +388,7 @@ export function SuppliersWorkspace({
                 key={s.id}
                 type="button"
                 aria-pressed={isSel}
-                onClick={() => setSelectedId(s.id)}
+                onClick={() => chooseSupplier(s.id)}
                 className={`supplier-tile w-full text-start px-3 py-2 border-b border-border/50 transition hover:bg-primary/10 ${
                   isSel
                     ? "bg-primary/15 border-inline-start-4 border-inline-start-primary"
@@ -417,7 +462,14 @@ export function SuppliersWorkspace({
             disabled={busy || !name.trim()}
             className="px-4 py-2 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition"
           >
-            {busy ? "..." : `💾 ${copy.save}`}
+            {busy ? (
+              "..."
+            ) : (
+              <>
+                <span aria-hidden="true">💾</span>
+                <span>{copy.save}</span>
+              </>
+            )}
           </button>
         </div>
 

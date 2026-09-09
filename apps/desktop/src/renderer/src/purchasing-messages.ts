@@ -58,6 +58,18 @@ export const purchasingMessages = {
     mergeInto: "Merge into",
     mergeSupplier: "Merge supplier",
     supplierSaved: "Supplier saved.",
+    supplierSavedRefreshFailed:
+      "Supplier saved, but the list could not be refreshed. Reopen Purchases to refresh it.",
+    supplierSaveConflict:
+      "The supplier changed while you were editing it. Refresh the list and try again.",
+    supplierSaveInvalid:
+      "The supplier was not saved because one of its values is invalid.",
+    supplierSavePermissionDenied:
+      "Your role does not have permission to manage suppliers.",
+    supplierSaveSessionEnded:
+      "Your session ended before the supplier could be saved. Sign in and try again.",
+    supplierSaveUnavailable:
+      "The local server could not save the supplier. Check the connection and try again.",
     drafts: "Purchase drafts",
     draftRegister: "Saved purchase drafts",
     scrollDrafts: "Scrollable purchase draft table",
@@ -275,6 +287,16 @@ export const purchasingMessages = {
     mergeInto: "دمج في",
     mergeSupplier: "دمج المورد",
     supplierSaved: "تم حفظ المورد.",
+    supplierSavedRefreshFailed:
+      "تم حفظ المورد، لكن تعذر تحديث القائمة. أعد فتح المشتريات لتحديثها.",
+    supplierSaveConflict:
+      "تغيرت بيانات المورد أثناء التعديل. حدّث القائمة ثم أعد المحاولة.",
+    supplierSaveInvalid: "لم يتم حفظ المورد لأن إحدى القيم غير صالحة.",
+    supplierSavePermissionDenied: "لا يملك دورك صلاحية إدارة بيانات الموردين.",
+    supplierSaveSessionEnded:
+      "انتهت الجلسة قبل حفظ المورد. سجّل الدخول ثم أعد المحاولة.",
+    supplierSaveUnavailable:
+      "تعذر على الخادم المحلي حفظ المورد. تحقق من الاتصال ثم أعد المحاولة.",
     drafts: "مسودات الشراء",
     draftRegister: "مسودات فواتير الشراء",
     scrollDrafts: "جدول مسودات الشراء القابل للتمرير",
