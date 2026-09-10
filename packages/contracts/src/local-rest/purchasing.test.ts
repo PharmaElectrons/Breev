@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   PURCHASE_POSTING_ACCOUNT_CODES,
+  PURCHASE_ADJUSTMENT_REASONS,
   PURCHASING_CONTRACTS,
   allowancePercentageSchema,
+  purchaseAdjustmentDraftCreateRequestSchema,
+  purchaseAdjustmentDraftSchema,
+  purchaseAdjustmentPostRequestSchema,
+  purchaseAdjustmentSummarySchema,
   purchasePostedDetailSchema,
   purchasePostedListRequestSchema,
   purchasePostedListResponseSchema,
@@ -172,7 +177,7 @@ describe("supplier and purchase draft contracts", () => {
   });
 
   it("has no supplier, draft, or posting hard-delete route", () => {
-    expect(PURCHASING_CONTRACTS).toHaveLength(17);
+    expect(PURCHASING_CONTRACTS).toHaveLength(24);
     expect(
       PURCHASING_CONTRACTS.map((contract) => contract.method),
     ).not.toContain("DELETE");
@@ -458,14 +463,19 @@ describe("supplier and purchase draft contracts", () => {
     ).toMatchObject({ defaultAllowancePercentage: "3.25" });
   });
 
-  it("keeps posted purchase review routes read-only", () => {
+  it("keeps posted purchase facts read-only while allowing linked drafts", () => {
     const reviewContracts = PURCHASING_CONTRACTS.filter((contract) =>
       contract.path.startsWith("/purchases/posted"),
     );
     expect(reviewContracts.map((contract) => contract.method)).toEqual([
       "GET",
       "GET",
+      "POST",
+      "GET",
     ]);
+    expect(reviewContracts.map((contract) => contract.method)).not.toContain(
+      "PUT",
+    );
     expect(purchasePostedPath(POSTING_ID)).toBe(
       `/purchases/posted/${POSTING_ID}`,
     );
@@ -548,10 +558,13 @@ describe("supplier and purchase draft contracts", () => {
   it("validates an immutable posted detail snapshot without live master fields", () => {
     const posted = postedPurchase();
     const detail = {
+      activeAdjustmentDrafts: [],
+      adjustments: [],
       allowanceFils: posted.allowanceFils,
       allowancePercentageSnapshot: posted.allowanceSnapshot.percentage,
       costAfterDiscountFils: posted.costAfterDiscountFils,
       costVisibility: "visible",
+      canAdjust: true,
       id: posted.id,
       invoiceDate: posted.invoiceDate,
       navigation: {
@@ -593,5 +606,134 @@ describe("supplier and purchase draft contracts", () => {
         costVisibility: "hidden-by-setting",
       }).success,
     ).toBe(false);
+  });
+
+  it("publishes exactly the five mandatory adjustment reasons", () => {
+    expect(PURCHASE_ADJUSTMENT_REASONS).toEqual([
+      "quantity error",
+      "price error",
+      "invoice-number error",
+      "supplier error",
+      "other",
+    ]);
+    expect(
+      purchaseAdjustmentDraftCreateRequestSchema.safeParse({
+        evidence: null,
+        idempotencyKey: COMMAND_ID,
+      }).success,
+    ).toBe(false);
+    expect(
+      purchaseAdjustmentDraftCreateRequestSchema.safeParse({
+        evidence: null,
+        idempotencyKey: COMMAND_ID,
+        reason: "return",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates durable adjustment drafts, signed summaries, and confirmation", () => {
+    const snapshot = {
+      baseUnitsPerEnteredUnit: "1",
+      batchId: BATCH_ID,
+      costFils: "1000",
+      enteredQuantity: "8",
+      expiryDate: "2028-10-31",
+      inventoryUnitName: "Strip",
+      inventoryUnitQuantity: "8",
+      itemDisplayName: "Panadol",
+      itemId: "018fa000-0000-7000-8000-00000000000b",
+      lineageId: ROW_ID,
+      lotNumber: "LOT-49",
+      marginPercentage: null,
+      notes: null,
+      ordinal: 1,
+      originalRowId: ROW_ID,
+      pricingMethod: "by-price",
+      retailPriceFils: "1200",
+      unit: { kind: "inventory-unit" },
+    } as const;
+    expect(
+      purchaseAdjustmentDraftSchema.parse({
+        allowancePercentageSnapshot: "2.5",
+        createdAt: "2026-06-15T09:00:00.000Z",
+        evidence: null,
+        id: DRAFT_ID,
+        invoiceDate: "2026-06-15",
+        originalNumber: { series: "P", value: "1", year: 2026 },
+        originalPurchaseId: POSTING_ID,
+        reason: "quantity error",
+        rows: [{ ...snapshot, id: ROW_ID }],
+        settlementContext: "debt",
+        status: "active",
+        supplierId: SUPPLIER_ID,
+        supplierInvoiceNumber: "INV-100",
+        supplierNameSnapshot: "Al-Nahrain",
+        updatedAt: "2026-06-15T09:01:00.000Z",
+        version: "1",
+      }).rows,
+    ).toHaveLength(1);
+    expect(
+      purchaseAdjustmentSummarySchema.parse({
+        allowanceDeltaFils: "-100",
+        confirmationHash: "a".repeat(64),
+        costAfterDiscountDeltaFils: "3900",
+        draftId: DRAFT_ID,
+        draftVersion: "2",
+        headerChanges: [],
+        primarySupplierCostDeltaFils: "4000",
+        quantityDelta: "4",
+        rowDeltas: [
+          {
+            after: snapshot,
+            before: {
+              ...snapshot,
+              enteredQuantity: "4",
+              inventoryUnitQuantity: "4",
+            },
+            changes: [{ after: "8", before: "4", field: "entered-quantity" }],
+            kind: "changed",
+            lineageId: ROW_ID,
+            primarySupplierCostDeltaFils: "4000",
+            quantityDelta: "4",
+          },
+        ],
+        stockEffects: [
+          {
+            batchId: BATCH_ID,
+            itemDisplayName: "Panadol",
+            itemId: snapshot.itemId,
+            primarySupplierCostDeltaFils: "4000",
+            quantityDelta: "4",
+          },
+        ],
+        supplierEffects: [
+          {
+            deltaFils: "4000",
+            supplierId: SUPPLIER_ID,
+            supplierNameSnapshot: "Al-Nahrain",
+          },
+        ],
+      }).quantityDelta,
+    ).toBe("4");
+    expect(
+      purchaseAdjustmentPostRequestSchema.safeParse({
+        expectedVersion: "2",
+        idempotencyKey: COMMAND_ID,
+      }).success,
+    ).toBe(false);
+    expect(
+      purchasingDenialSchema.parse({
+        code: "adjustment-batch-conflict",
+        fieldErrors: [
+          {
+            code: "invalid",
+            path: ["rows"],
+            rule: "purchase.adjustment.batch-insufficient",
+          },
+        ],
+        requestId: POSTING_ID,
+        status: "denied",
+      }).fieldErrors[0]?.rule,
+    ).toBe("purchase.adjustment.batch-insufficient");
   });
 });

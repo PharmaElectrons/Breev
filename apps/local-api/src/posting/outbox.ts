@@ -9,6 +9,7 @@ import type { JsonObject } from "./canonical-hash.js";
  */
 export const POSTING_EVENT_TYPES = {
   pharmacySettingsChanged: "pharmacy.settings.changed",
+  purchaseInvoiceAdjusted: "purchase.invoice.adjusted",
   purchaseInvoicePosted: "purchase.invoice.posted",
 } as const;
 
@@ -29,6 +30,7 @@ export const POSTING_ENVELOPE_VERSIONS: {
   readonly [Type in PostingEventType]: readonly number[];
 } = {
   "pharmacy.settings.changed": [1],
+  "purchase.invoice.adjusted": [1],
   "purchase.invoice.posted": [1],
 };
 
@@ -37,6 +39,7 @@ export const CURRENT_ENVELOPE_VERSIONS: {
   readonly [Type in PostingEventType]: number;
 } = {
   "pharmacy.settings.changed": 1,
+  "purchase.invoice.adjusted": 1,
   "purchase.invoice.posted": 1,
 };
 

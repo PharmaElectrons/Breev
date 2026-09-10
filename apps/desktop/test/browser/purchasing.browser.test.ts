@@ -78,12 +78,17 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     import.meta.dirname,
     "../../../../evidence/issue-51/after",
   );
+  const adjustmentEvidenceDir = path.resolve(
+    import.meta.dirname,
+    "../../../../evidence/issue-52/after",
+  );
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
     await mkdir(rowEvidenceDir, { recursive: true });
     await mkdir(postingEvidenceDir, { recursive: true });
     await mkdir(reviewEvidenceDir, { recursive: true });
+    await mkdir(adjustmentEvidenceDir, { recursive: true });
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
     if (administratorUrl === undefined) {
       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
@@ -947,8 +952,18 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   });
 
   test("searches and reviews immutable purchases entirely by keyboard", async ({
-    page,
+    browser,
   }) => {
+    const context = await browser.newContext({
+      recordVideo: {
+        dir: path.resolve(
+          import.meta.dirname,
+          "../../../../test-results/issue-52-video",
+        ),
+        size: { height: 768, width: 1024 },
+      },
+    });
+    const page = await context.newPage();
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     const opener = page.getByRole("button", { name: "Posted invoices" });
@@ -1050,17 +1065,83 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.keyboard.press("Escape");
     await expect(itemDrilldown).toBeFocused();
 
+    const backToResults = dialog.getByRole("button", {
+      name: "Back to results",
+    });
+    await backToResults.focus();
+    await page.keyboard.press("Enter");
+    const adjustmentInvoice = dialog
+      .getByRole("button", { name: /Open invoice P/u })
+      .first();
+    await adjustmentInvoice.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toContainText("BROWSER-REVIEW");
+    await dialog.screenshot({
+      animations: "disabled",
+      path: path.join(
+        adjustmentEvidenceDir,
+        "purchase-adjustment-before-en-light.png",
+      ),
+    });
+
     const adjustment = dialog.getByRole("button", { name: "Edit Invoice" });
     await adjustment.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/adjustment$/u);
     await expect(
       dialog.getByRole("heading", {
-        name: "Purchase Invoice Adjustment draft",
+        name: "Purchase Invoice Adjustment",
       }),
     ).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(adjustment).toBeFocused();
+    await dialog
+      .getByRole("combobox", { name: "Reason" })
+      .selectOption("quantity error");
+    await dialog
+      .getByRole("button", { name: "Create adjustment copy" })
+      .click();
+    await dialog
+      .getByRole("button", { name: "Back to original invoice" })
+      .click();
+    await expect(
+      dialog.getByText(
+        "This adjustment is unfinished. Continue it or delete the draft before leaving.",
+      ),
+    ).toBeVisible();
+    await dialog.getByRole("button", { name: "Continue draft" }).click();
+    const adjustedQuantity = dialog.getByRole("textbox", {
+      name: new RegExp(`Quantity ${purchaseProduct.displayName}`, "u"),
+    });
+    await adjustedQuantity.fill("8");
+    await dialog.getByRole("button", { name: "Save and review Delta" }).click();
+    await expect(
+      dialog.getByRole("heading", { name: "Difference and impact" }),
+    ).toBeVisible();
+    await expect(dialog).toContainText("4 → 8 (4)");
+    await dialog.screenshot({
+      animations: "disabled",
+      path: path.join(
+        adjustmentEvidenceDir,
+        "purchase-adjustment-summary-en-light.png",
+      ),
+    });
+    await dialog
+      .getByRole("button", { name: "Confirm and post Delta" })
+      .click();
+    await expect(
+      dialog.getByRole("heading", { name: "Adjustment posted" }),
+    ).toBeVisible();
+    await expect(dialog).toContainText("-A01/");
+    await dialog
+      .getByRole("button", { name: "Back to original invoice" })
+      .click();
+    const adjustmentLink = dialog.getByRole("button", { name: /-A01\//u });
+    await expect(adjustmentLink).toBeVisible();
+    await adjustmentLink.click();
+    await expect(dialog.locator("#posted-adjustment-title")).toContainText(
+      "-A01/",
+    );
+    await dialog.getByRole("button", { name: "Back to invoice" }).click();
+    await expect(adjustmentLink).toBeFocused();
     const purchaseReturn = dialog.getByRole("button", {
       name: "Purchase Return",
     });
@@ -1078,6 +1159,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(opener).toBeFocused();
+    const video = page.video();
+    await context.close();
+    await video?.saveAs(
+      path.join(adjustmentEvidenceDir, "purchase-adjustment-keyboard.webm"),
+    );
   });
 
   test("renders explicit denied and recoverable unavailable register states", async ({
@@ -1189,6 +1275,35 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             name: locale === "en" ? /Open invoice P/u : /فتح الفاتورة P/u,
           })
           .first()
+          .click();
+        await expect(dialog.locator("#posted-detail-title")).toBeVisible();
+        await dialog
+          .getByRole("button", {
+            name: locale === "en" ? "Edit Invoice" : "تعديل الفاتورة",
+          })
+          .click();
+        await expect(
+          dialog.getByRole("heading", {
+            name:
+              locale === "en"
+                ? "Purchase Invoice Adjustment"
+                : "تعديل فاتورة شراء",
+          }),
+        ).toBeVisible();
+        await dialog.screenshot({
+          animations: "disabled",
+          path: path.join(
+            adjustmentEvidenceDir,
+            `purchase-adjustment-${locale}-${theme}.png`,
+          ),
+        });
+        await dialog
+          .getByRole("button", {
+            name:
+              locale === "en"
+                ? "Back to original invoice"
+                : "العودة إلى الفاتورة الأصلية",
+          })
           .click();
         await expect(dialog.locator("#posted-detail-title")).toBeVisible();
         expect(
@@ -1391,7 +1506,7 @@ async function postPurchaseForReview(
     purchaseDraftRowsPath(draft.id),
     {
       costFils: "80000",
-      enteredQuantity: "2",
+      enteredQuantity: "4",
       expectedVersion: draft.version,
       expiryDate: "2029-05-31",
       idempotencyKey: uuidV7(),

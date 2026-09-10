@@ -14,6 +14,7 @@ describe("posting outbox envelope rules", () => {
   it("publishes the event type names domain readers depend on", () => {
     expect(POSTING_EVENT_TYPES).toEqual({
       pharmacySettingsChanged: "pharmacy.settings.changed",
+      purchaseInvoiceAdjusted: "purchase.invoice.adjusted",
       purchaseInvoicePosted: "purchase.invoice.posted",
     });
   });
@@ -21,10 +22,12 @@ describe("posting outbox envelope rules", () => {
   it("registers exactly the envelope versions that exist today", () => {
     expect(POSTING_ENVELOPE_VERSIONS).toEqual({
       "pharmacy.settings.changed": [1],
+      "purchase.invoice.adjusted": [1],
       "purchase.invoice.posted": [1],
     });
     expect(CURRENT_ENVELOPE_VERSIONS).toEqual({
       "pharmacy.settings.changed": 1,
+      "purchase.invoice.adjusted": 1,
       "purchase.invoice.posted": 1,
     });
   });

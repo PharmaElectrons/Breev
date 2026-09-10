@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  PostedPurchaseAdjustment,
   Product,
   PurchasePostedDetail,
   PurchasePostedListRequest,
@@ -11,9 +12,11 @@ import { IdentityApiDenied } from "./identity-api";
 import {
   PurchasingApiDenied,
   requestPostedPurchase,
+  requestPostedPurchaseAdjustment,
   requestPostedPurchases,
   requestSupplier,
 } from "./purchasing-api";
+import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
 
@@ -38,12 +41,17 @@ export function PostedPurchaseReview({
   const detailOpenerRef = useRef<HTMLElement | null>(null);
   const drilldownOpenerRef = useRef<HTMLElement | null>(null);
   const correctionOpenerRef = useRef<HTMLElement | null>(null);
+  const postedAdjustmentOpenerRef = useRef<HTMLElement | null>(null);
   const [list, setList] = useState<PurchasePostedListResponse | null>(null);
   const [detail, setDetail] = useState<PurchasePostedDetail | null>(null);
+  const [postedAdjustment, setPostedAdjustment] =
+    useState<PostedPurchaseAdjustment | null>(null);
   const [currentRecord, setCurrentRecord] = useState<CurrentRecord | null>(
     null,
   );
   const [correction, setCorrection] = useState<CorrectionKind | null>(null);
+  const [adjustmentDraftActive, setAdjustmentDraftActive] = useState(false);
+  const [adjustmentLeaveRequest, setAdjustmentLeaveRequest] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [denial, setDenial] = useState<string | null>(null);
@@ -62,7 +70,10 @@ export function PostedPurchaseReview({
       dialog.showModal();
       setDetail(null);
       setCurrentRecord(null);
+      setPostedAdjustment(null);
       setCorrection(null);
+      setAdjustmentDraftActive(false);
+      setAdjustmentLeaveRequest(0);
       setAnnouncement("");
       const addressed = postedPurchaseAddress(window.location.hash);
       if (addressed === null) {
@@ -101,6 +112,7 @@ export function PostedPurchaseReview({
     setAnnouncement("");
     try {
       setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+      setPostedAdjustment(null);
       setCurrentRecord(null);
       setCorrection(addressedCorrection);
       window.history.replaceState(
@@ -182,6 +194,31 @@ export function PostedPurchaseReview({
     }
   }
 
+  async function openPostedAdjustment(
+    adjustmentId: string,
+    opener: HTMLElement,
+  ): Promise<void> {
+    postedAdjustmentOpenerRef.current = opener;
+    setLoading(true);
+    setError(null);
+    setDenial(null);
+    try {
+      setPostedAdjustment(
+        await requestPostedPurchaseAdjustment(baseUrl, adjustmentId),
+      );
+    } catch (caught) {
+      handleFailure(caught);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function closePostedAdjustment(): void {
+    const opener = postedAdjustmentOpenerRef.current;
+    setPostedAdjustment(null);
+    focusAfterRender(opener);
+  }
+
   function openCorrection(kind: CorrectionKind, opener: HTMLElement): void {
     if (detail === null) return;
     correctionOpenerRef.current = opener;
@@ -193,6 +230,7 @@ export function PostedPurchaseReview({
     if (detail === null) return;
     const opener = correctionOpenerRef.current;
     setCorrection(null);
+    setAdjustmentDraftActive(false);
     window.history.replaceState(null, "", `#/purchases/posted/${detail.id}`);
     focusAfterRender(opener);
   }
@@ -246,7 +284,11 @@ export function PostedPurchaseReview({
           closeDrilldown();
         } else if (correction !== null) {
           event.preventDefault();
-          closeCorrection();
+          if (correction === "adjustment" && adjustmentDraftActive) {
+            setAdjustmentLeaveRequest((value) => value + 1);
+          } else {
+            closeCorrection();
+          }
         }
       }}
       onClose={handleDialogClose}
@@ -261,7 +303,13 @@ export function PostedPurchaseReview({
         <button
           type="button"
           className="quiet-button"
-          onClick={() => dialogRef.current?.close()}
+          onClick={() => {
+            if (correction === "adjustment" && adjustmentDraftActive) {
+              setAdjustmentLeaveRequest((value) => value + 1);
+            } else {
+              dialogRef.current?.close();
+            }
+          }}
         >
           {copy.close}
         </button>
@@ -302,27 +350,48 @@ export function PostedPurchaseReview({
         </div>
       )}
 
-      {correction !== null && detail !== null ? (
+      {postedAdjustment !== null ? (
+        <PostedAdjustmentView
+          adjustment={postedAdjustment}
+          onBack={closePostedAdjustment}
+        />
+      ) : correction !== null && detail !== null ? (
         <section
           className="posted-correction-stage"
-          aria-labelledby="correction-stage-title"
-        >
-          <h3 id="correction-stage-title">
-            {correction === "adjustment"
+          aria-label={
+            correction === "adjustment"
               ? copy.adjustmentStageTitle
-              : copy.returnStageTitle}
-          </h3>
-          <p>{copy.correctionStageUnavailable}</p>
-          <p>
-            {copy.originalRemainsUntouched} <bdi>{formatNumber(detail)}</bdi>
-          </p>
-          <button
-            type="button"
-            className="quiet-button"
-            onClick={closeCorrection}
-          >
-            {copy.backToInvoice}
-          </button>
+              : copy.returnStageTitle
+          }
+        >
+          {correction === "adjustment" ? (
+            <PurchaseAdjustmentWorkflow
+              baseUrl={baseUrl}
+              detail={detail}
+              leaveRequest={adjustmentLeaveRequest}
+              onBack={closeCorrection}
+              onDraftActive={setAdjustmentDraftActive}
+              onPosted={async (purchaseId) => {
+                setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+              }}
+            />
+          ) : (
+            <>
+              <h3 id="correction-stage-title">{copy.returnStageTitle}</h3>
+              <p>{copy.correctionStageUnavailable}</p>
+              <p>
+                {copy.originalRemainsUntouched}{" "}
+                <bdi>{formatNumber(detail)}</bdi>
+              </p>
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={closeCorrection}
+              >
+                {copy.backToInvoice}
+              </button>
+            </>
+          )}
         </section>
       ) : currentRecord !== null ? (
         <CurrentRecordView record={currentRecord} onBack={closeDrilldown} />
@@ -332,6 +401,9 @@ export function PostedPurchaseReview({
           navigate={navigate}
           onBack={backToList}
           onCorrection={openCorrection}
+          onAdjustment={(adjustmentId, opener) =>
+            void openPostedAdjustment(adjustmentId, opener)
+          }
           onItem={(itemId, opener) => void openItem(itemId, opener)}
           onSupplier={(opener) => void openSupplier(opener)}
         />
@@ -500,6 +572,7 @@ function PostedPurchaseDetailView({
   navigate,
   onBack,
   onCorrection,
+  onAdjustment,
   onItem,
   onSupplier,
 }: {
@@ -507,6 +580,7 @@ function PostedPurchaseDetailView({
   readonly navigate: (direction: "next" | "previous") => void;
   readonly onBack: () => void;
   readonly onCorrection: (kind: CorrectionKind, opener: HTMLElement) => void;
+  readonly onAdjustment: (adjustmentId: string, opener: HTMLElement) => void;
   readonly onItem: (itemId: string, opener: HTMLElement) => void;
   readonly onSupplier: (opener: HTMLElement) => void;
 }): React.JSX.Element {
@@ -677,18 +751,45 @@ function PostedPurchaseDetailView({
           </tbody>
         </table>
       </div>
+      {detail.adjustments.length > 0 ? (
+        <section
+          className="posted-adjustment-links"
+          aria-label={copy.adjustmentStageTitle}
+        >
+          <h4>{copy.adjustmentStageTitle}</h4>
+          <ul>
+            {detail.adjustments.map((adjustment) => (
+              <li key={adjustment.id}>
+                <button
+                  type="button"
+                  className="quiet-button"
+                  data-review-focus={`posted-adjustment-${adjustment.id}`}
+                  onClick={(event) =>
+                    onAdjustment(adjustment.id, event.currentTarget)
+                  }
+                >
+                  {formatAdjustmentNumber(adjustment.number)} ·{" "}
+                  {adjustment.reason} · {adjustment.quantityDelta}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <div
         className="posted-correction-actions"
         aria-label={copy.correctionActions}
       >
-        <button
-          type="button"
-          className="purchase-adjust-button"
-          data-review-focus={`adjustment-${detail.id}`}
-          onClick={(event) => onCorrection("adjustment", event.currentTarget)}
-        >
-          {copy.editInvoice}
-        </button>
+        {detail.canAdjust ? (
+          <button
+            type="button"
+            className="purchase-adjust-button"
+            data-review-focus={`adjustment-${detail.id}`}
+            onClick={(event) => onCorrection("adjustment", event.currentTarget)}
+          >
+            {copy.editInvoice}
+          </button>
+        ) : null}
         <button
           type="button"
           className="purchase-return-button"
@@ -765,6 +866,64 @@ function CurrentRecordView({
   );
 }
 
+function PostedAdjustmentView({
+  adjustment,
+  onBack,
+}: {
+  readonly adjustment: PostedPurchaseAdjustment;
+  readonly onBack: () => void;
+}): React.JSX.Element {
+  const { locale } = usePreferences();
+  const copy = purchasingMessages[locale];
+  return (
+    <article
+      className="posted-adjustment-view"
+      aria-labelledby="posted-adjustment-title"
+    >
+      <p className="purchase-context-label">{copy.historicalSnapshot}</p>
+      <h3 id="posted-adjustment-title">
+        {formatAdjustmentNumber(adjustment.number)}
+      </h3>
+      <p>
+        {adjustment.reason} · {formatTimestamp(adjustment.postedAt, locale)}
+      </p>
+      <dl className="posted-purchase-totals">
+        <div>
+          <dt>{copy.quantity}</dt>
+          <dd>
+            <bdi>{adjustment.quantityDelta}</bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.primarySupplierCost}</dt>
+          <dd>
+            <bdi>{adjustment.primarySupplierCostDeltaFils}</bdi> {copy.fils}
+          </dd>
+        </div>
+      </dl>
+      <ul>
+        {adjustment.rowDeltas.map((row) => (
+          <li key={row.lineageId}>
+            {row.after?.itemDisplayName ?? row.before?.itemDisplayName}:{" "}
+            {row.before?.enteredQuantity ?? "0"} →{" "}
+            {row.after?.enteredQuantity ?? "0"} ({row.quantityDelta})
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="quiet-button" onClick={onBack}>
+        {copy.backToInvoice}
+      </button>
+      <button
+        type="button"
+        className="quiet-button"
+        onClick={() => window.print()}
+      >
+        {copy.print}
+      </button>
+    </article>
+  );
+}
+
 function formatNumber(value: {
   readonly number: {
     readonly series: "P";
@@ -773,6 +932,17 @@ function formatNumber(value: {
   };
 }): string {
   return `${value.number.series}${value.number.value}/${value.number.year}`;
+}
+
+function formatAdjustmentNumber(number: {
+  readonly original: {
+    readonly series: "P";
+    readonly value: string;
+    readonly year: number;
+  };
+  readonly suffix: string;
+}): string {
+  return `${number.original.series}${number.original.value}-A${number.suffix.padStart(2, "0")}/${number.original.year}`;
 }
 
 function formatTimestamp(value: string, locale: "ar" | "en"): string {
