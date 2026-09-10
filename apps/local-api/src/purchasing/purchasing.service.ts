@@ -106,6 +106,7 @@ const SUPPLIER_PERMISSION = "suppliers.manage";
 const DRAFT_PERMISSION = "purchases.drafts.manage";
 const POSTED_PERMISSION = "purchases.posted.view";
 const COST_PERMISSION = "purchases.costs.view";
+const ADJUSTMENT_PERMISSION = "purchases.adjustments.manage";
 const POSTGRES_BIGINT_MAXIMUM = 9_223_372_036_854_775_807n;
 const COMMANDS = {
   supplierArchive: "supplier.archive",
@@ -1513,7 +1514,67 @@ export class PurchasingService {
         [context.pharmacyId, purchaseId],
       );
       const costsVisible = costVisibility === "visible";
+      const canAdjust =
+        costsVisible && context.permissions.includes(ADJUSTMENT_PERMISSION);
+      const adjustmentResult = await client.query<{
+        id: string;
+        posted_at: Date;
+        posted_by: string;
+        primary_supplier_cost_delta_fils: string;
+        quantity_delta: string;
+        reason:
+          | "quantity error"
+          | "price error"
+          | "invoice-number error"
+          | "supplier error"
+          | "other";
+        suffix_value: string;
+      }>(
+        `select id, suffix_value::text, posted_at, posted_by, reason,
+                quantity_delta::text, primary_supplier_cost_delta_fils::text
+         from posted_purchase_adjustments
+         where pharmacy_id = $1 and original_purchase_id = $2
+         order by suffix_value, id`,
+        [context.pharmacyId, purchaseId],
+      );
+      const draftResult = canAdjust
+        ? await client.query<{
+            id: string;
+            updated_at: Date;
+            version: string;
+          }>(
+            `select id, updated_at, version::text
+             from purchase_adjustment_drafts
+             where pharmacy_id = $1 and original_purchase_id = $2
+               and status = 'active'
+             order by updated_at desc, id`,
+            [context.pharmacyId, purchaseId],
+          )
+        : { rows: [] };
       return purchasePostedDetailSchema.parse({
+        activeAdjustmentDrafts: draftResult.rows.map((draft) => ({
+          id: draft.id,
+          updatedAt: draft.updated_at.toISOString(),
+          version: draft.version,
+        })),
+        adjustments: adjustmentResult.rows.map((adjustment) => ({
+          id: adjustment.id,
+          number: {
+            original: {
+              series: "P",
+              value: header.number_value,
+              year: header.number_year,
+            },
+            suffix: adjustment.suffix_value,
+          },
+          postedAt: adjustment.posted_at.toISOString(),
+          postedBy: adjustment.posted_by,
+          primarySupplierCostDeltaFils: costsVisible
+            ? adjustment.primary_supplier_cost_delta_fils
+            : null,
+          quantityDelta: adjustment.quantity_delta,
+          reason: adjustment.reason,
+        })),
         allowanceFils: costsVisible ? header.allowance_fils : null,
         allowancePercentageSnapshot: costsVisible
           ? normalizedPercentage(header.allowance_percentage_snapshot)
@@ -1522,6 +1583,7 @@ export class PurchasingService {
           ? header.cost_after_discount_fils
           : null,
         costVisibility,
+        canAdjust,
         id: header.id,
         invoiceDate: header.invoice_date,
         navigation: {
@@ -2470,6 +2532,7 @@ export class PurchasingService {
     action: string,
     permission:
       | typeof DRAFT_PERMISSION
+      | typeof ADJUSTMENT_PERMISSION
       | typeof POSTED_PERMISSION
       | typeof SUPPLIER_PERMISSION,
     fieldErrors: readonly PurchasingFieldError[],
@@ -2505,10 +2568,15 @@ export class PurchasingService {
     action: string,
     permission:
       | typeof DRAFT_PERMISSION
+      | typeof ADJUSTMENT_PERMISSION
       | typeof POSTED_PERMISSION
       | typeof SUPPLIER_PERMISSION,
     code:
-      "draft-not-found" | "posted-purchase-not-found" | "supplier-not-found",
+      | "adjustment-draft-not-found"
+      | "adjustment-original-not-found"
+      | "draft-not-found"
+      | "posted-purchase-not-found"
+      | "supplier-not-found",
     targetId?: string,
   ): Promise<never> {
     const context = await this.identity.requirePermission(request, permission);
@@ -2640,7 +2708,11 @@ export class PurchasingService {
     context: IdentityExecutionContext,
     action: string,
     code:
-      "draft-not-found" | "posted-purchase-not-found" | "supplier-not-found",
+      | "adjustment-draft-not-found"
+      | "adjustment-original-not-found"
+      | "draft-not-found"
+      | "posted-purchase-not-found"
+      | "supplier-not-found",
     targetId?: string,
   ): Promise<PurchasingDenied> {
     const client = await this.localDatabase.requirePool().connect();

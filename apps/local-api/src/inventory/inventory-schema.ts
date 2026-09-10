@@ -87,6 +87,35 @@ export const inventoryMovements = pgTable(
   ],
 );
 
+export const inventoryValueEffects = pgTable(
+  "inventory_value_effects",
+  {
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    productId: uuid("product_id").notNull(),
+    batchId: uuid("batch_id"),
+    quantityDelta: bigint("quantity_delta", { mode: "bigint" }).notNull(),
+    carryingAmountDeltaFils: bigint("carrying_amount_delta_fils", {
+      mode: "bigint",
+    }).notNull(),
+    sourceDocumentType: text("source_document_type").notNull(),
+    sourceDocumentId: uuid("source_document_id").notNull(),
+    sourceRowOrdinal: integer("source_row_ordinal").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdBy: uuid("created_by").notNull(),
+  },
+  (table) => [
+    unique("inventory_value_effects_id_pharmacy_unique").on(
+      table.id,
+      table.pharmacyId,
+    ),
+  ],
+);
+
 export const inventoryValuationState = pgTable(
   "inventory_valuation_state",
   {

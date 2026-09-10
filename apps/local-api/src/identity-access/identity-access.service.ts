@@ -549,6 +549,7 @@ export class IdentityAccessService {
          select $1, role_row.id, permission_name.name, $2
          from pharmacy_roles role_row
          cross join (values
+           ('purchases.adjustments.manage'),
            ('purchases.drafts.manage'),
            ('purchases.posted.view'),
            ('purchases.costs.view')
@@ -2731,13 +2732,34 @@ export class IdentityAccessService {
   public async revalidatePurchasingManagement(
     client: PoolClient,
     expected: IdentityExecutionContext,
-    permission: "purchases.drafts.manage" | "suppliers.manage",
+    permission:
+      | "purchases.adjustments.manage"
+      | "purchases.costs.view"
+      | "purchases.drafts.manage"
+      | "suppliers.manage",
   ): Promise<IdentityExecutionContext> {
     await this.lockIdentity(client, expected.pharmacyId);
     return await this.requirePermissionInTransaction(
       client,
       expected,
       permission,
+    );
+  }
+
+  public async revalidatePurchaseAdjustmentManagement(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    const authorized = await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "purchases.adjustments.manage",
+    );
+    return await this.requirePermissionInTransaction(
+      client,
+      authorized,
+      "purchases.costs.view",
     );
   }
 

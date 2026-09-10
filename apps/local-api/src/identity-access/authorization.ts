@@ -17,6 +17,7 @@ export const PERMISSION_NAMES = [
   "licensing.manage",
   "pharmacy.settings.manage",
   "pricing.below_cost",
+  "purchases.adjustments.manage",
   "purchases.costs.view",
   "purchases.drafts.manage",
   "purchases.posted.view",

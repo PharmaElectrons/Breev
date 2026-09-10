@@ -140,6 +140,11 @@ const permissionLabels: Record<
         "تفعيل تسجيل الحضور أو إيقافه وتغيير إعدادات الصيدلية الأخرى.",
       name: "تغيير إعدادات الصيدلية",
     },
+    "purchases.adjustments.manage": {
+      description:
+        "إنشاء تصحيحات فواتير الشراء ومراجعة فروقها وترحيلها دون تغيير الأصل.",
+      name: "إدارة تصحيحات فواتير الشراء",
+    },
     "purchases.drafts.manage": {
       description:
         "إنشاء مسودات المشتريات واستئنافها وتحديثها واستبعادها وإدخال بنودها.",
@@ -197,6 +202,11 @@ const permissionLabels: Record<
       description:
         "Turn attendance on or off and change other pharmacy settings.",
       name: "Change pharmacy settings",
+    },
+    "purchases.adjustments.manage": {
+      description:
+        "Create, review, and post purchase invoice Deltas without changing the original.",
+      name: "Manage purchase adjustments",
     },
     "purchases.drafts.manage": {
       description:

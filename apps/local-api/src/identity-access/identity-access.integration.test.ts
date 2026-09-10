@@ -142,6 +142,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       roleRows?.find(({ key }) => key === "purchasing_employee")?.grants,
     ).toEqual([
       "catalog.item.search",
+      "purchases.adjustments.manage",
       "purchases.costs.view",
       "purchases.drafts.manage",
       "purchases.posted.view",

@@ -4,6 +4,7 @@ import {
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   purchaseDraftDiscardPath,
+  purchaseAdjustmentDraftsPath,
   purchaseDraftHeaderPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
@@ -11,6 +12,7 @@ import {
   type ProductCreateRequest,
   type PurchaseDraft,
   type PurchaseDraftDetail,
+  type PurchasePostResult,
   type Supplier,
 } from "@breev/contracts/local-rest";
 import {
@@ -517,6 +519,32 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       201,
     );
     postingDraft = postingRowResponse.body?.draft as unknown as PurchaseDraft;
+    const ownerPostedResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(postingDraft.id),
+      {
+        expectedVersion: postingDraft.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(ownerPostedResponse.status, diagnostics(ownerPostedResponse)).toBe(
+      201,
+    );
+    const postedPurchaseId = (
+      ownerPostedResponse.body as unknown as PurchasePostResult
+    ).posted.id;
+    const missingReason = await request(
+      "POST",
+      purchaseAdjustmentDraftsPath(postedPurchaseId),
+      { evidence: null, idempotencyKey: uuidV7() },
+    );
+    expect(missingReason).toMatchObject({
+      status: 400,
+      body: {
+        code: "body-invalid",
+        fieldErrors: [{ code: "invalid", path: ["reason"] }],
+      },
+    });
 
     const role = await administrator.query<{ id: string }>(
       `select id from pharmacy_roles where pharmacy_id = $1 and role_key = 'pharmacist'`,
@@ -584,6 +612,15 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       },
     );
     const postedReviewDenied = await request("GET", "/purchases/posted");
+    const adjustmentPermissionDenied = await request(
+      "POST",
+      purchaseAdjustmentDraftsPath(postedPurchaseId),
+      {
+        evidence: null,
+        idempotencyKey: uuidV7(),
+        reason: "quantity error",
+      },
+    );
     expect(supplierDenied).toMatchObject({
       status: 403,
       body: {
@@ -626,13 +663,20 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
         requiredPermission: "purchases.posted.view",
       },
     });
+    expect(adjustmentPermissionDenied).toMatchObject({
+      status: 403,
+      body: {
+        code: "permission-denied",
+        requiredPermission: "purchases.adjustments.manage",
+      },
+    });
     const audits = await administrator.query<{ count: string }>(
       `select count(*)::text as count from identity_audit_records
        where pharmacy_id = $1 and actor_user_id <> $2
          and action = 'identity.authorization' and outcome = 'denied'`,
       [pharmacyId, ownerId],
     );
-    expect(audits.rows[0]?.count).toBe("6");
+    expect(audits.rows[0]?.count).toBe("7");
   });
 
   function startApi(): ChildProcessWithoutNullStreams {

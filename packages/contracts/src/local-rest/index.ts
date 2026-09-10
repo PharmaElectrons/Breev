@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "13" as const;
-export const LOCAL_SCHEMA_VERSION = "13" as const;
+export const LOCAL_API_VERSION = "14" as const;
+export const LOCAL_SCHEMA_VERSION = "14" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -97,6 +97,7 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "identity.users.manage",
   "licensing.manage",
   "pharmacy.settings.manage",
+  "purchases.adjustments.manage",
   "purchases.costs.view",
   "purchases.drafts.manage",
   "purchases.posted.view",
@@ -1624,6 +1625,20 @@ export const priceFilsSchema = z
     return BigInt(value) <= POSTGRES_BIGINT_MAXIMUM;
   });
 
+/** Exact signed PostgreSQL bigint transported as canonical decimal text. */
+export const signedBigintSchema = z
+  .string()
+  .max(20)
+  .regex(/^(?:0|-?[1-9][0-9]*)$/u)
+  .refine((value) => {
+    if (!/^(?:0|-?[1-9][0-9]*)$/u.test(value)) return false;
+    const parsed = BigInt(value);
+    return (
+      parsed >= -POSTGRES_BIGINT_MAXIMUM - 1n &&
+      parsed <= POSTGRES_BIGINT_MAXIMUM
+    );
+  });
+
 /**
  * Exact margin text with at most six decimal places, at least zero and strictly
  * below one hundred.
@@ -2652,6 +2667,36 @@ export const purchasePostedListResponseSchema = z
     });
   });
 
+export const PURCHASE_ADJUSTMENT_REASONS = [
+  "quantity error",
+  "price error",
+  "invoice-number error",
+  "supplier error",
+  "other",
+] as const;
+export const purchaseAdjustmentReasonSchema = z.enum(
+  PURCHASE_ADJUSTMENT_REASONS,
+);
+const purchaseAdjustmentEvidenceSchema = nullableTrimmedPurchaseText(1_000);
+export const purchaseAdjustmentNumberSchema = z.strictObject({
+  original: postedDocumentNumberSchema,
+  suffix: decimalRevisionSchema,
+});
+export const purchasePostedAdjustmentLinkSchema = z.strictObject({
+  id: z.uuidv7(),
+  number: purchaseAdjustmentNumberSchema,
+  postedAt: z.iso.datetime(),
+  postedBy: z.uuidv7(),
+  primarySupplierCostDeltaFils: signedBigintSchema.nullable(),
+  quantityDelta: signedBigintSchema,
+  reason: purchaseAdjustmentReasonSchema,
+});
+export const purchaseActiveAdjustmentDraftSchema = z.strictObject({
+  id: z.uuidv7(),
+  updatedAt: z.iso.datetime(),
+  version: decimalRevisionSchema,
+});
+
 export const purchasePostedDetailRowSchema = z.strictObject({
   baseUnitsPerEnteredUnit: packageUnitRatioSchema,
   costAfterDiscountFils: nullableReviewCostSchema,
@@ -2672,10 +2717,13 @@ export const purchasePostedDetailRowSchema = z.strictObject({
 
 export const purchasePostedDetailSchema = z
   .strictObject({
+    activeAdjustmentDrafts: z.array(purchaseActiveAdjustmentDraftSchema),
+    adjustments: z.array(purchasePostedAdjustmentLinkSchema),
     allowanceFils: nullableReviewCostSchema,
     allowancePercentageSnapshot: allowancePercentageSchema.nullable(),
     costAfterDiscountFils: nullableReviewCostSchema,
     costVisibility: purchasePostedCostVisibilitySchema,
+    canAdjust: z.boolean(),
     id: z.uuidv7(),
     invoiceDate: z.iso.date(),
     navigation: z.strictObject({
@@ -2728,6 +2776,189 @@ export const purchasePostedDetailSchema = z
     });
   });
 
+export const PURCHASE_ADJUSTMENT_FIELDS = [
+  "entered-quantity",
+  "primary-supplier-cost",
+  "retail-price",
+  "supplier",
+  "supplier-invoice-number",
+] as const;
+export const purchaseAdjustmentFieldSchema = z.enum(PURCHASE_ADJUSTMENT_FIELDS);
+export const purchaseAdjustmentFieldChangeSchema = z.strictObject({
+  after: z.string().nullable(),
+  before: z.string().nullable(),
+  field: purchaseAdjustmentFieldSchema,
+});
+const purchaseAdjustmentSnapshotRowFields = {
+  baseUnitsPerEnteredUnit: packageUnitRatioSchema,
+  batchId: z.uuidv7().nullable(),
+  costFils: priceFilsSchema,
+  enteredQuantity: packageUnitRatioSchema,
+  expiryDate: z.iso.date().nullable(),
+  inventoryUnitName: productUnitNameSchema,
+  inventoryUnitQuantity: packageUnitRatioSchema,
+  itemDisplayName: z.string().min(1).max(726),
+  itemId: z.uuidv7(),
+  lineageId: z.uuidv7(),
+  lotNumber: nullableTrimmedPurchaseText(120),
+  marginPercentage: marginPercentageSchema.nullable(),
+  notes: nullableTrimmedPurchaseText(1_000),
+  ordinal: z.number().int().positive(),
+  originalRowId: z.uuidv7().nullable(),
+  pricingMethod: productPricingMethodSchema,
+  retailPriceFils: priceFilsSchema,
+  unit: inventoryCapableUnitSchema,
+} as const;
+export const purchaseAdjustmentSnapshotRowSchema = z.strictObject(
+  purchaseAdjustmentSnapshotRowFields,
+);
+export const purchaseAdjustmentDraftRowSchema = z.strictObject({
+  ...purchaseAdjustmentSnapshotRowFields,
+  id: z.uuidv7(),
+});
+export const purchaseAdjustmentDraftRowInputSchema = z.strictObject({
+  costFils: priceFilsSchema,
+  enteredQuantity: packageUnitRatioSchema,
+  expiryDate: z.iso.date().nullable(),
+  itemId: z.uuidv7(),
+  lineageId: z.uuidv7().nullable(),
+  lotNumber: nullableTrimmedPurchaseText(120),
+  notes: nullableTrimmedPurchaseText(1_000),
+  originalRowId: z.uuidv7().nullable(),
+  pricing: purchaseRowPricingInputSchema,
+  unit: inventoryCapableUnitSchema,
+});
+export const purchaseAdjustmentDraftSchema = z.strictObject({
+  allowancePercentageSnapshot: allowancePercentageSchema,
+  createdAt: z.iso.datetime(),
+  evidence: purchaseAdjustmentEvidenceSchema,
+  id: z.uuidv7(),
+  invoiceDate: z.iso.date(),
+  originalNumber: postedDocumentNumberSchema,
+  originalPurchaseId: z.uuidv7(),
+  reason: purchaseAdjustmentReasonSchema,
+  rows: z.array(purchaseAdjustmentDraftRowSchema).max(500),
+  settlementContext: purchaseSettlementContextSchema,
+  status: z.enum(["active", "discarded", "posted"]),
+  supplierId: z.uuidv7(),
+  supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
+  supplierNameSnapshot: supplierNameSchema,
+  updatedAt: z.iso.datetime(),
+  version: decimalRevisionSchema,
+});
+export const purchaseAdjustmentDraftCreateRequestSchema = z.strictObject({
+  evidence: purchaseAdjustmentEvidenceSchema,
+  idempotencyKey: z.uuid(),
+  reason: purchaseAdjustmentReasonSchema,
+});
+export const purchaseAdjustmentDraftUpdateRequestSchema = z.strictObject({
+  evidence: purchaseAdjustmentEvidenceSchema,
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  reason: purchaseAdjustmentReasonSchema,
+  rows: z.array(purchaseAdjustmentDraftRowInputSchema).max(500),
+  supplierId: z.uuidv7(),
+  supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
+});
+export const purchaseAdjustmentDraftDiscardRequestSchema = z.strictObject({
+  confirmation: z.literal("discard-purchase-adjustment-draft"),
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const purchaseAdjustmentRowDeltaSchema = z.strictObject({
+  after: purchaseAdjustmentSnapshotRowSchema.nullable(),
+  before: purchaseAdjustmentSnapshotRowSchema.nullable(),
+  changes: z.array(purchaseAdjustmentFieldChangeSchema),
+  kind: z.enum(["added", "changed", "removed"]),
+  lineageId: z.uuidv7(),
+  primarySupplierCostDeltaFils: signedBigintSchema,
+  quantityDelta: signedBigintSchema,
+});
+export const purchaseAdjustmentSummarySchema = z.strictObject({
+  allowanceDeltaFils: signedBigintSchema,
+  confirmationHash: z.string().regex(/^[0-9a-f]{64}$/u),
+  costAfterDiscountDeltaFils: signedBigintSchema,
+  draftId: z.uuidv7(),
+  draftVersion: decimalRevisionSchema,
+  headerChanges: z.array(purchaseAdjustmentFieldChangeSchema),
+  primarySupplierCostDeltaFils: signedBigintSchema,
+  quantityDelta: signedBigintSchema,
+  rowDeltas: z.array(purchaseAdjustmentRowDeltaSchema),
+  stockEffects: z.array(
+    z.strictObject({
+      batchId: z.uuidv7().nullable(),
+      itemDisplayName: z.string().min(1).max(726),
+      itemId: z.uuidv7(),
+      primarySupplierCostDeltaFils: signedBigintSchema,
+      quantityDelta: signedBigintSchema,
+    }),
+  ),
+  supplierEffects: z.array(
+    z.strictObject({
+      deltaFils: signedBigintSchema,
+      supplierId: z.uuidv7(),
+      supplierNameSnapshot: supplierNameSchema,
+    }),
+  ),
+});
+export const purchaseAdjustmentPostRequestSchema = z.strictObject({
+  confirmationHash: z.string().regex(/^[0-9a-f]{64}$/u),
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const purchaseAdjustmentJournalSchema = z
+  .strictObject({
+    entryId: z.uuidv7(),
+    lines: z.array(postedPurchaseJournalLineSchema),
+    templateId: z.literal("purchase.adjustment"),
+    templateVersion: z.number().int().positive(),
+  })
+  .superRefine((journal, ctx) => {
+    const debits = journal.lines.reduce(
+      (sum, line) => sum + BigInt(line.debitFils),
+      0n,
+    );
+    const credits = journal.lines.reduce(
+      (sum, line) => sum + BigInt(line.creditFils),
+      0n,
+    );
+    if (debits !== credits) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Adjustment journal debits must equal credits",
+        path: ["lines"],
+      });
+    }
+  });
+export const postedPurchaseAdjustmentSchema = z.strictObject({
+  allowanceDeltaFils: signedBigintSchema,
+  costAfterDiscountDeltaFils: signedBigintSchema,
+  draftId: z.uuidv7(),
+  evidence: purchaseAdjustmentEvidenceSchema,
+  headerChanges: z.array(purchaseAdjustmentFieldChangeSchema),
+  id: z.uuidv7(),
+  journal: purchaseAdjustmentJournalSchema,
+  number: purchaseAdjustmentNumberSchema,
+  originalPurchaseId: z.uuidv7(),
+  postedAt: z.iso.datetime(),
+  postedBy: z.uuidv7(),
+  primarySupplierCostDeltaFils: signedBigintSchema,
+  quantityDelta: signedBigintSchema,
+  reason: purchaseAdjustmentReasonSchema,
+  rowDeltas: z.array(
+    purchaseAdjustmentRowDeltaSchema.extend({
+      movementId: z.uuidv7().nullable(),
+      valueEffectId: z.uuidv7().nullable(),
+    }),
+  ),
+  supplierId: z.uuidv7(),
+  supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
+  supplierNameSnapshot: supplierNameSchema,
+});
+export const purchaseAdjustmentPostResultSchema = z.strictObject({
+  posted: postedPurchaseAdjustmentSchema,
+});
+
 export const PURCHASING_FIELD_ERROR_CODES = [
   "invalid",
   "out-of-range",
@@ -2746,6 +2977,12 @@ export const PURCHASING_FIELD_ERROR_CODES = [
  * and a missing lot on row 5.
  */
 export const PURCHASING_RULE_IDS = [
+  "purchase.adjustment.batch-insufficient",
+  "purchase.adjustment.batch-invalid",
+  "purchase.adjustment.empty",
+  "purchase.adjustment.original-row-invalid",
+  "purchase.adjustment.summary-stale",
+  "purchase.adjustment.valuation-invalid",
   "purchase.post.draft-empty",
   "purchase.post.item-unavailable",
   "purchase.post.lot-required-at-receipt",
@@ -2764,6 +3001,13 @@ export const purchasingFieldErrorSchema = z.strictObject({
   rule: purchasingRuleIdSchema.optional(),
 });
 export const PURCHASING_DENIAL_CODES = [
+  "adjustment-batch-conflict",
+  "adjustment-draft-discarded",
+  "adjustment-draft-not-found",
+  "adjustment-draft-posted",
+  "adjustment-empty",
+  "adjustment-original-not-found",
+  "adjustment-summary-stale",
   "body-invalid",
   "draft-discarded",
   "draft-empty",
@@ -2948,6 +3192,68 @@ export const purchasePostedReadContract = {
     404: purchasingDenialSchema,
   },
 } as const;
+export const purchaseAdjustmentDraftCreateContract = {
+  method: "POST",
+  path: "/purchases/posted/:purchaseId/adjustment-drafts",
+  request: { body: purchaseAdjustmentDraftCreateRequestSchema },
+  responses: {
+    201: purchaseAdjustmentDraftSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseAdjustmentDraftReadContract = {
+  method: "GET",
+  path: "/purchases/adjustment-drafts/:draftId",
+  responses: {
+    200: purchaseAdjustmentDraftSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
+  },
+} as const;
+export const purchaseAdjustmentDraftUpdateContract = {
+  method: "PUT",
+  path: "/purchases/adjustment-drafts/:draftId",
+  request: { body: purchaseAdjustmentDraftUpdateRequestSchema },
+  responses: {
+    200: purchaseAdjustmentDraftSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseAdjustmentDraftDiscardContract = {
+  method: "POST",
+  path: "/purchases/adjustment-drafts/:draftId/discards",
+  request: { body: purchaseAdjustmentDraftDiscardRequestSchema },
+  responses: {
+    201: purchaseAdjustmentDraftSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseAdjustmentSummaryReadContract = {
+  method: "GET",
+  path: "/purchases/adjustment-drafts/:draftId/summary",
+  responses: {
+    200: purchaseAdjustmentSummarySchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseAdjustmentPostContract = {
+  method: "POST",
+  path: "/purchases/adjustment-drafts/:draftId/postings",
+  request: { body: purchaseAdjustmentPostRequestSchema },
+  responses: {
+    201: purchaseAdjustmentPostResultSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchasePostedAdjustmentReadContract = {
+  method: "GET",
+  path: "/purchases/posted-adjustments/:adjustmentId",
+  responses: {
+    200: postedPurchaseAdjustmentSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
+  },
+} as const;
 
 export const supplierPath = (supplierId: string): string =>
   `/suppliers/${supplierId}`;
@@ -2967,6 +3273,18 @@ export const purchaseDraftPostingsPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/postings`;
 export const purchasePostedPath = (purchaseId: string): string =>
   `/purchases/posted/${purchaseId}`;
+export const purchaseAdjustmentDraftsPath = (purchaseId: string): string =>
+  `/purchases/posted/${purchaseId}/adjustment-drafts`;
+export const purchaseAdjustmentDraftPath = (draftId: string): string =>
+  `/purchases/adjustment-drafts/${draftId}`;
+export const purchaseAdjustmentDraftDiscardPath = (draftId: string): string =>
+  `/purchases/adjustment-drafts/${draftId}/discards`;
+export const purchaseAdjustmentSummaryPath = (draftId: string): string =>
+  `/purchases/adjustment-drafts/${draftId}/summary`;
+export const purchaseAdjustmentPostingsPath = (draftId: string): string =>
+  `/purchases/adjustment-drafts/${draftId}/postings`;
+export const purchasePostedAdjustmentPath = (adjustmentId: string): string =>
+  `/purchases/posted-adjustments/${adjustmentId}`;
 
 export const PURCHASING_CONTRACTS = [
   supplierArchiveContract,
@@ -2986,6 +3304,13 @@ export const PURCHASING_CONTRACTS = [
   purchasePostContract,
   purchasePostedListContract,
   purchasePostedReadContract,
+  purchaseAdjustmentDraftCreateContract,
+  purchaseAdjustmentDraftDiscardContract,
+  purchaseAdjustmentDraftReadContract,
+  purchaseAdjustmentDraftUpdateContract,
+  purchaseAdjustmentPostContract,
+  purchaseAdjustmentSummaryReadContract,
+  purchasePostedAdjustmentReadContract,
 ] as const;
 
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
@@ -3292,6 +3617,51 @@ export type PurchasePostedDetailRow = z.infer<
   typeof purchasePostedDetailRowSchema
 >;
 export type PurchasePostedDetail = z.infer<typeof purchasePostedDetailSchema>;
+export type PurchaseAdjustmentReason = z.infer<
+  typeof purchaseAdjustmentReasonSchema
+>;
+export type PurchaseAdjustmentField = z.infer<
+  typeof purchaseAdjustmentFieldSchema
+>;
+export type PurchaseAdjustmentFieldChange = z.infer<
+  typeof purchaseAdjustmentFieldChangeSchema
+>;
+export type PurchaseAdjustmentSnapshotRow = z.infer<
+  typeof purchaseAdjustmentSnapshotRowSchema
+>;
+export type PurchaseAdjustmentDraftRow = z.infer<
+  typeof purchaseAdjustmentDraftRowSchema
+>;
+export type PurchaseAdjustmentDraftRowInput = z.infer<
+  typeof purchaseAdjustmentDraftRowInputSchema
+>;
+export type PurchaseAdjustmentDraft = z.infer<
+  typeof purchaseAdjustmentDraftSchema
+>;
+export type PurchaseAdjustmentDraftCreateRequest = z.infer<
+  typeof purchaseAdjustmentDraftCreateRequestSchema
+>;
+export type PurchaseAdjustmentDraftUpdateRequest = z.infer<
+  typeof purchaseAdjustmentDraftUpdateRequestSchema
+>;
+export type PurchaseAdjustmentDraftDiscardRequest = z.infer<
+  typeof purchaseAdjustmentDraftDiscardRequestSchema
+>;
+export type PurchaseAdjustmentRowDelta = z.infer<
+  typeof purchaseAdjustmentRowDeltaSchema
+>;
+export type PurchaseAdjustmentSummary = z.infer<
+  typeof purchaseAdjustmentSummarySchema
+>;
+export type PurchaseAdjustmentPostRequest = z.infer<
+  typeof purchaseAdjustmentPostRequestSchema
+>;
+export type PostedPurchaseAdjustment = z.infer<
+  typeof postedPurchaseAdjustmentSchema
+>;
+export type PurchaseAdjustmentPostResult = z.infer<
+  typeof purchaseAdjustmentPostResultSchema
+>;
 
 /**
  * The approved product naming templates, and the total function that applies

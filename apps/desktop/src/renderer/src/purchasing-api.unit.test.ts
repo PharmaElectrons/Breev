@@ -225,10 +225,13 @@ describe("Purchasing REST client", () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
+          activeAdjustmentDrafts: [],
+          adjustments: [],
           allowanceFils: null,
           allowancePercentageSnapshot: null,
           costAfterDiscountFils: null,
           costVisibility: "hidden-by-permission",
+          canAdjust: false,
           id,
           invoiceDate: "2026-09-08",
           navigation: {

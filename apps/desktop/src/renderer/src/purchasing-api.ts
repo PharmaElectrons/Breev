@@ -3,6 +3,17 @@ import {
   BREEV_CSRF_VALUE,
   identityDenialSchema,
   licensingDenialSchema,
+  postedPurchaseAdjustmentSchema,
+  purchaseAdjustmentDraftDiscardContract,
+  purchaseAdjustmentDraftDiscardPath,
+  purchaseAdjustmentDraftPath,
+  purchaseAdjustmentDraftSchema,
+  purchaseAdjustmentDraftsPath,
+  purchaseAdjustmentPostContract,
+  purchaseAdjustmentPostResultSchema,
+  purchaseAdjustmentPostingsPath,
+  purchaseAdjustmentSummaryPath,
+  purchaseAdjustmentSummarySchema,
   purchaseDraftCreateContract,
   purchaseDraftDiscardContract,
   purchaseDraftDiscardPath,
@@ -24,6 +35,8 @@ import {
   purchasePostRequestSchema,
   purchasePostResultSchema,
   purchasePostedDetailSchema,
+  purchasePostedAdjustmentPath,
+  purchasePostedAdjustmentReadContract,
   purchasePostedListContract,
   purchasePostedListResponseSchema,
   purchasePostedPath,
@@ -40,6 +53,14 @@ import {
   supplierReadContract,
   supplierSchema,
   type PurchaseDraft,
+  type PostedPurchaseAdjustment,
+  type PurchaseAdjustmentDraft,
+  type PurchaseAdjustmentDraftCreateRequest,
+  type PurchaseAdjustmentDraftDiscardRequest,
+  type PurchaseAdjustmentDraftUpdateRequest,
+  type PurchaseAdjustmentPostRequest,
+  type PurchaseAdjustmentPostResult,
+  type PurchaseAdjustmentSummary,
   type PurchaseDraftDetail,
   type PurchaseDraftCreateRequest,
   type PurchaseDraftDiscardRequest,
@@ -285,6 +306,98 @@ export const requestPostedPurchase = async (
     purchasePostedReadContract.method,
     200,
     purchasePostedDetailSchema,
+  );
+
+export const createPurchaseAdjustmentDraft = async (
+  baseUrl: string,
+  purchaseId: string,
+  body: PurchaseAdjustmentDraftCreateRequest,
+): Promise<PurchaseAdjustmentDraft> =>
+  await requestJson(
+    baseUrl,
+    purchaseAdjustmentDraftsPath(purchaseId),
+    "POST",
+    201,
+    purchaseAdjustmentDraftSchema,
+    body,
+  );
+
+export const requestPurchaseAdjustmentDraft = async (
+  baseUrl: string,
+  draftId: string,
+): Promise<PurchaseAdjustmentDraft> =>
+  await requestJson(
+    baseUrl,
+    purchaseAdjustmentDraftPath(draftId),
+    "GET",
+    200,
+    purchaseAdjustmentDraftSchema,
+  );
+
+export const updatePurchaseAdjustmentDraft = async (
+  baseUrl: string,
+  draftId: string,
+  body: PurchaseAdjustmentDraftUpdateRequest,
+): Promise<PurchaseAdjustmentDraft> =>
+  await requestJson(
+    baseUrl,
+    purchaseAdjustmentDraftPath(draftId),
+    "PUT",
+    200,
+    purchaseAdjustmentDraftSchema,
+    body,
+  );
+
+export const discardPurchaseAdjustmentDraft = async (
+  baseUrl: string,
+  draftId: string,
+  body: PurchaseAdjustmentDraftDiscardRequest,
+): Promise<PurchaseAdjustmentDraft> =>
+  await requestJson(
+    baseUrl,
+    purchaseAdjustmentDraftDiscardPath(draftId),
+    purchaseAdjustmentDraftDiscardContract.method,
+    201,
+    purchaseAdjustmentDraftSchema,
+    body,
+  );
+
+export const requestPurchaseAdjustmentSummary = async (
+  baseUrl: string,
+  draftId: string,
+): Promise<PurchaseAdjustmentSummary> =>
+  await requestJson(
+    baseUrl,
+    purchaseAdjustmentSummaryPath(draftId),
+    "GET",
+    200,
+    purchaseAdjustmentSummarySchema,
+  );
+
+export const postPurchaseAdjustment = async (
+  baseUrl: string,
+  draftId: string,
+  body: PurchaseAdjustmentPostRequest,
+): Promise<PurchaseAdjustmentPostResult> =>
+  await requestJson(
+    baseUrl,
+    purchaseAdjustmentPostingsPath(draftId),
+    purchaseAdjustmentPostContract.method,
+    201,
+    purchaseAdjustmentPostResultSchema,
+    body,
+  );
+
+export const requestPostedPurchaseAdjustment = async (
+  baseUrl: string,
+  adjustmentId: string,
+): Promise<PostedPurchaseAdjustment> =>
+  await requestJson(
+    baseUrl,
+    purchasePostedAdjustmentPath(adjustmentId),
+    purchasePostedAdjustmentReadContract.method,
+    200,
+    postedPurchaseAdjustmentSchema,
   );
 
 export function newPurchasingIdempotencyKey(): string {
