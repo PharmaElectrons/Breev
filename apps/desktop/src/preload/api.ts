@@ -2,6 +2,7 @@ import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_COPY_IDENTIFIER_CHANNEL,
   DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
+  DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
@@ -15,6 +16,8 @@ import {
   desktopCopyIdentifierResponseSchema,
   desktopExportDiagnosticsRequestSchema,
   desktopExportDiagnosticsResponseSchema,
+  desktopSaveInventoryExportRequestSchema,
+  desktopSaveInventoryExportResponseSchema,
   desktopManualEndpointRequestSchema,
   desktopOpenSupportRequestSchema,
   desktopOpenSupportResponseSchema,
@@ -65,6 +68,15 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
         await invoke(
           DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
           desktopExportDiagnosticsRequestSchema.parse(arguments_[0]),
+        ),
+      );
+    },
+    saveInventoryExport: async (...arguments_: unknown[]) => {
+      assertSingleArgument("saveInventoryExport", arguments_);
+      return desktopSaveInventoryExportResponseSchema.parse(
+        await invoke(
+          DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
+          desktopSaveInventoryExportRequestSchema.parse(arguments_[0]),
         ),
       );
     },

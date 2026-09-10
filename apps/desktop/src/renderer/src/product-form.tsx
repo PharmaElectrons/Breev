@@ -489,6 +489,11 @@ export function ProductForm({
       initialProduct?.stateColours.coldStorageRequired ?? false,
     manual: initialProduct?.stateColours.manual ?? "",
   });
+  const [stockLevels, setStockLevels] = useState({
+    maximumLevel: initialProduct?.stockLevels.maximumLevel ?? "",
+    minimumLevel: initialProduct?.stockLevels.minimumLevel ?? "",
+    reorderPoint: initialProduct?.stockLevels.reorderPoint ?? "",
+  });
 
   // Packaging State
   const [inventoryUnitName, setInventoryUnitName] = useState(
@@ -845,6 +850,11 @@ export function ProductForm({
       stateColours: {
         coldStorageRequired: stateColours.coldStorageRequired,
         manual: stateColours.manual || null,
+      },
+      stockLevels: {
+        maximumLevel: stockLevels.maximumLevel.trim() || null,
+        minimumLevel: stockLevels.minimumLevel.trim() || null,
+        reorderPoint: stockLevels.reorderPoint.trim() || null,
       },
     };
 
@@ -2408,6 +2418,41 @@ export function ProductForm({
                   <span>{copy.stateColours.coldStorageRequired}</span>
                 </label>
               </div>
+            </div>
+          </fieldset>
+
+          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
+            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
+              {copy.stockLevels.title}
+            </legend>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {(
+                [
+                  ["minimumLevel", copy.stockLevels.minimum],
+                  ["maximumLevel", copy.stockLevels.maximum],
+                  ["reorderPoint", copy.stockLevels.reorderPoint],
+                ] as const
+              ).map(([field, label]) => (
+                <div className="field-label" key={field}>
+                  <label htmlFor={`${formId}-${field}`}>
+                    <span>{label}</span>
+                  </label>
+                  <input
+                    id={`${formId}-${field}`}
+                    min={0}
+                    name={field}
+                    step={1}
+                    type="number"
+                    value={stockLevels[field]}
+                    onChange={(event) =>
+                      setStockLevels((previous) => ({
+                        ...previous,
+                        [field]: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              ))}
             </div>
           </fieldset>
 

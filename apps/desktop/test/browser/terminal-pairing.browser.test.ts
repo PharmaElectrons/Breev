@@ -467,6 +467,7 @@ async function openTerminal(
         copyIdentifier: async () => ({ copied: true as const }),
         printBarcodeLabel: async () => ({ status: "handed-off" as const }),
         exportDiagnostics: async () => ({ status: "saved" as const }),
+        saveInventoryExport: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
           diagnosticReporting: "disabled" as const,
           localApiOrigin: target,

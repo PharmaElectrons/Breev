@@ -460,6 +460,7 @@ async function installDesktopFake(
         },
         printBarcodeLabel: async () => ({ status: "handed-off" as const }),
         exportDiagnostics: async () => ({ status: "saved" as const }),
+        saveInventoryExport: async () => ({ status: "saved" as const }),
         getTerminalPairingState: async () => pairingState,
         openSupport: async () => ({ status: "unavailable" as const }),
         reportRendererIncident: async () => ({ accepted: true as const }),

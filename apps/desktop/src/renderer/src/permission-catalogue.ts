@@ -19,6 +19,7 @@ export type PermissionGroupId =
   | "attendance"
   | "devices-licensing"
   | "products"
+  | "inventory"
   | "purchasing";
 
 export interface PermissionGroup {
@@ -50,6 +51,10 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       "purchases.costs.view",
       "suppliers.manage",
     ],
+  },
+  {
+    id: "inventory",
+    permissions: ["inventory.review", "inventory.valuation.view"],
   },
   { id: "attendance", permissions: ["attendance.record"] },
   {

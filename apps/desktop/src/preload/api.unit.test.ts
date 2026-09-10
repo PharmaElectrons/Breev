@@ -21,6 +21,7 @@ describe("desktop preload API", () => {
       "cancelTerminalPairing",
       "copyIdentifier",
       "exportDiagnostics",
+      "saveInventoryExport",
       "getStartupConfig",
       "getTerminalPairingState",
       "openSupport",

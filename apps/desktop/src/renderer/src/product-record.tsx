@@ -361,6 +361,44 @@ export function ProductRecord({
             </dl>
           </section>
 
+          <section
+            aria-labelledby="stock-levels-heading"
+            className="space-y-2 p-3 rounded-lg border border-[color:var(--border)]"
+          >
+            <h3
+              id="stock-levels-heading"
+              className="text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              {copy.stockLevels.title}
+            </h3>
+            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+              <div>
+                <dt className="text-muted-foreground">
+                  {copy.stockLevels.minimum}
+                </dt>
+                <dd className="font-semibold">
+                  {product.stockLevels.minimumLevel ?? "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">
+                  {copy.stockLevels.maximum}
+                </dt>
+                <dd className="font-semibold">
+                  {product.stockLevels.maximumLevel ?? "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">
+                  {copy.stockLevels.reorderPoint}
+                </dt>
+                <dd className="font-semibold">
+                  {product.stockLevels.reorderPoint ?? "—"}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
           {/* Read-Only Inventory Balance Section */}
           <section
             aria-label={copy.inventory.readOnlyAssistiveText}

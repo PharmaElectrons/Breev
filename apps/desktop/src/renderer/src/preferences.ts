@@ -37,6 +37,18 @@ export function formatDateTime(value: Date, locale: Locale): string {
   }).format(value);
 }
 
+export function formatDate(value: Date, locale: Locale): string {
+  return new Intl.DateTimeFormat(localeTags[locale], {
+    dateStyle: "medium",
+  }).format(value);
+}
+
+export function formatTime(value: Date, locale: Locale): string {
+  return new Intl.DateTimeFormat(localeTags[locale], {
+    timeStyle: "medium",
+  }).format(value);
+}
+
 export function formatCurrencyFromFils(value: bigint, locale: Locale): string {
   const sign = value < 0n ? "-" : "";
   const absoluteValue = value < 0n ? -value : value;

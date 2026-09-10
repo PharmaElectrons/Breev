@@ -1756,6 +1756,7 @@ function medicationRequest(
     scientificName: "Paracetamol",
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: "blue" },
+    stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }
 
@@ -1775,6 +1776,7 @@ async function installDesktopFake(
         copyIdentifier: async () => ({ copied: true as const }),
         printBarcodeLabel: async () => ({ status: "handed-off" as const }),
         exportDiagnostics: async () => ({ status: "saved" as const }),
+        saveInventoryExport: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
           diagnosticReporting: "disabled" as const,
           localApiOrigin: origin,

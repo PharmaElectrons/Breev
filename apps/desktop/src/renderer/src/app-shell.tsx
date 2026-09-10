@@ -15,6 +15,7 @@ import {
 } from "./error-boundary";
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityShell } from "./identity-shell";
+import { InventoryRouteView } from "./inventory-screen";
 import { messages } from "./messages";
 import { ModuleNavigation } from "./module-navigation";
 import {
@@ -187,6 +188,8 @@ export function AppShell({
 
   const purchaseWorkspace =
     state === "ready" && authenticated && activeModuleId === "purchases";
+  const inventoryWorkspace =
+    state === "ready" && authenticated && activeModuleId === "inventory";
   const connectionCard = (
     <Card className="status-card" data-state={state}>
       <CardHeader className="status-header">
@@ -252,6 +255,7 @@ export function AppShell({
   return (
     <main
       className="shell-page"
+      data-inventory-workspace={inventoryWorkspace || undefined}
       data-purchase-workspace={purchaseWorkspace || undefined}
     >
       <header className="shell-header" aria-label="Breev">
@@ -261,9 +265,9 @@ export function AppShell({
           </span>
           <span>
             <strong className="brand-name">Breev</strong>
-            {purchaseWorkspace ? (
+            {purchaseWorkspace || inventoryWorkspace ? (
               <h1 className="brand-description">
-                {navigationCopy.modules.purchases.label}
+                {navigationCopy.modules[activeModuleId].label}
               </h1>
             ) : (
               <span className="brand-description">
@@ -382,7 +386,7 @@ export function AppShell({
                           : ""}
       </p>
 
-      {purchaseWorkspace ? null : (
+      {purchaseWorkspace || inventoryWorkspace ? null : (
         <section className="status-region" aria-label={copy.connectionStatus}>
           <Card className="status-card" data-state={state}>
             <CardHeader className="status-header">
@@ -466,7 +470,11 @@ export function AppShell({
           resetKey={
             activeModuleId +
             ":" +
-            (activeModuleId === "products" ? catalogHash(currentHash) : "")
+            (activeModuleId === "products"
+              ? catalogHash(currentHash)
+              : activeModuleId === "inventory"
+                ? currentHash
+                : "")
           }
         >
           {!authenticated ? (
@@ -488,13 +496,21 @@ export function AppShell({
             />
           ) : activeModuleId === "purchases" ? (
             <PurchasingRouteView baseUrl={localApiOrigin} />
+          ) : activeModuleId === "inventory" ? (
+            <InventoryRouteView
+              baseUrl={localApiOrigin}
+              checkNow={async () => {
+                await checkNow();
+              }}
+              hash={currentHash}
+            />
           ) : (
             <IdentityShell baseUrl={localApiOrigin} />
           )}
         </WorkspaceErrorBoundary>
       ) : null}
 
-      {purchaseWorkspace ? null : (
+      {purchaseWorkspace || inventoryWorkspace ? null : (
         <footer className="shell-footer">Breev</footer>
       )}
     </main>
