@@ -171,6 +171,15 @@ export function extractPurchaseAdjustmentDelta(
       targetQuantityDelta - priorEffect.quantityDelta;
     const postingValueDelta =
       targetValueDelta - priorEffect.primarySupplierCostDeltaFils;
+    const isNetNoop = postingQuantityDelta === 0n && postingValueDelta === 0n;
+    if (
+      isNetNoop &&
+      (before === null ||
+        after === null ||
+        before.retailPriceFils === after.retailPriceFils)
+    ) {
+      continue;
+    }
     const changes = rowChanges(before, after);
     if (
       changes.length === 0 &&
@@ -258,10 +267,22 @@ function rowChanges(
   after: PurchaseAdjustmentRowSnapshot | null,
 ): PurchaseAdjustmentFieldChange[] {
   if (before === null && after !== null) {
-    return [{ after: after.itemId, before: null, field: "entered-quantity" }];
+    return [
+      {
+        after: after.enteredQuantity.toString(),
+        before: null,
+        field: "entered-quantity",
+      },
+    ];
   }
   if (before !== null && after === null) {
-    return [{ after: null, before: before.itemId, field: "entered-quantity" }];
+    return [
+      {
+        after: null,
+        before: before.enteredQuantity.toString(),
+        field: "entered-quantity",
+      },
+    ];
   }
   if (before === null || after === null) return [];
   const changes: PurchaseAdjustmentFieldChange[] = [];

@@ -545,6 +545,9 @@ export function PurchaseAdjustmentWorkflow({
                 {row.after?.itemDisplayName ?? row.before?.itemDisplayName}:{" "}
                 {row.before?.enteredQuantity ?? "0"} →{" "}
                 {row.after?.enteredQuantity ?? "0"} ({row.quantityDelta})
+                {row.primarySupplierCostDeltaFils !== "0"
+                  ? ` · ${row.primarySupplierCostDeltaFils} fils`
+                  : null}
               </li>
             ))}
           </ul>

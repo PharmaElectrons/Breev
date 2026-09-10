@@ -282,6 +282,9 @@ export function PostedPurchaseReview({
         if (currentRecord !== null) {
           event.preventDefault();
           closeDrilldown();
+        } else if (postedAdjustment !== null) {
+          event.preventDefault();
+          closePostedAdjustment();
         } else if (correction !== null) {
           event.preventDefault();
           if (correction === "adjustment" && adjustmentDraftActive) {

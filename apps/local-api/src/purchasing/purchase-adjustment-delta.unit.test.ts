@@ -139,4 +139,92 @@ describe("purchase adjustment Delta extraction", () => {
     const delta = extract([row("01", 4n)], [row("01", 4n)]);
     expect(isEmptyPurchaseAdjustmentDelta(delta)).toBe(true);
   });
+
+  it("scales deltas by pack size multipliers for multi-unit packaging", () => {
+    const originalRow: PurchaseAdjustmentRowSnapshot = {
+      ...row("01", 2n, 5_000n),
+      inventoryUnitQuantity: 20n, // 2 boxes * 10 tablets/box
+    };
+    const correctedRow: PurchaseAdjustmentRowSnapshot = {
+      ...row("01", 5n, 5_000n),
+      inventoryUnitQuantity: 50n, // 5 boxes * 10 tablets/box
+    };
+    const delta = extract([originalRow], [correctedRow]);
+    expect(delta.quantityDelta).toBe(30n); // +30 base units (tablets)
+    expect(delta.primarySupplierCostDeltaFils).toBe(15_000n); // 3 boxes * 5,000 fils
+    expect(delta.rowDeltas[0]).toMatchObject({
+      primarySupplierCostDeltaFils: 15_000n,
+      quantityDelta: 30n,
+    });
+  });
+
+  it("emits no ghost row deltas when a prior added row is untouched in a successive adjustment", () => {
+    const originalRows = [row("01", 4n, 1_000n)];
+    const correctedRows = [
+      row("01", 4n, 1_000n),
+      { ...row("02", 5n, 2_000n), originalRowId: null },
+    ];
+    const outcome = extractPurchaseAdjustmentDelta({
+      allowancePercentage: "0",
+      correctedHeader: header,
+      correctedRows,
+      originalHeader: header,
+      originalRows,
+      priorAllowanceDeltaFils: 0n,
+      priorCostAfterDiscountDeltaFils: 0n,
+      priorEffects: [
+        {
+          lineageId: "02",
+          primarySupplierCostDeltaFils: 10_000n,
+          quantityDelta: 5n,
+        },
+      ],
+      priorPrimarySupplierCostDeltaFils: 10_000n,
+    });
+    if (!outcome.ok) throw new Error(outcome.problem);
+    expect(outcome.delta.rowDeltas).toHaveLength(0);
+    expect(outcome.delta.quantityDelta).toBe(0n);
+    expect(outcome.delta.primarySupplierCostDeltaFils).toBe(0n);
+    expect(isEmptyPurchaseAdjustmentDelta(outcome.delta)).toBe(true);
+  });
+
+  it("emits no ghost row deltas when a prior removed row is untouched in a successive adjustment", () => {
+    const originalRows = [row("01", 4n, 1_000n), row("02", 3n, 2_000n)];
+    const correctedRows = [row("01", 4n, 1_000n)];
+    const outcome = extractPurchaseAdjustmentDelta({
+      allowancePercentage: "0",
+      correctedHeader: header,
+      correctedRows,
+      originalHeader: header,
+      originalRows,
+      priorAllowanceDeltaFils: 0n,
+      priorCostAfterDiscountDeltaFils: 0n,
+      priorEffects: [
+        {
+          lineageId: "02",
+          primarySupplierCostDeltaFils: -6_000n,
+          quantityDelta: -3n,
+        },
+      ],
+      priorPrimarySupplierCostDeltaFils: -6_000n,
+    });
+    if (!outcome.ok) throw new Error(outcome.problem);
+    expect(outcome.delta.rowDeltas).toHaveLength(0);
+    expect(outcome.delta.quantityDelta).toBe(0n);
+    expect(outcome.delta.primarySupplierCostDeltaFils).toBe(0n);
+    expect(isEmptyPurchaseAdjustmentDelta(outcome.delta)).toBe(true);
+  });
+
+  it("records entered-quantity strings rather than itemIds for added and removed rows", () => {
+    const added = { ...row("02", 7n, 1_000n), originalRowId: null };
+    const delta = extract([row("01", 3n)], [added]);
+    const removedDelta = delta.rowDeltas.find((r) => r.kind === "removed");
+    const addedDelta = delta.rowDeltas.find((r) => r.kind === "added");
+    expect(removedDelta?.changes).toEqual([
+      { after: null, before: "3", field: "entered-quantity" },
+    ]);
+    expect(addedDelta?.changes).toEqual([
+      { after: "7", before: null, field: "entered-quantity" },
+    ]);
+  });
 });
