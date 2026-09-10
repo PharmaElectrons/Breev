@@ -1982,6 +1982,99 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
         posted.posted.id,
       ]),
     ).rejects.toMatchObject({ code: "55000" });
+
+    const sessionBoundary = await requestAs(
+      { ...credentials, sessionToken: randomBytes(32).toString("base64url") },
+      "GET",
+      purchaseReturnDraftPath(saved.id),
+    );
+    expect(sessionBoundary.status, diagnostics(sessionBoundary)).toBe(401);
+    expect(sessionBoundary.body).toMatchObject({
+      code: "session-binding-invalid",
+    });
+
+    const deviceBoundary = await requestAs(
+      { ...credentials, deviceId: uuidV7() },
+      "GET",
+      purchaseReturnDraftPath(saved.id),
+    );
+    expect(deviceBoundary.status, diagnostics(deviceBoundary)).toBe(401);
+    expect(deviceBoundary.body).toMatchObject({ code: "binding-invalid" });
+
+    const owner = await administrator.query<{
+      role_id: string;
+      user_id: string;
+    }>(
+      `select identity_user.id as user_id, identity_user.role_id
+       from identity_users identity_user
+       where identity_user.pharmacy_id = $1 and identity_user.username = $2`,
+      [pharmacyId, OWNER_USERNAME],
+    );
+    const ownerId = owner.rows[0]?.user_id;
+    const ownerRoleId = owner.rows[0]?.role_id;
+    expect(ownerId).toBeTruthy();
+    expect(ownerRoleId).toBeTruthy();
+
+    const revoke = async (permission: string): Promise<void> => {
+      await administrator.query(
+        `delete from role_permission_grants
+         where role_id = $1 and permission_name = $2`,
+        [ownerRoleId, permission],
+      );
+      await administrator.query(
+        "update pharmacy_roles set revision = revision + 1 where id = $1",
+        [ownerRoleId],
+      );
+    };
+    const restore = async (permission: string): Promise<void> => {
+      await administrator.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         values ($1, $2, $3, $4)
+         on conflict (role_id, permission_name) do nothing`,
+        [pharmacyId, ownerRoleId, permission, ownerId],
+      );
+      await administrator.query(
+        "update pharmacy_roles set revision = revision + 1 where id = $1",
+        [ownerRoleId],
+      );
+    };
+    const returnDraftBody = {
+      evidence: "Boundary authorization check",
+      idempotencyKey: uuidV7(),
+      reason: "Boundary authorization check",
+    };
+    await revoke("purchases.returns.manage");
+    try {
+      const denied = await request(
+        "POST",
+        purchaseReturnDraftsPath(original.posted.id),
+        returnDraftBody,
+      );
+      expect(denied.status, diagnostics(denied)).toBe(403);
+      expect(denied.body).toMatchObject({
+        code: "permission-denied",
+        requiredPermission: "purchases.returns.manage",
+      });
+    } finally {
+      await restore("purchases.returns.manage");
+    }
+
+    await revoke("purchases.costs.view");
+    try {
+      const denied = await request(
+        "POST",
+        purchaseReturnDraftsPath(original.posted.id),
+        { ...returnDraftBody, idempotencyKey: uuidV7() },
+      );
+      expect(denied.status, diagnostics(denied)).toBe(403);
+      expect(denied.body).toMatchObject({
+        code: "permission-denied",
+        requiredPermission: "purchases.costs.view",
+      });
+    } finally {
+      await restore("purchases.costs.view");
+    }
   }, 30_000);
 
   async function createReturnDraft(
@@ -2139,9 +2232,18 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     route: string,
     body?: unknown,
   ): Promise<ApiResponse> {
+    return await requestAs(credentials, method, route, body);
+  }
+
+  async function requestAs(
+    requestCredentials: Credentials,
+    method: "DELETE" | "GET" | "PATCH" | "POST" | "PUT",
+    route: string,
+    body?: unknown,
+  ): Promise<ApiResponse> {
     const response = await fetch(`${apiOrigin}${route}`, {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      headers: headers(credentials, body !== undefined),
+      headers: headers(requestCredentials, body !== undefined),
       method,
     });
     const text = await response.text();
