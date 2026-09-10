@@ -2,6 +2,7 @@ import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_COPY_IDENTIFIER_CHANNEL,
   DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
+  DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
@@ -14,6 +15,8 @@ import {
   desktopCopyIdentifierResponseSchema,
   desktopExportDiagnosticsRequestSchema,
   desktopExportDiagnosticsResponseSchema,
+  desktopSaveInventoryExportRequestSchema,
+  desktopSaveInventoryExportResponseSchema,
   desktopManualEndpointRequestSchema,
   desktopOpenSupportRequestSchema,
   desktopOpenSupportResponseSchema,
@@ -58,6 +61,7 @@ import {
   diagnosticFileName,
   writeDiagnosticBundle,
 } from "./diagnostic-bundle.js";
+import { writeExportedJson } from "./exported-file.js";
 import {
   createSupportDestination,
   readSupportConfiguration,
@@ -203,6 +207,11 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
     rendererEntry.origin,
     rendererEntry.url,
   );
+  registerInventoryExportHandler(
+    window,
+    rendererEntry.origin,
+    rendererEntry.url,
+  );
   registerSupportHandler(window, rendererEntry.origin, rendererEntry.url);
   registerCentralDiagnosticHandler(
     window,
@@ -261,6 +270,7 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
       ipcMain.removeHandler(DESKTOP_PRINT_BARCODE_LABEL_CHANNEL);
       ipcMain.removeHandler(DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL);
       ipcMain.removeHandler(DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL);
       ipcMain.removeHandler(DESKTOP_OPEN_SUPPORT_CHANNEL);
       ipcMain.removeHandler(DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL);
       for (const channel of TERMINAL_CHANNELS) {
@@ -538,6 +548,77 @@ function registerDiagnosticExportHandler(
       }
     },
   );
+}
+
+const MAXIMUM_INVENTORY_EXPORT_BYTES = 16 * 1024 * 1024;
+
+function registerInventoryExportHandler(
+  window: BrowserWindow,
+  trustedOrigin: string,
+  trustedUrl: string,
+): void {
+  ipcMain.removeHandler(DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL);
+  const guard = createIpcGuard({
+    maximumCalls: 2,
+    maximumPayloadBytes: MAXIMUM_INVENTORY_EXPORT_BYTES,
+    name: "inventory export",
+    now: Date.now,
+    parse: (payload) => desktopSaveInventoryExportRequestSchema.parse(payload),
+    trustedOrigin,
+    trustedProcessId: () => window.webContents.mainFrame.processId,
+    trustedSenderId: window.webContents.id,
+    trustedUrl,
+  });
+  ipcMain.handle(
+    DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
+    async (event, payload: unknown) => {
+      const request = guard(toIpcInvocation(event), payload);
+      const selection = await dialog.showSaveDialog(window, {
+        defaultPath: path.join(
+          app.getPath("downloads"),
+          inventoryExportFileName(),
+        ),
+        filters: [
+          {
+            extensions: ["json"],
+            name:
+              request.locale === "ar"
+                ? "بيانات مخزون Breev"
+                : "Breev inventory data",
+          },
+        ],
+        properties: ["createDirectory", "showOverwriteConfirmation"],
+        title:
+          request.locale === "ar"
+            ? "تصدير بيانات المخزون"
+            : "Export inventory data",
+      });
+      if (selection.canceled || selection.filePath === "") {
+        return desktopSaveInventoryExportResponseSchema.parse({
+          status: "cancelled",
+        });
+      }
+      try {
+        const serialized = JSON.stringify(request.bundle, null, 2) + "\n";
+        await writeExportedJson(
+          selection.filePath,
+          serialized,
+          MAXIMUM_INVENTORY_EXPORT_BYTES,
+        );
+        return desktopSaveInventoryExportResponseSchema.parse({
+          status: "saved",
+        });
+      } catch {
+        return desktopSaveInventoryExportResponseSchema.parse({
+          status: "failed",
+        });
+      }
+    },
+  );
+}
+
+function inventoryExportFileName(now = new Date()): string {
+  return `breev-inventory-${now.toISOString().replace(/[:.]/gu, "-")}.json`;
 }
 
 function registerRendererIncidentHandler(

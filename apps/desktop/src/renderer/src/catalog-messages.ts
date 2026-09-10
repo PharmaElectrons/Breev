@@ -184,6 +184,12 @@ export interface CatalogCopy {
     readonly manualColorNone: string;
     readonly title: string;
   };
+  readonly stockLevels: {
+    readonly maximum: string;
+    readonly minimum: string;
+    readonly reorderPoint: string;
+    readonly title: string;
+  };
   readonly titles: {
     readonly createProduct: string;
     readonly editProduct: string;
@@ -436,6 +442,12 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       manualColor: "لون الحالة اليدوي",
       manualColorNone: "بدون لون",
       title: "مؤشرات الحالة والألوان",
+    },
+    stockLevels: {
+      maximum: "الحد الأقصى",
+      minimum: "الحد الأدنى",
+      reorderPoint: "نقطة إعادة الطلب",
+      title: "مستويات المخزون",
     },
     titles: {
       createProduct: "تعريف منتج جديد",
@@ -690,6 +702,12 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       manualColor: "Manual state color",
       manualColorNone: "None",
       title: "State indicators",
+    },
+    stockLevels: {
+      maximum: "Maximum level",
+      minimum: "Minimum level",
+      reorderPoint: "Reorder point",
+      title: "Stock levels",
     },
     titles: {
       createProduct: "Define new product",

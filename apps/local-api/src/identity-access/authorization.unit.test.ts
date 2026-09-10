@@ -27,6 +27,10 @@ describe("identity authorization", () => {
     expect(STEP_UP_ACTIONS["purchase.return.post"]).toBe(
       "purchases.returns.manage",
     );
+    expect(STEP_UP_ACTIONS["inventory.sensitive.export"]).toBe(
+      "inventory.valuation.view",
+    );
+    expect(stepUpActionSchema.options).toContain("inventory.sensitive.export");
   });
 
   it("denies every role until an explicit grant exists", () => {
@@ -70,6 +74,8 @@ describe("identity authorization", () => {
       "draft.price.override",
       "identity.roles.manage",
       "identity.users.manage",
+      "inventory.review",
+      "inventory.valuation.view",
       "licensing.manage",
       "pharmacy.settings.manage",
       "pricing.below_cost",
@@ -96,6 +102,8 @@ describe("identity authorization", () => {
       "devices.pair",
       "identity.roles.manage",
       "identity.users.manage",
+      "inventory.review",
+      "inventory.valuation.view",
       "licensing.manage",
       "pharmacy.settings.manage",
       "purchases.adjustments.manage",

@@ -128,6 +128,7 @@ function sampleMedicationRequest(barcode: string): ProductCreateRequest {
       coldStorageRequired: false,
       manual: "blue",
     },
+    stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }
 
@@ -233,6 +234,7 @@ async function installDesktopFake(
           return { status: "handed-off" as const };
         },
         exportDiagnostics: async () => ({ status: "saved" as const }),
+        saveInventoryExport: async () => ({ status: "saved" as const }),
         getStartupConfig: async () => ({
           diagnosticReporting: "disabled" as const,
           localApiOrigin: apiOrigin,

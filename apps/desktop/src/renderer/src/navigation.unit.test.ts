@@ -12,7 +12,11 @@ import {
 import { navigationMessages } from "./navigation-messages";
 
 const FREE_CORE_ACCESS = {
-  allowedPermissions: ["catalog.item.manage", "purchases.drafts.manage"],
+  allowedPermissions: [
+    "catalog.item.manage",
+    "inventory.review",
+    "purchases.drafts.manage",
+  ],
   capabilities: ["local-sales", "reports"],
 } as const;
 

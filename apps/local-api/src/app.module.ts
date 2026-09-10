@@ -25,6 +25,8 @@ import { PurchasingController } from "./purchasing/purchasing.controller.js";
 import { PurchaseAdjustmentsService } from "./purchasing/purchase-adjustments.service.js";
 import { PurchaseReturnsService } from "./purchasing/purchase-returns.service.js";
 import { PurchasingService } from "./purchasing/purchasing.service.js";
+import { InventoryReviewController } from "./reporting/inventory-review.controller.js";
+import { InventoryReviewService } from "./reporting/inventory-review.service.js";
 import { RecoveryCoordinatorService } from "./recovery/recovery-coordinator.service.js";
 import { readMachineRecoveryKey } from "./recovery/recovery-crypto.js";
 import { RecoveryJobService } from "./recovery/recovery-job.service.js";
@@ -38,6 +40,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     DevicesController,
     HealthController,
     IdentityAccessController,
+    InventoryReviewController,
     LicensingController,
     MainDeviceProofController,
     PurchasingController,
@@ -53,6 +56,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
       useFactory: () => readPairingEndpoint(process.env),
     },
     IdentityAccessService,
+    InventoryReviewService,
     LocalDatabaseService,
     LicensingAdministrationService,
     LicensingService,

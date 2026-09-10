@@ -111,6 +111,8 @@ interface ProductRow {
   readonly medication_manufacturer: string | null;
   readonly medication_strength: string | null;
   readonly medication_trade_name: string | null;
+  readonly minimum_level: string | null;
+  readonly maximum_level: string | null;
   readonly merged_into_product_id: string | null;
   readonly name_template_version: number;
   readonly package_units: readonly {
@@ -124,6 +126,7 @@ interface ProductRow {
   readonly margin_percentage: string | null;
   readonly retail_price_fils: string;
   readonly revision: string;
+  readonly reorder_point: string | null;
   readonly scientific_name: string | null;
   readonly status: "active" | "archived" | "merged";
   readonly third_unit_name: string | null;
@@ -268,6 +271,7 @@ export class CatalogService {
              scientific_name, category, uses_per_day, uses_per_week,
              uses_per_month, food_timing, externally_visible,
              ai_sharing_allowed, manual_state_colour, cold_storage_required,
+             minimum_level, maximum_level, reorder_point,
              count_default_unit_id, purchase_default_unit_id,
              sale_default_unit_id, pricing_method, retail_price_fils,
              wholesale_price_fils, margin_percentage, price_rounding,
@@ -275,7 +279,8 @@ export class CatalogService {
            ) values (
              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
              $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
-             $26, $27, $28, $29, $30, $31, $32, $33, $34, $34
+             $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37,
+             $37
            ) returning id`,
           [
             ...productWriteValues(
@@ -392,18 +397,21 @@ export class CatalogService {
                ai_sharing_allowed = $23,
                manual_state_colour = $24,
                cold_storage_required = $25,
-               count_default_unit_id = $26,
-               purchase_default_unit_id = $27,
-               sale_default_unit_id = $28,
-               pricing_method = $29,
-               retail_price_fils = $30,
-               wholesale_price_fils = $31,
-               margin_percentage = $32,
-               price_rounding = $33,
-               updated_by = $34,
+               minimum_level = $26,
+               maximum_level = $27,
+               reorder_point = $28,
+               count_default_unit_id = $29,
+               purchase_default_unit_id = $30,
+               sale_default_unit_id = $31,
+               pricing_method = $32,
+               retail_price_fils = $33,
+               wholesale_price_fils = $34,
+               margin_percentage = $35,
+               price_rounding = $36,
+               updated_by = $37,
                updated_at = statement_timestamp(),
                revision = revision + 1
-           where id = $35 and pharmacy_id = $1`,
+           where id = $38 and pharmacy_id = $1`,
           [
             ...values,
             defaultUnitIds.count,
@@ -1230,6 +1238,9 @@ function productWriteValues(
     input.sharing.aiSharingAllowed,
     input.stateColours.manual,
     input.stateColours.coldStorageRequired,
+    input.stockLevels.minimumLevel,
+    input.stockLevels.maximumLevel,
+    input.stockLevels.reorderPoint,
   ];
 }
 
@@ -1598,6 +1609,11 @@ function productView(row: ProductRow): Product {
     stateColours: {
       coldStorageRequired: row.cold_storage_required,
       manual: row.manual_state_colour,
+    },
+    stockLevels: {
+      maximumLevel: row.maximum_level,
+      minimumLevel: row.minimum_level,
+      reorderPoint: row.reorder_point,
     },
     status: row.status,
   });
@@ -2075,6 +2091,9 @@ const PRODUCT_SELECT = `select product_row.id,
        product_row.ai_sharing_allowed,
        product_row.manual_state_colour,
        product_row.cold_storage_required,
+       product_row.minimum_level::text,
+       product_row.maximum_level::text,
+       product_row.reorder_point::text,
        product_row.status,
        product_row.merged_into_product_id,
        product_row.revision::text,

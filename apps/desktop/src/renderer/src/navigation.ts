@@ -60,8 +60,8 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   {
     hash: "#/inventory",
     id: "inventory",
-    implemented: false,
-    requiredPermissionsAny: [],
+    implemented: true,
+    requiredPermissionsAny: ["inventory.review"],
   },
   {
     hash: "#/catalog/products",

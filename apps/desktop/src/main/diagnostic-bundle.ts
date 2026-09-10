@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { open, readFile, rename, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { arch, platform, release } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -14,6 +14,7 @@ import {
 } from "@breev/contracts/desktop-preload";
 
 import { containsDiagnosticCanary } from "./diagnostic-redaction.js";
+import { writeExportedJson } from "./exported-file.js";
 
 const executeFile = promisify(execFile);
 const MAXIMUM_LOG_FILES = 5;
@@ -276,22 +277,7 @@ export async function writeDiagnosticBundle(
     throw new Error("Diagnostic bundle exceeds the safe export limit");
   }
 
-  const temporaryPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${randomBytes(8).toString("hex")}.tmp`,
-  );
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(temporaryPath, "wx", 0o600);
-    await handle.writeFile(serialized, "utf8");
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await rename(temporaryPath, filePath);
-  } finally {
-    await handle?.close().catch(() => undefined);
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
-  }
+  await writeExportedJson(filePath, serialized, MAXIMUM_BUNDLE_BYTES);
 }
 
 function assertDiagnosticDestination(filePath: string): void {

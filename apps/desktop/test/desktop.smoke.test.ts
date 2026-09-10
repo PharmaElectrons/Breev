@@ -164,6 +164,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
         "cancelTerminalPairing",
         "copyIdentifier",
         "exportDiagnostics",
+        "saveInventoryExport",
         "getStartupConfig",
         "getTerminalPairingState",
         "openSupport",

@@ -212,6 +212,39 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     });
   });
 
+  it("round-trips integer stock levels and rejects an inverted range", async () => {
+    const created = await request("POST", "/catalog/products", {
+      ...medicationRequest("Stock Level Product", []),
+      stockLevels: {
+        maximumLevel: "100",
+        minimumLevel: "10",
+        reorderPoint: "20",
+      },
+    });
+    expect(created.status, failureContext([created])).toBe(201);
+    expect(created.body?.stockLevels).toEqual({
+      maximumLevel: "100",
+      minimumLevel: "10",
+      reorderPoint: "20",
+    });
+    const productId = String(created.body?.id);
+    const read = await request("GET", productPath(productId));
+    expect(read.status, failureContext([read])).toBe(200);
+    expect(read.body?.stockLevels).toEqual(created.body?.stockLevels);
+
+    const rejected = await request("PUT", productPath(productId), {
+      ...medicationRequest("Stock Level Product", []),
+      expectedRevision: created.body?.revision,
+      stockLevels: {
+        maximumLevel: "9",
+        minimumLevel: "10",
+        reorderPoint: "5",
+      },
+    });
+    expect(rejected.status, failureContext([rejected])).toBe(400);
+    expect(rejected.body).toMatchObject({ code: "body-invalid" });
+  });
+
   it("searches ordered subsequences and barcodes, suggests and prints an internal code, and keeps daily matching eligible across restart and day boundaries", async () => {
     const searchable = await request(
       "POST",
@@ -1444,6 +1477,7 @@ function medicationRequest(
     scientificName: "Paracetamol",
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: "blue" },
+    stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }
 
@@ -1488,6 +1522,7 @@ function generalItemRequest(company: string): ProductCreateRequest {
     scientificName: null,
     sharing: { aiSharingAllowed: true, externallyVisible: false },
     stateColours: { coldStorageRequired: false, manual: null },
+    stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }
 

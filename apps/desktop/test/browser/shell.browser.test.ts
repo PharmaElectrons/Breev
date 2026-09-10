@@ -757,8 +757,9 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager" }),
     ).toBeVisible();
-    // The built-in manager role is seeded with role administration and Product
-    // search: the role editor is offered and user management is not.
+    // The built-in manager role is seeded with role administration, Product
+    // search, inventory review, and inventory valuation; the role editor is
+    // offered and user management is not.
     await expect(
       page.getByRole("heading", { name: "User management" }),
     ).toHaveCount(0);
@@ -766,7 +767,7 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("heading", { name: "Configure role permissions" }),
     ).toBeVisible();
     await expect(page.locator(".permission-summary p")).toHaveText(
-      "Manage roles and permissions · Search products",
+      "Manage roles and permissions · Search products · Review inventory · View inventory valuation",
     );
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
@@ -1281,7 +1282,7 @@ test.describe.serial("bilingual desktop shell", () => {
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await roleList
       .getByRole("button", {
-        name: `Manager 2 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
+        name: `Manager 4 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
@@ -1338,7 +1339,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page
       .getByRole("navigation", { name: "Roles" })
       .getByRole("button", {
-        name: `Manager 2 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
+        name: `Manager 4 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
@@ -1382,7 +1383,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page
       .getByRole("navigation", { name: "Roles" })
       .getByRole("button", {
-        name: `Manager 2 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
+        name: `Manager 4 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
@@ -2089,6 +2090,7 @@ async function installDesktopFake(
         copyIdentifier: async () => ({ copied: true as const }),
         printBarcodeLabel: async () => ({ status: "handed-off" as const }),
         exportDiagnostics: async () => ({ status: "saved" as const }),
+        saveInventoryExport: async () => ({ status: "saved" as const }),
         getTerminalPairingState: async () => pairing,
         openSupport: async () => ({ status: "unavailable" as const }),
         reportRendererIncident: async () => ({ accepted: true as const }),

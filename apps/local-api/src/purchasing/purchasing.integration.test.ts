@@ -790,6 +790,7 @@ function medicationRequest(tradeName: string): ProductCreateRequest {
     scientificName: "Paracetamol",
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: "blue" },
+    stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }
 function headers(

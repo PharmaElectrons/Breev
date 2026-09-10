@@ -14,6 +14,8 @@ export const PERMISSION_NAMES = [
   "draft.price.override",
   "identity.roles.manage",
   "identity.users.manage",
+  "inventory.review",
+  "inventory.valuation.view",
   "licensing.manage",
   "pharmacy.settings.manage",
   "pricing.below_cost",
@@ -50,6 +52,7 @@ export const STEP_UP_ACTIONS = {
   "identity.user.create": "identity.users.manage",
   "identity.user.password.reset": "identity.users.manage",
   "identity.user.update": "identity.users.manage",
+  "inventory.sensitive.export": "inventory.valuation.view",
   "licensing.licence.deactivate": "licensing.manage",
   "licensing.licence.install": "licensing.manage",
 } as const satisfies Readonly<Record<string, PermissionName>>;

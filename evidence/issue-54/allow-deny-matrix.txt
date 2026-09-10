@@ -1,0 +1,17 @@
+Issue #54 server-boundary allow/deny matrix evidence
+
+Host: Linux, Docker Testcontainers postgres:18.6-bookworm, real compiled local API child process.
+Command: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/reporting/inventory-authorization.integration.test.ts
+
+
+ RUN  v4.1.11 /home/mohamed/Desktop/pharmaa/PharmaElectrons/apps/local-api
+
+ ✓ src/reporting/inventory-authorization.integration.test.ts > Inventory review server-boundary authorization matrix > filters valuation by permission while every review role can read the item 188ms
+ ✓ src/reporting/inventory-authorization.integration.test.ts > Inventory review server-boundary authorization matrix > gates the original posted purchase drill-down independently of movement access 109ms
+ ✓ src/reporting/inventory-authorization.integration.test.ts > Inventory review server-boundary authorization matrix > allows preferences for review roles and audits all protected export decisions 501ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  07:33:15
+   Duration  12.66s (transform 87ms, setup 0ms, import 382ms, tests 12.18s, environment 0ms)
+

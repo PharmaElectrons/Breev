@@ -131,6 +131,14 @@ const permissionLabels: Record<
         "إضافة المستخدمين وإعادة تعيين كلمات مرورهم وإيقاف الحسابات وتعيين الأدوار.",
       name: "إدارة المستخدمين",
     },
+    "inventory.review": {
+      description: "مراجعة الرصيد والحركات والمخاطر دون تعديل المخزون.",
+      name: "مراجعة المخزون",
+    },
+    "inventory.valuation.view": {
+      description: "عرض قيمة المخزون ومتوسط التكلفة وبيانات المورد الحساسة.",
+      name: "عرض تقييم المخزون",
+    },
     "licensing.manage": {
       description: "تثبيت ترخيص الصيدلية أو تجديده أو إزالته.",
       name: "إدارة الترخيص",
@@ -198,6 +206,16 @@ const permissionLabels: Record<
       description:
         "Add users, reset their passwords, lock accounts, and assign roles.",
       name: "Manage users",
+    },
+    "inventory.review": {
+      description:
+        "Review balances, movements, and risks without changing stock.",
+      name: "Review inventory",
+    },
+    "inventory.valuation.view": {
+      description:
+        "View inventory value, average cost, and sensitive supplier data.",
+      name: "View inventory valuation",
     },
     "licensing.manage": {
       description: "Install or renew the pharmacy licence, or remove it.",
@@ -308,6 +326,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "last-owner-required": "يجب أن يبقى مالك نشط واحد على الأقل.",
       "owner-permission-floor-required":
         "يجب أن يحتفظ دور المالك بصلاحيتي إدارة الأدوار والمستخدمين.",
+      "owner-role-required": "يجب أن يكون حسابك حساب المالك لهذا التصدير.",
       "permission-denied": "لا يملك حسابك الإذن المطلوب.",
       "rate-limit-exceeded": "محاولات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.",
       "role-name-reserved":
@@ -351,6 +370,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "devices-licensing": "الأجهزة والترخيص",
       products: "الأصناف",
       purchasing: "المشتريات والموردون",
+      inventory: "المخزون",
     },
     permissionLabels: permissionLabels.ar,
     permissions: "الصلاحيات الممنوحة",
@@ -425,6 +445,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "last-owner-required": "At least one active owner must remain.",
       "owner-permission-floor-required":
         "The owner role must keep role and user management permissions.",
+      "owner-role-required": "Only the owner account can run this export.",
       "permission-denied":
         "Your account does not have the required permission.",
       "rate-limit-exceeded":
@@ -472,6 +493,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "devices-licensing": "Devices and licensing",
       products: "Products",
       purchasing: "Purchasing and suppliers",
+      inventory: "Inventory",
     },
     permissionLabels: permissionLabels.en,
     permissions: "Granted permissions",

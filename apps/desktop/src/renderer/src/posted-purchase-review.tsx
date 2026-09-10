@@ -29,13 +29,17 @@ type CurrentRecord =
   | { readonly kind: "supplier"; readonly value: Supplier };
 
 export function PostedPurchaseReview({
+  address,
   baseUrl,
   onClose,
   open,
+  returnHash = "#/purchases",
 }: {
+  readonly address?: { readonly id: string };
   readonly baseUrl: string;
   readonly onClose: () => void;
   readonly open: boolean;
+  readonly returnHash?: string;
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
@@ -87,7 +91,10 @@ export function PostedPurchaseReview({
       setReturnDraftActive(false);
       setReturnLeaveRequest(0);
       setAnnouncement("");
-      const addressed = postedPurchaseAddress(window.location.hash);
+      const addressed =
+        address === undefined
+          ? postedPurchaseAddress(window.location.hash)
+          : { correction: null, id: address.id };
       if (addressed === null) {
         void loadList({});
         queueMicrotask(() => searchRef.current?.focus());
@@ -97,7 +104,7 @@ export function PostedPurchaseReview({
     } else if (!open && dialog?.open) {
       dialog.close();
     }
-  }, [baseUrl, open]);
+  }, [address, baseUrl, open, returnHash]);
 
   async function loadList(input: PurchasePostedListRequest): Promise<void> {
     setLoading(true);
@@ -128,13 +135,15 @@ export function PostedPurchaseReview({
       setPostedReturn(null);
       setCurrentRecord(null);
       setCorrection(addressedCorrection);
-      window.history.replaceState(
-        null,
-        "",
-        `#/purchases/posted/${purchaseId}${
-          addressedCorrection === null ? "" : `/${addressedCorrection}`
-        }`,
-      );
+      if (address === undefined) {
+        window.history.replaceState(
+          null,
+          "",
+          `#/purchases/posted/${purchaseId}${
+            addressedCorrection === null ? "" : `/${addressedCorrection}`
+          }`,
+        );
+      }
     } catch (caught) {
       handleFailure(caught);
     } finally {
@@ -160,7 +169,11 @@ export function PostedPurchaseReview({
     setDetail(null);
     setCurrentRecord(null);
     setCorrection(null);
-    window.history.replaceState(null, "", "#/purchases");
+    window.history.replaceState(null, "", returnHash);
+    if (address !== undefined) {
+      dialogRef.current?.close();
+      return;
+    }
     focusAfterRender(opener);
   }
 
@@ -283,8 +296,11 @@ export function PostedPurchaseReview({
   }
 
   function handleDialogClose(): void {
-    if (window.location.hash.startsWith("#/purchases/posted/")) {
-      window.history.replaceState(null, "", "#/purchases");
+    if (
+      address !== undefined ||
+      window.location.hash.startsWith("#/purchases/posted/")
+    ) {
+      window.history.replaceState(null, "", returnHash);
     }
     onClose();
   }

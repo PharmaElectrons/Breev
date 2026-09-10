@@ -95,6 +95,8 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "devices.pair",
   "identity.roles.manage",
   "identity.users.manage",
+  "inventory.review",
+  "inventory.valuation.view",
   "licensing.manage",
   "pharmacy.settings.manage",
   "purchases.adjustments.manage",
@@ -121,6 +123,7 @@ export const stepUpActionSchema = z.enum([
   "identity.user.password.reset",
   "identity.user.create",
   "identity.user.update",
+  "inventory.sensitive.export",
   "licensing.licence.deactivate",
   "licensing.licence.install",
 ]);
@@ -137,6 +140,7 @@ export const IDENTITY_DENIAL_CODES = [
   "idempotency-conflict",
   "last-owner-required",
   "owner-permission-floor-required",
+  "owner-role-required",
   "permission-denied",
   "rate-limit-exceeded",
   "role-name-reserved",
@@ -1796,6 +1800,26 @@ const productAttributeFields = {
   scientificName: optionalProductTextSchema(160),
   sharing: productSharingControlsSchema,
   stateColours: productStateColoursSchema,
+  stockLevels: z
+    .strictObject({
+      minimumLevel: nonNegativeIntegerStringSchema.nullable(),
+      maximumLevel: nonNegativeIntegerStringSchema.nullable(),
+      reorderPoint: nonNegativeIntegerStringSchema.nullable(),
+    })
+    .superRefine((levels, ctx) => {
+      if (
+        levels.minimumLevel !== null &&
+        levels.maximumLevel !== null &&
+        BigInt(levels.maximumLevel) < BigInt(levels.minimumLevel)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["maximumLevel"],
+          message:
+            "Maximum level must be greater than or equal to minimum level",
+        });
+      }
+    }),
 } as const;
 
 /**
@@ -2126,6 +2150,277 @@ export const CATALOG_CONTRACTS = [
   productMergeContract,
   productReadContract,
   productSearchContract,
+] as const;
+
+export const INVENTORY_COLUMN_FIELDS = [
+  "item",
+  "balance",
+  "value",
+  "averageCost",
+  "batches",
+  "expiry",
+  "levels",
+  "reorderPoint",
+  "consumptionRate",
+  "risk",
+] as const;
+export const inventoryColumnFieldSchema = z.enum(INVENTORY_COLUMN_FIELDS);
+export const INVENTORY_RISK_INDICATORS = [
+  "out-of-stock",
+  "below-minimum",
+  "at-or-below-reorder-point",
+  "above-maximum",
+  "expiring-soon",
+  "expired",
+  "missing-barcode",
+  "cold-storage",
+] as const;
+export const inventoryRiskIndicatorSchema = z.enum(INVENTORY_RISK_INDICATORS);
+const signedIntegerStringSchema = z.string().regex(/^-?(?:0|[1-9]\d*)$/u);
+const inventoryCountSchema = nonNegativeIntegerStringSchema;
+const inventoryStockLevelsSchema = z.strictObject({
+  minimumLevel: nonNegativeIntegerStringSchema.nullable(),
+  maximumLevel: nonNegativeIntegerStringSchema.nullable(),
+  reorderPoint: nonNegativeIntegerStringSchema.nullable(),
+});
+const inventoryStateColourSchema = z.strictObject({
+  automatic: productStateColorSchema,
+  effective: productStateColorSchema,
+  manual: productStateColorSchema.nullable(),
+});
+export const inventoryItemSchema = z.strictObject({
+  averageUnitCostFils: priceFilsSchema.nullable(),
+  balance: signedIntegerStringSchema,
+  batches: z.strictObject({
+    count: inventoryCountSchema,
+    earliestExpiry: z.iso.date().nullable(),
+    expiredCount: inventoryCountSchema,
+  }),
+  consumptionRatePer30Days: inventoryCountSchema,
+  displayName: z.string().min(1).max(726),
+  productId: z.uuidv7(),
+  reconciliation: z.enum(["consistent", "mismatch"]),
+  riskIndicators: z.array(inventoryRiskIndicatorSchema),
+  stateColour: inventoryStateColourSchema,
+  status: productStatusSchema,
+  stockLevels: inventoryStockLevelsSchema,
+  valueFils: signedIntegerStringSchema.nullable(),
+});
+export const inventoryDenialSchema = z.strictObject({
+  code: z.enum([
+    "body-invalid",
+    "product-not-found",
+    "idempotency-conflict",
+    "version-conflict",
+    "owner-role-required",
+  ]),
+  fieldErrors: z.array(catalogFieldErrorSchema),
+  requestId: z.uuidv7(),
+  status: z.literal("denied"),
+});
+const inventoryReadDenialResponses = {
+  401: identityDenialSchema,
+  403: identityOrEntitlementDenialSchema,
+} as const;
+export const inventoryItemListContract = {
+  method: "GET",
+  path: "/inventory/items",
+  responses: {
+    200: z.strictObject({
+      fields: z.strictObject({ valuation: z.enum(["granted", "denied"]) }),
+      items: z.array(inventoryItemSchema),
+    }),
+    ...inventoryReadDenialResponses,
+    400: inventoryDenialSchema,
+    404: inventoryDenialSchema,
+  },
+} as const;
+
+export const INVENTORY_MOVEMENT_KINDS = [
+  "purchase-adjustment",
+  "purchase-receipt",
+  "purchase-return",
+] as const;
+const inventoryMovementBaseSchema = z.strictObject({
+  batchId: z.uuidv7(),
+  id: z.uuidv7(),
+  occurredAt: z.iso.datetime(),
+  quantity: signedIntegerStringSchema,
+  reference: z.strictObject({
+    documentId: z.uuidv7(),
+    documentType: z.string().min(1).max(64),
+    label: z.string().min(1).max(256),
+    number: z
+      .strictObject({
+        series: z.literal("P"),
+        value: decimalRevisionSchema,
+        year: z.number().int().min(1970).max(9999),
+      })
+      .nullable(),
+    openable: z.boolean(),
+  }),
+  user: z.strictObject({
+    displayName: z.string().min(1).max(96),
+    id: z.uuidv7(),
+  }),
+  valueFils: signedIntegerStringSchema.nullable(),
+});
+export const inventoryMovementSchema = z.discriminatedUnion("kind", [
+  inventoryMovementBaseSchema.extend({
+    kind: z.literal("purchase-adjustment"),
+  }),
+  inventoryMovementBaseSchema.extend({ kind: z.literal("purchase-receipt") }),
+  inventoryMovementBaseSchema.extend({ kind: z.literal("purchase-return") }),
+]);
+export const inventoryMovementHistoryContract = {
+  method: "GET",
+  path: "/inventory/items/:productId/movements",
+  responses: {
+    200: z.strictObject({
+      movements: z.array(inventoryMovementSchema),
+      productDisplayName: z.string().min(1).max(726),
+      productId: z.uuidv7(),
+    }),
+    ...inventoryReadDenialResponses,
+    400: inventoryDenialSchema,
+    404: inventoryDenialSchema,
+  },
+} as const;
+export const inventoryMovementHistoryPath = (productId: string): string =>
+  `/inventory/items/${productId}/movements`;
+
+export const inventoryReviewPreferencesSchema = z
+  .strictObject({
+    columns: z
+      .array(
+        z.strictObject({
+          field: inventoryColumnFieldSchema,
+          visible: z.boolean(),
+        }),
+      )
+      .length(INVENTORY_COLUMN_FIELDS.length),
+    revision: decimalRevisionSchema,
+  })
+  .superRefine((preferences, ctx) => {
+    const fields = preferences.columns.map((column) => column.field);
+    if (
+      new Set(fields).size !== INVENTORY_COLUMN_FIELDS.length ||
+      INVENTORY_COLUMN_FIELDS.some((field) => !fields.includes(field))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["columns"],
+        message: "Each inventory field must occur exactly once",
+      });
+    }
+    if (
+      !preferences.columns.some(
+        ({ field, visible }) => field === "item" && visible,
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["columns"],
+        message: "The Item column must remain visible",
+      });
+    }
+  });
+export const inventoryReviewPreferencesUpdateRequestSchema = z.strictObject({
+  columns: inventoryReviewPreferencesSchema.shape.columns,
+  expectedRevision: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const inventoryReviewPreferencesReadContract = {
+  method: "GET",
+  path: "/inventory/review-preferences",
+  responses: {
+    200: inventoryReviewPreferencesSchema,
+    ...catalogReadDenialResponses,
+  },
+} as const;
+export const inventoryReviewPreferencesUpdateContract = {
+  method: "PUT",
+  path: "/inventory/review-preferences",
+  request: { body: inventoryReviewPreferencesUpdateRequestSchema },
+  responses: {
+    200: inventoryReviewPreferencesSchema,
+    ...catalogCommandDenialResponses,
+  },
+} as const;
+
+const inventoryExportMoneySchema = z
+  .string()
+  .regex(/^(?:0|[1-9]\d*)$/u)
+  .nullable();
+export const inventorySensitiveExportRequestSchema = z.strictObject({
+  challengeId: z.uuidv7(),
+  idempotencyKey: z.uuid(),
+});
+export const inventorySensitiveExportSchema = z.strictObject({
+  counts: z.strictObject({
+    batches: inventoryCountSchema,
+    items: inventoryCountSchema,
+    movements: inventoryCountSchema,
+  }),
+  exportedAt: z.iso.datetime(),
+  exportedBy: z.strictObject({
+    displayName: z.string().min(1).max(96),
+    id: z.uuidv7(),
+  }),
+  items: z.array(
+    z.strictObject({
+      averageUnitCostFils: inventoryExportMoneySchema,
+      balance: signedIntegerStringSchema,
+      batches: z.array(
+        z.strictObject({
+          balance: signedIntegerStringSchema,
+          batchId: z.uuidv7(),
+          expiryDate: z.iso.date().nullable(),
+          lotNumber: z.string().min(1).max(120).nullable(),
+        }),
+      ),
+      displayName: z.string().min(1).max(726),
+      productId: z.uuidv7(),
+      status: productStatusSchema,
+      stockLevels: inventoryStockLevelsSchema,
+      suppliers: z.array(
+        z.strictObject({
+          lastCostAfterDiscountFils: inventoryExportMoneySchema,
+          lastInvoiceDate: z.iso.date().nullable(),
+          lastPostedPurchaseId: z.uuidv7().nullable(),
+          lastPrimarySupplierCostFils: inventoryExportMoneySchema,
+          receiptCount: inventoryCountSchema,
+          supplierId: z.uuidv7(),
+          supplierName: z.string().min(1).max(160),
+        }),
+      ),
+      valueFils: inventoryExportMoneySchema,
+    }),
+  ),
+  pharmacyId: z.uuidv7(),
+  valuationMethod: z.literal("weighted-average-cost"),
+});
+const inventoryCommandDenialResponses = {
+  ...inventoryReadDenialResponses,
+  400: inventoryDenialSchema,
+  404: inventoryDenialSchema,
+  409: inventoryDenialSchema,
+} as const;
+export const inventorySensitiveExportContract = {
+  method: "POST",
+  path: "/inventory/sensitive-exports",
+  request: { body: inventorySensitiveExportRequestSchema },
+  responses: {
+    201: inventorySensitiveExportSchema,
+    ...inventoryCommandDenialResponses,
+  },
+} as const;
+export const INVENTORY_CONTRACTS = [
+  inventoryItemListContract,
+  inventoryMovementHistoryContract,
+  inventoryReviewPreferencesReadContract,
+  inventoryReviewPreferencesUpdateContract,
+  inventorySensitiveExportContract,
 ] as const;
 
 const supplierNameSchema = z
@@ -3746,6 +4041,25 @@ export type ProductSharingControls = z.infer<
   typeof productSharingControlsSchema
 >;
 export type ProductStateColours = z.infer<typeof productStateColoursSchema>;
+export type InventoryColumnField = z.infer<typeof inventoryColumnFieldSchema>;
+export type InventoryRiskIndicator = z.infer<
+  typeof inventoryRiskIndicatorSchema
+>;
+export type InventoryItem = z.infer<typeof inventoryItemSchema>;
+export type InventoryMovement = z.infer<typeof inventoryMovementSchema>;
+export type InventoryReviewPreferences = z.infer<
+  typeof inventoryReviewPreferencesSchema
+>;
+export type InventoryReviewPreferencesUpdateRequest = z.infer<
+  typeof inventoryReviewPreferencesUpdateRequestSchema
+>;
+export type InventorySensitiveExportRequest = z.infer<
+  typeof inventorySensitiveExportRequestSchema
+>;
+export type InventorySensitiveExport = z.infer<
+  typeof inventorySensitiveExportSchema
+>;
+export type InventoryDenial = z.infer<typeof inventoryDenialSchema>;
 export type ProductUnitInterface = z.infer<typeof productUnitInterfaceSchema>;
 export type ProductPackageUnit = z.infer<typeof productPackageUnitSchema>;
 export type ProductThirdUnit = z.infer<typeof productThirdUnitSchema>;

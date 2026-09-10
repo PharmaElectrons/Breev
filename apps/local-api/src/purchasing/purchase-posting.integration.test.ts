@@ -2403,6 +2403,7 @@ function medicationRequest(
     scientificName: "Paracetamol",
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired, manual: "blue" },
+    stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }
 function headers(

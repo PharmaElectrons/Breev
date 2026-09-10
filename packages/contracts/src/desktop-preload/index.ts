@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  inventorySensitiveExportSchema,
+  type InventorySensitiveExport,
+} from "../local-rest/index.js";
 
 export const DESKTOP_API_GLOBAL = "breevDesktop" as const;
 
@@ -8,6 +12,8 @@ export const DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL =
   "breev:desktop:cancel-terminal-pairing" as const;
 export const DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL =
   "breev:desktop:export-diagnostics" as const;
+export const DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL =
+  "breev:desktop:save-inventory-export" as const;
 export const DESKTOP_MANUAL_ENDPOINT_CHANNEL =
   "breev:desktop:submit-manual-endpoint" as const;
 export const DESKTOP_OPEN_SUPPORT_CHANNEL =
@@ -228,6 +234,19 @@ export const desktopExportDiagnosticsResponseSchema = z.discriminatedUnion(
   ],
 );
 
+export const desktopSaveInventoryExportRequestSchema = z.strictObject({
+  bundle: inventorySensitiveExportSchema,
+  locale: z.enum(["ar", "en"]),
+});
+export const desktopSaveInventoryExportResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.strictObject({ status: z.literal("cancelled") }),
+    z.strictObject({ status: z.literal("failed") }),
+    z.strictObject({ status: z.literal("saved") }),
+  ],
+);
+
 export const desktopOpenSupportRequestSchema = z.strictObject({
   incidentCode: z
     .string()
@@ -339,6 +358,12 @@ export type DesktopExportDiagnosticsRequest = z.infer<
 export type DesktopExportDiagnosticsResponse = z.infer<
   typeof desktopExportDiagnosticsResponseSchema
 >;
+export type DesktopSaveInventoryExportRequest = z.infer<
+  typeof desktopSaveInventoryExportRequestSchema
+>;
+export type DesktopSaveInventoryExportResponse = z.infer<
+  typeof desktopSaveInventoryExportResponseSchema
+>;
 export type DesktopOpenSupportRequest = z.infer<
   typeof desktopOpenSupportRequestSchema
 >;
@@ -372,6 +397,10 @@ export interface BreevDesktopApi {
   exportDiagnostics(
     request: DesktopExportDiagnosticsRequest,
   ): Promise<DesktopExportDiagnosticsResponse>;
+  saveInventoryExport(request: {
+    readonly locale: "ar" | "en";
+    readonly bundle: InventorySensitiveExport;
+  }): Promise<DesktopSaveInventoryExportResponse>;
   getStartupConfig(): Promise<DesktopStartupConfig>;
   getTerminalPairingState(): Promise<TerminalPairingState>;
   openSupport(

@@ -1,0 +1,21 @@
+Issue #54 reconciliation / no-mutation / migration evidence
+
+Host: Linux, Docker Testcontainers postgres:18.6-bookworm, real compiled local API child process.
+Command: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/reporting/inventory-review.integration.test.ts src/identity-access/inventory-review-migration.integration.test.ts
+
+
+ RUN  v4.1.11 /home/mohamed/Desktop/pharmaa/PharmaElectrons/apps/local-api
+
+ ✓ src/reporting/inventory-review.integration.test.ts > Inventory review PostgreSQL seam > reconciles the API projection independently against movements and valuation state 31ms
+ ✓ src/reporting/inventory-review.integration.test.ts > Inventory review PostgreSQL seam > keeps all stock and posted facts unchanged across every review route 127ms
+ ✓ src/reporting/inventory-review.integration.test.ts > Inventory review PostgreSQL seam > rejects direct and maintenance-adjacent stock writes as the application role 36ms
+ ✓ src/reporting/inventory-review.integration.test.ts > Inventory review PostgreSQL seam > returns one complete pre- or post-posting snapshot under concurrent posting 81ms
+ ✓ src/identity-access/inventory-review-migration.integration.test.ts > migration 0019: inventory review > adds the inventory grants, advances each touched role once, and is idempotent 174ms
+
+ Test Files  2 passed (2)
+      Tests  5 passed (5)
+   Start at  07:32:52
+   Duration  21.84s (transform 124ms, setup 0ms, import 961ms, tests 20.69s, environment 0ms)
+
+
+Full suite (pnpm test:integration) on the same host: 26 files passed, 249 tests passed, 2 skipped.

@@ -412,6 +412,8 @@ describe("local REST health contract", () => {
       "devices.pair",
       "identity.roles.manage",
       "identity.users.manage",
+      "inventory.review",
+      "inventory.valuation.view",
       "licensing.manage",
       "pharmacy.settings.manage",
       "purchases.adjustments.manage",
@@ -919,6 +921,7 @@ const PRODUCT_ATTRIBUTES = {
   scientificName: "Paracetamol",
   sharing: { externallyVisible: true, aiSharingAllowed: false },
   stateColours: { manual: "red", coldStorageRequired: false },
+  stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
 } as const;
 
 const PRODUCT = {
