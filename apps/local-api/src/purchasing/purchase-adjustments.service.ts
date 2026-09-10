@@ -1550,20 +1550,28 @@ async function calculateSummary(
     throw new Error(`Adjustment Delta failed: ${outcome.problem}`);
   const currentMap = new Map(current.rows.map((row) => [row.lineageId, row]));
   const draftMap = new Map(draftSnapshots.map((row) => [row.lineageId, row]));
-  const rowDeltas = outcome.delta.rowDeltas.map((delta) => {
-    const before = currentMap.get(delta.lineageId) ?? null;
-    const after = draftMap.get(delta.lineageId) ?? null;
-    return {
-      after,
-      before,
-      changes: displayRowChanges(before, after),
-      kind: before === null ? "added" : after === null ? "removed" : "changed",
-      lineageId: delta.lineageId,
-      primarySupplierCostDeltaFils:
-        delta.primarySupplierCostDeltaFils.toString(),
-      quantityDelta: delta.quantityDelta.toString(),
-    } as const;
-  });
+  const rowDeltas = outcome.delta.rowDeltas
+    .map((delta) => {
+      const before = currentMap.get(delta.lineageId) ?? null;
+      const after = draftMap.get(delta.lineageId) ?? null;
+      return {
+        after,
+        before,
+        changes: displayRowChanges(before, after),
+        kind:
+          before === null ? "added" : after === null ? "removed" : "changed",
+        lineageId: delta.lineageId,
+        primarySupplierCostDeltaFils:
+          delta.primarySupplierCostDeltaFils.toString(),
+        quantityDelta: delta.quantityDelta.toString(),
+      } as const;
+    })
+    .filter(
+      (row) =>
+        row.changes.length > 0 ||
+        row.quantityDelta !== "0" ||
+        row.primarySupplierCostDeltaFils !== "0",
+    );
   const headerChanges = displayHeaderChanges(current.header, draftHeader);
   const currentGross =
     BigInt(original.primary_supplier_cost_fils) + BigInt(prior.primary_delta);
@@ -1723,7 +1731,9 @@ async function validateSummaryValuation(
   calculated: CalculatedSummary,
 ): Promise<void> {
   const byProduct = aggregateProductEffects(calculated.summary.stockEffects);
-  for (const effect of byProduct.values()) {
+  const sortedProductIds = [...byProduct.keys()].sort();
+  for (const productId of sortedProductIds) {
+    const effect = byProduct.get(productId)!;
     const valid = await validatePurchaseAdjustmentValuation(client, {
       pharmacyId,
       primarySupplierCostDeltaFils: effect.primarySupplierCostDeltaFils,
@@ -1855,7 +1865,9 @@ async function applyValuationEffects(
       quantityDelta: row.quantityDelta,
     })),
   );
-  for (const effect of effects.values()) {
+  const sortedProductIds = [...effects.keys()].sort();
+  for (const productId of sortedProductIds) {
+    const effect = effects.get(productId)!;
     const applied = await applyPurchaseAdjustmentToValuation(client, {
       pharmacyId,
       primarySupplierCostDeltaFils: effect.primarySupplierCostDeltaFils,
