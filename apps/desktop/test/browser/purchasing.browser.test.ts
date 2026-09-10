@@ -952,8 +952,18 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   });
 
   test("searches and reviews immutable purchases entirely by keyboard", async ({
-    page,
+    browser,
   }) => {
+    const context = await browser.newContext({
+      recordVideo: {
+        dir: path.resolve(
+          import.meta.dirname,
+          "../../../../test-results/issue-52-video",
+        ),
+        size: { height: 768, width: 1024 },
+      },
+    });
+    const page = await context.newPage();
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     const opener = page.getByRole("button", { name: "Posted invoices" });
@@ -1135,6 +1145,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(opener).toBeFocused();
+    const video = page.video();
+    await context.close();
+    await video?.saveAs(
+      path.join(adjustmentEvidenceDir, "purchase-adjustment-keyboard.webm"),
+    );
   });
 
   test("renders explicit denied and recoverable unavailable register states", async ({
