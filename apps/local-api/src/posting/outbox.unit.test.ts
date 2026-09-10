@@ -16,6 +16,7 @@ describe("posting outbox envelope rules", () => {
       pharmacySettingsChanged: "pharmacy.settings.changed",
       purchaseInvoiceAdjusted: "purchase.invoice.adjusted",
       purchaseInvoicePosted: "purchase.invoice.posted",
+      purchaseReturnPosted: "purchase.return.posted",
     });
   });
 
@@ -24,11 +25,13 @@ describe("posting outbox envelope rules", () => {
       "pharmacy.settings.changed": [1],
       "purchase.invoice.adjusted": [1],
       "purchase.invoice.posted": [1],
+      "purchase.return.posted": [1],
     });
     expect(CURRENT_ENVELOPE_VERSIONS).toEqual({
       "pharmacy.settings.changed": 1,
       "purchase.invoice.adjusted": 1,
       "purchase.invoice.posted": 1,
+      "purchase.return.posted": 1,
     });
   });
 

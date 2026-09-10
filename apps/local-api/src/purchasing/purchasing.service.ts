@@ -107,6 +107,7 @@ const DRAFT_PERMISSION = "purchases.drafts.manage";
 const POSTED_PERMISSION = "purchases.posted.view";
 const COST_PERMISSION = "purchases.costs.view";
 const ADJUSTMENT_PERMISSION = "purchases.adjustments.manage";
+const RETURN_PERMISSION = "purchases.returns.manage";
 const POSTGRES_BIGINT_MAXIMUM = 9_223_372_036_854_775_807n;
 const COMMANDS = {
   supplierArchive: "supplier.archive",
@@ -1516,6 +1517,8 @@ export class PurchasingService {
       const costsVisible = costVisibility === "visible";
       const canAdjust =
         costsVisible && context.permissions.includes(ADJUSTMENT_PERMISSION);
+      const canReturn =
+        costsVisible && context.permissions.includes(RETURN_PERMISSION);
       const adjustmentResult = await client.query<{
         id: string;
         posted_at: Date;
@@ -1551,8 +1554,45 @@ export class PurchasingService {
             [context.pharmacyId, purchaseId],
           )
         : { rows: [] };
+      const returnResult = await client.query<{
+        id: string;
+        inventory_carrying_amount_fils: string;
+        number_value: string;
+        number_year: number;
+        posted_at: Date;
+        posted_by: string;
+        reason: string;
+        supplier_reduction_fils: string;
+      }>(
+        `select id, number_value::text, number_year, posted_at, posted_by,
+                reason, inventory_carrying_amount_fils::text,
+                supplier_reduction_fils::text
+         from posted_purchase_returns
+         where pharmacy_id = $1 and original_purchase_id = $2
+         order by number_year, number_value, id`,
+        [context.pharmacyId, purchaseId],
+      );
+      const returnDraftResult = canReturn
+        ? await client.query<{
+            id: string;
+            updated_at: Date;
+            version: string;
+          }>(
+            `select id, updated_at, version::text
+             from purchase_return_drafts
+             where pharmacy_id = $1 and original_purchase_id = $2
+               and status = 'active'
+             order by updated_at desc, id`,
+            [context.pharmacyId, purchaseId],
+          )
+        : { rows: [] };
       return purchasePostedDetailSchema.parse({
         activeAdjustmentDrafts: draftResult.rows.map((draft) => ({
+          id: draft.id,
+          updatedAt: draft.updated_at.toISOString(),
+          version: draft.version,
+        })),
+        activeReturnDrafts: returnDraftResult.rows.map((draft) => ({
           id: draft.id,
           updatedAt: draft.updated_at.toISOString(),
           version: draft.version,
@@ -1584,6 +1624,7 @@ export class PurchasingService {
           : null,
         costVisibility,
         canAdjust,
+        canReturn,
         id: header.id,
         invoiceDate: header.invoice_date,
         navigation: {
@@ -1602,6 +1643,23 @@ export class PurchasingService {
         primarySupplierCostFils: costsVisible
           ? header.primary_supplier_cost_fils
           : null,
+        returns: returnResult.rows.map((purchaseReturn) => ({
+          id: purchaseReturn.id,
+          inventoryCarryingAmountFils: costsVisible
+            ? purchaseReturn.inventory_carrying_amount_fils
+            : null,
+          number: {
+            series: "PR",
+            value: purchaseReturn.number_value,
+            year: purchaseReturn.number_year,
+          },
+          postedAt: purchaseReturn.posted_at.toISOString(),
+          postedBy: purchaseReturn.posted_by,
+          reason: purchaseReturn.reason,
+          supplierReductionFils: costsVisible
+            ? purchaseReturn.supplier_reduction_fils
+            : null,
+        })),
         rows: rowResult.rows.map((row) => ({
           baseUnitsPerEnteredUnit: row.base_units_per_entered_unit,
           costAfterDiscountFils: costsVisible
@@ -2533,6 +2591,7 @@ export class PurchasingService {
     permission:
       | typeof DRAFT_PERMISSION
       | typeof ADJUSTMENT_PERMISSION
+      | typeof RETURN_PERMISSION
       | typeof POSTED_PERMISSION
       | typeof SUPPLIER_PERMISSION,
     fieldErrors: readonly PurchasingFieldError[],
@@ -2569,6 +2628,7 @@ export class PurchasingService {
     permission:
       | typeof DRAFT_PERMISSION
       | typeof ADJUSTMENT_PERMISSION
+      | typeof RETURN_PERMISSION
       | typeof POSTED_PERMISSION
       | typeof SUPPLIER_PERMISSION,
     code:
@@ -2576,6 +2636,8 @@ export class PurchasingService {
       | "adjustment-original-not-found"
       | "draft-not-found"
       | "posted-purchase-not-found"
+      | "return-draft-not-found"
+      | "return-original-not-found"
       | "supplier-not-found",
     targetId?: string,
   ): Promise<never> {
@@ -2712,6 +2774,8 @@ export class PurchasingService {
       | "adjustment-original-not-found"
       | "draft-not-found"
       | "posted-purchase-not-found"
+      | "return-draft-not-found"
+      | "return-original-not-found"
       | "supplier-not-found",
     targetId?: string,
   ): Promise<PurchasingDenied> {

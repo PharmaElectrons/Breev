@@ -260,9 +260,9 @@ export const purchasingMessages = {
     editInvoice: "Edit Invoice",
     adjustmentStageTitle: "Purchase Invoice Adjustment draft",
     returnStageTitle: "Purchase Return",
-    correctionStageUnavailable:
-      "This route is staged for its owning issue and is not available in this build.",
-    originalRemainsUntouched: "The original invoice remains read-only:",
+    returnCarryingAmount: "Inventory carrying amount",
+    returnSupplierReduction: "Supplier balance reduction",
+    originalInvoice: "Original invoice",
   },
   ar: {
     item: "اسم المادة",
@@ -520,8 +520,8 @@ export const purchasingMessages = {
     editInvoice: "تعديل الفاتورة",
     adjustmentStageTitle: "مسودة تعديل فاتورة شراء",
     returnStageTitle: "مردود شراء",
-    correctionStageUnavailable:
-      "هذا المسار مُهيأ للمهمة المالكة له وغير متاح في هذا الإصدار.",
-    originalRemainsUntouched: "تبقى الفاتورة الأصلية للقراءة فقط:",
+    returnCarryingAmount: "القيمة الدفترية الخارجة من المخزون",
+    returnSupplierReduction: "تخفيض رصيد المورد",
+    originalInvoice: "الفاتورة الأصلية",
   },
 } as const;

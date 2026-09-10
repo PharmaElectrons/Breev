@@ -71,6 +71,9 @@ export const inventoryMovements = pgTable(
     carryingAmountFils: bigint("carrying_amount_fils", {
       mode: "bigint",
     }).notNull(),
+    supplierReductionFils: bigint("supplier_reduction_fils", {
+      mode: "bigint",
+    }),
     sourceDocumentType: text("source_document_type").notNull(),
     sourceDocumentId: uuid("source_document_id").notNull(),
     sourceRowOrdinal: integer("source_row_ordinal").notNull(),

@@ -46,6 +46,7 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       "purchases.adjustments.manage",
       "purchases.drafts.manage",
       "purchases.posted.view",
+      "purchases.returns.manage",
       "purchases.costs.view",
       "suppliers.manage",
     ],

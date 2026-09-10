@@ -226,12 +226,14 @@ describe("Purchasing REST client", () => {
       new Response(
         JSON.stringify({
           activeAdjustmentDrafts: [],
+          activeReturnDrafts: [],
           adjustments: [],
           allowanceFils: null,
           allowancePercentageSnapshot: null,
           costAfterDiscountFils: null,
           costVisibility: "hidden-by-permission",
           canAdjust: false,
+          canReturn: false,
           id,
           invoiceDate: "2026-09-08",
           navigation: {
@@ -244,6 +246,7 @@ describe("Purchasing REST client", () => {
           postedAt: "2026-09-08T10:00:00.000Z",
           postedBy: "018fa000-0000-7000-8000-000000000005",
           primarySupplierCostFils: null,
+          returns: [],
           rows: [
             {
               baseUnitsPerEnteredUnit: "1",

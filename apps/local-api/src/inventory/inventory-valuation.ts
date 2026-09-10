@@ -75,6 +75,19 @@ export interface InventoryReceipt {
   readonly quantity: bigint;
 }
 
+export interface InventoryDepletion {
+  /** Positive Inventory Units leaving stock. */
+  readonly quantity: bigint;
+}
+
+export interface InventoryDepletionResult {
+  /** Positive whole-fils Carrying Amount frozen on the outbound movement. */
+  readonly carryingAmountFils: bigint;
+  /** Frozen WAC per Inventory Unit at posting, scaled by VALUATION_SCALE. */
+  readonly carryingAmountPerUnitScaled: bigint;
+  readonly state: InventoryValuationState;
+}
+
 /** A product Breev has never received: no quantity and no value. */
 export const EMPTY_INVENTORY_VALUATION: InventoryValuationState = {
   totalQuantity: 0n,
@@ -112,6 +125,60 @@ export function applyWeightedAverageReceipt(
     totalQuantity: state.totalQuantity + receipt.quantity,
     totalValueScaled:
       state.totalValueScaled + receipt.carryingAmountFils * VALUATION_UNIT,
+  };
+}
+
+/**
+ * Removes stock at the WAC that exists when the outbound movement posts.
+ * Partial depletions round once to whole fils. A final depletion takes the
+ * entire remaining value, then zeros both fields, so a fully depleted product
+ * can never retain phantom quantity or value.
+ */
+export function applyWeightedAverageDepletion(
+  state: InventoryValuationState,
+  depletion: InventoryDepletion,
+): InventoryDepletionResult {
+  assertExact(state.totalQuantity, "A valuation quantity");
+  assertExact(state.totalValueScaled, "A valuation value");
+  assertExact(depletion.quantity, "A depleted quantity");
+  if (depletion.quantity <= 0n) {
+    throw new RangeError(
+      "A depletion must remove a positive Inventory Unit count",
+    );
+  }
+  if (depletion.quantity > state.totalQuantity) {
+    throw new RangeError("A depletion cannot make valuation quantity negative");
+  }
+  if (state.totalValueScaled < 0n) {
+    throw new RangeError("A valuation value cannot be negative");
+  }
+  const carryingAmountPerUnitScaled = divideFilsRounded(
+    state.totalValueScaled,
+    state.totalQuantity,
+  );
+  if (depletion.quantity === state.totalQuantity) {
+    return {
+      carryingAmountFils: valuationValueFils(state),
+      carryingAmountPerUnitScaled,
+      state: EMPTY_INVENTORY_VALUATION,
+    };
+  }
+  const carryingAmountFils = divideFilsRounded(
+    state.totalValueScaled * depletion.quantity,
+    state.totalQuantity * VALUATION_UNIT,
+  );
+  const nextValue =
+    state.totalValueScaled - carryingAmountFils * VALUATION_UNIT;
+  if (nextValue < 0n) {
+    throw new RangeError("A depletion cannot make valuation value negative");
+  }
+  return {
+    carryingAmountFils,
+    carryingAmountPerUnitScaled,
+    state: {
+      totalQuantity: state.totalQuantity - depletion.quantity,
+      totalValueScaled: nextValue,
+    },
   };
 }
 

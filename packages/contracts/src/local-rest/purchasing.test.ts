@@ -8,6 +8,11 @@ import {
   purchaseAdjustmentDraftSchema,
   purchaseAdjustmentPostRequestSchema,
   purchaseAdjustmentSummarySchema,
+  purchaseReturnDraftCreateRequestSchema,
+  purchaseReturnDraftSchema,
+  purchaseReturnPostRequestSchema,
+  purchaseReturnSummarySchema,
+  postedPurchaseReturnSchema,
   purchasePostedDetailSchema,
   purchasePostedListRequestSchema,
   purchasePostedListResponseSchema,
@@ -177,7 +182,7 @@ describe("supplier and purchase draft contracts", () => {
   });
 
   it("has no supplier, draft, or posting hard-delete route", () => {
-    expect(PURCHASING_CONTRACTS).toHaveLength(24);
+    expect(PURCHASING_CONTRACTS).toHaveLength(31);
     expect(
       PURCHASING_CONTRACTS.map((contract) => contract.method),
     ).not.toContain("DELETE");
@@ -472,6 +477,8 @@ describe("supplier and purchase draft contracts", () => {
       "GET",
       "POST",
       "GET",
+      "GET",
+      "POST",
     ]);
     expect(reviewContracts.map((contract) => contract.method)).not.toContain(
       "PUT",
@@ -559,12 +566,14 @@ describe("supplier and purchase draft contracts", () => {
     const posted = postedPurchase();
     const detail = {
       activeAdjustmentDrafts: [],
+      activeReturnDrafts: [],
       adjustments: [],
       allowanceFils: posted.allowanceFils,
       allowancePercentageSnapshot: posted.allowanceSnapshot.percentage,
       costAfterDiscountFils: posted.costAfterDiscountFils,
       costVisibility: "visible",
       canAdjust: true,
+      canReturn: true,
       id: posted.id,
       invoiceDate: posted.invoiceDate,
       navigation: {
@@ -577,6 +586,7 @@ describe("supplier and purchase draft contracts", () => {
       postedAt: posted.postedAt,
       postedBy: posted.postedBy,
       primarySupplierCostFils: posted.primarySupplierCostFils,
+      returns: [],
       rows: posted.rows.map((row) => ({
         baseUnitsPerEnteredUnit: row.baseUnitsPerEnteredUnit,
         costAfterDiscountFils: row.costAfterDiscountFils,
@@ -606,6 +616,137 @@ describe("supplier and purchase draft contracts", () => {
         costVisibility: "hidden-by-setting",
       }).success,
     ).toBe(false);
+  });
+
+  it("stores return carrying amount and supplier reduction as distinct exact values", () => {
+    const draft = {
+      createdAt: "2026-06-16T09:00:00.000Z",
+      evidence: "Supplier collection note 44",
+      id: DRAFT_ID,
+      originalInvoiceDate: "2026-06-15",
+      originalNumber: { series: "P", value: "1", year: 2026 },
+      originalPurchaseId: POSTING_ID,
+      reason: "Damaged packaging",
+      rows: [
+        {
+          batchId: BATCH_ID,
+          id: "018fa000-0000-7000-8000-000000000010",
+          inventoryUnitName: "Strip",
+          itemDisplayName: "Panadol Extra 500 mg tablet GSK",
+          itemId: "018fa000-0000-7000-8000-00000000000b",
+          originalPurchaseRowId: ROW_ID,
+          originalQuantity: "8",
+          previouslyReturnedQuantity: "0",
+          remainingEligibleQuantity: "8",
+          returnQuantity: "3",
+        },
+      ],
+      status: "active",
+      supplierId: SUPPLIER_ID,
+      supplierNameSnapshot: "Al-Nahrain",
+      updatedAt: "2026-06-16T09:00:00.000Z",
+      version: "1",
+    } as const;
+    expect(purchaseReturnDraftSchema.parse(draft)).toEqual(draft);
+    expect(
+      purchaseReturnDraftCreateRequestSchema.safeParse({
+        evidence: "",
+        idempotencyKey: COMMAND_ID,
+        reason: "Damaged packaging",
+      }).success,
+    ).toBe(false);
+
+    const summary = {
+      confirmationHash: "a".repeat(64),
+      draftId: DRAFT_ID,
+      draftVersion: "1",
+      inventoryCarryingAmountFils: "54000",
+      rows: [
+        {
+          batchId: BATCH_ID,
+          carryingAmountFils: "54000",
+          carryingAmountPerUnitScaled: "18000000000",
+          inventoryUnitName: "Strip",
+          itemDisplayName: "Panadol Extra 500 mg tablet GSK",
+          itemId: "018fa000-0000-7000-8000-00000000000b",
+          originalPurchaseRowId: ROW_ID,
+          quantity: "3",
+          supplierReductionFils: "60000",
+          valuationMethod: "weighted-average-cost",
+        },
+      ],
+      supplierReductionFils: "60000",
+    } as const;
+    expect(purchaseReturnSummarySchema.parse(summary)).toEqual(summary);
+    expect(summary.inventoryCarryingAmountFils).not.toBe(
+      summary.supplierReductionFils,
+    );
+    expect(
+      purchaseReturnPostRequestSchema.parse({
+        confirmationHash: summary.confirmationHash,
+        expectedVersion: "1",
+        idempotencyKey: COMMAND_ID,
+        stepUpChallengeId: "018fa000-0000-7000-8000-00000000000c",
+      }),
+    ).toBeDefined();
+
+    const postedReturn = {
+      approvalChallengeId: "018fa000-0000-7000-8000-00000000000c",
+      deviceId: "018fa000-0000-7000-8000-00000000000d",
+      draftId: DRAFT_ID,
+      evidence: draft.evidence,
+      id: "018fa000-0000-7000-8000-00000000000e",
+      inventoryCarryingAmountFils: "54000",
+      journal: {
+        entryId: JOURNAL_ID,
+        lines: [
+          {
+            accountCode: "supplier-payable",
+            creditFils: "0",
+            debitFils: "60000",
+            ordinal: 1,
+            supplierId: SUPPLIER_ID,
+          },
+          {
+            accountCode: "inventory",
+            creditFils: "54000",
+            debitFils: "0",
+            ordinal: 2,
+            supplierId: null,
+          },
+          {
+            accountCode: "inventory",
+            creditFils: "6000",
+            debitFils: "0",
+            ordinal: 3,
+            supplierId: null,
+          },
+        ],
+        templateId: "purchase.return",
+        templateVersion: 1,
+        treatment: "inventory-account-offset-pending-g01",
+      },
+      number: { series: "PR", value: "1", year: 2026 },
+      originalInvoiceDate: draft.originalInvoiceDate,
+      originalNumber: draft.originalNumber,
+      originalPurchaseId: POSTING_ID,
+      postedAt: "2026-06-16T09:01:00.000Z",
+      postedBy: "018fa000-0000-7000-8000-00000000000a",
+      reason: draft.reason,
+      rows: [
+        {
+          ...summary.rows[0],
+          id: "018fa000-0000-7000-8000-00000000000f",
+          movementId: MOVEMENT_ID,
+        },
+      ],
+      supplierId: SUPPLIER_ID,
+      supplierNameSnapshot: draft.supplierNameSnapshot,
+      supplierReductionFils: "60000",
+    } as const;
+    expect(postedPurchaseReturnSchema.parse(postedReturn)).toEqual(
+      postedReturn,
+    );
   });
 
   it("publishes exactly the five mandatory adjustment reasons", () => {

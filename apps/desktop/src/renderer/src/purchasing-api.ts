@@ -4,6 +4,7 @@ import {
   identityDenialSchema,
   licensingDenialSchema,
   postedPurchaseAdjustmentSchema,
+  postedPurchaseReturnSchema,
   purchaseAdjustmentDraftDiscardContract,
   purchaseAdjustmentDraftDiscardPath,
   purchaseAdjustmentDraftPath,
@@ -14,6 +15,16 @@ import {
   purchaseAdjustmentPostingsPath,
   purchaseAdjustmentSummaryPath,
   purchaseAdjustmentSummarySchema,
+  purchaseReturnDraftDiscardContract,
+  purchaseReturnDraftDiscardPath,
+  purchaseReturnDraftPath,
+  purchaseReturnDraftSchema,
+  purchaseReturnDraftsPath,
+  purchaseReturnPostContract,
+  purchaseReturnPostResultSchema,
+  purchaseReturnPostingsPath,
+  purchaseReturnSummaryPath,
+  purchaseReturnSummarySchema,
   purchaseDraftCreateContract,
   purchaseDraftDiscardContract,
   purchaseDraftDiscardPath,
@@ -37,6 +48,8 @@ import {
   purchasePostedDetailSchema,
   purchasePostedAdjustmentPath,
   purchasePostedAdjustmentReadContract,
+  purchasePostedReturnPath,
+  purchasePostedReturnReadContract,
   purchasePostedListContract,
   purchasePostedListResponseSchema,
   purchasePostedPath,
@@ -54,6 +67,7 @@ import {
   supplierSchema,
   type PurchaseDraft,
   type PostedPurchaseAdjustment,
+  type PostedPurchaseReturn,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentDraftCreateRequest,
   type PurchaseAdjustmentDraftDiscardRequest,
@@ -61,6 +75,13 @@ import {
   type PurchaseAdjustmentPostRequest,
   type PurchaseAdjustmentPostResult,
   type PurchaseAdjustmentSummary,
+  type PurchaseReturnDraft,
+  type PurchaseReturnDraftCreateRequest,
+  type PurchaseReturnDraftDiscardRequest,
+  type PurchaseReturnDraftUpdateRequest,
+  type PurchaseReturnPostRequest,
+  type PurchaseReturnPostResult,
+  type PurchaseReturnSummary,
   type PurchaseDraftDetail,
   type PurchaseDraftCreateRequest,
   type PurchaseDraftDiscardRequest,
@@ -398,6 +419,98 @@ export const requestPostedPurchaseAdjustment = async (
     purchasePostedAdjustmentReadContract.method,
     200,
     postedPurchaseAdjustmentSchema,
+  );
+
+export const createPurchaseReturnDraft = async (
+  baseUrl: string,
+  purchaseId: string,
+  body: PurchaseReturnDraftCreateRequest,
+): Promise<PurchaseReturnDraft> =>
+  await requestJson(
+    baseUrl,
+    purchaseReturnDraftsPath(purchaseId),
+    "POST",
+    201,
+    purchaseReturnDraftSchema,
+    body,
+  );
+
+export const requestPurchaseReturnDraft = async (
+  baseUrl: string,
+  draftId: string,
+): Promise<PurchaseReturnDraft> =>
+  await requestJson(
+    baseUrl,
+    purchaseReturnDraftPath(draftId),
+    "GET",
+    200,
+    purchaseReturnDraftSchema,
+  );
+
+export const updatePurchaseReturnDraft = async (
+  baseUrl: string,
+  draftId: string,
+  body: PurchaseReturnDraftUpdateRequest,
+): Promise<PurchaseReturnDraft> =>
+  await requestJson(
+    baseUrl,
+    purchaseReturnDraftPath(draftId),
+    "PUT",
+    200,
+    purchaseReturnDraftSchema,
+    body,
+  );
+
+export const discardPurchaseReturnDraft = async (
+  baseUrl: string,
+  draftId: string,
+  body: PurchaseReturnDraftDiscardRequest,
+): Promise<PurchaseReturnDraft> =>
+  await requestJson(
+    baseUrl,
+    purchaseReturnDraftDiscardPath(draftId),
+    purchaseReturnDraftDiscardContract.method,
+    201,
+    purchaseReturnDraftSchema,
+    body,
+  );
+
+export const requestPurchaseReturnSummary = async (
+  baseUrl: string,
+  draftId: string,
+): Promise<PurchaseReturnSummary> =>
+  await requestJson(
+    baseUrl,
+    purchaseReturnSummaryPath(draftId),
+    "GET",
+    200,
+    purchaseReturnSummarySchema,
+  );
+
+export const postPurchaseReturn = async (
+  baseUrl: string,
+  draftId: string,
+  body: PurchaseReturnPostRequest,
+): Promise<PurchaseReturnPostResult> =>
+  await requestJson(
+    baseUrl,
+    purchaseReturnPostingsPath(draftId),
+    purchaseReturnPostContract.method,
+    201,
+    purchaseReturnPostResultSchema,
+    body,
+  );
+
+export const requestPostedPurchaseReturn = async (
+  baseUrl: string,
+  returnId: string,
+): Promise<PostedPurchaseReturn> =>
+  await requestJson(
+    baseUrl,
+    purchasePostedReturnPath(returnId),
+    purchasePostedReturnReadContract.method,
+    200,
+    postedPurchaseReturnSchema,
   );
 
 export function newPurchasingIdempotencyKey(): string {

@@ -552,7 +552,8 @@ export class IdentityAccessService {
            ('purchases.adjustments.manage'),
            ('purchases.drafts.manage'),
            ('purchases.posted.view'),
-           ('purchases.costs.view')
+           ('purchases.costs.view'),
+           ('purchases.returns.manage')
          ) as permission_name(name)
          where role_row.pharmacy_id = $1
            and role_row.role_key = 'purchasing_employee'`,
@@ -2736,6 +2737,7 @@ export class IdentityAccessService {
       | "purchases.adjustments.manage"
       | "purchases.costs.view"
       | "purchases.drafts.manage"
+      | "purchases.returns.manage"
       | "suppliers.manage",
   ): Promise<IdentityExecutionContext> {
     await this.lockIdentity(client, expected.pharmacyId);
@@ -2761,6 +2763,35 @@ export class IdentityAccessService {
       authorized,
       "purchases.costs.view",
     );
+  }
+
+  public async revalidatePurchaseReturnManagement(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    const authorized = await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "purchases.returns.manage",
+    );
+    return await this.requirePermissionInTransaction(
+      client,
+      authorized,
+      "purchases.costs.view",
+    );
+  }
+
+  public async consumePurchaseReturnStepUp(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    challengeId: string,
+    draftId: string,
+  ): Promise<void> {
+    await this.consumeStepUp(client, context, challengeId, {
+      action: "purchase.return.post",
+      subjectId: draftId,
+    });
   }
 
   /**
@@ -3390,6 +3421,22 @@ export class IdentityAccessService {
     }
     if (subjectId === undefined) {
       throw await this.contextDenial(context, 400, "body-invalid");
+    }
+    if (action === "purchase.return.post") {
+      const draft = await client.query<{ version: string }>(
+        `select version::text from purchase_return_drafts
+         where id = $1 and pharmacy_id = $2`,
+        [subjectId, context.pharmacyId],
+      );
+      const version = draft.rows[0]?.version;
+      if (version === undefined) {
+        throw await this.contextDenial(
+          context,
+          404,
+          "identity-resource-not-found",
+        );
+      }
+      return { id: subjectId, revision: BigInt(version) };
     }
     if (
       action === "devices.revoke" ||

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { calculatePurchaseCosts } from "../purchasing/purchase-costs.js";
 import {
+  applyWeightedAverageDepletion,
   applyWeightedAverageReceipt,
   EMPTY_INVENTORY_VALUATION,
   INVENTORY_VALUATION_METHOD,
@@ -164,5 +165,28 @@ describe("applyWeightedAverageReceipt", () => {
         totalValueScaled: 1.5 as unknown as bigint,
       }),
     ).toThrow(TypeError);
+  });
+});
+
+describe("applyWeightedAverageDepletion", () => {
+  it("freezes current WAC when it differs from the original purchase cost", () => {
+    const state = receive([
+      { carryingAmountFils: 80n, quantity: 8n },
+      { carryingAmountFils: 64n, quantity: 4n },
+    ]);
+    const result = applyWeightedAverageDepletion(state, { quantity: 1n });
+    expect(result.carryingAmountFils).toBe(12n);
+    expect(result.carryingAmountPerUnitScaled).toBe(12n * UNIT);
+    expect(result.state.totalQuantity).toBe(11n);
+  });
+
+  it("conserves the original whole-fils value and leaves no phantom state", () => {
+    const received = receive([{ carryingAmountFils: 10n, quantity: 3n }]);
+    const partial = applyWeightedAverageDepletion(received, { quantity: 1n });
+    const final = applyWeightedAverageDepletion(partial.state, {
+      quantity: 2n,
+    });
+    expect(partial.carryingAmountFils + final.carryingAmountFils).toBe(10n);
+    expect(final.state).toEqual(EMPTY_INVENTORY_VALUATION);
   });
 });

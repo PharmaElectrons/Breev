@@ -1,5 +1,6 @@
 import {
   postedPurchaseAdjustmentSchema,
+  postedPurchaseReturnSchema,
   purchaseAdjustmentDraftCreateContract,
   purchaseAdjustmentDraftCreateRequestSchema,
   purchaseAdjustmentDraftDiscardContract,
@@ -11,6 +12,18 @@ import {
   purchaseAdjustmentPostContract,
   purchaseAdjustmentPostRequestSchema,
   purchaseAdjustmentSummaryReadContract,
+  purchaseReturnDraftCreateContract,
+  purchaseReturnDraftCreateRequestSchema,
+  purchaseReturnDraftDiscardContract,
+  purchaseReturnDraftDiscardRequestSchema,
+  purchaseReturnDraftReadContract,
+  purchaseReturnDraftSchema,
+  purchaseReturnDraftUpdateContract,
+  purchaseReturnDraftUpdateRequestSchema,
+  purchaseReturnPostContract,
+  purchaseReturnPostRequestSchema,
+  purchaseReturnSummaryReadContract,
+  purchasePostedReturnReadContract,
   purchasePostedAdjustmentReadContract,
   purchaseDraftCreateContract,
   purchaseDraftCreateRequestSchema,
@@ -52,9 +65,13 @@ import {
   type PurchasePostedDetail,
   type PurchasePostedListResponse,
   type PostedPurchaseAdjustment,
+  type PostedPurchaseReturn,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentPostResult,
   type PurchaseAdjustmentSummary,
+  type PurchaseReturnDraft,
+  type PurchaseReturnPostResult,
+  type PurchaseReturnSummary,
   type PurchasingFieldError,
   type Supplier,
 } from "@breev/contracts/local-rest";
@@ -73,6 +90,7 @@ import {
 import type { Request } from "express";
 import { translateIdentityDenial } from "../identity-access/identity-access.controller.js";
 import { PurchaseAdjustmentsService } from "./purchase-adjustments.service.js";
+import { PurchaseReturnsService } from "./purchase-returns.service.js";
 import { PurchasingDenied, PurchasingService } from "./purchasing.service.js";
 
 @Controller()
@@ -80,6 +98,7 @@ export class PurchasingController {
   public constructor(
     private readonly purchasing: PurchasingService,
     private readonly adjustments: PurchaseAdjustmentsService,
+    private readonly returns: PurchaseReturnsService,
   ) {}
 
   @Get(supplierListContract.path)
@@ -558,6 +577,159 @@ export class PurchasingController {
           "adjustment-original-not-found",
         );
       return await this.adjustments.readPostedAdjustment(request, id.data);
+    });
+  }
+
+  @Post(purchaseReturnDraftCreateContract.path)
+  @HttpCode(201)
+  public async createReturnDraft(
+    @Param("purchaseId") purchaseId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchaseReturnDraft> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchasePostedDetailSchema.shape.id.safeParse(purchaseId);
+      const input = purchaseReturnDraftCreateRequestSchema.safeParse(body);
+      if (!id.success || !input.success)
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.return-draft.create",
+          "purchases.returns.manage",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["purchaseId"] }],
+          id.success ? id.data : undefined,
+        );
+      return await this.returns.createDraft(request, id.data, input.data);
+    });
+  }
+
+  @Get(purchaseReturnDraftReadContract.path)
+  public async readReturnDraft(
+    @Param("draftId") draftId: string,
+    @Req() request: Request,
+  ): Promise<PurchaseReturnDraft> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchaseReturnDraftSchema.shape.id.safeParse(draftId);
+      if (!id.success)
+        return await this.purchasing.rejectMissing(
+          request,
+          "purchase.return-draft.read",
+          "purchases.returns.manage",
+          "return-draft-not-found",
+        );
+      return await this.returns.readDraft(request, id.data);
+    });
+  }
+
+  @Put(purchaseReturnDraftUpdateContract.path)
+  public async updateReturnDraft(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchaseReturnDraft> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchaseReturnDraftSchema.shape.id.safeParse(draftId);
+      const input = purchaseReturnDraftUpdateRequestSchema.safeParse(body);
+      if (!id.success || !input.success)
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.return-draft.update",
+          "purchases.returns.manage",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["draftId"] }],
+          id.success ? id.data : undefined,
+        );
+      return await this.returns.updateDraft(request, id.data, input.data);
+    });
+  }
+
+  @Post(purchaseReturnDraftDiscardContract.path)
+  @HttpCode(201)
+  public async discardReturnDraft(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchaseReturnDraft> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchaseReturnDraftSchema.shape.id.safeParse(draftId);
+      const input = purchaseReturnDraftDiscardRequestSchema.safeParse(body);
+      if (!id.success || !input.success)
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.return-draft.discard",
+          "purchases.returns.manage",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["draftId"] }],
+          id.success ? id.data : undefined,
+        );
+      return await this.returns.discardDraft(request, id.data, input.data);
+    });
+  }
+
+  @Get(purchaseReturnSummaryReadContract.path)
+  public async previewReturn(
+    @Param("draftId") draftId: string,
+    @Req() request: Request,
+  ): Promise<PurchaseReturnSummary> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchaseReturnDraftSchema.shape.id.safeParse(draftId);
+      if (!id.success)
+        return await this.purchasing.rejectMissing(
+          request,
+          "purchase.return.preview",
+          "purchases.returns.manage",
+          "return-draft-not-found",
+        );
+      return await this.returns.preview(request, id.data);
+    });
+  }
+
+  @Post(purchaseReturnPostContract.path)
+  @HttpCode(201)
+  public async postReturn(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchaseReturnPostResult> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchaseReturnDraftSchema.shape.id.safeParse(draftId);
+      const input = purchaseReturnPostRequestSchema.safeParse(body);
+      if (!id.success || !input.success)
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.return.post",
+          "purchases.returns.manage",
+          id.success && !input.success
+            ? fieldErrors(input.error)
+            : [{ code: "invalid", path: ["draftId"] }],
+          id.success ? id.data : undefined,
+        );
+      return await this.returns.postPurchaseReturn(
+        request,
+        id.data,
+        input.data,
+      );
+    });
+  }
+
+  @Get(purchasePostedReturnReadContract.path)
+  public async readPostedReturn(
+    @Param("returnId") returnId: string,
+    @Req() request: Request,
+  ): Promise<PostedPurchaseReturn> {
+    return await translatePurchasingDenial(async () => {
+      const id = postedPurchaseReturnSchema.shape.id.safeParse(returnId);
+      if (!id.success)
+        return await this.purchasing.rejectMissing(
+          request,
+          "purchase.return.read",
+          "purchases.posted.view",
+          "return-original-not-found",
+        );
+      return await this.returns.readPostedReturn(request, id.data);
     });
   }
 }
