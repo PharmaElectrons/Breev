@@ -52,10 +52,12 @@ with eligible_roles as (
        and not exists (
          select 1 from role_permission_grants other_grant
          where other_grant.role_id = pharmacy_role.id
+           -- Extend this allow-list whenever a later migration adds a
+           -- default grant to this role.
            and other_grant.permission_name not in (
              'catalog.item.search', 'inventory.review',
-             'purchases.costs.view', 'purchases.drafts.manage',
-             'purchases.posted.view'
+             'purchases.adjustments.manage', 'purchases.costs.view',
+             'purchases.drafts.manage', 'purchases.posted.view'
            )
        )
      )
@@ -100,6 +102,7 @@ where pharmacy_row.id in (select distinct pharmacy_id from advanced_roles);
 --> statement-breakpoint
 alter table posting_command_results
   drop constraint posting_command_results_name,
+  -- Keep this list a superset of the command names allowed by the previous migration.
   add constraint posting_command_results_name check (
     command_name in (
       'catalog.barcode.add',
@@ -114,6 +117,10 @@ alter table posting_command_results
       'inventory.review-preferences.update',
       'inventory.sensitive-export',
       'pharmacy.settings.update',
+      'purchase.adjustment-draft.create',
+      'purchase.adjustment-draft.discard',
+      'purchase.adjustment-draft.update',
+      'purchase.adjustment.post',
       'purchase.draft.create',
       'purchase.draft.discard',
       'purchase.draft.row.commit',

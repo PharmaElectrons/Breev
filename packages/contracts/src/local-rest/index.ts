@@ -2236,7 +2236,10 @@ export const inventoryItemListContract = {
   },
 } as const;
 
-export const INVENTORY_MOVEMENT_KINDS = ["purchase-receipt"] as const;
+export const INVENTORY_MOVEMENT_KINDS = [
+  "purchase-adjustment",
+  "purchase-receipt",
+] as const;
 const inventoryMovementBaseSchema = z.strictObject({
   batchId: z.uuidv7(),
   id: z.uuidv7(),
@@ -2262,6 +2265,9 @@ const inventoryMovementBaseSchema = z.strictObject({
   valueFils: signedIntegerStringSchema.nullable(),
 });
 export const inventoryMovementSchema = z.discriminatedUnion("kind", [
+  inventoryMovementBaseSchema.extend({
+    kind: z.literal("purchase-adjustment"),
+  }),
   inventoryMovementBaseSchema.extend({ kind: z.literal("purchase-receipt") }),
 ]);
 export const inventoryMovementHistoryContract = {

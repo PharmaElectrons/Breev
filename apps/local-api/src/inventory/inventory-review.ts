@@ -28,6 +28,28 @@ export interface InventoryPosition {
   readonly valuationValueScaled: bigint;
 }
 
+export type InventoryMovementReason =
+  "purchase-adjustment" | "purchase-receipt";
+
+export function deriveInventoryValueFils(
+  movements: readonly {
+    readonly carryingAmountFils: bigint;
+    readonly reason: InventoryMovementReason;
+  }[],
+  valueEffects: readonly bigint[],
+): bigint {
+  return (
+    movements.reduce(
+      (total, movement) =>
+        total +
+        (movement.reason === "purchase-adjustment"
+          ? 0n
+          : movement.carryingAmountFils),
+      0n,
+    ) + valueEffects.reduce((total, effect) => total + effect, 0n)
+  );
+}
+
 interface InventoryPositionRow {
   readonly product_id: string;
   readonly balance: string;
@@ -57,9 +79,17 @@ export async function readInventoryPositions(
     `with movement_totals as (
        select product_id,
               sum(quantity)::text as balance,
-              sum(carrying_amount_fils)::text as value_fils,
+              sum(carrying_amount_fils) filter (
+                where reason <> 'purchase-adjustment'
+              )::text as value_fils,
               count(*)::text as movement_count
        from inventory_movements
+       where pharmacy_id = $1
+       group by product_id
+     ), value_effect_totals as (
+       select product_id,
+              sum(carrying_amount_delta_fils)::text as value_fils
+       from inventory_value_effects
        where pharmacy_id = $1
        group by product_id
      ), movement_facts as (
@@ -72,6 +102,7 @@ export async function readInventoryPositions(
               ) as movement_facts
        from inventory_movements
        where pharmacy_id = $1
+         and reason <> 'purchase-adjustment'
          and quantity < 0
          and occurred_at >= now() - interval '90 days'
        group by product_id
@@ -114,7 +145,10 @@ export async function readInventoryPositions(
      )
      select movement.product_id,
             coalesce(movement.balance, '0') as balance,
-            coalesce(movement.value_fils, '0') as value_fils,
+            (
+              coalesce(movement.value_fils, '0')::bigint
+              + coalesce(value_effect.value_fils, '0')::bigint
+            )::text as value_fils,
             coalesce(summary.total_batch_count, '0') as total_batch_count,
             summary.earliest_expiry,
             coalesce(summary.expired_count, '0') as expired_count,
@@ -126,12 +160,16 @@ export async function readInventoryPositions(
      from (
        select product_id from movement_totals
        union
+       select product_id from value_effect_totals
+       union
        select product_id from batch_summaries
        union
        select product_id from inventory_valuation_state
        where pharmacy_id = $1
      ) product
      left join movement_totals movement on movement.product_id = product.product_id
+     left join value_effect_totals value_effect
+       on value_effect.product_id = product.product_id
      left join batch_summaries summary on summary.product_id = product.product_id
      left join movement_facts facts on facts.product_id = product.product_id
      left join inventory_valuation_state valuation
@@ -198,10 +236,10 @@ export interface ProductMovement {
   readonly occurredAt: Date;
   readonly productId: string;
   readonly quantity: bigint;
-  readonly reason: "purchase-receipt";
+  readonly reason: InventoryMovementReason;
   readonly userId: string;
   readonly sourceDocumentId: string;
-  readonly sourceDocumentType: string;
+  readonly sourceDocumentType: "purchase-adjustment" | "purchase-invoice";
   readonly sourceRowOrdinal: number;
 }
 
@@ -217,9 +255,9 @@ export async function readProductMovements(
     occurred_at: string;
     product_id: string;
     quantity: string;
-    reason: "purchase-receipt";
+    reason: InventoryMovementReason;
     source_document_id: string;
-    source_document_type: string;
+    source_document_type: "purchase-adjustment" | "purchase-invoice";
     source_row_ordinal: number;
     created_by: string;
   }>(
@@ -240,10 +278,26 @@ export async function readProductMovements(
     occurredAt: new Date(row.occurred_at),
     productId: row.product_id,
     quantity: BigInt(row.quantity),
-    reason: row.reason,
+    reason: mapInventoryMovementReason(row.reason),
     sourceDocumentId: row.source_document_id,
     sourceDocumentType: row.source_document_type,
     sourceRowOrdinal: row.source_row_ordinal,
     userId: row.created_by,
   }));
+}
+
+function mapInventoryMovementReason(
+  reason: InventoryMovementReason,
+): InventoryMovementReason {
+  switch (reason) {
+    case "purchase-adjustment":
+    case "purchase-receipt":
+      return reason;
+    default:
+      return assertNever(reason);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected inventory movement value: ${String(value)}`);
 }

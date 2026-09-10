@@ -10,6 +10,13 @@ export interface PostedPurchaseReference {
   readonly supplierName: string;
 }
 
+export interface PostedPurchaseAdjustmentReference {
+  readonly number: PostedPurchaseReference["number"];
+  readonly originalPurchaseId: string;
+  readonly suffixValue: string;
+  readonly supplierNameSnapshot: string;
+}
+
 export async function resolvePostedPurchaseReferences(
   client: PoolClient,
   pharmacyId: string,
@@ -36,6 +43,43 @@ export async function resolvePostedPurchaseReferences(
         number: { series: "P", value: row.number_value, year: row.number_year },
         supplierId: row.supplier_id,
         supplierName: row.supplier_name_snapshot,
+      },
+    ]),
+  );
+}
+
+export async function resolvePostedPurchaseAdjustmentReferences(
+  client: PoolClient,
+  pharmacyId: string,
+  ids: readonly string[],
+): Promise<Map<string, PostedPurchaseAdjustmentReference>> {
+  if (ids.length === 0) return new Map();
+  const result = await client.query<{
+    id: string;
+    number_value: string;
+    number_year: number;
+    original_purchase_id: string;
+    suffix_value: string;
+    supplier_name_snapshot: string;
+  }>(
+    `select adjustment.id, adjustment.original_purchase_id,
+            original.number_value::text, original.number_year,
+            adjustment.suffix_value::text, adjustment.supplier_name_snapshot
+     from posted_purchase_adjustments adjustment
+     join posted_purchases original
+       on original.id = adjustment.original_purchase_id
+      and original.pharmacy_id = adjustment.pharmacy_id
+     where adjustment.pharmacy_id = $1 and adjustment.id = any($2::uuid[])`,
+    [pharmacyId, ids],
+  );
+  return new Map(
+    result.rows.map((row) => [
+      row.id,
+      {
+        number: { series: "P", value: row.number_value, year: row.number_year },
+        originalPurchaseId: row.original_purchase_id,
+        suffixValue: row.suffix_value,
+        supplierNameSnapshot: row.supplier_name_snapshot,
       },
     ]),
   );

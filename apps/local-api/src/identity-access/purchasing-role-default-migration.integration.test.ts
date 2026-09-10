@@ -133,7 +133,7 @@ describe.sequential("purchasing role default migrations", () => {
       "catalog.item.search",
       "suppliers.manage",
     ]);
-    // 0017, 0018, 0019, and 0020 each advance the pharmacy identity
+    // 0017, 0018, 0019, 0020, and 0021 each advance the pharmacy identity
     // revision when their new permission is granted to the owner. This
     // customized purchasing role remains untouched by every default migration.
     expect(await revisions()).toEqual({ pharmacy: "4", role: "1" });

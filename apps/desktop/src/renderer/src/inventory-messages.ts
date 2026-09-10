@@ -18,14 +18,17 @@ export interface InventoryCopy {
   readonly exportStepUp: string;
   readonly loading: string;
   readonly movement: {
+    readonly adjustment: string;
     readonly date: string;
     readonly empty: string;
+    readonly kind: string;
     readonly quantity: string;
     readonly reference: string;
     readonly time: string;
     readonly title: string;
     readonly user: string;
     readonly value: string;
+    readonly receipt: string;
   };
   readonly riskIndicators: Record<InventoryRiskIndicator, string>;
   readonly retry: string;
@@ -128,10 +131,13 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     manual: "يدوي",
     manualNone: "لا يوجد لون يدوي",
     movement: {
+      adjustment: "تعديل شراء",
       date: "التاريخ",
       empty: "لا توجد حركات لهذه المادة.",
+      kind: "نوع الحركة",
       quantity: "الكمية",
       reference: "المستند المرجعي",
+      receipt: "استلام شراء",
       time: "الوقت",
       title: "تفاصيل حركات المادة",
       user: "المستخدم",
@@ -169,10 +175,13 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     manual: "Manual",
     manualNone: "No manual colour",
     movement: {
+      adjustment: "Purchase adjustment",
       date: "Date",
       empty: "This item has no movements.",
+      kind: "Movement kind",
       quantity: "Quantity",
       reference: "Reference document",
+      receipt: "Purchase receipt",
       time: "Time",
       title: "Item movement details",
       user: "User",

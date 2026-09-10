@@ -4,6 +4,7 @@ import {
   type InventoryColumnField,
   type InventoryDenial,
   type InventoryItem,
+  type InventoryMovement,
   type LicensingDenial,
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,6 +19,7 @@ import {
   updateInventoryReviewPreferences,
 } from "./inventory-api";
 import { inventoryMessages, type InventoryCopy } from "./inventory-messages";
+import { createInventoryPreferenceSaveQueue } from "./inventory-preferences-save";
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 import { identityMessages } from "./identity-messages";
@@ -99,6 +101,19 @@ function InventoryScreen({
   >("idle");
   const [pendingSettingsFocus, setPendingSettingsFocus] = useState(false);
   const settingsToggleRef = useRef<HTMLElement>(null);
+  const latestPreferenceRevisionRef = useRef(preferences.revision);
+  const preferenceSaveQueueRef = useRef<ReturnType<
+    typeof createInventoryPreferenceSaveQueue
+  > | null>(null);
+  if (preferenceSaveQueueRef.current === null) {
+    preferenceSaveQueueRef.current = createInventoryPreferenceSaveQueue(
+      latestPreferenceRevisionRef,
+      (request) => updateInventoryReviewPreferences(baseUrl, request),
+      () => requestInventoryReviewPreferences(baseUrl),
+      setPreferences,
+      newInventoryIdempotencyKey,
+    );
+  }
   const canExport =
     identity?.state === "authenticated" &&
     identity.user.role.kind === "built-in" &&
@@ -115,6 +130,7 @@ function InventoryScreen({
       ]);
       setItems(result.items);
       setValuation(result.fields.valuation);
+      latestPreferenceRevisionRef.current = savedPreferences.revision;
       setPreferences(savedPreferences);
     } catch (caught) {
       if (caught instanceof InventoryApiDenied) {
@@ -195,11 +211,7 @@ function InventoryScreen({
     );
     setPreferences((previous) => ({ ...previous, columns }));
     try {
-      const saved = await updateInventoryReviewPreferences(baseUrl, {
-        columns,
-        expectedRevision: preferences.revision,
-        idempotencyKey: newInventoryIdempotencyKey(),
-      });
+      const saved = await preferenceSaveQueueRef.current!.enqueue(columns);
       setPreferences(saved);
     } catch (caught) {
       setError(copy.reviewUnavailable);
@@ -673,6 +685,7 @@ export function InventoryMovements({
             <thead>
               <tr>
                 <th scope="col">{copy.movement.reference}</th>
+                <th scope="col">{copy.movement.kind}</th>
                 <th scope="col">{copy.movement.date}</th>
                 <th scope="col">{copy.movement.time}</th>
                 <th scope="col">{copy.movement.user}</th>
@@ -703,6 +716,7 @@ export function InventoryMovements({
                     <td data-review-focus={`movement-${movement.id}`}>
                       {reference}
                     </td>
+                    <td>{movementKindLabel(movement.kind, copy)}</td>
                     <td>
                       <bdi>
                         {formatDate(new Date(movement.occurredAt), locale)}
@@ -752,6 +766,24 @@ export function InventoryMovements({
       />
     </section>
   );
+}
+
+function movementKindLabel(
+  kind: InventoryMovement["kind"],
+  copy: InventoryCopy,
+): string {
+  switch (kind) {
+    case "purchase-adjustment":
+      return copy.movement.adjustment;
+    case "purchase-receipt":
+      return copy.movement.receipt;
+    default:
+      return assertNever(kind);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected inventory movement kind: ${String(value)}`);
 }
 
 function inventoryRoute(hash: string):

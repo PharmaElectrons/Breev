@@ -77,8 +77,11 @@ describe("inventory review contracts", () => {
     ).toBe(false);
   });
 
-  it("validates movement history as a closed union with the current DB kind", () => {
-    expect([...INVENTORY_MOVEMENT_KINDS]).toEqual(["purchase-receipt"]);
+  it("validates movement history as a closed union with both DB kinds", () => {
+    expect([...INVENTORY_MOVEMENT_KINDS]).toEqual([
+      "purchase-adjustment",
+      "purchase-receipt",
+    ]);
     const movement = {
       batchId: BATCH_ID,
       id: "0198e7ce-7685-7000-8000-000000000005",
@@ -98,6 +101,15 @@ describe("inventory review contracts", () => {
     expect(inventoryMovementSchema.parse(movement).kind).toBe(
       "purchase-receipt",
     );
+    expect(
+      inventoryMovementSchema.parse({
+        ...movement,
+        id: "0198e7ce-7685-7000-8000-000000000006",
+        kind: "purchase-adjustment",
+        quantity: "-2",
+        valueFils: "-2500",
+      }).kind,
+    ).toBe("purchase-adjustment");
     expect(
       inventoryMovementHistoryContract.responses[200].parse({
         productId: PRODUCT_ID,

@@ -29,6 +29,7 @@ import {
   readInventoryPositions,
   readProductMovements,
   type InventoryPosition,
+  type ProductMovement,
 } from "../inventory/inventory-review.js";
 import {
   automaticStateColour,
@@ -52,8 +53,11 @@ import {
 } from "../posting/idempotency.js";
 import { runWholeCommandWithRetry } from "../posting/command-retry.js";
 import {
+  resolvePostedPurchaseAdjustmentReferences,
   resolvePostedPurchaseReferences,
   resolveSupplierCostFacts,
+  type PostedPurchaseAdjustmentReference,
+  type PostedPurchaseReference,
   type SupplierCostFact,
 } from "../purchasing/purchasing-references.js";
 
@@ -220,11 +224,24 @@ export class InventoryReviewService {
         context.pharmacyId,
         productId,
       );
-      const references = await resolvePostedPurchaseReferences(
-        client,
-        context.pharmacyId,
-        [...new Set(movements.map((movement) => movement.sourceDocumentId))],
-      );
+      const purchaseIds = movements
+        .filter(
+          (movement) => movement.sourceDocumentType === "purchase-invoice",
+        )
+        .map((movement) => movement.sourceDocumentId);
+      const adjustmentIds = movements
+        .filter(
+          (movement) => movement.sourceDocumentType === "purchase-adjustment",
+        )
+        .map((movement) => movement.sourceDocumentId);
+      const [references, adjustmentReferences] = await Promise.all([
+        resolvePostedPurchaseReferences(client, context.pharmacyId, [
+          ...new Set(purchaseIds),
+        ]),
+        resolvePostedPurchaseAdjustmentReferences(client, context.pharmacyId, [
+          ...new Set(adjustmentIds),
+        ]),
+      ]);
       const displayNames = await this.identity.resolveUserDisplayNames(
         client,
         context.pharmacyId,
@@ -232,7 +249,11 @@ export class InventoryReviewService {
       );
       return {
         movements: movements.map((movement) => {
-          const reference = references.get(movement.sourceDocumentId);
+          const reference = movementReference(
+            movement,
+            references,
+            adjustmentReferences,
+          );
           const openable = context.permissions.includes(
             "purchases.posted.view",
           );
@@ -244,13 +265,10 @@ export class InventoryReviewService {
             occurredAt: movement.occurredAt.toISOString(),
             quantity: movement.quantity.toString(),
             reference: {
-              documentId: movement.sourceDocumentId,
-              documentType: movement.sourceDocumentType,
-              label:
-                reference === undefined
-                  ? movement.sourceDocumentType
-                  : `P${reference.number.value}/${reference.number.year} · ${reference.supplierName}`,
-              number: reference?.number ?? null,
+              documentId: reference.documentId,
+              documentType: reference.documentType,
+              label: reference.label,
+              number: reference.number,
               openable,
             },
             user: {
@@ -677,6 +695,54 @@ export class InventoryReviewService {
       }),
     );
   }
+}
+
+interface MovementReference {
+  readonly documentId: string;
+  readonly documentType: ProductMovement["sourceDocumentType"];
+  readonly label: string;
+  readonly number: PostedPurchaseReference["number"] | null;
+}
+
+function movementReference(
+  movement: ProductMovement,
+  purchaseReferences: ReadonlyMap<string, PostedPurchaseReference>,
+  adjustmentReferences: ReadonlyMap<string, PostedPurchaseAdjustmentReference>,
+): MovementReference {
+  switch (movement.sourceDocumentType) {
+    case "purchase-invoice": {
+      const reference = purchaseReferences.get(movement.sourceDocumentId);
+      return {
+        documentId: movement.sourceDocumentId,
+        documentType: "purchase-invoice",
+        label:
+          reference === undefined
+            ? movement.sourceDocumentType
+            : `P${reference.number.value}/${reference.number.year} · ${reference.supplierName}`,
+        number: reference?.number ?? null,
+      };
+    }
+    case "purchase-adjustment": {
+      const reference = adjustmentReferences.get(movement.sourceDocumentId);
+      return {
+        // PostedPurchaseReview owns the adjustment list, so open the original
+        // purchase; the adjustment remains reachable from that list.
+        documentId: reference?.originalPurchaseId ?? movement.sourceDocumentId,
+        documentType: "purchase-adjustment",
+        label:
+          reference === undefined
+            ? movement.sourceDocumentType
+            : `P${reference.number.value}/${reference.number.year}-${reference.suffixValue} · ${reference.supplierNameSnapshot}`,
+        number: reference?.number ?? null,
+      };
+    }
+    default:
+      return assertNever(movement.sourceDocumentType);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected inventory movement source: ${String(value)}`);
 }
 
 function itemView(

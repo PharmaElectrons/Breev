@@ -172,6 +172,9 @@ test.describe.serial("read-only inventory review", () => {
     await expect(valueCheckbox).toBeFocused();
 
     await valueCheckbox.press("Space");
+    await expect(
+      page.getByRole("columnheader", { name: "Value" }),
+    ).toBeVisible();
     await page.evaluate(`(() => {
       const valueHeaderButton = document.querySelector(
         "th[data-column-field='value'] button",

@@ -2841,7 +2841,7 @@ export class IdentityAccessService {
     return await this.requirePermissionInTransaction(
       client,
       expected,
-      permission
+      permission,
     );
   }
 

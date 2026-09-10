@@ -4,9 +4,14 @@ import {
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   inventoryItemListContract,
+  inventoryMovementHistoryContract,
   inventoryMovementHistoryPath,
   inventorySensitiveExportContract,
   productArchivePath,
+  purchaseAdjustmentDraftPath,
+  purchaseAdjustmentDraftsPath,
+  purchaseAdjustmentPostingsPath,
+  purchaseAdjustmentSummaryPath,
   purchasePostedPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
@@ -16,6 +21,9 @@ import {
   type Product,
   type ProductCreateRequest,
   type PurchaseDraft,
+  type PurchaseAdjustmentDraft,
+  type PurchaseAdjustmentPostResult,
+  type PurchaseAdjustmentSummary,
   type PurchasePostResult,
   type Supplier,
 } from "@breev/contracts/local-rest";
@@ -218,6 +226,216 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     );
   });
 
+  it("reconciles quantity and price-only purchase adjustments exactly once", async () => {
+    const originalPurchaseId = postedPurchaseIds[0]!;
+    const quantityDraft = await createAdjustmentDraft(
+      originalPurchaseId,
+      "quantity error",
+    );
+    const quantitySaved = await saveAdjustmentDraft(quantityDraft, (rows) =>
+      rows.map((row, index) =>
+        index === 0
+          ? {
+              ...row,
+              enteredQuantity: (BigInt(row.enteredQuantity) + 2n).toString(),
+            }
+          : row,
+      ),
+    );
+    const quantitySummary = await previewAdjustment(quantitySaved);
+    expect(quantitySummary).toMatchObject({
+      primarySupplierCostDeltaFils: "2000",
+      quantityDelta: "2",
+    });
+    const quantityPosted = await postAdjustment(quantitySaved, quantitySummary);
+
+    const priceDraft = await createAdjustmentDraft(
+      originalPurchaseId,
+      "price error",
+    );
+    const priceSaved = await saveAdjustmentDraft(priceDraft, (rows) =>
+      rows.map((row, index) =>
+        index === 0 ? { ...row, costFils: "1200" } : row,
+      ),
+    );
+    const priceSummary = await previewAdjustment(priceSaved);
+    expect(priceSummary).toMatchObject({
+      primarySupplierCostDeltaFils: "2400",
+      quantityDelta: "0",
+    });
+    const pricePosted = await postAdjustment(priceSaved, priceSummary);
+
+    const reconciliationAuditBefore = await administrator.query<{
+      count: string;
+    }>(
+      `select count(*)::text as count
+       from posting_audit_records
+       where pharmacy_id = $1
+         and action = 'inventory.review.reconciliation'
+         and outcome = 'mismatch'`,
+      [pharmacyId],
+    );
+    expect(reconciliationAuditBefore.rows[0]?.count).toBe("0");
+
+    let item: InventoryItem | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await request("GET", inventoryItemListContract.path);
+      expect(response.status, diagnostics(response)).toBe(200);
+      item = (response.body as { items: InventoryItem[] }).items.find(
+        ({ productId }) => productId === product.id,
+      );
+      if (item === undefined) throw new Error("Inventory fixture item missing");
+    }
+    if (item === undefined) throw new Error("Inventory fixture item missing");
+    const reconciliationAuditAfter = await administrator.query<{
+      count: string;
+    }>(
+      `select count(*)::text as count
+       from posting_audit_records
+       where pharmacy_id = $1
+         and action = 'inventory.review.reconciliation'
+         and outcome = 'mismatch'`,
+      [pharmacyId],
+    );
+    expect(reconciliationAuditAfter.rows[0]?.count).toBe("0");
+
+    const movements = await administrator.query<{
+      carrying_amount_fils: string;
+      quantity: string;
+      reason: "purchase-adjustment" | "purchase-receipt";
+    }>(
+      `select reason, quantity::text, carrying_amount_fils::text
+       from inventory_movements
+       where pharmacy_id = $1 and product_id = $2
+       order by occurred_at, id`,
+      [pharmacyId, product.id],
+    );
+    const valueEffects = await administrator.query<{
+      carrying_amount_delta_fils: string;
+      quantity_delta: string;
+    }>(
+      `select quantity_delta::text, carrying_amount_delta_fils::text
+       from inventory_value_effects
+       where pharmacy_id = $1 and product_id = $2
+       order by occurred_at, id`,
+      [pharmacyId, product.id],
+    );
+    const valuation = await administrator.query<{
+      total_quantity: string;
+      total_value_scaled: string;
+    }>(
+      `select total_quantity::text, total_value_scaled::text
+       from inventory_valuation_state
+       where pharmacy_id = $1 and product_id = $2`,
+      [pharmacyId, product.id],
+    );
+    const expectedBalance = movements.rows.reduce(
+      (total, row) => total + BigInt(row.quantity),
+      0n,
+    );
+    const expectedValue =
+      movements.rows.reduce(
+        (total, row) =>
+          total +
+          (row.reason === "purchase-adjustment"
+            ? 0n
+            : BigInt(row.carrying_amount_fils)),
+        0n,
+      ) +
+      valueEffects.rows.reduce(
+        (total, row) => total + BigInt(row.carrying_amount_delta_fils),
+        0n,
+      );
+    const state = valuation.rows[0]!;
+    const stateQuantity = BigInt(state.total_quantity);
+    const stateValueScaled = BigInt(state.total_value_scaled);
+    expect(movements.rows).toHaveLength(4);
+    expect(valueEffects.rows).toHaveLength(2);
+    expect(quantityPosted.posted.rowDeltas[0]?.movementId).not.toBeNull();
+    expect(quantityPosted.posted.rowDeltas[0]?.valueEffectId).not.toBeNull();
+    expect(pricePosted.posted.rowDeltas[0]?.movementId).toBeNull();
+    expect(pricePosted.posted.rowDeltas[0]?.valueEffectId).not.toBeNull();
+    expect(expectedBalance).toBe(stateQuantity);
+    expect(expectedValue).toBe(stateValueScaled / 10_000_000_000n);
+    expect(item.balance).toBe(expectedBalance.toString());
+    expect(item.valueFils).toBe(expectedValue.toString());
+    expect(item.averageUnitCostFils).toBe(
+      divideFilsRounded(
+        reportAverage({
+          totalQuantity: stateQuantity,
+          totalValueScaled: stateValueScaled,
+        })!,
+        10_000_000_000n,
+      ).toString(),
+    );
+    expect(item.reconciliation).toBe("consistent");
+
+    const challenge = await request("POST", "/identity/step-up-challenges", {
+      action: "inventory.sensitive.export",
+      idempotencyKey: uuidV7(),
+    });
+    expect(challenge.status, diagnostics(challenge)).toBe(201);
+    const challengeId = String((challenge.body as { id?: string }).id ?? "");
+    const approved = await request(
+      "POST",
+      `/identity/step-up-challenges/${challengeId}/approve`,
+      { idempotencyKey: uuidV7(), password: OWNER_PASSWORD },
+    );
+    expect(approved.status, diagnostics(approved)).toBe(200);
+    const exported = await request(
+      "POST",
+      inventorySensitiveExportContract.path,
+      { challengeId, idempotencyKey: uuidV7() },
+    );
+    expect(exported.status, diagnostics(exported)).toBe(201);
+    const bundle = exported.body as InventorySensitiveExport;
+    const exportedItem = bundle.items.find(
+      ({ productId }) => productId === product.id,
+    );
+    expect(exportedItem).toBeDefined();
+    expect(exportedItem!.balance).toBe(item.balance);
+    expect(exportedItem!.valueFils).toBe(item.valueFils);
+    expect(exportedItem!.averageUnitCostFils).toBe(item.averageUnitCostFils);
+
+    const originalNumber = await administrator.query<{
+      number_value: string;
+      number_year: number;
+    }>(
+      `select number_value::text, number_year
+       from posted_purchases where pharmacy_id = $1 and id = $2`,
+      [pharmacyId, originalPurchaseId],
+    );
+    const history = await request(
+      "GET",
+      inventoryMovementHistoryPath(product.id),
+    );
+    const parsedHistory = inventoryMovementHistoryContract.responses[200].parse(
+      history.body,
+    );
+    expect(parsedHistory.movements.map((movement) => movement.kind)).toEqual([
+      "purchase-receipt",
+      "purchase-receipt",
+      "purchase-receipt",
+      "purchase-adjustment",
+    ]);
+    const adjustmentMovement = parsedHistory.movements.find(
+      (movement) => movement.kind === "purchase-adjustment",
+    );
+    expect(adjustmentMovement?.reference).toMatchObject({
+      documentId: originalPurchaseId,
+      documentType: "purchase-adjustment",
+      number: {
+        series: "P",
+        value: originalNumber.rows[0]!.number_value,
+        year: originalNumber.rows[0]!.number_year,
+      },
+      openable: true,
+    });
+    expect(adjustmentMovement?.reference.label).toContain(
+      "-1 · Primary Review Supplier",
+    );
+  });
+
   it("keeps all stock and posted facts unchanged across every review route", async () => {
     const before = await stockFacts();
     const list = await request("GET", inventoryItemListContract.path);
@@ -270,7 +488,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     expect(bundle.counts).toMatchObject({
       batches: "3",
       items: "1",
-      movements: "3",
+      movements: "4",
     });
     expect(bundle.items[0]?.suppliers).toHaveLength(2);
 
@@ -368,10 +586,12 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
   > {
     const tables = [
       ["inventory_movements", "id"],
+      ["inventory_value_effects", "id"],
       ["inventory_batches", "id"],
       ["inventory_valuation_state", "product_id"],
       ["posted_purchases", "id"],
       ["posted_purchase_rows", "id"],
+      ["posted_purchase_adjustments", "id"],
     ] as const;
     const result: Record<string, { count: string; digest: string }> = {};
     for (const [table, orderColumn] of tables) {
@@ -435,6 +655,71 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
           "",
       ),
     );
+  }
+
+  async function createAdjustmentDraft(
+    originalPurchaseId: string,
+    reason:
+      | "quantity error"
+      | "price error"
+      | "invoice-number error"
+      | "supplier error"
+      | "other",
+  ): Promise<PurchaseAdjustmentDraft> {
+    const response = await request(
+      "POST",
+      purchaseAdjustmentDraftsPath(originalPurchaseId),
+      {
+        evidence: "Supplier invoice checked",
+        idempotencyKey: uuidV7(),
+        reason,
+      },
+    );
+    expect(response.status, diagnostics(response)).toBe(201);
+    return response.body as PurchaseAdjustmentDraft;
+  }
+
+  async function saveAdjustmentDraft(
+    draft: PurchaseAdjustmentDraft,
+    edit: (
+      rows: ReturnType<typeof adjustmentRows>,
+    ) => ReturnType<typeof adjustmentRows>,
+  ): Promise<PurchaseAdjustmentDraft> {
+    const response = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(draft.id),
+      adjustmentUpdateBody(draft, edit(adjustmentRows(draft))),
+    );
+    expect(response.status, diagnostics(response)).toBe(200);
+    return response.body as PurchaseAdjustmentDraft;
+  }
+
+  async function previewAdjustment(
+    draft: PurchaseAdjustmentDraft,
+  ): Promise<PurchaseAdjustmentSummary> {
+    const response = await request(
+      "GET",
+      purchaseAdjustmentSummaryPath(draft.id),
+    );
+    expect(response.status, diagnostics(response)).toBe(200);
+    return response.body as PurchaseAdjustmentSummary;
+  }
+
+  async function postAdjustment(
+    draft: PurchaseAdjustmentDraft,
+    summary: PurchaseAdjustmentSummary,
+  ): Promise<PurchaseAdjustmentPostResult> {
+    const response = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(draft.id),
+      {
+        confirmationHash: summary.confirmationHash,
+        expectedVersion: draft.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(response.status, diagnostics(response)).toBe(201);
+    return response.body as PurchaseAdjustmentPostResult;
   }
 
   async function createPostableDraft(
@@ -532,6 +817,45 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     };
   }
 });
+
+function adjustmentRows(draft: PurchaseAdjustmentDraft) {
+  return draft.rows.map((row) => ({
+    costFils: row.costFils,
+    enteredQuantity: row.enteredQuantity,
+    expiryDate: row.expiryDate,
+    itemId: row.itemId,
+    lineageId: row.lineageId,
+    lotNumber: row.lotNumber,
+    notes: row.notes,
+    originalRowId: row.originalRowId,
+    pricing:
+      row.pricingMethod === "by-price"
+        ? ({
+            method: "by-price",
+            retailPriceFils: row.retailPriceFils,
+          } as const)
+        : ({
+            marginPercentage: row.marginPercentage ?? "0",
+            method: "by-percentage",
+          } as const),
+    unit: row.unit,
+  }));
+}
+
+function adjustmentUpdateBody(
+  draft: PurchaseAdjustmentDraft,
+  rows: ReturnType<typeof adjustmentRows>,
+) {
+  return {
+    evidence: draft.evidence,
+    expectedVersion: draft.version,
+    idempotencyKey: uuidV7(),
+    reason: draft.reason,
+    rows,
+    supplierId: draft.supplierId,
+    supplierInvoiceNumber: draft.supplierInvoiceNumber,
+  };
+}
 
 function medicationRequest(tradeName: string): ProductCreateRequest {
   return {

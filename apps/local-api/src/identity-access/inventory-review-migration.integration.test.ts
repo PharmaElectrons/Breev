@@ -35,7 +35,7 @@ interface JournalEntry {
   readonly tag: string;
 }
 
-describe.sequential("migration 0019: inventory review", () => {
+describe.sequential("migration 0020: inventory review", () => {
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -63,7 +63,7 @@ describe.sequential("migration 0019: inventory review", () => {
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
     application = new Pool({ connectionString: databaseRoles.applicationUrl });
 
-    preUpgradeFolder = await mkdtemp(path.join(tmpdir(), "breev-pre-0019-"));
+    preUpgradeFolder = await mkdtemp(path.join(tmpdir(), "breev-pre-0020-"));
     const journal = JSON.parse(
       await readFile(
         path.join(MIGRATIONS_FOLDER, "meta/_journal.json"),
@@ -158,11 +158,11 @@ describe.sequential("migration 0019: inventory review", () => {
       accountant: "2",
       inventory_employee: "2",
       manager: "2",
-      owner: "2",
+      owner: "3",
       pharmacist: "2",
-      purchasing_employee: "2",
+      purchasing_employee: "3",
     });
-    expect(first.pharmacyRevision).toBe("2");
+    expect(first.pharmacyRevision).toBe("3");
 
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshot()).toEqual(first);

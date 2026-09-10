@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { calculatePurchaseCosts } from "../purchasing/purchase-costs.js";
+import { consumptionRatePer30Days } from "./inventory-risk.js";
+import {
+  deriveInventoryValueFils,
+  type InventoryMovementReason,
+} from "./inventory-review.js";
 import {
   applyWeightedAverageReceipt,
   EMPTY_INVENTORY_VALUATION,
@@ -10,6 +15,67 @@ import {
 } from "./inventory-valuation.js";
 
 describe("inventory review movement folding", () => {
+  it("reconciles a price-only adjustment from one value effect without a movement", () => {
+    const value = deriveInventoryValueFils(
+      [{ carryingAmountFils: 10_000n, reason: "purchase-receipt" }],
+      [2_500n],
+    );
+    const balance = 10n;
+    const valuation = { quantity: 10n, value: 12_500n };
+
+    expect(value).toBe(valuation.value);
+    expect(balance).toBe(valuation.quantity);
+    expect(value * 10_000_000_000n).toBe(valuation.value * 10_000_000_000n);
+  });
+
+  it("counts a quantity adjustment value delta once when movement and effect match", () => {
+    const movements: {
+      carryingAmountFils: bigint;
+      quantity: bigint;
+      reason: InventoryMovementReason;
+    }[] = [
+      {
+        carryingAmountFils: 10_000n,
+        quantity: 10n,
+        reason: "purchase-receipt",
+      },
+      {
+        carryingAmountFils: 2_000n,
+        quantity: 2n,
+        reason: "purchase-adjustment",
+      },
+    ];
+    const value = deriveInventoryValueFils(movements, [2_000n]);
+
+    expect(
+      movements.reduce((total, movement) => total + movement.quantity, 0n),
+    ).toBe(12n);
+    expect(value).toBe(12_000n);
+    expect(value).not.toBe(14_000n);
+  });
+
+  it("does not count a negative purchase adjustment as consumption", () => {
+    const now = new Date("2026-09-10T12:00:00.000Z");
+
+    expect(
+      consumptionRatePer30Days(
+        [
+          {
+            occurredAt: new Date("2026-09-09T12:00:00.000Z"),
+            quantity: -6n,
+            reason: "purchase-receipt",
+          },
+          {
+            occurredAt: new Date("2026-09-09T12:00:00.000Z"),
+            quantity: -90n,
+            reason: "purchase-adjustment",
+          },
+        ],
+        now,
+      ),
+    ).toBe(2n);
+  });
+
   it("reconciles balance, value, and WAC from movement fixtures", () => {
     const movements = [
       { carryingAmountFils: 100_000n, quantity: 10n },

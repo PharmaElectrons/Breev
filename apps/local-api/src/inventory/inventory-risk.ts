@@ -10,6 +10,7 @@ export const EXPIRING_SOON_DAYS = 90n;
 export interface InventoryRiskMovement {
   readonly occurredAt: Date;
   readonly quantity: bigint;
+  readonly reason?: "purchase-adjustment" | "purchase-receipt";
 }
 
 export interface InventoryRiskInput {
@@ -33,7 +34,8 @@ export function consumptionRatePer30Days(
     if (
       movement.occurredAt.getTime() < windowStart ||
       movement.occurredAt.getTime() > now.getTime() ||
-      movement.quantity >= 0n
+      movement.quantity >= 0n ||
+      movement.reason === "purchase-adjustment"
     ) {
       return total;
     }
