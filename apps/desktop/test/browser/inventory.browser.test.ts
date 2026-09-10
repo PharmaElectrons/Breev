@@ -5,10 +5,17 @@ import {
   BREEV_CSRF_VALUE,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  purchaseAdjustmentDraftPath,
+  purchaseAdjustmentDraftsPath,
+  purchaseAdjustmentPostingsPath,
+  purchaseAdjustmentSummaryPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
   type Product,
   type ProductCreateRequest,
+  type PurchaseAdjustmentDraft,
+  type PurchaseAdjustmentPostResult,
+  type PurchaseAdjustmentSummary,
   type PurchaseDraft,
   type PurchasePostResult,
   type Supplier,
@@ -116,7 +123,8 @@ test.describe.serial("read-only inventory review", () => {
     );
     expect(created.status).toBe(201);
     product = created.body as Product;
-    await postPurchase(supplier, product);
+    const purchase = await postPurchase(supplier, product);
+    await postPurchaseAdjustment(purchase.posted.id);
     await createManagerUser(
       String(
         (bootstrap.body as { pharmacy?: { id?: string } }).pharmacy?.id ?? "",
@@ -230,6 +238,7 @@ test.describe.serial("read-only inventory review", () => {
     await expect(
       page.getByRole("heading", { name: "Item movement details" }),
     ).toContainText(product.displayName);
+    await assertMovementDetails(page, "en");
     const reference = page.locator(
       "tbody tr:first-child td:first-child button",
     );
@@ -294,6 +303,7 @@ test.describe.serial("read-only inventory review", () => {
             name: locale === "ar" ? "مراجعة المخزون" : "Inventory review",
           }),
         ).toBeVisible();
+        await assertInventoryRow(page, locale);
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -316,6 +326,7 @@ test.describe.serial("read-only inventory review", () => {
               locale === "ar" ? "تفاصيل حركات المادة" : "Item movement details",
           }),
         ).toBeVisible();
+        await assertMovementDetails(page, locale);
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -643,7 +654,10 @@ async function createSupplier(): Promise<Supplier> {
   return response.body as Supplier;
 }
 
-async function postPurchase(supplier: Supplier, item: Product): Promise<void> {
+async function postPurchase(
+  supplier: Supplier,
+  item: Product,
+): Promise<PurchasePostResult> {
   const created = await apiRequest("POST", "/purchases/drafts", {
     idempotencyKey: uuidV7(),
     invoiceDate: "2026-06-15",
@@ -672,9 +686,202 @@ async function postPurchase(supplier: Supplier, item: Product): Promise<void> {
     idempotencyKey: uuidV7(),
   });
   expect(posted.status).toBe(201);
+  const result = posted.body as PurchasePostResult;
+  expect(result.posted.id).toBeTruthy();
+  return result;
+}
+
+async function postPurchaseAdjustment(purchaseId: string): Promise<void> {
+  const created = await apiRequest(
+    "POST",
+    purchaseAdjustmentDraftsPath(purchaseId),
+    {
+      evidence: null,
+      idempotencyKey: uuidV7(),
+      reason: "quantity error",
+    },
+  );
+  expect(created.status).toBe(201);
+  const draft = created.body as PurchaseAdjustmentDraft;
+  const updated = await apiRequest(
+    "PUT",
+    purchaseAdjustmentDraftPath(draft.id),
+    {
+      evidence: null,
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+      reason: draft.reason,
+      rows: draft.rows.map((row) => ({
+        costFils: row.costFils,
+        enteredQuantity: (BigInt(row.enteredQuantity) - 1n).toString(),
+        expiryDate: row.expiryDate,
+        itemId: row.itemId,
+        lineageId: row.lineageId,
+        lotNumber: row.lotNumber,
+        notes: row.notes,
+        originalRowId: row.originalRowId,
+        pricing:
+          row.pricingMethod === "by-price"
+            ? { method: "by-price", retailPriceFils: row.retailPriceFils }
+            : {
+                marginPercentage: row.marginPercentage ?? "0",
+                method: "by-percentage",
+              },
+        unit: row.unit,
+      })),
+      supplierId: draft.supplierId,
+      supplierInvoiceNumber: draft.supplierInvoiceNumber,
+    },
+  );
+  expect(updated.status).toBe(200);
+  const updatedDraft = updated.body as PurchaseAdjustmentDraft;
+  const summaryResponse = await apiRequest(
+    "GET",
+    purchaseAdjustmentSummaryPath(updatedDraft.id),
+  );
+  expect(summaryResponse.status).toBe(200);
+  const summary = summaryResponse.body as PurchaseAdjustmentSummary;
+  const posted = await apiRequest(
+    "POST",
+    purchaseAdjustmentPostingsPath(updatedDraft.id),
+    {
+      confirmationHash: summary.confirmationHash,
+      expectedVersion: updatedDraft.version,
+      idempotencyKey: uuidV7(),
+    },
+  );
+  expect(posted.status).toBe(201);
   expect(
-    ((posted.body as PurchasePostResult).posted as { id?: string }).id,
-  ).toBeTruthy();
+    (posted.body as PurchaseAdjustmentPostResult).posted.quantityDelta,
+  ).toBe("-1");
+}
+
+async function assertInventoryRow(
+  page: Page,
+  locale: "ar" | "en",
+): Promise<void> {
+  const row = page.locator("tbody tr").first();
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(
+        await row.locator("td[data-column-field='balance']").innerText(),
+      ),
+    )
+    .toBe(locale === "ar" ? "٣" : "3");
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(
+        await row.locator("td[data-column-field='value']").innerText(),
+      ),
+    )
+    .toMatch(locale === "ar" ? /٣٫٠٠٠/u : /IQD\s*3\.000/u);
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(
+        await row.locator("td[data-column-field='averageCost']").innerText(),
+      ),
+    )
+    .toMatch(locale === "ar" ? /١٫٠٠٠/u : /IQD\s*1\.000/u);
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(
+        await row
+          .locator("td[data-column-field='consumptionRate']")
+          .innerText(),
+      ),
+    )
+    .toBe(locale === "ar" ? "٠" : "0");
+
+  const riskCell = row.locator("td[data-column-field='risk']");
+  await expect(
+    riskCell.locator("[data-indicator='below-minimum']"),
+  ).toContainText(locale === "ar" ? "دون الحد الأدنى" : "Below minimum");
+  await expect(
+    riskCell.locator("[data-indicator='at-or-below-reorder-point']"),
+  ).toContainText(
+    locale === "ar"
+      ? "عند نقطة إعادة الطلب أو دونها"
+      : "At or below reorder point",
+  );
+}
+
+async function assertMovementDetails(
+  page: Page,
+  locale: "ar" | "en",
+): Promise<void> {
+  const labels =
+    locale === "ar"
+      ? {
+          adjustment: "تعديل شراء",
+          receipt: "استلام شراء",
+        }
+      : {
+          adjustment: "Purchase adjustment",
+          receipt: "Purchase receipt",
+        };
+  const table = page.locator(".inventory-table-scroll table");
+  await expect(table.locator("thead th")).toHaveText(
+    locale === "ar"
+      ? [
+          "المستند المرجعي",
+          "نوع الحركة",
+          "التاريخ",
+          "الوقت",
+          "المستخدم",
+          "الكمية",
+          "القيمة",
+        ]
+      : [
+          "Reference document",
+          "Movement kind",
+          "Date",
+          "Time",
+          "User",
+          "Quantity",
+          "Value",
+        ],
+  );
+  const rows = table.locator("tbody tr");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).locator("td").nth(1)).toHaveText(labels.receipt);
+  await expect(rows.nth(1).locator("td").nth(1)).toHaveText(labels.adjustment);
+
+  const adjustmentCells = rows.nth(1).locator("td");
+  await expect(adjustmentCells).toHaveCount(7);
+  await expect(adjustmentCells.nth(0)).toHaveText(
+    /P\d+\/\d+-\d+ · Inventory Browser Supplier/u,
+  );
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(await adjustmentCells.nth(2).innerText()),
+    )
+    .toMatch(/\S/u);
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(await adjustmentCells.nth(3).innerText()),
+    )
+    .toMatch(/\S/u);
+  await expect(adjustmentCells.nth(4)).toHaveText("Inventory Browser Owner");
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(await adjustmentCells.nth(5).innerText()),
+    )
+    .toBe(locale === "ar" ? "-١" : "-1");
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(await adjustmentCells.nth(6).innerText()),
+    )
+    .toMatch(/-/u);
+  await expect
+    .poll(async () =>
+      normalizeBidiMarks(await adjustmentCells.nth(6).innerText()),
+    )
+    .not.toBe("—");
+}
+
+// Strip locale bidi marks so RTL numeric and date output compares by its visible value.
+function normalizeBidiMarks(value: string): string {
+  return value.replace(/[\u061C\u200E\u200F\u2068\u2069]/gu, "");
 }
 
 function medicationRequest(): ProductCreateRequest {
