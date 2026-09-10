@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 
 import {
   VALUATION_SCALE,
+  applyWeightedAverageDepletion,
   applyWeightedAverageReceipt,
   type InventoryReceipt,
   type InventoryValuationState,
@@ -421,4 +422,211 @@ export async function validatePurchaseAdjustmentValuation(
     BigInt(row?.total_value_scaled ?? "0") +
     input.primarySupplierCostDeltaFils * 10n ** BigInt(VALUATION_SCALE);
   return totalQuantity >= 0n && totalValueScaled >= 0n;
+}
+
+export interface PurchaseReturnBatchRequest {
+  readonly batchId: string;
+  readonly productId: string;
+  readonly quantity: bigint;
+}
+
+export type PurchaseReturnBatchProblem =
+  | { readonly batchId: string; readonly kind: "ineligible-batch" }
+  | {
+      readonly availableQuantity: bigint;
+      readonly batchId: string;
+      readonly kind: "negative-stock";
+      readonly requestedQuantity: bigint;
+    };
+
+/** Locks all affected batch rows in deterministic id order and validates the
+ * movement-derived balance. The lock is held by the caller's transaction. */
+export async function lockPurchaseReturnBatches(
+  client: PoolClient,
+  pharmacyId: string,
+  requests: readonly PurchaseReturnBatchRequest[],
+): Promise<PurchaseReturnBatchProblem | undefined> {
+  const quantities = new Map<string, bigint>();
+  const products = new Map<string, string>();
+  for (const request of requests) {
+    const product = products.get(request.batchId);
+    if (product !== undefined && product !== request.productId) {
+      return { batchId: request.batchId, kind: "ineligible-batch" };
+    }
+    products.set(request.batchId, request.productId);
+    quantities.set(
+      request.batchId,
+      (quantities.get(request.batchId) ?? 0n) + request.quantity,
+    );
+  }
+  const batchIds = [...quantities.keys()].sort();
+  const locked = await client.query<{
+    id: string;
+    product_id: string;
+    status: string;
+  }>(
+    `select id, product_id, status from inventory_batches
+     where pharmacy_id = $1 and id = any($2::uuid[])
+     order by id for update`,
+    [pharmacyId, batchIds],
+  );
+  const facts = new Map(locked.rows.map((row) => [row.id, row]));
+  for (const batchId of batchIds) {
+    const row = facts.get(batchId);
+    if (row?.status !== "active" || row.product_id !== products.get(batchId)) {
+      return { batchId, kind: "ineligible-batch" };
+    }
+  }
+  const balances = await client.query<{ batch_id: string; quantity: string }>(
+    `select batch_id, coalesce(sum(quantity), 0)::text as quantity
+     from inventory_movements
+     where pharmacy_id = $1 and batch_id = any($2::uuid[])
+     group by batch_id`,
+    [pharmacyId, batchIds],
+  );
+  const available = new Map(
+    balances.rows.map((row) => [row.batch_id, BigInt(row.quantity)]),
+  );
+  for (const batchId of batchIds) {
+    const requestedQuantity = quantities.get(batchId) ?? 0n;
+    const availableQuantity = available.get(batchId) ?? 0n;
+    if (requestedQuantity > availableQuantity) {
+      return {
+        availableQuantity,
+        batchId,
+        kind: "negative-stock",
+        requestedQuantity,
+      };
+    }
+  }
+  return undefined;
+}
+
+export interface PurchaseReturnValuationRequest {
+  readonly key: string;
+  readonly productId: string;
+  readonly quantity: bigint;
+}
+
+export interface PurchaseReturnValuationEffect {
+  readonly carryingAmountFils: bigint;
+  readonly carryingAmountPerUnitScaled: bigint;
+  readonly key: string;
+  readonly productId: string;
+  readonly quantity: bigint;
+}
+
+export interface PurchaseReturnValuationPlan {
+  readonly effects: readonly PurchaseReturnValuationEffect[];
+  readonly states: ReadonlyMap<string, InventoryValuationState>;
+}
+
+/** Locks WAC rows in product-id order, then values outbound rows in caller
+ * order. Passing the stable Purchase row ordinal as that order makes rounding
+ * and final-remainder allocation reproducible. */
+export async function preparePurchaseReturnValuation(
+  client: PoolClient,
+  pharmacyId: string,
+  requests: readonly PurchaseReturnValuationRequest[],
+): Promise<PurchaseReturnValuationPlan | undefined> {
+  const productIds = [...new Set(requests.map((row) => row.productId))].sort();
+  const locked = await client.query<{
+    product_id: string;
+    total_quantity: string;
+    total_value_scaled: string;
+  }>(
+    `select product_id, total_quantity::text, total_value_scaled::text
+     from inventory_valuation_state
+     where pharmacy_id = $1 and product_id = any($2::uuid[])
+     order by product_id for update`,
+    [pharmacyId, productIds],
+  );
+  const states = new Map<string, InventoryValuationState>(
+    locked.rows.map((row) => [
+      row.product_id,
+      {
+        totalQuantity: BigInt(row.total_quantity),
+        totalValueScaled: BigInt(row.total_value_scaled),
+      },
+    ]),
+  );
+  const effects: PurchaseReturnValuationEffect[] = [];
+  for (const request of requests) {
+    const state = states.get(request.productId);
+    if (state === undefined || request.quantity > state.totalQuantity) {
+      return undefined;
+    }
+    const result = applyWeightedAverageDepletion(state, {
+      quantity: request.quantity,
+    });
+    states.set(request.productId, result.state);
+    effects.push({
+      carryingAmountFils: result.carryingAmountFils,
+      carryingAmountPerUnitScaled: result.carryingAmountPerUnitScaled,
+      key: request.key,
+      productId: request.productId,
+      quantity: request.quantity,
+    });
+  }
+  return { effects, states };
+}
+
+export async function applyPurchaseReturnValuation(
+  client: PoolClient,
+  pharmacyId: string,
+  plan: PurchaseReturnValuationPlan,
+): Promise<void> {
+  for (const productId of [...plan.states.keys()].sort()) {
+    const state = plan.states.get(productId)!;
+    await client.query(
+      `update inventory_valuation_state
+       set total_quantity = $3::bigint, total_value_scaled = $4::numeric,
+           updated_at = statement_timestamp()
+       where pharmacy_id = $1 and product_id = $2`,
+      [
+        pharmacyId,
+        productId,
+        state.totalQuantity.toString(),
+        state.totalValueScaled.toString(),
+      ],
+    );
+  }
+}
+
+export async function recordPurchaseReturnMovement(
+  client: PoolClient,
+  input: RecordPurchaseReceiptMovementInput & {
+    readonly supplierReductionFils: bigint;
+  },
+): Promise<{ movementId: string }> {
+  if (input.quantity <= 0n || input.carryingAmountFils < 0n) {
+    throw new RangeError(
+      "A Purchase Return movement must remove positive stock value",
+    );
+  }
+  const inserted = await client.query<{ id: string }>(
+    `insert into inventory_movements (
+       pharmacy_id, product_id, batch_id, reason, quantity,
+       carrying_amount_fils, supplier_reduction_fils, source_document_type,
+       source_document_id, source_row_ordinal, created_by
+     ) values ($1, $2, $3, 'purchase-return', $4, $5, $6,
+               'purchase-return', $7, $8, $9)
+     returning id`,
+    [
+      input.pharmacyId,
+      input.productId,
+      input.batchId,
+      (-input.quantity).toString(),
+      (-input.carryingAmountFils).toString(),
+      (-input.supplierReductionFils).toString(),
+      input.sourceDocumentId,
+      input.sourceRowOrdinal,
+      input.actorId,
+    ],
+  );
+  const movementId = inserted.rows[0]?.id;
+  if (movementId === undefined) {
+    throw new Error("The Purchase Return movement was not created");
+  }
+  return { movementId };
 }

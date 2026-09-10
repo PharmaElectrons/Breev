@@ -154,6 +154,11 @@ const permissionLabels: Record<
       description: "البحث في فواتير الشراء المُرحّلة وفتح نسخها التاريخية.",
       name: "عرض المشتريات المُرحّلة",
     },
+    "purchases.returns.manage": {
+      description:
+        "إنشاء مرتجعات شراء للبضاعة التي غادرت الصيدلية ومراجعتها وترحيلها.",
+      name: "إدارة مرتجعات المشتريات",
+    },
     "purchases.costs.view": {
       description:
         "عرض تكلفة المورد الأساسية والتكلفة بعد الخصم في سجل المشتريات.",
@@ -217,6 +222,11 @@ const permissionLabels: Record<
       description:
         "Search posted purchase invoices and open historical copies.",
       name: "View posted purchases",
+    },
+    "purchases.returns.manage": {
+      description:
+        "Create, review, and post purchase returns for goods that physically left the pharmacy.",
+      name: "Manage purchase returns",
     },
     "purchases.costs.view": {
       description:

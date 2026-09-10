@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "14" as const;
-export const LOCAL_SCHEMA_VERSION = "14" as const;
+export const LOCAL_API_VERSION = "15" as const;
+export const LOCAL_SCHEMA_VERSION = "15" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -101,6 +101,7 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "purchases.costs.view",
   "purchases.drafts.manage",
   "purchases.posted.view",
+  "purchases.returns.manage",
   "suppliers.manage",
 ] as const;
 export type ImplementedPermissionName =
@@ -110,6 +111,7 @@ export const permissionNameSchema = z
   .regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/u)
   .max(96);
 export const stepUpActionSchema = z.enum([
+  "purchase.return.post",
   "devices.pairing.start",
   "devices.revoke",
   "devices.seat.release.request",
@@ -2696,6 +2698,24 @@ export const purchaseActiveAdjustmentDraftSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
   version: decimalRevisionSchema,
 });
+export const purchasePostedReturnLinkSchema = z.strictObject({
+  id: z.uuidv7(),
+  inventoryCarryingAmountFils: nullableReviewCostSchema,
+  number: z.strictObject({
+    series: z.literal("PR"),
+    value: decimalRevisionSchema,
+    year: z.number().int().min(1970).max(9999),
+  }),
+  postedAt: z.iso.datetime(),
+  postedBy: z.uuidv7(),
+  reason: z.string().trim().min(1).max(500),
+  supplierReductionFils: nullableReviewCostSchema,
+});
+export const purchaseActiveReturnDraftSchema = z.strictObject({
+  id: z.uuidv7(),
+  updatedAt: z.iso.datetime(),
+  version: decimalRevisionSchema,
+});
 
 export const purchasePostedDetailRowSchema = z.strictObject({
   baseUnitsPerEnteredUnit: packageUnitRatioSchema,
@@ -2718,12 +2738,14 @@ export const purchasePostedDetailRowSchema = z.strictObject({
 export const purchasePostedDetailSchema = z
   .strictObject({
     activeAdjustmentDrafts: z.array(purchaseActiveAdjustmentDraftSchema),
+    activeReturnDrafts: z.array(purchaseActiveReturnDraftSchema),
     adjustments: z.array(purchasePostedAdjustmentLinkSchema),
     allowanceFils: nullableReviewCostSchema,
     allowancePercentageSnapshot: allowancePercentageSchema.nullable(),
     costAfterDiscountFils: nullableReviewCostSchema,
     costVisibility: purchasePostedCostVisibilitySchema,
     canAdjust: z.boolean(),
+    canReturn: z.boolean(),
     id: z.uuidv7(),
     invoiceDate: z.iso.date(),
     navigation: z.strictObject({
@@ -2736,6 +2758,7 @@ export const purchasePostedDetailSchema = z
     postedAt: z.iso.datetime(),
     postedBy: z.uuidv7(),
     primarySupplierCostFils: nullableReviewCostSchema,
+    returns: z.array(purchasePostedReturnLinkSchema),
     rows: z.array(purchasePostedDetailRowSchema).min(1),
     settlementContext: purchaseSettlementContextSchema,
     supplierId: z.uuidv7(),
@@ -2959,6 +2982,148 @@ export const purchaseAdjustmentPostResultSchema = z.strictObject({
   posted: postedPurchaseAdjustmentSchema,
 });
 
+/** A Purchase Return has its own pharmacy/year PR series. */
+export const purchaseReturnNumberSchema = z.strictObject({
+  series: z.literal("PR"),
+  value: decimalRevisionSchema,
+  year: z.number().int().min(1970).max(9999),
+});
+export const purchaseReturnReasonSchema = z.string().trim().min(1).max(500);
+export const purchaseReturnEvidenceSchema = z.string().trim().min(1).max(1_000);
+export const purchaseReturnDraftRowSchema = z.strictObject({
+  batchId: z.uuidv7(),
+  id: z.uuidv7(),
+  inventoryUnitName: productUnitNameSchema,
+  itemDisplayName: z.string().min(1).max(726),
+  itemId: z.uuidv7(),
+  originalPurchaseRowId: z.uuidv7(),
+  originalQuantity: packageUnitRatioSchema,
+  previouslyReturnedQuantity: priceFilsSchema,
+  remainingEligibleQuantity: priceFilsSchema,
+  returnQuantity: priceFilsSchema,
+});
+export const purchaseReturnDraftSchema = z.strictObject({
+  createdAt: z.iso.datetime(),
+  evidence: purchaseReturnEvidenceSchema,
+  id: z.uuidv7(),
+  originalInvoiceDate: z.iso.date(),
+  originalNumber: postedDocumentNumberSchema,
+  originalPurchaseId: z.uuidv7(),
+  reason: purchaseReturnReasonSchema,
+  rows: z.array(purchaseReturnDraftRowSchema).min(1).max(500),
+  status: z.enum(["active", "discarded", "posted"]),
+  supplierId: z.uuidv7(),
+  supplierNameSnapshot: supplierNameSchema,
+  updatedAt: z.iso.datetime(),
+  version: decimalRevisionSchema,
+});
+export const purchaseReturnDraftCreateRequestSchema = z.strictObject({
+  evidence: purchaseReturnEvidenceSchema,
+  idempotencyKey: z.uuid(),
+  reason: purchaseReturnReasonSchema,
+});
+export const purchaseReturnDraftUpdateRequestSchema = z.strictObject({
+  evidence: purchaseReturnEvidenceSchema,
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  reason: purchaseReturnReasonSchema,
+  rows: z
+    .array(
+      z.strictObject({
+        originalPurchaseRowId: z.uuidv7(),
+        returnQuantity: priceFilsSchema,
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+export const purchaseReturnDraftDiscardRequestSchema = z.strictObject({
+  confirmation: z.literal("discard-purchase-return-draft"),
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const purchaseReturnSummaryRowSchema = z.strictObject({
+  batchId: z.uuidv7(),
+  carryingAmountFils: priceFilsSchema,
+  carryingAmountPerUnitScaled: priceFilsSchema,
+  inventoryUnitName: productUnitNameSchema,
+  itemDisplayName: z.string().min(1).max(726),
+  itemId: z.uuidv7(),
+  originalPurchaseRowId: z.uuidv7(),
+  quantity: packageUnitRatioSchema,
+  supplierReductionFils: priceFilsSchema,
+  valuationMethod: z.literal("weighted-average-cost"),
+});
+export const purchaseReturnSummarySchema = z.strictObject({
+  confirmationHash: z.string().regex(/^[0-9a-f]{64}$/u),
+  draftId: z.uuidv7(),
+  draftVersion: decimalRevisionSchema,
+  inventoryCarryingAmountFils: priceFilsSchema,
+  rows: z.array(purchaseReturnSummaryRowSchema).min(1),
+  supplierReductionFils: priceFilsSchema,
+});
+export const purchaseReturnPostRequestSchema = z.strictObject({
+  confirmationHash: z.string().regex(/^[0-9a-f]{64}$/u),
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  stepUpChallengeId: z.uuidv7(),
+});
+export const PURCHASE_RETURN_G01_WORKING_DEFAULT =
+  "inventory-account-offset-pending-g01" as const;
+export const purchaseReturnJournalSchema = z
+  .strictObject({
+    entryId: z.uuidv7(),
+    lines: z.array(postedPurchaseJournalLineSchema).min(2),
+    templateId: z.literal("purchase.return"),
+    templateVersion: z.number().int().positive(),
+    treatment: z.literal(PURCHASE_RETURN_G01_WORKING_DEFAULT),
+  })
+  .superRefine((journal, ctx) => {
+    const debits = journal.lines.reduce(
+      (sum, line) => sum + BigInt(line.debitFils),
+      0n,
+    );
+    const credits = journal.lines.reduce(
+      (sum, line) => sum + BigInt(line.creditFils),
+      0n,
+    );
+    if (debits !== credits) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Purchase Return journal debits must equal credits",
+        path: ["lines"],
+      });
+    }
+  });
+export const postedPurchaseReturnRowSchema =
+  purchaseReturnSummaryRowSchema.extend({
+    id: z.uuidv7(),
+    movementId: z.uuidv7(),
+  });
+export const postedPurchaseReturnSchema = z.strictObject({
+  approvalChallengeId: z.uuidv7(),
+  deviceId: z.string().min(1).max(200),
+  draftId: z.uuidv7(),
+  evidence: purchaseReturnEvidenceSchema,
+  id: z.uuidv7(),
+  inventoryCarryingAmountFils: priceFilsSchema,
+  journal: purchaseReturnJournalSchema,
+  number: purchaseReturnNumberSchema,
+  originalInvoiceDate: z.iso.date(),
+  originalNumber: postedDocumentNumberSchema,
+  originalPurchaseId: z.uuidv7(),
+  postedAt: z.iso.datetime(),
+  postedBy: z.uuidv7(),
+  reason: purchaseReturnReasonSchema,
+  rows: z.array(postedPurchaseReturnRowSchema).min(1),
+  supplierId: z.uuidv7(),
+  supplierNameSnapshot: supplierNameSchema,
+  supplierReductionFils: priceFilsSchema,
+});
+export const purchaseReturnPostResultSchema = z.strictObject({
+  posted: postedPurchaseReturnSchema,
+});
+
 export const PURCHASING_FIELD_ERROR_CODES = [
   "invalid",
   "out-of-range",
@@ -2983,6 +3148,11 @@ export const PURCHASING_RULE_IDS = [
   "purchase.adjustment.original-row-invalid",
   "purchase.adjustment.summary-stale",
   "purchase.adjustment.valuation-invalid",
+  "purchase.return.empty",
+  "purchase.return.ineligible-batch",
+  "purchase.return.negative-stock",
+  "purchase.return.over-return",
+  "purchase.return.summary-stale",
   "purchase.post.draft-empty",
   "purchase.post.item-unavailable",
   "purchase.post.lot-required-at-receipt",
@@ -3020,6 +3190,15 @@ export const PURCHASING_DENIAL_CODES = [
   "item-unavailable",
   "money-overflow",
   "pricing-mode-conflict",
+  "return-draft-discarded",
+  "return-draft-not-found",
+  "return-draft-posted",
+  "return-empty",
+  "return-ineligible-batch",
+  "return-negative-stock",
+  "return-original-not-found",
+  "return-over-eligible",
+  "return-summary-stale",
   "posted-purchase-not-found",
   "unit-invalid",
   "merge-into-self",
@@ -3254,6 +3433,68 @@ export const purchasePostedAdjustmentReadContract = {
     404: purchasingDenialSchema,
   },
 } as const;
+export const purchaseReturnDraftCreateContract = {
+  method: "POST",
+  path: "/purchases/posted/:purchaseId/return-drafts",
+  request: { body: purchaseReturnDraftCreateRequestSchema },
+  responses: {
+    201: purchaseReturnDraftSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseReturnDraftReadContract = {
+  method: "GET",
+  path: "/purchases/return-drafts/:draftId",
+  responses: {
+    200: purchaseReturnDraftSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
+  },
+} as const;
+export const purchaseReturnDraftUpdateContract = {
+  method: "PUT",
+  path: "/purchases/return-drafts/:draftId",
+  request: { body: purchaseReturnDraftUpdateRequestSchema },
+  responses: {
+    200: purchaseReturnDraftSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseReturnDraftDiscardContract = {
+  method: "POST",
+  path: "/purchases/return-drafts/:draftId/discards",
+  request: { body: purchaseReturnDraftDiscardRequestSchema },
+  responses: {
+    201: purchaseReturnDraftSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseReturnSummaryReadContract = {
+  method: "GET",
+  path: "/purchases/return-drafts/:draftId/summary",
+  responses: {
+    200: purchaseReturnSummarySchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseReturnPostContract = {
+  method: "POST",
+  path: "/purchases/return-drafts/:draftId/postings",
+  request: { body: purchaseReturnPostRequestSchema },
+  responses: {
+    201: purchaseReturnPostResultSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchasePostedReturnReadContract = {
+  method: "GET",
+  path: "/purchases/posted-returns/:returnId",
+  responses: {
+    200: postedPurchaseReturnSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
+  },
+} as const;
 
 export const supplierPath = (supplierId: string): string =>
   `/suppliers/${supplierId}`;
@@ -3285,6 +3526,18 @@ export const purchaseAdjustmentPostingsPath = (draftId: string): string =>
   `/purchases/adjustment-drafts/${draftId}/postings`;
 export const purchasePostedAdjustmentPath = (adjustmentId: string): string =>
   `/purchases/posted-adjustments/${adjustmentId}`;
+export const purchaseReturnDraftsPath = (purchaseId: string): string =>
+  `/purchases/posted/${purchaseId}/return-drafts`;
+export const purchaseReturnDraftPath = (draftId: string): string =>
+  `/purchases/return-drafts/${draftId}`;
+export const purchaseReturnDraftDiscardPath = (draftId: string): string =>
+  `/purchases/return-drafts/${draftId}/discards`;
+export const purchaseReturnSummaryPath = (draftId: string): string =>
+  `/purchases/return-drafts/${draftId}/summary`;
+export const purchaseReturnPostingsPath = (draftId: string): string =>
+  `/purchases/return-drafts/${draftId}/postings`;
+export const purchasePostedReturnPath = (returnId: string): string =>
+  `/purchases/posted-returns/${returnId}`;
 
 export const PURCHASING_CONTRACTS = [
   supplierArchiveContract,
@@ -3311,6 +3564,13 @@ export const PURCHASING_CONTRACTS = [
   purchaseAdjustmentPostContract,
   purchaseAdjustmentSummaryReadContract,
   purchasePostedAdjustmentReadContract,
+  purchasePostedReturnReadContract,
+  purchaseReturnDraftCreateContract,
+  purchaseReturnDraftDiscardContract,
+  purchaseReturnDraftReadContract,
+  purchaseReturnDraftUpdateContract,
+  purchaseReturnPostContract,
+  purchaseReturnSummaryReadContract,
 ] as const;
 
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
@@ -3661,6 +3921,28 @@ export type PostedPurchaseAdjustment = z.infer<
 >;
 export type PurchaseAdjustmentPostResult = z.infer<
   typeof purchaseAdjustmentPostResultSchema
+>;
+export type PurchaseReturnNumber = z.infer<typeof purchaseReturnNumberSchema>;
+export type PurchaseReturnDraftRow = z.infer<
+  typeof purchaseReturnDraftRowSchema
+>;
+export type PurchaseReturnDraft = z.infer<typeof purchaseReturnDraftSchema>;
+export type PurchaseReturnDraftCreateRequest = z.infer<
+  typeof purchaseReturnDraftCreateRequestSchema
+>;
+export type PurchaseReturnDraftUpdateRequest = z.infer<
+  typeof purchaseReturnDraftUpdateRequestSchema
+>;
+export type PurchaseReturnDraftDiscardRequest = z.infer<
+  typeof purchaseReturnDraftDiscardRequestSchema
+>;
+export type PurchaseReturnSummary = z.infer<typeof purchaseReturnSummarySchema>;
+export type PurchaseReturnPostRequest = z.infer<
+  typeof purchaseReturnPostRequestSchema
+>;
+export type PostedPurchaseReturn = z.infer<typeof postedPurchaseReturnSchema>;
+export type PurchaseReturnPostResult = z.infer<
+  typeof purchaseReturnPostResultSchema
 >;
 
 /**

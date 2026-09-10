@@ -48,6 +48,10 @@ export const purchaseAdjustmentDraftStatus = pgEnum(
   "purchase_adjustment_draft_status",
   ["active", "discarded", "posted"],
 );
+export const purchaseReturnDraftStatus = pgEnum(
+  "purchase_return_draft_status",
+  ["active", "discarded", "posted"],
+);
 
 export const suppliers = pgTable(
   "suppliers",
@@ -461,6 +465,153 @@ export const postedPurchaseAdjustmentRows = pgTable(
     unique("posted_purchase_adjustment_rows_adjustment_lineage_unique").on(
       table.adjustmentId,
       table.lineageId,
+    ),
+  ],
+);
+
+export const purchaseReturnDrafts = pgTable(
+  "purchase_return_drafts",
+  {
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    originalPurchaseId: uuid("original_purchase_id").notNull(),
+    reason: text().notNull(),
+    evidence: text().notNull(),
+    status: purchaseReturnDraftStatus().default("active").notNull(),
+    version: bigint({ mode: "bigint" }).default(1n).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdBy: uuid("created_by").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedBy: uuid("updated_by").notNull(),
+    discardedAt: timestamp("discarded_at", { withTimezone: true }),
+    discardedBy: uuid("discarded_by"),
+  },
+  (table) => [
+    unique("purchase_return_drafts_id_pharmacy_unique").on(
+      table.id,
+      table.pharmacyId,
+    ),
+  ],
+);
+
+export const purchaseReturnDraftRows = pgTable(
+  "purchase_return_draft_rows",
+  {
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    draftId: uuid("draft_id").notNull(),
+    originalPurchaseRowId: uuid("original_purchase_row_id").notNull(),
+    returnQuantity: bigint("return_quantity", { mode: "bigint" })
+      .default(0n)
+      .notNull(),
+  },
+  (table) => [
+    unique("purchase_return_draft_rows_id_pharmacy_unique").on(
+      table.id,
+      table.pharmacyId,
+    ),
+    unique("purchase_return_draft_rows_draft_original_unique").on(
+      table.draftId,
+      table.originalPurchaseRowId,
+    ),
+  ],
+);
+
+export const postedPurchaseReturns = pgTable(
+  "posted_purchase_returns",
+  {
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    draftId: uuid("draft_id").notNull(),
+    originalPurchaseId: uuid("original_purchase_id").notNull(),
+    originalNumberValue: bigint("original_number_value", {
+      mode: "bigint",
+    }).notNull(),
+    originalNumberYear: integer("original_number_year").notNull(),
+    originalInvoiceDate: date("original_invoice_date").notNull(),
+    supplierId: uuid("supplier_id").notNull(),
+    supplierNameSnapshot: text("supplier_name_snapshot").notNull(),
+    numberValue: bigint("number_value", { mode: "bigint" }).notNull(),
+    numberYear: integer("number_year").notNull(),
+    reason: text().notNull(),
+    evidence: text().notNull(),
+    inventoryCarryingAmountFils: bigint("inventory_carrying_amount_fils", {
+      mode: "bigint",
+    }).notNull(),
+    supplierReductionFils: bigint("supplier_reduction_fils", {
+      mode: "bigint",
+    }).notNull(),
+    differenceTreatment: text("difference_treatment").notNull(),
+    journalEntryId: uuid("journal_entry_id").notNull(),
+    approvalChallengeId: uuid("approval_challenge_id").notNull(),
+    deviceId: text("device_id").notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    postedBy: uuid("posted_by").notNull(),
+  },
+  (table) => [
+    unique("posted_purchase_returns_id_pharmacy_unique").on(
+      table.id,
+      table.pharmacyId,
+    ),
+    unique("posted_purchase_returns_draft_unique").on(table.draftId),
+    unique("posted_purchase_returns_number_unique").on(
+      table.pharmacyId,
+      table.numberYear,
+      table.numberValue,
+    ),
+  ],
+);
+
+export const postedPurchaseReturnRows = pgTable(
+  "posted_purchase_return_rows",
+  {
+    id: uuid()
+      .default(sql`uuidv7()`)
+      .primaryKey(),
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    purchaseReturnId: uuid("purchase_return_id").notNull(),
+    originalPurchaseRowId: uuid("original_purchase_row_id").notNull(),
+    ordinal: integer().notNull(),
+    productId: uuid("product_id").notNull(),
+    batchId: uuid("batch_id").notNull(),
+    itemDisplayName: text("item_display_name").notNull(),
+    inventoryUnitName: text("inventory_unit_name").notNull(),
+    quantity: bigint({ mode: "bigint" }).notNull(),
+    carryingAmountPerUnitScaled: numeric(
+      "carrying_amount_per_unit_scaled",
+    ).notNull(),
+    carryingAmountFils: bigint("carrying_amount_fils", {
+      mode: "bigint",
+    }).notNull(),
+    supplierReductionFils: bigint("supplier_reduction_fils", {
+      mode: "bigint",
+    }).notNull(),
+    valuationMethod: text("valuation_method").notNull(),
+    movementId: uuid("movement_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("posted_purchase_return_rows_id_pharmacy_unique").on(
+      table.id,
+      table.pharmacyId,
+    ),
+    unique("posted_purchase_return_rows_return_original_unique").on(
+      table.purchaseReturnId,
+      table.originalPurchaseRowId,
     ),
   ],
 );

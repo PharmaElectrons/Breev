@@ -82,6 +82,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     import.meta.dirname,
     "../../../../evidence/issue-52/after",
   );
+  const returnEvidenceDir = path.resolve(
+    import.meta.dirname,
+    "../../../../evidence/issue-53/after",
+  );
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });
@@ -89,6 +93,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await mkdir(postingEvidenceDir, { recursive: true });
     await mkdir(reviewEvidenceDir, { recursive: true });
     await mkdir(adjustmentEvidenceDir, { recursive: true });
+    await mkdir(returnEvidenceDir, { recursive: true });
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
     if (administratorUrl === undefined) {
       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
@@ -1143,15 +1148,59 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await dialog.getByRole("button", { name: "Back to invoice" }).click();
     await expect(adjustmentLink).toBeFocused();
     const purchaseReturn = dialog.getByRole("button", {
-      name: "Purchase Return",
+      name: /Purchase return/iu,
     });
     await purchaseReturn.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/return$/u);
     await expect(
-      dialog.getByText("The original invoice remains read-only:"),
+      dialog.getByRole("heading", {
+        name: "Purchase Return · goods physically leave stock",
+      }),
     ).toBeVisible();
-    await page.keyboard.press("Escape");
+    await dialog.getByLabel("Return reason").fill("Supplier accepted damage");
+    await dialog
+      .getByLabel("Disposition evidence")
+      .fill("Supplier collection note BROWSER-RT-1");
+    await dialog
+      .getByRole("button", { name: "Create Purchase Return" })
+      .click();
+    const returnQuantity = dialog.getByRole("textbox", {
+      name: new RegExp(`Return quantity ${purchaseProduct.displayName}`, "u"),
+    });
+    await returnQuantity.focus();
+    await returnQuantity.fill("1");
+    await dialog
+      .getByRole("button", { name: "Save and review physical return" })
+      .click();
+    await expect(dialog).toContainText("Inventory carrying amount");
+    await expect(dialog).toContainText("Supplier balance reduction");
+    await dialog.screenshot({
+      animations: "disabled",
+      path: path.join(
+        returnEvidenceDir,
+        "purchase-return-summary-en-light.png",
+      ),
+    });
+    await dialog.getByLabel("Your password").fill(OWNER_PASSWORD);
+    await dialog
+      .getByRole("button", { name: "Approve and post return" })
+      .click();
+    await expect(
+      dialog.getByRole("heading", { name: "Purchase Return posted" }),
+    ).toBeVisible();
+    await expect(dialog).toContainText("PR");
+    await dialog
+      .getByRole("button", { name: "Back to original invoice" })
+      .click();
+    const returnLink = dialog.getByRole("button", { name: /PR\d+\//u });
+    await expect(returnLink).toBeVisible();
+    await returnLink.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog.locator("#posted-return-title")).toContainText("PR");
+    await expect(dialog).toContainText("Original invoice");
+    await dialog.getByRole("button", { name: "Back to invoice" }).click();
+    await expect(returnLink).toBeFocused();
 
     expect(
       (await new AxeBuilder({ page }).include("dialog").analyze()).violations,
@@ -1162,7 +1211,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     const video = page.video();
     await context.close();
     await video?.saveAs(
-      path.join(adjustmentEvidenceDir, "purchase-adjustment-keyboard.webm"),
+      path.join(returnEvidenceDir, "purchase-return-keyboard.webm"),
     );
   });
 
@@ -1277,6 +1326,27 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           .first()
           .click();
         await expect(dialog.locator("#posted-detail-title")).toBeVisible();
+        await dialog
+          .getByRole("button", {
+            name: locale === "en" ? /Purchase return/iu : "فاتورة مردود",
+          })
+          .click();
+        await expect(dialog.locator("#return-title")).toBeVisible();
+        await dialog.screenshot({
+          animations: "disabled",
+          path: path.join(
+            returnEvidenceDir,
+            `purchase-return-${locale}-${theme}.png`,
+          ),
+        });
+        await dialog
+          .getByRole("button", {
+            name:
+              locale === "en"
+                ? "Back to original invoice"
+                : "العودة إلى الفاتورة الأصلية",
+          })
+          .click();
         await dialog
           .getByRole("button", {
             name: locale === "en" ? "Edit Invoice" : "تعديل الفاتورة",

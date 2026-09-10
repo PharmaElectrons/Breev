@@ -7,6 +7,10 @@ import {
   purchaseAdjustmentDraftsPath,
   purchaseAdjustmentPostingsPath,
   purchaseAdjustmentSummaryPath,
+  purchaseReturnDraftPath,
+  purchaseReturnDraftsPath,
+  purchaseReturnPostingsPath,
+  purchaseReturnSummaryPath,
   purchaseDraftDiscardPath,
   purchaseDraftHeaderPath,
   purchaseDraftPostingsPath,
@@ -17,6 +21,9 @@ import {
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentPostResult,
   type PurchaseAdjustmentSummary,
+  type PurchaseReturnDraft,
+  type PurchaseReturnPostResult,
+  type PurchaseReturnSummary,
   type PurchasePostResult,
   type PurchasePostedDetail,
   type PurchasePostedListResponse,
@@ -1624,6 +1631,511 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     ).rejects.toMatchObject({ code: "55000" });
   }, 30_000);
 
+  it("posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links", async () => {
+    const productResponse = await request(
+      "POST",
+      "/catalog/products",
+      medicationRequest("Return Valuation", false),
+    );
+    expect(productResponse.status, diagnostics(productResponse)).toBe(201);
+    const product = productResponse.body as unknown as Product;
+    const originalDraft = await createPostableDraft(
+      supplierLow.id,
+      "INV-RETURN-ORIGINAL",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "10", itemId: product.id }],
+    );
+    const originalResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(originalDraft.id),
+      { expectedVersion: originalDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(originalResponse.status, diagnostics(originalResponse)).toBe(201);
+    const original = originalResponse.body as unknown as PurchasePostResult;
+    const originalBytes = await immutablePurchaseBytes(original.posted.id);
+
+    const laterDraft = await createPostableDraft(
+      supplierLow.id,
+      "INV-RETURN-LATER",
+      "debt",
+      [{ costFils: "3000", enteredQuantity: "10", itemId: product.id }],
+    );
+    const laterResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(laterDraft.id),
+      { expectedVersion: laterDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(laterResponse.status, diagnostics(laterResponse)).toBe(201);
+
+    const draft = await createReturnDraft(original.posted.id);
+    const overReturn = await request("PUT", purchaseReturnDraftPath(draft.id), {
+      evidence: draft.evidence,
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+      reason: draft.reason,
+      rows: draft.rows.map((row) => ({
+        originalPurchaseRowId: row.originalPurchaseRowId,
+        returnQuantity: "11",
+      })),
+    });
+    expect(overReturn.status, diagnostics(overReturn)).toBe(409);
+    expect(overReturn.body).toMatchObject({
+      code: "return-over-eligible",
+      fieldErrors: [{ rule: "purchase.return.over-return" }],
+    });
+    const saved = await saveReturnDraft(draft, "4");
+    const summary = await previewReturn(saved);
+    expect(summary).toMatchObject({
+      inventoryCarryingAmountFils: "8000",
+      supplierReductionFils: "4000",
+    });
+    const missingStepUp = await request(
+      "POST",
+      purchaseReturnPostingsPath(saved.id),
+      {
+        confirmationHash: summary.confirmationHash,
+        expectedVersion: saved.version,
+        idempotencyKey: uuidV7(),
+        stepUpChallengeId: uuidV7(),
+      },
+    );
+    expect(missingStepUp.status, diagnostics(missingStepUp)).toBe(404);
+    expect(missingStepUp.body).toMatchObject({
+      code: "identity-resource-not-found",
+    });
+    const survivingDraft = await request(
+      "GET",
+      purchaseReturnDraftPath(saved.id),
+    );
+    expect(survivingDraft.status, diagnostics(survivingDraft)).toBe(200);
+    expect(survivingDraft.body).toMatchObject({
+      status: "active",
+      version: saved.version,
+    });
+    const challengeId = await approvedReturnStepUp(saved.id);
+    const idempotencyKey = uuidV7();
+    const balanceBeforeFailure = await administrator.query<{
+      balance_fils: string;
+    }>(
+      `select balance_fils::text from accounting_supplier_balances
+       where pharmacy_id = $1 and supplier_id = $2`,
+      [pharmacyId, supplierLow.id],
+    );
+    const valuationBeforeFailure = await administrator.query<{
+      total_quantity: string;
+      total_value_scaled: string;
+    }>(
+      `select total_quantity::text, total_value_scaled::text
+       from inventory_valuation_state
+       where pharmacy_id = $1 and product_id = $2`,
+      [pharmacyId, product.id],
+    );
+
+    await administrator.query(
+      `create function test_force_return_outbox_failure()
+         returns trigger language plpgsql as $$
+         begin
+           if new.event_type = 'purchase.return.posted' then
+             raise exception 'test-injected return outbox failure'
+               using errcode = 'P0001';
+           end if;
+           return new;
+         end;
+         $$`,
+    );
+    await administrator.query(
+      `create trigger test_force_return_outbox_failure_trigger
+         before insert on posting_outbox_entries
+         for each row execute function test_force_return_outbox_failure()`,
+    );
+    let failedPost: ApiResponse;
+    try {
+      failedPost = await request("POST", purchaseReturnPostingsPath(saved.id), {
+        confirmationHash: summary.confirmationHash,
+        expectedVersion: saved.version,
+        idempotencyKey,
+        stepUpChallengeId: challengeId,
+      });
+    } finally {
+      await administrator.query(
+        `drop trigger test_force_return_outbox_failure_trigger
+         on posting_outbox_entries`,
+      );
+      await administrator.query(
+        `drop function test_force_return_outbox_failure()`,
+      );
+    }
+    expect(failedPost.status, diagnostics(failedPost)).not.toBe(201);
+
+    const rolledBack = await administrator.query<{
+      audit_count: string;
+      command_count: string;
+      journal_count: string;
+      movement_count: string;
+      outbox_count: string;
+      posted_count: string;
+      status: string;
+      step_up_status: string;
+      version: string;
+    }>(
+      `select draft.status::text, draft.version::text,
+              (select count(*)::text from posted_purchase_returns posted
+               where posted.pharmacy_id = draft.pharmacy_id
+                 and posted.draft_id = draft.id) as posted_count,
+              (select count(*)::text from inventory_movements movement
+               where movement.pharmacy_id = draft.pharmacy_id
+                 and movement.source_document_type = 'purchase-return') as movement_count,
+              (select count(*)::text from accounting_journal_entries entry
+               where entry.pharmacy_id = draft.pharmacy_id
+                 and entry.template_id = 'purchase.return') as journal_count,
+              (select count(*)::text from posting_command_results result
+               where result.pharmacy_id = draft.pharmacy_id
+                 and result.idempotency_key = $3) as command_count,
+              (select count(*)::text from posting_audit_records audit
+               where audit.pharmacy_id = draft.pharmacy_id
+                 and audit.correlation_id = $3
+                 and audit.outcome = 'committed') as audit_count,
+              (select count(*)::text from posting_outbox_entries outbox
+               where outbox.pharmacy_id = draft.pharmacy_id
+                 and outbox.correlation_id = $3) as outbox_count,
+              (select challenge.status::text from step_up_challenges challenge
+               where challenge.id = $4) as step_up_status
+       from purchase_return_drafts draft
+       where draft.pharmacy_id = $1 and draft.id = $2`,
+      [pharmacyId, saved.id, idempotencyKey, challengeId],
+    );
+    expect(rolledBack.rows[0]).toEqual({
+      audit_count: "0",
+      command_count: "0",
+      journal_count: "0",
+      movement_count: "0",
+      outbox_count: "0",
+      posted_count: "0",
+      status: "active",
+      step_up_status: "approved",
+      version: saved.version,
+    });
+    const balanceAfterFailure = await administrator.query<{
+      balance_fils: string;
+    }>(
+      `select balance_fils::text from accounting_supplier_balances
+       where pharmacy_id = $1 and supplier_id = $2`,
+      [pharmacyId, supplierLow.id],
+    );
+    expect(balanceAfterFailure.rows[0]).toEqual(balanceBeforeFailure.rows[0]);
+    const valuationAfterFailure = await administrator.query<{
+      total_quantity: string;
+      total_value_scaled: string;
+    }>(
+      `select total_quantity::text, total_value_scaled::text
+       from inventory_valuation_state
+       where pharmacy_id = $1 and product_id = $2`,
+      [pharmacyId, product.id],
+    );
+    expect(valuationAfterFailure.rows[0]).toEqual(
+      valuationBeforeFailure.rows[0],
+    );
+
+    const postedResponse = await request(
+      "POST",
+      purchaseReturnPostingsPath(saved.id),
+      {
+        confirmationHash: summary.confirmationHash,
+        expectedVersion: saved.version,
+        idempotencyKey,
+        stepUpChallengeId: challengeId,
+      },
+    );
+    expect(postedResponse.status, diagnostics(postedResponse)).toBe(201);
+    const posted = postedResponse.body as unknown as PurchaseReturnPostResult;
+    expect(posted.posted).toMatchObject({
+      inventoryCarryingAmountFils: "8000",
+      number: { series: "PR", value: "2" },
+      originalInvoiceDate: original.posted.invoiceDate,
+      originalNumber: original.posted.number,
+      originalPurchaseId: original.posted.id,
+      supplierReductionFils: "4000",
+    });
+    expect(posted.posted.journal.treatment).toBe(
+      "inventory-account-offset-pending-g01",
+    );
+    expect(posted.posted.journal.lines).toHaveLength(3);
+    expect(await immutablePurchaseBytes(original.posted.id)).toEqual(
+      originalBytes,
+    );
+
+    const replay = await request("POST", purchaseReturnPostingsPath(saved.id), {
+      confirmationHash: summary.confirmationHash,
+      expectedVersion: saved.version,
+      idempotencyKey,
+      stepUpChallengeId: challengeId,
+    });
+    expect(replay.status).toBe(201);
+    expect(replay.body).toEqual(postedResponse.body);
+
+    const effects = await administrator.query<{
+      movement_carrying: string;
+      movement_count: string;
+      movement_quantity: string;
+      posted_count: string;
+    }>(
+      `select
+         (select count(*)::text from posted_purchase_returns where id = $1) as posted_count,
+         (select count(*)::text from inventory_movements
+          where source_document_type = 'purchase-return' and source_document_id = $1) as movement_count,
+         (select sum(quantity)::text from inventory_movements
+          where source_document_type = 'purchase-return' and source_document_id = $1) as movement_quantity,
+         (select sum(carrying_amount_fils)::text from inventory_movements
+          where source_document_type = 'purchase-return' and source_document_id = $1) as movement_carrying`,
+      [posted.posted.id],
+    );
+    expect(effects.rows[0]).toEqual({
+      movement_carrying: "-8000",
+      movement_count: "1",
+      movement_quantity: "-4",
+      posted_count: "1",
+    });
+
+    const originalDetail = await request(
+      "GET",
+      `/purchases/posted/${original.posted.id}`,
+    );
+    expect(originalDetail.status, diagnostics(originalDetail)).toBe(200);
+    expect(
+      (originalDetail.body as unknown as PurchasePostedDetail).returns,
+    ).toEqual([
+      expect.objectContaining({
+        id: posted.posted.id,
+        number: posted.posted.number,
+      }),
+    ]);
+    const returnRead = await request(
+      "GET",
+      `/purchases/posted-returns/${posted.posted.id}`,
+    );
+    expect(returnRead.status, diagnostics(returnRead)).toBe(200);
+    expect(returnRead.body).toMatchObject({
+      originalPurchaseId: original.posted.id,
+      originalNumber: original.posted.number,
+    });
+
+    const contenders = await Promise.all([
+      createReturnDraft(original.posted.id),
+      createReturnDraft(original.posted.id),
+    ]);
+    const contenderSaved = await Promise.all(
+      contenders.map((candidate) => saveReturnDraft(candidate, "6")),
+    );
+    const contenderSummaries = await Promise.all(
+      contenderSaved.map(previewReturn),
+    );
+    const contenderChallenges = await Promise.all(
+      contenderSaved.map((candidate) => approvedReturnStepUp(candidate.id)),
+    );
+    const contenderPosts = await Promise.all(
+      contenderSaved.map((candidate, index) =>
+        request("POST", purchaseReturnPostingsPath(candidate.id), {
+          confirmationHash: contenderSummaries[index]!.confirmationHash,
+          expectedVersion: candidate.version,
+          idempotencyKey: uuidV7(),
+          stepUpChallengeId: contenderChallenges[index],
+        }),
+      ),
+    );
+    expect(contenderPosts.map(({ status }) => status).sort()).toEqual([
+      201, 409,
+    ]);
+    expect(
+      contenderPosts.find(({ status }) => status === 409)?.body,
+    ).toMatchObject({
+      code: expect.stringMatching(/^return-(negative-stock|over-eligible)$/u),
+    });
+    const stock = await administrator.query<{
+      batch_quantity: string;
+      product_quantity: string;
+    }>(
+      `select (select sum(movement.quantity)::text
+               from inventory_movements movement
+               where movement.pharmacy_id = batch.pharmacy_id
+                 and movement.batch_id = batch.id) as batch_quantity,
+              valuation.total_quantity::text as product_quantity
+       from inventory_batches batch
+       join inventory_valuation_state valuation
+         on valuation.pharmacy_id = batch.pharmacy_id
+        and valuation.product_id = batch.product_id
+       where batch.id = $1`,
+      [original.posted.rows[0]!.batchId],
+    );
+    expect(stock.rows[0]).toEqual({
+      batch_quantity: "0",
+      product_quantity: "10",
+    });
+
+    await expect(
+      administrator.query(
+        "update posted_purchase_returns set reason = 'mutated' where id = $1",
+        [posted.posted.id],
+      ),
+    ).rejects.toMatchObject({ code: "55000" });
+    await expect(
+      administrator.query("delete from posted_purchase_returns where id = $1", [
+        posted.posted.id,
+      ]),
+    ).rejects.toMatchObject({ code: "55000" });
+
+    const sessionBoundary = await requestAs(
+      { ...credentials, sessionToken: randomBytes(32).toString("base64url") },
+      "GET",
+      purchaseReturnDraftPath(saved.id),
+    );
+    expect(sessionBoundary.status, diagnostics(sessionBoundary)).toBe(401);
+    expect(sessionBoundary.body).toMatchObject({
+      code: "session-binding-invalid",
+    });
+
+    const deviceBoundary = await requestAs(
+      { ...credentials, deviceId: uuidV7() },
+      "GET",
+      purchaseReturnDraftPath(saved.id),
+    );
+    expect(deviceBoundary.status, diagnostics(deviceBoundary)).toBe(401);
+    expect(deviceBoundary.body).toMatchObject({ code: "binding-invalid" });
+
+    const owner = await administrator.query<{
+      role_id: string;
+      user_id: string;
+    }>(
+      `select identity_user.id as user_id, identity_user.role_id
+       from identity_users identity_user
+       where identity_user.pharmacy_id = $1 and identity_user.username = $2`,
+      [pharmacyId, OWNER_USERNAME],
+    );
+    const ownerId = owner.rows[0]?.user_id;
+    const ownerRoleId = owner.rows[0]?.role_id;
+    expect(ownerId).toBeTruthy();
+    expect(ownerRoleId).toBeTruthy();
+
+    const revoke = async (permission: string): Promise<void> => {
+      await administrator.query(
+        `delete from role_permission_grants
+         where role_id = $1 and permission_name = $2`,
+        [ownerRoleId, permission],
+      );
+      await administrator.query(
+        "update pharmacy_roles set revision = revision + 1 where id = $1",
+        [ownerRoleId],
+      );
+    };
+    const restore = async (permission: string): Promise<void> => {
+      await administrator.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         values ($1, $2, $3, $4)
+         on conflict (role_id, permission_name) do nothing`,
+        [pharmacyId, ownerRoleId, permission, ownerId],
+      );
+      await administrator.query(
+        "update pharmacy_roles set revision = revision + 1 where id = $1",
+        [ownerRoleId],
+      );
+    };
+    const returnDraftBody = {
+      evidence: "Boundary authorization check",
+      idempotencyKey: uuidV7(),
+      reason: "Boundary authorization check",
+    };
+    await revoke("purchases.returns.manage");
+    try {
+      const denied = await request(
+        "POST",
+        purchaseReturnDraftsPath(original.posted.id),
+        returnDraftBody,
+      );
+      expect(denied.status, diagnostics(denied)).toBe(403);
+      expect(denied.body).toMatchObject({
+        code: "permission-denied",
+        requiredPermission: "purchases.returns.manage",
+      });
+    } finally {
+      await restore("purchases.returns.manage");
+    }
+
+    await revoke("purchases.costs.view");
+    try {
+      const denied = await request(
+        "POST",
+        purchaseReturnDraftsPath(original.posted.id),
+        { ...returnDraftBody, idempotencyKey: uuidV7() },
+      );
+      expect(denied.status, diagnostics(denied)).toBe(403);
+      expect(denied.body).toMatchObject({
+        code: "permission-denied",
+        requiredPermission: "purchases.costs.view",
+      });
+    } finally {
+      await restore("purchases.costs.view");
+    }
+  }, 30_000);
+
+  async function createReturnDraft(
+    originalId: string,
+  ): Promise<PurchaseReturnDraft> {
+    const response = await request(
+      "POST",
+      purchaseReturnDraftsPath(originalId),
+      {
+        evidence: "Supplier collection note RT-44",
+        idempotencyKey: uuidV7(),
+        reason: "Supplier accepted damaged outer packaging",
+      },
+    );
+    expect(response.status, diagnostics(response)).toBe(201);
+    return response.body as unknown as PurchaseReturnDraft;
+  }
+
+  async function saveReturnDraft(
+    draft: PurchaseReturnDraft,
+    quantity: string,
+  ): Promise<PurchaseReturnDraft> {
+    const response = await request("PUT", purchaseReturnDraftPath(draft.id), {
+      evidence: draft.evidence,
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+      reason: draft.reason,
+      rows: draft.rows.map((row) => ({
+        originalPurchaseRowId: row.originalPurchaseRowId,
+        returnQuantity: quantity,
+      })),
+    });
+    expect(response.status, diagnostics(response)).toBe(200);
+    return response.body as unknown as PurchaseReturnDraft;
+  }
+
+  async function previewReturn(
+    draft: PurchaseReturnDraft,
+  ): Promise<PurchaseReturnSummary> {
+    const response = await request("GET", purchaseReturnSummaryPath(draft.id));
+    expect(response.status, diagnostics(response)).toBe(200);
+    return response.body as unknown as PurchaseReturnSummary;
+  }
+
+  async function approvedReturnStepUp(draftId: string): Promise<string> {
+    const challenge = await request("POST", "/identity/step-up-challenges", {
+      action: "purchase.return.post",
+      idempotencyKey: uuidV7(),
+      subjectId: draftId,
+    });
+    expect(challenge.status, diagnostics(challenge)).toBe(201);
+    const challengeId = String(challenge.body?.id ?? "");
+    const approved = await request(
+      "POST",
+      `/identity/step-up-challenges/${challengeId}/approve`,
+      { idempotencyKey: uuidV7(), password: OWNER_PASSWORD },
+    );
+    expect(approved.status, diagnostics(approved)).toBe(200);
+    return challengeId;
+  }
+
   async function createAdjustmentDraft(
     originalId: string,
     reason:
@@ -1720,9 +2232,18 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     route: string,
     body?: unknown,
   ): Promise<ApiResponse> {
+    return await requestAs(credentials, method, route, body);
+  }
+
+  async function requestAs(
+    requestCredentials: Credentials,
+    method: "DELETE" | "GET" | "PATCH" | "POST" | "PUT",
+    route: string,
+    body?: unknown,
+  ): Promise<ApiResponse> {
     const response = await fetch(`${apiOrigin}${route}`, {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      headers: headers(credentials, body !== undefined),
+      headers: headers(requestCredentials, body !== undefined),
       method,
     });
     const text = await response.text();

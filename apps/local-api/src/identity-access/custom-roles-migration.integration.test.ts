@@ -47,7 +47,7 @@ interface RoleSnapshot {
  *
  * The migrations must keep every role id and user assignment exactly as they
  * found them. The built-in manager receives role administration in 0011 and
- * the owner receives the live purchasing permissions in 0012, 0018, and 0019, with
+ * the owner receives the live purchasing permissions in 0012, 0018, 0019, and 0020, with
  * each touched role revision advanced once per migration.
  */
 describe.sequential("migration 0011: custom roles upgrade", () => {
@@ -178,7 +178,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
       const after = rolesAfter.find((role) => role.id === before.id);
       expect(after?.revision, before.role_key ?? before.id).toBe(
         before.role_key === "owner"
-          ? String(BigInt(before.revision) + 4n)
+          ? String(BigInt(before.revision) + 5n)
           : before.role_key === "manager"
             ? String(BigInt(before.revision) + 2n)
             : before.revision,
@@ -225,12 +225,17 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
         },
         {
           granted_by: ownerId,
+          permission_name: "purchases.returns.manage",
+          role_id: ownerRoleId,
+        },
+        {
+          granted_by: ownerId,
           permission_name: "suppliers.manage",
           role_id: ownerRoleId,
         },
       ].sort(compareGrants),
     );
-    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 5n));
+    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 6n));
 
     const actions = await application.query<{ name: string }>(
       `select name from step_up_action_definitions
@@ -245,7 +250,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     // Running the migrations again changes nothing more.
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshotRoles()).toEqual(rolesAfter);
-    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 5n));
+    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 6n));
   }, 120_000);
 
   it("enforces one identity per role, unique custom names, and the owner floor in PostgreSQL", async () => {

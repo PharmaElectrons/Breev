@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   PostedPurchaseAdjustment,
+  PostedPurchaseReturn,
   Product,
   PurchasePostedDetail,
   PurchasePostedListRequest,
@@ -13,10 +14,12 @@ import {
   PurchasingApiDenied,
   requestPostedPurchase,
   requestPostedPurchaseAdjustment,
+  requestPostedPurchaseReturn,
   requestPostedPurchases,
   requestSupplier,
 } from "./purchasing-api";
 import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
+import { PurchaseReturnWorkflow } from "./purchase-return-workflow";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
 
@@ -42,16 +45,22 @@ export function PostedPurchaseReview({
   const drilldownOpenerRef = useRef<HTMLElement | null>(null);
   const correctionOpenerRef = useRef<HTMLElement | null>(null);
   const postedAdjustmentOpenerRef = useRef<HTMLElement | null>(null);
+  const postedReturnOpenerRef = useRef<HTMLElement | null>(null);
   const [list, setList] = useState<PurchasePostedListResponse | null>(null);
   const [detail, setDetail] = useState<PurchasePostedDetail | null>(null);
   const [postedAdjustment, setPostedAdjustment] =
     useState<PostedPurchaseAdjustment | null>(null);
+  const [postedReturn, setPostedReturn] = useState<PostedPurchaseReturn | null>(
+    null,
+  );
   const [currentRecord, setCurrentRecord] = useState<CurrentRecord | null>(
     null,
   );
   const [correction, setCorrection] = useState<CorrectionKind | null>(null);
   const [adjustmentDraftActive, setAdjustmentDraftActive] = useState(false);
   const [adjustmentLeaveRequest, setAdjustmentLeaveRequest] = useState(0);
+  const [returnDraftActive, setReturnDraftActive] = useState(false);
+  const [returnLeaveRequest, setReturnLeaveRequest] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [denial, setDenial] = useState<string | null>(null);
@@ -71,9 +80,12 @@ export function PostedPurchaseReview({
       setDetail(null);
       setCurrentRecord(null);
       setPostedAdjustment(null);
+      setPostedReturn(null);
       setCorrection(null);
       setAdjustmentDraftActive(false);
       setAdjustmentLeaveRequest(0);
+      setReturnDraftActive(false);
+      setReturnLeaveRequest(0);
       setAnnouncement("");
       const addressed = postedPurchaseAddress(window.location.hash);
       if (addressed === null) {
@@ -113,6 +125,7 @@ export function PostedPurchaseReview({
     try {
       setDetail(await requestPostedPurchase(baseUrl, purchaseId));
       setPostedAdjustment(null);
+      setPostedReturn(null);
       setCurrentRecord(null);
       setCorrection(addressedCorrection);
       window.history.replaceState(
@@ -219,6 +232,29 @@ export function PostedPurchaseReview({
     focusAfterRender(opener);
   }
 
+  async function openPostedReturn(
+    returnId: string,
+    opener: HTMLElement,
+  ): Promise<void> {
+    postedReturnOpenerRef.current = opener;
+    setLoading(true);
+    setError(null);
+    setDenial(null);
+    try {
+      setPostedReturn(await requestPostedPurchaseReturn(baseUrl, returnId));
+    } catch (caught) {
+      handleFailure(caught);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function closePostedReturn(): void {
+    const opener = postedReturnOpenerRef.current;
+    setPostedReturn(null);
+    focusAfterRender(opener);
+  }
+
   function openCorrection(kind: CorrectionKind, opener: HTMLElement): void {
     if (detail === null) return;
     correctionOpenerRef.current = opener;
@@ -231,6 +267,7 @@ export function PostedPurchaseReview({
     const opener = correctionOpenerRef.current;
     setCorrection(null);
     setAdjustmentDraftActive(false);
+    setReturnDraftActive(false);
     window.history.replaceState(null, "", `#/purchases/posted/${detail.id}`);
     focusAfterRender(opener);
   }
@@ -285,10 +322,15 @@ export function PostedPurchaseReview({
         } else if (postedAdjustment !== null) {
           event.preventDefault();
           closePostedAdjustment();
+        } else if (postedReturn !== null) {
+          event.preventDefault();
+          closePostedReturn();
         } else if (correction !== null) {
           event.preventDefault();
           if (correction === "adjustment" && adjustmentDraftActive) {
             setAdjustmentLeaveRequest((value) => value + 1);
+          } else if (correction === "return" && returnDraftActive) {
+            setReturnLeaveRequest((value) => value + 1);
           } else {
             closeCorrection();
           }
@@ -309,6 +351,8 @@ export function PostedPurchaseReview({
           onClick={() => {
             if (correction === "adjustment" && adjustmentDraftActive) {
               setAdjustmentLeaveRequest((value) => value + 1);
+            } else if (correction === "return" && returnDraftActive) {
+              setReturnLeaveRequest((value) => value + 1);
             } else {
               dialogRef.current?.close();
             }
@@ -358,6 +402,11 @@ export function PostedPurchaseReview({
           adjustment={postedAdjustment}
           onBack={closePostedAdjustment}
         />
+      ) : postedReturn !== null ? (
+        <PostedReturnView
+          purchaseReturn={postedReturn}
+          onBack={closePostedReturn}
+        />
       ) : correction !== null && detail !== null ? (
         <section
           className="posted-correction-stage"
@@ -379,21 +428,16 @@ export function PostedPurchaseReview({
               }}
             />
           ) : (
-            <>
-              <h3 id="correction-stage-title">{copy.returnStageTitle}</h3>
-              <p>{copy.correctionStageUnavailable}</p>
-              <p>
-                {copy.originalRemainsUntouched}{" "}
-                <bdi>{formatNumber(detail)}</bdi>
-              </p>
-              <button
-                type="button"
-                className="quiet-button"
-                onClick={closeCorrection}
-              >
-                {copy.backToInvoice}
-              </button>
-            </>
+            <PurchaseReturnWorkflow
+              baseUrl={baseUrl}
+              detail={detail}
+              leaveRequest={returnLeaveRequest}
+              onBack={closeCorrection}
+              onDraftActive={setReturnDraftActive}
+              onPosted={async (purchaseId) => {
+                setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+              }}
+            />
           )}
         </section>
       ) : currentRecord !== null ? (
@@ -406,6 +450,9 @@ export function PostedPurchaseReview({
           onCorrection={openCorrection}
           onAdjustment={(adjustmentId, opener) =>
             void openPostedAdjustment(adjustmentId, opener)
+          }
+          onReturn={(returnId, opener) =>
+            void openPostedReturn(returnId, opener)
           }
           onItem={(itemId, opener) => void openItem(itemId, opener)}
           onSupplier={(opener) => void openSupplier(opener)}
@@ -576,6 +623,7 @@ function PostedPurchaseDetailView({
   onBack,
   onCorrection,
   onAdjustment,
+  onReturn,
   onItem,
   onSupplier,
 }: {
@@ -584,6 +632,7 @@ function PostedPurchaseDetailView({
   readonly onBack: () => void;
   readonly onCorrection: (kind: CorrectionKind, opener: HTMLElement) => void;
   readonly onAdjustment: (adjustmentId: string, opener: HTMLElement) => void;
+  readonly onReturn: (returnId: string, opener: HTMLElement) => void;
   readonly onItem: (itemId: string, opener: HTMLElement) => void;
   readonly onSupplier: (opener: HTMLElement) => void;
 }): React.JSX.Element {
@@ -779,6 +828,31 @@ function PostedPurchaseDetailView({
           </ul>
         </section>
       ) : null}
+      {detail.returns.length > 0 ? (
+        <section
+          className="posted-return-links"
+          aria-label={copy.returnStageTitle}
+        >
+          <h4>{copy.returnStageTitle}</h4>
+          <ul>
+            {detail.returns.map((purchaseReturn) => (
+              <li key={purchaseReturn.id}>
+                <button
+                  type="button"
+                  className="quiet-button purchase-return-link"
+                  data-review-focus={`posted-return-${purchaseReturn.id}`}
+                  onClick={(event) =>
+                    onReturn(purchaseReturn.id, event.currentTarget)
+                  }
+                >
+                  {formatReturnNumber(purchaseReturn.number)} ·{" "}
+                  {purchaseReturn.reason}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <div
         className="posted-correction-actions"
         aria-label={copy.correctionActions}
@@ -793,14 +867,16 @@ function PostedPurchaseDetailView({
             {copy.editInvoice}
           </button>
         ) : null}
-        <button
-          type="button"
-          className="purchase-return-button"
-          data-review-focus={`return-${detail.id}`}
-          onClick={(event) => onCorrection("return", event.currentTarget)}
-        >
-          {copy.returnInvoice}
-        </button>
+        {detail.canReturn ? (
+          <button
+            type="button"
+            className="purchase-return-button"
+            data-review-focus={`return-${detail.id}`}
+            onClick={(event) => onCorrection("return", event.currentTarget)}
+          >
+            {copy.returnInvoice}
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -927,6 +1003,75 @@ function PostedAdjustmentView({
   );
 }
 
+function PostedReturnView({
+  purchaseReturn,
+  onBack,
+}: {
+  readonly purchaseReturn: PostedPurchaseReturn;
+  readonly onBack: () => void;
+}): React.JSX.Element {
+  const { locale } = usePreferences();
+  const copy = purchasingMessages[locale];
+  return (
+    <article
+      className="posted-return-view"
+      aria-labelledby="posted-return-title"
+    >
+      <p className="purchase-context-label">{copy.returnStageTitle}</p>
+      <h3 id="posted-return-title">
+        {formatReturnNumber(purchaseReturn.number)}
+      </h3>
+      <p>
+        {purchaseReturn.reason} ·{" "}
+        {formatTimestamp(purchaseReturn.postedAt, locale)}
+      </p>
+      <p>{purchaseReturn.evidence}</p>
+      <dl className="posted-purchase-totals">
+        <div>
+          <dt>{copy.returnCarryingAmount}</dt>
+          <dd>
+            <bdi>{purchaseReturn.inventoryCarryingAmountFils}</bdi> {copy.fils}
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.returnSupplierReduction}</dt>
+          <dd>
+            <bdi>{purchaseReturn.supplierReductionFils}</bdi> {copy.fils}
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.originalInvoice}</dt>
+          <dd>
+            <bdi>{formatNumber({ number: purchaseReturn.originalNumber })}</bdi>{" "}
+            · <bdi>{purchaseReturn.originalInvoiceDate}</bdi>
+          </dd>
+        </div>
+      </dl>
+      <div className="posted-return-proof">
+        <p>{purchaseReturn.supplierNameSnapshot}</p>
+        <ul>
+          {purchaseReturn.rows.map((row) => (
+            <li key={row.id}>
+              {row.itemDisplayName}: {row.quantity} · {row.carryingAmountFils} /{" "}
+              {row.supplierReductionFils}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <button type="button" className="quiet-button" onClick={onBack}>
+        {copy.backToInvoice}
+      </button>
+      <button
+        type="button"
+        className="quiet-button"
+        onClick={() => window.print()}
+      >
+        {copy.printReturn}
+      </button>
+    </article>
+  );
+}
+
 function formatNumber(value: {
   readonly number: {
     readonly series: "P";
@@ -946,6 +1091,14 @@ function formatAdjustmentNumber(number: {
   readonly suffix: string;
 }): string {
   return `${number.original.series}${number.original.value}-A${number.suffix.padStart(2, "0")}/${number.original.year}`;
+}
+
+function formatReturnNumber(number: {
+  readonly series: "PR";
+  readonly value: string;
+  readonly year: number;
+}): string {
+  return `${number.series}${number.value}/${number.year}`;
 }
 
 function formatTimestamp(value: string, locale: "ar" | "en"): string {

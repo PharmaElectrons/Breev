@@ -11,6 +11,7 @@ export const POSTING_EVENT_TYPES = {
   pharmacySettingsChanged: "pharmacy.settings.changed",
   purchaseInvoiceAdjusted: "purchase.invoice.adjusted",
   purchaseInvoicePosted: "purchase.invoice.posted",
+  purchaseReturnPosted: "purchase.return.posted",
 } as const;
 
 export type PostingEventType =
@@ -32,6 +33,7 @@ export const POSTING_ENVELOPE_VERSIONS: {
   "pharmacy.settings.changed": [1],
   "purchase.invoice.adjusted": [1],
   "purchase.invoice.posted": [1],
+  "purchase.return.posted": [1],
 };
 
 /** The version a writer produces today for each event type. */
@@ -41,6 +43,7 @@ export const CURRENT_ENVELOPE_VERSIONS: {
   "pharmacy.settings.changed": 1,
   "purchase.invoice.adjusted": 1,
   "purchase.invoice.posted": 1,
+  "purchase.return.posted": 1,
 };
 
 export class PostingEnvelopeVersionError extends Error {

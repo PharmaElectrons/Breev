@@ -24,6 +24,9 @@ describe("identity authorization", () => {
     expect(STEP_UP_ACTIONS["identity.role.rename"]).toBe(
       "identity.roles.manage",
     );
+    expect(STEP_UP_ACTIONS["purchase.return.post"]).toBe(
+      "purchases.returns.manage",
+    );
   });
 
   it("denies every role until an explicit grant exists", () => {
@@ -74,6 +77,7 @@ describe("identity authorization", () => {
       "purchases.costs.view",
       "purchases.drafts.manage",
       "purchases.posted.view",
+      "purchases.returns.manage",
       "sales.invoice.reverse",
       "sales.return.post",
       "suppliers.manage",
@@ -98,6 +102,7 @@ describe("identity authorization", () => {
       "purchases.costs.view",
       "purchases.drafts.manage",
       "purchases.posted.view",
+      "purchases.returns.manage",
       "suppliers.manage",
     ]);
     for (const permission of IMPLEMENTED_PERMISSION_NAMES) {

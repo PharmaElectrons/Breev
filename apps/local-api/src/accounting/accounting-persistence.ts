@@ -15,6 +15,14 @@ import {
   type PurchaseAdjustmentJournalLine,
   type PurchaseAdjustmentSupplierEffect,
 } from "./purchase-adjustment-posting-template.js";
+import {
+  PURCHASE_RETURN_DIFFERENCE_TREATMENT,
+  PURCHASE_RETURN_POSTING_TEMPLATE_ID,
+  PURCHASE_RETURN_POSTING_TEMPLATE_VERSION,
+  renderPurchaseReturnJournal,
+  type PurchaseReturnJournalFacts,
+  type PurchaseReturnJournalLine,
+} from "./purchase-return-posting-template.js";
 
 /**
  * Accounting's own transaction-aware persistence: posting the balanced
@@ -237,4 +245,86 @@ export async function applyPurchaseAdjustmentSettlementEffects(
       [input.pharmacyId, effect.supplierId, effect.deltaFils.toString()],
     );
   }
+}
+
+export interface PostedPurchaseReturnJournal {
+  readonly entryId: string;
+  readonly lines: readonly PurchaseReturnJournalLine[];
+  readonly templateId: "purchase.return";
+  readonly templateVersion: number;
+  readonly treatment: typeof PURCHASE_RETURN_DIFFERENCE_TREATMENT;
+}
+
+export async function postPurchaseReturnJournal(
+  client: PoolClient,
+  input: {
+    readonly facts: PurchaseReturnJournalFacts;
+    readonly pharmacyId: string;
+    readonly postedBy: string;
+  },
+): Promise<PostedPurchaseReturnJournal> {
+  const lines = renderPurchaseReturnJournal(input.facts);
+  const entry = await client.query<{ id: string }>(
+    `insert into accounting_journal_entries (
+       pharmacy_id, template_id, template_version, posted_by
+     ) values ($1, $2, $3, $4) returning id`,
+    [
+      input.pharmacyId,
+      PURCHASE_RETURN_POSTING_TEMPLATE_ID,
+      PURCHASE_RETURN_POSTING_TEMPLATE_VERSION,
+      input.postedBy,
+    ],
+  );
+  const entryId = entry.rows[0]?.id;
+  if (entryId === undefined) {
+    throw new Error("The Purchase Return journal was not created");
+  }
+  for (const line of lines) {
+    await client.query(
+      `insert into accounting_journal_lines (
+         pharmacy_id, entry_id, ordinal, account_code, supplier_id,
+         debit_fils, credit_fils
+       ) values ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        input.pharmacyId,
+        entryId,
+        line.ordinal,
+        line.accountCode,
+        line.supplierId,
+        line.debitFils.toString(),
+        line.creditFils.toString(),
+      ],
+    );
+  }
+  return {
+    entryId,
+    lines,
+    templateId: PURCHASE_RETURN_POSTING_TEMPLATE_ID,
+    templateVersion: PURCHASE_RETURN_POSTING_TEMPLATE_VERSION,
+    treatment: PURCHASE_RETURN_DIFFERENCE_TREATMENT,
+  };
+}
+
+export async function applyPurchaseReturnSupplierEffect(
+  client: PoolClient,
+  input: {
+    readonly pharmacyId: string;
+    readonly supplierId: string;
+    readonly supplierReductionFils: bigint;
+  },
+): Promise<void> {
+  await client.query(
+    `insert into accounting_supplier_balances (
+       pharmacy_id, supplier_id, balance_fils
+     ) values ($1, $2, $3::bigint)
+     on conflict (pharmacy_id, supplier_id) do update
+       set balance_fils = accounting_supplier_balances.balance_fils
+         + excluded.balance_fils,
+           updated_at = statement_timestamp()`,
+    [
+      input.pharmacyId,
+      input.supplierId,
+      (-input.supplierReductionFils).toString(),
+    ],
+  );
 }

@@ -146,6 +146,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
       "purchases.costs.view",
       "purchases.drafts.manage",
       "purchases.posted.view",
+      "purchases.returns.manage",
     ]);
     const databaseState = await administrator.query<{
       pharmacy_count: string;

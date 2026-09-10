@@ -3333,11 +3333,73 @@ a:focus-visible,
 .adjustment-form,
 .adjustment-summary,
 .posted-adjustment-view,
-.posted-adjustment-links {
+.posted-adjustment-links,
+.purchase-return,
+.return-form,
+.return-summary,
+.posted-return-view,
+.posted-return-links {
   display: grid;
   min-block-size: 0;
   gap: 1rem;
   text-align: start;
+}
+
+.purchase-return,
+.posted-return-view,
+.posted-return-links {
+  padding: 1rem;
+  border-inline-start: 0.35rem solid #b45309;
+  background: color-mix(in srgb, #f59e0b 8%, var(--card));
+}
+
+.return-form > label,
+.return-summary > label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.return-form input,
+.return-form textarea,
+.return-summary input {
+  min-block-size: 2.5rem;
+  padding: 0.5rem;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.return-warning {
+  padding: 1rem;
+  background: var(--card);
+  border: 2px solid #b45309;
+  border-radius: var(--radius);
+}
+
+.return-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.return-summary dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+.return-summary dl div {
+  padding: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.return-form small {
+  display: block;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
 }
 
 .adjustment-form > label {

@@ -21,6 +21,7 @@ export const PERMISSION_NAMES = [
   "purchases.costs.view",
   "purchases.drafts.manage",
   "purchases.posted.view",
+  "purchases.returns.manage",
   "sales.invoice.reverse",
   "sales.return.post",
   "suppliers.manage",
@@ -39,6 +40,7 @@ export type PermissionName = (typeof PERMISSION_NAMES)[number];
  * to show as grantable.
  */
 export const STEP_UP_ACTIONS = {
+  "purchase.return.post": "purchases.returns.manage",
   "devices.pairing.start": "devices.pair",
   "devices.revoke": "devices.pair",
   "devices.seat.release.request": "devices.pair",
