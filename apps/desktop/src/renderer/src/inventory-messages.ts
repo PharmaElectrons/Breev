@@ -29,6 +29,7 @@ export interface InventoryCopy {
     readonly user: string;
     readonly value: string;
     readonly receipt: string;
+    readonly return: string;
   };
   readonly riskIndicators: Record<InventoryRiskIndicator, string>;
   readonly retry: string;
@@ -138,6 +139,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
       quantity: "الكمية",
       reference: "المستند المرجعي",
       receipt: "استلام شراء",
+      return: "مرتجع شراء",
       time: "الوقت",
       title: "تفاصيل حركات المادة",
       user: "المستخدم",
@@ -182,6 +184,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
       quantity: "Quantity",
       reference: "Reference document",
       receipt: "Purchase receipt",
+      return: "Purchase return",
       time: "Time",
       title: "Item movement details",
       user: "User",

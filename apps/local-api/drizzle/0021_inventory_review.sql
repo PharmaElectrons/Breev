@@ -52,12 +52,14 @@ with eligible_roles as (
        and not exists (
          select 1 from role_permission_grants other_grant
          where other_grant.role_id = pharmacy_role.id
-           -- Extend this allow-list whenever a later migration adds a
-           -- default grant to this role.
+           -- Every migration that adds a default grant to
+           -- purchasing_employee must also add that permission here, or this
+           -- migration will silently stop granting.
            and other_grant.permission_name not in (
              'catalog.item.search', 'inventory.review',
              'purchases.adjustments.manage', 'purchases.costs.view',
-             'purchases.drafts.manage', 'purchases.posted.view'
+             'purchases.drafts.manage', 'purchases.posted.view',
+             'purchases.returns.manage'
            )
        )
      )
@@ -127,6 +129,10 @@ alter table posting_command_results
       'purchase.draft.update',
       'purchase.entry-preferences.update',
       'purchase.post',
+      'purchase.return-draft.create',
+      'purchase.return-draft.discard',
+      'purchase.return-draft.update',
+      'purchase.return.post',
       'supplier.archive',
       'supplier.create',
       'supplier.edit',

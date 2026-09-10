@@ -55,9 +55,11 @@ import { runWholeCommandWithRetry } from "../posting/command-retry.js";
 import {
   resolvePostedPurchaseAdjustmentReferences,
   resolvePostedPurchaseReferences,
+  resolvePostedPurchaseReturnReferences,
   resolveSupplierCostFacts,
   type PostedPurchaseAdjustmentReference,
   type PostedPurchaseReference,
+  type PostedPurchaseReturnReference,
   type SupplierCostFact,
 } from "../purchasing/purchasing-references.js";
 
@@ -234,14 +236,23 @@ export class InventoryReviewService {
           (movement) => movement.sourceDocumentType === "purchase-adjustment",
         )
         .map((movement) => movement.sourceDocumentId);
-      const [references, adjustmentReferences] = await Promise.all([
-        resolvePostedPurchaseReferences(client, context.pharmacyId, [
-          ...new Set(purchaseIds),
-        ]),
-        resolvePostedPurchaseAdjustmentReferences(client, context.pharmacyId, [
-          ...new Set(adjustmentIds),
-        ]),
-      ]);
+      const returnIds = movements
+        .filter((movement) => movement.sourceDocumentType === "purchase-return")
+        .map((movement) => movement.sourceDocumentId);
+      const [references, adjustmentReferences, returnReferences] =
+        await Promise.all([
+          resolvePostedPurchaseReferences(client, context.pharmacyId, [
+            ...new Set(purchaseIds),
+          ]),
+          resolvePostedPurchaseAdjustmentReferences(
+            client,
+            context.pharmacyId,
+            [...new Set(adjustmentIds)],
+          ),
+          resolvePostedPurchaseReturnReferences(client, context.pharmacyId, [
+            ...new Set(returnIds),
+          ]),
+        ]);
       const displayNames = await this.identity.resolveUserDisplayNames(
         client,
         context.pharmacyId,
@@ -253,6 +264,7 @@ export class InventoryReviewService {
             movement,
             references,
             adjustmentReferences,
+            returnReferences,
           );
           const openable = context.permissions.includes(
             "purchases.posted.view",
@@ -708,6 +720,7 @@ function movementReference(
   movement: ProductMovement,
   purchaseReferences: ReadonlyMap<string, PostedPurchaseReference>,
   adjustmentReferences: ReadonlyMap<string, PostedPurchaseAdjustmentReference>,
+  returnReferences: ReadonlyMap<string, PostedPurchaseReturnReference>,
 ): MovementReference {
   switch (movement.sourceDocumentType) {
     case "purchase-invoice": {
@@ -734,6 +747,20 @@ function movementReference(
             ? movement.sourceDocumentType
             : `P${reference.number.value}/${reference.number.year}-${reference.suffixValue} · ${reference.supplierNameSnapshot}`,
         number: reference?.number ?? null,
+      };
+    }
+    case "purchase-return": {
+      const reference = returnReferences.get(movement.sourceDocumentId);
+      return {
+        // PostedPurchaseReview owns the return list, so open the original
+        // purchase; the return remains reachable from that list.
+        documentId: reference?.originalPurchaseId ?? movement.sourceDocumentId,
+        documentType: "purchase-return",
+        label:
+          reference === undefined
+            ? movement.sourceDocumentType
+            : `PR${reference.returnNumber.value}/${reference.returnNumber.year} · P${reference.originalNumber.value}/${reference.originalNumber.year} · ${reference.supplierNameSnapshot}`,
+        number: reference?.originalNumber ?? null,
       };
     }
     default:

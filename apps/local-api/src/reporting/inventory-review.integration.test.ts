@@ -15,6 +15,10 @@ import {
   purchasePostedPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
+  purchaseReturnDraftPath,
+  purchaseReturnDraftsPath,
+  purchaseReturnPostingsPath,
+  purchaseReturnSummaryPath,
   type InventoryItem,
   type InventoryReviewPreferences,
   type InventorySensitiveExport,
@@ -25,6 +29,9 @@ import {
   type PurchaseAdjustmentPostResult,
   type PurchaseAdjustmentSummary,
   type PurchasePostResult,
+  type PurchaseReturnDraft,
+  type PurchaseReturnPostResult,
+  type PurchaseReturnSummary,
   type Supplier,
 } from "@breev/contracts/local-rest";
 import {
@@ -226,7 +233,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     );
   });
 
-  it("reconciles quantity and price-only purchase adjustments exactly once", async () => {
+  it("reconciles adjustments and a purchase return exactly once", async () => {
     const originalPurchaseId = postedPurchaseIds[0]!;
     const quantityDraft = await createAdjustmentDraft(
       originalPurchaseId,
@@ -264,6 +271,13 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       quantityDelta: "0",
     });
     const pricePosted = await postAdjustment(priceSaved, priceSummary);
+    const returnPosted = await postPurchaseReturn(originalPurchaseId, "1");
+    expect(returnPosted.posted).toMatchObject({
+      inventoryCarryingAmountFils: "1600",
+      number: { series: "PR" },
+      originalPurchaseId,
+      supplierReductionFils: "1000",
+    });
 
     const reconciliationAuditBefore = await administrator.query<{
       count: string;
@@ -302,7 +316,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     const movements = await administrator.query<{
       carrying_amount_fils: string;
       quantity: string;
-      reason: "purchase-adjustment" | "purchase-receipt";
+      reason: "purchase-adjustment" | "purchase-receipt" | "purchase-return";
     }>(
       `select reason, quantity::text, carrying_amount_fils::text
        from inventory_movements
@@ -349,7 +363,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     const state = valuation.rows[0]!;
     const stateQuantity = BigInt(state.total_quantity);
     const stateValueScaled = BigInt(state.total_value_scaled);
-    expect(movements.rows).toHaveLength(4);
+    expect(movements.rows).toHaveLength(5);
     expect(valueEffects.rows).toHaveLength(2);
     expect(quantityPosted.posted.rowDeltas[0]?.movementId).not.toBeNull();
     expect(quantityPosted.posted.rowDeltas[0]?.valueEffectId).not.toBeNull();
@@ -369,6 +383,12 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       ).toString(),
     );
     expect(item.reconciliation).toBe("consistent");
+    expect(item).toMatchObject({
+      averageUnitCostFils: "1600",
+      balance: "18",
+      valueFils: "28800",
+      reconciliation: "consistent",
+    });
 
     const challenge = await request("POST", "/identity/step-up-challenges", {
       action: "inventory.sensitive.export",
@@ -417,6 +437,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       "purchase-receipt",
       "purchase-receipt",
       "purchase-adjustment",
+      "purchase-return",
     ]);
     const adjustmentMovement = parsedHistory.movements.find(
       (movement) => movement.kind === "purchase-adjustment",
@@ -433,6 +454,22 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     });
     expect(adjustmentMovement?.reference.label).toContain(
       "-1 · Primary Review Supplier",
+    );
+    const returnMovement = parsedHistory.movements.find(
+      (movement) => movement.kind === "purchase-return",
+    );
+    expect(returnMovement?.reference).toMatchObject({
+      documentId: originalPurchaseId,
+      documentType: "purchase-return",
+      number: {
+        series: "P",
+        value: originalNumber.rows[0]!.number_value,
+        year: originalNumber.rows[0]!.number_year,
+      },
+      openable: true,
+    });
+    expect(returnMovement?.reference.label).toContain(
+      `PR${returnPosted.posted.number.value}/${returnPosted.posted.number.year} · P${originalNumber.rows[0]!.number_value}/${originalNumber.rows[0]!.number_year} · Primary Review Supplier`,
     );
   });
 
@@ -488,7 +525,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     expect(bundle.counts).toMatchObject({
       batches: "3",
       items: "1",
-      movements: "4",
+      movements: "5",
     });
     expect(bundle.items[0]?.suppliers).toHaveLength(2);
 
@@ -592,6 +629,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       ["posted_purchases", "id"],
       ["posted_purchase_rows", "id"],
       ["posted_purchase_adjustments", "id"],
+      ["posted_purchase_returns", "id"],
     ] as const;
     const result: Record<string, { count: string; digest: string }> = {};
     for (const [table, orderColumn] of tables) {
@@ -655,6 +693,70 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
           "",
       ),
     );
+  }
+
+  async function postPurchaseReturn(
+    originalPurchaseId: string,
+    quantity: string,
+  ): Promise<PurchaseReturnPostResult> {
+    const created = await request(
+      "POST",
+      purchaseReturnDraftsPath(originalPurchaseId),
+      {
+        evidence: "Supplier collection note",
+        idempotencyKey: uuidV7(),
+        reason: "Supplier accepted returned stock",
+      },
+    );
+    expect(created.status, diagnostics(created)).toBe(201);
+    const draft = created.body as PurchaseReturnDraft;
+    const savedResponse = await request(
+      "PUT",
+      purchaseReturnDraftPath(draft.id),
+      {
+        evidence: draft.evidence,
+        expectedVersion: draft.version,
+        idempotencyKey: uuidV7(),
+        reason: draft.reason,
+        rows: draft.rows.map((row) => ({
+          originalPurchaseRowId: row.originalPurchaseRowId,
+          returnQuantity: quantity,
+        })),
+      },
+    );
+    expect(savedResponse.status, diagnostics(savedResponse)).toBe(200);
+    const saved = savedResponse.body as PurchaseReturnDraft;
+    const summaryResponse = await request(
+      "GET",
+      purchaseReturnSummaryPath(saved.id),
+    );
+    expect(summaryResponse.status, diagnostics(summaryResponse)).toBe(200);
+    const summary = summaryResponse.body as PurchaseReturnSummary;
+    const challenge = await request("POST", "/identity/step-up-challenges", {
+      action: "purchase.return.post",
+      idempotencyKey: uuidV7(),
+      subjectId: saved.id,
+    });
+    expect(challenge.status, diagnostics(challenge)).toBe(201);
+    const challengeId = String((challenge.body as { id?: string }).id ?? "");
+    const approved = await request(
+      "POST",
+      `/identity/step-up-challenges/${challengeId}/approve`,
+      { idempotencyKey: uuidV7(), password: OWNER_PASSWORD },
+    );
+    expect(approved.status, diagnostics(approved)).toBe(200);
+    const response = await request(
+      "POST",
+      purchaseReturnPostingsPath(saved.id),
+      {
+        confirmationHash: summary.confirmationHash,
+        expectedVersion: saved.version,
+        idempotencyKey: uuidV7(),
+        stepUpChallengeId: challengeId,
+      },
+    );
+    expect(response.status, diagnostics(response)).toBe(201);
+    return response.body as PurchaseReturnPostResult;
   }
 
   async function createAdjustmentDraft(

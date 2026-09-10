@@ -17,6 +17,17 @@ export interface PostedPurchaseAdjustmentReference {
   readonly supplierNameSnapshot: string;
 }
 
+export interface PostedPurchaseReturnReference {
+  readonly originalNumber: PostedPurchaseReference["number"];
+  readonly originalPurchaseId: string;
+  readonly returnNumber: {
+    readonly series: "PR";
+    readonly value: string;
+    readonly year: number;
+  };
+  readonly supplierNameSnapshot: string;
+}
+
 export async function resolvePostedPurchaseReferences(
   client: PoolClient,
   pharmacyId: string,
@@ -79,6 +90,54 @@ export async function resolvePostedPurchaseAdjustmentReferences(
         number: { series: "P", value: row.number_value, year: row.number_year },
         originalPurchaseId: row.original_purchase_id,
         suffixValue: row.suffix_value,
+        supplierNameSnapshot: row.supplier_name_snapshot,
+      },
+    ]),
+  );
+}
+
+export async function resolvePostedPurchaseReturnReferences(
+  client: PoolClient,
+  pharmacyId: string,
+  ids: readonly string[],
+): Promise<Map<string, PostedPurchaseReturnReference>> {
+  if (ids.length === 0) return new Map();
+  const result = await client.query<{
+    id: string;
+    original_number_value: string;
+    original_number_year: number;
+    original_purchase_id: string;
+    return_number_value: string;
+    return_number_year: number;
+    supplier_name_snapshot: string;
+  }>(
+    `select return_record.id,
+            return_record.original_purchase_id,
+            return_record.original_number_value::text as original_number_value,
+            return_record.original_number_year,
+            return_record.number_value::text as return_number_value,
+            return_record.number_year as return_number_year,
+            return_record.supplier_name_snapshot
+     from posted_purchase_returns return_record
+     where return_record.pharmacy_id = $1
+       and return_record.id = any($2::uuid[])`,
+    [pharmacyId, ids],
+  );
+  return new Map(
+    result.rows.map((row) => [
+      row.id,
+      {
+        originalNumber: {
+          series: "P",
+          value: row.original_number_value,
+          year: row.original_number_year,
+        },
+        originalPurchaseId: row.original_purchase_id,
+        returnNumber: {
+          series: "PR",
+          value: row.return_number_value,
+          year: row.return_number_year,
+        },
         supplierNameSnapshot: row.supplier_name_snapshot,
       },
     ]),

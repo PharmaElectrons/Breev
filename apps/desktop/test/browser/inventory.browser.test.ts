@@ -11,6 +11,10 @@ import {
   purchaseAdjustmentSummaryPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
+  purchaseReturnDraftPath,
+  purchaseReturnDraftsPath,
+  purchaseReturnPostingsPath,
+  purchaseReturnSummaryPath,
   type Product,
   type ProductCreateRequest,
   type PurchaseAdjustmentDraft,
@@ -18,6 +22,9 @@ import {
   type PurchaseAdjustmentSummary,
   type PurchaseDraft,
   type PurchasePostResult,
+  type PurchaseReturnDraft,
+  type PurchaseReturnPostResult,
+  type PurchaseReturnSummary,
   type Supplier,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Page } from "@playwright/test";
@@ -125,6 +132,7 @@ test.describe.serial("read-only inventory review", () => {
     product = created.body as Product;
     const purchase = await postPurchase(supplier, product);
     await postPurchaseAdjustment(purchase.posted.id);
+    await postPurchaseReturn(purchase.posted.id);
     await createManagerUser(
       String(
         (bootstrap.body as { pharmacy?: { id?: string } }).pharmacy?.id ?? "",
@@ -756,6 +764,66 @@ async function postPurchaseAdjustment(purchaseId: string): Promise<void> {
   ).toBe("-1");
 }
 
+async function postPurchaseReturn(purchaseId: string): Promise<void> {
+  const created = await apiRequest(
+    "POST",
+    purchaseReturnDraftsPath(purchaseId),
+    {
+      evidence: "Supplier collection note",
+      idempotencyKey: uuidV7(),
+      reason: "Supplier accepted returned stock",
+    },
+  );
+  expect(created.status).toBe(201);
+  const draft = created.body as PurchaseReturnDraft;
+  const updated = await apiRequest("PUT", purchaseReturnDraftPath(draft.id), {
+    evidence: draft.evidence,
+    expectedVersion: draft.version,
+    idempotencyKey: uuidV7(),
+    reason: draft.reason,
+    rows: draft.rows.map((row) => ({
+      originalPurchaseRowId: row.originalPurchaseRowId,
+      returnQuantity: "1",
+    })),
+  });
+  expect(updated.status).toBe(200);
+  const updatedDraft = updated.body as PurchaseReturnDraft;
+  const summaryResponse = await apiRequest(
+    "GET",
+    purchaseReturnSummaryPath(updatedDraft.id),
+  );
+  expect(summaryResponse.status).toBe(200);
+  const summary = summaryResponse.body as PurchaseReturnSummary;
+  const challenge = await apiRequest("POST", "/identity/step-up-challenges", {
+    action: "purchase.return.post",
+    idempotencyKey: uuidV7(),
+    subjectId: updatedDraft.id,
+  });
+  expect(challenge.status).toBe(201);
+  const challengeId = String((challenge.body as { id?: string }).id ?? "");
+  const approved = await apiRequest(
+    "POST",
+    `/identity/step-up-challenges/${challengeId}/approve`,
+    { idempotencyKey: uuidV7(), password: OWNER_PASSWORD },
+  );
+  expect(approved.status).toBe(200);
+  const posted = await apiRequest(
+    "POST",
+    purchaseReturnPostingsPath(updatedDraft.id),
+    {
+      confirmationHash: summary.confirmationHash,
+      expectedVersion: updatedDraft.version,
+      idempotencyKey: uuidV7(),
+      stepUpChallengeId: challengeId,
+    },
+  );
+  expect(posted.status).toBe(201);
+  expect(
+    (posted.body as PurchaseReturnPostResult).posted
+      .inventoryCarryingAmountFils,
+  ).toBe("1000");
+}
+
 async function assertInventoryRow(
   page: Page,
   locale: "ar" | "en",
@@ -767,14 +835,14 @@ async function assertInventoryRow(
         await row.locator("td[data-column-field='balance']").innerText(),
       ),
     )
-    .toBe(locale === "ar" ? "٣" : "3");
+    .toBe(locale === "ar" ? "٢" : "2");
   await expect
     .poll(async () =>
       normalizeBidiMarks(
         await row.locator("td[data-column-field='value']").innerText(),
       ),
     )
-    .toMatch(locale === "ar" ? /٣٫٠٠٠/u : /IQD\s*3\.000/u);
+    .toMatch(locale === "ar" ? /٢٫٠٠٠/u : /IQD\s*2\.000/u);
   await expect
     .poll(async () =>
       normalizeBidiMarks(
@@ -814,10 +882,12 @@ async function assertMovementDetails(
       ? {
           adjustment: "تعديل شراء",
           receipt: "استلام شراء",
+          return: "مرتجع شراء",
         }
       : {
           adjustment: "Purchase adjustment",
           receipt: "Purchase receipt",
+          return: "Purchase return",
         };
   const table = page.locator(".inventory-table-scroll table");
   await expect(table.locator("thead th")).toHaveText(
@@ -842,9 +912,10 @@ async function assertMovementDetails(
         ],
   );
   const rows = table.locator("tbody tr");
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(3);
   await expect(rows.nth(0).locator("td").nth(1)).toHaveText(labels.receipt);
   await expect(rows.nth(1).locator("td").nth(1)).toHaveText(labels.adjustment);
+  await expect(rows.nth(2).locator("td").nth(1)).toHaveText(labels.return);
 
   const adjustmentCells = rows.nth(1).locator("td");
   await expect(adjustmentCells).toHaveCount(7);
@@ -876,6 +947,18 @@ async function assertMovementDetails(
     .poll(async () =>
       normalizeBidiMarks(await adjustmentCells.nth(6).innerText()),
     )
+    .not.toBe("—");
+
+  const returnCells = rows.nth(2).locator("td");
+  await expect(returnCells).toHaveCount(7);
+  await expect(returnCells.nth(0)).toHaveText(
+    /PR\d+\/\d+ · P\d+\/\d+ · Inventory Browser Supplier/u,
+  );
+  await expect
+    .poll(async () => normalizeBidiMarks(await returnCells.nth(5).innerText()))
+    .toBe(locale === "ar" ? "-١" : "-1");
+  await expect
+    .poll(async () => normalizeBidiMarks(await returnCells.nth(6).innerText()))
     .not.toBe("—");
 }
 

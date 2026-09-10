@@ -18,6 +18,7 @@ const PRODUCT_ID = "0198e7ce-7685-7000-8000-000000000001";
 const BATCH_ID = "0198e7ce-7685-7000-8000-000000000002";
 const USER_ID = "0198e7ce-7685-7000-8000-000000000003";
 const PURCHASE_ID = "0198e7ce-7685-7000-8000-000000000004";
+const RETURN_ID = "0198e7ce-7685-7000-8000-000000000007";
 
 const columns = INVENTORY_COLUMN_FIELDS.map((field) => ({
   field,
@@ -77,10 +78,11 @@ describe("inventory review contracts", () => {
     ).toBe(false);
   });
 
-  it("validates movement history as a closed union with both DB kinds", () => {
+  it("validates movement history as a closed union with all DB kinds", () => {
     expect([...INVENTORY_MOVEMENT_KINDS]).toEqual([
       "purchase-adjustment",
       "purchase-receipt",
+      "purchase-return",
     ]);
     const movement = {
       batchId: BATCH_ID,
@@ -110,6 +112,21 @@ describe("inventory review contracts", () => {
         valueFils: "-2500",
       }).kind,
     ).toBe("purchase-adjustment");
+    expect(
+      inventoryMovementSchema.parse({
+        ...movement,
+        id: RETURN_ID,
+        kind: "purchase-return",
+        quantity: "-1",
+        valueFils: "-1250",
+        reference: {
+          ...movement.reference,
+          documentId: RETURN_ID,
+          documentType: "purchase-return",
+          label: "PR1/2026 · P1/2026 · Supplier",
+        },
+      }).kind,
+    ).toBe("purchase-return");
     expect(
       inventoryMovementHistoryContract.responses[200].parse({
         productId: PRODUCT_ID,

@@ -54,7 +54,20 @@ describe("inventory review movement folding", () => {
     expect(value).not.toBe(14_000n);
   });
 
-  it("does not count a negative purchase adjustment as consumption", () => {
+  it("counts a purchase return carrying delta once without a value effect", () => {
+    const value = deriveInventoryValueFils(
+      [
+        { carryingAmountFils: 10_000n, reason: "purchase-receipt" },
+        { carryingAmountFils: -1_000n, reason: "purchase-return" },
+        { carryingAmountFils: 2_000n, reason: "purchase-adjustment" },
+      ],
+      [2_000n],
+    );
+
+    expect(value).toBe(11_000n);
+  });
+
+  it("does not count purchase adjustments or returns as consumption", () => {
     const now = new Date("2026-09-10T12:00:00.000Z");
 
     expect(
@@ -69,6 +82,11 @@ describe("inventory review movement folding", () => {
             occurredAt: new Date("2026-09-09T12:00:00.000Z"),
             quantity: -90n,
             reason: "purchase-adjustment",
+          },
+          {
+            occurredAt: new Date("2026-09-09T12:00:00.000Z"),
+            quantity: -30n,
+            reason: "purchase-return",
           },
         ],
         now,
