@@ -374,6 +374,12 @@ function ProductRail({
     return () => window.clearTimeout(timer);
   }, [baseUrl, query]);
 
+  useEffect(() => {
+    if (!matchingBusy && matchingError !== null) {
+      matchingButtonRef.current?.focus();
+    }
+  }, [matchingBusy, matchingError]);
+
   const matches =
     searchResponse === null
       ? products
@@ -404,7 +410,6 @@ function ProductRail({
           ? matchingFailure.message
           : String(matchingFailure),
       );
-      requestAnimationFrame(() => matchingButtonRef.current?.focus());
     } finally {
       setMatchingBusy(false);
     }
