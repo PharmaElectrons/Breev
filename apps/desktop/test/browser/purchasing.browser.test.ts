@@ -1076,6 +1076,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await adjustmentInvoice.focus();
     await page.keyboard.press("Enter");
     await expect(dialog).toContainText("BROWSER-REVIEW");
+    await dialog.screenshot({
+      animations: "disabled",
+      path: path.join(
+        adjustmentEvidenceDir,
+        "purchase-adjustment-before-en-light.png",
+      ),
+    });
 
     const adjustment = dialog.getByRole("button", { name: "Edit Invoice" });
     await adjustment.focus();
@@ -1110,6 +1117,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       dialog.getByRole("heading", { name: "Difference and impact" }),
     ).toBeVisible();
     await expect(dialog).toContainText("4 → 8 (4)");
+    await dialog.screenshot({
+      animations: "disabled",
+      path: path.join(
+        adjustmentEvidenceDir,
+        "purchase-adjustment-summary-en-light.png",
+      ),
+    });
     await dialog
       .getByRole("button", { name: "Confirm and post Delta" })
       .click();
