@@ -983,6 +983,7 @@ function medicationRequest(tradeName: string): ProductCreateRequest {
     scientificName: null,
     sharing: { aiSharingAllowed: false, externallyVisible: false },
     stateColours: { coldStorageRequired: false, manual: null },
+    stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }
 

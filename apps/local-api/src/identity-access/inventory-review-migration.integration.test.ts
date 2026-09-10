@@ -28,14 +28,14 @@ import { runMigrations } from "../database-migrations.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const MIGRATIONS_FOLDER = path.resolve(import.meta.dirname, "../../drizzle");
-const PRE_UPGRADE_MIGRATION_INDEX = 15;
+const PRE_UPGRADE_MIGRATION_INDEX = 18;
 
 interface JournalEntry {
   readonly idx: number;
   readonly tag: string;
 }
 
-describe.sequential("purchasing role default migrations", () => {
+describe.sequential("migration 0019: inventory review", () => {
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -45,7 +45,11 @@ describe.sequential("purchasing role default migrations", () => {
   const pharmacyId = createUuidV7();
   const ownerRoleId = createUuidV7();
   const ownerId = createUuidV7();
+  const managerRoleId = createUuidV7();
+  const pharmacistRoleId = createUuidV7();
+  const inventoryRoleId = createUuidV7();
   const purchasingRoleId = createUuidV7();
+  const accountantRoleId = createUuidV7();
 
   beforeAll(async () => {
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
@@ -59,7 +63,7 @@ describe.sequential("purchasing role default migrations", () => {
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
     application = new Pool({ connectionString: databaseRoles.applicationUrl });
 
-    preUpgradeFolder = await mkdtemp(path.join(tmpdir(), "breev-pre-0016-"));
+    preUpgradeFolder = await mkdtemp(path.join(tmpdir(), "breev-pre-0019-"));
     const journal = JSON.parse(
       await readFile(
         path.join(MIGRATIONS_FOLDER, "meta/_journal.json"),
@@ -92,27 +96,38 @@ describe.sequential("purchasing role default migrations", () => {
     }
 
     await application.query(
-      "insert into pharmacies (id, name) values ($1, 'Pre-0016 Pharmacy')",
+      "insert into pharmacies (id, name) values ($1, 'Inventory Review Pharmacy')",
       [pharmacyId],
     );
     await seedOwnerRoleWithFloor(application, {
       actorId: ownerId,
-      displayName: "Upgrade Owner",
+      displayName: "Inventory Owner",
       pharmacyId,
       roleId: ownerRoleId,
-      username: "upgrade.owner",
+      username: "inventory.owner",
     });
     await application.query(
       `insert into pharmacy_roles (id, pharmacy_id, role_key)
-       values ($1, $2, 'purchasing_employee')`,
-      [purchasingRoleId, pharmacyId],
+       values ($1, $2, 'manager'), ($3, $2, 'pharmacist'),
+              ($4, $2, 'inventory_employee'), ($5, $2, 'purchasing_employee'),
+              ($6, $2, 'accountant')`,
+      [
+        managerRoleId,
+        pharmacyId,
+        pharmacistRoleId,
+        inventoryRoleId,
+        purchasingRoleId,
+        accountantRoleId,
+      ],
     );
     await application.query(
       `insert into role_permission_grants (
          pharmacy_id, role_id, permission_name, granted_by
        ) values
          ($1, $2, 'catalog.item.search', $3),
-         ($1, $2, 'suppliers.manage', $3)`,
+         ($1, $2, 'purchases.costs.view', $3),
+         ($1, $2, 'purchases.drafts.manage', $3),
+         ($1, $2, 'purchases.posted.view', $3)`,
       [pharmacyId, purchasingRoleId, ownerId],
     );
   }, 120_000);
@@ -126,89 +141,76 @@ describe.sequential("purchasing role default migrations", () => {
     }
   });
 
-  it("preserves a customized role and advances an untouched old default once", async () => {
+  it("adds the inventory grants, advances each touched role once, and is idempotent", async () => {
     await runMigrations(application, databaseRoles.migrationUrl);
-
-    expect(await purchasingGrants()).toEqual([
-      "catalog.item.search",
-      "suppliers.manage",
+    const first = await snapshot();
+    expect(first.grants).toEqual([
+      ["accountant", "inventory.valuation.view"],
+      ["inventory_employee", "inventory.review"],
+      ["manager", "inventory.review"],
+      ["manager", "inventory.valuation.view"],
+      ["owner", "inventory.review"],
+      ["owner", "inventory.valuation.view"],
+      ["pharmacist", "inventory.review"],
+      ["purchasing_employee", "inventory.review"],
     ]);
-    // 0017, 0018, 0019, and 0020 each advance the pharmacy identity
-    // revision when their new permission is granted to the owner. This
-    // customized purchasing role remains untouched by every default migration.
-    expect(await revisions()).toEqual({ pharmacy: "4", role: "1" });
+    expect(first.revisions).toEqual({
+      accountant: "2",
+      inventory_employee: "2",
+      manager: "2",
+      owner: "2",
+      pharmacist: "2",
+      purchasing_employee: "2",
+    });
+    expect(first.pharmacyRevision).toBe("2");
 
-    // Recreate the exact legacy default and execute the migration body to
-    // prove the eligible path independently of Drizzle's migration journal.
-    await application.query(
-      `delete from role_permission_grants
-       where role_id = $1 and permission_name = 'suppliers.manage'`,
-      [purchasingRoleId],
-    );
-    const migrationSql = await readFile(
-      path.join(MIGRATIONS_FOLDER, "0016_purchasing_role_default.sql"),
-      "utf8",
-    );
-    await administrator.query(migrationSql);
-
-    expect(await purchasingGrants()).toEqual([
-      "catalog.item.search",
-      "purchases.drafts.manage",
-    ]);
-    expect(await revisions()).toEqual({ pharmacy: "5", role: "2" });
-
-    const reviewMigrationSql = await readFile(
-      path.join(MIGRATIONS_FOLDER, "0018_review_posted_purchases.sql"),
-      "utf8",
-    );
-    await administrator.query(reviewMigrationSql);
-    expect(await purchasingGrants()).toEqual([
-      "catalog.item.search",
-      "purchases.costs.view",
-      "purchases.drafts.manage",
-      "purchases.posted.view",
-    ]);
-    expect(await revisions()).toEqual({ pharmacy: "6", role: "3" });
-
-    // Replaying the previous migration must not add duplicate grants or
-    // advance either revision.
-    await administrator.query(reviewMigrationSql);
-    expect(await purchasingGrants()).toEqual([
-      "catalog.item.search",
-      "purchases.costs.view",
-      "purchases.drafts.manage",
-      "purchases.posted.view",
-    ]);
-    expect(await revisions()).toEqual({ pharmacy: "6", role: "3" });
+    await runMigrations(application, databaseRoles.migrationUrl);
+    expect(await snapshot()).toEqual(first);
   }, 120_000);
 
-  async function purchasingGrants(): Promise<string[]> {
-    const result = await application.query<{ permission_name: string }>(
-      `select permission_name
-       from role_permission_grants
-       where role_id = $1
-       order by permission_name`,
-      [purchasingRoleId],
-    );
-    return result.rows.map(({ permission_name }) => permission_name);
-  }
-
-  async function revisions(): Promise<{ pharmacy: string; role: string }> {
-    const result = await application.query<{
-      pharmacy_revision: string;
-      role_revision: string;
+  async function snapshot(): Promise<{
+    readonly grants: string[][];
+    readonly pharmacyRevision: string;
+    readonly revisions: Record<string, string>;
+  }> {
+    const grants = await application.query<{
+      role_key: string;
+      permission_name: string;
     }>(
-      `select pharmacy_row.identity_revision::text as pharmacy_revision,
-              role_row.revision::text as role_revision
-       from pharmacies pharmacy_row
-       join pharmacy_roles role_row
-         on role_row.pharmacy_id = pharmacy_row.id
-       where pharmacy_row.id = $1 and role_row.id = $2`,
-      [pharmacyId, purchasingRoleId],
+      `select role.role_key, grant_row.permission_name
+       from role_permission_grants grant_row
+       join pharmacy_roles role on role.id = grant_row.role_id
+       where grant_row.pharmacy_id = $1
+         and grant_row.permission_name in (
+           'inventory.review', 'inventory.valuation.view'
+         )
+       order by role.role_key, grant_row.permission_name`,
+      [pharmacyId],
+    );
+    const revisions = await application.query<{
+      role_key: string;
+      revision: string;
+    }>(
+      `select role_key, revision::text
+       from pharmacy_roles where pharmacy_id = $1 order by role_key`,
+      [pharmacyId],
+    );
+    const pharmacy = await application.query<{ revision: string }>(
+      "select identity_revision::text as revision from pharmacies where id = $1",
+      [pharmacyId],
     );
     return {
-      pharmacy: result.rows[0]?.pharmacy_revision ?? "",
-      role: result.rows[0]?.role_revision ?? "",
+      grants: grants.rows
+        .map((row) => [row.role_key, row.permission_name] as [string, string])
+        .sort(([leftRole, leftPermission], [rightRole, rightPermission]) =>
+          leftRole === rightRole
+            ? leftPermission.localeCompare(rightPermission)
+            : leftRole.localeCompare(rightRole),
+        ),
+      pharmacyRevision: pharmacy.rows[0]?.revision ?? "",
+      revisions: Object.fromEntries(
+        revisions.rows.map((row) => [row.role_key, row.revision]),
+      ),
     };
   }
 });

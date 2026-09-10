@@ -529,6 +529,28 @@ export class IdentityAccessService {
         [pharmacyId, ownerId],
       );
       await client.query(
+        `insert into role_permission_grants (
+           pharmacy_id, role_id, permission_name, granted_by
+         )
+         select $1, role_row.id, permission_name.name, $2
+         from pharmacy_roles role_row
+         cross join (values
+           ('inventory.review'), ('inventory.valuation.view')
+         ) as permission_name(name)
+         where role_row.pharmacy_id = $1
+           and (
+             permission_name.name = 'inventory.review'
+             and role_row.role_key in (
+               'manager', 'pharmacist', 'inventory_employee',
+               'purchasing_employee'
+             )
+             or permission_name.name = 'inventory.valuation.view'
+             and role_row.role_key in ('manager', 'accountant')
+           )
+         on conflict (role_id, permission_name) do nothing`,
+        [pharmacyId, ownerId],
+      );
+      await client.query(
         `insert into role_permission_grants
            (pharmacy_id, role_id, permission_name, granted_by)
          select $1, id, 'catalog.item.search', $2
@@ -849,6 +871,22 @@ export class IdentityAccessService {
       roles: roles.rows.map(roleReference),
       users: users.rows.map(userView),
     };
+  }
+
+  /** Identity's narrow read for composed views that need display names only. */
+  public async resolveUserDisplayNames(
+    client: PoolClient,
+    pharmacyId: string,
+    userIds: readonly string[],
+  ): Promise<Map<string, string>> {
+    if (userIds.length === 0) return new Map();
+    const result = await client.query<{ id: string; display_name: string }>(
+      `select id, display_name
+       from identity_users
+       where pharmacy_id = $1 and id = any($2::uuid[])`,
+      [pharmacyId, userIds],
+    );
+    return new Map(result.rows.map((row) => [row.id, row.display_name]));
   }
 
   /**
@@ -2794,6 +2832,19 @@ export class IdentityAccessService {
     });
   }
 
+  public async revalidateInventoryReview(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+    permission: "inventory.review" | "inventory.valuation.view",
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      permission
+    );
+  }
+
   /**
    * The device-administration equivalent of the licence path: take the
    * per-pharmacy write lock, then re-read the session, the grants, and the
@@ -2916,6 +2967,17 @@ export class IdentityAccessService {
   ): Promise<void> {
     await this.consumeStepUp(client, context, challengeId, {
       action,
+      subjectId: context.pharmacyId,
+    });
+  }
+
+  public async consumeInventoryExportStepUp(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    challengeId: string,
+  ): Promise<void> {
+    await this.consumeStepUp(client, context, challengeId, {
+      action: "inventory.sensitive.export",
       subjectId: context.pharmacyId,
     });
   }
@@ -3390,7 +3452,8 @@ export class IdentityAccessService {
   ): Promise<{ readonly id: string; readonly revision: bigint }> {
     if (
       action === "licensing.licence.install" ||
-      action === "licensing.licence.deactivate"
+      action === "licensing.licence.deactivate" ||
+      action === "inventory.sensitive.export"
     ) {
       if (subjectId !== undefined && subjectId !== context.pharmacyId) {
         throw await this.contextDenial(context, 400, "body-invalid");

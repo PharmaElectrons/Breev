@@ -180,7 +180,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
         before.role_key === "owner"
           ? String(BigInt(before.revision) + 5n)
           : before.role_key === "manager"
-            ? String(BigInt(before.revision) + 2n)
+            ? String(BigInt(before.revision) + 3n)
             : before.revision,
       );
     }
@@ -202,6 +202,26 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
           granted_by: ownerId,
           permission_name: "identity.roles.manage",
           role_id: managerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "inventory.review",
+          role_id: managerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "inventory.review",
+          role_id: ownerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "inventory.valuation.view",
+          role_id: managerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "inventory.valuation.view",
+          role_id: ownerRoleId,
         },
         {
           granted_by: ownerId,
@@ -239,12 +259,16 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
 
     const actions = await application.query<{ name: string }>(
       `select name from step_up_action_definitions
-       where name in ('identity.role.create', 'identity.role.rename')
+       where name in (
+         'identity.role.create', 'identity.role.rename',
+         'inventory.sensitive.export'
+       )
        order by name`,
     );
     expect(actions.rows.map(({ name }) => name)).toEqual([
       "identity.role.create",
       "identity.role.rename",
+      "inventory.sensitive.export",
     ]);
 
     // Running the migrations again changes nothing more.

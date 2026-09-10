@@ -4,6 +4,7 @@ import {
   boolean,
   date,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -133,4 +134,17 @@ export const inventoryValuationState = pgTable(
       .notNull(),
   },
   (table) => [primaryKey({ columns: [table.pharmacyId, table.productId] })],
+);
+
+export const inventoryReviewPreferences = pgTable(
+  "inventory_review_preferences",
+  {
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    columns: jsonb().notNull(),
+    revision: bigint({ mode: "bigint" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+    updatedBy: uuid("updated_by").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.pharmacyId, table.userId] })],
 );
