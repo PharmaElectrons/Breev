@@ -136,6 +136,36 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
       await expect(secondDb.onModuleInit()).resolves.toBeUndefined();
       await secondDb.onApplicationShutdown();
     });
+
+    it("registers a timezone-aware schedule through the application role", async () => {
+      const queueName = "schedule-registration-test";
+      const key = "schedule-pharmacy-0001";
+      await durableJobs.ensureQueue(queueName);
+      await durableJobs.schedule(
+        queueName,
+        "5 0 * * *",
+        { trigger: "scheduled" },
+        { key, tz: "Asia/Baghdad" },
+      );
+
+      const schedules = await durableJobs.getSchedules(queueName, key);
+      expect(schedules).toHaveLength(1);
+      expect(schedules[0]).toMatchObject({
+        cron: "5 0 * * *",
+        key,
+        name: queueName,
+        timezone: "Asia/Baghdad",
+      });
+      const privilege = await localDatabase
+        .requirePool()
+        .query<{ writable: boolean }>(
+          "select has_table_privilege('breev_app', 'pgboss.schedule', 'INSERT') as writable",
+        );
+      expect(privilege.rows[0]?.writable).toBe(true);
+
+      await durableJobs.unschedule(queueName, key);
+      expect(await durableJobs.getSchedules(queueName, key)).toHaveLength(0);
+    });
   });
 
   describe("Transactional Enqueue (Atomic Commit & Rollback)", () => {

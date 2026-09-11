@@ -13,6 +13,8 @@ import {
   type DrizzleSqlTagLike,
   type DrizzleTransactionLike,
   type Job,
+  type Schedule,
+  type ScheduleOptions,
 } from "pg-boss";
 
 import { LocalDatabaseService } from "../local-database.service.js";
@@ -90,7 +92,7 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
           monitorIntervalSeconds: 1,
           persistQueueStats: false,
           persistWarnings: false,
-          schedule: false,
+          schedule: true,
           schema: "pgboss",
           supervise: true,
           superviseIntervalSeconds: 1,
@@ -241,6 +243,23 @@ export class DurableJobsService implements OnModuleInit, OnApplicationShutdown {
         });
       }
     });
+  }
+
+  public async schedule(
+    name: string,
+    cron: string,
+    data?: object | null,
+    options?: ScheduleOptions,
+  ): Promise<void> {
+    await this.requireBoss().schedule(name, cron, data, options);
+  }
+
+  public async unschedule(name: string, key?: string): Promise<void> {
+    await this.requireBoss().unschedule(name, key);
+  }
+
+  public async getSchedules(name?: string, key?: string): Promise<Schedule[]> {
+    return await this.requireBoss().getSchedules(name, key);
   }
 
   public async getJob<T = unknown>(

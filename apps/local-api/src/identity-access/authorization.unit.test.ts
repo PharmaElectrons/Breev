@@ -30,6 +30,9 @@ describe("identity authorization", () => {
     expect(STEP_UP_ACTIONS["inventory.sensitive.export"]).toBe(
       "inventory.valuation.view",
     );
+    expect(STEP_UP_ACTIONS["inventory.batch_expiry.correct"]).toBe(
+      "inventory.batch_safety.manage",
+    );
     expect(stepUpActionSchema.options).toContain("inventory.sensitive.export");
   });
 
@@ -74,6 +77,7 @@ describe("identity authorization", () => {
       "draft.price.override",
       "identity.roles.manage",
       "identity.users.manage",
+      "inventory.batch_safety.manage",
       "inventory.review",
       "inventory.valuation.view",
       "licensing.manage",
@@ -102,6 +106,7 @@ describe("identity authorization", () => {
       "devices.pair",
       "identity.roles.manage",
       "identity.users.manage",
+      "inventory.batch_safety.manage",
       "inventory.review",
       "inventory.valuation.view",
       "licensing.manage",

@@ -9,6 +9,8 @@ import type { JsonObject } from "./canonical-hash.js";
  */
 export const POSTING_EVENT_TYPES = {
   pharmacySettingsChanged: "pharmacy.settings.changed",
+  inventoryBatchStatusChanged: "inventory.batch.status-changed",
+  inventoryBatchExpiryCorrected: "inventory.batch.expiry-corrected",
   purchaseInvoiceAdjusted: "purchase.invoice.adjusted",
   purchaseInvoicePosted: "purchase.invoice.posted",
   purchaseReturnPosted: "purchase.return.posted",
@@ -31,6 +33,8 @@ export const POSTING_ENVELOPE_VERSIONS: {
   readonly [Type in PostingEventType]: readonly number[];
 } = {
   "pharmacy.settings.changed": [1],
+  "inventory.batch.status-changed": [1],
+  "inventory.batch.expiry-corrected": [1],
   "purchase.invoice.adjusted": [1],
   "purchase.invoice.posted": [1],
   "purchase.return.posted": [1],
@@ -41,6 +45,8 @@ export const CURRENT_ENVELOPE_VERSIONS: {
   readonly [Type in PostingEventType]: number;
 } = {
   "pharmacy.settings.changed": 1,
+  "inventory.batch.status-changed": 1,
+  "inventory.batch.expiry-corrected": 1,
   "purchase.invoice.adjusted": 1,
   "purchase.invoice.posted": 1,
   "purchase.return.posted": 1,

@@ -147,22 +147,25 @@ describe.sequential("migration 0021: inventory review", () => {
     expect(first.grants).toEqual([
       ["accountant", "inventory.valuation.view"],
       ["inventory_employee", "inventory.review"],
+      ["manager", "inventory.batch_safety.manage"],
       ["manager", "inventory.review"],
       ["manager", "inventory.valuation.view"],
+      ["owner", "inventory.batch_safety.manage"],
       ["owner", "inventory.review"],
       ["owner", "inventory.valuation.view"],
+      ["pharmacist", "inventory.batch_safety.manage"],
       ["pharmacist", "inventory.review"],
       ["purchasing_employee", "inventory.review"],
     ]);
     expect(first.revisions).toEqual({
       accountant: "2",
       inventory_employee: "2",
-      manager: "2",
-      owner: "4",
-      pharmacist: "2",
+      manager: "3",
+      owner: "5",
+      pharmacist: "3",
       purchasing_employee: "4",
     });
-    expect(first.pharmacyRevision).toBe("4");
+    expect(first.pharmacyRevision).toBe("5");
 
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshot()).toEqual(first);
@@ -182,7 +185,8 @@ describe.sequential("migration 0021: inventory review", () => {
        join pharmacy_roles role on role.id = grant_row.role_id
        where grant_row.pharmacy_id = $1
          and grant_row.permission_name in (
-           'inventory.review', 'inventory.valuation.view'
+           'inventory.batch_safety.manage', 'inventory.review',
+           'inventory.valuation.view'
          )
        order by role.role_key, grant_row.permission_name`,
       [pharmacyId],

@@ -13,6 +13,8 @@ import {
 describe("posting outbox envelope rules", () => {
   it("publishes the event type names domain readers depend on", () => {
     expect(POSTING_EVENT_TYPES).toEqual({
+      inventoryBatchExpiryCorrected: "inventory.batch.expiry-corrected",
+      inventoryBatchStatusChanged: "inventory.batch.status-changed",
       pharmacySettingsChanged: "pharmacy.settings.changed",
       purchaseInvoiceAdjusted: "purchase.invoice.adjusted",
       purchaseInvoicePosted: "purchase.invoice.posted",
@@ -22,12 +24,16 @@ describe("posting outbox envelope rules", () => {
 
   it("registers exactly the envelope versions that exist today", () => {
     expect(POSTING_ENVELOPE_VERSIONS).toEqual({
+      "inventory.batch.expiry-corrected": [1],
+      "inventory.batch.status-changed": [1],
       "pharmacy.settings.changed": [1],
       "purchase.invoice.adjusted": [1],
       "purchase.invoice.posted": [1],
       "purchase.return.posted": [1],
     });
     expect(CURRENT_ENVELOPE_VERSIONS).toEqual({
+      "inventory.batch.expiry-corrected": 1,
+      "inventory.batch.status-changed": 1,
       "pharmacy.settings.changed": 1,
       "purchase.invoice.adjusted": 1,
       "purchase.invoice.posted": 1,

@@ -1,0 +1,9 @@
+ RUN  v4.1.11 /home/mohamed/Desktop/pharmaa/PharmaElectrons/apps/local-api
+ ✓ src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > enforces FEFO, hard blocks, daily detection, append-only facts, and correction 373ms
+ ✓ src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > rejects direct mutation and preserves the business-date boundary 129ms
+ ✓ src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > recovers the real queue across claim, date-commit, final-commit, and duplicate-delivery crashes 23940ms
+ ✓ src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > reports an unavailable runtime and audits Step-Up correction denials 153ms
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  17:44:19
+   Duration  35.31s (transform 322ms, setup 0ms, import 1.21s, tests 33.99s, environment 0ms)

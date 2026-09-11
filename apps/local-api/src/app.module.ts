@@ -27,6 +27,8 @@ import { PurchaseReturnsService } from "./purchasing/purchase-returns.service.js
 import { PurchasingService } from "./purchasing/purchasing.service.js";
 import { InventoryReviewController } from "./reporting/inventory-review.controller.js";
 import { InventoryReviewService } from "./reporting/inventory-review.service.js";
+import { InventorySafetyController } from "./inventory/inventory-safety.controller.js";
+import { InventorySafetyService } from "./inventory/inventory-safety.service.js";
 import { RecoveryCoordinatorService } from "./recovery/recovery-coordinator.service.js";
 import { readMachineRecoveryKey } from "./recovery/recovery-crypto.js";
 import { RecoveryJobService } from "./recovery/recovery-job.service.js";
@@ -41,6 +43,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     HealthController,
     IdentityAccessController,
     InventoryReviewController,
+    InventorySafetyController,
     LicensingController,
     MainDeviceProofController,
     PurchasingController,
@@ -57,6 +60,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     },
     IdentityAccessService,
     InventoryReviewService,
+    InventorySafetyService,
     LocalDatabaseService,
     LicensingAdministrationService,
     LicensingService,

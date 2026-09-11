@@ -1,12 +1,21 @@
 import type { PoolClient } from "pg";
 
+import { DEFAULT_NEAR_EXPIRY_DAYS } from "./inventory-receipt-rules.js";
 import { reportedAverageUnitCostScaled } from "./inventory-valuation.js";
 
 export interface InventoryBatchPosition {
   readonly balance: bigint;
   readonly batchId: string;
+  readonly effectiveExpiryDate: string | null;
   readonly expiryDate: string | null;
   readonly lotNumber: string | null;
+  readonly status:
+    | "eligible"
+    | "near-expiry"
+    | "expired"
+    | "recalled"
+    | "quarantined"
+    | "postponed-blocked";
 }
 
 export interface InventoryPosition {
@@ -74,7 +83,10 @@ interface InventoryPositionRow {
 export async function readInventoryPositions(
   client: PoolClient,
   pharmacyId: string,
+  businessDate: string,
+  nearExpiryDays: ReadonlyMap<string, number>,
 ): Promise<InventoryPosition[]> {
+  const nearExpiryDaysJson = JSON.stringify(Object.fromEntries(nearExpiryDays));
   const result = await client.query<InventoryPositionRow>(
     `with movement_totals as (
        select product_id,
@@ -115,28 +127,61 @@ export async function readInventoryPositions(
        select batch.id as batch_id,
               batch.product_id,
               batch.lot_number,
+              batch.created_at,
               batch.expiry_date,
+              coalesce(amendment.corrected_expiry_date, batch.expiry_date)
+                as effective_expiry_date,
+              case
+                when status_event.kind = 'recalled' then 'recalled'
+                when status_event.kind = 'quarantined' then 'quarantined'
+                when coalesce(amendment.corrected_expiry_date, batch.expiry_date)
+                     < $2::date then 'expired'
+                when coalesce(amendment.corrected_expiry_date, batch.expiry_date)
+                     is not null
+                 and coalesce(amendment.corrected_expiry_date, batch.expiry_date)
+                     <= $2::date + coalesce(($3::jsonb ->> batch.product_id::text)::integer, ${DEFAULT_NEAR_EXPIRY_DAYS})
+                   then 'near-expiry'
+                else 'eligible'
+              end as status,
               coalesce(batch_movement.balance, '0') as balance
        from inventory_batches batch
        left join batch_movements batch_movement on batch_movement.batch_id = batch.id
+       left join lateral (
+         select amendment_row.corrected_expiry_date
+         from inventory_batch_expiry_amendments amendment_row
+         where amendment_row.pharmacy_id = batch.pharmacy_id
+           and amendment_row.batch_id = batch.id
+         order by amendment_row.sequence desc
+         limit 1
+       ) amendment on true
+       left join lateral (
+         select event.kind
+         from inventory_batch_status_events event
+         where event.pharmacy_id = batch.pharmacy_id
+           and event.batch_id = batch.id
+         order by event.sequence desc
+         limit 1
+       ) status_event on true
        where batch.pharmacy_id = $1
      ), batch_summaries as (
        select product_id,
               count(*)::text as total_batch_count,
-              (min(expiry_date) filter (
-                where expiry_date is not null and balance::bigint > 0
+              (min(effective_expiry_date) filter (
+                where effective_expiry_date is not null and balance::bigint > 0
               ))::text as earliest_expiry,
               count(*) filter (
-                where expiry_date < current_date and balance::bigint > 0
+                where effective_expiry_date < $2::date and balance::bigint > 0
               )::text as expired_count,
               coalesce(
                 json_agg(
                   json_build_object(
-                    'balance', balance,
-                    'batchId', batch_id,
-                    'expiryDate', expiry_date,
-                    'lotNumber', lot_number
-                  ) order by expiry_date nulls last, batch_id
+                  'balance', balance,
+                  'batchId', batch_id,
+                  'effectiveExpiryDate', effective_expiry_date,
+                  'expiryDate', expiry_date,
+                  'lotNumber', lot_number,
+                  'status', status
+                ) order by effective_expiry_date nulls last, created_at, batch_id
                 ),
                 '[]'::json
               ) as batches
@@ -175,7 +220,7 @@ export async function readInventoryPositions(
      left join inventory_valuation_state valuation
        on valuation.pharmacy_id = $1 and valuation.product_id = product.product_id
      order by product.product_id`,
-    [pharmacyId],
+    [pharmacyId, businessDate, nearExpiryDaysJson],
   );
   return result.rows.map((row) => {
     const batches = Array.isArray(row.batches)
@@ -184,10 +229,15 @@ export async function readInventoryPositions(
           return {
             balance: BigInt(String(value.balance)),
             batchId: String(value.batchId),
+            effectiveExpiryDate:
+              value.effectiveExpiryDate === null
+                ? null
+                : String(value.effectiveExpiryDate),
             expiryDate:
               value.expiryDate === null ? null : String(value.expiryDate),
             lotNumber:
               value.lotNumber === null ? null : String(value.lotNumber),
+            status: String(value.status) as InventoryBatchPosition["status"],
           };
         })
       : [];

@@ -33,10 +33,22 @@ const COLD_GENERAL: InventoryReceiptProduct = {
  * no longer needs an expiry.
  */
 const CONFIGURED: InventoryReceiptRuleSet = {
-  "general-item": { expiryRequired: false, lotRequired: false },
-  "general-item-cold-chain": { expiryRequired: false, lotRequired: false },
-  medication: { expiryRequired: true, lotRequired: true },
-  "medication-cold-chain": { expiryRequired: true, lotRequired: true },
+  "general-item": {
+    expiryRequired: false,
+    lotRequired: false,
+    nearExpiryDays: 90,
+  },
+  "general-item-cold-chain": {
+    expiryRequired: false,
+    lotRequired: false,
+    nearExpiryDays: 90,
+  },
+  medication: { expiryRequired: true, lotRequired: true, nearExpiryDays: 90 },
+  "medication-cold-chain": {
+    expiryRequired: true,
+    lotRequired: true,
+    nearExpiryDays: 90,
+  },
 };
 
 describe("receiptClassOf", () => {
@@ -67,20 +79,24 @@ describe("DEFAULT_RECEIPT_CLASS_RULES", () => {
     expect(receiptRuleFor(MEDICATION)).toEqual({
       expiryRequired: true,
       lotRequired: false,
+      nearExpiryDays: 90,
     });
     expect(receiptRuleFor(COLD_MEDICATION)).toEqual({
       expiryRequired: true,
       lotRequired: true,
+      nearExpiryDays: 90,
     });
     expect(receiptRuleFor(COLD_GENERAL)).toEqual({
       expiryRequired: true,
       lotRequired: false,
+      nearExpiryDays: 90,
     });
     // A plain general item never interrupts the keyboard row flow for evidence
     // its supplier may not print at all.
     expect(receiptRuleFor(GENERAL)).toEqual({
       expiryRequired: false,
       lotRequired: false,
+      nearExpiryDays: 90,
     });
   });
 
@@ -104,10 +120,12 @@ describe("receiptRuleFor", () => {
     expect(receiptRuleFor(MEDICATION, CONFIGURED)).toEqual({
       expiryRequired: true,
       lotRequired: true,
+      nearExpiryDays: 90,
     });
     expect(receiptRuleFor(COLD_GENERAL, CONFIGURED)).toEqual({
       expiryRequired: false,
       lotRequired: false,
+      nearExpiryDays: 90,
     });
   });
 });
@@ -180,7 +198,7 @@ describe("checkReceiptEvidence", () => {
   it("never requires evidence a rule does not ask for", () => {
     expect(
       checkReceiptEvidence(
-        { expiryRequired: false, lotRequired: false },
+        { expiryRequired: false, lotRequired: false, nearExpiryDays: 90 },
         { expiryDate: null, lotNumber: null },
       ),
     ).toBe(null);
