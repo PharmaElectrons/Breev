@@ -1,4 +1,5 @@
 import {
+  BATCH_ELIGIBILITY_STATUSES,
   INVENTORY_COLUMN_FIELDS,
   INVENTORY_RISK_INDICATORS,
   PRODUCT_STATE_COLORS,
@@ -19,6 +20,24 @@ describe("inventory translations", () => {
       for (const colour of PRODUCT_STATE_COLORS) {
         expect(inventoryMessages[locale].stateColours[colour]).not.toBe("");
       }
+      for (const status of BATCH_ELIGIBILITY_STATUSES) {
+        expect(inventoryMessages[locale].safety.statusLabels[status]).not.toBe(
+          "",
+        );
+        expect(
+          inventoryMessages[locale].safety.statusSentence(status, "3"),
+        ).not.toBe("");
+      }
+      expect(inventoryMessages[locale].safety.dispositionNote).not.toBe("");
     }
+  });
+
+  it("keeps the near-expiry warning bilingual and explicit about saleability", () => {
+    expect(
+      inventoryMessages.en.safety.statusSentence("near-expiry", "3"),
+    ).toContain("sellable");
+    expect(
+      inventoryMessages.ar.safety.statusSentence("near-expiry", "٣"),
+    ).toContain("قابل للبيع");
   });
 });

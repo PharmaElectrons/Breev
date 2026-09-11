@@ -2281,6 +2281,245 @@ a:focus-visible,
   color: var(--warning);
 }
 
+.inventory-safety-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.78rem;
+}
+
+.inventory-safety-summary a,
+.batch-safety-heading a {
+  color: var(--primary);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.batch-safety-panel {
+  display: grid;
+  min-block-size: 0;
+  min-inline-size: 0;
+  gap: 0.85rem;
+  border-block: 1px solid var(--border);
+  padding-block: 1rem;
+}
+
+.batch-safety-heading,
+.batch-safety-review-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.batch-safety-heading h3,
+.batch-safety-heading p,
+.batch-safety-preview h3,
+.batch-safety-preview p,
+.batch-safety-review-heading h2,
+.batch-safety-review-heading p {
+  margin: 0;
+}
+
+.batch-safety-heading p,
+.batch-safety-preview > div > p,
+.batch-safety-run-summary {
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.batch-safety-table-scroll,
+.batch-safety-review-table-scroll {
+  min-block-size: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+}
+
+.batch-safety-table,
+.batch-safety-review-table {
+  inline-size: 100%;
+  min-inline-size: 72rem;
+  border-collapse: collapse;
+  background: var(--card);
+}
+
+.batch-safety-table th,
+.batch-safety-table td,
+.batch-safety-review-table th,
+.batch-safety-review-table td {
+  border-block-end: 1px solid var(--border);
+  padding: 0.7rem 0.75rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.batch-safety-table th,
+.batch-safety-review-table th {
+  position: sticky;
+  z-index: 1;
+  inset-block-start: 0;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.batch-safety-table tbody tr:hover,
+.batch-safety-review-table tbody tr:hover {
+  background: var(--primary-wash);
+}
+
+.batch-safety-actions {
+  min-inline-size: 17rem;
+}
+
+.batch-safety-actions > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.batch-safety-actions .quiet-button,
+.batch-safety-review-heading .primary-button {
+  min-block-size: 2.5rem;
+}
+
+.batch-safety-corrected,
+.batch-safety-warning {
+  display: block;
+  color: var(--warning);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.batch-safety-history {
+  margin-block-start: 0.55rem;
+  font-size: 0.76rem;
+}
+
+.batch-safety-history summary {
+  min-block-size: 2.25rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.batch-safety-history-content {
+  display: grid;
+  gap: 0.35rem;
+  border-inline-start: 2px solid var(--control-border);
+  padding-inline-start: 0.65rem;
+}
+
+.batch-safety-history-content p {
+  margin: 0;
+}
+
+.batch-safety-preview {
+  display: grid;
+  min-block-size: 0;
+  gap: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 1rem;
+  background: var(--surface);
+}
+
+.batch-safety-preview-form,
+.batch-safety-review-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.7rem;
+}
+
+.batch-safety-preview-form .field-label {
+  min-inline-size: 11rem;
+}
+
+.batch-safety-announcement {
+  min-block-size: 1.5rem;
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+.batch-safety-preview-result {
+  min-block-size: 0;
+  max-block-size: 15rem;
+  overflow: auto;
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 0.7rem;
+}
+
+.batch-safety-preview-result h4,
+.batch-safety-preview-result h5 {
+  margin-block: 0.2rem 0.5rem;
+}
+
+.batch-safety-preview-result ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-inline-start: 1.2rem;
+}
+
+.batch-safety-review {
+  min-block-size: 0;
+}
+
+.batch-safety-review-controls {
+  min-block-size: 0;
+}
+
+.batch-safety-review-controls .quiet-button {
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
+}
+
+.batch-safety-review-controls .field-label {
+  min-inline-size: 12rem;
+}
+
+.batch-safety-gate,
+.batch-safety-missed-banner {
+  border-inline-start: 3px solid var(--warning);
+  padding-inline: 0.75rem;
+}
+
+.batch-safety-missed-banner {
+  margin-block: 0;
+  background: var(--warning-soft);
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+.batch-safety-dialog {
+  inline-size: min(100%, 34rem);
+  max-block-size: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.5rem;
+  box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.45);
+  text-align: start;
+}
+
+.batch-safety-dialog h2,
+.batch-safety-dialog p {
+  margin-block: 0 0.75rem;
+}
+
+.batch-safety-dialog-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.batch-safety-dialog-form textarea {
+  min-block-size: 5rem;
+  resize: vertical;
+}
+
 @media (forced-colors: active) {
   .state-indicator {
     color: CanvasText;

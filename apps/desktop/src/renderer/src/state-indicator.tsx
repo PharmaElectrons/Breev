@@ -1,4 +1,5 @@
 import type {
+  BatchEligibilityStatus,
   InventoryRiskIndicator,
   ProductStateColour,
 } from "@breev/contracts/local-rest";
@@ -15,15 +16,26 @@ type StateIndicatorProps =
       readonly indicator: InventoryRiskIndicator;
       readonly kind: "risk";
       readonly label: string;
+    }
+  | {
+      readonly assistiveLabel?: string;
+      readonly kind: "eligibility";
+      readonly label: string;
+      readonly status: BatchEligibilityStatus;
     };
 
 export function StateIndicator(props: StateIndicatorProps): React.JSX.Element {
   const token =
-    props.kind === "state" ? props.colour : riskToken(props.indicator);
+    props.kind === "state"
+      ? props.colour
+      : props.kind === "risk"
+        ? riskToken(props.indicator)
+        : eligibilityToken(props.status);
   const assistiveLabel = props.assistiveLabel ?? props.label;
   return (
     <span
       className={`state-indicator state-indicator-${token}`}
+      data-eligibility={props.kind === "eligibility" ? props.status : undefined}
       data-indicator={props.kind === "risk" ? props.indicator : undefined}
       data-state-colour={props.kind === "state" ? props.colour : undefined}
     >
@@ -34,12 +46,35 @@ export function StateIndicator(props: StateIndicatorProps): React.JSX.Element {
         stroke="currentColor"
         viewBox="0 0 24 24"
       >
-        {indicatorIcon(props.kind === "state" ? props.colour : props.indicator)}
+        {indicatorIcon(
+          props.kind === "state"
+            ? props.colour
+            : props.kind === "risk"
+              ? props.indicator
+              : props.status,
+        )}
       </svg>
       <span>{props.label}</span>
       <span className="visually-hidden">{assistiveLabel}</span>
     </span>
   );
+}
+
+function eligibilityToken(status: BatchEligibilityStatus): ProductStateColour {
+  switch (status) {
+    case "eligible":
+      return "green";
+    case "near-expiry":
+      return "yellow";
+    case "expired":
+      return "red";
+    case "recalled":
+      return "purple";
+    case "quarantined":
+      return "orange";
+    case "postponed-blocked":
+      return "blue";
+  }
 }
 
 function riskToken(indicator: InventoryRiskIndicator): ProductStateColour {
@@ -62,14 +97,51 @@ function riskToken(indicator: InventoryRiskIndicator): ProductStateColour {
 }
 
 function indicatorIcon(
-  value: ProductStateColour | InventoryRiskIndicator,
+  value: ProductStateColour | InventoryRiskIndicator | BatchEligibilityStatus,
 ): React.JSX.Element {
   switch (value) {
+    case "eligible":
+      return <path d="m5 12 4 4L19 6" />;
+    case "near-expiry":
+      return (
+        <>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 7v5l3 2" />
+        </>
+      );
+    case "expired":
+      return (
+        <>
+          <path d="M6 4h12M6 20h12" />
+          <path d="M8 4c0 4 4 4 4 8s-4 4-4 8" />
+          <path d="M16 4c0 4-4 4-4 8s4 4 4 8" />
+        </>
+      );
+    case "recalled":
+      return (
+        <>
+          <path d="M8 7H4v4" />
+          <path d="M4 11a8 8 0 1 0 2-5" />
+        </>
+      );
+    case "quarantined":
+      return (
+        <>
+          <path d="M12 3 19 6v5c0 4.5-3 7.5-7 10-4-2.5-7-5.5-7-10V6l7-3Z" />
+          <path d="M9 12h6" />
+        </>
+      );
+    case "postponed-blocked":
+      return (
+        <>
+          <path d="M7 5v14M17 5v14" />
+          <path d="M5 5h14M5 19h14" />
+        </>
+      );
     case "green":
     case "cold-storage":
       return <path d="m5 12 4 4L19 6" />;
     case "red":
-    case "expired":
     case "out-of-stock":
       return (
         <>
