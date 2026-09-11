@@ -3,9 +3,8 @@ import type {
   ProductStateColour,
 } from "@breev/contracts/local-rest";
 
+import { addDays, compareDates } from "./business-date.js";
 import { divideFilsRounded } from "../posting/money.js";
-
-export const EXPIRING_SOON_DAYS = 90n;
 
 export interface InventoryRiskMovement {
   readonly occurredAt: Date;
@@ -16,12 +15,13 @@ export interface InventoryRiskMovement {
 
 export interface InventoryRiskInput {
   readonly balance: bigint;
-  readonly earliestExpiry: Date | null;
+  readonly earliestExpiry: string | null;
   readonly expiredCount: bigint;
   readonly hasBarcode: boolean;
   readonly maximumLevel: bigint | null;
   readonly minimumLevel: bigint | null;
-  readonly now: Date;
+  readonly businessDate: string;
+  readonly nearExpiryDays: number;
   readonly reorderPoint: bigint | null;
   readonly coldStorageRequired: boolean;
 }
@@ -63,9 +63,11 @@ export function riskIndicators(
   if (input.expiredCount > 0n) indicators.push("expired");
   if (
     input.earliestExpiry !== null &&
-    input.earliestExpiry.getTime() >= input.now.getTime() &&
-    input.earliestExpiry.getTime() <=
-      input.now.getTime() + Number(EXPIRING_SOON_DAYS) * 24 * 60 * 60 * 1_000
+    compareDates(input.earliestExpiry, input.businessDate) >= 0 &&
+    compareDates(
+      input.earliestExpiry,
+      addDays(input.businessDate, input.nearExpiryDays),
+    ) <= 0
   ) {
     indicators.push("expiring-soon");
   }

@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  listBatches,
+  previewAllocation,
+  readBatchSafetyReview,
+  readBatchSafetyStatus,
   requestInventoryItems,
+  triggerBatchSafetyRun,
   updateInventoryReviewPreferences,
 } from "./inventory-api";
 
@@ -69,6 +74,85 @@ describe("inventory API client", () => {
       expect.any(URL),
       expect.objectContaining({ method: "PUT" }),
     );
+    vi.unstubAllGlobals();
+  });
+
+  it("consumes the batch safety routes with their distinct success statuses", async () => {
+    const status = {
+      businessTimeZone: "Asia/Baghdad",
+      jobRuntime: "available" as const,
+      lastCompletedBusinessDate: null,
+      missedBusinessDates: [],
+      scheduled: true,
+      state: "never-run" as const,
+      thresholds: { classes: [], pendingGate: "G-02" as const },
+      todayBusinessDate: "2026-09-11",
+    };
+    const fetchMock = vi.fn(async (input: URL, init?: RequestInit) => {
+      const path = input.pathname;
+      if (path.endsWith("/batches")) {
+        return new Response(
+          JSON.stringify({ batches: [], businessDate: "2026-09-11" }),
+          { status: 200 },
+        );
+      }
+      if (path.endsWith("/allocation-previews")) {
+        return new Response(
+          JSON.stringify({
+            allocations: [],
+            blocked: [],
+            businessDate: "2026-09-11",
+            shortfalls: [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (path.endsWith("/runs")) {
+        expect(init?.method).toBe("POST");
+        return new Response(JSON.stringify(status), { status: 202 });
+      }
+      if (path.endsWith("/review")) {
+        return new Response(
+          JSON.stringify({
+            businessDate: "2026-09-11",
+            fields: { valuation: "denied" },
+            month: "2026-09",
+            rows: [],
+            runs: { completedBusinessDates: [], missedBusinessDates: [] },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify(status), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listBatches(
+        "http://127.0.0.1:4311",
+        "0198e7ce-7685-7000-8000-000000000001",
+      ),
+    ).resolves.toEqual({ batches: [], businessDate: "2026-09-11" });
+    await expect(
+      previewAllocation("http://127.0.0.1:4311", {
+        lines: [
+          {
+            productId: "0198e7ce-7685-7000-8000-000000000001",
+            quantity: "2",
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ allocations: [], blocked: [] });
+    await expect(
+      triggerBatchSafetyRun("http://127.0.0.1:4311"),
+    ).resolves.toEqual(status);
+    await expect(
+      readBatchSafetyStatus("http://127.0.0.1:4311"),
+    ).resolves.toEqual(status);
+    await expect(
+      readBatchSafetyReview("http://127.0.0.1:4311", "2026-09"),
+    ).resolves.toMatchObject({ month: "2026-09", rows: [] });
+    expect(fetchMock).toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 });

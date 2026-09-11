@@ -54,7 +54,11 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
   },
   {
     id: "inventory",
-    permissions: ["inventory.review", "inventory.valuation.view"],
+    permissions: [
+      "inventory.review",
+      "inventory.valuation.view",
+      "inventory.batch_safety.manage",
+    ],
   },
   { id: "attendance", permissions: ["attendance.record"] },
   {

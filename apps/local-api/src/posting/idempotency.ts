@@ -13,6 +13,7 @@ import type { PoolClient } from "pg";
  * - 165308860 identity bootstrap (identity-access.service.ts)
  * - 165308861 licensing per-pharmacy installation lock (licensing.service.ts)
  * - 165308862 posting command idempotency (this file)
+ * - 165308863 inventory batch-safety evaluator per-pharmacy lock
  *
  * A 64-bit `hashtextextended` collision between two lock texts would cost
  * extra serialization between two unrelated commands and can never produce a

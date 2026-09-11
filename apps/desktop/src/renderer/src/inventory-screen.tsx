@@ -13,11 +13,14 @@ import {
   InventoryApiDenied,
   exportInventorySensitiveData,
   newInventoryIdempotencyKey,
+  readBatchSafetyStatus,
   requestInventoryItems,
   requestInventoryMovements,
   requestInventoryReviewPreferences,
   updateInventoryReviewPreferences,
 } from "./inventory-api";
+import { BatchSafetyReview } from "./batch-safety-review";
+import { BatchSafetyPanel } from "./batch-safety-panel";
 import { inventoryMessages, type InventoryCopy } from "./inventory-messages";
 import { createInventoryPreferenceSaveQueue } from "./inventory-preferences-save";
 import { useIdentityState } from "./identity-state-provider";
@@ -67,6 +70,15 @@ export function InventoryRouteView({
       />
     );
   }
+  if (route.kind === "safety-review") {
+    return (
+      <BatchSafetyReview
+        baseUrl={baseUrl}
+        checkNow={checkNow}
+        month={route.month}
+      />
+    );
+  }
   return <InventoryScreen baseUrl={baseUrl} checkNow={checkNow} />;
 }
 
@@ -81,6 +93,9 @@ function InventoryScreen({
   const copy = inventoryMessages[locale];
   const { state: identity } = useIdentityState();
   const [items, setItems] = useState<InventoryItem[] | null>(null);
+  const [safetyStatus, setSafetyStatus] = useState<Awaited<
+    ReturnType<typeof readBatchSafetyStatus>
+  > | null>(null);
   const [valuation, setValuation] = useState<"granted" | "denied">("denied");
   const [preferences, setPreferences] = useState({
     columns: DEFAULT_COLUMNS,
@@ -124,12 +139,14 @@ function InventoryScreen({
     setError(null);
     setDenial(null);
     try {
-      const [result, savedPreferences] = await Promise.all([
+      const [result, savedPreferences, nextSafetyStatus] = await Promise.all([
         requestInventoryItems(baseUrl),
         requestInventoryReviewPreferences(baseUrl),
+        readBatchSafetyStatus(baseUrl),
       ]);
       setItems(result.items);
       setValuation(result.fields.valuation);
+      setSafetyStatus(nextSafetyStatus);
       latestPreferenceRevisionRef.current = savedPreferences.revision;
       setPreferences(savedPreferences);
     } catch (caught) {
@@ -304,6 +321,15 @@ function InventoryScreen({
         <div>
           <h2 id="inventory-title">{copy.title}</h2>
           <p>{copy.readOnly}</p>
+          <p className="inventory-safety-summary">
+            {safetyStatus === null
+              ? copy.safety.unavailable
+              : copy.safety.dailyStatus(
+                  safetyStatus.state,
+                  safetyStatus.lastCompletedBusinessDate,
+                )}{" "}
+            <a href="#/inventory/safety-review">{copy.safety.review}</a>
+          </p>
         </div>
         <div className="inventory-actions">
           {canExport ? (
@@ -676,6 +702,11 @@ export function InventoryMovements({
       <h2 id="inventory-movement-title">
         {copy.movement.title} · <bdi>{response.productDisplayName}</bdi>
       </h2>
+      <BatchSafetyPanel
+        baseUrl={baseUrl}
+        checkNow={checkNow}
+        productId={productId}
+      />
       {response.movements.length === 0 ? (
         <p role="status">{copy.movement.empty}</p>
       ) : (
@@ -790,12 +821,25 @@ function assertNever(value: never): never {
 
 function inventoryRoute(hash: string):
   | { readonly kind: "inventory" }
+  | { readonly kind: "safety-review"; readonly month?: string }
   | {
       readonly kind: "movements";
       readonly productId: string;
       readonly purchaseId?: string;
     } {
   const parts = hash.replace(/^#\//u, "").split("/");
+  if (parts[0] === "inventory" && parts[1] === "safety-review") {
+    if (
+      parts.length > 3 ||
+      (parts[2] !== undefined && !/^\d{4}-(?:0[1-9]|1[0-2])$/u.test(parts[2]))
+    ) {
+      return { kind: "inventory" };
+    }
+    return {
+      kind: "safety-review",
+      ...(parts[2] === undefined ? {} : { month: parts[2] }),
+    };
+  }
   if (
     parts[0] !== "inventory" ||
     parts[1] !== "items" ||

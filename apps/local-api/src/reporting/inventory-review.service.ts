@@ -31,6 +31,12 @@ import {
   type InventoryPosition,
   type ProductMovement,
 } from "../inventory/inventory-review.js";
+import { businessDateOf } from "../inventory/business-date.js";
+import {
+  readNearExpiryDays,
+  resolveReceiptClassRuleSet,
+} from "../inventory/inventory-persistence.js";
+import { DEFAULT_NEAR_EXPIRY_DAYS } from "../inventory/inventory-receipt-rules.js";
 import {
   automaticStateColour,
   consumptionRatePer30Days,
@@ -117,9 +123,22 @@ export class InventoryReviewService {
     );
     const client = await this.localDatabase.requirePool().connect();
     try {
+      const now = new Date();
+      const timeZone = await this.identity.readPharmacyBusinessTimeZone(
+        client,
+        context.pharmacyId,
+      );
+      const businessDate = businessDateOf(now, timeZone);
+      await resolveReceiptClassRuleSet(client, context.pharmacyId);
+      const nearExpiryDays = await readNearExpiryDays(
+        client,
+        context.pharmacyId,
+      );
       const positions = await readInventoryPositions(
         client,
         context.pharmacyId,
+        businessDate,
+        nearExpiryDays,
       );
       const facts = await resolveCatalogInventoryFacts(
         client,
@@ -136,7 +155,14 @@ export class InventoryReviewService {
         )
         .map((fact) => {
           const position = positionByProduct.get(fact.productId);
-          return itemView(fact, position, valuationGranted, new Date());
+          return itemView(
+            fact,
+            position,
+            valuationGranted,
+            now,
+            businessDate,
+            nearExpiryDays.get(fact.productId) ?? DEFAULT_NEAR_EXPIRY_DAYS,
+          );
         });
       for (const position of positions) {
         if (position.reconciliation === "mismatch") {
@@ -569,7 +595,20 @@ export class InventoryReviewService {
     client: PoolClient,
     context: IdentityExecutionContext,
   ): Promise<InventorySensitiveExport> {
-    const positions = await readInventoryPositions(client, context.pharmacyId);
+    const now = new Date();
+    const timeZone = await this.identity.readPharmacyBusinessTimeZone(
+      client,
+      context.pharmacyId,
+    );
+    const businessDate = businessDateOf(now, timeZone);
+    await resolveReceiptClassRuleSet(client, context.pharmacyId);
+    const nearExpiryDays = await readNearExpiryDays(client, context.pharmacyId);
+    const positions = await readInventoryPositions(
+      client,
+      context.pharmacyId,
+      businessDate,
+      nearExpiryDays,
+    );
     const facts = await resolveCatalogInventoryFacts(
       client,
       context.pharmacyId,
@@ -777,21 +816,20 @@ function itemView(
   position: InventoryPosition | undefined,
   valuationGranted: boolean,
   now: Date,
+  businessDate: string,
+  nearExpiryDays: number,
 ): InventoryItem {
   const balance = position?.balance ?? 0n;
-  const earliestExpiryDate =
-    position?.earliestExpiry === null || position?.earliestExpiry === undefined
-      ? null
-      : new Date(`${position.earliestExpiry}T00:00:00.000Z`);
   const indicators = riskIndicators({
     balance,
     coldStorageRequired: fact.coldStorageRequired,
-    earliestExpiry: earliestExpiryDate,
+    earliestExpiry: position?.earliestExpiry ?? null,
     expiredCount: position?.expiredCount ?? 0n,
     hasBarcode: fact.hasBarcode,
     maximumLevel: fact.stockLevels.maximumLevel,
     minimumLevel: fact.stockLevels.minimumLevel,
-    now,
+    businessDate,
+    nearExpiryDays,
     reorderPoint: fact.stockLevels.reorderPoint,
   });
   const automatic = automaticStateColour(indicators);

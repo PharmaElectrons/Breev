@@ -4,7 +4,6 @@ import {
   automaticStateColour,
   consumptionRatePer30Days,
   effectiveStateColour,
-  EXPIRING_SOON_DAYS,
   riskIndicators,
 } from "./inventory-risk.js";
 
@@ -31,12 +30,13 @@ describe("inventory risk calculations", () => {
       riskIndicators({
         balance: 4n,
         coldStorageRequired: true,
-        earliestExpiry: new Date("2026-10-01T00:00:00.000Z"),
+        earliestExpiry: "2026-10-01",
         expiredCount: 1n,
         hasBarcode: false,
         maximumLevel: 3n,
         minimumLevel: 5n,
-        now,
+        businessDate: "2026-09-10",
+        nearExpiryDays: 90,
         reorderPoint: 4n,
       }),
     ).toEqual([
@@ -64,6 +64,5 @@ describe("inventory risk calculations", () => {
     expect(automaticStateColour([])).toBe("green");
     expect(effectiveStateColour("purple", "red")).toBe("purple");
     expect(effectiveStateColour(null, "yellow")).toBe("yellow");
-    expect(EXPIRING_SOON_DAYS).toBe(90n);
   });
 });

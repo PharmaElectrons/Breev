@@ -57,7 +57,10 @@ export type InventoryReceiptClass = (typeof INVENTORY_RECEIPT_CLASSES)[number];
 export interface InventoryReceiptRule {
   readonly expiryRequired: boolean;
   readonly lotRequired: boolean;
+  readonly nearExpiryDays: number;
 }
+
+export const DEFAULT_NEAR_EXPIRY_DAYS = 90;
 
 /** One rule per class: what a pharmacy's configuration must supply in full. */
 export type InventoryReceiptRuleSet = Readonly<
@@ -75,15 +78,22 @@ export const DEFAULT_RECEIPT_CLASS_RULES: InventoryReceiptRuleSet =
     "general-item": Object.freeze({
       expiryRequired: false,
       lotRequired: false,
+      nearExpiryDays: DEFAULT_NEAR_EXPIRY_DAYS,
     }),
     "general-item-cold-chain": Object.freeze({
       expiryRequired: true,
       lotRequired: false,
+      nearExpiryDays: DEFAULT_NEAR_EXPIRY_DAYS,
     }),
-    medication: Object.freeze({ expiryRequired: true, lotRequired: false }),
+    medication: Object.freeze({
+      expiryRequired: true,
+      lotRequired: false,
+      nearExpiryDays: DEFAULT_NEAR_EXPIRY_DAYS,
+    }),
     "medication-cold-chain": Object.freeze({
       expiryRequired: true,
       lotRequired: true,
+      nearExpiryDays: DEFAULT_NEAR_EXPIRY_DAYS,
     }),
   });
 

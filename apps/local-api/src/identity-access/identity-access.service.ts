@@ -535,10 +535,14 @@ export class IdentityAccessService {
          select $1, role_row.id, permission_name.name, $2
          from pharmacy_roles role_row
          cross join (values
+           ('inventory.batch_safety.manage'),
            ('inventory.review'), ('inventory.valuation.view')
          ) as permission_name(name)
          where role_row.pharmacy_id = $1
            and (
+             permission_name.name = 'inventory.batch_safety.manage'
+             and role_row.role_key in ('manager', 'pharmacist')
+             or
              permission_name.name = 'inventory.review'
              and role_row.role_key in (
                'manager', 'pharmacist', 'inventory_employee',
@@ -887,6 +891,23 @@ export class IdentityAccessService {
       [pharmacyId, userIds],
     );
     return new Map(result.rows.map((row) => [row.id, row.display_name]));
+  }
+
+  public async readPharmacyBusinessTimeZone(
+    client: PoolClient,
+    pharmacyId: string,
+  ): Promise<string> {
+    const result = await client.query<{ business_time_zone: string }>(
+      `select business_time_zone
+       from pharmacies
+       where id = $1`,
+      [pharmacyId],
+    );
+    const zone = result.rows[0]?.business_time_zone;
+    if (zone === undefined) {
+      throw new Error("The pharmacy business time zone is unavailable");
+    }
+    return zone;
   }
 
   /**
@@ -2845,6 +2866,33 @@ export class IdentityAccessService {
     );
   }
 
+  public async revalidateBatchSafety(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "inventory.batch_safety.manage",
+    );
+  }
+
+  public async consumeBatchSafetyStepUp(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    challengeId: string,
+    input: {
+      readonly action: "inventory.batch_expiry.correct";
+      readonly batchId: string;
+    },
+  ): Promise<void> {
+    await this.consumeStepUp(client, context, challengeId, {
+      action: input.action,
+      subjectId: input.batchId,
+    });
+  }
+
   /**
    * The device-administration equivalent of the licence path: take the
    * per-pharmacy write lock, then re-read the session, the grants, and the
@@ -3461,6 +3509,41 @@ export class IdentityAccessService {
       return {
         id: context.pharmacyId,
         revision: context.pharmacyIdentityRevision,
+      };
+    }
+    if (action === "inventory.batch_expiry.correct") {
+      if (subjectId === undefined) {
+        throw await this.contextDenial(context, 400, "body-invalid");
+      }
+      const batch = await client.query<{ count: string }>(
+        `select count(*)::text as count
+         from inventory_batches
+         where id = $1 and pharmacy_id = $2`,
+        [subjectId, context.pharmacyId],
+      );
+      if (batch.rows[0]?.count !== "1") {
+        throw await this.contextDenial(
+          context,
+          404,
+          "identity-resource-not-found",
+          undefined,
+          subjectId,
+          action,
+        );
+      }
+      const revision = await client.query<{ revision: string }>(
+        `select (
+           1
+           + (select count(*) from inventory_batch_status_events
+              where pharmacy_id = $1 and batch_id = $2)
+           + (select count(*) from inventory_batch_expiry_amendments
+              where pharmacy_id = $1 and batch_id = $2)
+         )::text as revision`,
+        [context.pharmacyId, subjectId],
+      );
+      return {
+        id: subjectId,
+        revision: BigInt(revision.rows[0]?.revision ?? "1"),
       };
     }
     if (

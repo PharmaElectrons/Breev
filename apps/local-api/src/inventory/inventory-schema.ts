@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   date,
   integer,
   jsonb,
@@ -29,8 +30,15 @@ export const inventoryReceiptClassRules = pgTable(
     class: inventoryReceiptClass().notNull(),
     expiryRequired: boolean("expiry_required").notNull(),
     lotRequired: boolean("lot_required").notNull(),
+    nearExpiryDays: integer("near_expiry_days").notNull().default(90),
   },
-  (table) => [primaryKey({ columns: [table.pharmacyId, table.class] })],
+  (table) => [
+    primaryKey({ columns: [table.pharmacyId, table.class] }),
+    check(
+      "inventory_receipt_class_rules_near_expiry_days",
+      sql`${table.nearExpiryDays} between 1 and 730`,
+    ),
+  ],
 );
 
 export const inventoryBatches = pgTable(

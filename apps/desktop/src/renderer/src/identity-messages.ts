@@ -139,6 +139,11 @@ const permissionLabels: Record<
       description: "عرض قيمة المخزون ومتوسط التكلفة وبيانات المورد الحساسة.",
       name: "عرض تقييم المخزون",
     },
+    "inventory.batch_safety.manage": {
+      description:
+        "سحب دفعة أو حجرها مع سبب ودليل، وتصحيح تاريخ انتهاء خاطئ بعد إعادة التحقق.",
+      name: "إدارة سلامة الدفعات",
+    },
     "licensing.manage": {
       description: "تثبيت ترخيص الصيدلية أو تجديده أو إزالته.",
       name: "إدارة الترخيص",
@@ -216,6 +221,11 @@ const permissionLabels: Record<
       description:
         "View inventory value, average cost, and sensitive supplier data.",
       name: "View inventory valuation",
+    },
+    "inventory.batch_safety.manage": {
+      description:
+        "Recall or quarantine a batch with reason and evidence, and correct a wrong expiry after re-authentication.",
+      name: "Manage batch safety",
     },
     "licensing.manage": {
       description: "Install or renew the pharmacy licence, or remove it.",

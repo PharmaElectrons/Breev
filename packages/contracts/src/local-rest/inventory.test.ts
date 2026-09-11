@@ -5,6 +5,16 @@ import {
   INVENTORY_CONTRACTS,
   INVENTORY_MOVEMENT_KINDS,
   INVENTORY_RISK_INDICATORS,
+  BATCH_ELIGIBILITY_STATUSES,
+  inventoryAllocationPreviewRequestSchema,
+  inventoryBatchSafetyReviewContract,
+  inventoryBatchSchema,
+  inventoryBatchListContract,
+  inventoryBatchStatusChangeContract,
+  inventoryBatchExpiryCorrectionContract,
+  inventoryBatchSafetyRunContract,
+  inventoryBatchSafetyStatusContract,
+  inventoryAllocationPreviewContract,
   inventoryItemListContract,
   inventoryItemSchema,
   inventoryMovementHistoryContract,
@@ -12,6 +22,7 @@ import {
   inventoryReviewPreferencesSchema,
   inventorySensitiveExportRequestSchema,
   inventorySensitiveExportSchema,
+  inventorySensitiveExportContract,
 } from "./index.js";
 
 const PRODUCT_ID = "0198e7ce-7685-7000-8000-000000000001";
@@ -171,21 +182,89 @@ describe("inventory review contracts", () => {
   });
 
   it("keeps the inventory transport surface read-only except its two commands", () => {
-    expect(INVENTORY_CONTRACTS.map((contract) => contract.method)).toEqual([
-      "GET",
-      "GET",
-      "GET",
-      "PUT",
-      "POST",
+    expect(
+      INVENTORY_CONTRACTS.filter((contract) => contract.method === "POST"),
+    ).toEqual([
+      inventoryAllocationPreviewContract,
+      inventoryBatchExpiryCorrectionContract,
+      inventoryBatchSafetyRunContract,
+      inventoryBatchStatusChangeContract,
+      inventorySensitiveExportContract,
     ]);
     expect(
-      INVENTORY_CONTRACTS.slice(0, 3).every(
+      INVENTORY_CONTRACTS.filter((contract) => contract.method === "GET").every(
         (contract) => contract.method === "GET",
       ),
+    ).toBe(true);
+    expect(
+      INVENTORY_CONTRACTS.some((contract) => contract.method === "PUT"),
     ).toBe(true);
   });
 
   it("keeps every risk indicator in the wire catalogue", () => {
     expect(INVENTORY_RISK_INDICATORS).toHaveLength(8);
+  });
+
+  it("keeps the eligibility enum exhaustive and expiry values date-only", () => {
+    expect(inventoryBatchSchema.shape.status.options).toEqual([
+      ...BATCH_ELIGIBILITY_STATUSES,
+    ]);
+    const batch = {
+      balance: "2",
+      batchId: BATCH_ID,
+      blockedSinceBusinessDate: null,
+      daysToExpiry: "10",
+      effectiveExpiryDate: "2026-09-20",
+      expiryAmendments: [],
+      expiryCorrected: false,
+      lotNumber: null,
+      nearExpiryDays: "90",
+      originalExpiryDate: "2026-09-20",
+      productId: PRODUCT_ID,
+      receivedAt: "2026-09-10T10:00:00.000Z",
+      status: "near-expiry",
+      statusEvents: [],
+    };
+    expect(inventoryBatchSchema.safeParse(batch).success).toBe(true);
+    expect(
+      inventoryBatchSchema.safeParse({
+        ...batch,
+        effectiveExpiryDate: "2026-09-20T00:00:00.000Z",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("bounds allocation previews and validates the review month", () => {
+    const line = { productId: PRODUCT_ID, quantity: "1" };
+    expect(
+      inventoryAllocationPreviewRequestSchema.safeParse({
+        lines: Array.from({ length: 50 }, () => line),
+      }).success,
+    ).toBe(true);
+    expect(
+      inventoryAllocationPreviewRequestSchema.safeParse({
+        lines: Array.from({ length: 51 }, () => line),
+      }).success,
+    ).toBe(false);
+    expect(
+      inventoryBatchSafetyReviewContract.request.query.parse({
+        month: "2026-09",
+      }),
+    ).toEqual({ month: "2026-09" });
+    expect(
+      inventoryBatchSafetyReviewContract.request.query.safeParse({
+        month: "2026-9",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("exposes the new batch safety routes with their intended methods", () => {
+    expect(inventoryBatchListContract.method).toBe("GET");
+    expect(inventoryBatchSafetyStatusContract.method).toBe("GET");
+    expect(inventoryBatchSafetyReviewContract.method).toBe("GET");
+    expect(inventoryAllocationPreviewContract.method).toBe("POST");
+    expect(inventoryBatchStatusChangeContract.method).toBe("POST");
+    expect(inventoryBatchExpiryCorrectionContract.method).toBe("POST");
+    expect(inventoryBatchSafetyRunContract.method).toBe("POST");
   });
 });

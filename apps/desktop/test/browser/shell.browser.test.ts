@@ -767,7 +767,7 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("heading", { name: "Configure role permissions" }),
     ).toBeVisible();
     await expect(page.locator(".permission-summary p")).toHaveText(
-      "Manage roles and permissions · Search products · Review inventory · View inventory valuation",
+      "Manage roles and permissions · Search products · Review inventory · View inventory valuation · Manage batch safety",
     );
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
@@ -1282,7 +1282,10 @@ test.describe.serial("bilingual desktop shell", () => {
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await roleList
       .getByRole("button", {
-        name: `Manager 4 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
+        name: new RegExp(
+          `^Manager \\d+ of ${IMPLEMENTED_PERMISSION_COUNT} permissions$`,
+          "u",
+        ),
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
@@ -1339,7 +1342,10 @@ test.describe.serial("bilingual desktop shell", () => {
     await page
       .getByRole("navigation", { name: "Roles" })
       .getByRole("button", {
-        name: `Manager 4 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
+        name: new RegExp(
+          `^Manager \\d+ of ${IMPLEMENTED_PERMISSION_COUNT} permissions$`,
+          "u",
+        ),
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
@@ -1383,7 +1389,10 @@ test.describe.serial("bilingual desktop shell", () => {
     await page
       .getByRole("navigation", { name: "Roles" })
       .getByRole("button", {
-        name: `Manager 4 of ${IMPLEMENTED_PERMISSION_COUNT} permissions`,
+        name: new RegExp(
+          `^Manager \\d+ of ${IMPLEMENTED_PERMISSION_COUNT} permissions$`,
+          "u",
+        ),
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });

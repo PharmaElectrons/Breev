@@ -3,6 +3,16 @@ import {
   BREEV_CSRF_VALUE,
   identityDenialSchema,
   inventoryDenialSchema,
+  inventoryAllocationPreviewContract,
+  inventoryBatchExpiryCorrectionContract,
+  inventoryBatchExpiryCorrectionPath,
+  inventoryBatchListContract,
+  inventoryBatchListPath,
+  inventoryBatchSafetyReviewContract,
+  inventoryBatchSafetyRunContract,
+  inventoryBatchSafetyStatusContract,
+  inventoryBatchStatusChangeContract,
+  inventoryBatchStatusChangePath,
   inventoryItemListContract,
   inventoryMovementHistoryContract,
   inventoryMovementHistoryPath,
@@ -13,6 +23,13 @@ import {
   inventorySensitiveExportSchema,
   licensingDenialSchema,
   type InventoryItem,
+  type InventoryAllocationPreview,
+  type InventoryAllocationPreviewRequest,
+  type InventoryBatch,
+  type InventoryBatchExpiryCorrectionRequest,
+  type InventoryBatchSafetyReview,
+  type InventoryBatchSafetyStatus,
+  type InventoryBatchStatusChangeRequest,
   type InventoryMovement,
   type InventoryReviewPreferences,
   type InventoryReviewPreferencesUpdateRequest,
@@ -68,6 +85,108 @@ export async function requestInventoryMovements(
     inventoryMovementHistoryContract.method,
     200,
     inventoryMovementHistoryContract.responses[200],
+  );
+}
+
+export async function listBatches(
+  baseUrl: string,
+  productId: string,
+): Promise<{
+  readonly batches: InventoryBatch[];
+  readonly businessDate: string;
+}> {
+  return await requestJson(
+    baseUrl,
+    inventoryBatchListPath(productId),
+    inventoryBatchListContract.method,
+    200,
+    inventoryBatchListContract.responses[200],
+  );
+}
+
+export async function previewAllocation(
+  baseUrl: string,
+  body: InventoryAllocationPreviewRequest,
+): Promise<InventoryAllocationPreview> {
+  return await requestJson(
+    baseUrl,
+    inventoryAllocationPreviewContract.path,
+    inventoryAllocationPreviewContract.method,
+    200,
+    inventoryAllocationPreviewContract.responses[200],
+    body,
+  );
+}
+
+export async function changeBatchStatus(
+  baseUrl: string,
+  batchId: string,
+  body: InventoryBatchStatusChangeRequest,
+): Promise<InventoryBatch> {
+  return await requestJson(
+    baseUrl,
+    inventoryBatchStatusChangePath(batchId),
+    inventoryBatchStatusChangeContract.method,
+    201,
+    inventoryBatchStatusChangeContract.responses[201],
+    body,
+  );
+}
+
+export async function correctBatchExpiry(
+  baseUrl: string,
+  batchId: string,
+  body: InventoryBatchExpiryCorrectionRequest,
+): Promise<InventoryBatch> {
+  return await requestJson(
+    baseUrl,
+    inventoryBatchExpiryCorrectionPath(batchId),
+    inventoryBatchExpiryCorrectionContract.method,
+    201,
+    inventoryBatchExpiryCorrectionContract.responses[201],
+    body,
+  );
+}
+
+export async function readBatchSafetyStatus(
+  baseUrl: string,
+): Promise<InventoryBatchSafetyStatus> {
+  return await requestJson(
+    baseUrl,
+    inventoryBatchSafetyStatusContract.path,
+    inventoryBatchSafetyStatusContract.method,
+    200,
+    inventoryBatchSafetyStatusContract.responses[200],
+  );
+}
+
+export async function triggerBatchSafetyRun(
+  baseUrl: string,
+): Promise<InventoryBatchSafetyStatus> {
+  return await requestJson(
+    baseUrl,
+    inventoryBatchSafetyRunContract.path,
+    inventoryBatchSafetyRunContract.method,
+    202,
+    inventoryBatchSafetyRunContract.responses[202],
+    {},
+  );
+}
+
+export async function readBatchSafetyReview(
+  baseUrl: string,
+  month?: string,
+): Promise<InventoryBatchSafetyReview> {
+  const path =
+    month === undefined
+      ? inventoryBatchSafetyReviewContract.path
+      : `${inventoryBatchSafetyReviewContract.path}?month=${encodeURIComponent(month)}`;
+  return await requestJson(
+    baseUrl,
+    path,
+    inventoryBatchSafetyReviewContract.method,
+    200,
+    inventoryBatchSafetyReviewContract.responses[200],
   );
 }
 

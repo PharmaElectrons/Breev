@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "15" as const;
-export const LOCAL_SCHEMA_VERSION = "15" as const;
+export const LOCAL_API_VERSION = "16" as const;
+export const LOCAL_SCHEMA_VERSION = "16" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -95,6 +95,7 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "devices.pair",
   "identity.roles.manage",
   "identity.users.manage",
+  "inventory.batch_safety.manage",
   "inventory.review",
   "inventory.valuation.view",
   "licensing.manage",
@@ -123,6 +124,7 @@ export const stepUpActionSchema = z.enum([
   "identity.user.password.reset",
   "identity.user.create",
   "identity.user.update",
+  "inventory.batch_expiry.correct",
   "inventory.sensitive.export",
   "licensing.licence.deactivate",
   "licensing.licence.install",
@@ -2206,15 +2208,25 @@ export const inventoryItemSchema = z.strictObject({
   stockLevels: inventoryStockLevelsSchema,
   valueFils: signedIntegerStringSchema.nullable(),
 });
+export const INVENTORY_DENIAL_CODES = [
+  "body-invalid",
+  "batch-not-found",
+  "batch-status-transition-invalid",
+  "expiry-correction-unchanged",
+  "product-not-found",
+  "idempotency-conflict",
+  "job-runtime-unavailable",
+  "regulatory-hard-block",
+  "version-conflict",
+  "owner-role-required",
+] as const;
+export const inventoryDenialCodeSchema = z.enum(INVENTORY_DENIAL_CODES);
+export const inventoryFieldErrorSchema = catalogFieldErrorSchema.extend({
+  rule: z.string().min(1).max(128).optional(),
+});
 export const inventoryDenialSchema = z.strictObject({
-  code: z.enum([
-    "body-invalid",
-    "product-not-found",
-    "idempotency-conflict",
-    "version-conflict",
-    "owner-role-required",
-  ]),
-  fieldErrors: z.array(catalogFieldErrorSchema),
+  code: inventoryDenialCodeSchema,
+  fieldErrors: z.array(inventoryFieldErrorSchema),
   requestId: z.uuidv7(),
   status: z.literal("denied"),
 });
@@ -2415,7 +2427,280 @@ export const inventorySensitiveExportContract = {
     ...inventoryCommandDenialResponses,
   },
 } as const;
+/**
+ * Batch safety is deliberately a separate contract family from the product
+ * review grid. Batches remain immutable receipt facts; these schemas expose
+ * the append-only safety facts and the server's date-based eligibility.
+ */
+export const BATCH_ELIGIBILITY_STATUSES = [
+  "eligible",
+  "near-expiry",
+  "expired",
+  "recalled",
+  "quarantined",
+  "postponed-blocked",
+] as const;
+export const batchEligibilityStatusSchema = z.enum(BATCH_ELIGIBILITY_STATUSES);
+export const BATCH_STATUS_EVENT_KINDS = [
+  "expired",
+  "recalled",
+  "quarantined",
+] as const;
+export const batchStatusEventKindSchema = z.enum(BATCH_STATUS_EVENT_KINDS);
+
+const batchSafetyUserSchema = z.strictObject({
+  displayName: z.string().min(1).max(96),
+  id: z.uuidv7(),
+});
+const positiveIntegerStringSchema = z.string().regex(/^[1-9]\d*$/u);
+const batchStatusEventSourceSchema = z.enum(["user", "daily-evaluator"]);
+
+export const inventoryBatchStatusEventSchema = z.strictObject({
+  approvalChallengeId: z.uuidv7().nullable(),
+  businessDate: z.iso.date(),
+  evidence: z.string().min(1).max(1_000).nullable(),
+  id: z.uuidv7(),
+  kind: batchStatusEventKindSchema,
+  occurredAt: z.iso.datetime(),
+  reason: z.string().min(1).max(500).nullable(),
+  source: batchStatusEventSourceSchema,
+  user: batchSafetyUserSchema.nullable(),
+});
+
+export const inventoryBatchExpiryAmendmentSchema = z.strictObject({
+  approvalChallengeId: z.uuidv7(),
+  businessDate: z.iso.date(),
+  correctedExpiryDate: z.iso.date(),
+  evidence: z.string().min(1).max(1_000),
+  id: z.uuidv7(),
+  occurredAt: z.iso.datetime(),
+  originalExpiryDate: z.iso.date().nullable(),
+  reason: z.string().min(1).max(500),
+  user: batchSafetyUserSchema,
+});
+
+export const inventoryBatchSchema = z.strictObject({
+  balance: nonNegativeIntegerStringSchema,
+  batchId: z.uuidv7(),
+  blockedSinceBusinessDate: z.iso.date().nullable(),
+  daysToExpiry: signedIntegerStringSchema.nullable(),
+  effectiveExpiryDate: z.iso.date().nullable(),
+  expiryAmendments: z.array(inventoryBatchExpiryAmendmentSchema),
+  expiryCorrected: z.boolean(),
+  lotNumber: z.string().min(1).max(120).nullable(),
+  nearExpiryDays: positiveIntegerStringSchema,
+  originalExpiryDate: z.iso.date().nullable(),
+  productId: z.uuidv7(),
+  receivedAt: z.iso.datetime(),
+  status: batchEligibilityStatusSchema,
+  statusEvents: z.array(inventoryBatchStatusEventSchema),
+});
+
+export const inventoryBatchListContract = {
+  method: "GET",
+  path: "/inventory/items/:productId/batches",
+  responses: {
+    200: z.strictObject({
+      batches: z.array(inventoryBatchSchema),
+      businessDate: z.iso.date(),
+    }),
+    ...inventoryReadDenialResponses,
+    400: inventoryDenialSchema,
+    404: inventoryDenialSchema,
+  },
+} as const;
+export const inventoryBatchListPath = (productId: string): string =>
+  `/inventory/items/${productId}/batches`;
+
+export const inventoryAllocationPreviewRequestSchema = z.strictObject({
+  lines: z
+    .array(
+      z.strictObject({
+        batchId: z.uuidv7().optional(),
+        productId: z.uuidv7(),
+        quantity: positiveIntegerStringSchema,
+      }),
+    )
+    .min(1)
+    .max(50),
+});
+export const inventoryAllocationPreviewSchema = z.strictObject({
+  allocations: z.array(
+    z.strictObject({
+      batchId: z.uuidv7(),
+      effectiveExpiryDate: z.iso.date().nullable(),
+      productId: z.uuidv7(),
+      quantity: positiveIntegerStringSchema,
+      status: z.enum(["eligible", "near-expiry"]),
+    }),
+  ),
+  blocked: z.array(
+    z.strictObject({
+      balance: nonNegativeIntegerStringSchema,
+      batchId: z.uuidv7(),
+      productId: z.uuidv7(),
+      status: z.enum([
+        "expired",
+        "recalled",
+        "quarantined",
+        "postponed-blocked",
+      ]),
+    }),
+  ),
+  businessDate: z.iso.date(),
+  shortfalls: z.array(
+    z.strictObject({
+      allocatable: nonNegativeIntegerStringSchema,
+      productId: z.uuidv7(),
+      requested: positiveIntegerStringSchema,
+    }),
+  ),
+});
+export const inventoryAllocationPreviewContract = {
+  method: "POST",
+  path: "/inventory/allocation-previews",
+  request: { body: inventoryAllocationPreviewRequestSchema },
+  responses: {
+    200: inventoryAllocationPreviewSchema,
+    ...inventoryReadDenialResponses,
+    400: inventoryDenialSchema,
+    409: inventoryDenialSchema,
+  },
+} as const;
+
+export const inventoryBatchStatusChangeRequestSchema = z.strictObject({
+  evidence: z.string().trim().min(1).max(1_000),
+  idempotencyKey: z.uuid(),
+  kind: z.enum(["recall", "quarantine"]),
+  reason: z.string().trim().min(1).max(500),
+});
+export const inventoryBatchStatusChangeContract = {
+  method: "POST",
+  path: "/inventory/batches/:batchId/status-changes",
+  request: { body: inventoryBatchStatusChangeRequestSchema },
+  responses: {
+    201: inventoryBatchSchema,
+    ...inventoryReadDenialResponses,
+    400: inventoryDenialSchema,
+    404: inventoryDenialSchema,
+    409: inventoryDenialSchema,
+  },
+} as const;
+export const inventoryBatchStatusChangePath = (batchId: string): string =>
+  `/inventory/batches/${batchId}/status-changes`;
+
+export const inventoryBatchExpiryCorrectionRequestSchema = z.strictObject({
+  challengeId: z.uuidv7(),
+  correctedExpiryDate: z.iso.date(),
+  evidence: z.string().trim().min(1).max(1_000),
+  idempotencyKey: z.uuid(),
+  reason: z.string().trim().min(1).max(500),
+});
+export const inventoryBatchExpiryCorrectionContract = {
+  method: "POST",
+  path: "/inventory/batches/:batchId/expiry-corrections",
+  request: { body: inventoryBatchExpiryCorrectionRequestSchema },
+  responses: {
+    201: inventoryBatchSchema,
+    ...inventoryReadDenialResponses,
+    400: inventoryDenialSchema,
+    404: inventoryDenialSchema,
+    409: inventoryDenialSchema,
+  },
+} as const;
+export const inventoryBatchExpiryCorrectionPath = (batchId: string): string =>
+  `/inventory/batches/${batchId}/expiry-corrections`;
+
+const inventorySafetyThresholdSchema = z.strictObject({
+  class: z.enum([
+    "general-item",
+    "general-item-cold-chain",
+    "medication",
+    "medication-cold-chain",
+  ]),
+  expiryRequired: z.boolean(),
+  lotRequired: z.boolean(),
+  nearExpiryDays: positiveIntegerStringSchema,
+});
+export const inventoryBatchSafetyStatusSchema = z.strictObject({
+  businessTimeZone: z.string().min(1).max(64),
+  jobRuntime: z.enum(["available", "unavailable"]),
+  lastCompletedBusinessDate: z.iso.date().nullable(),
+  missedBusinessDates: z.array(z.iso.date()),
+  scheduled: z.boolean(),
+  state: z.enum(["current", "behind", "never-run", "time-zone-invalid"]),
+  thresholds: z.strictObject({
+    classes: z.array(inventorySafetyThresholdSchema),
+    pendingGate: z.literal("G-02"),
+  }),
+  todayBusinessDate: z.iso.date(),
+});
+export const inventoryBatchSafetyStatusContract = {
+  method: "GET",
+  path: "/inventory/batch-safety/status",
+  responses: {
+    200: inventoryBatchSafetyStatusSchema,
+    ...inventoryReadDenialResponses,
+  },
+} as const;
+export const inventoryBatchSafetyRunContract = {
+  method: "POST",
+  path: "/inventory/batch-safety/runs",
+  request: { body: z.strictObject({}) },
+  responses: {
+    202: inventoryBatchSafetyStatusSchema,
+    ...inventoryReadDenialResponses,
+    503: inventoryDenialSchema,
+  },
+} as const;
+
+const inventoryBatchReviewSchema = inventoryBatchSchema.omit({
+  expiryAmendments: true,
+  statusEvents: true,
+});
+export const inventoryBatchSafetyReviewContract = {
+  method: "GET",
+  path: "/inventory/batch-safety/review",
+  request: {
+    query: z.strictObject({
+      month: z
+        .string()
+        .regex(/^\d{4}-(?:0[1-9]|1[0-2])$/u)
+        .optional(),
+    }),
+  },
+  responses: {
+    200: z.strictObject({
+      businessDate: z.iso.date(),
+      fields: z.strictObject({ valuation: z.enum(["granted", "denied"]) }),
+      month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/u),
+      rows: z.array(
+        z.strictObject({
+          batch: inventoryBatchReviewSchema,
+          carryingAmountFils: signedIntegerStringSchema.nullable(),
+          daysBlocked: nonNegativeIntegerStringSchema,
+          detectedOnBusinessDate: z.iso.date(),
+          productDisplayName: z.string().min(1).max(726),
+        }),
+      ),
+      runs: z.strictObject({
+        completedBusinessDates: z.array(z.iso.date()),
+        missedBusinessDates: z.array(z.iso.date()),
+      }),
+    }),
+    ...inventoryReadDenialResponses,
+    400: inventoryDenialSchema,
+  },
+} as const;
+
 export const INVENTORY_CONTRACTS = [
+  inventoryAllocationPreviewContract,
+  inventoryBatchExpiryCorrectionContract,
+  inventoryBatchListContract,
+  inventoryBatchSafetyReviewContract,
+  inventoryBatchSafetyRunContract,
+  inventoryBatchSafetyStatusContract,
+  inventoryBatchStatusChangeContract,
   inventoryItemListContract,
   inventoryMovementHistoryContract,
   inventoryReviewPreferencesReadContract,
@@ -4059,6 +4344,35 @@ export type InventorySensitiveExportRequest = z.infer<
 export type InventorySensitiveExport = z.infer<
   typeof inventorySensitiveExportSchema
 >;
+export type BatchEligibilityStatus = z.infer<
+  typeof batchEligibilityStatusSchema
+>;
+export type InventoryBatchStatusEvent = z.infer<
+  typeof inventoryBatchStatusEventSchema
+>;
+export type InventoryBatchExpiryAmendment = z.infer<
+  typeof inventoryBatchExpiryAmendmentSchema
+>;
+export type InventoryBatch = z.infer<typeof inventoryBatchSchema>;
+export type InventoryAllocationPreviewRequest = z.infer<
+  typeof inventoryAllocationPreviewRequestSchema
+>;
+export type InventoryAllocationPreview = z.infer<
+  typeof inventoryAllocationPreviewSchema
+>;
+export type InventoryBatchStatusChangeRequest = z.infer<
+  typeof inventoryBatchStatusChangeRequestSchema
+>;
+export type InventoryBatchExpiryCorrectionRequest = z.infer<
+  typeof inventoryBatchExpiryCorrectionRequestSchema
+>;
+export type InventoryBatchSafetyStatus = z.infer<
+  typeof inventoryBatchSafetyStatusSchema
+>;
+export type InventoryBatchSafetyReview = z.infer<
+  (typeof inventoryBatchSafetyReviewContract.responses)[200]
+>;
+export type InventoryDenialCode = z.infer<typeof inventoryDenialCodeSchema>;
 export type InventoryDenial = z.infer<typeof inventoryDenialSchema>;
 export type ProductUnitInterface = z.infer<typeof productUnitInterfaceSchema>;
 export type ProductPackageUnit = z.infer<typeof productPackageUnitSchema>;

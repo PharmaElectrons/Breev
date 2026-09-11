@@ -38,8 +38,10 @@ describe("inventory export item view", () => {
         {
           balance: 12n,
           batchId: BATCH_ID,
+          effectiveExpiryDate: "2027-01-01",
           expiryDate: "2027-01-01",
           lotNumber: "LOT-1",
+          status: "eligible",
         },
       ],
       earliestExpiry: "2027-01-01",
