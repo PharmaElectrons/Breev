@@ -9,6 +9,8 @@ import {
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useCommittedFocus } from "./committed-focus";
+
 import {
   InventoryApiDenied,
   exportInventorySensitiveData,
@@ -114,15 +116,17 @@ function InventoryScreen({
   const [exportStatus, setExportStatus] = useState<
     "cancelled" | "failed" | "idle" | "saved"
   >("idle");
-  const [pendingSettingsFocus, setPendingSettingsFocus] = useState(false);
   const settingsToggleRef = useRef<HTMLElement>(null);
+  const requestCommittedFocus = useCommittedFocus();
   const latestPreferenceRevisionRef = useRef(preferences.revision);
+  const latestPreferenceColumnsRef = useRef(preferences.columns);
   const preferenceSaveQueueRef = useRef<ReturnType<
     typeof createInventoryPreferenceSaveQueue
   > | null>(null);
   if (preferenceSaveQueueRef.current === null) {
     preferenceSaveQueueRef.current = createInventoryPreferenceSaveQueue(
       latestPreferenceRevisionRef,
+      latestPreferenceColumnsRef,
       (request) => updateInventoryReviewPreferences(baseUrl, request),
       () => requestInventoryReviewPreferences(baseUrl),
       setPreferences,
@@ -147,6 +151,7 @@ function InventoryScreen({
       setItems(result.items);
       setValuation(result.fields.valuation);
       setSafetyStatus(nextSafetyStatus);
+      latestPreferenceColumnsRef.current = savedPreferences.columns;
       latestPreferenceRevisionRef.current = savedPreferences.revision;
       setPreferences(savedPreferences);
     } catch (caught) {
@@ -184,12 +189,6 @@ function InventoryScreen({
     [availableFields, preferences.columns],
   );
 
-  useEffect(() => {
-    if (!pendingSettingsFocus) return;
-    settingsToggleRef.current?.focus();
-    setPendingSettingsFocus(false);
-  }, [pendingSettingsFocus, visibleFields]);
-
   const sortedItems = useMemo(
     () =>
       [...(items ?? [])].sort((left, right) => {
@@ -221,15 +220,18 @@ function InventoryScreen({
       activeTableColumn !== null &&
       activeTableColumn !== undefined
     ) {
-      setPendingSettingsFocus(true);
+      // The focused column leaves the DOM in this same commit, so the
+      // settings toggle takes focus in that commit rather than a frame later.
+      requestCommittedFocus(() => settingsToggleRef.current);
     }
-    const columns = preferences.columns.map((column) =>
-      column.field === field ? { ...column, visible } : column,
-    );
-    setPreferences((previous) => ({ ...previous, columns }));
+    setPreferences((previous) => ({
+      ...previous,
+      columns: previous.columns.map((column) =>
+        column.field === field ? { ...column, visible } : column,
+      ),
+    }));
     try {
-      const saved = await preferenceSaveQueueRef.current!.enqueue(columns);
-      setPreferences(saved);
+      await preferenceSaveQueueRef.current!.enqueue(field, visible);
     } catch (caught) {
       setError(copy.reviewUnavailable);
       if (caught instanceof InventoryApiDenied) setDenial(caught.denial);

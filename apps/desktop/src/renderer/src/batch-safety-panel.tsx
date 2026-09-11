@@ -7,6 +7,8 @@ import type {
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useCommittedFocus } from "./committed-focus";
+
 import {
   changeBatchStatus,
   correctBatchExpiry,
@@ -60,10 +62,7 @@ export function BatchSafetyPanel({
   >(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [focusRequest, setFocusRequest] = useState<{
-    readonly batchId: string;
-    readonly originId: string;
-  } | null>(null);
+  const requestCommittedFocus = useCommittedFocus();
 
   const canManage =
     identity?.state === "authenticated" &&
@@ -122,23 +121,16 @@ export function BatchSafetyPanel({
     const originId = dialog?.originId;
     const batchId = dialog?.batch.batchId;
     setDialog(null);
-    if (originId !== undefined && batchId !== undefined) {
-      setFocusRequest({ batchId, originId });
-    }
+    if (originId === undefined || batchId === undefined) return;
+    // The target resolves at commit time: a committed recall or quarantine
+    // removes its own button, so focus falls back to the row's correction
+    // control, which always stays.
+    requestCommittedFocus(
+      () =>
+        document.getElementById(originId) ??
+        document.getElementById("batch-" + batchId + "-correction"),
+    );
   }
-
-  // Focus returns only after React has committed the updated row: a
-  // committed recall or quarantine removes its own button, so the fallback
-  // is the row's correction control, which always stays.
-  useEffect(() => {
-    if (focusRequest === null) return;
-    const origin = document.getElementById(focusRequest.originId);
-    const target =
-      origin ??
-      document.getElementById("batch-" + focusRequest.batchId + "-correction");
-    target?.focus();
-    setFocusRequest(null);
-  }, [focusRequest, batches]);
 
   async function submitStatusChange(
     kind: "recall" | "quarantine",
@@ -190,9 +182,9 @@ export function BatchSafetyPanel({
   useEffect(() => {
     if (stepUp.pendingFocusId === null) return;
     const focusId = stepUp.pendingFocusId;
-    queueMicrotask(() => document.getElementById(focusId)?.focus());
+    requestCommittedFocus(() => document.getElementById(focusId));
     stepUp.setPendingFocusId(null);
-  }, [stepUp]);
+  }, [requestCommittedFocus, stepUp]);
 
   async function submitCorrection(
     correctedExpiryDate: string,

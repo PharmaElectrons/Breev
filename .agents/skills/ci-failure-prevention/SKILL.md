@@ -199,6 +199,34 @@ pnpm --filter @breev/desktop exec playwright test --config playwright.config.ts
   3. Add the exact method name to the expected keys array in `apps/desktop/test/desktop.smoke.test.ts`.
   4. Run `pnpm package:desktop && pnpm test:smoke`.
 
+### Pitfall 8: Renderer Readiness — Deferred Focus and Raw DOM Queries
+- **Context:** Headless Chromium on the CI runner is slower than a workstation, so every window between "the view is visible" and "the view is really ready" is wide enough for the next Playwright action to fall into it.
+- **Trap 1 (application):** Restoring or moving focus with `requestAnimationFrame`, `queueMicrotask`, or `setTimeout` after a state change. The new view renders and is actionable a frame before the callback runs, so a keystroke lands on the previously focused control and the callback then moves focus a second time. The purchasing review's "Back to original invoice" restored focus this way and the next `Enter` opened the wrong control on CI.
+- **Trap 2 (application):** Applying a superseded async response to state. Two serialized preference saves resolved in order, but the first response overwrote the optimistic state of the second toggle, so the Value column vanished for one render after the user had shown it again.
+- **Trap 3 (test):** `page.evaluate` with `document.querySelector` to find controls, or `locator.focus()` followed directly by `page.keyboard.press()`. Neither waits for anything; both observe whatever transient render is on screen.
+- **Do This:**
+  ```ts
+  // Application: focus commits with the view it belongs to.
+  const requestCommittedFocus = useCommittedFocus(); // src/renderer/src/committed-focus.ts
+  setCorrection(null);
+  requestCommittedFocus(() => dialogRef.current?.querySelector('[data-review-focus="return-1"]'));
+
+  // Application: ignore a response that a later request has superseded.
+  if (sequence === latestEnqueuedSequence) onPreferencesChanged(saved);
+
+  // Test: synchronize on the committed state, then act.
+  await expect(opener).toBeFocused();
+  await pressKeyOnFocused(page, returnLink, "Enter"); // test/browser/focus.ts
+  await valueOption.dispatchEvent("click"); // a locator waits for the element
+  ```
+- **Don't Do This:**
+  ```ts
+  window.requestAnimationFrame(() => opener?.focus()); // view is actionable before this runs
+  setPreferences(await save(columns)); // may be older than the state on screen
+  await page.evaluate(() => document.querySelector("th button")?.focus()); // no waiting at all
+  await link.focus(); await page.keyboard.press("Enter"); // focus may still be moving
+  ```
+
 ---
 
 ## 3. Diagnostics & Triage Flowchart for CI Failures
@@ -252,3 +280,4 @@ The following rules must be maintained in repository engineering agreements:
 - **Cross-Platform File Operations:** File flush operations (`fsyncSync`) must open descriptors with `"r+"` for Win32 compatibility. Assertions on POSIX file mode bits (`mode & 0o077`) must be guarded by `process.platform !== "win32"`.
 - **Electron Bundling Safety:** Every runtime dependency imported in Main or Preload must be bundled into `app.asar`. Preload and Main bundles must satisfy `desktop.smoke.test.ts` ASAR import validation.
 - **Non-Blocking Headless UI:** All desktop error handling must use asynchronous dialogs. Synchronous native dialogs are strictly prohibited in the Main process.
+- **Renderer Readiness Contract:** Focus that a view depends on is committed with that view through `useCommittedFocus` (`useLayoutEffect`), never deferred to a frame, microtask, or timer; a response that a later request superseded is never applied to state. Browser tests synchronize on committed state with auto-waiting locators and `toBeFocused()` (`test/browser/focus.ts`), never with `page.evaluate` DOM queries, sleeps, or a key press straight after `locator.focus()`.
