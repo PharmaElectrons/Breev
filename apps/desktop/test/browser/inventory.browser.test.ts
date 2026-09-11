@@ -366,7 +366,10 @@ test.describe.serial("read-only inventory review", () => {
     await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
     api = startApi(Number(new URL(apiOrigin).port));
     await waitForHealth(apiOrigin, "healthy", api);
-    await page.getByRole("button", { name: "Check now" }).click();
+    // The shell also polls health on its own; whichever recovers first, the
+    // review must come back without any fallback surface.
+    const checkNow = page.getByRole("button", { name: "Check now" });
+    if (await checkNow.isVisible()) await checkNow.click();
     await expect(page.locator("table")).toBeVisible();
 
     await expect(
