@@ -117,12 +117,14 @@ function InventoryScreen({
   const [pendingSettingsFocus, setPendingSettingsFocus] = useState(false);
   const settingsToggleRef = useRef<HTMLElement>(null);
   const latestPreferenceRevisionRef = useRef(preferences.revision);
+  const latestPreferenceColumnsRef = useRef(preferences.columns);
   const preferenceSaveQueueRef = useRef<ReturnType<
     typeof createInventoryPreferenceSaveQueue
   > | null>(null);
   if (preferenceSaveQueueRef.current === null) {
     preferenceSaveQueueRef.current = createInventoryPreferenceSaveQueue(
       latestPreferenceRevisionRef,
+      latestPreferenceColumnsRef,
       (request) => updateInventoryReviewPreferences(baseUrl, request),
       () => requestInventoryReviewPreferences(baseUrl),
       setPreferences,
@@ -147,6 +149,7 @@ function InventoryScreen({
       setItems(result.items);
       setValuation(result.fields.valuation);
       setSafetyStatus(nextSafetyStatus);
+      latestPreferenceColumnsRef.current = savedPreferences.columns;
       latestPreferenceRevisionRef.current = savedPreferences.revision;
       setPreferences(savedPreferences);
     } catch (caught) {
@@ -223,13 +226,14 @@ function InventoryScreen({
     ) {
       setPendingSettingsFocus(true);
     }
-    const columns = preferences.columns.map((column) =>
-      column.field === field ? { ...column, visible } : column,
-    );
-    setPreferences((previous) => ({ ...previous, columns }));
+    setPreferences((previous) => ({
+      ...previous,
+      columns: previous.columns.map((column) =>
+        column.field === field ? { ...column, visible } : column,
+      ),
+    }));
     try {
-      const saved = await preferenceSaveQueueRef.current!.enqueue(columns);
-      setPreferences(saved);
+      await preferenceSaveQueueRef.current!.enqueue(field, visible);
     } catch (caught) {
       setError(copy.reviewUnavailable);
       if (caught instanceof InventoryApiDenied) setDenial(caught.denial);
