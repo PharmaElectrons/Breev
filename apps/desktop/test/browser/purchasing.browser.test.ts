@@ -24,6 +24,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
+import { pressKeyOnFocused } from "./focus.js";
 import { Pool } from "pg";
 
 import {
@@ -973,7 +974,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.goto(`${renderer.origin}#/purchases`);
     const opener = page.getByRole("button", { name: "Posted invoices" });
     await opener.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, opener, "Enter");
 
     const dialog = page.getByRole("dialog", {
       name: "Posted purchase invoices",
@@ -999,7 +1000,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       .getByRole("button", { name: /Open invoice P/u })
       .first();
     await openNewest.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, openNewest, "Enter");
     const newestHeading = await dialog
       .locator("#posted-detail-title")
       .textContent();
@@ -1025,20 +1026,20 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         .locator("#posted-detail-title")
         .textContent();
       await next.focus();
-      await page.keyboard.press("Enter");
+      await pressKeyOnFocused(page, next, "Enter");
       await expect(dialog.locator("#posted-detail-title")).not.toHaveText(
         currentNumber ?? "",
       );
     }
     await expect(next).toHaveAttribute("aria-disabled", "true");
     await next.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, next, "Enter");
     await expect(
       dialog.getByText("This is the last posted purchase invoice."),
     ).toBeAttached();
     const previous = dialog.getByRole("button", { name: /Previous/u });
     await previous.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, previous, "Enter");
     await expect(dialog.locator("#posted-detail-title")).not.toHaveText(
       newestHeading ?? "",
     );
@@ -1047,7 +1048,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: "Open current supplier record",
     });
     await supplierDrilldown.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, supplierDrilldown, "Enter");
     await expect(
       dialog.getByRole("heading", { name: "Al-Nahrain Medical" }),
     ).toBeVisible();
@@ -1055,7 +1056,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: "Back to invoice",
     });
     await supplierBack.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, supplierBack, "Enter");
     await expect(supplierDrilldown).toBeFocused();
 
     const itemDrilldown = dialog.getByRole("button", {
@@ -1065,7 +1066,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       ),
     });
     await itemDrilldown.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, itemDrilldown, "Enter");
     await expect(dialog.getByText("Current master record")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(itemDrilldown).toBeFocused();
@@ -1074,12 +1075,12 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: "Back to results",
     });
     await backToResults.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, backToResults, "Enter");
     const adjustmentInvoice = dialog
       .getByRole("button", { name: /Open invoice P/u })
       .first();
     await adjustmentInvoice.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, adjustmentInvoice, "Enter");
     await expect(dialog).toContainText("BROWSER-REVIEW");
     await dialog.screenshot({
       animations: "disabled",
@@ -1091,7 +1092,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     const adjustment = dialog.getByRole("button", { name: "Edit Invoice" });
     await adjustment.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, adjustment, "Enter");
     await expect(page).toHaveURL(/\/adjustment$/u);
     await expect(
       dialog.getByRole("heading", {
@@ -1151,7 +1152,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: /Purchase return/iu,
     });
     await purchaseReturn.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, purchaseReturn, "Enter");
     await expect(page).toHaveURL(/\/return$/u);
     await expect(
       dialog.getByRole("heading", {
@@ -1193,10 +1194,14 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await dialog
       .getByRole("button", { name: "Back to original invoice" })
       .click();
+    // Regression: leaving the return stage restores focus to the correction
+    // opener in the same commit that renders the invoice again, so the next
+    // keystroke can never land on a stale control.
+    await expect(purchaseReturn).toBeFocused();
     const returnLink = dialog.getByRole("button", { name: /PR\d+\//u });
     await expect(returnLink).toBeVisible();
     await returnLink.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, returnLink, "Enter");
     await expect(dialog.locator("#posted-return-title")).toContainText("PR");
     await expect(dialog).toContainText("Original invoice");
     await dialog.getByRole("button", { name: "Back to invoice" }).click();

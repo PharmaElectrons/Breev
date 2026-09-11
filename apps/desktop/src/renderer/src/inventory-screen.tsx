@@ -9,6 +9,8 @@ import {
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useCommittedFocus } from "./committed-focus";
+
 import {
   InventoryApiDenied,
   exportInventorySensitiveData,
@@ -114,8 +116,8 @@ function InventoryScreen({
   const [exportStatus, setExportStatus] = useState<
     "cancelled" | "failed" | "idle" | "saved"
   >("idle");
-  const [pendingSettingsFocus, setPendingSettingsFocus] = useState(false);
   const settingsToggleRef = useRef<HTMLElement>(null);
+  const requestCommittedFocus = useCommittedFocus();
   const latestPreferenceRevisionRef = useRef(preferences.revision);
   const latestPreferenceColumnsRef = useRef(preferences.columns);
   const preferenceSaveQueueRef = useRef<ReturnType<
@@ -187,12 +189,6 @@ function InventoryScreen({
     [availableFields, preferences.columns],
   );
 
-  useEffect(() => {
-    if (!pendingSettingsFocus) return;
-    settingsToggleRef.current?.focus();
-    setPendingSettingsFocus(false);
-  }, [pendingSettingsFocus, visibleFields]);
-
   const sortedItems = useMemo(
     () =>
       [...(items ?? [])].sort((left, right) => {
@@ -224,7 +220,9 @@ function InventoryScreen({
       activeTableColumn !== null &&
       activeTableColumn !== undefined
     ) {
-      setPendingSettingsFocus(true);
+      // The focused column leaves the DOM in this same commit, so the
+      // settings toggle takes focus in that commit rather than a frame later.
+      requestCommittedFocus(() => settingsToggleRef.current);
     }
     setPreferences((previous) => ({
       ...previous,

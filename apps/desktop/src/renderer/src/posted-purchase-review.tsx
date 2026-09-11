@@ -9,6 +9,7 @@ import type {
   Supplier,
 } from "@breev/contracts/local-rest";
 import { CatalogApiDenied, requestProduct } from "./catalog-api";
+import { useCommittedFocus } from "./committed-focus";
 import { IdentityApiDenied } from "./identity-api";
 import {
   PurchasingApiDenied,
@@ -50,6 +51,7 @@ export function PostedPurchaseReview({
   const correctionOpenerRef = useRef<HTMLElement | null>(null);
   const postedAdjustmentOpenerRef = useRef<HTMLElement | null>(null);
   const postedReturnOpenerRef = useRef<HTMLElement | null>(null);
+  const requestCommittedFocus = useCommittedFocus();
   const [list, setList] = useState<PurchasePostedListResponse | null>(null);
   const [detail, setDetail] = useState<PurchasePostedDetail | null>(null);
   const [postedAdjustment, setPostedAdjustment] =
@@ -285,14 +287,16 @@ export function PostedPurchaseReview({
     focusAfterRender(opener);
   }
 
+  // Focus returns to the opener in the same commit that renders the view it
+  // belongs to, so the restored view is never actionable with stale focus.
   function focusAfterRender(opener: HTMLElement | null): void {
     const focusKey = opener?.dataset.reviewFocus;
     if (focusKey === undefined) return;
-    window.requestAnimationFrame(() => {
-      dialogRef.current
-        ?.querySelector<HTMLElement>(`[data-review-focus="${focusKey}"]`)
-        ?.focus();
-    });
+    requestCommittedFocus(() =>
+      dialogRef.current?.querySelector<HTMLElement>(
+        `[data-review-focus="${focusKey}"]`,
+      ),
+    );
   }
 
   function handleDialogClose(): void {

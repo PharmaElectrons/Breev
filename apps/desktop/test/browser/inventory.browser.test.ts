@@ -51,6 +51,7 @@ import {
   waitForHealth,
 } from "../local-api-process.js";
 import { evidencePath } from "./evidence-path.js";
+import { pressKeyOnFocused } from "./focus.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_USERNAME = "inventory.browser.owner";
@@ -162,9 +163,9 @@ test.describe.serial("read-only inventory review", () => {
     });
     const balanceButton = balanceHeader.getByRole("button");
     await balanceButton.focus();
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, balanceButton, "Enter");
     await expect(balanceHeader).toHaveAttribute("aria-sort", "ascending");
-    await page.keyboard.press("Enter");
+    await pressKeyOnFocused(page, balanceButton, "Enter");
     await expect(balanceHeader).toHaveAttribute("aria-sort", "descending");
     await expect(
       page
@@ -180,50 +181,39 @@ test.describe.serial("read-only inventory review", () => {
 
     await page.getByText("Column settings", { exact: true }).click();
     const valueCheckbox = page.getByRole("checkbox", { name: "Value" });
+    const valueHeader = page.getByRole("columnheader", { name: "Value" });
     await valueCheckbox.focus();
-    await page.keyboard.press("Space");
-    await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(
-      0,
-    );
+    await pressKeyOnFocused(page, valueCheckbox, "Space");
+    await expect(valueHeader).toHaveCount(0);
     await expect(valueCheckbox).toBeFocused();
 
-    await valueCheckbox.press("Space");
-    await expect(
-      page.getByRole("columnheader", { name: "Value" }),
-    ).toBeVisible();
-    await page.evaluate(`(() => {
-      const valueHeaderButton = document.querySelector(
-        "th[data-column-field='value'] button",
-      );
-      const checkbox = document.querySelector(
-        "label[data-column-field='value'] input",
-      );
-      if (valueHeaderButton === null || checkbox === null) {
-        throw new Error("Value column controls are missing");
-      }
-      valueHeaderButton.focus();
-      checkbox.click();
-    })()`);
-    await expect(page.getByRole("columnheader", { name: "Value" })).toHaveCount(
-      0,
+    await pressKeyOnFocused(page, valueCheckbox, "Space");
+    await expect(valueHeader).toBeVisible();
+    // Regression: the first (hide) save resolves after the second (show)
+    // toggle. Its stale response must not move the grid back. Wait until the
+    // server holds the final "visible" state, then require the column to
+    // still be there.
+    await expect
+      .poll(async () => await valueColumnVisibleOnServer())
+      .toBe(true);
+    await expect(valueHeader).toBeVisible();
+
+    // Hiding the column while focus sits inside it hands focus to the
+    // settings toggle in the same commit that removes the column. A
+    // dispatched click, unlike a real one, leaves focus on the header button.
+    const valueHeaderButton = page.locator(
+      "th[data-column-field='value'] button",
     );
+    const valueOption = page.locator("label[data-column-field='value'] input");
+    await valueHeaderButton.focus();
+    await expect(valueHeaderButton).toBeFocused();
+    await valueOption.dispatchEvent("click");
+    await expect(valueHeader).toHaveCount(0);
     await expect(
       page.getByText("Column settings", { exact: true }),
     ).toBeFocused();
     await expect
-      .poll(async () => {
-        const current = await apiRequest(
-          "GET",
-          "/inventory/review-preferences",
-        );
-        if (current.status !== 200) return false;
-        const columns = (
-          current.body as {
-            columns: Array<{ field: string; visible: boolean }>;
-          }
-        ).columns;
-        return columns.find((column) => column.field === "value")?.visible;
-      })
+      .poll(async () => await valueColumnVisibleOnServer())
       .toBe(false);
     await restorePreferences();
   });
@@ -363,13 +353,21 @@ test.describe.serial("read-only inventory review", () => {
     await expect(
       page.getByRole("heading", { name: "Main unavailable" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
+    const checkNow = page.getByRole("button", { name: "Check now" });
+    await expect(checkNow).toBeVisible();
+    // A manual check while the Main is still down has one deterministic
+    // outcome: the shell stays unavailable and the control returns to its
+    // idle label once the check has finished.
+    await checkNow.click();
+    await expect(
+      page.getByRole("heading", { name: "Main unavailable" }),
+    ).toBeVisible();
+    await expect(checkNow).toBeEnabled();
     api = startApi(Number(new URL(apiOrigin).port));
     await waitForHealth(apiOrigin, "healthy", api);
-    // The shell also polls health on its own; whichever recovers first, the
-    // review must come back without any fallback surface.
-    const checkNow = page.getByRole("button", { name: "Check now" });
-    if (await checkNow.isVisible()) await checkNow.click();
+    // The shell polls health every second and recovers on its own, replacing
+    // the unavailable surface. The ready state to synchronize on is the
+    // review itself, never the control the recovery removes.
     await expect(page.locator("table")).toBeVisible();
 
     await expect(
@@ -1013,6 +1011,15 @@ function medicationRequest(): ProductCreateRequest {
     stateColours: { coldStorageRequired: false, manual: null },
     stockLevels: { maximumLevel: "10", minimumLevel: "5", reorderPoint: "4" },
   };
+}
+
+async function valueColumnVisibleOnServer(): Promise<boolean | undefined> {
+  const current = await apiRequest("GET", "/inventory/review-preferences");
+  if (current.status !== 200) return undefined;
+  const columns = (
+    current.body as { columns: Array<{ field: string; visible: boolean }> }
+  ).columns;
+  return columns.find((column) => column.field === "value")?.visible;
 }
 
 async function restorePreferences(): Promise<void> {
