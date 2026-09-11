@@ -31,7 +31,9 @@ permission) × 4 Step-Up states × 3 hard-blocked batches. Every named
 allocation attempt is refused (409 `regulatory-hard-block`, or 403 for roles
 without `inventory.review`), every unnamed preview omits the blocked batch,
 and the in-process allocation and validation operations refuse as well. An
-approved correction challenge stays unconsumed.
+approved correction challenge stays unconsumed. The same run asserts that
+the monthly review lists exactly the expired, quarantined, and recalled
+batches with their detection dates and nothing eligible or near-expiry.
 
 ## Renderer
 

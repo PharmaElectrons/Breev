@@ -319,6 +319,40 @@ describe.sequential("inventory batch-safety refusal matrix", () => {
     );
   }, 120_000);
 
+  it("lists every expired and unresolved recalled or quarantined batch in the monthly review", async () => {
+    await login({ password: OWNER_PASSWORD, username: OWNER_USERNAME });
+    const review = await request("GET", "/inventory/batch-safety/review");
+    expect(review.status, diagnostics(review)).toBe(200);
+    const body = review.body as {
+      readonly businessDate: string;
+      readonly fields: { readonly valuation: "granted" | "denied" };
+      readonly month: string;
+      readonly rows: ReadonlyArray<{
+        readonly batch: { readonly batchId: string; readonly status: string };
+        readonly carryingAmountFils: string | null;
+        readonly daysBlocked: string;
+        readonly detectedOnBusinessDate: string;
+      }>;
+      readonly runs: { readonly completedBusinessDates: readonly string[] };
+    };
+    expect(body.month).toBe(today.slice(0, 7));
+    expect(body.fields.valuation).toBe("granted");
+    expect(body.runs.completedBusinessDates).toContain(today);
+    // Exactly the three hard-blocked batches, nothing eligible or near-expiry.
+    expect(
+      body.rows
+        .map((row) => [row.batch.batchId, row.batch.status] as const)
+        .sort(),
+    ).toEqual(
+      targets.map((target) => [target.batchId, target.status] as const).sort(),
+    );
+    for (const row of body.rows) {
+      expect(row.detectedOnBusinessDate).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+      expect(row.daysBlocked).toMatch(/^\d+$/u);
+      expect(row.carryingAmountFils).toMatch(/^-?\d+$/u);
+    }
+  });
+
   it("keeps safety source identifiers free of bypass-shaped escape hatches", async () => {
     const directory = path.resolve(import.meta.dirname);
     const files = (await readdir(directory)).filter(

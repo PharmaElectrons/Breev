@@ -97,9 +97,10 @@ custom-all-permissions	approved-correction	recalled	409:regulatory-hard-block	20
 custom-all-permissions	approved-export	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
 custom-all-permissions	approved-export	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
 custom-all-permissions	approved-export	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
- ✓ src/inventory/inventory-safety-no-override.integration.test.ts > inventory batch-safety refusal matrix > refuses every hard-blocked batch for every role and Step-Up state 6371ms
+ ✓ src/inventory/inventory-safety-no-override.integration.test.ts > inventory batch-safety refusal matrix > refuses every hard-blocked batch for every role and Step-Up state 6199ms
+ ✓ src/inventory/inventory-safety-no-override.integration.test.ts > inventory batch-safety refusal matrix > lists every expired and unresolved recalled or quarantined batch in the monthly review 58ms
  ✓ src/inventory/inventory-safety-no-override.integration.test.ts > inventory batch-safety refusal matrix > keeps safety source identifiers free of bypass-shaped escape hatches 3ms
  Test Files  1 passed (1)
-      Tests  2 passed (2)
-   Start at  17:45:39
-   Duration  30.06s (transform 162ms, setup 0ms, import 511ms, tests 29.44s, environment 0ms)
+      Tests  3 passed (3)
+   Start at  21:15:32
+   Duration  31.29s (transform 165ms, setup 0ms, import 527ms, tests 30.66s, environment 0ms)
