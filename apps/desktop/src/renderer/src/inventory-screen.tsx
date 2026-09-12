@@ -71,12 +71,16 @@ export function InventoryRouteView({
   const canApproveCount =
     identity?.state === "authenticated" &&
     identity.allowedPermissions.includes("inventory.counts.approve");
+  const canReviewInventory =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("inventory.review");
   if (route.kind === "count") {
     return (
       <CountSessionScreen
         baseUrl={baseUrl}
         canApprove={canApproveCount}
         canRecord={canRecordCount}
+        canReviewInventory={canReviewInventory}
         checkNow={checkNow}
         mode="start"
       />
@@ -88,6 +92,7 @@ export function InventoryRouteView({
         baseUrl={baseUrl}
         canApprove={canApproveCount}
         canRecord={canRecordCount}
+        canReviewInventory={canReviewInventory}
         checkNow={checkNow}
         mode="loop"
         sessionId={route.sessionId}
@@ -117,15 +122,13 @@ export function InventoryRouteView({
   if (!canRecordCount && !canApproveCount) {
     return <InventoryScreen baseUrl={baseUrl} checkNow={checkNow} />;
   }
-  const canReviewInventory =
-    identity?.state === "authenticated" &&
-    identity.allowedPermissions.includes("inventory.review");
   if (!canReviewInventory) {
     return (
       <CountSessionScreen
         baseUrl={baseUrl}
         canApprove={canApproveCount}
         canRecord={canRecordCount}
+        canReviewInventory={canReviewInventory}
         checkNow={checkNow}
         mode="start"
       />

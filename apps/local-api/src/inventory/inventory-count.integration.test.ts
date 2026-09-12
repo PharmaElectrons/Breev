@@ -168,7 +168,13 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     );
     expect(secondApplied.session.number).toEqual(applied.session.number);
 
-    const multiBatch = await createStockedProduct("Count FEFO", [1, 1]);
+    // The later-received batch expires first, so FEFO must deplete it first
+    // and receipt order must not decide the allocation.
+    const multiBatch = await createStockedProduct(
+      "Count FEFO",
+      [1, 1],
+      ["2029-12-31", "2027-06-30"],
+    );
     const multiRecorded = await recordLine(
       secondApplied.session,
       multiBatch.product.id,
@@ -183,6 +189,22 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     );
     expect(multiApplied.line.application?.variance).toBe("-6");
     expect(multiApplied.line.application?.movementIds).toHaveLength(2);
+    const fefoMovements = await administrator.query<{
+      batch_id: string;
+      quantity: string;
+    }>(
+      `select movement.batch_id, movement.quantity::text
+       from inventory_movements movement
+       where movement.pharmacy_id = $1
+         and movement.source_document_type = 'count-session'
+         and movement.product_id = $2
+       order by movement.quantity`,
+      [pharmacyId, multiBatch.product.id],
+    );
+    expect(fefoMovements.rows).toEqual([
+      { batch_id: multiBatch.purchases[1]!.batchId, quantity: "-4" },
+      { batch_id: multiBatch.purchases[0]!.batchId, quantity: "-2" },
+    ]);
 
     const blocked = await createStockedProduct("Count blocked", [2]);
     await quarantine(blocked.purchases[0]!.batchId);
@@ -547,7 +569,12 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
       inventoryEntry("3"),
     ]);
     const before = await request("GET", countSessionPath(session.id));
-    await stopProcess(api);
+    // A crash, not a graceful stop: nothing gets a chance to flush.
+    const exited = new Promise<void>((resolve) =>
+      api.once("exit", () => resolve()),
+    );
+    api.kill("SIGKILL");
+    await exited;
     api = startApi();
     await waitForHealth(apiOrigin, () => apiOutput);
     const after = await request("GET", countSessionPath(session.id));
@@ -725,6 +752,7 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
   async function createStockedProduct(
     name: string,
     purchaseQuantities: readonly (number | string)[],
+    expiryDates: readonly string[] = [],
   ): Promise<StockedProduct> {
     const created = await request(
       "POST",
@@ -734,8 +762,10 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     expect(created.status, diagnostics(created)).toBe(201);
     const product = created.body as Product;
     const purchases: PurchaseFixture[] = [];
-    for (const quantity of purchaseQuantities) {
-      purchases.push(await purchaseProduct(product, String(quantity)));
+    for (const [index, quantity] of purchaseQuantities.entries()) {
+      purchases.push(
+        await purchaseProduct(product, String(quantity), expiryDates[index]),
+      );
     }
     return { product, purchases };
   }
@@ -743,6 +773,7 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
   async function purchaseProduct(
     product: Product,
     enteredQuantity: string,
+    expiryDate = "2029-12-31",
   ): Promise<PurchaseFixture> {
     const draftResponse = await request("POST", "/purchases/drafts", {
       idempotencyKey: uuidV7(),
@@ -757,7 +788,7 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
       costFils: "1000",
       enteredQuantity,
       expectedVersion: draft.version,
-      expiryDate: "2029-12-31",
+      expiryDate,
       idempotencyKey: uuidV7(),
       itemId: product.id,
       lotNumber: `COUNT-LOT-${String(invoiceSequence)}`,

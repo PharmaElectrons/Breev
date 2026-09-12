@@ -32,6 +32,7 @@ export function CountSessionScreen({
   baseUrl,
   canApprove,
   canRecord,
+  canReviewInventory,
   checkNow,
   mode,
   sessionId,
@@ -39,6 +40,7 @@ export function CountSessionScreen({
   readonly baseUrl: string;
   readonly canApprove: boolean;
   readonly canRecord: boolean;
+  readonly canReviewInventory: boolean;
   readonly checkNow: () => Promise<void>;
   readonly mode: "start" | "loop";
   readonly sessionId?: string;
@@ -49,6 +51,7 @@ export function CountSessionScreen({
         baseUrl={baseUrl}
         canApprove={canApprove}
         canRecord={canRecord}
+        canReviewInventory={canReviewInventory}
         sessionId={sessionId}
       />
     );
@@ -285,11 +288,13 @@ function CountSessionLoop({
   baseUrl,
   canApprove,
   canRecord,
+  canReviewInventory,
   sessionId,
 }: {
   readonly baseUrl: string;
   readonly canApprove: boolean;
   readonly canRecord: boolean;
+  readonly canReviewInventory: boolean;
   readonly sessionId: string;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -332,6 +337,9 @@ function CountSessionLoop({
 
   useEffect(() => {
     void loadSession();
+    // The grid read needs inventory.review; a count-only user sees the balance
+    // once the line is saved, because the server returns it with the line.
+    if (!canReviewInventory) return;
     void requestInventoryItems(baseUrl)
       .then((response) => {
         const balances = new Map(
@@ -340,10 +348,9 @@ function CountSessionLoop({
         setInventoryBalances(balances);
       })
       .catch(() => {
-        // Count-only users may not hold inventory.review. The count read remains
-        // authoritative for lines already recorded in this session.
+        // The balance card falls back to the recorded line.
       });
-  }, [baseUrl, loadSession]);
+  }, [baseUrl, canReviewInventory, loadSession]);
 
   useEffect(() => {
     if (session === null || initialFocusDone.current) return;

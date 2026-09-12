@@ -31,7 +31,6 @@ describe("count entry preview", () => {
     ]);
     const fields = { Box: "", Pack: "2", Strip: "1" };
     expect(countEntriesFromFields(packaging, fields)).toEqual([
-      { count: "0", unit: { kind: "package-unit", packageUnitName: "Box" } },
       { count: "2", unit: { kind: "package-unit", packageUnitName: "Pack" } },
       { count: "1", unit: { kind: "inventory-unit" } },
     ]);

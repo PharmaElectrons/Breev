@@ -2787,7 +2787,7 @@ export const countEntrySchema = z.strictObject({
 export const countEntriesSchema = z
   .array(countEntrySchema)
   .min(1)
-  .max(4)
+  .max(8)
   .superRefine((entries, ctx) => {
     const seen = new Set<string>();
     for (const [index, entry] of entries.entries()) {

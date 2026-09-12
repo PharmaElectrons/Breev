@@ -49,14 +49,19 @@ export function countEntryUnits(
   ];
 }
 
+/** Only the units the user actually typed are sent; an untouched control is
+ * not an observation of zero, and a product may define more package units than
+ * the wire accepts. */
 export function countEntriesFromFields(
   packaging: ProductPackaging,
   fields: Readonly<Record<string, string>>,
 ): CountEntry[] {
-  return countEntryUnits(packaging).map(({ key, unit }) => ({
-    count: normalizedCount(fields[key] ?? ""),
-    unit,
-  }));
+  return countEntryUnits(packaging)
+    .filter(({ key }) => (fields[key] ?? "").trim() !== "")
+    .map(({ key, unit }) => ({
+      count: normalizedCount(fields[key] ?? ""),
+      unit,
+    }));
 }
 
 export function countEntryCaption(
