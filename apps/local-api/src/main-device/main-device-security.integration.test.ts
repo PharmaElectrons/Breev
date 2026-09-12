@@ -6,6 +6,7 @@ import {
   LOCAL_DEVICE_SESSION_HEADER,
   LOCAL_RECOVERY_STATUS_SUCCESS_STATUS,
   LOCAL_RESTORE_QUARANTINE_STATUS,
+  INVENTORY_CONTRACTS,
   localHealthContract,
   localProofEvidenceContract,
   localRecoveryStatusContract,
@@ -575,6 +576,52 @@ describe.sequential("Main device security persistence seam", () => {
       (contract) => contract.method !== "GET",
     );
     expect(mutations.length).toBeGreaterThan(0);
+
+    for (const contract of mutations) {
+      const requestPath = contract.path.replaceAll(/:[a-zA-Z]+/gu, sampleId);
+      const preflight = await fetch(new URL(requestPath, apiOrigin), {
+        headers: {
+          "Access-Control-Request-Headers": "content-type, x-breev-csrf",
+          "Access-Control-Request-Method": contract.method,
+          Origin: PACKAGED_RENDERER_ORIGIN,
+        },
+        method: "OPTIONS",
+      });
+
+      expect(
+        { path: requestPath, status: preflight.status },
+        `${contract.method} ${contract.path} must be preflight-allowed`,
+      ).toEqual({ path: requestPath, status: 204 });
+      expect(preflight.headers.get("access-control-allow-origin")).toBe(
+        PACKAGED_RENDERER_ORIGIN,
+      );
+      expect(preflight.headers.get("access-control-allow-methods")).toBe(
+        contract.method,
+      );
+    }
+  });
+
+  /*
+   * The reorder basket is driven from the packaged renderer (grid action,
+   * basket edits, confirm, return, remove), so every one of its mutations
+   * must be preflight-allowed exactly like Catalog's. The browser suite proxies
+   * the API from one origin and never issues a preflight, so only this test
+   * proves the packaged app can reach them.
+   */
+  it("answers the preflight for every reorder-basket mutation the renderer can issue", async () => {
+    const sampleId = "01a05d7a-6abd-7e85-9893-740321e7d3ac";
+    const mutations = INVENTORY_CONTRACTS.filter(
+      (contract) =>
+        contract.method !== "GET" &&
+        contract.path.startsWith("/inventory/reorder-basket"),
+    );
+    expect(mutations.map((contract) => contract.method).sort()).toEqual([
+      "POST",
+      "POST",
+      "POST",
+      "POST",
+      "PUT",
+    ]);
 
     for (const contract of mutations) {
       const requestPath = contract.path.replaceAll(/:[a-zA-Z]+/gu, sampleId);

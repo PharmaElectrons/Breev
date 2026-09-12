@@ -2177,6 +2177,12 @@ a:focus-visible,
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  /* The item column shares a 64rem table with nine others; without a floor
+     the name and the basket action wrap into tall rows at 1080px. */
+  min-inline-size: 13rem;
+}
+.inventory-item-cell .quiet-button {
+  white-space: nowrap;
 }
 .basket-product-state {
   display: inline-flex;

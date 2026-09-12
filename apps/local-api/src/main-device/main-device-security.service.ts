@@ -10,6 +10,11 @@ import {
   productCreateContract,
   productEditContract,
   productMergeContract,
+  reorderItemAddContract,
+  reorderItemConfirmContract,
+  reorderItemRemoveContract,
+  reorderItemReturnContract,
+  reorderItemUpdateContract,
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
   identityBootstrapContract,
@@ -733,6 +738,23 @@ const CORS_MUTATION_ROUTES = [
   dynamicMutation(
     catalogMatchingApprovalContract.method,
     catalogMatchingApprovalContract.path,
+  ),
+  exactMutation(reorderItemAddContract.method, reorderItemAddContract.path),
+  dynamicMutation(
+    reorderItemUpdateContract.method,
+    reorderItemUpdateContract.path,
+  ),
+  dynamicMutation(
+    reorderItemRemoveContract.method,
+    reorderItemRemoveContract.path,
+  ),
+  dynamicMutation(
+    reorderItemConfirmContract.method,
+    reorderItemConfirmContract.path,
+  ),
+  dynamicMutation(
+    reorderItemReturnContract.method,
+    reorderItemReturnContract.path,
   ),
 ] as const;
 

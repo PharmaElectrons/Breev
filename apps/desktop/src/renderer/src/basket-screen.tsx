@@ -294,6 +294,9 @@ function BasketScreen({
         [result.item.id]: result.item.quantity,
       }));
       markFailed(item.id, false);
+      // The input was disabled while its own save was in flight, which drops
+      // focus to the document; async completion must leave a control focused.
+      focusQuantity(item.id);
       setAnnouncement(
         copy.savedAnnouncement(
           result.item.product.displayName,

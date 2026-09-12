@@ -322,9 +322,9 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await expect(surplus).toContainText(
       "Projected 68 — could create surplus or waste (maximum 60)",
     );
-
-    await quantityA.focus();
+    // Async completion leaves the edited control focused (workflows.md).
     await expect(quantityA).toBeFocused();
+
     await pressKeyOnFocused(page, quantityA, "ControlOrMeta+A");
     await quantityA.fill("52");
     await expect(quantityA).toBeFocused();
@@ -334,9 +334,8 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     );
     await expect(rowA.locator("[data-warning='surplus']")).toHaveCount(0);
     await expect(rowA.locator("td").nth(5)).toContainText("Within the maximum");
-
-    await quantityA.focus();
     await expect(quantityA).toBeFocused();
+
     await pressKeyOnFocused(page, quantityA, "ControlOrMeta+A");
     await quantityA.fill("1.5");
     await expect(quantityA).toBeFocused();
@@ -609,6 +608,7 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await rowB.locator(`[data-basket-retry="${itemBId}"]`).click();
     await expect(statusRegion(page)).toContainText("Saved 1 Strip");
     await expect(quantityB).toHaveValue("1");
+    await expect(quantityB).toBeFocused();
     await expect(rowB.locator(".basket-not-saved")).toHaveCount(0);
     await expect(rowB.locator(`[data-basket-retry="${itemBId}"]`)).toHaveCount(
       0,
