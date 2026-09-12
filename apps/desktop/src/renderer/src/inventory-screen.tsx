@@ -723,6 +723,13 @@ export function InventoryMovements({
   const [error, setError] = useState<string | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const requestCommittedFocus = useCommittedFocus();
+  // The shell's hash state only follows `hashchange`, so a dialog dismissed
+  // with `history.replaceState` would otherwise reopen on the next commit.
+  const [dismissedDocumentId, setDismissedDocumentId] = useState<string | null>(
+    null,
+  );
+  const reviewOpen =
+    documentId !== undefined && documentId !== dismissedDocumentId;
 
   const load = useCallback(async () => {
     try {
@@ -853,6 +860,7 @@ export function InventoryMovements({
           : { address: { id: documentId } })}
         baseUrl={baseUrl}
         onClose={() => {
+          setDismissedDocumentId(documentId ?? null);
           window.history.replaceState(
             null,
             "",
@@ -860,7 +868,7 @@ export function InventoryMovements({
           );
           requestCommittedFocus(() => openerRef.current);
         }}
-        open={documentType === "purchase" && documentId !== undefined}
+        open={documentType === "purchase" && reviewOpen}
         returnHash={`#/inventory/items/${productId}/movements`}
       />
       <CountSessionReview
@@ -869,6 +877,7 @@ export function InventoryMovements({
           : { address: { id: documentId } })}
         baseUrl={baseUrl}
         onClose={() => {
+          setDismissedDocumentId(documentId ?? null);
           window.history.replaceState(
             null,
             "",
@@ -876,7 +885,7 @@ export function InventoryMovements({
           );
           requestCommittedFocus(() => openerRef.current);
         }}
-        open={documentType === "count-session" && documentId !== undefined}
+        open={documentType === "count-session" && reviewOpen}
         returnHash={`#/inventory/items/${productId}/movements`}
       />
     </section>
