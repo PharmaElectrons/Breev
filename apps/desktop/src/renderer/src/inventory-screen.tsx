@@ -232,17 +232,19 @@ function InventoryScreen({
         idempotencyKey: attempt.idempotencyKey,
         productId: item.productId,
       });
+      // A completed add is a finished intent: the next press is a new
+      // command (a re-add refreshes the proposal), not a retry of this one.
+      reorderAttemptRef.current = null;
       const basketCopy = basketMessages[locale];
+      const quantity = formatNumber(BigInt(result.item.quantity), locale);
+      const unit = result.item.product.inventoryUnitName;
+      const name = result.item.product.displayName;
       setAnnouncement(
         result.outcome === "already-ordered"
-          ? basketCopy.alreadyOrderedAnnouncement(
-              result.item.product.displayName,
-            )
-          : basketCopy.addedAnnouncement(
-              result.item.product.displayName,
-              formatNumber(BigInt(result.item.quantity), locale),
-              result.item.product.inventoryUnitName,
-            ),
+          ? basketCopy.alreadyOrderedAnnouncement(name)
+          : result.outcome === "updated"
+            ? basketCopy.alreadyInBasketAnnouncement(name, quantity, unit)
+            : basketCopy.addedAnnouncement(name, quantity, unit),
       );
     } catch (caught) {
       if (

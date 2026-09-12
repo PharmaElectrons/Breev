@@ -69,6 +69,7 @@
   --danger-soft: #fbe7e6;
   --info: #2b5f80;
   --info-soft: #e5eff5;
+  --state-purple: #7d4ab5;
 }
 
 :root[data-theme="dark"] {
@@ -96,6 +97,7 @@
   --danger-soft: #3a1d1c;
   --info: #9dc3e6;
   --info-soft: #14263a;
+  --state-purple: #c9a6f0;
 }
 
 * {
@@ -2651,7 +2653,7 @@ a:focus-visible,
   color: var(--danger);
 }
 .state-indicator-purple {
-  color: #7d4ab5;
+  color: var(--state-purple);
 }
 .state-indicator-yellow {
   color: var(--warning);

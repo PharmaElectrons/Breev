@@ -45,7 +45,13 @@ export interface BasketCopy {
     unit: string,
   ) => string;
   readonly alreadyOrderedAnnouncement: (name: string) => string;
+  readonly alreadyInBasketAnnouncement: (
+    name: string,
+    quantity: string,
+    unit: string,
+  ) => string;
   readonly archivedRow: string;
+  readonly archivedOrderedRow: string;
   readonly columns: {
     readonly actions: string;
     readonly balance: string;
@@ -152,7 +158,10 @@ const arabic: BasketCopy = {
     `أُضيفت ${quantity} ${unit} من ${name} إلى سلة الطلبات.`,
   alreadyOrderedAnnouncement: (name) =>
     `${name} مطلوبة بالفعل. لم يتغير شيء. افتح المواد المطلوبة لمراجعتها.`,
+  alreadyInBasketAnnouncement: (name, quantity, unit) =>
+    `${name} موجودة بالفعل في سلة الطلبات. تم تحديث الاقتراح؛ الكمية الآن ${quantity} ${unit}.`,
   archivedRow: "مؤرشفة — أزلها من السلة",
+  archivedOrderedRow: "مؤرشفة — أعدها إلى السلة ثم أزلها",
   columns: {
     actions: "الإجراءات",
     balance: "الرصيد",
@@ -216,7 +225,10 @@ const english: BasketCopy = {
     `Added ${quantity} ${unit} for ${name} to the order basket.`,
   alreadyOrderedAnnouncement: (name) =>
     `${name} is already ordered. Nothing changed. Open Ordered Items to review it.`,
+  alreadyInBasketAnnouncement: (name, quantity, unit) =>
+    `${name} is already in the order basket. The proposal was refreshed; the quantity is now ${quantity} ${unit}.`,
   archivedRow: "Archived — remove from the basket",
+  archivedOrderedRow: "Archived — return it to the basket, then remove it",
   columns: {
     actions: "Actions",
     balance: "Balance",

@@ -23,7 +23,11 @@ describe("basket translations", () => {
         copy.quantityCaption([{ count: "15", unitName: "Pack" }]),
       ).not.toBe("");
       expect(copy.archivedRow).not.toBe("");
+      expect(copy.archivedOrderedRow).not.toBe("");
       expect(copy.mergedRow).not.toBe("");
+      expect(
+        copy.alreadyInBasketAnnouncement("Panadol", "52", "Strip"),
+      ).toContain("52");
       expect(copy.notSaved).not.toBe("");
     }
   });

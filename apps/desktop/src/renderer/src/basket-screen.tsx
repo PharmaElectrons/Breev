@@ -878,11 +878,15 @@ function BasketItemName({
   readonly copy: BasketCopy;
   readonly item: ReorderItem;
 }): React.JSX.Element {
+  // An ordered row cannot be removed directly (docs: return first), so its
+  // archived label names the action that is actually available.
   const productState =
     item.product.status === "active"
       ? null
       : item.product.status === "archived"
-        ? copy.archivedRow
+        ? item.status === "ordered"
+          ? copy.archivedOrderedRow
+          : copy.archivedRow
         : copy.mergedRow;
   const mergedTargetId =
     item.product.status === "merged" ? item.product.mergedIntoProductId : null;
