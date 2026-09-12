@@ -4,10 +4,8 @@ import { describe, expect, it } from "vitest";
 import type { CatalogInventoryFacts } from "../catalog/catalog-inventory.js";
 import type { InventoryPosition } from "../inventory/inventory-review.js";
 import type { SupplierCostFact } from "../purchasing/purchasing-references.js";
-import {
-  includeInReview,
-  inventoryExportItemView,
-} from "./inventory-review.service.js";
+import { includeInReview } from "../inventory/inventory-item-view.js";
+import { inventoryExportItemView } from "./inventory-review.service.js";
 
 const PHARMACY_ID = "01999f00-0000-7000-8000-000000000001";
 const PRODUCT_ID = "01999f00-0000-7000-8000-000000000002";

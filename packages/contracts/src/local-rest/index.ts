@@ -4770,6 +4770,7 @@ export type InventoryRiskIndicator = z.infer<
 export type InventoryItem = z.infer<typeof inventoryItemSchema>;
 export type InventoryMovement = z.infer<typeof inventoryMovementSchema>;
 export type CountSession = z.infer<typeof countSessionSchema>;
+export type ReorderItem = z.infer<typeof reorderItemSchema>;
 export type CountSessionSummary = z.infer<typeof countSessionSummarySchema>;
 export type CountLine = z.infer<typeof countLineSchema>;
 export type CountEntry = z.infer<typeof countEntrySchema>;
