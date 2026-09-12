@@ -117,6 +117,18 @@ describe("moduleIdForHash", () => {
     expect(moduleIdForHash("#catalog/products")).toBe("products");
   });
 
+  it("resolves count session hashes to the inventory module", () => {
+    expect(moduleIdForHash("#/inventory/count")).toBe("inventory");
+    expect(
+      moduleIdForHash("#/inventory/count/018fa000-0000-7000-8000-000000000001"),
+    ).toBe("inventory");
+    expect(
+      moduleIdForHash(
+        "#/inventory/items/018fa000-0000-7000-8000-000000000001/movements/count-sessions/018fa000-0000-7000-8000-000000000002",
+      ),
+    ).toBe("inventory");
+  });
+
   it("resolves an unbuilt surface so a deep link explains itself", () => {
     expect(moduleIdForHash("#/sales")).toBe("sales");
     expect(moduleIdForHash("#/reports")).toBe("reports");
