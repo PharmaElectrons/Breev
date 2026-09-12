@@ -536,12 +536,21 @@ export class IdentityAccessService {
          from pharmacy_roles role_row
          cross join (values
            ('inventory.batch_safety.manage'),
+           ('inventory.counts.approve'), ('inventory.counts.record'),
            ('inventory.review'), ('inventory.valuation.view')
          ) as permission_name(name)
          where role_row.pharmacy_id = $1
            and (
              permission_name.name = 'inventory.batch_safety.manage'
              and role_row.role_key in ('manager', 'pharmacist')
+             or
+             permission_name.name = 'inventory.counts.approve'
+             and role_row.role_key in ('manager')
+             or
+             permission_name.name = 'inventory.counts.record'
+             and role_row.role_key in (
+               'manager', 'pharmacist', 'inventory_employee'
+             )
              or
              permission_name.name = 'inventory.review'
              and role_row.role_key in (
@@ -2857,6 +2866,19 @@ export class IdentityAccessService {
     client: PoolClient,
     expected: IdentityExecutionContext,
     permission: "inventory.review" | "inventory.valuation.view",
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      permission,
+    );
+  }
+
+  public async revalidateInventoryCount(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+    permission: "inventory.counts.record" | "inventory.counts.approve",
   ): Promise<IdentityExecutionContext> {
     await this.lockIdentity(client, expected.pharmacyId);
     return await this.requirePermissionInTransaction(

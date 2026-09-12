@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  countCommandAttempt,
   listBatches,
   previewAllocation,
   readBatchSafetyReview,
@@ -29,6 +30,23 @@ describe("inventory API client", () => {
       items: [],
     });
     vi.unstubAllGlobals();
+  });
+
+  it("reuses a count command key for the same body and rotates it when the body changes", () => {
+    const createKey = vi
+      .fn<() => string>()
+      .mockReturnValueOnce("count-first")
+      .mockReturnValueOnce("count-second");
+    const first = countCommandAttempt(null, "same-count", createKey);
+    const retry = countCommandAttempt(first, "same-count", createKey);
+    const changed = countCommandAttempt(first, "changed-count", createKey);
+
+    expect(retry).toBe(first);
+    expect(changed).toEqual({
+      fingerprint: "changed-count",
+      idempotencyKey: "count-second",
+    });
+    expect(createKey).toHaveBeenCalledTimes(2);
   });
 
   it("sends CSRF-protected preference commands", async () => {

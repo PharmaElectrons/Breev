@@ -1,4 +1,6 @@
 import {
+  COUNT_LINE_STATUSES,
+  type InventoryDenial,
   type BatchEligibilityStatus,
   type InventoryColumnField,
   type InventoryRiskIndicator,
@@ -6,6 +8,23 @@ import {
 } from "@breev/contracts/local-rest";
 
 import type { Locale } from "./preferences";
+
+export const COUNT_DENIAL_CODES = [
+  "count-session-not-found",
+  "count-line-not-found",
+  "count-session-completed",
+  "count-entry-invalid",
+  "count-balance-changed",
+  "count-variance-zero",
+  "count-variance-already-applied",
+  "count-blocked-stock",
+  "count-no-batch",
+  "count-no-cost-basis",
+  "count-valuation-mismatch",
+] as const satisfies readonly InventoryDenial["code"][];
+
+export type CountDenialCode = (typeof COUNT_DENIAL_CODES)[number];
+type CountLineStatus = (typeof COUNT_LINE_STATUSES)[number];
 
 export interface InventoryCopy {
   readonly automatic: string;
@@ -31,6 +50,7 @@ export interface InventoryCopy {
     readonly value: string;
     readonly receipt: string;
     readonly return: string;
+    readonly countVariance: string;
   };
   readonly riskIndicators: Record<InventoryRiskIndicator, string>;
   readonly retry: string;
@@ -48,6 +68,78 @@ export interface InventoryCopy {
   readonly manualNone: string;
   readonly title: string;
   readonly valuationDenied: string;
+  readonly count: {
+    readonly title: string;
+    readonly startTitle: string;
+    readonly loopTitle: string;
+    readonly description: string;
+    readonly start: string;
+    readonly resume: string;
+    readonly activeSessions: string;
+    readonly completedSessions: string;
+    readonly noActiveSessions: string;
+    readonly noCompletedSessions: string;
+    readonly startedAt: string;
+    readonly startedBy: string;
+    readonly lineCount: string;
+    readonly pendingVariances: string;
+    readonly number: string;
+    readonly status: string;
+    readonly statusLabels: Record<CountLineStatus, string>;
+    readonly item: string;
+    readonly itemPlaceholder: string;
+    readonly itemRequired: string;
+    readonly itemNotFound: string;
+    readonly archivedItem: string;
+    readonly currentBalance: string;
+    readonly countUnit: string;
+    readonly unitCaption: (unit: string) => string;
+    readonly save: string;
+    readonly savedAnnouncement: (
+      item: string,
+      counted: string,
+      unit: string,
+      variance: string,
+    ) => string;
+    readonly varianceSentence: (
+      before: string,
+      counted: string,
+      variance: string,
+    ) => string;
+    readonly balanceChanged: (current: string) => string;
+    readonly blockedStock: (count: string) => string;
+    readonly reviewBatches: string;
+    readonly validationEntryRequired: string;
+    readonly validationEntryInteger: string;
+    readonly unavailable: string;
+    readonly lines: string;
+    readonly emptyLines: string;
+    readonly tableCaption: string;
+    readonly columns: {
+      readonly item: string;
+      readonly recorded: string;
+      readonly counted: string;
+      readonly before: string;
+      readonly after: string;
+      readonly variance: string;
+      readonly status: string;
+      readonly action: string;
+    };
+    readonly includesBlocked: (count: string) => string;
+    readonly applyVariance: string;
+    readonly applicationReason: string;
+    readonly applicationEvidence: string;
+    readonly reasonHint: string;
+    readonly evidenceHint: string;
+    readonly applicationSaved: string;
+    readonly applicationAppliedBy: string;
+    readonly complete: string;
+    readonly completionConfirmation: (count: string) => string;
+    readonly completed: string;
+    readonly cancel: string;
+    readonly close: string;
+    readonly denialMessages: Record<CountDenialCode, string>;
+  };
   readonly safety: {
     readonly backToInventory: string;
     readonly blockedSince: string;
@@ -183,6 +275,186 @@ const englishColours: Record<ProductStateColour, string> = {
   purple: "Purple — above maximum",
   red: "Red — risk or out of stock",
   yellow: "Yellow — expiring soon",
+};
+
+const arabicCountStatuses: Record<CountLineStatus, string> = {
+  matched: "متطابق",
+  pending: "بانتظار التطبيق",
+  stale: "قديم — يحتاج مراجعة",
+  applied: "طُبّق",
+};
+
+const englishCountStatuses: Record<CountLineStatus, string> = {
+  matched: "Matched",
+  pending: "Pending application",
+  stale: "Stale — review needed",
+  applied: "Applied",
+};
+
+const arabicCountDenials: Record<CountDenialCode, string> = {
+  "count-session-not-found": "جلسة الجرد غير موجودة.",
+  "count-line-not-found": "سطر الجرد غير موجود.",
+  "count-session-completed": "اكتملت جلسة الجرد ولا يمكن تغييرها.",
+  "count-entry-invalid": "أدخل كمية صحيحة بوحدات صحيحة غير سالبة.",
+  "count-balance-changed": "تغير رصيد المادة؛ أعد التحقق من الرصيد الحالي.",
+  "count-variance-zero": "لا يوجد فرق يحتاج إلى تطبيق.",
+  "count-variance-already-applied": "تم تطبيق فرق هذا السطر من قبل.",
+  "count-blocked-stock": "لا يمكن تطبيق الفرق على مخزون محجوب.",
+  "count-no-batch": "لا توجد دفعة صالحة لإسناد الفرق إليها.",
+  "count-no-cost-basis": "لا توجد كلفة دفترية لتقييم هذا الفرق.",
+  "count-valuation-mismatch": "لا يتطابق رصيد المخزون مع سجل التقييم.",
+};
+
+const englishCountDenials: Record<CountDenialCode, string> = {
+  "count-session-not-found": "The count session was not found.",
+  "count-line-not-found": "The count line was not found.",
+  "count-session-completed": "This count session is complete and immutable.",
+  "count-entry-invalid": "Enter whole, non-negative quantities for the units.",
+  "count-balance-changed":
+    "The item balance changed; review the current balance.",
+  "count-variance-zero": "There is no variance to apply.",
+  "count-variance-already-applied":
+    "This line's variance has already been applied.",
+  "count-blocked-stock": "The variance cannot be applied to blocked stock.",
+  "count-no-batch": "There is no eligible batch to receive this variance.",
+  "count-no-cost-basis": "There is no carrying-cost basis for this variance.",
+  "count-valuation-mismatch": "The inventory balance does not match valuation.",
+};
+
+const arabicCount: InventoryCopy["count"] = {
+  title: "جرد المخزون",
+  startTitle: "جلسات جرد المخزون",
+  loopTitle: "جرد المخزون الحالي",
+  description: "سجّل الرصيد الفعلي دون تعديل بطاقة المادة مباشرة.",
+  start: "بدء جلسة جرد",
+  resume: "استئناف الجرد",
+  activeSessions: "الجلسات النشطة",
+  completedSessions: "الجلسات المكتملة",
+  noActiveSessions: "لا توجد جلسات جرد نشطة.",
+  noCompletedSessions: "لا توجد جلسات مكتملة.",
+  startedAt: "بدأت في",
+  startedBy: "بدأت بواسطة",
+  lineCount: "الأسطر",
+  pendingVariances: "الفروقات المعلقة",
+  number: "رقم الجلسة",
+  status: "الحالة",
+  statusLabels: arabicCountStatuses,
+  item: "المادة / الباركود",
+  itemPlaceholder: "امسح الباركود أو ابحث عن مادة",
+  itemRequired: "أدخل مادة أو باركوداً أولاً.",
+  itemNotFound: "لم يتم العثور على مادة نشطة بهذا الإدخال.",
+  archivedItem: "لا يمكن جرد مادة مؤرشفة أو مدمجة.",
+  currentBalance: "الرصيد الحالي",
+  countUnit: "الكمية المعدودة",
+  unitCaption: (unit) => `الكمية بوحدة ${unit}`,
+  save: "حفظ الرصيد",
+  savedAnnouncement: (item, counted, unit, variance) =>
+    `تم حفظ جرد ${item}: ${counted} ${unit}، والفرق ${variance}.`,
+  varianceSentence: (before, counted, variance) =>
+    `قبل ${before}، المعدود ${counted}، الفرق ${variance}.`,
+  balanceChanged: (current) => `تغير الرصيد. الرصيد الحالي هو ${current}.`,
+  blockedStock: (count) => `يشمل الرصيد ${count} من المخزون المحجوب.`,
+  reviewBatches: "مراجعة الدفعات",
+  validationEntryRequired: "أدخل كمية واحدة على الأقل.",
+  validationEntryInteger: "استخدم أعداداً صحيحة غير سالبة.",
+  unavailable: "تعذر الوصول إلى جلسة الجرد. تحقق من الاتصال وحاول مرة أخرى.",
+  lines: "أسطر الجرد",
+  emptyLines: "لم يتم تسجيل أي أسطر بعد.",
+  tableCaption: "أسطر جلسة الجرد",
+  columns: {
+    item: "المادة",
+    recorded: "المسجل",
+    counted: "المعدود",
+    before: "قبل",
+    after: "بعد",
+    variance: "الفرق",
+    status: "الحالة",
+    action: "الإجراء",
+  },
+  includesBlocked: (count) => `يشمل ${count} محجوباً`,
+  applyVariance: "تطبيق الفرق",
+  applicationReason: "سبب التطبيق",
+  applicationEvidence: "الدليل",
+  reasonHint: "اذكر سبب الفرق (مطلوب).",
+  evidenceHint: "أضف مرجعاً أو وصفاً قابلاً للمراجعة (مطلوب).",
+  applicationSaved: "تم تطبيق فرق الجرد وتحديث سجل الحركات.",
+  applicationAppliedBy: "طُبّق بواسطة",
+  complete: "إكمال الجلسة",
+  completionConfirmation: (count) =>
+    `ستبقى ${count} فروقات معلقة غير قابلة للتطبيق بعد إكمال الجلسة. هل تريد المتابعة؟`,
+  completed: "اكتملت الجلسة.",
+  cancel: "إلغاء",
+  close: "إغلاق",
+  denialMessages: arabicCountDenials,
+};
+
+const englishCount: InventoryCopy["count"] = {
+  title: "Stock count",
+  startTitle: "Stock count sessions",
+  loopTitle: "Current stock count",
+  description: "Record physical stock without editing the item directly.",
+  start: "Start count session",
+  resume: "Resume count",
+  activeSessions: "Active sessions",
+  completedSessions: "Completed sessions",
+  noActiveSessions: "There are no active count sessions.",
+  noCompletedSessions: "There are no completed sessions.",
+  startedAt: "Started",
+  startedBy: "Started by",
+  lineCount: "Lines",
+  pendingVariances: "Pending variances",
+  number: "Session number",
+  status: "Status",
+  statusLabels: englishCountStatuses,
+  item: "Barcode / item",
+  itemPlaceholder: "Scan a barcode or search for an item",
+  itemRequired: "Enter an item or barcode first.",
+  itemNotFound: "No active item matched this entry.",
+  archivedItem: "Archived or merged items cannot be counted.",
+  currentBalance: "Current balance",
+  countUnit: "Counted quantity",
+  unitCaption: (unit) => `Quantity in ${unit}`,
+  save: "Save balance",
+  savedAnnouncement: (item, counted, unit, variance) =>
+    `Count saved for ${item}: ${counted} ${unit}; variance ${variance}.`,
+  varianceSentence: (before, counted, variance) =>
+    `Before ${before}, counted ${counted}, variance ${variance}.`,
+  balanceChanged: (current) =>
+    `The balance changed. Current balance: ${current}.`,
+  blockedStock: (count) => `${count} of the balance is blocked stock.`,
+  reviewBatches: "Review batches",
+  validationEntryRequired: "Enter a quantity in at least one field.",
+  validationEntryInteger: "Use whole, non-negative numbers.",
+  unavailable:
+    "The count session is unavailable. Check the connection and try again.",
+  lines: "Count lines",
+  emptyLines: "No count lines have been recorded yet.",
+  tableCaption: "Count session lines",
+  columns: {
+    item: "Item",
+    recorded: "Recorded",
+    counted: "Counted",
+    before: "Before",
+    after: "After",
+    variance: "Variance",
+    status: "Status",
+    action: "Action",
+  },
+  includesBlocked: (count) => `Includes ${count} blocked`,
+  applyVariance: "Apply variance",
+  applicationReason: "Application reason",
+  applicationEvidence: "Evidence",
+  reasonHint: "State why the variance is being applied (required).",
+  evidenceHint: "Add a reviewable reference or description (required).",
+  applicationSaved: "Count variance applied and movement history updated.",
+  applicationAppliedBy: "Applied by",
+  complete: "Complete session",
+  completionConfirmation: (count) =>
+    `${count} pending variances will remain unapplied after completion. Continue?`,
+  completed: "Session completed.",
+  cancel: "Cancel",
+  close: "Close",
+  denialMessages: englishCountDenials,
 };
 
 const arabicStatuses: Record<BatchEligibilityStatus, string> = {
@@ -423,6 +695,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
   ar: {
     automatic: "تلقائي",
     backToInventory: "العودة إلى المخزن",
+    count: arabicCount,
     columns: arabicColumns,
     empty: "لا توجد مواد مخزنية بعد.",
     export: "تصدير بيانات المخزون الحساسة",
@@ -442,6 +715,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
       reference: "المستند المرجعي",
       receipt: "استلام شراء",
       return: "مرتجع شراء",
+      countVariance: "فرق جرد",
       time: "الوقت",
       title: "تفاصيل حركات المادة",
       user: "المستخدم",
@@ -469,6 +743,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
   en: {
     automatic: "Automatic",
     backToInventory: "Back to inventory",
+    count: englishCount,
     columns: englishColumns,
     empty: "There are no inventory items yet.",
     export: "Export sensitive inventory data",
@@ -488,6 +763,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
       reference: "Reference document",
       receipt: "Purchase receipt",
       return: "Purchase return",
+      countVariance: "Count variance",
       time: "Time",
       title: "Item movement details",
       user: "User",

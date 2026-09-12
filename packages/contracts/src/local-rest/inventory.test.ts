@@ -6,6 +6,10 @@ import {
   INVENTORY_MOVEMENT_KINDS,
   INVENTORY_RISK_INDICATORS,
   BATCH_ELIGIBILITY_STATUSES,
+  countLineRecordContract,
+  countSessionCompleteContract,
+  countSessionStartContract,
+  countVarianceApplyContract,
   inventoryAllocationPreviewRequestSchema,
   inventoryBatchSafetyReviewContract,
   inventoryBatchSchema,
@@ -94,6 +98,7 @@ describe("inventory review contracts", () => {
       "purchase-adjustment",
       "purchase-receipt",
       "purchase-return",
+      "count-variance",
     ]);
     const movement = {
       batchId: BATCH_ID,
@@ -138,6 +143,22 @@ describe("inventory review contracts", () => {
         },
       }).kind,
     ).toBe("purchase-return");
+    expect(
+      inventoryMovementSchema.parse({
+        ...movement,
+        id: "0198e7ce-7685-7000-8000-000000000008",
+        kind: "count-variance",
+        quantity: "1",
+        valueFils: "1250",
+        reference: {
+          ...movement.reference,
+          documentId: RETURN_ID,
+          documentType: "count-session",
+          label: "C1/2026 · line 1",
+          number: { series: "C", value: "1", year: 2026 },
+        },
+      }).kind,
+    ).toBe("count-variance");
     expect(
       inventoryMovementHistoryContract.responses[200].parse({
         productId: PRODUCT_ID,
@@ -190,6 +211,10 @@ describe("inventory review contracts", () => {
       inventoryBatchSafetyRunContract,
       inventoryBatchStatusChangeContract,
       inventorySensitiveExportContract,
+      countLineRecordContract,
+      countSessionCompleteContract,
+      countSessionStartContract,
+      countVarianceApplyContract,
     ]);
     expect(
       INVENTORY_CONTRACTS.filter((contract) => contract.method === "GET").every(

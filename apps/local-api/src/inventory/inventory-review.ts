@@ -38,7 +38,10 @@ export interface InventoryPosition {
 }
 
 export type InventoryMovementReason =
-  "purchase-adjustment" | "purchase-receipt" | "purchase-return";
+  | "purchase-adjustment"
+  | "purchase-receipt"
+  | "purchase-return"
+  | "count-variance";
 
 export function deriveInventoryValueFils(
   movements: readonly {
@@ -114,7 +117,9 @@ export async function readInventoryPositions(
               ) as movement_facts
        from inventory_movements
        where pharmacy_id = $1
-         and reason not in ('purchase-adjustment', 'purchase-return')
+         and reason not in (
+           'purchase-adjustment', 'purchase-return', 'count-variance'
+         )
          and quantity < 0
          and occurred_at >= now() - interval '90 days'
        group by product_id
@@ -290,7 +295,10 @@ export interface ProductMovement {
   readonly userId: string;
   readonly sourceDocumentId: string;
   readonly sourceDocumentType:
-    "purchase-adjustment" | "purchase-invoice" | "purchase-return";
+    | "purchase-adjustment"
+    | "purchase-invoice"
+    | "purchase-return"
+    | "count-session";
   readonly sourceRowOrdinal: number;
 }
 
@@ -309,7 +317,10 @@ export async function readProductMovements(
     reason: InventoryMovementReason;
     source_document_id: string;
     source_document_type:
-      "purchase-adjustment" | "purchase-invoice" | "purchase-return";
+      | "purchase-adjustment"
+      | "purchase-invoice"
+      | "purchase-return"
+      | "count-session";
     source_row_ordinal: number;
     created_by: string;
   }>(
@@ -345,6 +356,7 @@ function mapInventoryMovementReason(
     case "purchase-adjustment":
     case "purchase-receipt":
     case "purchase-return":
+    case "count-variance":
       return reason;
     default:
       return assertNever(reason);

@@ -37,6 +37,8 @@ import {
   formatTime,
 } from "./preferences";
 import { PostedPurchaseReview } from "./posted-purchase-review";
+import { CountSessionReview } from "./count-session-review";
+import { CountSessionScreen } from "./count-session-screen";
 import { StateIndicator } from "./state-indicator";
 import { StepUpDialog, useStepUp } from "./step-up";
 
@@ -62,13 +64,49 @@ export function InventoryRouteView({
   readonly hash: string;
 }): React.JSX.Element {
   const route = inventoryRoute(hash);
+  const { state: identity } = useIdentityState();
+  const canRecordCount =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("inventory.counts.record");
+  const canApproveCount =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("inventory.counts.approve");
+  const canReviewInventory =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("inventory.review");
+  if (route.kind === "count") {
+    return (
+      <CountSessionScreen
+        baseUrl={baseUrl}
+        canApprove={canApproveCount}
+        canRecord={canRecordCount}
+        canReviewInventory={canReviewInventory}
+        checkNow={checkNow}
+        mode="start"
+      />
+    );
+  }
+  if (route.kind === "count-session") {
+    return (
+      <CountSessionScreen
+        baseUrl={baseUrl}
+        canApprove={canApproveCount}
+        canRecord={canRecordCount}
+        canReviewInventory={canReviewInventory}
+        checkNow={checkNow}
+        mode="loop"
+        sessionId={route.sessionId}
+      />
+    );
+  }
   if (route.kind === "movements") {
     return (
       <InventoryMovements
         baseUrl={baseUrl}
         checkNow={checkNow}
         productId={route.productId}
-        purchaseId={route.purchaseId}
+        documentId={route.documentId}
+        documentType={route.documentType}
       />
     );
   }
@@ -78,6 +116,21 @@ export function InventoryRouteView({
         baseUrl={baseUrl}
         checkNow={checkNow}
         month={route.month}
+      />
+    );
+  }
+  if (!canRecordCount && !canApproveCount) {
+    return <InventoryScreen baseUrl={baseUrl} checkNow={checkNow} />;
+  }
+  if (!canReviewInventory) {
+    return (
+      <CountSessionScreen
+        baseUrl={baseUrl}
+        canApprove={canApproveCount}
+        canRecord={canRecordCount}
+        canReviewInventory={canReviewInventory}
+        checkNow={checkNow}
+        mode="start"
       />
     );
   }
@@ -138,6 +191,9 @@ function InventoryScreen({
     identity.user.role.kind === "built-in" &&
     identity.user.role.key === "owner" &&
     identity.allowedPermissions.includes("inventory.valuation.view");
+  const canRecordCount =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("inventory.counts.record");
 
   const load = useCallback(async (): Promise<void> => {
     setError(null);
@@ -334,6 +390,11 @@ function InventoryScreen({
           </p>
         </div>
         <div className="inventory-actions">
+          {canRecordCount ? (
+            <a className="primary-button" href="#/inventory/count">
+              {copy.count.start}
+            </a>
+          ) : null}
           {canExport ? (
             <button
               className="primary-button"
@@ -647,13 +708,15 @@ function InventoryFailure({
 export function InventoryMovements({
   baseUrl,
   checkNow,
+  documentId,
+  documentType,
   productId,
-  purchaseId,
 }: {
   readonly baseUrl: string;
   readonly checkNow: () => Promise<void>;
+  readonly documentId: string | undefined;
+  readonly documentType: "purchase" | "count-session" | undefined;
   readonly productId: string;
-  readonly purchaseId: string | undefined;
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = inventoryMessages[locale];
@@ -662,6 +725,14 @@ export function InventoryMovements({
   > | null>(null);
   const [error, setError] = useState<string | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const requestCommittedFocus = useCommittedFocus();
+  // The shell's hash state only follows `hashchange`, so a dialog dismissed
+  // with `history.replaceState` would otherwise reopen on the next commit.
+  const [dismissedDocumentId, setDismissedDocumentId] = useState<string | null>(
+    null,
+  );
+  const reviewOpen =
+    documentId !== undefined && documentId !== dismissedDocumentId;
 
   const load = useCallback(async () => {
     try {
@@ -736,7 +807,10 @@ export function InventoryMovements({
                     type="button"
                     onClick={(event) => {
                       openerRef.current = event.currentTarget;
-                      window.location.hash = `#/inventory/items/${productId}/movements/${movement.reference.documentId}`;
+                      window.location.hash =
+                        movement.reference.documentType === "count-session"
+                          ? `#/inventory/items/${productId}/movements/count-sessions/${movement.reference.documentId}`
+                          : `#/inventory/items/${productId}/movements/${movement.reference.documentId}`;
                     }}
                   >
                     {referenceLabel}
@@ -784,17 +858,37 @@ export function InventoryMovements({
         </div>
       )}
       <PostedPurchaseReview
-        {...(purchaseId === undefined ? {} : { address: { id: purchaseId } })}
+        {...(documentType !== "purchase" || documentId === undefined
+          ? {}
+          : { address: { id: documentId } })}
         baseUrl={baseUrl}
         onClose={() => {
+          setDismissedDocumentId(documentId ?? null);
           window.history.replaceState(
             null,
             "",
             "#/inventory/items/" + productId + "/movements",
           );
-          queueMicrotask(() => openerRef.current?.focus());
+          requestCommittedFocus(() => openerRef.current);
         }}
-        open={purchaseId !== undefined}
+        open={documentType === "purchase" && reviewOpen}
+        returnHash={`#/inventory/items/${productId}/movements`}
+      />
+      <CountSessionReview
+        {...(documentType !== "count-session" || documentId === undefined
+          ? {}
+          : { address: { id: documentId } })}
+        baseUrl={baseUrl}
+        onClose={() => {
+          setDismissedDocumentId(documentId ?? null);
+          window.history.replaceState(
+            null,
+            "",
+            `#/inventory/items/${productId}/movements`,
+          );
+          requestCommittedFocus(() => openerRef.current);
+        }}
+        open={documentType === "count-session" && reviewOpen}
         returnHash={`#/inventory/items/${productId}/movements`}
       />
     </section>
@@ -812,6 +906,8 @@ function movementKindLabel(
       return copy.movement.receipt;
     case "purchase-return":
       return copy.movement.return;
+    case "count-variance":
+      return copy.movement.countVariance;
     default:
       return assertNever(kind);
   }
@@ -821,15 +917,25 @@ function assertNever(value: never): never {
   throw new Error(`Unexpected inventory movement kind: ${String(value)}`);
 }
 
-function inventoryRoute(hash: string):
+export function inventoryRoute(hash: string):
   | { readonly kind: "inventory" }
+  | { readonly kind: "count" }
+  | { readonly kind: "count-session"; readonly sessionId: string }
   | { readonly kind: "safety-review"; readonly month?: string }
   | {
       readonly kind: "movements";
       readonly productId: string;
-      readonly purchaseId?: string;
+      readonly documentId?: string;
+      readonly documentType?: "purchase" | "count-session";
     } {
   const parts = hash.replace(/^#\//u, "").split("/");
+  if (parts[0] === "inventory" && parts[1] === "count") {
+    if (parts.length === 2) return { kind: "count" };
+    if (parts.length === 3 && parts[2] !== undefined) {
+      return { kind: "count-session", sessionId: parts[2] };
+    }
+    return { kind: "inventory" };
+  }
   if (parts[0] === "inventory" && parts[1] === "safety-review") {
     if (
       parts.length > 3 ||
@@ -850,10 +956,29 @@ function inventoryRoute(hash: string):
     return { kind: "inventory" };
   }
   const productId = parts[2];
-  if (productId === undefined || parts.length > 5) return { kind: "inventory" };
-  return {
-    kind: "movements",
-    productId,
-    ...(parts[4] === undefined ? {} : { purchaseId: parts[4] }),
-  };
+  if (productId === undefined) return { kind: "inventory" };
+  if (parts.length === 4) {
+    return { kind: "movements", productId };
+  }
+  if (parts.length === 5 && parts[4] !== undefined) {
+    return {
+      documentId: parts[4],
+      documentType: "purchase",
+      kind: "movements",
+      productId,
+    };
+  }
+  if (
+    parts.length === 6 &&
+    parts[4] === "count-sessions" &&
+    parts[5] !== undefined
+  ) {
+    return {
+      documentId: parts[5],
+      documentType: "count-session",
+      kind: "movements",
+      productId,
+    };
+  }
+  return { kind: "inventory" };
 }

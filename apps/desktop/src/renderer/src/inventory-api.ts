@@ -13,6 +13,16 @@ import {
   inventoryBatchSafetyStatusContract,
   inventoryBatchStatusChangeContract,
   inventoryBatchStatusChangePath,
+  countSessionCompletionPath,
+  countSessionLinesPath,
+  countSessionListContract,
+  countSessionPath,
+  countSessionReadContract,
+  countSessionStartContract,
+  countSessionCompleteContract,
+  countVarianceApplicationPath,
+  countLineRecordContract,
+  countVarianceApplyContract,
   inventoryItemListContract,
   inventoryMovementHistoryContract,
   inventoryMovementHistoryPath,
@@ -36,6 +46,14 @@ import {
   type InventorySensitiveExport,
   type InventorySensitiveExportRequest,
   type InventoryDenial,
+  type CountSession,
+  type CountSessionSummary,
+  type CountLine,
+  type CountSessionCompleteRequest,
+  type CountSessionListQuery,
+  type CountSessionStartRequest,
+  type CountLineRecordRequest,
+  type CountVarianceApplyRequest,
 } from "@breev/contracts/local-rest";
 
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
@@ -230,8 +248,121 @@ export async function exportInventorySensitiveData(
   );
 }
 
+export async function startCountSession(
+  baseUrl: string,
+  body: CountSessionStartRequest,
+): Promise<CountSession> {
+  return await requestJson(
+    baseUrl,
+    countSessionStartContract.path,
+    countSessionStartContract.method,
+    201,
+    countSessionStartContract.responses[201],
+    body,
+  );
+}
+
+export async function listCountSessions(
+  baseUrl: string,
+  query: CountSessionListQuery = {},
+): Promise<{
+  readonly sessions: CountSessionSummary[];
+}> {
+  const search =
+    query.status === undefined
+      ? ""
+      : `?status=${encodeURIComponent(query.status)}`;
+  return await requestJson(
+    baseUrl,
+    `${countSessionListContract.path}${search}`,
+    countSessionListContract.method,
+    200,
+    countSessionListContract.responses[200],
+  );
+}
+
+export async function readCountSession(
+  baseUrl: string,
+  sessionId: string,
+): Promise<CountSession> {
+  return await requestJson(
+    baseUrl,
+    countSessionPath(sessionId),
+    countSessionReadContract.method,
+    200,
+    countSessionReadContract.responses[200],
+  );
+}
+
+export async function recordCountLine(
+  baseUrl: string,
+  sessionId: string,
+  body: CountLineRecordRequest,
+): Promise<{
+  readonly line: CountLine;
+  readonly session: CountSessionSummary;
+}> {
+  return await requestJson(
+    baseUrl,
+    countSessionLinesPath(sessionId),
+    countLineRecordContract.method,
+    201,
+    countLineRecordContract.responses[201],
+    body,
+  );
+}
+
+export async function applyCountVariance(
+  baseUrl: string,
+  sessionId: string,
+  lineId: string,
+  body: CountVarianceApplyRequest,
+): Promise<{
+  readonly line: CountLine;
+  readonly session: CountSessionSummary;
+}> {
+  return await requestJson(
+    baseUrl,
+    countVarianceApplicationPath(sessionId, lineId),
+    countVarianceApplyContract.method,
+    201,
+    countVarianceApplyContract.responses[201],
+    body,
+  );
+}
+
+export async function completeCountSession(
+  baseUrl: string,
+  sessionId: string,
+  body: CountSessionCompleteRequest,
+): Promise<CountSessionSummary> {
+  return await requestJson(
+    baseUrl,
+    countSessionCompletionPath(sessionId),
+    countSessionCompleteContract.method,
+    200,
+    countSessionCompleteContract.responses[200],
+    body,
+  );
+}
+
 export function newInventoryIdempotencyKey(): string {
   return crypto.randomUUID();
+}
+
+export interface CountCommandAttempt {
+  readonly fingerprint: string;
+  readonly idempotencyKey: string;
+}
+
+export function countCommandAttempt(
+  previous: CountCommandAttempt | null,
+  fingerprint: string,
+  createKey: () => string = newInventoryIdempotencyKey,
+): CountCommandAttempt {
+  return previous?.fingerprint === fingerprint
+    ? previous
+    : { fingerprint, idempotencyKey: createKey() };
 }
 
 async function requestJson<T>(

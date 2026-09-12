@@ -1,0 +1,20 @@
+Host: Linux 7.1.8-1-cachyos x86_64, v24.19.0, Docker Testcontainers postgres:18.6-bookworm, 2026-09-12T04:04Z
+Command: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/inventory/inventory-count.unit.test.ts src/accounting/count-variance-posting-template.unit.test.ts
+
+
+ RUN  v4.1.11 /home/mohamed/Desktop/pharmaa/PharmaElectrons/apps/local-api
+
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > converts 2 packs and 1 strip to 9 strips with a preserved label 2ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > composes arbitrary non-negative integer counts at arbitrary positive ratios 3ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > keeps variance and signed fils splits exact 1ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > conserves WAC quantity and value for both variance directions 2ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > picks the newest eligible batch by receipt time then id 8ms
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > debits the variance account for a shortage and balances 2ms
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > debits inventory for a surplus and balances 0ms
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > rejects a zero variance 0ms
+
+ Test Files  2 passed (2)
+      Tests  8 passed (8)
+   Start at  07:04:07
+   Duration  328ms (transform 226ms, setup 0ms, import 356ms, tests 20ms, environment 0ms)
+

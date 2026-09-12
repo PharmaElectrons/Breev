@@ -114,6 +114,35 @@ describe("inventory review movement folding", () => {
     expect(reportedAverageUnitCostScaled(valuation)).toBe(91_666_666_666_667n);
   });
 
+  it("folds count shortages and surpluses into balance, value, and average", () => {
+    const movements: {
+      carryingAmountFils: bigint;
+      quantity: bigint;
+      reason: InventoryMovementReason;
+    }[] = [
+      {
+        carryingAmountFils: 10_000n,
+        quantity: 10n,
+        reason: "purchase-receipt",
+      },
+      { carryingAmountFils: -2_000n, quantity: -2n, reason: "count-variance" },
+      { carryingAmountFils: 3_000n, quantity: 3n, reason: "count-variance" },
+    ];
+    const balance = movements.reduce(
+      (total, movement) => total + movement.quantity,
+      0n,
+    );
+    const value = deriveInventoryValueFils(movements, []);
+    const valuation = {
+      totalQuantity: 11n,
+      totalValueScaled: value * 10_000_000_000n,
+    };
+
+    expect(balance).toBe(11n);
+    expect(value).toBe(11_000n);
+    expect(reportedAverageUnitCostScaled(valuation)).toBe(10_000_000_000_000n);
+  });
+
   it("keeps WAC on Primary Supplier Cost when an allowance is present", () => {
     const lines = [
       { enteredQuantity: 10n, primarySupplierCostFils: 1_000n },

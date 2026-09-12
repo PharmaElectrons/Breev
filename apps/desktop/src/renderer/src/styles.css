@@ -2221,6 +2221,255 @@ a:focus-visible,
 .inventory-table-scroll tbody tr:hover {
   background: var(--primary-wash);
 }
+
+/* Count sessions keep the scanner path compact and the reconciliation table independent. */
+.count-workspace {
+  gap: 0.85rem;
+}
+.count-heading {
+  align-items: center;
+}
+.inventory-context-label {
+  margin-block-end: 0.2rem !important;
+  color: var(--primary) !important;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+[dir="rtl"] .inventory-context-label {
+  letter-spacing: 0;
+}
+.count-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.count-session-list {
+  display: grid;
+  gap: 0.55rem;
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 0.85rem;
+}
+.count-session-list h3,
+.count-session-list p {
+  margin: 0;
+}
+.count-session-list > p {
+  color: var(--muted-foreground);
+}
+.count-session-list ul {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.count-session-list li {
+  display: flex;
+  min-block-size: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-block-start: 1px solid var(--border);
+  padding-block: 0.7rem;
+}
+.count-session-list li > div {
+  display: grid;
+  gap: 0.2rem;
+  min-inline-size: 0;
+}
+.count-session-list li span {
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+.count-entry-form {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.8rem;
+  padding: 1rem;
+  background: var(--primary-wash);
+}
+.count-item-field,
+.count-unit-field {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--card-foreground);
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-align: start;
+}
+.count-item-field input,
+.count-unit-field input {
+  inline-size: 100%;
+  min-block-size: 2.75rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.65rem;
+  padding-inline: 0.8rem;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 1rem;
+}
+.count-item-field input {
+  min-block-size: 3.25rem;
+  font-size: 1.1rem;
+}
+.count-resolved-item {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(20rem, 1.35fr);
+  align-items: end;
+  gap: 1rem;
+}
+.count-resolved-item h3,
+.count-resolved-item p {
+  margin: 0;
+}
+.count-resolved-item > div:first-child {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+}
+.count-resolved-item > div:first-child p {
+  color: var(--muted-foreground);
+}
+.count-resolved-item a,
+.count-lines-table a {
+  color: var(--primary);
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.count-unit-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.6rem;
+}
+.count-unit-field input {
+  min-block-size: 3.25rem;
+  font-family: var(--font-family-mono);
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-align: start;
+}
+.count-live-caption {
+  min-block-size: 1.5rem;
+  margin: 0;
+  color: var(--primary);
+  font-family: var(--font-family-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.count-save-button {
+  justify-self: start;
+}
+.count-lines-container {
+  display: flex;
+  min-block-size: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: auto;
+}
+.count-lines-container h3 {
+  flex: none;
+  margin: 0;
+}
+.count-lines-table-wrap,
+.count-review-table-wrap {
+  min-block-size: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+}
+.count-lines-table {
+  inline-size: 100%;
+  min-inline-size: 70rem;
+  border-collapse: collapse;
+  background: var(--card);
+}
+.count-lines-table th,
+.count-lines-table td {
+  border-block-end: 1px solid var(--border);
+  padding: 0.65rem 0.75rem;
+  text-align: start;
+  vertical-align: top;
+}
+.count-lines-table thead th {
+  position: sticky;
+  z-index: 1;
+  inset-block-start: 0;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.count-lines-table tbody tr:last-child th,
+.count-lines-table tbody tr:last-child td {
+  border-block-end: 0;
+}
+.count-lines-table bdi {
+  font-variant-numeric: tabular-nums;
+}
+.count-blocked-note {
+  display: inline-block;
+  color: var(--warning);
+  font-size: 0.75rem;
+}
+.count-variance-dialog,
+.count-completion-dialog {
+  inline-size: min(100%, 34rem);
+  max-block-size: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 1.35rem;
+  text-align: start;
+}
+.count-variance-dialog h2,
+.count-completion-dialog h2 {
+  margin-block-start: 0;
+}
+.count-variance-sentence {
+  border-inline-start: 0.25rem solid var(--primary);
+  padding-inline-start: 0.75rem;
+  color: var(--muted-foreground);
+}
+.count-application-row td {
+  background: var(--muted);
+}
+.count-application-details,
+.count-session-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+.count-application-details dt,
+.count-session-summary dt {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.count-application-details dd,
+.count-session-summary dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.count-review-content {
+  display: grid;
+  gap: 1rem;
+}
+@media (max-width: 60rem) {
+  .count-resolved-item {
+    grid-template-columns: 1fr;
+  }
+  .count-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .table-link {
   border: 0;
   padding: 0;

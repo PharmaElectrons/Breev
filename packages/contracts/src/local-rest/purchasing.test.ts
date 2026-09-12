@@ -335,6 +335,7 @@ describe("supplier and purchase draft contracts", () => {
     expect(PURCHASE_POSTING_ACCOUNT_CODES).toEqual([
       "cash",
       "inventory",
+      "inventory-count-variance",
       "supplier-payable",
     ]);
     const posted = postedPurchase();

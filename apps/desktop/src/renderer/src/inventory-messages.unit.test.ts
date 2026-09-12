@@ -1,12 +1,13 @@
 import {
   BATCH_ELIGIBILITY_STATUSES,
+  COUNT_LINE_STATUSES,
   INVENTORY_COLUMN_FIELDS,
   INVENTORY_RISK_INDICATORS,
   PRODUCT_STATE_COLORS,
 } from "@breev/contracts/local-rest";
 import { describe, expect, it } from "vitest";
 
-import { inventoryMessages } from "./inventory-messages";
+import { COUNT_DENIAL_CODES, inventoryMessages } from "./inventory-messages";
 
 describe("inventory translations", () => {
   it("covers every inventory field, risk, and state colour in Arabic and English", () => {
@@ -28,6 +29,27 @@ describe("inventory translations", () => {
           inventoryMessages[locale].safety.statusSentence(status, "3"),
         ).not.toBe("");
       }
+      for (const status of COUNT_LINE_STATUSES) {
+        expect(inventoryMessages[locale].count.statusLabels[status]).not.toBe(
+          "",
+        );
+      }
+      for (const denial of COUNT_DENIAL_CODES) {
+        expect(inventoryMessages[locale].count.denialMessages[denial]).not.toBe(
+          "",
+        );
+      }
+      expect(
+        inventoryMessages[locale].count.savedAnnouncement(
+          "Item",
+          "9",
+          "Strip",
+          "+1",
+        ),
+      ).not.toBe("");
+      expect(
+        inventoryMessages[locale].count.varianceSentence("8", "9", "+1"),
+      ).not.toBe("");
       expect(inventoryMessages[locale].safety.dispositionNote).not.toBe("");
     }
   });

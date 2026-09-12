@@ -31,6 +31,10 @@ import {
   type InventoryPosition,
   type ProductMovement,
 } from "../inventory/inventory-review.js";
+import {
+  resolveCountSessionReferences,
+  type CountSessionReference,
+} from "../inventory/inventory-count-persistence.js";
 import { businessDateOf } from "../inventory/business-date.js";
 import {
   readNearExpiryDays,
@@ -265,20 +269,28 @@ export class InventoryReviewService {
       const returnIds = movements
         .filter((movement) => movement.sourceDocumentType === "purchase-return")
         .map((movement) => movement.sourceDocumentId);
-      const [references, adjustmentReferences, returnReferences] =
-        await Promise.all([
-          resolvePostedPurchaseReferences(client, context.pharmacyId, [
-            ...new Set(purchaseIds),
-          ]),
-          resolvePostedPurchaseAdjustmentReferences(
-            client,
-            context.pharmacyId,
-            [...new Set(adjustmentIds)],
-          ),
-          resolvePostedPurchaseReturnReferences(client, context.pharmacyId, [
-            ...new Set(returnIds),
-          ]),
-        ]);
+      const countSessionIds = movements
+        .filter((movement) => movement.sourceDocumentType === "count-session")
+        .map((movement) => movement.sourceDocumentId);
+      const [
+        references,
+        adjustmentReferences,
+        returnReferences,
+        countReferences,
+      ] = await Promise.all([
+        resolvePostedPurchaseReferences(client, context.pharmacyId, [
+          ...new Set(purchaseIds),
+        ]),
+        resolvePostedPurchaseAdjustmentReferences(client, context.pharmacyId, [
+          ...new Set(adjustmentIds),
+        ]),
+        resolvePostedPurchaseReturnReferences(client, context.pharmacyId, [
+          ...new Set(returnIds),
+        ]),
+        resolveCountSessionReferences(client, context.pharmacyId, [
+          ...new Set(countSessionIds),
+        ]),
+      ]);
       const displayNames = await this.identity.resolveUserDisplayNames(
         client,
         context.pharmacyId,
@@ -291,10 +303,13 @@ export class InventoryReviewService {
             references,
             adjustmentReferences,
             returnReferences,
+            countReferences,
           );
-          const openable = context.permissions.includes(
-            "purchases.posted.view",
-          );
+          const openable =
+            movement.sourceDocumentType === "count-session"
+              ? context.permissions.includes("inventory.counts.record") ||
+                context.permissions.includes("inventory.counts.approve")
+              : context.permissions.includes("purchases.posted.view");
           const userName = displayNames.get(movement.userId);
           return {
             batchId: movement.batchId,
@@ -307,7 +322,7 @@ export class InventoryReviewService {
               documentType: reference.documentType,
               label: reference.label,
               number: reference.number,
-              openable,
+              openable: openable && reference.openable,
             },
             user: {
               displayName: userName ?? "—",
@@ -752,7 +767,9 @@ interface MovementReference {
   readonly documentId: string;
   readonly documentType: ProductMovement["sourceDocumentType"];
   readonly label: string;
-  readonly number: PostedPurchaseReference["number"] | null;
+  readonly number:
+    PostedPurchaseReference["number"] | CountSessionReference["number"];
+  readonly openable: boolean;
 }
 
 function movementReference(
@@ -760,6 +777,7 @@ function movementReference(
   purchaseReferences: ReadonlyMap<string, PostedPurchaseReference>,
   adjustmentReferences: ReadonlyMap<string, PostedPurchaseAdjustmentReference>,
   returnReferences: ReadonlyMap<string, PostedPurchaseReturnReference>,
+  countReferences: ReadonlyMap<string, CountSessionReference>,
 ): MovementReference {
   switch (movement.sourceDocumentType) {
     case "purchase-invoice": {
@@ -772,6 +790,7 @@ function movementReference(
             ? movement.sourceDocumentType
             : `P${reference.number.value}/${reference.number.year} · ${reference.supplierName}`,
         number: reference?.number ?? null,
+        openable: true,
       };
     }
     case "purchase-adjustment": {
@@ -786,6 +805,7 @@ function movementReference(
             ? movement.sourceDocumentType
             : `P${reference.number.value}/${reference.number.year}-${reference.suffixValue} · ${reference.supplierNameSnapshot}`,
         number: reference?.number ?? null,
+        openable: true,
       };
     }
     case "purchase-return": {
@@ -800,6 +820,19 @@ function movementReference(
             ? movement.sourceDocumentType
             : `PR${reference.returnNumber.value}/${reference.returnNumber.year} · P${reference.originalNumber.value}/${reference.originalNumber.year} · ${reference.supplierNameSnapshot}`,
         number: reference?.originalNumber ?? null,
+        openable: true,
+      };
+    }
+    case "count-session": {
+      const reference = countReferences.get(movement.sourceDocumentId);
+      return {
+        documentId: movement.sourceDocumentId,
+        documentType: "count-session",
+        label:
+          reference?.labels.get(movement.sourceRowOrdinal) ??
+          `Count session ${movement.sourceDocumentId} · line ${movement.sourceRowOrdinal}`,
+        number: reference?.number ?? null,
+        openable: true,
       };
     }
     default:
