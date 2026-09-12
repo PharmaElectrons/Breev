@@ -159,13 +159,13 @@ describe.sequential("migration 0021: inventory review", () => {
     ]);
     expect(first.revisions).toEqual({
       accountant: "2",
-      inventory_employee: "3",
-      manager: "4",
-      owner: "6",
-      pharmacist: "4",
-      purchasing_employee: "4",
+      inventory_employee: "4",
+      manager: "5",
+      owner: "7",
+      pharmacist: "5",
+      purchasing_employee: "5",
     });
-    expect(first.pharmacyRevision).toBe("6");
+    expect(first.pharmacyRevision).toBe("7");
 
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshot()).toEqual(first);

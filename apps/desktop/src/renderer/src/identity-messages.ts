@@ -152,6 +152,14 @@ const permissionLabels: Record<
       description: "تسجيل الكميات الفعلية ومتابعة جلسات جرد المخزون.",
       name: "تسجيل جرد المخزون",
     },
+    "inventory.reorder.manage": {
+      description: "إضافة الأصناف إلى سلة الطلبات وتعديلها وإزالتها.",
+      name: "إدارة سلة الطلبات",
+    },
+    "inventory.reorder.confirm": {
+      description: "تأكيد الطلبات وإعادة البنود المطلوبة إلى السلة.",
+      name: "تأكيد الطلبات",
+    },
     "licensing.manage": {
       description: "تثبيت ترخيص الصيدلية أو تجديده أو إزالته.",
       name: "إدارة الترخيص",
@@ -243,6 +251,14 @@ const permissionLabels: Record<
     "inventory.counts.record": {
       description: "Record physical stock counts and resume count sessions.",
       name: "Record stock counts",
+    },
+    "inventory.reorder.manage": {
+      description: "Add, update, and remove items in the order basket.",
+      name: "Manage the order basket",
+    },
+    "inventory.reorder.confirm": {
+      description: "Confirm orders and return ordered items to the basket.",
+      name: "Confirm orders",
     },
     "licensing.manage": {
       description: "Install or renew the pharmacy licence, or remove it.",

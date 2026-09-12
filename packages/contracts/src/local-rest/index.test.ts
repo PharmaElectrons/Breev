@@ -403,8 +403,8 @@ describe("identity role contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("17");
-    expect(LOCAL_SCHEMA_VERSION).toBe("17");
+    expect(LOCAL_API_VERSION).toBe("18");
+    expect(LOCAL_SCHEMA_VERSION).toBe("18");
     expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
       "attendance.record",
       "catalog.item.manage",
@@ -415,6 +415,8 @@ describe("local REST health contract", () => {
       "inventory.batch_safety.manage",
       "inventory.counts.approve",
       "inventory.counts.record",
+      "inventory.reorder.confirm",
+      "inventory.reorder.manage",
       "inventory.review",
       "inventory.valuation.view",
       "licensing.manage",

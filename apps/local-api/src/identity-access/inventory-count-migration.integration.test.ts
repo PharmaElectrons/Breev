@@ -136,14 +136,14 @@ describe.sequential("migration 0023: inventory count sessions", () => {
     ]);
     expect(after.revisions).toEqual({
       inventory_employee: String(
-        BigInt(before.revisions.inventory_employee ?? "0") + 1n,
+        BigInt(before.revisions.inventory_employee ?? "0") + 2n,
       ),
-      manager: String(BigInt(before.revisions.manager ?? "0") + 1n),
-      owner: String(BigInt(before.revisions.owner ?? "0") + 1n),
-      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 1n),
+      manager: String(BigInt(before.revisions.manager ?? "0") + 2n),
+      owner: String(BigInt(before.revisions.owner ?? "0") + 2n),
+      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 2n),
     });
     expect(after.pharmacyRevision).toBe(
-      String(BigInt(before.pharmacyRevision) + 1n),
+      String(BigInt(before.pharmacyRevision) + 2n),
     );
 
     await runMigrations(application, databaseRoles.migrationUrl);

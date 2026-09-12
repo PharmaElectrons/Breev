@@ -56,7 +56,8 @@ with eligible_roles as (
            -- purchasing_employee must also add that permission here, or this
            -- migration will silently stop granting.
            and other_grant.permission_name not in (
-             'catalog.item.search', 'inventory.review',
+             'catalog.item.search', 'inventory.reorder.confirm',
+             'inventory.reorder.manage', 'inventory.review',
              'purchases.adjustments.manage', 'purchases.costs.view',
              'purchases.drafts.manage', 'purchases.posted.view',
              'purchases.returns.manage'
