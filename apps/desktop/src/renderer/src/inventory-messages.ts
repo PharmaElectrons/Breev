@@ -31,6 +31,7 @@ export interface InventoryCopy {
     readonly value: string;
     readonly receipt: string;
     readonly return: string;
+    readonly countVariance: string;
   };
   readonly riskIndicators: Record<InventoryRiskIndicator, string>;
   readonly retry: string;
@@ -442,6 +443,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
       reference: "المستند المرجعي",
       receipt: "استلام شراء",
       return: "مرتجع شراء",
+      countVariance: "فرق جرد",
       time: "الوقت",
       title: "تفاصيل حركات المادة",
       user: "المستخدم",
@@ -488,6 +490,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
       reference: "Reference document",
       receipt: "Purchase receipt",
       return: "Purchase return",
+      countVariance: "Count variance",
       time: "Time",
       title: "Item movement details",
       user: "User",

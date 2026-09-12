@@ -15,6 +15,7 @@ describe("posting outbox envelope rules", () => {
     expect(POSTING_EVENT_TYPES).toEqual({
       inventoryBatchExpiryCorrected: "inventory.batch.expiry-corrected",
       inventoryBatchStatusChanged: "inventory.batch.status-changed",
+      inventoryCountVarianceApplied: "inventory.count.variance-applied",
       pharmacySettingsChanged: "pharmacy.settings.changed",
       purchaseInvoiceAdjusted: "purchase.invoice.adjusted",
       purchaseInvoicePosted: "purchase.invoice.posted",
@@ -25,6 +26,7 @@ describe("posting outbox envelope rules", () => {
   it("registers exactly the envelope versions that exist today", () => {
     expect(POSTING_ENVELOPE_VERSIONS).toEqual({
       "inventory.batch.expiry-corrected": [1],
+      "inventory.count.variance-applied": [1],
       "inventory.batch.status-changed": [1],
       "pharmacy.settings.changed": [1],
       "purchase.invoice.adjusted": [1],
@@ -33,6 +35,7 @@ describe("posting outbox envelope rules", () => {
     });
     expect(CURRENT_ENVELOPE_VERSIONS).toEqual({
       "inventory.batch.expiry-corrected": 1,
+      "inventory.count.variance-applied": 1,
       "inventory.batch.status-changed": 1,
       "pharmacy.settings.changed": 1,
       "purchase.invoice.adjusted": 1,

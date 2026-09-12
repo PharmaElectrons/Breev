@@ -15,6 +15,8 @@ export const PERMISSION_NAMES = [
   "identity.roles.manage",
   "identity.users.manage",
   "inventory.batch_safety.manage",
+  "inventory.counts.approve",
+  "inventory.counts.record",
   "inventory.review",
   "inventory.valuation.view",
   "licensing.manage",

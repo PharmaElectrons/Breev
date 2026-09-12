@@ -23,6 +23,14 @@ import {
   type PurchaseReturnJournalFacts,
   type PurchaseReturnJournalLine,
 } from "./purchase-return-posting-template.js";
+import {
+  COUNT_VARIANCE_DIFFERENCE_TREATMENT,
+  COUNT_VARIANCE_POSTING_TEMPLATE_ID,
+  COUNT_VARIANCE_POSTING_TEMPLATE_VERSION,
+  renderCountVarianceJournal,
+  type CountVarianceJournalFacts,
+  type CountVarianceJournalLine,
+} from "./count-variance-posting-template.js";
 
 /**
  * Accounting's own transaction-aware persistence: posting the balanced
@@ -302,6 +310,64 @@ export async function postPurchaseReturnJournal(
     templateId: PURCHASE_RETURN_POSTING_TEMPLATE_ID,
     templateVersion: PURCHASE_RETURN_POSTING_TEMPLATE_VERSION,
     treatment: PURCHASE_RETURN_DIFFERENCE_TREATMENT,
+  };
+}
+
+export interface PostedCountVarianceJournal {
+  readonly entryId: string;
+  readonly lines: readonly CountVarianceJournalLine[];
+  readonly templateId: "inventory.count";
+  readonly templateVersion: number;
+  readonly treatment: typeof COUNT_VARIANCE_DIFFERENCE_TREATMENT;
+}
+
+export async function postCountVarianceJournal(
+  client: PoolClient,
+  input: {
+    readonly facts: CountVarianceJournalFacts;
+    readonly pharmacyId: string;
+    readonly postedBy: string;
+  },
+): Promise<PostedCountVarianceJournal> {
+  const lines = renderCountVarianceJournal(input.facts);
+  const entry = await client.query<{ id: string }>(
+    `insert into accounting_journal_entries (
+       pharmacy_id, template_id, template_version, posted_by
+     ) values ($1, $2, $3, $4) returning id`,
+    [
+      input.pharmacyId,
+      COUNT_VARIANCE_POSTING_TEMPLATE_ID,
+      COUNT_VARIANCE_POSTING_TEMPLATE_VERSION,
+      input.postedBy,
+    ],
+  );
+  const entryId = entry.rows[0]?.id;
+  if (entryId === undefined) {
+    throw new Error("The Count Variance journal was not created");
+  }
+  for (const line of lines) {
+    await client.query(
+      `insert into accounting_journal_lines (
+         pharmacy_id, entry_id, ordinal, account_code, supplier_id,
+         debit_fils, credit_fils
+       ) values ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        input.pharmacyId,
+        entryId,
+        line.ordinal,
+        line.accountCode,
+        line.supplierId,
+        line.debitFils.toString(),
+        line.creditFils.toString(),
+      ],
+    );
+  }
+  return {
+    entryId,
+    lines,
+    templateId: COUNT_VARIANCE_POSTING_TEMPLATE_ID,
+    templateVersion: COUNT_VARIANCE_POSTING_TEMPLATE_VERSION,
+    treatment: COUNT_VARIANCE_DIFFERENCE_TREATMENT,
   };
 }
 

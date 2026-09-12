@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "16" as const;
-export const LOCAL_SCHEMA_VERSION = "16" as const;
+export const LOCAL_API_VERSION = "17" as const;
+export const LOCAL_SCHEMA_VERSION = "17" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -96,6 +96,8 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "identity.roles.manage",
   "identity.users.manage",
   "inventory.batch_safety.manage",
+  "inventory.counts.approve",
+  "inventory.counts.record",
   "inventory.review",
   "inventory.valuation.view",
   "licensing.manage",
@@ -2212,6 +2214,17 @@ export const INVENTORY_DENIAL_CODES = [
   "body-invalid",
   "batch-not-found",
   "batch-status-transition-invalid",
+  "count-session-not-found",
+  "count-line-not-found",
+  "count-session-completed",
+  "count-entry-invalid",
+  "count-balance-changed",
+  "count-variance-zero",
+  "count-variance-already-applied",
+  "count-blocked-stock",
+  "count-no-batch",
+  "count-no-cost-basis",
+  "count-valuation-mismatch",
   "expiry-correction-unchanged",
   "product-not-found",
   "idempotency-conflict",
@@ -2252,6 +2265,7 @@ export const INVENTORY_MOVEMENT_KINDS = [
   "purchase-adjustment",
   "purchase-receipt",
   "purchase-return",
+  "count-variance",
 ] as const;
 const inventoryMovementBaseSchema = z.strictObject({
   batchId: z.uuidv7(),
@@ -2264,7 +2278,7 @@ const inventoryMovementBaseSchema = z.strictObject({
     label: z.string().min(1).max(256),
     number: z
       .strictObject({
-        series: z.literal("P"),
+        series: z.enum(["P", "C"]),
         value: decimalRevisionSchema,
         year: z.number().int().min(1970).max(9999),
       })
@@ -2283,6 +2297,7 @@ export const inventoryMovementSchema = z.discriminatedUnion("kind", [
   }),
   inventoryMovementBaseSchema.extend({ kind: z.literal("purchase-receipt") }),
   inventoryMovementBaseSchema.extend({ kind: z.literal("purchase-return") }),
+  inventoryMovementBaseSchema.extend({ kind: z.literal("count-variance") }),
 ]);
 export const inventoryMovementHistoryContract = {
   method: "GET",
@@ -2693,6 +2708,259 @@ export const inventoryBatchSafetyReviewContract = {
   },
 } as const;
 
+export const COUNT_LINE_STATUSES = [
+  "matched",
+  "pending",
+  "stale",
+  "applied",
+] as const;
+export const COUNT_RULE_IDS = [
+  "inventory.count.entry-empty",
+  "inventory.count.entry-not-whole",
+  "inventory.count.unit-unknown",
+  "inventory.count.balance-changed",
+  "inventory.count.reason-required",
+  "inventory.count.evidence-required",
+  "inventory.count.variance-zero",
+  "inventory.count.already-applied",
+  "inventory.count.blocked-stock",
+  "inventory.count.no-batch",
+  "inventory.count.no-cost-basis",
+] as const;
+export const countRuleIdSchema = z.enum(COUNT_RULE_IDS);
+
+const countPersonSchema = z.strictObject({
+  displayName: z.string().min(1).max(96),
+  id: z.uuidv7(),
+});
+const countSessionNumberSchema = z.strictObject({
+  series: z.literal("C"),
+  value: decimalRevisionSchema,
+  year: z.number().int().min(1970).max(9999),
+});
+const countJournalLineSchema = z.strictObject({
+  accountCode: z.enum(["inventory", "inventory-count-variance"]),
+  creditFils: priceFilsSchema,
+  debitFils: priceFilsSchema,
+  ordinal: z.number().int().positive(),
+  supplierId: z.null(),
+});
+const countJournalSchema = z
+  .strictObject({
+    entryId: z.uuidv7(),
+    lines: z.array(countJournalLineSchema).min(2),
+    templateId: z.literal("inventory.count"),
+    templateVersion: z.number().int().positive(),
+    treatment: z.literal("count-variance-account-pending-g01"),
+  })
+  .superRefine((journal, ctx) => {
+    const debits = journal.lines.reduce(
+      (sum, line) => sum + BigInt(line.debitFils),
+      0n,
+    );
+    const credits = journal.lines.reduce(
+      (sum, line) => sum + BigInt(line.creditFils),
+      0n,
+    );
+    for (const line of journal.lines) {
+      if (line.debitFils !== "0" && line.creditFils !== "0") {
+        ctx.addIssue({
+          code: "custom",
+          message: "A journal line is either a debit or a credit, never both",
+          path: ["lines"],
+        });
+      }
+    }
+    if (debits !== credits) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Count variance journal debits must equal credits",
+        path: ["lines"],
+      });
+    }
+  });
+
+export const countEntrySchema = z.strictObject({
+  count: nonNegativeIntegerStringSchema,
+  unit: inventoryCapableUnitSchema,
+});
+export const countEntriesSchema = z
+  .array(countEntrySchema)
+  .min(1)
+  .max(4)
+  .superRefine((entries, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, entry] of entries.entries()) {
+      const key =
+        entry.unit.kind === "inventory-unit"
+          ? "inventory-unit"
+          : `package-unit:${entry.unit.packageUnitName}`;
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Each inventory unit may occur only once",
+          path: [index, "unit"],
+        });
+      }
+      seen.add(key);
+    }
+  });
+
+export const countLineApplicationSchema = z.strictObject({
+  appliedAt: z.iso.datetime(),
+  appliedBy: countPersonSchema,
+  averageUnitCostScaled: signedIntegerStringSchema.nullable(),
+  balanceAfter: signedIntegerStringSchema,
+  balanceBefore: signedIntegerStringSchema,
+  carryingAmountFils: signedIntegerStringSchema.nullable(),
+  evidence: z.string().trim().min(1).max(1_000),
+  id: z.uuidv7(),
+  journal: countJournalSchema.nullable(),
+  movementIds: z.array(z.uuidv7()).min(1),
+  reason: z.string().trim().min(1).max(500),
+  treatment: z.literal("count-variance-account-pending-g01"),
+  valuationMethod: z.literal("weighted-average-cost"),
+  variance: signedIntegerStringSchema,
+});
+
+export const countLineSchema = z.strictObject({
+  application: countLineApplicationSchema.nullable(),
+  balanceAtObservation: signedIntegerStringSchema,
+  blockedQuantityAtObservation: nonNegativeIntegerStringSchema,
+  countedQuantity: nonNegativeIntegerStringSchema,
+  currentBalance: signedIntegerStringSchema,
+  currentVariance: signedIntegerStringSchema,
+  enteredLabel: z.string().min(1).max(1_000),
+  entries: countEntriesSchema,
+  id: z.uuidv7(),
+  inventoryUnitName: productUnitNameSchema,
+  itemDisplayName: z.string().min(1).max(726),
+  observedAt: z.iso.datetime(),
+  observedBy: countPersonSchema,
+  ordinal: z.number().int().positive(),
+  productId: z.uuidv7(),
+  status: z.enum(COUNT_LINE_STATUSES),
+  varianceAtObservation: signedIntegerStringSchema,
+});
+
+export const countSessionSummarySchema = z.strictObject({
+  completedAt: z.iso.datetime().nullable(),
+  completedBy: countPersonSchema.nullable(),
+  id: z.uuidv7(),
+  lineCount: nonNegativeIntegerStringSchema,
+  number: countSessionNumberSchema.nullable(),
+  pendingVarianceCount: nonNegativeIntegerStringSchema,
+  startedAt: z.iso.datetime(),
+  startedBy: countPersonSchema,
+  status: z.enum(["active", "completed"]),
+  version: decimalRevisionSchema,
+});
+export const countSessionSchema = countSessionSummarySchema.extend({
+  lines: z.array(countLineSchema),
+});
+
+export const countSessionStartRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+});
+export const countSessionListQuerySchema = z.strictObject({
+  status: z.enum(["active", "completed"]).optional(),
+});
+export const countLineRecordRequestSchema = z.strictObject({
+  entries: countEntriesSchema,
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  productId: z.uuidv7(),
+});
+export const countVarianceApplyRequestSchema = z.strictObject({
+  evidence: z.string().trim().min(1).max(1_000),
+  expectedBalanceBefore: signedIntegerStringSchema,
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  reason: z.string().trim().min(1).max(500),
+});
+export const countSessionCompleteRequestSchema = z.strictObject({
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+
+const inventoryCountCommandDenialResponses = {
+  ...inventoryReadDenialResponses,
+  400: inventoryDenialSchema,
+  404: inventoryDenialSchema,
+  409: inventoryDenialSchema,
+} as const;
+export const countSessionStartContract = {
+  method: "POST",
+  path: "/inventory/count-sessions",
+  request: { body: countSessionStartRequestSchema },
+  responses: {
+    201: countSessionSchema,
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+export const countSessionListContract = {
+  method: "GET",
+  path: "/inventory/count-sessions",
+  request: { query: countSessionListQuerySchema },
+  responses: {
+    200: z.strictObject({ sessions: z.array(countSessionSummarySchema) }),
+    ...inventoryReadDenialResponses,
+  },
+} as const;
+export const countSessionReadContract = {
+  method: "GET",
+  path: "/inventory/count-sessions/:sessionId",
+  responses: {
+    200: countSessionSchema,
+    ...inventoryReadDenialResponses,
+    404: inventoryDenialSchema,
+  },
+} as const;
+export const countLineRecordContract = {
+  method: "POST",
+  path: "/inventory/count-sessions/:sessionId/lines",
+  request: { body: countLineRecordRequestSchema },
+  responses: {
+    201: z.strictObject({
+      line: countLineSchema,
+      session: countSessionSummarySchema,
+    }),
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+export const countVarianceApplyContract = {
+  method: "POST",
+  path: "/inventory/count-sessions/:sessionId/lines/:lineId/variance-applications",
+  request: { body: countVarianceApplyRequestSchema },
+  responses: {
+    201: z.strictObject({
+      line: countLineSchema,
+      session: countSessionSummarySchema,
+    }),
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+export const countSessionCompleteContract = {
+  method: "POST",
+  path: "/inventory/count-sessions/:sessionId/completions",
+  request: { body: countSessionCompleteRequestSchema },
+  responses: {
+    200: countSessionSummarySchema,
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+export const countSessionPath = (sessionId: string): string =>
+  `/inventory/count-sessions/${sessionId}`;
+export const countSessionLinesPath = (sessionId: string): string =>
+  `${countSessionPath(sessionId)}/lines`;
+export const countVarianceApplicationPath = (
+  sessionId: string,
+  lineId: string,
+): string =>
+  `${countSessionLinesPath(sessionId)}/${lineId}/variance-applications`;
+export const countSessionCompletionPath = (sessionId: string): string =>
+  `${countSessionPath(sessionId)}/completions`;
+
 export const INVENTORY_CONTRACTS = [
   inventoryAllocationPreviewContract,
   inventoryBatchExpiryCorrectionContract,
@@ -2706,6 +2974,12 @@ export const INVENTORY_CONTRACTS = [
   inventoryReviewPreferencesReadContract,
   inventoryReviewPreferencesUpdateContract,
   inventorySensitiveExportContract,
+  countLineRecordContract,
+  countSessionCompleteContract,
+  countSessionListContract,
+  countSessionReadContract,
+  countSessionStartContract,
+  countVarianceApplyContract,
 ] as const;
 
 const supplierNameSchema = z
@@ -3047,10 +3321,13 @@ export const postedPurchaseRowSchema = z.strictObject({
  * own transaction (docs/domain.md: an allowance at settlement "is a separate
  * transaction type, never a purchase return"). A closed set with nothing to
  * spend the allowance on is what makes booking it at invoice time unspellable.
+ * The inventory count variance template shares this closed account vocabulary
+ * and uses `inventory-count-variance` for its G-01 working default.
  */
 export const PURCHASE_POSTING_ACCOUNT_CODES = [
   "cash",
   "inventory",
+  "inventory-count-variance",
   "supplier-payable",
 ] as const;
 export const purchasePostingAccountCodeSchema = z.enum(
@@ -3650,6 +3927,8 @@ export const purchaseReturnPostRequestSchema = z.strictObject({
 });
 export const PURCHASE_RETURN_G01_WORKING_DEFAULT =
   "inventory-account-offset-pending-g01" as const;
+export const COUNT_VARIANCE_G01_WORKING_DEFAULT =
+  "count-variance-account-pending-g01" as const;
 export const purchaseReturnJournalSchema = z
   .strictObject({
     entryId: z.uuidv7(),
@@ -4332,6 +4611,24 @@ export type InventoryRiskIndicator = z.infer<
 >;
 export type InventoryItem = z.infer<typeof inventoryItemSchema>;
 export type InventoryMovement = z.infer<typeof inventoryMovementSchema>;
+export type CountSession = z.infer<typeof countSessionSchema>;
+export type CountSessionSummary = z.infer<typeof countSessionSummarySchema>;
+export type CountLine = z.infer<typeof countLineSchema>;
+export type CountEntry = z.infer<typeof countEntrySchema>;
+export type CountLineRecordRequest = z.infer<
+  typeof countLineRecordRequestSchema
+>;
+export type CountVarianceApplyRequest = z.infer<
+  typeof countVarianceApplyRequestSchema
+>;
+export type CountSessionCompleteRequest = z.infer<
+  typeof countSessionCompleteRequestSchema
+>;
+export type CountSessionStartRequest = z.infer<
+  typeof countSessionStartRequestSchema
+>;
+export type CountSessionListQuery = z.infer<typeof countSessionListQuerySchema>;
+export type CountLineApplication = z.infer<typeof countLineApplicationSchema>;
 export type InventoryReviewPreferences = z.infer<
   typeof inventoryReviewPreferencesSchema
 >;

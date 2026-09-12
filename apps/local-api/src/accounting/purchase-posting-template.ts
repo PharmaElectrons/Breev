@@ -1,5 +1,10 @@
 import type { PurchasePostingAccountCode } from "@breev/contracts/local-rest";
 
+type PurchaseInvoiceAccountCode = Exclude<
+  PurchasePostingAccountCode,
+  "inventory-count-variance"
+>;
+
 /**
  * The purchase-invoice posting template: the one place a purchase becomes
  * journal lines.
@@ -93,7 +98,7 @@ export interface PurchaseInvoiceJournalFacts {
 }
 
 export interface PurchaseJournalLine {
-  readonly accountCode: PurchasePostingAccountCode;
+  readonly accountCode: PurchaseInvoiceAccountCode;
   readonly creditFils: bigint;
   readonly debitFils: bigint;
   /** One-based position, so a stored journal reads in the order posted. */

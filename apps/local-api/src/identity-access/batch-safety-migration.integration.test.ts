@@ -138,12 +138,12 @@ describe.sequential("migration 0022: batch safety", () => {
       ["pharmacist", "inventory.batch_safety.manage"],
     ]);
     expect(after.revisions).toEqual({
-      manager: String(BigInt(before.revisions.manager ?? "0") + 1n),
-      owner: String(BigInt(before.revisions.owner ?? "0") + 1n),
-      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 1n),
+      manager: String(BigInt(before.revisions.manager ?? "0") + 2n),
+      owner: String(BigInt(before.revisions.owner ?? "0") + 2n),
+      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 2n),
     });
     expect(after.pharmacyRevision).toBe(
-      String(BigInt(before.pharmacyRevision) + 1n),
+      String(BigInt(before.pharmacyRevision) + 2n),
     );
 
     await runMigrations(application, databaseRoles.migrationUrl);

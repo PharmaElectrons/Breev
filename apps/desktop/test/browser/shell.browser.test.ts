@@ -767,7 +767,7 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("heading", { name: "Configure role permissions" }),
     ).toBeVisible();
     await expect(page.locator(".permission-summary p")).toHaveText(
-      "Manage roles and permissions · Search products · Review inventory · View inventory valuation · Manage batch safety",
+      "Manage roles and permissions · Search products · Review inventory · View inventory valuation · Manage batch safety · Record stock counts · Approve count variances",
     );
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {

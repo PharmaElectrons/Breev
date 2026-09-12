@@ -812,6 +812,8 @@ function movementKindLabel(
       return copy.movement.receipt;
     case "purchase-return":
       return copy.movement.return;
+    case "count-variance":
+      return copy.movement.countVariance;
     default:
       return assertNever(kind);
   }

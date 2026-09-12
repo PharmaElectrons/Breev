@@ -1,5 +1,10 @@
 import type { PurchasePostingAccountCode } from "@breev/contracts/local-rest";
 
+type PurchaseAdjustmentAccountCode = Exclude<
+  PurchasePostingAccountCode,
+  "inventory-count-variance"
+>;
+
 /** One finite, versioned template for Purchase Invoice Adjustment journals. */
 export const PURCHASE_ADJUSTMENT_POSTING_TEMPLATE_ID =
   "purchase.adjustment" as const;
@@ -19,7 +24,7 @@ export interface PurchaseAdjustmentJournalFacts {
 }
 
 export interface PurchaseAdjustmentJournalLine {
-  readonly accountCode: PurchasePostingAccountCode;
+  readonly accountCode: PurchaseAdjustmentAccountCode;
   readonly creditFils: bigint;
   readonly debitFils: bigint;
   readonly ordinal: number;
@@ -82,7 +87,7 @@ export function assertAdjustmentJournalBalanced(
 
 function appendSignedLine(
   lines: Omit<PurchaseAdjustmentJournalLine, "ordinal">[],
-  accountCode: PurchasePostingAccountCode,
+  accountCode: PurchaseAdjustmentAccountCode,
   signedDebitFils: bigint,
   supplierId: string | null,
 ): void {

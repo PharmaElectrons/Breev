@@ -307,7 +307,7 @@ export class InventoryReviewService {
               documentType: reference.documentType,
               label: reference.label,
               number: reference.number,
-              openable,
+              openable: openable && reference.openable,
             },
             user: {
               displayName: userName ?? "—",
@@ -753,6 +753,7 @@ interface MovementReference {
   readonly documentType: ProductMovement["sourceDocumentType"];
   readonly label: string;
   readonly number: PostedPurchaseReference["number"] | null;
+  readonly openable: boolean;
 }
 
 function movementReference(
@@ -772,6 +773,7 @@ function movementReference(
             ? movement.sourceDocumentType
             : `P${reference.number.value}/${reference.number.year} · ${reference.supplierName}`,
         number: reference?.number ?? null,
+        openable: true,
       };
     }
     case "purchase-adjustment": {
@@ -786,6 +788,7 @@ function movementReference(
             ? movement.sourceDocumentType
             : `P${reference.number.value}/${reference.number.year}-${reference.suffixValue} · ${reference.supplierNameSnapshot}`,
         number: reference?.number ?? null,
+        openable: true,
       };
     }
     case "purchase-return": {
@@ -800,8 +803,17 @@ function movementReference(
             ? movement.sourceDocumentType
             : `PR${reference.returnNumber.value}/${reference.returnNumber.year} · P${reference.originalNumber.value}/${reference.originalNumber.year} · ${reference.supplierNameSnapshot}`,
         number: reference?.originalNumber ?? null,
+        openable: true,
       };
     }
+    case "count-session":
+      return {
+        documentId: movement.sourceDocumentId,
+        documentType: "count-session",
+        label: `Count session ${movement.sourceDocumentId}`,
+        number: null,
+        openable: false,
+      };
     default:
       return assertNever(movement.sourceDocumentType);
   }

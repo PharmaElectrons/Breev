@@ -28,14 +28,14 @@ import { runMigrations } from "../database-migrations.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const MIGRATIONS_FOLDER = path.resolve(import.meta.dirname, "../../drizzle");
-const PRE_UPGRADE_MIGRATION_INDEX = 18;
+const PRE_UPGRADE_MIGRATION_INDEX = 22;
 
 interface JournalEntry {
   readonly idx: number;
   readonly tag: string;
 }
 
-describe.sequential("migration 0021: inventory review", () => {
+describe.sequential("migration 0023: inventory count sessions", () => {
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -48,8 +48,6 @@ describe.sequential("migration 0021: inventory review", () => {
   const managerRoleId = createUuidV7();
   const pharmacistRoleId = createUuidV7();
   const inventoryRoleId = createUuidV7();
-  const purchasingRoleId = createUuidV7();
-  const accountantRoleId = createUuidV7();
 
   beforeAll(async () => {
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
@@ -63,7 +61,7 @@ describe.sequential("migration 0021: inventory review", () => {
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
     application = new Pool({ connectionString: databaseRoles.applicationUrl });
 
-    preUpgradeFolder = await mkdtemp(path.join(tmpdir(), "breev-pre-0021-"));
+    preUpgradeFolder = await mkdtemp(path.join(tmpdir(), "breev-pre-0023-"));
     const journal = JSON.parse(
       await readFile(
         path.join(MIGRATIONS_FOLDER, "meta/_journal.json"),
@@ -96,39 +94,21 @@ describe.sequential("migration 0021: inventory review", () => {
     }
 
     await application.query(
-      "insert into pharmacies (id, name) values ($1, 'Inventory Review Pharmacy')",
+      "insert into pharmacies (id, name) values ($1, 'Inventory Count Pharmacy')",
       [pharmacyId],
     );
     await seedOwnerRoleWithFloor(application, {
       actorId: ownerId,
-      displayName: "Inventory Owner",
+      displayName: "Inventory Count Owner",
       pharmacyId,
       roleId: ownerRoleId,
-      username: "inventory.owner",
+      username: "inventory-count.owner",
     });
     await application.query(
       `insert into pharmacy_roles (id, pharmacy_id, role_key)
        values ($1, $2, 'manager'), ($3, $2, 'pharmacist'),
-              ($4, $2, 'inventory_employee'), ($5, $2, 'purchasing_employee'),
-              ($6, $2, 'accountant')`,
-      [
-        managerRoleId,
-        pharmacyId,
-        pharmacistRoleId,
-        inventoryRoleId,
-        purchasingRoleId,
-        accountantRoleId,
-      ],
-    );
-    await application.query(
-      `insert into role_permission_grants (
-         pharmacy_id, role_id, permission_name, granted_by
-       ) values
-         ($1, $2, 'catalog.item.search', $3),
-         ($1, $2, 'purchases.costs.view', $3),
-         ($1, $2, 'purchases.drafts.manage', $3),
-         ($1, $2, 'purchases.posted.view', $3)`,
-      [pharmacyId, purchasingRoleId, ownerId],
+              ($4, $2, 'inventory_employee')`,
+      [managerRoleId, pharmacyId, pharmacistRoleId, inventoryRoleId],
     );
   }, 120_000);
 
@@ -141,34 +121,33 @@ describe.sequential("migration 0021: inventory review", () => {
     }
   });
 
-  it("adds the inventory grants, advances each touched role once, and is idempotent", async () => {
+  it("grants count permissions once and remains idempotent", async () => {
+    const before = await snapshot();
     await runMigrations(application, databaseRoles.migrationUrl);
-    const first = await snapshot();
-    expect(first.grants).toEqual([
-      ["accountant", "inventory.valuation.view"],
-      ["inventory_employee", "inventory.review"],
-      ["manager", "inventory.batch_safety.manage"],
-      ["manager", "inventory.review"],
-      ["manager", "inventory.valuation.view"],
-      ["owner", "inventory.batch_safety.manage"],
-      ["owner", "inventory.review"],
-      ["owner", "inventory.valuation.view"],
-      ["pharmacist", "inventory.batch_safety.manage"],
-      ["pharmacist", "inventory.review"],
-      ["purchasing_employee", "inventory.review"],
+    const after = await snapshot();
+
+    expect(after.grants).toEqual([
+      ["inventory_employee", "inventory.counts.record"],
+      ["manager", "inventory.counts.approve"],
+      ["manager", "inventory.counts.record"],
+      ["owner", "inventory.counts.approve"],
+      ["owner", "inventory.counts.record"],
+      ["pharmacist", "inventory.counts.record"],
     ]);
-    expect(first.revisions).toEqual({
-      accountant: "2",
-      inventory_employee: "3",
-      manager: "4",
-      owner: "6",
-      pharmacist: "4",
-      purchasing_employee: "4",
+    expect(after.revisions).toEqual({
+      inventory_employee: String(
+        BigInt(before.revisions.inventory_employee ?? "0") + 1n,
+      ),
+      manager: String(BigInt(before.revisions.manager ?? "0") + 1n),
+      owner: String(BigInt(before.revisions.owner ?? "0") + 1n),
+      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 1n),
     });
-    expect(first.pharmacyRevision).toBe("6");
+    expect(after.pharmacyRevision).toBe(
+      String(BigInt(before.pharmacyRevision) + 1n),
+    );
 
     await runMigrations(application, databaseRoles.migrationUrl);
-    expect(await snapshot()).toEqual(first);
+    expect(await snapshot()).toEqual(after);
   }, 120_000);
 
   async function snapshot(): Promise<{
@@ -177,23 +156,22 @@ describe.sequential("migration 0021: inventory review", () => {
     readonly revisions: Record<string, string>;
   }> {
     const grants = await application.query<{
-      role_key: string;
       permission_name: string;
+      role_key: string;
     }>(
       `select role.role_key, grant_row.permission_name
        from role_permission_grants grant_row
        join pharmacy_roles role on role.id = grant_row.role_id
        where grant_row.pharmacy_id = $1
          and grant_row.permission_name in (
-           'inventory.batch_safety.manage', 'inventory.review',
-           'inventory.valuation.view'
+           'inventory.counts.approve', 'inventory.counts.record'
          )
-       order by role.role_key, grant_row.permission_name`,
+       order by role.role_key::text, grant_row.permission_name`,
       [pharmacyId],
     );
     const revisions = await application.query<{
-      role_key: string;
       revision: string;
+      role_key: string;
     }>(
       `select role_key, revision::text
        from pharmacy_roles where pharmacy_id = $1 order by role_key`,
@@ -204,13 +182,7 @@ describe.sequential("migration 0021: inventory review", () => {
       [pharmacyId],
     );
     return {
-      grants: grants.rows
-        .map((row) => [row.role_key, row.permission_name] as [string, string])
-        .sort(([leftRole, leftPermission], [rightRole, rightPermission]) =>
-          leftRole === rightRole
-            ? leftPermission.localeCompare(rightPermission)
-            : leftRole.localeCompare(rightRole),
-        ),
+      grants: grants.rows.map((row) => [row.role_key, row.permission_name]),
       pharmacyRevision: pharmacy.rows[0]?.revision ?? "",
       revisions: Object.fromEntries(
         revisions.rows.map((row) => [row.role_key, row.revision]),

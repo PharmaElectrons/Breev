@@ -144,6 +144,14 @@ const permissionLabels: Record<
         "سحب دفعة أو حجرها مع سبب ودليل، وتصحيح تاريخ انتهاء خاطئ بعد إعادة التحقق.",
       name: "إدارة سلامة الدفعات",
     },
+    "inventory.counts.approve": {
+      description: "اعتماد فروق الجرد مع السبب والدليل المسجلين.",
+      name: "اعتماد فروق الجرد",
+    },
+    "inventory.counts.record": {
+      description: "تسجيل الكميات الفعلية ومتابعة جلسات جرد المخزون.",
+      name: "تسجيل جرد المخزون",
+    },
     "licensing.manage": {
       description: "تثبيت ترخيص الصيدلية أو تجديده أو إزالته.",
       name: "إدارة الترخيص",
@@ -226,6 +234,15 @@ const permissionLabels: Record<
       description:
         "Recall or quarantine a batch with reason and evidence, and correct a wrong expiry after re-authentication.",
       name: "Manage batch safety",
+    },
+    "inventory.counts.approve": {
+      description:
+        "Approve recorded stock-count variances with reason and evidence.",
+      name: "Approve count variances",
+    },
+    "inventory.counts.record": {
+      description: "Record physical stock counts and resume count sessions.",
+      name: "Record stock counts",
     },
     "licensing.manage": {
       description: "Install or renew the pharmacy licence, or remove it.",
