@@ -48,6 +48,7 @@ const item = {
   product: {
     displayName: "Panadol",
     inventoryUnitName: "Strip",
+    mergedIntoDisplayName: null,
     mergedIntoProductId: null,
     packageUnits: [{ baseUnitsPerPackage: "4", name: "Pack" }],
     status: "active",

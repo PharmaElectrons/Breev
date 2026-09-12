@@ -887,7 +887,7 @@ function BasketItemName({
         ? item.status === "ordered"
           ? copy.archivedOrderedRow
           : copy.archivedRow
-        : copy.mergedRow;
+        : copy.mergedRow(item.product.mergedIntoDisplayName);
   const mergedTargetId =
     item.product.status === "merged" ? item.product.mergedIntoProductId : null;
   const name = canReviewInventory ? (

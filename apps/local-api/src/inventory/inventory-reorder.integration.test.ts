@@ -265,6 +265,18 @@ describe.sequential("Inventory reorder PostgreSQL seam", () => {
       }),
     ]);
     expect(concurrent.map(({ status }) => status).sort()).toEqual([200, 200]);
+    const concurrentItems = concurrent.map(
+      (response) => response.body as ReorderResponse,
+    );
+    expect(concurrentItems.map(({ outcome }) => outcome).sort()).toEqual([
+      "added",
+      "updated",
+    ]);
+    expect(concurrentItems[0]?.item.id).toBe(concurrentItems[1]?.item.id);
+    expect(
+      concurrentItems.find(({ outcome }) => outcome === "updated")?.item
+        .version,
+    ).toBe("2");
     const concurrentLive = await administrator.query<{ count: string }>(
       `select count(*)::text as count from inventory_reorder_items
        where pharmacy_id = $1 and product_id = $2 and status <> 'removed'`,
@@ -623,6 +635,7 @@ describe.sequential("Inventory reorder PostgreSQL seam", () => {
     const product = await createProduct("Reorder rollback", "60", 1);
     const added = await add(product.id);
     const body = transitionBody(added.item.version);
+    const beforeCommandResults = await confirmCommandResultCount();
     await installConfirmFault();
     let failed: ApiResponse;
     try {
@@ -642,12 +655,8 @@ describe.sequential("Inventory reorder PostgreSQL seam", () => {
       status: "basket",
       version: added.item.version,
     });
-    const committed = await administrator.query<{ count: string }>(
-      `select count(*)::text as count from posting_audit_records
-       where pharmacy_id = $1 and correlation_id = $2 and outcome = 'committed'`,
-      [pharmacyId, body.idempotencyKey],
-    );
-    expect(committed.rows[0]?.count).toBe("0");
+    expect(await confirmCommandResultCount()).toBe(beforeCommandResults);
+    expect(await committedAuditCount(body.idempotencyKey)).toBe("0");
 
     const retry = await request(
       "POST",
@@ -656,6 +665,10 @@ describe.sequential("Inventory reorder PostgreSQL seam", () => {
     );
     expect(retry.status, diagnostics(retry)).toBe(200);
     expect((retry.body as ReorderResponse).item.status).toBe("ordered");
+    expect(await confirmCommandResultCount()).toBe(
+      String(BigInt(beforeCommandResults) + 1n),
+    );
+    expect(await committedAuditCount(body.idempotencyKey)).toBe("1");
   }, 60_000);
 
   async function add(productId: string): Promise<ReorderResponse> {
@@ -908,6 +921,24 @@ describe.sequential("Inventory reorder PostgreSQL seam", () => {
       `drop trigger reorder_test_fault_trigger on posting_command_results`,
     );
     await administrator.query("drop function reorder_test_fault()");
+  }
+
+  async function confirmCommandResultCount(): Promise<string> {
+    const result = await administrator.query<{ count: string }>(
+      `select count(*)::text as count from posting_command_results
+       where pharmacy_id = $1 and command_name = 'inventory.reorder.item.confirm'`,
+      [pharmacyId],
+    );
+    return result.rows[0]?.count ?? "0";
+  }
+
+  async function committedAuditCount(idempotencyKey: string): Promise<string> {
+    const result = await administrator.query<{ count: string }>(
+      `select count(*)::text as count from posting_audit_records
+       where pharmacy_id = $1 and correlation_id = $2 and outcome = 'committed'`,
+      [pharmacyId, idempotencyKey],
+    );
+    return result.rows[0]?.count ?? "0";
   }
 });
 

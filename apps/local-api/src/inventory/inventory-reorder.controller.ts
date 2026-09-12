@@ -37,12 +37,11 @@ export class InventoryReorderController {
   public constructor(private readonly reorder: InventoryReorderService) {}
 
   @Get(reorderBasketReadContract.path)
-  public async list(
-    @Query("status") status: string | undefined,
-    @Req() request: Request,
-  ) {
+  public async list(@Query() query: unknown, @Req() request: Request) {
     return await translateReorderDenial(async () => {
-      const input = reorderBasketQuerySchema.safeParse({ status });
+      // The whole query object is parsed so an unknown parameter is refused,
+      // as the strict contract promises.
+      const input = reorderBasketQuerySchema.safeParse(query ?? {});
       if (!input.success) {
         throw await this.reorder.rejectInvalidBody(
           request,

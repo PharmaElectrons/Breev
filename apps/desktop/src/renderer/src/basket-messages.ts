@@ -71,7 +71,7 @@ export interface BasketCopy {
   readonly empty: string;
   readonly emptyOrdered: string;
   readonly loading: string;
-  readonly mergedRow: string;
+  readonly mergedRow: (survivorName: string | null) => string;
   readonly notSaved: string;
   readonly permissionDenied: string;
   readonly proposalBasis: Record<ReorderProposalBasis, string>;
@@ -182,7 +182,10 @@ const arabic: BasketCopy = {
   empty: "لا توجد مواد في سلة الطلبات.",
   emptyOrdered: "لا توجد مواد مطلوبة.",
   loading: "جارٍ تحميل سلة الطلبات...",
-  mergedRow: "مدمجة في مادة أخرى — أزلها من السلة",
+  mergedRow: (survivorName) =>
+    survivorName === null
+      ? "مدمجة في مادة أخرى — أزلها من السلة"
+      : `مدمجة في ${survivorName} — أزلها من السلة`,
   notSaved: "لم تُحفظ",
   permissionDenied: "لا تملك صلاحية الوصول إلى سلة الطلبات.",
   proposalBasis: arabicProposalBasis,
@@ -249,7 +252,10 @@ const english: BasketCopy = {
   empty: "There are no items in the order basket.",
   emptyOrdered: "There are no Ordered Items.",
   loading: "Loading the order basket...",
-  mergedRow: "Merged into another item — remove from the basket",
+  mergedRow: (survivorName) =>
+    survivorName === null
+      ? "Merged into another item — remove from the basket"
+      : `Merged into ${survivorName} — remove from the basket`,
   notSaved: "Not saved",
   permissionDenied: "You do not have permission to access the order basket.",
   proposalBasis: englishProposalBasis,

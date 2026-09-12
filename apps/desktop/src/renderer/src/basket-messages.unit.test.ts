@@ -24,7 +24,8 @@ describe("basket translations", () => {
       ).not.toBe("");
       expect(copy.archivedRow).not.toBe("");
       expect(copy.archivedOrderedRow).not.toBe("");
-      expect(copy.mergedRow).not.toBe("");
+      expect(copy.mergedRow(null)).not.toBe("");
+      expect(copy.mergedRow("Panadol")).toContain("Panadol");
       expect(
         copy.alreadyInBasketAnnouncement("Panadol", "52", "Strip"),
       ).toContain("52");

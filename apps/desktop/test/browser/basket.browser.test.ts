@@ -6,11 +6,13 @@ import {
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   productArchivePath,
+  productMergePath,
   productPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
   reorderBasketPath,
   reorderItemConfirmationsPath,
+  reorderItemPath,
   reorderItemsPath,
   type Product,
   type ProductCreateRequest,
@@ -72,7 +74,7 @@ interface ApiResponse {
 }
 
 interface ForgedResponse {
-  readonly body: { readonly code?: string };
+  readonly body: { readonly code?: string; readonly requestId?: string };
   readonly status: number;
 }
 
@@ -94,9 +96,12 @@ test.describe.serial("reorder basket and Ordered Items", () => {
   let productA: Product;
   let productB: Product;
   let productC: Product;
+  let productD: Product;
+  let productE: Product;
   let itemAId = "";
   let itemBId = "";
   let itemCId = "";
+  let itemDId = "";
 
   test.beforeAll("reorder basket fixture", async () => {
     test.setTimeout(180_000);
@@ -154,6 +159,18 @@ test.describe.serial("reorder basket and Ordered Items", () => {
       2,
       supplier,
     );
+    productD = await createProduct(
+      "Basket Item D",
+      { maximumLevel: null, minimumLevel: null, reorderPoint: null },
+      0,
+      supplier,
+    );
+    productE = await createProduct(
+      "Basket Item E",
+      { maximumLevel: null, minimumLevel: null, reorderPoint: null },
+      0,
+      supplier,
+    );
     await createUser(
       pharmacyId,
       "manager",
@@ -190,7 +207,7 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     ).toBeVisible();
 
     const gridRows = page.locator("table tbody tr");
-    await expect(gridRows).toHaveCount(3);
+    await expect(gridRows).toHaveCount(5);
     const initialRows = await gridRows.allTextContents();
     const productRow = gridRows.filter({ hasText: productA.displayName });
     const itemButton = productRow.locator(
@@ -208,22 +225,28 @@ test.describe.serial("reorder basket and Ordered Items", () => {
       `Added 52 Strip for ${productA.displayName} to the order basket.`,
     );
     await expect(addButton).toBeFocused();
-    await expect(gridRows).toHaveCount(3);
+    await expect(gridRows).toHaveCount(5);
     await expect(gridRows).toHaveText(initialRows);
+    const basketAfterFirstAdd = await readBasketItems();
 
     // A second press is a new command, not a replay: the row is updated in
     // place and the renderer says so.
     await pressKeyOnFocused(page, addButton, "Enter");
-    await expect(statusRegion(page)).toContainText(
-      `${productA.displayName} is already in the order basket.`,
+    await expect(statusRegion(page)).toHaveText(
+      `${productA.displayName} is already in the order basket. The proposal was refreshed; the quantity is now 52 Strip.`,
     );
-    await expect(statusRegion(page)).toContainText("52");
     await expect(addButton).toBeFocused();
     const basketAfterReplay = await readBasketItems();
+    const firstAddedA = requireItem(basketAfterFirstAdd, productA);
+    const replayedA = requireItem(basketAfterReplay, productA);
     expect(
       basketAfterReplay.filter((item) => item.productId === productA.id),
     ).toHaveLength(1);
-    itemAId = requireItem(basketAfterReplay, productA).id;
+    expect(replayedA.quantity).toBe("52");
+    expect(BigInt(replayedA.version)).toBeGreaterThan(
+      BigInt(firstAddedA.version),
+    );
+    itemAId = replayedA.id;
 
     const openBasket = page.getByRole("link", {
       name: "Open the order basket",
@@ -291,9 +314,8 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await quantityA.fill("60");
     await expect(quantityA).toBeFocused();
     await pressKeyOnFocused(page, quantityA, "Enter");
-    await expect(statusRegion(page)).toContainText("Saved 60 Strip");
-    await expect(statusRegion(page)).toContainText(
-      "could create surplus or waste",
+    await expect(statusRegion(page)).toHaveText(
+      `Saved 60 Strip for ${productA.displayName} — projected 68 exceeds the maximum 60 and could create surplus or waste.`,
     );
     const surplus = rowA.locator("[data-warning='surplus']");
     await expect(surplus).toBeVisible();
@@ -307,8 +329,9 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await quantityA.fill("52");
     await expect(quantityA).toBeFocused();
     await pressKeyOnFocused(page, quantityA, "Enter");
-    await expect(statusRegion(page)).toContainText("Saved 52 Strip");
-    await expect(statusRegion(page)).toContainText("within the maximum 60");
+    await expect(statusRegion(page)).toHaveText(
+      `Saved 52 Strip for ${productA.displayName} — projected 60 is within the maximum 60.`,
+    );
     await expect(rowA.locator("[data-warning='surplus']")).toHaveCount(0);
     await expect(rowA.locator("td").nth(5)).toContainText("Within the maximum");
 
@@ -363,6 +386,7 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await expect(statusRegion(page)).toContainText(
       `${productA.displayName} returned to the order basket.`,
     );
+    await expect(page.locator("#basket-tab-ordered")).toBeFocused();
     await page.locator("#basket-tab-basket").click();
     await expect(basketRow(page, productA)).toBeVisible();
     await expect(
@@ -409,6 +433,9 @@ test.describe.serial("reorder basket and Ordered Items", () => {
       1,
     );
     await expect(
+      archivedRowA.locator(`[data-basket-action^="confirm:"]`),
+    ).toHaveCount(0);
+    await expect(
       archivedRowA.locator(`[data-basket-field="quantity:${itemAId}"]`),
     ).toBeDisabled();
     await archivedRowA
@@ -420,6 +447,7 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     );
 
     await login(MANAGER_USERNAME, MANAGER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
     await page.reload();
     const rowC = basketRow(page, productC);
     const quantityC = page.locator(`[data-basket-field="quantity:${itemCId}"]`);
@@ -433,6 +461,8 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     );
 
     await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.reload();
     const currentC = await apiRequest("GET", productPath(productC.id));
     expect(currentC.status).toBe(200);
     const archivedC = await apiRequest(
@@ -444,8 +474,55 @@ test.describe.serial("reorder basket and Ordered Items", () => {
       },
     );
     expect(archivedC.status).toBe(201);
-    // A hash-only navigation keeps the loaded rows; the archive is a server
-    // fact, so re-read the basket.
+    const addD = await apiRequest("POST", reorderItemsPath(), {
+      idempotencyKey: uuidV7(),
+      productId: productD.id,
+    });
+    expect(addD.status).toBe(200);
+    itemDId = requireItem(await readBasketItems(), productD).id;
+    const currentD = await apiRequest("GET", productPath(productD.id));
+    expect(currentD.status).toBe(200);
+    const mergedD = await apiRequest("POST", productMergePath(productD.id), {
+      expectedRevision: (currentD.body as Product).revision,
+      idempotencyKey: uuidV7(),
+      survivorProductId: productE.id,
+    });
+    expect(mergedD.status).toBe(201);
+    await page.goto(`${renderer.origin}#/basket`);
+    await page.reload();
+    const mergedRowD = basketRow(page, productD);
+    await expect(mergedRowD.locator(".basket-product-state")).toContainText(
+      `Merged into ${productE.displayName} — remove from the basket`,
+    );
+    await expect(mergedRowD.locator(".basket-product-state svg")).toHaveCount(
+      1,
+    );
+    await expect(mergedRowD.locator("[data-basket-merged-link]")).toHaveText(
+      `Merged into ${productE.displayName} — remove from the basket`,
+    );
+    await expect(
+      mergedRowD.locator("[data-basket-merged-link]"),
+    ).toHaveAttribute("href", `#/inventory/items/${productE.id}/movements`);
+    await expect(
+      mergedRowD.locator(`[data-basket-field="quantity:${itemDId}"]`),
+    ).toBeDisabled();
+    await expect(mergedRowD.locator("[data-basket-action]")).toHaveCount(1);
+    await expect(
+      mergedRowD.locator(`[data-basket-action^="remove:"]`),
+    ).toHaveCount(1);
+    await expect(
+      mergedRowD.locator(`[data-basket-action^="confirm:"]`),
+    ).toHaveCount(0);
+    await mergedRowD
+      .locator(`[data-basket-action="remove:${itemDId}"]`)
+      .click();
+    await expect(mergedRowD).toHaveCount(0);
+    await expect(statusRegion(page)).toContainText(
+      `${productD.displayName} was removed from the order basket.`,
+    );
+
+    // Navigation to Ordered Items is followed by a full reload so the archive
+    // is read from the server rather than from the previous route state.
     await page.goto(`${renderer.origin}#/basket/ordered`);
     await page.reload();
     const orderedArchivedC = page.locator(`tr[data-basket-row="${itemCId}"]`);
@@ -475,6 +552,45 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await page.goto(`${renderer.origin}#/basket`);
     const rowB = basketRow(page, productB);
     const quantityB = page.locator(`[data-basket-field="quantity:${itemBId}"]`);
+    const currentB = requireItem(await readBasketItems(), productB);
+    await expect(quantityB).toHaveValue(currentB.quantity);
+    const apiQuantity = "7";
+    const typedQuantity = "9";
+    const bumped = await apiRequest("PUT", reorderItemPath(currentB.id), {
+      expectedVersion: currentB.version,
+      idempotencyKey: uuidV7(),
+      quantity: apiQuantity,
+    });
+    expect(bumped.status).toBe(200);
+    // Pin the conflict at the network layer: whatever version the page holds
+    // (a health-poll remount could have refreshed it), the request carries
+    // the version from before the API edit, so the server must answer 409.
+    const stalePattern = `**${reorderItemPath(currentB.id)}`;
+    await page.route(stalePattern, async (route) => {
+      if (route.request().method() !== "PUT") {
+        await route.continue();
+        return;
+      }
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      await route.continue({
+        postData: JSON.stringify({
+          ...body,
+          expectedVersion: currentB.version,
+        }),
+      });
+    });
+    await quantityB.fill(typedQuantity);
+    await expect(quantityB).toBeFocused();
+    await pressKeyOnFocused(page, quantityB, "Enter");
+    await expect(statusRegion(page)).toHaveText(
+      `${productB.displayName} was refreshed. The saved quantity is now ${apiQuantity} Strip.`,
+    );
+    await page.unroute(stalePattern);
+    // load() initializes only unknown quantity ids, so the stale typed value
+    // remains visible while the announcement reports the server quantity.
+    await expect(quantityB).toHaveValue(typedQuantity);
+    await expect(quantityB).toBeFocused();
+
     await page.route("**/inventory/reorder-basket/items/*", async (route) => {
       if (route.request().method() === "PUT") await route.abort();
       else await route.continue();
@@ -493,6 +609,10 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await rowB.locator(`[data-basket-retry="${itemBId}"]`).click();
     await expect(statusRegion(page)).toContainText("Saved 1 Strip");
     await expect(quantityB).toHaveValue("1");
+    await expect(rowB.locator(".basket-not-saved")).toHaveCount(0);
+    await expect(rowB.locator(`[data-basket-retry="${itemBId}"]`)).toHaveCount(
+      0,
+    );
 
     await stopProcess(api);
     api = undefined;
@@ -540,9 +660,26 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     });
     expect(confirmationDenial.status).toBe(403);
     expect(confirmationDenial.body.code).toBe("permission-denied");
+    expect(confirmationDenial.body.requestId).toMatch(/^\S+$/u);
+    const employeeAudit = await administrator.query<{
+      outcome: string;
+      required_permission: string;
+    }>(
+      `select outcome, after_state->>'requiredPermission' as required_permission
+       from identity_audit_records
+       where id = $1`,
+      [confirmationDenial.body.requestId],
+    );
+    expect(employeeAudit.rows).toEqual([
+      {
+        outcome: "denied",
+        required_permission: "inventory.reorder.confirm",
+      },
+    ]);
 
     await login(CUSTOM_USERNAME, CUSTOM_PASSWORD);
     await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.reload();
     await page.goto(`${renderer.origin}#/inventory`);
     await expect(page.locator('a[href="#/basket"]')).toHaveCount(0);
     await expect(
@@ -554,16 +691,22 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     });
     expect(addDenial.status).toBe(403);
     expect(addDenial.body.code).toBe("permission-denied");
-    const deniedAudit = await administrator.query<{ count: string }>(
-      `select count(*)::text as count
+    expect(addDenial.body.requestId).toMatch(/^\S+$/u);
+    const customAudit = await administrator.query<{
+      outcome: string;
+      required_permission: string;
+    }>(
+      `select outcome, after_state->>'requiredPermission' as required_permission
        from identity_audit_records
-       where pharmacy_id = $1
-         and action = 'identity.authorization'
-         and outcome = 'denied'
-         and after_state->>'requiredPermission' = 'inventory.reorder.manage'`,
-      [pharmacyId],
+       where id = $1`,
+      [addDenial.body.requestId],
     );
-    expect(Number(deniedAudit.rows[0]?.count ?? "0")).toBeGreaterThan(0);
+    expect(customAudit.rows).toEqual([
+      {
+        outcome: "denied",
+        required_permission: "inventory.reorder.manage",
+      },
+    ]);
   });
 
   test("covers Arabic and English RTL/LTR themes, accessibility, logical order, and video evidence", async ({
@@ -597,6 +740,7 @@ test.describe.serial("reorder basket and Ordered Items", () => {
         "Actions",
       ],
     } as const;
+    let englishLightKeyboardOrder: readonly string[] | undefined;
     const orderedHeaders = {
       ar: ["المادة", "الكمية", "الحالة", "تاريخ الطلب", "طلبها", "الإجراءات"],
       en: ["Item", "Quantity", "Status", "Order date", "Ordered by", "Actions"],
@@ -634,6 +778,14 @@ test.describe.serial("reorder basket and Ordered Items", () => {
         await expect(
           page.locator(`[data-basket-field="quantity:${itemBId}"]`),
         ).toBeVisible();
+        if (theme === "light") {
+          const keyboardOrder = await collectBasketKeyboardOrder(page, itemBId);
+          if (locale === "en") {
+            englishLightKeyboardOrder = keyboardOrder;
+          } else {
+            expect(keyboardOrder).toEqual(englishLightKeyboardOrder);
+          }
+        }
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -717,6 +869,45 @@ function statusRegion(page: Page): Locator {
   return page.locator('p.visually-hidden[role="status"][aria-live="polite"]');
 }
 
+async function collectBasketKeyboardOrder(
+  page: Page,
+  itemId: string,
+): Promise<readonly string[]> {
+  const firstRow = page.locator("table.basket-table tbody tr").first();
+  const itemLink = firstRow.locator("[data-basket-item-link]");
+  const quantity = firstRow.locator(`[data-basket-field="quantity:${itemId}"]`);
+  const remove = firstRow.locator(`[data-basket-action="remove:${itemId}"]`);
+  const confirm = firstRow.locator(`[data-basket-action="confirm:${itemId}"]`);
+  await itemLink.focus();
+  await expect(itemLink).toBeFocused();
+  const sequence: string[] = [];
+  let current = itemLink;
+  for (const next of [quantity, remove, confirm]) {
+    await pressKeyOnFocused(page, current, "Tab");
+    await expect(next).toBeFocused();
+    const attribute = await page.evaluate(() => {
+      const active = (
+        globalThis as unknown as {
+          document: {
+            activeElement: {
+              getAttribute: (name: string) => string | null;
+            } | null;
+          };
+        }
+      ).document.activeElement;
+      return (
+        active?.getAttribute("data-basket-field") ??
+        active?.getAttribute("data-basket-action") ??
+        active?.getAttribute("data-basket-item-link")
+      );
+    });
+    expect(attribute).not.toBeNull();
+    sequence.push(attribute as string);
+    current = next;
+  }
+  return sequence;
+}
+
 function basketRow(page: Page, product: Product): Locator {
   return page.locator("table.basket-table tbody tr").filter({
     hasText: product.displayName,
@@ -756,7 +947,10 @@ async function forgeFetch(
       method: "POST",
     });
     return {
-      body: (await response.json()) as { readonly code?: string },
+      body: (await response.json()) as {
+        readonly code?: string;
+        readonly requestId?: string;
+      },
       status: response.status,
     };
   }, input);

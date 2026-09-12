@@ -1,12 +1,12 @@
 
  RUN  v4.1.11 /home/mohamed/Desktop/pharmaa/PharmaElectrons/apps/local-api
 
- ✓ src/inventory/inventory-reorder-authorization.integration.test.ts > Inventory reorder server-boundary authorization matrix > allows the split permissions and audits every denied command 4963ms
- ✓ src/inventory/inventory-reorder-authorization.integration.test.ts > Inventory reorder server-boundary authorization matrix > audits tenant, locked-user, device, step-up, and expected-version boundaries 856ms
- ✓ src/inventory/inventory-reorder-authorization.integration.test.ts > Inventory reorder POS entitlement boundary > allows an entitled terminal and denies it after entitlement removal 289ms
+ ✓ src/inventory/inventory-reorder-authorization.integration.test.ts > Inventory reorder server-boundary authorization matrix > allows the split permissions and audits every denied command 6622ms
+ ✓ src/inventory/inventory-reorder-authorization.integration.test.ts > Inventory reorder server-boundary authorization matrix > audits tenant, locked-user, device, step-up, and expected-version boundaries 1346ms
+ ✓ src/inventory/inventory-reorder-authorization.integration.test.ts > Inventory reorder POS entitlement boundary > allows an entitled terminal and denies it after entitlement removal 275ms
 
  Test Files  1 passed (1)
       Tests  3 passed (3)
-   Start at  00:01:46
-   Duration  32.73s (transform 513ms, setup 0ms, import 1.49s, tests 31.09s, environment 0ms)
+   Start at  00:59:11
+   Duration  36.28s (transform 445ms, setup 0ms, import 1.34s, tests 34.83s, environment 0ms)
 

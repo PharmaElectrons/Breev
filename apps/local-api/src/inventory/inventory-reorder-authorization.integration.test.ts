@@ -198,12 +198,16 @@ describe.sequential(
 
     it("allows the split permissions and audits every denied command", async () => {
       for (const [roleKey, actor] of Object.entries(actors)) {
+        const beforeRead = await readBasketAsOwner();
         await loginAs(actor);
         const listed = await request("GET", "/inventory/reorder-basket");
         if (!actor.canManage && !actor.canConfirm) {
           expect(listed.status, diagnostics(listed)).toBe(403);
           await expectIdentityAudit(listed, "inventory.reorder.manage");
+          await expectBasketUnchanged(beforeRead);
           const deniedProduct = await createProduct(`Denied add ${roleKey}`);
+          const beforeAdd = await readBasketAsOwner();
+          const beforeAddCount = await liveReorderCount(deniedProduct.id);
           await loginAs(actor);
           const deniedAdd = await request("POST", reorderItemsPath(), {
             idempotencyKey: uuidV7(),
@@ -211,6 +215,8 @@ describe.sequential(
           });
           expect(deniedAdd.status, diagnostics(deniedAdd)).toBe(403);
           await expectIdentityAudit(deniedAdd, "inventory.reorder.manage");
+          await expectBasketUnchanged(beforeAdd);
+          expect(await liveReorderCount(deniedProduct.id)).toBe(beforeAddCount);
           continue;
         }
         expect(listed.status, diagnostics(listed)).toBe(200);
@@ -234,6 +240,8 @@ describe.sequential(
         } else {
           const product = await createProduct(`Confirm only manage ${roleKey}`);
           const row = await addAsOwner(product.id);
+          const beforeAdd = await snapshotRowAsOwner(row.id);
+          const beforeAddCount = await liveReorderCount(product.id);
           await loginAs(actor);
           const deniedAdd = await request("POST", reorderItemsPath(), {
             idempotencyKey: uuidV7(),
@@ -241,6 +249,10 @@ describe.sequential(
           });
           expect(deniedAdd.status, diagnostics(deniedAdd)).toBe(403);
           await expectIdentityAudit(deniedAdd, "inventory.reorder.manage");
+          await expectRowUnchanged(beforeAdd);
+          expect(await liveReorderCount(product.id)).toBe(beforeAddCount);
+          const beforeUpdate = await snapshotRowAsOwner(row.id);
+          await loginAs(actor);
           const deniedUpdate = await request("PUT", reorderItemPath(row.id), {
             expectedVersion: row.version,
             idempotencyKey: uuidV7(),
@@ -248,6 +260,9 @@ describe.sequential(
           });
           expect(deniedUpdate.status, diagnostics(deniedUpdate)).toBe(403);
           await expectIdentityAudit(deniedUpdate, "inventory.reorder.manage");
+          await expectRowUnchanged(beforeUpdate);
+          const beforeRemove = await snapshotRowAsOwner(row.id);
+          await loginAs(actor);
           const deniedRemove = await request(
             "POST",
             reorderItemRemovalsPath(row.id),
@@ -255,10 +270,14 @@ describe.sequential(
           );
           expect(deniedRemove.status, diagnostics(deniedRemove)).toBe(403);
           await expectIdentityAudit(deniedRemove, "inventory.reorder.manage");
+          await expectRowUnchanged(beforeRemove);
         }
 
         const confirmProduct = await createProduct(`Confirm ${roleKey}`);
         const confirmRow = await addAsOwner(confirmProduct.id);
+        const beforeConfirm = actor.canConfirm
+          ? undefined
+          : await snapshotRowAsOwner(confirmRow.id);
         await loginAs(actor);
         const confirm = await request(
           "POST",
@@ -277,6 +296,9 @@ describe.sequential(
         } else {
           expect(confirm.status, diagnostics(confirm)).toBe(403);
           await expectIdentityAudit(confirm, "inventory.reorder.confirm");
+          await expectRowUnchanged(beforeConfirm!);
+          const beforeReturn = await snapshotRowAsOwner(confirmRow.id);
+          await loginAs(actor);
           const deniedReturn = await request(
             "POST",
             reorderItemReturnsPath(confirmRow.id),
@@ -284,6 +306,7 @@ describe.sequential(
           );
           expect(deniedReturn.status, diagnostics(deniedReturn)).toBe(403);
           await expectIdentityAudit(deniedReturn, "inventory.reorder.confirm");
+          await expectRowUnchanged(beforeReturn);
         }
       }
     }, 180_000);
@@ -293,6 +316,7 @@ describe.sequential(
       const product = await createProduct("Authorization boundaries");
       const row = await addAsOwner(product.id);
 
+      const beforeForeign = await readBasketAsOwner();
       const foreign = await request("PUT", reorderItemPath(uuidV7()), {
         expectedVersion: row.version,
         idempotencyKey: uuidV7(),
@@ -301,6 +325,7 @@ describe.sequential(
       expect(foreign.status, diagnostics(foreign)).toBe(404);
       expect(foreign.body).toMatchObject({ code: "reorder-item-not-found" });
       await expectPostingAudit(foreign);
+      await expectBasketUnchanged(beforeForeign);
 
       const advanced = await request("PUT", reorderItemPath(row.id), {
         expectedVersion: row.version,
@@ -309,6 +334,7 @@ describe.sequential(
       });
       expect(advanced.status, diagnostics(advanced)).toBe(200);
       // The row moved on; the original version is now stale.
+      const beforeStale = await snapshotRowAsOwner(row.id);
       const stale = await request("PUT", reorderItemPath(row.id), {
         expectedVersion: row.version,
         idempotencyKey: uuidV7(),
@@ -317,28 +343,36 @@ describe.sequential(
       expect(stale.status, diagnostics(stale)).toBe(409);
       expect(stale.body).toMatchObject({ code: "version-conflict" });
       await expectPostingAudit(stale);
+      await expectRowUnchanged(beforeStale);
 
+      const beforeInvalidDevice = await readBasketAsOwner();
       const invalidDevice = await requestAs(
         { ...credentials, deviceId: uuidV7() },
         "GET",
         "/inventory/reorder-basket",
       );
       expect(invalidDevice.status, diagnostics(invalidDevice)).toBe(401);
+      await expectBasketUnchanged(beforeInvalidDevice);
+      const beforeMissingDevice = await readBasketAsOwner();
       const missingDevice = await requestWithoutDevice(
         "GET",
         "/inventory/reorder-basket",
       );
       expect(missingDevice.status, diagnostics(missingDevice)).toBe(401);
+      await expectBasketUnchanged(beforeMissingDevice);
 
+      const beforeLocked = await readBasketAsOwner();
       const locked = await createLockedUser();
       const lockedLogin = await loginByUsername(
         locked.username,
         locked.password,
       );
       expect(lockedLogin.status, diagnostics(lockedLogin)).toBe(401);
+      await expectBasketUnchanged(beforeLocked);
 
       const challenge = await createChallenge("inventory.sensitive.export");
       expect(challenge).toBeTruthy();
+      const beforeStepUp = await snapshotRowAsOwner(row.id);
       await loginAs(actors.inventory_employee!);
       const forgedStepUp = await request(
         "POST",
@@ -347,6 +381,7 @@ describe.sequential(
       );
       expect(forgedStepUp.status, diagnostics(forgedStepUp)).toBe(403);
       expect(forgedStepUp.body).toMatchObject({ code: "permission-denied" });
+      await expectRowUnchanged(beforeStepUp);
     }, 90_000);
 
     async function createUsersAndRoles(): Promise<void> {
@@ -536,6 +571,48 @@ describe.sequential(
       expect(response.status, diagnostics(response)).toBe(201);
       supplierId = String((response.body as { id: string }).id);
       return supplierId;
+    }
+
+    async function readBasketAsOwner(): Promise<readonly ReorderItem[]> {
+      const login = await loginAs(actors.owner!);
+      expect(login.status, diagnostics(login)).toBe(200);
+      const response = await request("GET", "/inventory/reorder-basket");
+      expect(response.status, diagnostics(response)).toBe(200);
+      return (response.body as { items: readonly ReorderItem[] }).items;
+    }
+
+    function rowSnapshot(
+      items: readonly ReorderItem[],
+      itemId: string,
+    ): ReorderItem {
+      const row = items.find((candidate) => candidate.id === itemId);
+      if (row === undefined) throw new Error(`Missing reorder item ${itemId}`);
+      return row;
+    }
+
+    async function snapshotRowAsOwner(itemId: string): Promise<ReorderItem> {
+      return rowSnapshot(await readBasketAsOwner(), itemId);
+    }
+
+    async function expectRowUnchanged(snapshot: ReorderItem): Promise<void> {
+      expect(rowSnapshot(await readBasketAsOwner(), snapshot.id)).toEqual(
+        snapshot,
+      );
+    }
+
+    async function expectBasketUnchanged(
+      snapshot: readonly ReorderItem[],
+    ): Promise<void> {
+      expect(await readBasketAsOwner()).toEqual(snapshot);
+    }
+
+    async function liveReorderCount(productId: string): Promise<string> {
+      const result = await administrator.query<{ count: string }>(
+        `select count(*)::text as count from inventory_reorder_items
+         where pharmacy_id = $1 and product_id = $2 and status <> 'removed'`,
+        [pharmacyId, productId],
+      );
+      return result.rows[0]?.count ?? "0";
     }
 
     async function expectIdentityAudit(

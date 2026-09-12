@@ -1,16 +1,16 @@
 
  RUN  v4.1.11 /home/mohamed/Desktop/pharmaa/PharmaElectrons/apps/local-api
 
- ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 1. runs the lifecycle and leaves review and movement facts unchanged 424ms
- ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 2. serializes and replays idempotent adds with deterministic re-add behavior 680ms
- ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 3. replays every transition and every rejected command without a second write 473ms
- ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 4. enforces versions, transitions, inactive products, and merged-product reads 730ms
- ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 5. preserves append-only reorder rows and rejects invalid direct mutations 232ms
- ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 6. survives an API restart with durable basket and Ordered Items state 1200ms
- ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 7. rolls back the row, audit, and result together when recording fails 245ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 1. runs the lifecycle and leaves review and movement facts unchanged 486ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 2. serializes and replays idempotent adds with deterministic re-add behavior 704ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 3. replays every transition and every rejected command without a second write 530ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 4. enforces versions, transitions, inactive products, and merged-product reads 729ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 5. preserves append-only reorder rows and rejects invalid direct mutations 235ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 6. survives an API restart with durable basket and Ordered Items state 1198ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 7. rolls back the row, audit, and result together when recording fails 224ms
 
  Test Files  1 passed (1)
       Tests  7 passed (7)
-   Start at  00:01:28
-   Duration  16.93s (transform 112ms, setup 0ms, import 448ms, tests 16.38s, environment 0ms)
+   Start at  00:58:55
+   Duration  15.54s (transform 111ms, setup 0ms, import 457ms, tests 14.98s, environment 0ms)
 

@@ -3002,6 +3002,7 @@ export const reorderItemSchema = z.strictObject({
   product: z.strictObject({
     displayName: z.string().min(1).max(726),
     inventoryUnitName: productUnitNameSchema,
+    mergedIntoDisplayName: z.string().min(1).max(726).nullable(),
     mergedIntoProductId: z.uuidv7().nullable(),
     packageUnits: z.array(productPackageUnitSchema),
     status: productStatusSchema,

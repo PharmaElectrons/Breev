@@ -136,6 +136,8 @@ export class InventoryReorderDenied extends Error {
 
 interface InventorySnapshot {
   readonly facts: ReadonlyMap<string, CatalogInventoryFacts>;
+  /** Display names of the survivors that merged products now point at. */
+  readonly mergedTargets: ReadonlyMap<string, string>;
   readonly nearExpiryDays: ReadonlyMap<string, number>;
   readonly now: Date;
   readonly packaging: ReadonlyMap<string, CatalogPackagingFacts>;
@@ -717,6 +719,11 @@ export class InventoryReorderService {
         product: {
           displayName: fact.displayName,
           inventoryUnitName: packaging.inventoryUnitName,
+          mergedIntoDisplayName:
+            fact.mergedIntoProductId === null ||
+            fact.mergedIntoProductId === undefined
+              ? null
+              : (snapshot.mergedTargets.get(fact.mergedIntoProductId) ?? null),
           mergedIntoProductId: fact.mergedIntoProductId ?? null,
           packageUnits: packaging.packageUnits,
           status: fact.status,
@@ -785,9 +792,31 @@ export class InventoryReorderService {
       context.pharmacyId,
       productIds,
     );
+    const survivorIds = [
+      ...new Set(
+        [...facts.values()].flatMap((fact) =>
+          fact.mergedIntoProductId === null ||
+          fact.mergedIntoProductId === undefined
+            ? []
+            : [fact.mergedIntoProductId],
+        ),
+      ),
+    ];
+    const survivors =
+      survivorIds.length === 0
+        ? new Map<string, CatalogInventoryFacts>()
+        : await resolveCatalogInventoryFacts(client, context.pharmacyId, {
+            productIds: survivorIds,
+          });
     return {
       businessDate,
       facts,
+      mergedTargets: new Map(
+        [...survivors.values()].map((fact) => [
+          fact.productId,
+          fact.displayName,
+        ]),
+      ),
       nearExpiryDays,
       now,
       packaging,
