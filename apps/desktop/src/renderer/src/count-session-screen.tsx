@@ -1149,12 +1149,12 @@ function ApplyVarianceDialog({
         >
           <label className="field-label">
             <span>{copy.applicationReason}</span>
-            <textarea ref={reasonRef} name="reason" required />
+            <textarea ref={reasonRef} aria-required="true" name="reason" />
           </label>
           <p className="field-hint">{copy.reasonHint}</p>
           <label className="field-label">
             <span>{copy.applicationEvidence}</span>
-            <textarea name="evidence" required />
+            <textarea aria-required="true" name="evidence" />
           </label>
           <p className="field-hint">{copy.evidenceHint}</p>
           {validationError === null ? null : (

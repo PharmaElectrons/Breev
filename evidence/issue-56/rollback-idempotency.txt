@@ -1,0 +1,20 @@
+Host: Linux 7.1.8-1-cachyos x86_64, v24.19.0, Docker Testcontainers postgres:18.6-bookworm, 2026-09-12T04:04Z
+Command: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/inventory/inventory-count.integration.test.ts
+
+
+ RUN  v4.1.11 /home/mohamed/Desktop/pharmaa/PharmaElectrons/apps/local-api
+
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 1. runs the lifecycle, converts mixed units, allocates FEFO, and conserves valuation 879ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 2. rolls back every posting fault together and reuses the committed number gap 1133ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 3. replays idempotent success and rejection while conflicting bodies are refused 300ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 4. revalidates balances after concurrent purchases and rejects stale versions 425ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 5. protects completed sessions, lines, applications, movements, and journals from mutation 205ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 6. survives an API restart with the same durable lines and version 1110ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 7. rejects direct quantity edits and leaves raw inventory facts unchanged across reads 225ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 8. reconciles raw movements, exposes the count reference, and excludes shortage from consumption 160ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  07:04:08
+   Duration  15.04s (transform 109ms, setup 0ms, import 443ms, tests 14.50s, environment 0ms)
+
