@@ -1954,33 +1954,37 @@ a:focus-visible,
 }
 
 /* Purchase invoice composition measured from the rendered client prototype. */
-.shell-page[data-purchase-workspace] {
+.shell-page[data-purchase-workspace],
+.shell-page[data-inventory-workspace],
+.shell-page[data-basket-workspace] {
   block-size: 100dvh;
   min-block-size: 40rem;
+  overflow: hidden;
+  background: var(--card);
+}
+.shell-page[data-purchase-workspace] {
   grid-template-rows: 4rem minmax(0, 1fr);
   margin-inline-end: 20rem;
-  overflow: hidden;
-  background: var(--card);
 }
-.shell-page[data-inventory-workspace] {
-  block-size: 100dvh;
-  min-block-size: 40rem;
+.shell-page[data-inventory-workspace],
+.shell-page[data-basket-workspace] {
   grid-template-rows: 4rem auto minmax(0, 1fr);
-  overflow: hidden;
-  background: var(--card);
 }
-.shell-page[data-inventory-workspace] .shell-header {
+.shell-page[data-inventory-workspace] .shell-header,
+.shell-page[data-basket-workspace] .shell-header {
   flex-wrap: nowrap;
   min-inline-size: 0;
   padding: 0.5rem 1.5rem;
   background: var(--card);
 }
-.shell-page[data-inventory-workspace] .brand-lockup > span:last-child {
+.shell-page[data-inventory-workspace] .brand-lockup > span:last-child,
+.shell-page[data-basket-workspace] .brand-lockup > span:last-child {
   display: flex;
   align-items: center;
   gap: 0.6rem;
 }
-.shell-page[data-inventory-workspace] .brand-description {
+.shell-page[data-inventory-workspace] .brand-description,
+.shell-page[data-basket-workspace] .brand-description {
   display: block;
   margin: 0;
   border-inline-start: 1px solid var(--border);
@@ -1988,11 +1992,13 @@ a:focus-visible,
   font-size: 0.8rem;
   font-weight: 500;
 }
-.shell-page[data-inventory-workspace] .module-nav {
+.shell-page[data-inventory-workspace] .module-nav,
+.shell-page[data-basket-workspace] .module-nav {
   flex: 1 1 0;
   min-inline-size: 8rem;
 }
-.shell-page[data-inventory-workspace] .preference-controls {
+.shell-page[data-inventory-workspace] .preference-controls,
+.shell-page[data-basket-workspace] .preference-controls {
   gap: 0.3rem;
 }
 .shell-page[data-purchase-workspace]:has(.purchase-item-sidebar[hidden]) {
@@ -2110,6 +2116,127 @@ a:focus-visible,
   overflow: auto;
   padding: 1.25rem clamp(1rem, 3vw, 2rem) 2rem;
   background: var(--card);
+}
+.basket-workspace {
+  display: flex;
+  min-block-size: 0;
+  min-inline-size: 0;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: auto;
+  padding-block-end: 2rem;
+  background: var(--card);
+}
+.basket-heading {
+  flex: none;
+  padding-inline: clamp(1rem, 3vw, 2rem);
+}
+.basket-table-scroll {
+  min-block-size: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-inline: clamp(1rem, 3vw, 2rem);
+}
+.basket-table {
+  inline-size: 100%;
+  min-inline-size: 58rem;
+  border-collapse: collapse;
+  background: var(--card);
+}
+.basket-table th,
+.basket-table td {
+  border-block-end: 1px solid var(--border);
+  padding: 0.75rem 0.8rem;
+  text-align: start;
+  vertical-align: top;
+}
+.basket-table thead th {
+  position: sticky;
+  z-index: 1;
+  inset-block-start: 0;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.basket-table tbody th[scope="row"] {
+  min-inline-size: 12rem;
+  font-weight: 700;
+}
+.basket-table tbody tr:hover {
+  background: var(--primary-wash);
+}
+.basket-table tr[data-saved="false"] {
+  background: var(--warning-soft);
+}
+.basket-item-name,
+.inventory-item-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.basket-product-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--warning);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.basket-product-state-icon,
+.basket-ordered-status-icon,
+.basket-warning-icon {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+  flex: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.basket-quantity {
+  inline-size: 6rem;
+  font-variant-numeric: tabular-nums;
+}
+.basket-quantity-caption,
+.basket-proposal-basis {
+  display: block;
+  margin-block-start: 0.3rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.basket-not-saved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-block-start: 0.5rem;
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.basket-not-saved .quiet-button {
+  min-block-size: 1.8rem;
+  padding-block: 0.2rem;
+  font-size: 0.72rem;
+}
+.basket-warning {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  color: var(--warning);
+  font-weight: 700;
+}
+.basket-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.basket-ordered-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
 }
 .inventory-heading {
   display: flex;
@@ -2777,6 +2904,13 @@ a:focus-visible,
     forced-color-adjust: none;
     color: CanvasText;
   }
+  .basket-warning {
+    color: CanvasText;
+  }
+  .basket-warning-icon {
+    forced-color-adjust: none;
+    color: CanvasText;
+  }
 }
 .purchase-view-tabs {
   display: flex;
@@ -2804,7 +2938,8 @@ a:focus-visible,
   white-space: nowrap;
 }
 .purchase-view-tab:hover:not(:disabled),
-.purchase-view-tab[aria-pressed="true"] {
+.purchase-view-tab[aria-pressed="true"],
+.purchase-view-tab[aria-current="page"] {
   border-block-end-color: var(--primary);
   color: var(--primary);
 }

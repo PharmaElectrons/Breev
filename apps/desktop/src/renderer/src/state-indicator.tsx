@@ -24,6 +24,56 @@ type StateIndicatorProps =
       readonly status: BatchEligibilityStatus;
     };
 
+export interface StateColourIndicatorsCopy {
+  readonly automatic: string;
+  readonly manual: string;
+  readonly manualNone: string;
+  readonly riskIndicators: Record<InventoryRiskIndicator, string>;
+  readonly stateColours: Record<ProductStateColour, string>;
+}
+
+export function StateColourIndicators({
+  copy,
+  riskIndicators,
+  stateColour,
+}: {
+  readonly copy: StateColourIndicatorsCopy;
+  readonly riskIndicators: readonly InventoryRiskIndicator[];
+  readonly stateColour: {
+    readonly automatic: ProductStateColour;
+    readonly effective: ProductStateColour;
+    readonly manual: ProductStateColour | null;
+  };
+}): React.JSX.Element {
+  return (
+    <div className="inventory-indicators">
+      <StateIndicator
+        assistiveLabel={copy.stateColours[stateColour.effective]}
+        colour={stateColour.effective}
+        kind="state"
+        label={copy.stateColours[stateColour.effective]}
+      />
+      <small>
+        {copy.automatic}: {copy.stateColours[stateColour.automatic]}
+      </small>
+      <small>
+        {copy.manual}:{" "}
+        {stateColour.manual === null
+          ? copy.manualNone
+          : copy.stateColours[stateColour.manual]}
+      </small>
+      {riskIndicators.map((indicator) => (
+        <StateIndicator
+          indicator={indicator}
+          key={indicator}
+          kind="risk"
+          label={copy.riskIndicators[indicator]}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function StateIndicator(props: StateIndicatorProps): React.JSX.Element {
   const token =
     props.kind === "state"

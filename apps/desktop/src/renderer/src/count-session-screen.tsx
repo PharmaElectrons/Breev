@@ -10,7 +10,7 @@ import { searchProducts } from "./catalog-api";
 import { useCommittedFocus } from "./committed-focus";
 import {
   applyCountVariance,
-  countCommandAttempt,
+  inventoryCommandAttempt,
   InventoryApiDenied,
   listCountSessions,
   readCountSession,
@@ -80,7 +80,7 @@ function CountSessionStart({
   const { locale } = usePreferences();
   const copy = inventoryMessages[locale].count;
   const requestCommittedFocus = useCommittedFocus();
-  const attemptRef = useRef<ReturnType<typeof countCommandAttempt> | null>(
+  const attemptRef = useRef<ReturnType<typeof inventoryCommandAttempt> | null>(
     null,
   );
   const [active, setActive] = useState<CountSessionSummary[] | null>(null);
@@ -124,7 +124,7 @@ function CountSessionStart({
   async function start(): Promise<void> {
     if (!canRecord || busy) return;
     const fingerprint = JSON.stringify({ command: "start-count-session" });
-    const attempt = countCommandAttempt(attemptRef.current, fingerprint);
+    const attempt = inventoryCommandAttempt(attemptRef.current, fingerprint);
     attemptRef.current = attempt;
     setBusy(true);
     setError(null);
@@ -315,7 +315,7 @@ function CountSessionLoop({
   const [completionPrompt, setCompletionPrompt] = useState(false);
   const applyOpenerRef = useRef<HTMLElement | null>(null);
   const completionOpenerRef = useRef<HTMLElement | null>(null);
-  const attemptRef = useRef<ReturnType<typeof countCommandAttempt> | null>(
+  const attemptRef = useRef<ReturnType<typeof inventoryCommandAttempt> | null>(
     null,
   );
   const sequence = useRef(0);
@@ -469,7 +469,7 @@ function CountSessionLoop({
       expectedVersion: session.version,
       productId: selectedProduct.id,
     };
-    const attempt = countCommandAttempt(
+    const attempt = inventoryCommandAttempt(
       attemptRef.current,
       JSON.stringify({ command: "record-count-line", sessionId, request }),
     );
@@ -572,7 +572,7 @@ function CountSessionLoop({
       expectedVersion: session.version,
       reason,
     };
-    const attempt = countCommandAttempt(
+    const attempt = inventoryCommandAttempt(
       attemptRef.current,
       JSON.stringify({
         command: "apply-count-variance",
@@ -644,7 +644,7 @@ function CountSessionLoop({
     const request = {
       expectedVersion: session.version,
     };
-    const attempt = countCommandAttempt(
+    const attempt = inventoryCommandAttempt(
       attemptRef.current,
       JSON.stringify({ command: "complete-count-session", sessionId, request }),
     );

@@ -124,7 +124,7 @@ function parseCount(value: string): bigint {
     : BigInt(normalized);
 }
 
-function normalizedCount(value: string): string {
+export function normalizedCount(value: string): string {
   const normalized = value.trim();
   if (normalized === "" || !/^\d+$/u.test(normalized)) return "0";
   return normalized.replace(/^0+(?=\d)/u, "");

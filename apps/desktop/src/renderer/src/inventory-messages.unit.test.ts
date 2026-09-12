@@ -21,6 +21,11 @@ describe("inventory translations", () => {
       for (const colour of PRODUCT_STATE_COLORS) {
         expect(inventoryMessages[locale].stateColours[colour]).not.toBe("");
       }
+      expect(inventoryMessages[locale].addToBasket).not.toBe("");
+      expect(
+        inventoryMessages[locale].addToBasketAriaLabel("Panadol"),
+      ).not.toBe("");
+      expect(inventoryMessages[locale].openBasket).not.toBe("");
       for (const status of BATCH_ELIGIBILITY_STATUSES) {
         expect(inventoryMessages[locale].safety.statusLabels[status]).not.toBe(
           "",

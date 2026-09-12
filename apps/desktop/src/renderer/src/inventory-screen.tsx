@@ -13,7 +13,9 @@ import { useCommittedFocus } from "./committed-focus";
 
 import {
   InventoryApiDenied,
+  addReorderItem,
   exportInventorySensitiveData,
+  inventoryCommandAttempt,
   newInventoryIdempotencyKey,
   readBatchSafetyStatus,
   requestInventoryItems,
@@ -23,6 +25,7 @@ import {
 } from "./inventory-api";
 import { BatchSafetyReview } from "./batch-safety-review";
 import { BatchSafetyPanel } from "./batch-safety-panel";
+import { basketMessages } from "./basket-messages";
 import { inventoryMessages, type InventoryCopy } from "./inventory-messages";
 import { createInventoryPreferenceSaveQueue } from "./inventory-preferences-save";
 import { useIdentityState } from "./identity-state-provider";
@@ -39,7 +42,7 @@ import {
 import { PostedPurchaseReview } from "./posted-purchase-review";
 import { CountSessionReview } from "./count-session-review";
 import { CountSessionScreen } from "./count-session-screen";
-import { StateIndicator } from "./state-indicator";
+import { StateColourIndicators } from "./state-indicator";
 import { StepUpDialog, useStepUp } from "./step-up";
 
 type SortDirection = "ascending" | "descending";
@@ -74,6 +77,9 @@ export function InventoryRouteView({
   const canReviewInventory =
     identity?.state === "authenticated" &&
     identity.allowedPermissions.includes("inventory.review");
+  const canManageReorder =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("inventory.reorder.manage");
   if (route.kind === "count") {
     return (
       <CountSessionScreen
@@ -120,7 +126,13 @@ export function InventoryRouteView({
     );
   }
   if (!canRecordCount && !canApproveCount) {
-    return <InventoryScreen baseUrl={baseUrl} checkNow={checkNow} />;
+    return (
+      <InventoryScreen
+        baseUrl={baseUrl}
+        canManageReorder={canManageReorder}
+        checkNow={checkNow}
+      />
+    );
   }
   if (!canReviewInventory) {
     return (
@@ -134,14 +146,22 @@ export function InventoryRouteView({
       />
     );
   }
-  return <InventoryScreen baseUrl={baseUrl} checkNow={checkNow} />;
+  return (
+    <InventoryScreen
+      baseUrl={baseUrl}
+      canManageReorder={canManageReorder}
+      checkNow={checkNow}
+    />
+  );
 }
 
 function InventoryScreen({
   baseUrl,
+  canManageReorder,
   checkNow,
 }: {
   readonly baseUrl: string;
+  readonly canManageReorder: boolean;
   readonly checkNow: () => Promise<void>;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -171,6 +191,9 @@ function InventoryScreen({
   >("idle");
   const settingsToggleRef = useRef<HTMLElement>(null);
   const requestCommittedFocus = useCommittedFocus();
+  const reorderAttemptRef = useRef<ReturnType<
+    typeof inventoryCommandAttempt
+  > | null>(null);
   const latestPreferenceRevisionRef = useRef(preferences.revision);
   const latestPreferenceColumnsRef = useRef(preferences.columns);
   const preferenceSaveQueueRef = useRef<ReturnType<
@@ -194,6 +217,45 @@ function InventoryScreen({
   const canRecordCount =
     identity?.state === "authenticated" &&
     identity.allowedPermissions.includes("inventory.counts.record");
+
+  async function addItemToBasket(item: InventoryItem): Promise<void> {
+    if (!canManageReorder) return;
+    const attempt = inventoryCommandAttempt(
+      reorderAttemptRef.current,
+      item.productId,
+    );
+    reorderAttemptRef.current = attempt;
+    setError(null);
+    setDenial(null);
+    try {
+      const result = await addReorderItem(baseUrl, {
+        idempotencyKey: attempt.idempotencyKey,
+        productId: item.productId,
+      });
+      const basketCopy = basketMessages[locale];
+      setAnnouncement(
+        result.outcome === "already-ordered"
+          ? basketCopy.alreadyOrderedAnnouncement(
+              result.item.product.displayName,
+            )
+          : basketCopy.addedAnnouncement(
+              result.item.product.displayName,
+              formatNumber(BigInt(result.item.quantity), locale),
+              result.item.product.inventoryUnitName,
+            ),
+      );
+    } catch (caught) {
+      if (
+        caught instanceof InventoryApiDenied ||
+        caught instanceof IdentityApiDenied ||
+        caught instanceof LicensingApiDenied
+      ) {
+        setDenial(caught.denial);
+      } else {
+        setError(basketMessages[locale].reviewUnavailable);
+      }
+    }
+  }
 
   const load = useCallback(async (): Promise<void> => {
     setError(null);
@@ -404,6 +466,11 @@ function InventoryScreen({
               {copy.export}
             </button>
           ) : null}
+          {canManageReorder ? (
+            <a className="quiet-button" href="#/basket">
+              {copy.openBasket}
+            </a>
+          ) : null}
           <details className="inventory-settings">
             <summary ref={settingsToggleRef}>{copy.settings}</summary>
             <div className="inventory-settings-panel">
@@ -500,6 +567,8 @@ function InventoryScreen({
                         field={field}
                         item={item}
                         locale={locale}
+                        canManageReorder={canManageReorder}
+                        onAddToBasket={() => void addItemToBasket(item)}
                       />
                     </td>
                   ))}
@@ -525,29 +594,46 @@ function InventoryScreen({
 }
 
 function InventoryCell({
+  canManageReorder,
   copy,
   field,
   item,
   locale,
+  onAddToBasket,
 }: {
   readonly copy: InventoryCopy;
   readonly field: InventoryColumnField;
   readonly item: InventoryItem;
   readonly locale: "ar" | "en";
+  readonly canManageReorder: boolean;
+  readonly onAddToBasket: () => void;
 }): React.JSX.Element {
   switch (field) {
     case "item":
       return (
-        <button
-          className="table-link"
-          data-review-focus={`inventory-item-${item.productId}`}
-          type="button"
-          onClick={() => {
-            window.location.hash = `#/inventory/items/${item.productId}/movements`;
-          }}
-        >
-          {item.displayName}
-        </button>
+        <div className="inventory-item-cell">
+          <button
+            className="table-link"
+            data-review-focus={`inventory-item-${item.productId}`}
+            type="button"
+            onClick={() => {
+              window.location.hash = `#/inventory/items/${item.productId}/movements`;
+            }}
+          >
+            {item.displayName}
+          </button>
+          {canManageReorder ? (
+            <button
+              aria-label={copy.addToBasketAriaLabel(item.displayName)}
+              className="quiet-button"
+              data-review-focus={`inventory-basket-add-${item.productId}`}
+              type="button"
+              onClick={onAddToBasket}
+            >
+              {copy.addToBasket}
+            </button>
+          ) : null}
+        </div>
       );
     case "balance":
       return <bdi>{formatNumber(BigInt(item.balance), locale)}</bdi>;
@@ -585,31 +671,11 @@ function InventoryCell({
       );
     case "risk":
       return (
-        <div className="inventory-indicators">
-          <StateIndicator
-            assistiveLabel={copy.stateColours[item.stateColour.effective]}
-            colour={item.stateColour.effective}
-            kind="state"
-            label={copy.stateColours[item.stateColour.effective]}
-          />
-          <small>
-            {copy.automatic}: {copy.stateColours[item.stateColour.automatic]}
-          </small>
-          <small>
-            {copy.manual}:{" "}
-            {item.stateColour.manual === null
-              ? copy.manualNone
-              : copy.stateColours[item.stateColour.manual]}
-          </small>
-          {item.riskIndicators.map((indicator) => (
-            <StateIndicator
-              indicator={indicator}
-              key={indicator}
-              kind="risk"
-              label={copy.riskIndicators[indicator]}
-            />
-          ))}
-        </div>
+        <StateColourIndicators
+          copy={copy}
+          riskIndicators={item.riskIndicators}
+          stateColour={item.stateColour}
+        />
       );
   }
 }

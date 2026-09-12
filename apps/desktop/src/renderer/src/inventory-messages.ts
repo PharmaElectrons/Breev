@@ -27,6 +27,8 @@ export type CountDenialCode = (typeof COUNT_DENIAL_CODES)[number];
 type CountLineStatus = (typeof COUNT_LINE_STATUSES)[number];
 
 export interface InventoryCopy {
+  readonly addToBasket: string;
+  readonly addToBasketAriaLabel: (name: string) => string;
   readonly automatic: string;
   readonly backToInventory: string;
   readonly columns: Record<InventoryColumnField, string>;
@@ -66,6 +68,7 @@ export interface InventoryCopy {
   readonly stateColours: Record<ProductStateColour, string>;
   readonly manual: string;
   readonly manualNone: string;
+  readonly openBasket: string;
   readonly title: string;
   readonly valuationDenied: string;
   readonly count: {
@@ -693,6 +696,8 @@ const englishSafety: InventoryCopy["safety"] = {
 
 export const inventoryMessages: Record<Locale, InventoryCopy> = {
   ar: {
+    addToBasket: "إضافة إلى سلة الطلبات",
+    addToBasketAriaLabel: (name) => `إضافة ${name} إلى سلة الطلبات`,
     automatic: "تلقائي",
     backToInventory: "العودة إلى المخزن",
     count: arabicCount,
@@ -721,6 +726,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
       user: "المستخدم",
       value: "القيمة",
     },
+    openBasket: "فتح سلة الطلبات",
     readOnly: "هذه الشاشة للقراءة فقط؛ الأرصدة مشتقة من حركات المخزون.",
     permissionDenied: "لا تملك صلاحية مراجعة المخزون. مرجع الطلب:",
     retry: "إعادة المحاولة",
@@ -741,6 +747,8 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     safety: arabicSafety,
   },
   en: {
+    addToBasket: "Add to order basket",
+    addToBasketAriaLabel: (name) => `Add ${name} to the order basket`,
     automatic: "Automatic",
     backToInventory: "Back to inventory",
     count: englishCount,
@@ -769,6 +777,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
       user: "User",
       value: "Value",
     },
+    openBasket: "Open the order basket",
     readOnly:
       "This screen is read-only; balances are derived from inventory movements.",
     permissionDenied:

@@ -226,7 +226,7 @@ test.describe.serial("read-only inventory review", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/inventory`);
     const itemLink = page.locator(
-      "tbody tr:first-child td[data-column-field='item'] button",
+      "tbody tr:first-child td[data-column-field='item'] button.table-link",
     );
     await itemLink.focus();
     await itemLink.press("Enter");
@@ -315,7 +315,7 @@ test.describe.serial("read-only inventory review", () => {
           ),
         });
         const itemLink = page.locator(
-          "tbody tr:first-child td[data-column-field='item'] button",
+          "tbody tr:first-child td[data-column-field='item'] button.table-link",
         );
         await itemLink.click();
         await expect(

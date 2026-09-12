@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  countCommandAttempt,
+  inventoryCommandAttempt,
   listBatches,
   previewAllocation,
   readBatchSafetyReview,
@@ -37,9 +37,9 @@ describe("inventory API client", () => {
       .fn<() => string>()
       .mockReturnValueOnce("count-first")
       .mockReturnValueOnce("count-second");
-    const first = countCommandAttempt(null, "same-count", createKey);
-    const retry = countCommandAttempt(first, "same-count", createKey);
-    const changed = countCommandAttempt(first, "changed-count", createKey);
+    const first = inventoryCommandAttempt(null, "same-count", createKey);
+    const retry = inventoryCommandAttempt(first, "same-count", createKey);
+    const changed = inventoryCommandAttempt(first, "changed-count", createKey);
 
     expect(retry).toBe(first);
     expect(changed).toEqual({

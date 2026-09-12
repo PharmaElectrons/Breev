@@ -88,8 +88,11 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   {
     hash: "#/basket",
     id: "basket",
-    implemented: false,
-    requiredPermissionsAny: [],
+    implemented: true,
+    requiredPermissionsAny: [
+      "inventory.reorder.manage",
+      "inventory.reorder.confirm",
+    ],
   },
   {
     hash: "#/reports",
