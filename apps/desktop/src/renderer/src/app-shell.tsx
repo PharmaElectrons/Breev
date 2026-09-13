@@ -273,7 +273,10 @@ export function AppShell({
           </span>
           <span>
             <strong className="brand-name">Breev</strong>
-            {purchaseWorkspace || inventoryWorkspace || basketWorkspace ? (
+            {purchaseWorkspace ||
+            inventoryWorkspace ||
+            basketWorkspace ||
+            salesWorkspace ? (
               <h1 className="brand-description">
                 {navigationCopy.modules[activeModuleId].label}
               </h1>
@@ -394,7 +397,10 @@ export function AppShell({
                           : ""}
       </p>
 
-      {purchaseWorkspace || inventoryWorkspace || basketWorkspace ? null : (
+      {purchaseWorkspace ||
+      inventoryWorkspace ||
+      basketWorkspace ||
+      salesWorkspace ? null : (
         <section className="status-region" aria-label={copy.connectionStatus}>
           <Card className="status-card" data-state={state}>
             <CardHeader className="status-header">
@@ -484,7 +490,9 @@ export function AppShell({
                 ? currentHash
                 : activeModuleId === "basket"
                   ? currentHash
-                  : "")
+                  : activeModuleId === "sales"
+                    ? currentHash
+                    : "")
           }
         >
           {!authenticated ? (
@@ -530,7 +538,10 @@ export function AppShell({
         </WorkspaceErrorBoundary>
       ) : null}
 
-      {purchaseWorkspace || inventoryWorkspace || basketWorkspace ? null : (
+      {purchaseWorkspace ||
+      inventoryWorkspace ||
+      basketWorkspace ||
+      salesWorkspace ? null : (
         <footer className="shell-footer">Breev</footer>
       )}
     </main>

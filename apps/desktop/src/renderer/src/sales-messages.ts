@@ -7,12 +7,12 @@ export type SalesDenialCode = (typeof SALES_DENIAL_CODES)[number];
 export interface SalesCopy {
   readonly addToBasket: string;
   readonly addToBasketAriaLabel: (name: string) => string;
-  readonly archivedResultRow: string;
   readonly denialMessages: Record<SalesDenialCode, string>;
   readonly description: string;
   readonly draftHeading: (createdAt: string) => string;
   readonly draftUnavailable: string;
   readonly draftsHeading: string;
+  readonly itemColumn: string;
   readonly empty: string;
   readonly loading: string;
   readonly newDraft: string;
@@ -54,7 +54,6 @@ export const salesMessages: Record<Locale, SalesCopy> = {
   ar: {
     addToBasket: "إضافة إلى سلة الطلبات",
     addToBasketAriaLabel: (name) => `إضافة ${name} إلى سلة الطلبات`,
-    archivedResultRow: "مؤرشفة — لا يمكن طلبها؛ اختر المادة النشطة.",
     denialMessages: arabicDenials,
     description:
       "افتح مسودة بيع أو استأنفها، ثم ابحث عن صنف لإضافته إلى سلة الطلبات. تبقى المسودة محفوظة على الخادم.",
@@ -62,6 +61,7 @@ export const salesMessages: Record<Locale, SalesCopy> = {
     draftUnavailable:
       "تعذّر الوصول إلى مسودة البيع. تحقق من الاتصال وحاول مرة أخرى.",
     draftsHeading: "مسودات البيع المفتوحة",
+    itemColumn: "المادة",
     empty: "لا توجد مسودات بيع مفتوحة.",
     loading: "جارٍ التحميل…",
     newDraft: "مسودة بيع جديدة",
@@ -84,8 +84,6 @@ export const salesMessages: Record<Locale, SalesCopy> = {
   en: {
     addToBasket: "Add to order basket",
     addToBasketAriaLabel: (name) => `Add ${name} to the order basket`,
-    archivedResultRow:
-      "Archived — it cannot be ordered; choose the active item.",
     denialMessages: englishDenials,
     description:
       "Open or resume a sale draft, then search for an item to add to the order basket. The draft is kept on the server.",
@@ -93,6 +91,7 @@ export const salesMessages: Record<Locale, SalesCopy> = {
     draftUnavailable:
       "The sale draft is unavailable. Check the connection and try again.",
     draftsHeading: "Open sale drafts",
+    itemColumn: "Item",
     empty: "There are no open sale drafts.",
     loading: "Loading…",
     newDraft: "New sale draft",

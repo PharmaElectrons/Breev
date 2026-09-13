@@ -1958,6 +1958,7 @@ a:focus-visible,
 /* Purchase invoice composition measured from the rendered client prototype. */
 .shell-page[data-purchase-workspace],
 .shell-page[data-inventory-workspace],
+.shell-page[data-sales-workspace],
 .shell-page[data-basket-workspace] {
   block-size: 100dvh;
   min-block-size: 40rem;
@@ -1969,10 +1970,12 @@ a:focus-visible,
   margin-inline-end: 20rem;
 }
 .shell-page[data-inventory-workspace],
+.shell-page[data-sales-workspace],
 .shell-page[data-basket-workspace] {
   grid-template-rows: 4rem auto minmax(0, 1fr);
 }
 .shell-page[data-inventory-workspace] .shell-header,
+.shell-page[data-sales-workspace] .shell-header,
 .shell-page[data-basket-workspace] .shell-header {
   flex-wrap: nowrap;
   min-inline-size: 0;
@@ -1980,12 +1983,14 @@ a:focus-visible,
   background: var(--card);
 }
 .shell-page[data-inventory-workspace] .brand-lockup > span:last-child,
+.shell-page[data-sales-workspace] .brand-lockup > span:last-child,
 .shell-page[data-basket-workspace] .brand-lockup > span:last-child {
   display: flex;
   align-items: center;
   gap: 0.6rem;
 }
 .shell-page[data-inventory-workspace] .brand-description,
+.shell-page[data-sales-workspace] .brand-description,
 .shell-page[data-basket-workspace] .brand-description {
   display: block;
   margin: 0;
@@ -4418,6 +4423,8 @@ a:focus-visible,
  * verification viewport at every locale and text size.
  */
 .sales-screen {
+  inline-size: 100%;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -4497,6 +4504,7 @@ a:focus-visible,
 }
 .sale-result-arabic {
   display: block;
+  text-align: start;
   color: var(--muted-foreground);
   font-size: 0.9rem;
 }

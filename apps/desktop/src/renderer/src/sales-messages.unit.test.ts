@@ -29,12 +29,4 @@ describe("sales translations", () => {
       Object.keys(salesMessages.en).sort(),
     );
   });
-
-  it("does not reuse the basket row wording for a search result", () => {
-    // basket-messages says "remove from the basket", which is wrong advice for
-    // a row the user has not added to anything yet.
-    for (const locale of ["ar", "en"] as const) {
-      expect(salesMessages[locale].archivedResultRow).not.toContain("basket");
-    }
-  });
 });

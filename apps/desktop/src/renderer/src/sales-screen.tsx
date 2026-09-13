@@ -500,56 +500,44 @@ function SaleDraftScreen({
             </caption>
             <thead>
               <tr>
-                <th scope="col">{copy.searchLabel}</th>
+                <th scope="col">{copy.itemColumn}</th>
                 <th scope="col">{copy.addToBasket}</th>
               </tr>
             </thead>
             <tbody>
-              {results.results.map((result) => {
-                const archived = result.product.status !== "active";
-                const tagId = `sale-result-status-${result.product.id}`;
-                return (
-                  <tr key={result.product.id}>
-                    <td>
-                      <span className="sale-result-name">
-                        {result.product.displayName}
+              {results.results.map((result) => (
+                <tr key={result.product.id}>
+                  <td>
+                    <span className="sale-result-name">
+                      {result.product.displayName}
+                    </span>
+                    {result.product.arabicSearchName === null ? null : (
+                      <span className="sale-result-arabic" lang="ar">
+                        {result.product.arabicSearchName}
                       </span>
-                      {result.product.arabicSearchName === null ? null : (
-                        <span className="sale-result-arabic" dir="rtl">
-                          {result.product.arabicSearchName}
-                        </span>
-                      )}
-                      {archived ? (
-                        <span className="sale-result-status" id={tagId}>
-                          <span aria-hidden="true">⛔</span>{" "}
-                          {copy.archivedResultRow}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>
-                      {canAddToBasket ? (
-                        <button
-                          aria-describedby={archived ? tagId : undefined}
-                          aria-label={copy.addToBasketAriaLabel(
+                    )}
+                  </td>
+                  <td>
+                    {canAddToBasket ? (
+                      <button
+                        aria-label={copy.addToBasketAriaLabel(
+                          result.product.displayName,
+                        )}
+                        data-sale-basket-add={result.product.id}
+                        type="button"
+                        onClick={() => {
+                          void addToBasket(
+                            result.product.id,
                             result.product.displayName,
-                          )}
-                          data-sale-basket-add={result.product.id}
-                          disabled={archived}
-                          type="button"
-                          onClick={() => {
-                            void addToBasket(
-                              result.product.id,
-                              result.product.displayName,
-                            );
-                          }}
-                        >
-                          {copy.addToBasket}
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
+                          );
+                        }}
+                      >
+                        {copy.addToBasket}
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
