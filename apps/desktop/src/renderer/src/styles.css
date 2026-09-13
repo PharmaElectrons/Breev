@@ -4408,3 +4408,109 @@ a:focus-visible,
     flex-direction: column;
   }
 }
+
+/*
+ * Sale Draft surface (#27).
+ *
+ * A plain page rather than one of the dense fixed-height workspaces: this
+ * slice has a search field and a row list and nothing else. The results
+ * region scrolls on its own so the row actions stay inside the 1280x800
+ * verification viewport at every locale and text size.
+ */
+.sales-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  min-block-size: 0;
+}
+.sales-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.sales-description {
+  color: var(--muted-foreground);
+  max-inline-size: 60ch;
+}
+.sale-draft-meta {
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+}
+.sales-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.sales-search {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-inline-size: 40rem;
+}
+.sales-search input {
+  min-block-size: 2.75rem;
+  padding-inline: 0.75rem;
+}
+.sale-draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sale-draft-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+}
+.sale-draft-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-inline-size: 0;
+}
+.sales-results {
+  overflow: auto;
+  min-block-size: 0;
+}
+.sales-results-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+.sales-results-table th,
+.sales-results-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: start;
+  border-block-end: 1px solid var(--border);
+  vertical-align: top;
+}
+.sale-result-name {
+  display: block;
+  font-weight: 600;
+}
+.sale-result-arabic {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+}
+.sale-result-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-block-start: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+}
+.sales-results-table button,
+.sale-draft-row button,
+.sales-actions button {
+  min-block-size: 2.75rem;
+  min-inline-size: 2.75rem;
+}
