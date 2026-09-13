@@ -1,16 +1,17 @@
 import {
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
-  CATALOG_CONTRACTS,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   LOCAL_RECOVERY_STATUS_SUCCESS_STATUS,
   LOCAL_RESTORE_QUARANTINE_STATUS,
+  DEVICE_CHANNEL_CONTRACTS,
   localHealthContract,
   localProofEvidenceContract,
   localRecoveryStatusContract,
   parseLocalRecoveryStatusResponse,
   localProofMutationContract,
+  RENDERER_CONTRACTS,
   parseLocalProofEvidenceResponse,
   parseLocalProofMutationResponse,
   type LocalProofEvidenceSuccess,
@@ -561,23 +562,36 @@ describe.sequential("Main device security persistence seam", () => {
   /*
    * Every mutation the renderer can issue must be preflight-allowed.
    *
-   * Catalog shipped its contracts, controller, and browser tests without ever
-   * being added to the CORS mutation allowlist, so every product create, edit,
-   * archive, and merge failed its preflight from the packaged renderer and
-   * surfaced as "Failed to fetch". The browser suites could not catch it: they
+   * Catalog once shipped without being added to a hand-written CORS allowlist,
+   * and purchasing, supplier, inventory, and count-session mutations later
+   * repeated it: each failed its preflight from the packaged renderer and
+   * surfaced as "Failed to fetch". The browser suites cannot catch it: they
    * serve the renderer and proxy the API from one origin, so no preflight is
-   * ever issued. This test walks the shipped contract registry instead of a
-   * hand-written list, so the next module cannot repeat it.
+   * ever issued. The allowlist is now derived from `RENDERER_CONTRACTS`, and
+   * this test walks that same registry, so a contract is either registered
+   * (and reachable) or fails `registries.test.ts` in the contracts package.
    */
-  it("answers the preflight for every catalog mutation the renderer can issue", async () => {
-    const sampleId = "01a05d7a-6abd-7e85-9893-740321e7d3ac";
-    const mutations = CATALOG_CONTRACTS.filter(
+  it("answers the preflight for every renderer mutation in the contract registry", async () => {
+    const sampleIds = [
+      "01a05d7a-6abd-7e85-9893-740321e7d3ac",
+      "01a05d7a-6abd-7e85-9893-740321e7d3ad",
+    ];
+    const mutations = RENDERER_CONTRACTS.filter(
       (contract) => contract.method !== "GET",
     );
-    expect(mutations.length).toBeGreaterThan(0);
+    expect(mutations.length).toBeGreaterThanOrEqual(53);
+    expect(new Set(mutations.map((contract) => contract.method))).toEqual(
+      new Set(["PATCH", "POST", "PUT"]),
+    );
 
     for (const contract of mutations) {
-      const requestPath = contract.path.replaceAll(/:[a-zA-Z]+/gu, sampleId);
+      // Each parameter receives its own identifier so a two-parameter path
+      // proves independent substitution, not one value repeated.
+      let parameterIndex = 0;
+      const requestPath = contract.path.replaceAll(
+        /:[a-zA-Z]+/gu,
+        () => sampleIds[parameterIndex++ % sampleIds.length]!,
+      );
       const preflight = await fetch(new URL(requestPath, apiOrigin), {
         headers: {
           "Access-Control-Request-Headers": "content-type, x-breev-csrf",
@@ -597,7 +611,93 @@ describe.sequential("Main device security persistence seam", () => {
       expect(preflight.headers.get("access-control-allow-methods")).toBe(
         contract.method,
       );
+      expect(preflight.headers.get("access-control-allow-headers")).toBe(
+        "Content-Type, X-Breev-CSRF",
+      );
+      expect(
+        preflight.headers.get("access-control-allow-credentials"),
+      ).toBeNull();
     }
+  });
+
+  /*
+   * Deriving the allowlist from the registry must not widen it: a method the
+   * contract does not declare, a path outside the registry, a hard delete, a
+   * malformed identifier segment, a GET-only contract, and the terminal
+   * pairing channel (served on the LAN listener, never from a renderer
+   * origin) all stay refused.
+   */
+  it("refuses every preflight the renderer registry does not authorise", async () => {
+    const sampleId = "01a05d7a-6abd-7e85-9893-740321e7d3ac";
+    const cases = [
+      {
+        label: "wrong method for a registered path",
+        method: "PUT",
+        path: "/catalog/products",
+      },
+      {
+        label: "hard delete on a registered path",
+        method: "DELETE",
+        path: `/catalog/products/${sampleId}`,
+      },
+      {
+        label: "unregistered path",
+        method: "POST",
+        path: "/catalog/products/import",
+      },
+      {
+        label: "unregistered nested path",
+        method: "POST",
+        path: `/purchases/drafts/${sampleId}/rows/extra`,
+      },
+      {
+        label: "non-UUID identifier segment",
+        method: "POST",
+        path: "/purchases/drafts/not-a-uuid/rows",
+      },
+      {
+        label: "empty identifier segment",
+        method: "POST",
+        path: "/purchases/drafts//rows",
+      },
+      { label: "GET-only contract", method: "POST", path: "/inventory/items" },
+      ...DEVICE_CHANNEL_CONTRACTS.filter(
+        (contract) => contract.method !== "GET",
+      ).map((contract) => ({
+        label: `device channel ${contract.path}`,
+        method: contract.method,
+        path: contract.path,
+      })),
+    ];
+    const before = await getProofEvidence(apiOrigin, credentials);
+    for (const candidate of cases) {
+      const preflight = await fetch(new URL(candidate.path, apiOrigin), {
+        headers: {
+          "Access-Control-Request-Headers": "content-type, x-breev-csrf",
+          "Access-Control-Request-Method": candidate.method,
+          Origin: PACKAGED_RENDERER_ORIGIN,
+        },
+        method: "OPTIONS",
+      });
+      expect({ label: candidate.label, status: preflight.status }).toEqual({
+        label: candidate.label,
+        status: 403,
+      });
+      expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+      expect(preflight.headers.get("access-control-allow-methods")).toBeNull();
+      expect(
+        parseLocalProofMutationResponse(
+          preflight.status,
+          await preflight.json(),
+        ),
+      ).toMatchObject({ status: "denied", code: "cors-preflight-not-allowed" });
+    }
+    // Every refusal is still audited as a denial and none of them mutates.
+    const after = await getProofEvidence(apiOrigin, credentials);
+    expect(after.mutationCount).toBe(before.mutationCount);
+    expect(denialCount(after, "cors-preflight-not-allowed")).toBe(
+      denialCount(before, "cors-preflight-not-allowed") + cases.length,
+    );
   });
 
   /*
