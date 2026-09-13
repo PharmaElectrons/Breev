@@ -1,45 +1,13 @@
 import {
-  attendanceEventContract,
-  catalogMatchingApprovalContract,
-  catalogMatchingBatchOpenContract,
-  productBarcodeAddContract,
-  productBarcodePrintContract,
-  productBarcodeSuggestContract,
-  deviceRevocationContract,
-  productArchiveContract,
-  productCreateContract,
-  productEditContract,
-  productMergeContract,
-  reorderItemAddContract,
-  reorderItemConfirmContract,
-  reorderItemRemoveContract,
-  reorderItemReturnContract,
-  reorderItemUpdateContract,
   BREEV_CSRF_HEADER,
   BREEV_CSRF_VALUE,
-  identityBootstrapContract,
-  identityCreateUserContract,
-  identityLoginContract,
-  identityLogoutContract,
-  identityStepUpApproveContract,
-  identityStepUpCreateContract,
-  identityUpdateRolePermissionsContract,
-  identityUpdateUserContract,
-  capabilityProofContract,
-  licenceDeactivateContract,
-  licenceInstallContract,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  RENDERER_CONTRACTS,
   localProofEvidenceSuccessSchema,
   localProofMutationContract,
   localProofMutationSuccessSchema,
   localSecurityDenialSchema,
-  pairingSessionCancelContract,
-  pairingSessionConfirmContract,
-  pairingSessionStartContract,
-  pharmacySettingsContract,
-  seatReleaseApprovalContract,
-  seatReleaseRequestContract,
   type LocalProofEvidenceSuccess,
   type LocalProofMutationSuccess,
   type LocalSecurityDenial,
@@ -652,119 +620,68 @@ function preflightMethod(request: Request): string | undefined {
 
 const UUID_V7_PATH_PART =
   "[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
-const CORS_MUTATION_ROUTES = [
-  exactMutation(
-    localProofMutationContract.method,
-    localProofMutationContract.path,
-  ),
-  exactMutation(
-    identityBootstrapContract.method,
-    identityBootstrapContract.path,
-  ),
-  exactMutation(identityLoginContract.method, identityLoginContract.path),
-  exactMutation(identityLogoutContract.method, identityLogoutContract.path),
-  exactMutation(
-    identityCreateUserContract.method,
-    identityCreateUserContract.path,
-  ),
-  dynamicMutation(
-    identityUpdateUserContract.method,
-    identityUpdateUserContract.path,
-  ),
-  exactMutation(
-    identityStepUpCreateContract.method,
-    identityStepUpCreateContract.path,
-  ),
-  dynamicMutation(
-    identityStepUpApproveContract.method,
-    identityStepUpApproveContract.path,
-  ),
-  dynamicMutation(
-    identityUpdateRolePermissionsContract.method,
-    identityUpdateRolePermissionsContract.path,
-  ),
-  exactMutation(pharmacySettingsContract.method, pharmacySettingsContract.path),
-  exactMutation(attendanceEventContract.method, attendanceEventContract.path),
-  exactMutation(capabilityProofContract.method, capabilityProofContract.path),
-  exactMutation(
-    licenceDeactivateContract.method,
-    licenceDeactivateContract.path,
-  ),
-  exactMutation(licenceInstallContract.method, licenceInstallContract.path),
-  exactMutation(
-    pairingSessionStartContract.method,
-    pairingSessionStartContract.path,
-  ),
-  dynamicMutation(
-    pairingSessionConfirmContract.method,
-    pairingSessionConfirmContract.path,
-  ),
-  dynamicMutation(
-    pairingSessionCancelContract.method,
-    pairingSessionCancelContract.path,
-  ),
-  dynamicMutation(
-    deviceRevocationContract.method,
-    deviceRevocationContract.path,
-  ),
-  exactMutation(
-    seatReleaseRequestContract.method,
-    seatReleaseRequestContract.path,
-  ),
-  dynamicMutation(
-    seatReleaseApprovalContract.method,
-    seatReleaseApprovalContract.path,
-  ),
-  exactMutation(productCreateContract.method, productCreateContract.path),
-  dynamicMutation(productEditContract.method, productEditContract.path),
-  dynamicMutation(productArchiveContract.method, productArchiveContract.path),
-  dynamicMutation(productMergeContract.method, productMergeContract.path),
-  dynamicMutation(
-    productBarcodeAddContract.method,
-    productBarcodeAddContract.path,
-  ),
-  dynamicMutation(
-    productBarcodeSuggestContract.method,
-    productBarcodeSuggestContract.path,
-  ),
-  dynamicMutation(
-    productBarcodePrintContract.method,
-    productBarcodePrintContract.path,
-  ),
-  exactMutation(
-    catalogMatchingBatchOpenContract.method,
-    catalogMatchingBatchOpenContract.path,
-  ),
-  dynamicMutation(
-    catalogMatchingApprovalContract.method,
-    catalogMatchingApprovalContract.path,
-  ),
-  exactMutation(reorderItemAddContract.method, reorderItemAddContract.path),
-  dynamicMutation(
-    reorderItemUpdateContract.method,
-    reorderItemUpdateContract.path,
-  ),
-  dynamicMutation(
-    reorderItemRemoveContract.method,
-    reorderItemRemoveContract.path,
-  ),
-  dynamicMutation(
-    reorderItemConfirmContract.method,
-    reorderItemConfirmContract.path,
-  ),
-  dynamicMutation(
-    reorderItemReturnContract.method,
-    reorderItemReturnContract.path,
-  ),
-] as const;
+/*
+ * The CORS mutation allowlist is derived from the renderer contract registry,
+ * never hand-written: a mutation is preflight-allowed exactly when its
+ * contract is registered as renderer-issued in `@breev/contracts/local-rest`
+ * (`RENDERER_CONTRACTS`), so a module cannot ship a route the packaged
+ * renderer cannot reach, and nothing outside the registry is ever allowed.
+ * Every other rule stays as strict as before: the exact `breev://app` Origin,
+ * the exact preflight header set, the request method matching the contract,
+ * and the device-session checks on the request itself.
+ */
+const CORS_MUTATION_ROUTES: readonly MutationRoute[] =
+  RENDERER_CONTRACTS.filter((contract) => contract.method !== "GET").map(
+    (contract) => contractMutation(contract.method, contract.path),
+  );
 
-function exactMutation(method: string, path: string): MutationRoute {
-  return { method, path: new RegExp(`^${escapeRegExp(path)}$`, "u") };
-}
+/*
+ * A hard delete is never a renderer mutation (docs/domain.md: archive or
+ * merge, never delete). The registry's literal types carry every method, so
+ * registering a DELETE contract fails this assignment at compile time instead
+ * of widening the allowlist at runtime.
+ */
+type RendererMutationMethod = Exclude<
+  (typeof RENDERER_CONTRACTS)[number]["method"],
+  "GET"
+>;
+const rendererMutationsNeverDelete: Exclude<
+  RendererMutationMethod,
+  "PATCH" | "POST" | "PUT"
+> extends never
+  ? true
+  : never = true;
+void rendererMutationsNeverDelete;
 
-function dynamicMutation(method: string, path: string): MutationRoute {
-  const source = escapeRegExp(path).replace(/:[a-zA-Z]+/gu, UUID_V7_PATH_PART);
-  return { method, path: new RegExp(`^${source}$`, "u") };
+/**
+ * A contract path becomes an anchored route: literal segments match exactly
+ * and each `:param` segment matches one UUIDv7, so `/x/:id/y` never admits a
+ * different depth, an empty segment, or a non-UUID identifier. The path is
+ * compiled segment by segment, and a segment that is neither a plain literal
+ * nor a whole `:param` (a trailing slash, an empty segment, `:id2`, or
+ * `:draft_id`) fails at module load instead of silently compiling into a
+ * route no renderer request can ever match.
+ */
+function contractMutation(method: string, path: string): MutationRoute {
+  const segments = path.split("/");
+  if (segments[0] !== "" || segments.length < 2) {
+    throw new Error(`Contract path must start with "/": ${path}`);
+  }
+  const source = segments
+    .slice(1)
+    .map((segment) => {
+      if (/^:[a-zA-Z]+$/u.test(segment)) {
+        return UUID_V7_PATH_PART;
+      }
+      if (/^[a-z][a-z0-9-]*$/u.test(segment)) {
+        return escapeRegExp(segment);
+      }
+      throw new Error(
+        `Unsupported contract path segment "${segment}": ${path}`,
+      );
+    })
+    .join("/");
+  return { method, path: new RegExp(`^/${source}$`, "u") };
 }
 
 function escapeRegExp(value: string): string {
