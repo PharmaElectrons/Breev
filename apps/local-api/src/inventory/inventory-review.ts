@@ -88,7 +88,10 @@ export async function readInventoryPositions(
   pharmacyId: string,
   businessDate: string,
   nearExpiryDays: ReadonlyMap<string, number>,
+  options?: { readonly productIds?: readonly string[] },
 ): Promise<InventoryPosition[]> {
+  const productIds = options?.productIds;
+  if (productIds?.length === 0) return [];
   const nearExpiryDaysJson = JSON.stringify(Object.fromEntries(nearExpiryDays));
   const result = await client.query<InventoryPositionRow>(
     `with movement_totals as (
@@ -100,12 +103,14 @@ export async function readInventoryPositions(
               count(*)::text as movement_count
        from inventory_movements
        where pharmacy_id = $1
+         and ($4::uuid[] is null or product_id = any($4))
        group by product_id
      ), value_effect_totals as (
        select product_id,
               sum(carrying_amount_delta_fils)::text as value_fils
        from inventory_value_effects
        where pharmacy_id = $1
+         and ($4::uuid[] is null or product_id = any($4))
        group by product_id
      ), movement_facts as (
        select product_id,
@@ -117,6 +122,7 @@ export async function readInventoryPositions(
               ) as movement_facts
        from inventory_movements
        where pharmacy_id = $1
+         and ($4::uuid[] is null or product_id = any($4))
          and reason not in (
            'purchase-adjustment', 'purchase-return', 'count-variance'
          )
@@ -127,6 +133,7 @@ export async function readInventoryPositions(
        select batch_id, sum(quantity)::text as balance
        from inventory_movements
        where pharmacy_id = $1
+         and ($4::uuid[] is null or product_id = any($4))
        group by batch_id
      ), batch_positions as (
        select batch.id as batch_id,
@@ -168,6 +175,7 @@ export async function readInventoryPositions(
          limit 1
        ) status_event on true
        where batch.pharmacy_id = $1
+         and ($4::uuid[] is null or batch.product_id = any($4))
      ), batch_summaries as (
        select product_id,
               count(*)::text as total_batch_count,
@@ -216,6 +224,7 @@ export async function readInventoryPositions(
        union
        select product_id from inventory_valuation_state
        where pharmacy_id = $1
+         and ($4::uuid[] is null or product_id = any($4))
      ) product
      left join movement_totals movement on movement.product_id = product.product_id
      left join value_effect_totals value_effect
@@ -225,7 +234,7 @@ export async function readInventoryPositions(
      left join inventory_valuation_state valuation
        on valuation.pharmacy_id = $1 and valuation.product_id = product.product_id
      order by product.product_id`,
-    [pharmacyId, businessDate, nearExpiryDaysJson],
+    [pharmacyId, businessDate, nearExpiryDaysJson, productIds ?? null],
   );
   return result.rows.map((row) => {
     const batches = Array.isArray(row.batches)

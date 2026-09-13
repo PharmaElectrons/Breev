@@ -60,6 +60,8 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       "inventory.batch_safety.manage",
       "inventory.counts.record",
       "inventory.counts.approve",
+      "inventory.reorder.manage",
+      "inventory.reorder.confirm",
     ],
   },
   { id: "attendance", permissions: ["attendance.record"] },

@@ -1,0 +1,16 @@
+
+ RUN  v4.1.11 /home/mohamed/Desktop/pharmaa/PharmaElectrons/apps/local-api
+
+ ✓ src/inventory/inventory-reorder.unit.test.ts > inventory reorder domain > proposes zero with an explicit basis when no maximum exists 3ms
+ ✓ src/inventory/inventory-reorder.unit.test.ts > inventory reorder domain > proposes zero when the balance is at or above the maximum 0ms
+ ✓ src/inventory/inventory-reorder.unit.test.ts > inventory reorder domain > proposes the maximum minus the balance below the maximum 0ms
+ ✓ src/inventory/inventory-reorder.unit.test.ts > inventory reorder domain > defends the proposal against a negative balance without negative quantities 1ms
+ ✓ src/inventory/inventory-reorder.unit.test.ts > inventory reorder domain > keeps an edited quantity when an item is re-added 0ms
+ ✓ src/inventory/inventory-reorder.unit.test.ts > inventory reorder domain > keeps every proposal non-negative and within the maximum bound 5ms
+ ✓ src/inventory/inventory-reorder.unit.test.ts > inventory reorder domain > warns exactly when a maximum exists and the projection exceeds it 3ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  00:58:54
+   Duration  248ms (transform 51ms, setup 0ms, import 94ms, tests 21ms, environment 0ms)
+

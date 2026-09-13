@@ -365,7 +365,9 @@ test.describe.serial("batch safety renderer", () => {
   async function openMovements(page: Page): Promise<void> {
     await page.goto(renderer.origin + "#/inventory");
     await page
-      .locator("tbody tr:first-child td[data-column-field='item'] button")
+      .locator(
+        "tbody tr:first-child td[data-column-field='item'] button.table-link",
+      )
       .click();
     // The heading id is locale-independent; its text is Arabic or English.
     await expect(page.locator("#inventory-movement-title")).toBeVisible();

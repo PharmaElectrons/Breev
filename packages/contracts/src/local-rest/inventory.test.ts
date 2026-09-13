@@ -27,6 +27,10 @@ import {
   inventorySensitiveExportRequestSchema,
   inventorySensitiveExportSchema,
   inventorySensitiveExportContract,
+  reorderItemAddContract,
+  reorderItemConfirmContract,
+  reorderItemRemoveContract,
+  reorderItemReturnContract,
 } from "./index.js";
 
 const PRODUCT_ID = "0198e7ce-7685-7000-8000-000000000001";
@@ -215,6 +219,10 @@ describe("inventory review contracts", () => {
       countSessionCompleteContract,
       countSessionStartContract,
       countVarianceApplyContract,
+      reorderItemAddContract,
+      reorderItemRemoveContract,
+      reorderItemConfirmContract,
+      reorderItemReturnContract,
     ]);
     expect(
       INVENTORY_CONTRACTS.filter((contract) => contract.method === "GET").every(

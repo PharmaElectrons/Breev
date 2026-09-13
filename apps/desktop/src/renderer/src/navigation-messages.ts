@@ -43,8 +43,7 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
       },
       basket: {
         label: "سلة الطلبات",
-        unavailableReason:
-          "سلة إعادة الطلب تعتمد على أرصدة المخزن، وهي غير متاحة بعد.",
+        unavailableReason: "",
       },
       dashboard: {
         label: "القائمة الرئيسية",
@@ -105,9 +104,8 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
         unavailableReason: "",
       },
       basket: {
-        label: "Orders basket",
-        unavailableReason:
-          "The reorder basket reads stock balances, which are not available yet.",
+        label: "Order basket",
+        unavailableReason: "",
       },
       dashboard: {
         label: "Main dashboard",

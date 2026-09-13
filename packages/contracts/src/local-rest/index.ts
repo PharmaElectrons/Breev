@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const LOCAL_API_VERSION = "17" as const;
-export const LOCAL_SCHEMA_VERSION = "17" as const;
+export const LOCAL_API_VERSION = "18" as const;
+export const LOCAL_SCHEMA_VERSION = "18" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -98,6 +98,8 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "inventory.batch_safety.manage",
   "inventory.counts.approve",
   "inventory.counts.record",
+  "inventory.reorder.confirm",
+  "inventory.reorder.manage",
   "inventory.review",
   "inventory.valuation.view",
   "licensing.manage",
@@ -2230,6 +2232,10 @@ export const INVENTORY_DENIAL_CODES = [
   "idempotency-conflict",
   "job-runtime-unavailable",
   "regulatory-hard-block",
+  "reorder-item-not-found",
+  "reorder-item-status-invalid",
+  "reorder-quantity-zero",
+  "reorder-product-inactive",
   "version-conflict",
   "owner-role-required",
 ] as const;
@@ -2961,6 +2967,153 @@ export const countVarianceApplicationPath = (
 export const countSessionCompletionPath = (sessionId: string): string =>
   `${countSessionPath(sessionId)}/completions`;
 
+export const REORDER_ITEM_STATUSES = ["basket", "ordered"] as const;
+export const REORDER_PROPOSAL_BASES = [
+  "maximum-minus-balance",
+  "no-maximum-level",
+  "balance-at-or-above-maximum",
+] as const;
+export const REORDER_WARNINGS = ["surplus"] as const;
+export const REORDER_ADD_OUTCOMES = [
+  "added",
+  "updated",
+  "already-ordered",
+] as const;
+
+/**
+ * A stable reorder row id is the future seam for a supplier quote row to
+ * reference. Supplier prices and supplier data are intentionally not modeled
+ * in this contract.
+ */
+export const reorderItemSchema = z.strictObject({
+  addedAt: z.iso.datetime(),
+  addedBy: countPersonSchema,
+  id: z.uuidv7(),
+  inventory: inventoryItemSchema.pick({
+    balance: true,
+    batches: true,
+    consumptionRatePer30Days: true,
+    riskIndicators: true,
+    stateColour: true,
+    stockLevels: true,
+  }),
+  orderedAt: z.iso.datetime().nullable(),
+  orderedBy: countPersonSchema.nullable(),
+  product: z.strictObject({
+    displayName: z.string().min(1).max(726),
+    inventoryUnitName: productUnitNameSchema,
+    mergedIntoDisplayName: z.string().min(1).max(726).nullable(),
+    mergedIntoProductId: z.uuidv7().nullable(),
+    packageUnits: z.array(productPackageUnitSchema),
+    status: productStatusSchema,
+  }),
+  productId: z.uuidv7(),
+  projection: z.strictObject({
+    projectedLevel: signedIntegerStringSchema,
+    warning: z.enum(REORDER_WARNINGS).nullable(),
+  }),
+  proposal: z.strictObject({
+    balance: signedIntegerStringSchema,
+    basis: z.enum(REORDER_PROPOSAL_BASES),
+    maximumLevel: nonNegativeIntegerStringSchema.nullable(),
+    proposedAt: z.iso.datetime(),
+    quantity: nonNegativeIntegerStringSchema,
+  }),
+  quantity: nonNegativeIntegerStringSchema,
+  quantityEditedAt: z.iso.datetime().nullable(),
+  status: z.enum(REORDER_ITEM_STATUSES),
+  version: decimalRevisionSchema,
+});
+
+export const reorderItemAddRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+  productId: z.uuidv7(),
+});
+export const reorderItemUpdateRequestSchema = z.strictObject({
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  quantity: nonNegativeIntegerStringSchema,
+});
+export const reorderItemTransitionRequestSchema = z.strictObject({
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const reorderBasketQuerySchema = z.strictObject({
+  status: z.enum(REORDER_ITEM_STATUSES).optional(),
+});
+
+export const reorderBasketReadContract = {
+  method: "GET",
+  path: "/inventory/reorder-basket",
+  request: { query: reorderBasketQuerySchema },
+  responses: {
+    200: z.strictObject({ items: z.array(reorderItemSchema) }),
+    ...inventoryReadDenialResponses,
+  },
+} as const;
+export const reorderItemAddContract = {
+  method: "POST",
+  path: "/inventory/reorder-basket/items",
+  request: { body: reorderItemAddRequestSchema },
+  responses: {
+    200: z.strictObject({
+      item: reorderItemSchema,
+      outcome: z.enum(REORDER_ADD_OUTCOMES),
+    }),
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+export const reorderItemUpdateContract = {
+  method: "PUT",
+  path: "/inventory/reorder-basket/items/:itemId",
+  request: { body: reorderItemUpdateRequestSchema },
+  responses: {
+    200: z.strictObject({ item: reorderItemSchema }),
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+export const reorderItemRemoveContract = {
+  method: "POST",
+  path: "/inventory/reorder-basket/items/:itemId/removals",
+  request: { body: reorderItemTransitionRequestSchema },
+  responses: {
+    200: z.strictObject({
+      itemId: z.uuidv7(),
+      removedAt: z.iso.datetime(),
+    }),
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+export const reorderItemConfirmContract = {
+  method: "POST",
+  path: "/inventory/reorder-basket/items/:itemId/confirmations",
+  request: { body: reorderItemTransitionRequestSchema },
+  responses: {
+    200: z.strictObject({ item: reorderItemSchema }),
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+export const reorderItemReturnContract = {
+  method: "POST",
+  path: "/inventory/reorder-basket/items/:itemId/returns",
+  request: { body: reorderItemTransitionRequestSchema },
+  responses: {
+    200: z.strictObject({ item: reorderItemSchema }),
+    ...inventoryCountCommandDenialResponses,
+  },
+} as const;
+
+export const reorderBasketPath = (): string => "/inventory/reorder-basket";
+export const reorderItemsPath = (): string => `${reorderBasketPath()}/items`;
+export const reorderItemPath = (itemId: string): string =>
+  `${reorderItemsPath()}/${itemId}`;
+export const reorderItemRemovalsPath = (itemId: string): string =>
+  `${reorderItemPath(itemId)}/removals`;
+export const reorderItemConfirmationsPath = (itemId: string): string =>
+  `${reorderItemPath(itemId)}/confirmations`;
+export const reorderItemReturnsPath = (itemId: string): string =>
+  `${reorderItemPath(itemId)}/returns`;
+
 export const INVENTORY_CONTRACTS = [
   inventoryAllocationPreviewContract,
   inventoryBatchExpiryCorrectionContract,
@@ -2980,6 +3133,12 @@ export const INVENTORY_CONTRACTS = [
   countSessionReadContract,
   countSessionStartContract,
   countVarianceApplyContract,
+  reorderBasketReadContract,
+  reorderItemAddContract,
+  reorderItemUpdateContract,
+  reorderItemRemoveContract,
+  reorderItemConfirmContract,
+  reorderItemReturnContract,
 ] as const;
 
 const supplierNameSchema = z
@@ -4697,6 +4856,7 @@ export type InventoryRiskIndicator = z.infer<
 export type InventoryItem = z.infer<typeof inventoryItemSchema>;
 export type InventoryMovement = z.infer<typeof inventoryMovementSchema>;
 export type CountSession = z.infer<typeof countSessionSchema>;
+export type ReorderItem = z.infer<typeof reorderItemSchema>;
 export type CountSessionSummary = z.infer<typeof countSessionSummarySchema>;
 export type CountLine = z.infer<typeof countLineSchema>;
 export type CountEntry = z.infer<typeof countEntrySchema>;

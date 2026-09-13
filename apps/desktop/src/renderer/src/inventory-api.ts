@@ -32,6 +32,17 @@ import {
   inventorySensitiveExportContract,
   inventorySensitiveExportSchema,
   licensingDenialSchema,
+  reorderBasketReadContract,
+  reorderItemAddContract,
+  reorderItemConfirmContract,
+  reorderItemConfirmationsPath,
+  reorderItemPath,
+  reorderItemRemoveContract,
+  reorderItemRemovalsPath,
+  reorderItemReturnsPath,
+  reorderItemReturnContract,
+  reorderItemUpdateContract,
+  reorderItemsPath,
   type InventoryItem,
   type InventoryAllocationPreview,
   type InventoryAllocationPreviewRequest,
@@ -54,6 +65,7 @@ import {
   type CountSessionStartRequest,
   type CountLineRecordRequest,
   type CountVarianceApplyRequest,
+  type ReorderItem,
 } from "@breev/contracts/local-rest";
 
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
@@ -346,20 +358,134 @@ export async function completeCountSession(
   );
 }
 
+export interface ReorderBasketQuery {
+  readonly status?: "basket" | "ordered";
+}
+
+export interface ReorderItemAddRequest {
+  readonly idempotencyKey: string;
+  readonly productId: string;
+}
+
+export interface ReorderItemUpdateRequest {
+  readonly expectedVersion: string;
+  readonly idempotencyKey: string;
+  readonly quantity: string;
+}
+
+export interface ReorderItemTransitionRequest {
+  readonly expectedVersion: string;
+  readonly idempotencyKey: string;
+}
+
+export async function readReorderBasket(
+  baseUrl: string,
+  query: ReorderBasketQuery = {},
+): Promise<{ readonly items: ReorderItem[] }> {
+  const search =
+    query.status === undefined
+      ? ""
+      : `?status=${encodeURIComponent(query.status)}`;
+  return await requestJson(
+    baseUrl,
+    `${reorderBasketReadContract.path}${search}`,
+    reorderBasketReadContract.method,
+    200,
+    reorderBasketReadContract.responses[200],
+  );
+}
+
+export async function addReorderItem(
+  baseUrl: string,
+  body: ReorderItemAddRequest,
+): Promise<{
+  readonly item: ReorderItem;
+  readonly outcome: "added" | "updated" | "already-ordered";
+}> {
+  return await requestJson(
+    baseUrl,
+    reorderItemsPath(),
+    reorderItemAddContract.method,
+    200,
+    reorderItemAddContract.responses[200],
+    body,
+  );
+}
+
+export async function updateReorderItemQuantity(
+  baseUrl: string,
+  itemId: string,
+  body: ReorderItemUpdateRequest,
+): Promise<{ readonly item: ReorderItem }> {
+  return await requestJson(
+    baseUrl,
+    reorderItemPath(itemId),
+    reorderItemUpdateContract.method,
+    200,
+    reorderItemUpdateContract.responses[200],
+    body,
+  );
+}
+
+export async function removeReorderItem(
+  baseUrl: string,
+  itemId: string,
+  body: ReorderItemTransitionRequest,
+): Promise<{ readonly itemId: string; readonly removedAt: string }> {
+  return await requestJson(
+    baseUrl,
+    reorderItemRemovalsPath(itemId),
+    reorderItemRemoveContract.method,
+    200,
+    reorderItemRemoveContract.responses[200],
+    body,
+  );
+}
+
+export async function confirmReorderItem(
+  baseUrl: string,
+  itemId: string,
+  body: ReorderItemTransitionRequest,
+): Promise<{ readonly item: ReorderItem }> {
+  return await requestJson(
+    baseUrl,
+    reorderItemConfirmationsPath(itemId),
+    reorderItemConfirmContract.method,
+    200,
+    reorderItemConfirmContract.responses[200],
+    body,
+  );
+}
+
+export async function returnReorderItem(
+  baseUrl: string,
+  itemId: string,
+  body: ReorderItemTransitionRequest,
+): Promise<{ readonly item: ReorderItem }> {
+  return await requestJson(
+    baseUrl,
+    reorderItemReturnsPath(itemId),
+    reorderItemReturnContract.method,
+    200,
+    reorderItemReturnContract.responses[200],
+    body,
+  );
+}
+
 export function newInventoryIdempotencyKey(): string {
   return crypto.randomUUID();
 }
 
-export interface CountCommandAttempt {
+export interface InventoryCommandAttempt {
   readonly fingerprint: string;
   readonly idempotencyKey: string;
 }
 
-export function countCommandAttempt(
-  previous: CountCommandAttempt | null,
+export function inventoryCommandAttempt(
+  previous: InventoryCommandAttempt | null,
   fingerprint: string,
   createKey: () => string = newInventoryIdempotencyKey,
-): CountCommandAttempt {
+): InventoryCommandAttempt {
   return previous?.fingerprint === fingerprint
     ? previous
     : { fingerprint, idempotencyKey: createKey() };

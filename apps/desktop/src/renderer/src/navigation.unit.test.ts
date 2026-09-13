@@ -14,6 +14,7 @@ import { navigationMessages } from "./navigation-messages";
 const FREE_CORE_ACCESS = {
   allowedPermissions: [
     "catalog.item.manage",
+    "inventory.reorder.manage",
     "inventory.review",
     "purchases.drafts.manage",
   ],
@@ -81,6 +82,7 @@ describe("navigationModules", () => {
     expect(availability.get("dashboard")).toBe("available");
     expect(availability.get("sales")).toBe("unavailable");
     expect(availability.get("purchases")).toBe("available");
+    expect(availability.get("basket")).toBe("available");
     expect(availability.get("reports")).toBe("unavailable");
   });
 
@@ -132,6 +134,10 @@ describe("moduleIdForHash", () => {
   it("resolves an unbuilt surface so a deep link explains itself", () => {
     expect(moduleIdForHash("#/sales")).toBe("sales");
     expect(moduleIdForHash("#/reports")).toBe("reports");
+  });
+
+  it("resolves Ordered Items to the basket module", () => {
+    expect(moduleIdForHash("#/basket/ordered")).toBe("basket");
   });
 
   it("sends an unknown hash to the default workspace", () => {

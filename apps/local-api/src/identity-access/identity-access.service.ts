@@ -537,6 +537,7 @@ export class IdentityAccessService {
          cross join (values
            ('inventory.batch_safety.manage'),
            ('inventory.counts.approve'), ('inventory.counts.record'),
+           ('inventory.reorder.manage'), ('inventory.reorder.confirm'),
            ('inventory.review'), ('inventory.valuation.view')
          ) as permission_name(name)
          where role_row.pharmacy_id = $1
@@ -551,6 +552,15 @@ export class IdentityAccessService {
              and role_row.role_key in (
                'manager', 'pharmacist', 'inventory_employee'
              )
+             or
+             permission_name.name = 'inventory.reorder.manage'
+             and role_row.role_key in (
+               'manager', 'pharmacist', 'inventory_employee',
+               'purchasing_employee', 'sales_employee'
+             )
+             or
+             permission_name.name = 'inventory.reorder.confirm'
+             and role_row.role_key in ('manager', 'purchasing_employee')
              or
              permission_name.name = 'inventory.review'
              and role_row.role_key in (
@@ -2879,6 +2889,19 @@ export class IdentityAccessService {
     client: PoolClient,
     expected: IdentityExecutionContext,
     permission: "inventory.counts.record" | "inventory.counts.approve",
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      permission,
+    );
+  }
+
+  public async revalidateInventoryReorder(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+    permission: "inventory.reorder.manage" | "inventory.reorder.confirm",
   ): Promise<IdentityExecutionContext> {
     await this.lockIdentity(client, expected.pharmacyId);
     return await this.requirePermissionInTransaction(
