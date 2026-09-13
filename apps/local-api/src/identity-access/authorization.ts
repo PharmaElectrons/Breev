@@ -29,6 +29,7 @@ export const PERMISSION_NAMES = [
   "purchases.drafts.manage",
   "purchases.posted.view",
   "purchases.returns.manage",
+  "sales.drafts.manage",
   "sales.invoice.reverse",
   "sales.return.post",
   "suppliers.manage",

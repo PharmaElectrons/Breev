@@ -193,6 +193,10 @@ const permissionLabels: Record<
         "عرض تكلفة المورد الأساسية والتكلفة بعد الخصم في سجل المشتريات.",
       name: "عرض تكاليف المشتريات",
     },
+    "sales.drafts.manage": {
+      description: "فتح مسودات البيع واستئنافها وعرض المفتوح منها.",
+      name: "إدارة مسودات البيع",
+    },
     "suppliers.manage": {
       description:
         "إنشاء سجلات الموردين وتعديلها وأرشفتها ودمجها وإدارة شروطها.",
@@ -293,6 +297,10 @@ const permissionLabels: Record<
       description:
         "View Primary Supplier Cost and Cost After Discount in purchase history.",
       name: "View purchase costs",
+    },
+    "sales.drafts.manage": {
+      description: "Open and resume sale drafts and list the open ones.",
+      name: "Manage sale drafts",
     },
     "suppliers.manage": {
       description:
@@ -412,6 +420,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       attendance: "الحضور",
       "devices-licensing": "الأجهزة والترخيص",
       products: "الأصناف",
+      sales: "المبيعات",
       purchasing: "المشتريات والموردون",
       inventory: "المخزون",
     },
@@ -535,6 +544,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       attendance: "Attendance",
       "devices-licensing": "Devices and licensing",
       products: "Products",
+      sales: "Sales",
       purchasing: "Purchasing and suppliers",
       inventory: "Inventory",
     },
