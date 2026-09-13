@@ -4432,6 +4432,91 @@ export const PURCHASING_CONTRACTS = [
   purchaseReturnSummaryReadContract,
 ] as const;
 
+/*
+ * Contract registries.
+ *
+ * Every REST contract this entry point exports belongs to exactly one of the
+ * two audiences below; `registries.test.ts` enumerates the exports and fails
+ * when a contract is missing from both, so a new module cannot ship a route
+ * the local API does not know how to classify.
+ *
+ * `RENDERER_CONTRACTS` is the set the packaged Electron renderer issues from
+ * its `breev://app` origin. The local API derives its CORS mutation allowlist
+ * from the non-GET members of this registry, so a mutation is preflight-
+ * allowed exactly when its contract is registered here — never wider — and
+ * the same strict Origin, header, and device-session checks still apply to
+ * every request. `DEVICE_CHANNEL_CONTRACTS` are the terminal pairing routes
+ * served on the LAN pairing channel ahead of the renderer boundary; they are
+ * never issued from a renderer origin and stay out of the allowlist.
+ */
+export const LOCAL_RUNTIME_CONTRACTS = [
+  localHealthContract,
+  localProofEvidenceContract,
+  localProofMutationContract,
+  localRecoveryStatusContract,
+] as const;
+export const IDENTITY_CONTRACTS = [
+  identityStateContract,
+  identityBootstrapContract,
+  identityLoginContract,
+  identityLogoutContract,
+  identityChangePasswordContract,
+  identityRolesContract,
+  identityCreateRoleContract,
+  identityRenameRoleContract,
+  identityUpdateRolePermissionsContract,
+  identityStepUpCreateContract,
+  identityStepUpApproveContract,
+  identityUsersContract,
+  identityCreateUserContract,
+  identityUpdateUserContract,
+  identityResetUserPasswordContract,
+] as const;
+export const PHARMACY_CONTRACTS = [
+  pharmacySettingsContract,
+  attendanceEventContract,
+] as const;
+/**
+ * Licence administration is issued from the renderer's licence panel. The
+ * capability proof stays renderer-facing as well: it was preflight-allowed
+ * before the allowlist was derived from this registry, and a licence check
+ * runs behind the same identity permission as the other licence commands.
+ */
+export const LICENSING_CONTRACTS = [
+  licenceInstallContract,
+  licenceDeactivateContract,
+  capabilityProofContract,
+] as const;
+export const DEVICE_ADMINISTRATION_CONTRACTS = [
+  deviceInventoryContract,
+  deviceRevocationContract,
+  pairingSessionStartContract,
+  pairingSessionCurrentContract,
+  pairingSessionConfirmContract,
+  pairingSessionCancelContract,
+  seatReleaseRequestContract,
+  seatReleaseApprovalContract,
+] as const;
+export const TERMINAL_PAIRING_CONTRACTS = [
+  pairingCaCertificateContract,
+  pairingJoinContract,
+  pairingChannelStateContract,
+  pairingCertificateContract,
+] as const;
+export const RENDERER_CONTRACTS = [
+  ...LOCAL_RUNTIME_CONTRACTS,
+  ...IDENTITY_CONTRACTS,
+  ...PHARMACY_CONTRACTS,
+  ...LICENSING_CONTRACTS,
+  ...DEVICE_ADMINISTRATION_CONTRACTS,
+  ...CATALOG_CONTRACTS,
+  ...INVENTORY_CONTRACTS,
+  ...PURCHASING_CONTRACTS,
+] as const;
+export const DEVICE_CHANNEL_CONTRACTS = [
+  ...TERMINAL_PAIRING_CONTRACTS,
+] as const;
+
 export type LocalHealthSuccess = z.infer<typeof localHealthSuccessSchema>;
 export type LocalHealthDatabaseUnavailable = z.infer<
   typeof localHealthDatabaseUnavailableSchema
