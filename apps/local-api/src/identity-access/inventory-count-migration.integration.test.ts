@@ -134,16 +134,19 @@ describe.sequential("migration 0023: inventory count sessions", () => {
       ["owner", "inventory.counts.record"],
       ["pharmacist", "inventory.counts.record"],
     ]);
+    // Migration 0025 grants sales.drafts.manage to owner, manager,
+    // pharmacist, and sales employee, so each of those advances once more
+    // between this baseline and migration head.
     expect(after.revisions).toEqual({
       inventory_employee: String(
         BigInt(before.revisions.inventory_employee ?? "0") + 2n,
       ),
-      manager: String(BigInt(before.revisions.manager ?? "0") + 2n),
-      owner: String(BigInt(before.revisions.owner ?? "0") + 2n),
-      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 2n),
+      manager: String(BigInt(before.revisions.manager ?? "0") + 3n),
+      owner: String(BigInt(before.revisions.owner ?? "0") + 3n),
+      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 3n),
     });
     expect(after.pharmacyRevision).toBe(
-      String(BigInt(before.pharmacyRevision) + 2n),
+      String(BigInt(before.pharmacyRevision) + 3n),
     );
 
     await runMigrations(application, databaseRoles.migrationUrl);

@@ -19,6 +19,7 @@ export type PermissionGroupId =
   | "attendance"
   | "devices-licensing"
   | "products"
+  | "sales"
   | "inventory"
   | "purchasing";
 
@@ -40,6 +41,10 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
   {
     id: "products",
     permissions: ["catalog.item.manage", "catalog.item.search"],
+  },
+  {
+    id: "sales",
+    permissions: ["sales.drafts.manage"],
   },
   {
     id: "purchasing",

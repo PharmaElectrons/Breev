@@ -55,6 +55,8 @@ exports[`local REST contract registries > pins the renderer mutation surface the
   "POST /purchases/posted/:purchaseId/return-drafts",
   "POST /purchases/return-drafts/:draftId/discards",
   "POST /purchases/return-drafts/:draftId/postings",
+  "POST /sales/drafts",
+  "POST /sales/drafts/:draftId/resumptions",
   "POST /security/device-session-proof",
   "POST /suppliers",
   "POST /suppliers/:supplierId/archivals",

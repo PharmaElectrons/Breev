@@ -585,6 +585,15 @@ export class IdentityAccessService {
            )`,
         [pharmacyId, ownerId],
       );
+      await client.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         select $1, id, 'sales.drafts.manage', $2
+         from pharmacy_roles
+         where pharmacy_id = $1
+           and role_key in ('manager', 'pharmacist', 'sales_employee')`,
+        [pharmacyId, ownerId],
+      );
       // Purchasing employees can perform their core draft and posted-review
       // workflows by default. Supplier master-data changes stay separately
       // grantable, and costs remain a distinct permission for custom roles.
@@ -2908,6 +2917,18 @@ export class IdentityAccessService {
       client,
       expected,
       permission,
+    );
+  }
+
+  public async revalidateSaleDrafts(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "sales.drafts.manage",
     );
   }
 

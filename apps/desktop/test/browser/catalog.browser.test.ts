@@ -1151,12 +1151,18 @@ test.describe.serial("Product catalog screens", () => {
     await expect(products).toHaveAttribute("aria-current", "page");
     await expect(products).toHaveAttribute("data-availability", "available");
 
-    // A required Phase One surface that is not built says so rather than
-    // pretending to work.
+    // Sales has server authority behind it since #58, and the signed-in
+    // pharmacist holds sales.drafts.manage.
     await expect(modules.getByRole("link", { name: /^Sales/ })).toHaveAttribute(
       "data-availability",
-      "unavailable",
+      "available",
     );
+
+    // A required Phase One surface that is not built says so rather than
+    // pretending to work.
+    await expect(
+      modules.getByRole("link", { name: /^Reports/ }),
+    ).toHaveAttribute("data-availability", "unavailable");
 
     // The Clinic tab is outside project scope, and delivery, e-commerce,
     // marketing, and external integration are deferred: none of them exists.
@@ -1188,7 +1194,8 @@ test.describe.serial("Product catalog screens", () => {
         });
         const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, { locale, theme });
-        await page.goto(`${renderer.origin}#/sales`);
+        // Sales is built as of #58; Reports is still an unbuilt required surface.
+        await page.goto(`${renderer.origin}#/reports`);
 
         const heading = page.getByTestId("unavailable-surface");
         await expect(heading).toBeVisible();

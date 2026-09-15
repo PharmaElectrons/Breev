@@ -1,0 +1,11 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef/apps/local-api
+
+ ✓ src/identity-access/sale-draft-migration.integration.test.ts > migration 0025: Sale Drafts > creates the exact minimal table, enum, permission, and default grants 222ms
+ ✓ src/identity-access/sale-draft-migration.integration.test.ts > migration 0025: Sale Drafts > guards Sale Drafts against direct deletion and immutable-fact mutation 30ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  18:42:57
+   Duration  5.15s (transform 131ms, setup 0ms, import 1.11s, tests 3.82s, environment 0ms)
+

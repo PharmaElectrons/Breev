@@ -92,6 +92,7 @@ describe("identity authorization", () => {
       "purchases.drafts.manage",
       "purchases.posted.view",
       "purchases.returns.manage",
+      "sales.drafts.manage",
       "sales.invoice.reverse",
       "sales.return.post",
       "suppliers.manage",
@@ -124,6 +125,7 @@ describe("identity authorization", () => {
       "purchases.drafts.manage",
       "purchases.posted.view",
       "purchases.returns.manage",
+      "sales.drafts.manage",
       "suppliers.manage",
     ]);
     for (const permission of IMPLEMENTED_PERMISSION_NAMES) {

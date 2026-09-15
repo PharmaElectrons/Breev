@@ -1,0 +1,16 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef/apps/local-api
+
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 1. creates, lists, and reads the minimal active draft 122ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 2. resumes at the expected version and preserves creation facts 133ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 3. survives a killed local API and resumes exactly 1845ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 4. lets exactly one concurrent resume advance one version 94ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 5. replays an idempotent resume and rejects a changed request 127ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 6. rejects direct Sale Draft deletion and immutable-fact mutation 65ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 7. lets every basket outcome leave the Sale Draft byte-identical 395ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  18:42:27
+   Duration  9.77s (transform 236ms, setup 0ms, import 973ms, tests 8.26s, environment 0ms)
+

@@ -17,6 +17,7 @@ const FREE_CORE_ACCESS = {
     "inventory.reorder.manage",
     "inventory.review",
     "purchases.drafts.manage",
+    "sales.drafts.manage",
   ],
   capabilities: ["local-sales", "reports"],
 } as const;
@@ -80,7 +81,7 @@ describe("navigationModules", () => {
     expect(availability.get("products")).toBe("available");
     expect(availability.get("administration")).toBe("available");
     expect(availability.get("dashboard")).toBe("available");
-    expect(availability.get("sales")).toBe("unavailable");
+    expect(availability.get("sales")).toBe("available");
     expect(availability.get("purchases")).toBe("available");
     expect(availability.get("basket")).toBe("available");
     expect(availability.get("reports")).toBe("unavailable");
@@ -152,7 +153,7 @@ describe("moduleImplemented", () => {
     expect(moduleImplemented("purchases")).toBe(true);
     expect(moduleImplemented("administration")).toBe(true);
     expect(moduleImplemented("dashboard")).toBe(true);
-    expect(moduleImplemented("sales")).toBe(false);
+    expect(moduleImplemented("sales")).toBe(true);
     expect(moduleImplemented("messages")).toBe(false);
   });
 });

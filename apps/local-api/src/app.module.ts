@@ -39,6 +39,8 @@ import { RecoveryJobService } from "./recovery/recovery-job.service.js";
 import { RECOVERY_KEY_PROVIDER } from "./recovery/recovery-key-provider.js";
 import { RecoveryController } from "./recovery/recovery.controller.js";
 import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.js";
+import { SaleDraftController } from "./sales/sale-draft.controller.js";
+import { SaleDraftService } from "./sales/sale-draft.service.js";
 
 @Module({
   controllers: [
@@ -54,6 +56,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     MainDeviceProofController,
     PurchasingController,
     RecoveryController,
+    SaleDraftController,
   ],
   providers: [
     CatalogService,
@@ -82,6 +85,7 @@ import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.
     RestoreQuarantineService,
     RecoveryJobService,
     SettingsPostCommitService,
+    SaleDraftService,
   ],
 })
 export class AppModule {}

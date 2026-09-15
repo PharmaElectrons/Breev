@@ -16,6 +16,7 @@ import {
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityShell } from "./identity-shell";
 import { BasketRouteView } from "./basket-screen";
+import { SalesRouteView } from "./sales-screen";
 import { InventoryRouteView } from "./inventory-screen";
 import { messages } from "./messages";
 import { ModuleNavigation } from "./module-navigation";
@@ -193,6 +194,8 @@ export function AppShell({
     state === "ready" && authenticated && activeModuleId === "inventory";
   const basketWorkspace =
     state === "ready" && authenticated && activeModuleId === "basket";
+  const salesWorkspace =
+    state === "ready" && authenticated && activeModuleId === "sales";
   const connectionCard = (
     <Card className="status-card" data-state={state}>
       <CardHeader className="status-header">
@@ -260,6 +263,7 @@ export function AppShell({
       className="shell-page"
       data-basket-workspace={basketWorkspace || undefined}
       data-inventory-workspace={inventoryWorkspace || undefined}
+      data-sales-workspace={salesWorkspace || undefined}
       data-purchase-workspace={purchaseWorkspace || undefined}
     >
       <header className="shell-header" aria-label="Breev">
@@ -269,7 +273,10 @@ export function AppShell({
           </span>
           <span>
             <strong className="brand-name">Breev</strong>
-            {purchaseWorkspace || inventoryWorkspace || basketWorkspace ? (
+            {purchaseWorkspace ||
+            inventoryWorkspace ||
+            basketWorkspace ||
+            salesWorkspace ? (
               <h1 className="brand-description">
                 {navigationCopy.modules[activeModuleId].label}
               </h1>
@@ -390,7 +397,10 @@ export function AppShell({
                           : ""}
       </p>
 
-      {purchaseWorkspace || inventoryWorkspace || basketWorkspace ? null : (
+      {purchaseWorkspace ||
+      inventoryWorkspace ||
+      basketWorkspace ||
+      salesWorkspace ? null : (
         <section className="status-region" aria-label={copy.connectionStatus}>
           <Card className="status-card" data-state={state}>
             <CardHeader className="status-header">
@@ -480,7 +490,9 @@ export function AppShell({
                 ? currentHash
                 : activeModuleId === "basket"
                   ? currentHash
-                  : "")
+                  : activeModuleId === "sales"
+                    ? currentHash
+                    : "")
           }
         >
           {!authenticated ? (
@@ -510,6 +522,8 @@ export function AppShell({
               }}
               hash={currentHash}
             />
+          ) : activeModuleId === "sales" ? (
+            <SalesRouteView baseUrl={localApiOrigin} hash={currentHash} />
           ) : activeModuleId === "basket" ? (
             <BasketRouteView
               baseUrl={localApiOrigin}
@@ -524,7 +538,10 @@ export function AppShell({
         </WorkspaceErrorBoundary>
       ) : null}
 
-      {purchaseWorkspace || inventoryWorkspace || basketWorkspace ? null : (
+      {purchaseWorkspace ||
+      inventoryWorkspace ||
+      basketWorkspace ||
+      salesWorkspace ? null : (
         <footer className="shell-footer">Breev</footer>
       )}
     </main>

@@ -426,6 +426,7 @@ describe("local REST health contract", () => {
       "purchases.drafts.manage",
       "purchases.posted.view",
       "purchases.returns.manage",
+      "sales.drafts.manage",
       "suppliers.manage",
     ]);
   });

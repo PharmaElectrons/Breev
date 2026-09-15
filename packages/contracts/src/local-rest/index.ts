@@ -109,6 +109,7 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "purchases.drafts.manage",
   "purchases.posted.view",
   "purchases.returns.manage",
+  "sales.drafts.manage",
   "suppliers.manage",
 ] as const;
 export type ImplementedPermissionName =
@@ -4591,6 +4592,106 @@ export const PURCHASING_CONTRACTS = [
   purchaseReturnSummaryReadContract,
 ] as const;
 
+export const SALE_DRAFT_STATUSES = ["active"] as const;
+
+/**
+ * The minimal durable Sale Draft: identity, tenant, actor, state, version, and
+ * times. Lines, prices, discounts, patient, and settlement are deliberately
+ * absent — #31 extends this record rather than replacing it. The device the
+ * draft was last opened on is persisted for audit and the device boundary; it
+ * is not on the wire, matching the Count Session.
+ */
+export const saleDraftSchema = z.strictObject({
+  createdAt: z.iso.datetime(),
+  createdBy: countPersonSchema,
+  id: z.uuidv7(),
+  status: z.enum(SALE_DRAFT_STATUSES),
+  updatedAt: z.iso.datetime(),
+  updatedBy: countPersonSchema,
+  version: decimalRevisionSchema,
+});
+export const saleDraftCreateRequestSchema = z.strictObject({
+  idempotencyKey: z.uuid(),
+});
+export const saleDraftResumeRequestSchema = z.strictObject({
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const saleDraftListQuerySchema = z.strictObject({
+  status: z.enum(SALE_DRAFT_STATUSES).optional(),
+});
+
+export const SALES_DENIAL_CODES = [
+  "body-invalid",
+  "idempotency-conflict",
+  "sale-draft-not-found",
+  "version-conflict",
+] as const;
+export const salesDenialCodeSchema = z.enum(SALES_DENIAL_CODES);
+export const salesFieldErrorSchema = catalogFieldErrorSchema.extend({
+  rule: z.string().min(1).max(128).optional(),
+});
+export const salesDenialSchema = z.strictObject({
+  code: salesDenialCodeSchema,
+  fieldErrors: z.array(salesFieldErrorSchema),
+  requestId: z.uuidv7(),
+  status: z.literal("denied"),
+});
+const salesReadDenialResponses = {
+  401: identityDenialSchema,
+  403: identityOrEntitlementDenialSchema,
+} as const;
+const salesCommandDenialResponses = {
+  ...salesReadDenialResponses,
+  400: salesDenialSchema,
+  404: salesDenialSchema,
+  409: salesDenialSchema,
+} as const;
+
+export const saleDraftListContract = {
+  method: "GET",
+  path: "/sales/drafts",
+  request: { query: saleDraftListQuerySchema },
+  responses: {
+    200: z.strictObject({ drafts: z.array(saleDraftSchema) }),
+    ...salesReadDenialResponses,
+  },
+} as const;
+export const saleDraftReadContract = {
+  method: "GET",
+  path: "/sales/drafts/:draftId",
+  responses: {
+    200: saleDraftSchema,
+    ...salesReadDenialResponses,
+    404: salesDenialSchema,
+  },
+} as const;
+export const saleDraftCreateContract = {
+  method: "POST",
+  path: "/sales/drafts",
+  request: { body: saleDraftCreateRequestSchema },
+  responses: { 201: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftResumeContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/resumptions",
+  request: { body: saleDraftResumeRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+
+export const saleDraftsPath = (): string => "/sales/drafts";
+export const saleDraftPath = (draftId: string): string =>
+  `/sales/drafts/${draftId}`;
+export const saleDraftResumptionsPath = (draftId: string): string =>
+  `/sales/drafts/${draftId}/resumptions`;
+
+export const SALES_CONTRACTS = [
+  saleDraftListContract,
+  saleDraftReadContract,
+  saleDraftCreateContract,
+  saleDraftResumeContract,
+] as const;
+
 /*
  * Contract registries.
  *
@@ -4671,6 +4772,7 @@ export const RENDERER_CONTRACTS = [
   ...CATALOG_CONTRACTS,
   ...INVENTORY_CONTRACTS,
   ...PURCHASING_CONTRACTS,
+  ...SALES_CONTRACTS,
 ] as const;
 export const DEVICE_CHANNEL_CONTRACTS = [
   ...TERMINAL_PAIRING_CONTRACTS,
@@ -4983,6 +5085,16 @@ export type PurchaseSettlementContext = z.infer<
   typeof purchaseSettlementContextSchema
 >;
 export type PurchaseDraft = z.infer<typeof purchaseDraftSchema>;
+export type SaleDraft = z.infer<typeof saleDraftSchema>;
+export type SaleDraftCreateRequest = z.infer<
+  typeof saleDraftCreateRequestSchema
+>;
+export type SaleDraftResumeRequest = z.infer<
+  typeof saleDraftResumeRequestSchema
+>;
+export type SaleDraftListQuery = z.infer<typeof saleDraftListQuerySchema>;
+export type SalesDenial = z.infer<typeof salesDenialSchema>;
+export type SalesDenialCode = z.infer<typeof salesDenialCodeSchema>;
 export type PurchaseDraftDetail = z.infer<typeof purchaseDraftDetailSchema>;
 export type PurchaseDraftRow = z.infer<typeof purchaseDraftRowSchema>;
 export type PurchaseDraftRowCommitRequest = z.infer<
