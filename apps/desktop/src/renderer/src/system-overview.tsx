@@ -35,7 +35,7 @@ export function SystemOverview({
         </div>
       </header>
 
-      <dl className="system-information-list">
+      <dl className="system-information-list" data-tour="dashboard-identity">
         <InformationRow label={copy.pharmacyName} value={state.pharmacy.name} />
         <IdentifierRow
           copyLabel={copy.copy}
