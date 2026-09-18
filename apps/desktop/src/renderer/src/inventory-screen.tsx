@@ -453,7 +453,7 @@ function InventoryScreen({
             <a href="#/inventory/safety-review">{copy.safety.review}</a>
           </p>
         </div>
-        <div className="inventory-actions">
+        <div className="inventory-actions" data-tour="inventory-actions">
           {canRecordCount ? (
             <a className="primary-button" href="#/inventory/count">
               {copy.count.start}
@@ -473,7 +473,7 @@ function InventoryScreen({
               {copy.openBasket}
             </a>
           ) : null}
-          <details className="inventory-settings">
+          <details className="inventory-settings" data-tour="inventory-columns">
             <summary ref={settingsToggleRef}>{copy.settings}</summary>
             <div className="inventory-settings-panel">
               <p>{copy.settingsNote}</p>
@@ -540,7 +540,10 @@ function InventoryScreen({
       {items.length === 0 ? (
         <p role="status">{copy.empty}</p>
       ) : (
-        <div className="inventory-table-scroll">
+        <div
+          className="inventory-table-scroll"
+          data-tour="inventory-stock-table"
+        >
           <table aria-describedby="inventory-read-only">
             <caption className="visually-hidden">{copy.title}</caption>
             <thead>

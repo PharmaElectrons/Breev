@@ -371,7 +371,11 @@ export function PurchasingRouteView({
 
   return (
     <section className="purchasing-workspace" aria-label={copy.title}>
-      <div className="purchase-view-tabs" aria-label={copy.title}>
+      <div
+        className="purchase-view-tabs"
+        aria-label={copy.title}
+        data-tour="purchases-view-tabs"
+      >
         {canManageDrafts ? (
           <button
             type="button"
@@ -461,6 +465,7 @@ export function PurchasingRouteView({
           id="purchase-header-form"
           className="purchase-header-form"
           data-purchase-editor
+          data-tour="purchases-header-form"
           onSubmit={(event) => void saveDraft(event)}
         >
           <fieldset>
@@ -553,7 +558,10 @@ export function PurchasingRouteView({
             aria-label={copy.scrollLines}
             tabIndex={0}
           >
-            <table className="purchase-lines-table">
+            <table
+              className="purchase-lines-table"
+              data-tour="purchases-lines-table"
+            >
               <caption className="visually-hidden">{copy.invoiceItems}</caption>
               <colgroup>
                 <col className="purchase-line-number" />

@@ -36,8 +36,16 @@ const RENDERER_ROOT = path.resolve(import.meta.dirname, "src/renderer");
 /**
  * Locale and theme are exactly the per-device presentation preferences the
  * architecture allows, and they are read and written in one place.
+ *
+ * `help-storage.ts` is admitted on the same grounds and no wider ones. It
+ * records only which tutorials this device has already watched, which decides
+ * nothing beyond whether the guide offers "start" or "run again". It holds no
+ * pharmacy data, the server never reads it back, and a user who loses it loses
+ * nothing.
  */
 const BROWSER_STORAGE_OWNERS = new Set([
+  "src/renderer/src/help-storage.ts",
+  "src/renderer/src/help-storage.unit.test.ts",
   "src/renderer/src/preferences-provider.tsx",
   "src/renderer/src/preferences.ts",
   "src/renderer/src/preferences.unit.test.ts",

@@ -1284,10 +1284,14 @@ test.describe.serial("Product catalog screens", () => {
     // Navigation is links, not buttons, so it does not disturb the header's
     // diagnostic, language, and theme control order. Central submission is
     // intentionally disabled by default (G-16), so it is absent here.
+    //
+    // Guide sits immediately before the language control, which keeps the
+    // documented language, theme, check order contiguous and in sequence.
     const buttons = page.locator(".preference-controls").getByRole("button");
     for (const [index, label] of [
       "Export diagnostic package",
       "Contact support",
+      "Guide",
       "Switch to Arabic",
       "Use dark theme",
     ].entries()) {
