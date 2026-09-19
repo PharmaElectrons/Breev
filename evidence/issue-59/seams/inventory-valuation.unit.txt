@@ -1,0 +1,27 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > is the one Phase One costing method 2ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > adds the received quantity and its Carrying Amount 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > conserves quantity and carrying amount over any sequence 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > never lets a rounded average feed back into the stored value 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > reports the weighted average, not the last purchase cost 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > values only the Primary Supplier Cost, whatever the allowance is 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > stays exact past double precision 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > has no average until it has stock 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > refuses a receipt that is not a positive, non-negative-value receipt 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > refuses a forged floating point operand 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageDepletion > freezes current WAC when it differs from the original purchase cost 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageDepletion > conserves the original whole-fils value and leaves no phantom state 0ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  00:47:28
+   Duration  351ms (transform 68ms, setup 0ms, import 138ms, tests 8ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/inventory/inventory-valuation.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

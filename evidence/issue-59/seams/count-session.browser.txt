@@ -1,0 +1,17 @@
+
+Running 7 tests using 1 worker
+
+[1/7] test\browser\count-session.browser.test.ts:190:3 › durable count sessions › records a scanner-first mixed-unit loop with keyboard only
+[2/7] test\browser\count-session.browser.test.ts:260:3 › durable count sessions › keeps focus and entered values for count validation failures
+[3/7] test\browser\count-session.browser.test.ts:298:3 › durable count sessions › applies a variance and drills from movement history into the session review
+[4/7] test\browser\count-session.browser.test.ts:369:3 › durable count sessions › reports stale balances and refuses a blocked-stock variance
+[5/7] test\browser\count-session.browser.test.ts:484:3 › durable count sessions › restarts the API and resumes the durable session with its lines
+[6/7] test\browser\count-session.browser.test.ts:509:3 › durable count sessions › enforces record-only and approval boundaries at the renderer and API
+[7/7] test\browser\count-session.browser.test.ts:549:3 › durable count sessions › covers Arabic and English RTL/LTR themes, accessibility, and the loop video
+  7 passed (36.2s)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/count-session.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+DURATION_SECONDS: 39
+SOURCE_COMMIT: e73b541

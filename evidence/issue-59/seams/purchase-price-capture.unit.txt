@@ -1,0 +1,23 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > makes the By Price invoice price the item's current price 3ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > rewrites nothing when By Price approved the price the item already has 1ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > calculates the By Percentage price and leaves the item record alone 1ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > recalculates from the current cost rather than the row's stored price 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > uses the item's current rounding step, in one rounding 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > refuses a row whose item changed pricing method since entry 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > refuses a By Percentage row with no percentage to calculate from 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > refuses a price that is not exact non-negative integer text 0ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  00:47:24
+   Duration  423ms (transform 100ms, setup 0ms, import 168ms, tests 8ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/purchasing/purchase-price-capture.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

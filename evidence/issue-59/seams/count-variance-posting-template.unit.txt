@@ -1,0 +1,18 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > debits the variance account for a shortage and balances 3ms
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > debits inventory for a surplus and balances 0ms
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > rejects a zero variance 1ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  00:47:40
+   Duration  684ms (transform 182ms, setup 0ms, import 455ms, tests 6ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/accounting/count-variance-posting-template.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 3
+SOURCE_COMMIT: e73b541

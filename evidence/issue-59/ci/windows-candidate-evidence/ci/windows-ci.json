@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "e73b5411d911bcf9a7a9a8b376137d89d29993d6",
+  "environmentPurpose": "windows-build-validation-only",
+  "certificationEvidence": false,
+  "repository": "PharmaElectrons/Breev",
+  "workflow": "Verify",
+  "workflowRunId": 35395379466,
+  "workflowRunAttempt": 1,
+  "workflowRunUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/35395379466",
+  "runner": {
+    "name": "GitHub Actions 1000000351",
+    "os": "Windows",
+    "architecture": "X64",
+    "windows": {
+      "WindowsProductName": "Windows Server 2025 Datacenter",
+      "WindowsVersion": "2009",
+      "OsBuildNumber": "26100",
+      "OsArchitecture": "64-bit"
+    }
+  },
+  "candidateVersions": ["0.0.0", "0.0.1"],
+  "payloadLockSha256": "9280d21448f6d550c196fe2d627ddf2a0c68ea07066419ef530b90f83089010d",
+  "fuses": [
+    {
+      "version": "0.0.0",
+      "candidate": "electron-builder",
+      "passed": true,
+      "executableSha256": "492455afde3c1134b91f52bff3335c7349976c0ebaa1391931b6058edb38f300"
+    },
+    {
+      "version": "0.0.0",
+      "candidate": "electron-forge",
+      "passed": true,
+      "executableSha256": "cf2e778ad78bcaea486f1755d0c88211e5184fa7847425576c700cc07a761d88"
+    },
+    {
+      "version": "0.0.1",
+      "candidate": "electron-builder",
+      "passed": true,
+      "executableSha256": "859ebc0ddd1de689bd14d5287d363d694d8e1deb9105c500e0db4fbc6a2a8bf9"
+    },
+    {
+      "version": "0.0.1",
+      "candidate": "electron-forge",
+      "passed": true,
+      "executableSha256": "7aa6aa0389d2c30031e1955d0fcf2fa9834ab3fae02bb3e56ef917578b0a5765"
+    }
+  ],
+  "checks": {
+    "lint": true,
+    "format": true,
+    "strictTypecheck": true,
+    "build": true,
+    "unit": true,
+    "bothWindowsCandidatesBuilt": true
+  },
+  "completedAtUtc": "2026-09-18T21:21:20.3292662Z",
+  "passed": true
+}

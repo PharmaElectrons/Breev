@@ -1,0 +1,23 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > matches the fixed acceptance example "panadol gs" 2ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > matches the fixed acceptance example "extra" wherever it occurs 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > requires query parts to finish in their stated order 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > matches characters in sequence within a part without a prefix anchor 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > normalizes case, whitespace, and simple punctuation identically 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > matches Arabic names under the same ordered subsequence rule 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > does not invent Arabic orthographic normalization 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > does not match an empty or punctuation-only query 0ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  00:47:14
+   Duration  390ms (transform 42ms, setup 0ms, import 75ms, tests 6ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/catalog/catalog-search.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

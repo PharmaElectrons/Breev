@@ -1,0 +1,26 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ windows/api-runtime.integration.test.mjs > isolated bundled API without development dependencies > ships exact SQL bytes, metadata, legal notices and the native addon without node_modules 2418ms
+ ✓ windows/api-runtime.integration.test.mjs > isolated bundled API without development dependencies > executes the standalone migration runner and denies forced pg-native 749ms
+ ✓ windows/api-runtime.integration.test.mjs > isolated bundled API without development dependencies > resolves the full Nest dependency graph and reports degraded without a database 1296ms
+ ✓ windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL > runs concurrent and repeated shipped migrations with least-privilege roles 3856ms
+ ✓ windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL > preserves Arabic UTF-8, ICU, PL/pgSQL and rollback 169ms
+ ✓ windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL > serves healthy through the bundled Nest API without migration credentials 8041ms
+ ✓ windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL > dumps/restores and verifies physical backup using only the pruned binaries 26243ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  01:02:50
+   Duration  72.04s (transform 439ms, setup 0ms, import 5.50s, tests 64.85s, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose windows/api-runtime.integration.test.mjs
+EXIT: 0
+DURATION_SECONDS: 85
+SOURCE_COMMIT: e73b541
+
+NOTE: identical command to api-runtime.integration.txt, run after the Windows payload
+was built successfully (package-windows-payload-rerun.txt). All 7 tests passed,
+including the four "bundled runtime on real PostgreSQL" tests that were skipped before.

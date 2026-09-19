@@ -1,0 +1,48 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a debt purchase atomically with document, snapshots, batch, movement, gross WAC, gross AP, and a balanced journal
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > searches stable posted numbers and reads immutable snapshots separately from current master records
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a cash purchase that changes only the Cash Box balance, never a supplier payable
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > replays an idempotent retry, rejects a conflicting payload, and lets exactly one of two concurrent keys post
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts two different drafts concurrently with distinct numbers and conserved WAC
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > warns but still posts a duplicate supplier invoice number
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > keeps the draft and names the row rule when receipt evidence is missing
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > changes Cost After Discount but never gross WAC or AP when only the allowance percentage differs
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > enforces a balanced journal at commit even bypassing the application
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back a forced database failure after number allocation, leaving an audited unissued gap a retry reuses and issues
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back every earlier write when the final idempotency result cannot be recorded
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts only Purchase Adjustment Deltas, preserves the original, numbers A01/A02, replays once, serializes, and blocks consumed stock
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam
+Error: Local API did not start at http://127.0.0.1:59415
+
+ ❯ waitForHealth src/purchasing/purchase-posting.integration.test.ts:2450:9
+    2448|     }
+    2449|   }
+    2450|   throw new Error(`Local API did not start at ${origin}\n${diagnostics…
+       |         ^
+    2451| }
+    2452| async function reservePort(): Promise<number> {
+ ❯ src/purchasing/purchase-posting.integration.test.ts:94:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  13 skipped (13)
+   Start at  00:35:16
+   Duration  82.54s (transform 548ms, setup 0ms, import 17.45s, tests 64.02s, environment 0ms)
+
+undefined
+D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\local-api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config vitest.config.ts "--reporter=verbose" src/purchasing/purchase-posting.integration.test.ts
+
+RESULT: host-limited — the spawned local API did not answer /health inside the harness 60s deadline while another agent's packaged-desktop harness was loading this host; the same command passed on the next attempt (see purchase-posting.integration.txt)
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/purchasing/purchase-posting.integration.test.ts
+EXIT: 1
+DURATION_SECONDS: 87
+SOURCE_COMMIT: e73b541

@@ -7,6 +7,10 @@ import type {
   PurchasingDenial,
   Supplier,
 } from "@breev/contracts/local-rest";
+import {
+  PurchaseItemPanel,
+  type PurchaseItemSelection,
+} from "./purchase-item-details";
 import { PurchaseRowEntry } from "./purchase-row-entry";
 import { useIdentityState } from "./identity-state-provider";
 import {
@@ -60,6 +64,8 @@ export function PurchasingRouteView({
   );
   const [postedPurchase, setPostedPurchase] =
     useState<PurchasePostResult | null>(null);
+  const [itemSelection, setItemSelection] =
+    useState<PurchaseItemSelection | null>(null);
   const [postDenial, setPostDenial] = useState<PurchasingDenial | null>(null);
   const [posting, setPosting] = useState(false);
   const [warning, setWarning] = useState(false);
@@ -551,6 +557,11 @@ export function PurchasingRouteView({
           ) : null}
         </form>
 
+        <PurchaseItemPanel
+          hidden={!canManageDrafts || view !== "invoice"}
+          selection={itemSelection}
+        />
+
         {activeDraft === null ? (
           <div
             className="purchase-lines-wrap"
@@ -597,6 +608,12 @@ export function PurchasingRouteView({
             onPost={requestPost}
             postDenial={postDenial}
             posting={posting}
+            // `setItemSelection` is a `useState` setter, and it has to stay
+            // referentially stable: the row entry publishes its selection from
+            // an effect that depends on this callback, so a fresh function on
+            // every render would re-run that effect — and its clearing cleanup —
+            // on every keystroke.
+            onItemSelectionChanged={setItemSelection}
             onDraftChanged={(nextDraft) => {
               setPostDenial(null);
               setActiveDraft(nextDraft);
@@ -788,18 +805,6 @@ export function PurchasingRouteView({
           />
         </div>
       ) : null}
-      <aside
-        className="purchase-item-sidebar"
-        aria-label={copy.itemDetails}
-        hidden={view !== "invoice"}
-      >
-        <div className="purchase-item-empty">
-          <span className="purchase-item-symbol" aria-hidden="true">
-            <span />
-          </span>
-          <p>{copy.noSelectedItem}</p>
-        </div>
-      </aside>
       <dialog
         ref={registerRef}
         className="purchase-register-dialog"

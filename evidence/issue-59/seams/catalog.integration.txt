@@ -1,0 +1,38 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > stores Product description without a stock balance, expiry, or unique display name 192ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > round-trips integer stock levels and rejects an inverted range 65ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > searches ordered subsequences and barcodes, suggests and prints an internal code, and keeps daily matching eligible across restart and day boundaries 2864ms
+stdout | src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > records search p95 below 200 ms on more than 10,000 real PostgreSQL Products
+{"dataset":"10,000 generated Products plus functional fixtures","hardware":"win32-x64","locale":"en","metric":"catalog-product-search-p95-ms","p95":70.57,"samples":40,"theme":"API seam (theme independent)"}
+
+stdout | src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > records search p95 below 200 ms on more than 10,000 real PostgreSQL Products
+{"dataset":"10,000 generated Products plus functional fixtures","hardware":"win32-x64","locale":"exact barcode (locale independent)","metric":"catalog-barcode-to-product-p95-ms","p95":26.35,"samples":40,"theme":"API seam (theme independent)"}
+
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > records search p95 below 200 ms on more than 10,000 real PostgreSQL Products 3906ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > calculates and stores exact percentage pricing for every rounding setting 150ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > enforces default-unit, ratio, Third Unit, and pricing constraints in PostgreSQL 21ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > rolls back every packaging replacement step with its audit and idempotency result 408ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > rejects locked pricing fields at their exact API paths without editing the Product 104ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > editing a field regenerates the current name while the posted snapshot name stays frozen 76ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > rejects an update attempt on a posted Product snapshot 14ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > rejects a delete attempt on a posted Product snapshot 15ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > switches mode by clearing abandoned fields and surfaces that outcome 40ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > archives a referenced Product and every existing reference still resolves 103ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > merges a referenced Product, redirects future references, and keeps history readable 108ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > has no hard-delete path in the schema, service, controller, repair, or cleanup surfaces 109ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > denies and audits a direct Product balance write at the server boundary 28ms
+ ✓ src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam > enforces tenant-safe Product references in PostgreSQL 3ms
+
+ Test Files  1 passed (1)
+      Tests  17 passed (17)
+   Start at  00:46:19
+   Duration  16.29s (transform 673ms, setup 0ms, import 1.83s, tests 14.23s, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/catalog/catalog.integration.test.ts
+EXIT: 0
+DURATION_SECONDS: 18
+SOURCE_COMMIT: e73b541

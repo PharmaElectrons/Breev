@@ -1,0 +1,27 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > treats percentage as margin on the selling price 2ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > returns the supplied By Price retail price without inventing a percentage 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > keeps wholesale pricing as stored data outside the calculation 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > applies each optional rounding setting after calculating the margin price 1ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > applies the rounding step to the exact price rather than to an already-rounded one 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects noncanonical and impossible margins 1ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects negative, noncanonical, and JS-number costs at the authoritative seam 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects a By Percentage request with no cost to calculate from 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects non-text and noncanonical stored prices 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects a rounding value outside the contract 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > matches an independent exact oracle across generated margins, costs, and rounding steps 21ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects a calculated retail price that cannot fit the bigint store 0ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  00:47:16
+   Duration  354ms (transform 83ms, setup 0ms, import 131ms, tests 29ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/catalog/catalog-pricing.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

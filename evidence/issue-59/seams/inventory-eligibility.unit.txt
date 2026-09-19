@@ -1,0 +1,18 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/inventory/inventory-eligibility.unit.test.ts > batch eligibility > applies regulatory precedence before date warnings 2ms
+ ✓ src/inventory/inventory-eligibility.unit.test.ts > batch eligibility > keeps null expiry eligible and only allows the two sellable states 0ms
+ ✓ src/inventory/inventory-eligibility.unit.test.ts > batch eligibility > keeps the allocation boundary pure and narrow 1ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  00:47:42
+   Duration  284ms (transform 47ms, setup 0ms, import 89ms, tests 5ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/inventory/inventory-eligibility.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 1
+SOURCE_COMMIT: e73b541

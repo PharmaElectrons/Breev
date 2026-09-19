@@ -1,0 +1,18 @@
+
+Running 7 tests using 1 worker
+
+[1/7] test\browser\basket.browser.test.ts:199:3 › reorder basket and Ordered Items › adds product A from the grid by keyboard without changing grid rows
+[2/7] test\browser\basket.browser.test.ts:261:3 › reorder basket and Ordered Items › shows live basket facts, warnings, captions, and validation focus
+[3/7] test\browser\basket.browser.test.ts:350:3 › reorder basket and Ordered Items › confirms, returns, and refuses a zero-quantity order
+[4/7] test\browser\basket.browser.test.ts:409:3 › reorder basket and Ordered Items › renders archived rows, removes a basket row, and offers only return for an archived ordered row
+[5/7] test\browser\basket.browser.test.ts:546:3 › reorder basket and Ordered Items › keeps a failed edit visible for retry and survives API restart with committed rows
+[6/7] test\browser\basket.browser.test.ts:638:3 › reorder basket and Ordered Items › enforces employee and custom-role denials in the renderer and API
+[7/7] test\browser\basket.browser.test.ts:712:3 › reorder basket and Ordered Items › covers Arabic and English RTL/LTR themes, accessibility, logical order, and video evidence
+  7 passed (31.6s)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/basket.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+STARTED_AT: 19 Sep 2026 10:48:43
+DURATION_SECONDS: 33
+SOURCE_COMMIT: 1d229d4

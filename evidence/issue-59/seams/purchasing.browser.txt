@@ -1,0 +1,25 @@
+
+Running 15 tests using 1 worker
+
+[1/15] test\browser\purchasing.browser.test.ts:199:3 › Supplier and Purchase Draft screens › enters the header keyboard-first, warns without blocking, and resumes after restart
+[2/15] test\browser\purchasing.browser.test.ts:318:3 › Supplier and Purchase Draft screens › enters durable rows by scanner and Enter, quick-creates a Product, and follows persisted column order
+[3/15] test\browser\purchasing.browser.test.ts:603:3 › Supplier and Purchase Draft screens › is accessible in Arabic RTL and English LTR in both themes
+[4/15] test\browser\purchasing.browser.test.ts:711:3 › Supplier and Purchase Draft screens › switches to suppliers and back without losing either form
+[5/15] test\browser\purchasing.browser.test.ts:746:3 › Supplier and Purchase Draft screens › contains wide and narrow layouts without document overflow
+[6/15] test\browser\purchasing.browser.test.ts:797:3 › Supplier and Purchase Draft screens › keeps connection details reachable and hides unentitled OCR
+[7/15] test\browser\purchasing.browser.test.ts:822:3 › Supplier and Purchase Draft screens › retries an uncertain draft creation without creating a duplicate
+[8/15] test\browser\purchasing.browser.test.ts:855:3 › Supplier and Purchase Draft screens › posts only from the explicit action and shows the immutable server result
+[9/15] test\browser\purchasing.browser.test.ts:891:3 › Supplier and Purchase Draft screens › replays the same posting after a timeout and renderer reload exactly once
+[10/15] test\browser\purchasing.browser.test.ts:960:3 › Supplier and Purchase Draft screens › searches and reviews immutable purchases entirely by keyboard
+[11/15] test\browser\purchasing.browser.test.ts:1223:3 › Supplier and Purchase Draft screens › renders explicit denied and recoverable unavailable register states
+[12/15] test\browser\purchasing.browser.test.ts:1253:3 › Supplier and Purchase Draft screens › keeps posted-review-only roles out of the purchase draft workspace
+[13/15] test\browser\purchasing.browser.test.ts:1290:3 › Supplier and Purchase Draft screens › captures bilingual list and detail evidence in both themes
+[14/15] test\browser\purchasing.browser.test.ts:1404:3 › Supplier and Purchase Draft screens › keeps a rejected draft and focuses the named receipt-rule field
+[15/15] test\browser\purchasing.browser.test.ts:1433:3 › Supplier and Purchase Draft screens › preserves an invalid Supplier header and returns focus for correction
+  15 passed (1.1m)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/purchasing.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+DURATION_SECONDS: 70
+SOURCE_COMMIT: e73b541

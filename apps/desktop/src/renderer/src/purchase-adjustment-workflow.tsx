@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PURCHASE_ADJUSTMENT_REASONS,
   type PurchaseAdjustmentDraft,
@@ -18,6 +18,7 @@ import {
   requestSuppliers,
   updatePurchaseAdjustmentDraft,
 } from "./purchasing-api";
+import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
@@ -111,6 +112,8 @@ export function PurchaseAdjustmentWorkflow({
   const [error, setError] = useState<string | null>(null);
   const [leaveWarning, setLeaveWarning] = useState(false);
   const [postedNumber, setPostedNumber] = useState("");
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const requestFocus = useCommittedFocus();
 
   useEffect(() => {
     if (stage === "edit") {
@@ -128,15 +131,34 @@ export function PurchaseAdjustmentWorkflow({
     if (leaveRequest > 0) setLeaveWarning(true);
   }, [leaveRequest]);
 
+  /**
+   * A refusal the user has to read.
+   *
+   * The correction stage and the posted-purchase dialog both scroll, and the
+   * action that earns a refusal sits at the bottom of the stage while the alert
+   * renders at its top, so a plain `setError` leaves the refusal above the
+   * scrollport with focus still on the button that was pressed. Committed focus
+   * puts focus on the alert in the same commit that renders it, and the scroll
+   * happens with it, so the refusal is on screen and announced before the next
+   * keystroke can land.
+   */
+  function refuse(message: string): void {
+    setError(message);
+    requestFocus(() => {
+      errorRef.current?.scrollIntoView({ block: "center" });
+      return errorRef.current;
+    });
+  }
+
   function handleError(caught: unknown): void {
     if (
       caught instanceof PurchasingApiDenied &&
       caught.denial.code === "adjustment-batch-conflict"
     ) {
-      setError(copy.blocked);
+      refuse(copy.blocked);
       return;
     }
-    setError(
+    refuse(
       caught instanceof PurchasingApiDenied
         ? `${caught.denial.code} · ${caught.denial.requestId}`
         : String(caught),
@@ -279,7 +301,7 @@ export function PurchaseAdjustmentWorkflow({
       <h3 id="adjustment-title">{copy.title}</h3>
       <p>{copy.unchanged}</p>
       {error === null ? null : (
-        <p className="form-error" role="alert">
+        <p className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
           {error}
         </p>
       )}

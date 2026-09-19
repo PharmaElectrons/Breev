@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "executable": "D:\\a\\Breev\\Breev\\artifacts\\windows\\candidates\\0.0.0\\electron-forge\\app\\BreevForgeComparison.exe",
+  "executableSha256": "2509cc1f59d025b1bc9b5e3bd94dc922650aebad8f91a88fc0a7d4e0b8c061bf",
+  "expected": {
+    "EnableCookieEncryption": 49,
+    "EnableEmbeddedAsarIntegrityValidation": 49,
+    "EnableNodeCliInspectArguments": 48,
+    "EnableNodeOptionsEnvironmentVariable": 48,
+    "GrantFileProtocolExtraPrivileges": 48,
+    "LoadBrowserProcessSpecificV8Snapshot": 48,
+    "OnlyLoadAppFromAsar": 49,
+    "RunAsNode": 48,
+    "WasmTrapHandlers": 49
+  },
+  "actual": {
+    "EnableCookieEncryption": 49,
+    "EnableEmbeddedAsarIntegrityValidation": 49,
+    "EnableNodeCliInspectArguments": 48,
+    "EnableNodeOptionsEnvironmentVariable": 48,
+    "GrantFileProtocolExtraPrivileges": 48,
+    "LoadBrowserProcessSpecificV8Snapshot": 48,
+    "OnlyLoadAppFromAsar": 49,
+    "RunAsNode": 48,
+    "WasmTrapHandlers": 49
+  },
+  "passed": true
+}

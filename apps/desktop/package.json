@@ -16,6 +16,8 @@
     "package:windows": "electron-builder --config electron-builder.config.mjs --win nsis --x64",
     "postinstall": "install-electron",
     "start": "node --env-file-if-exists=../../.env --env-file-if-exists=.env ./node_modules/electron/cli.js .",
+    "test:acceptance:m2": "playwright test --config playwright.acceptance.config.ts",
+    "test:acceptance:m2:publish": "node scripts/regenerate-m2-acceptance.mjs",
     "test:browser": "playwright test --config playwright.browser.config.ts",
     "test:browser:regenerate-evidence": "node scripts/regenerate-evidence.mjs",
     "test:smoke": "pnpm package && playwright test --config playwright.config.ts",

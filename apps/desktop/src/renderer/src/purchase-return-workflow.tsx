@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   PurchasePostedDetail,
   PurchaseReturnDraft,
@@ -16,6 +16,7 @@ import {
   requestPurchaseReturnSummary,
   updatePurchaseReturnDraft,
 } from "./purchasing-api";
+import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
@@ -97,6 +98,8 @@ export function PurchaseReturnWorkflow({
   const [error, setError] = useState<string | null>(null);
   const [leaveWarning, setLeaveWarning] = useState(false);
   const [postedNumber, setPostedNumber] = useState("");
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const requestFocus = useCommittedFocus();
 
   useEffect(() => {
     onDraftActive(detail.activeReturnDrafts.length > 0);
@@ -105,12 +108,22 @@ export function PurchaseReturnWorkflow({
     if (leaveRequest > 0) setLeaveWarning(true);
   }, [leaveRequest]);
 
+  /**
+   * A refusal the user has to read. Same reason as the adjustment stage: the
+   * stage scrolls, the alert renders at its top, and the action that earns the
+   * refusal sits at the bottom, so the refusal takes focus in the commit that
+   * renders it rather than waiting to be scrolled up to.
+   */
   function handleError(caught: unknown): void {
     setError(
       caught instanceof PurchasingApiDenied
         ? `${caught.denial.code} · ${caught.denial.requestId}`
         : String(caught),
     );
+    requestFocus(() => {
+      errorRef.current?.scrollIntoView({ block: "center" });
+      return errorRef.current;
+    });
   }
 
   async function createDraft(): Promise<void> {
@@ -240,7 +253,7 @@ export function PurchaseReturnWorkflow({
     <section className="purchase-return" aria-labelledby="return-title">
       <h3 id="return-title">{copy.title}</h3>
       {error === null ? null : (
-        <p className="form-error" role="alert">
+        <p className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
           {error}
         </p>
       )}

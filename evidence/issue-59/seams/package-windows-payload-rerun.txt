@@ -1,0 +1,19 @@
+$ node apps/local-api/windows/prepare-payload.mjs
+node selective extraction: 7618 ms
+postgresql selective extraction: 6595 ms
+PostgreSQL runtime: {"files":1022,"bytes":72548645}
+shawl selective extraction: 44 ms
+Bundled API runtime: {"bundleBytes":7383107,"migrations":26,"nativeFiles":["argon2.glibc.node"]}
+Payload inventory: 1059 files, 176858147 bytes (excluding manifest)
+D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\artifacts\windows\payload
+
+RESULT: passed — suite completed with exit code 0 (PATH modified: C:\Windows\System32 prepended so tar.exe resolves to bsdtar)
+COMMAND: pnpm package:windows:payload
+EXIT: 0
+DURATION_SECONDS: 225
+SOURCE_COMMIT: e73b541
+
+NOTE: identical command to package-windows-payload.txt. The only difference is that
+C:\Windows\System32 was prepended to PATH for this run so that tar.exe resolved to
+Windows bsdtar 3.8.8 instead of Git for Windows' GNU tar 1.35. No file in the
+repository was changed. See package-windows-payload.txt for the full diagnosis.

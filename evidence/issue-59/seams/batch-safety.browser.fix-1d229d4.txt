@@ -1,0 +1,16 @@
+
+Running 5 tests using 1 worker
+
+[1/5] test\browser\batch-safety.browser.test.ts:126:3 › batch safety renderer › previews FEFO with a near-expiry warning and expired block
+[2/5] test\browser\batch-safety.browser.test.ts:163:3 › batch safety renderer › runs review now, quarantines a batch, and preserves focus
+[3/5] test\browser\batch-safety.browser.test.ts:206:3 › batch safety renderer › corrects expiry through Step-Up and retains original history
+[4/5] test\browser\batch-safety.browser.test.ts:247:3 › batch safety renderer › covers keyboard, forced-colors, Arabic/English, and both themes
+[5/5] test\browser\batch-safety.browser.test.ts:338:3 › batch safety renderer › hides actions from a manager without permission and refuses forged POST
+  5 passed (23.6s)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/batch-safety.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+STARTED_AT: 19 Sep 2026 10:49:42
+DURATION_SECONDS: 25
+SOURCE_COMMIT: 1d229d4
