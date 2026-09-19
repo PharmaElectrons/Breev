@@ -1,0 +1,26 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > receiptClassOf > derives the class from product facts Catalog already stores 2ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > receiptClassOf > has a rule for every class it can name 1ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > DEFAULT_RECEIPT_CLASS_RULES > is the current G-02 engineering default, not approved policy 1ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > DEFAULT_RECEIPT_CLASS_RULES > cannot be edited in place by a caller that reads it 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > receiptRuleFor > uses the shipped default when no configuration is supplied 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > receiptRuleFor > uses the pharmacy's configured rule when one is supplied 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > accepts a receipt that carries what its rule requires 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > names the missing evidence rather than refusing without a reason 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > reports the sale-blocking gap first when both are missing 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > follows a configured override in both directions 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > never requires evidence a rule does not ask for 0ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  00:47:30
+   Duration  289ms (transform 45ms, setup 0ms, import 89ms, tests 8ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/inventory/inventory-receipt-rules.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

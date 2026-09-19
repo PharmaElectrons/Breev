@@ -1,0 +1,19 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/sales/sale-draft-authorization.integration.test.ts > Sale Draft server-boundary authorization matrix > allows the built-in sales employee and a custom role with the exact grant 295ms
+ ✓ src/sales/sale-draft-authorization.integration.test.ts > Sale Draft server-boundary authorization matrix > denies a custom role with no sales grant and leaves the draft byte-identical 285ms
+ ✓ src/sales/sale-draft-authorization.integration.test.ts > Sale Draft server-boundary authorization matrix > keeps tenant, revoked-session, wrong-device, and absent-device denials outside the draft 226ms
+ ✓ src/sales/sale-draft-authorization.integration.test.ts > Sale Draft server-boundary authorization matrix > keeps the implemented permission vocabulary grantable for custom roles 95ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  00:46:07
+   Duration  11.03s (transform 200ms, setup 0ms, import 952ms, tests 9.87s, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/sales/sale-draft-authorization.integration.test.ts
+EXIT: 0
+DURATION_SECONDS: 13
+SOURCE_COMMIT: e73b541

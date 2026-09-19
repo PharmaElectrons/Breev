@@ -1,0 +1,62 @@
+
+Running 5 tests using 1 worker
+
+[1/5] test\browser\inventory.browser.test.ts:152:3 › read-only inventory review › sorts and changes visibility by keyboard while preserving table semantics
+  1) test\browser\inventory.browser.test.ts:152:3 › read-only inventory review › sorts and changes visibility by keyboard while preserving table semantics 
+
+    Error: Local API did not report healthy at http://127.0.0.1:53653 (still running).
+    --- stdout tail ---
+    [Nest] 22260  - 09/19/2026, 1:06:10 AM    WARN [RecoveryJobService] BREEV_BACKUP_DIRECTORY is not configured, so no recovery points will be produced
+
+       at ..\local-api-process.ts:113
+
+      111 |     await delay(100);
+      112 |   }
+    > 113 |   throw new Error(describeHealthFailure(baseUrl, status, child));
+          |         ^
+      114 | }
+      115 |
+      116 | function describeHealthFailure(
+        at waitForHealth (D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\desktop\test\local-api-process.ts:113:9)
+        at D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\desktop\test\browser\inventory.browser.test.ts:114:5
+
+    Error Context: ..\..\test-results\desktop-browser\inventory.browser-read-onl-ca579--preserving-table-semantics\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\inventory.browser-read-onl-ca579--preserving-table-semantics\error-context.md
+
+
+[2/5] test\browser\inventory.browser.test.ts:221:3 › read-only inventory review › opens movement history and the originating purchase, then restores focus
+[3/5] test\browser\inventory.browser.test.ts:257:3 › read-only inventory review › pairs state colour with text and an icon, including forced colours
+[4/5] test\browser\inventory.browser.test.ts:282:3 › read-only inventory review › renders Arabic RTL and English LTR evidence in both themes
+[5/5] test\browser\inventory.browser.test.ts:345:3 › read-only inventory review › shows a recoverable API-down state and owner-only export
+  1 failed
+    test\browser\inventory.browser.test.ts:152:3 › read-only inventory review › sorts and changes visibility by keyboard while preserving table semantics 
+  4 did not run
+undefined
+D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts
+
+RESULT: host-limited — DIAGNOSTIC CONTROL RUN under host load, not a W2 list item; inventory.browser passed at 00:52 and again on the idle host at 01:47, but failed here at 01:06 while a second agent's harness loaded the workstation
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts
+EXIT: 1
+DURATION_SECONDS: not captured — this control was run ad hoc in the foreground rather than through the wave runner, so no start/stop timestamps were taken. Observed wall time was roughly one minute, between tool calls at 01:05 and 01:06:40; treat that as an estimate, not a measurement.
+SOURCE_COMMIT: e73b541
+
+
+WHY THIS FILE EXISTS (and how to read it)
+  batch-safety.browser failed four times with
+    "Local API did not report healthy at http://127.0.0.1:<port> (still running)"
+  from apps/desktop/test/local-api-process.ts:113, whose waitForHealth deadline is
+  15_000 ms (local-api-process.ts:90-115). This control re-ran the already-passing
+  inventory.browser suite to test whether the host or the suite was the variable.
+  It failed the same way at 01:06, which at the time looked like proof that the host
+  alone was at fault.
+  That reading was incomplete. Once the concurrent packaged-desktop harness finished
+  and the workstation went idle, BOTH suites passed 5/5:
+    host-load-control-inventory.browser-idle.txt  (inventory.browser, idle, 73 s)
+    batch-safety.browser.txt                      (batch-safety.browser, idle, 61 s)
+  So the accurate conclusion is that the 15 s readiness deadline is marginal on this
+  Windows workstation: it holds when the host is free and loses the race under
+  concurrent load, batch-safety.browser first because its beforeAll fixture is the
+  heaviest. The build never changed - the lane worktree stayed detached at e73b541
+  with no source, test or config file modified.

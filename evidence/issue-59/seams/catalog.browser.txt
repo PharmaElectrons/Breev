@@ -1,0 +1,28 @@
+
+Running 18 tests using 1 worker
+
+[1/18] test\browser\catalog.browser.test.ts:451:3 › Product catalog screens › Keyboard-only entry of a full medication, start to submit — no mouse
+[2/18] test\browser\catalog.browser.test.ts:574:3 › Product catalog screens › Instant English, Arabic, and scanner search announces counts in both directions and themes
+[3/18] test\browser\catalog.browser.test.ts:631:3 › Product catalog screens › Search failure retains scanner value and focus; barcode suggest, print, and matching work without a mouse
+[4/18] test\browser\catalog.browser.test.ts:700:3 › Product catalog screens › Keyboard-only entry of a full general item
+[5/18] test\browser\catalog.browser.test.ts:773:3 › Product catalog screens › Validation failure keeps the entered value and keeps focus on the failing field
+[6/18] test\browser\catalog.browser.test.ts:818:3 › Product catalog screens › Keyboard packaging and percentage pricing use the real API
+[7/18] test\browser\catalog.browser.test.ts:876:3 › Product catalog screens › Invalid package ratio keeps its value and focus
+[8/18] test\browser\catalog.browser.test.ts:899:3 › Product catalog screens › Mode switching displays confirmation dialog with abandoned fields
+[9/18] test\browser\catalog.browser.test.ts:952:3 › Product catalog screens › The Arabic search name appears below the English name and never inside it
+[10/18] test\browser\catalog.browser.test.ts:983:3 › Product catalog screens › The display name is not reachable as an editable control by keyboard
+[11/18] test\browser\catalog.browser.test.ts:1006:3 › Product catalog screens › The inventory balance renders read-only and is announced as read-only to assistive technology
+[12/18] test\browser\catalog.browser.test.ts:1033:3 › Product catalog screens › Archive and merge actions work on referenced products without delete
+[13/18] test\browser\catalog.browser.test.ts:1062:3 › Product catalog screens › All screens pass Arabic/RTL + English/LTR in both light and dark themes (WCAG 2.2 AA)
+[14/18] test\browser\catalog.browser.test.ts:1136:3 › Product catalog screens › The module bar offers Phase One surfaces only, and never an excluded or deferred one
+[15/18] test\browser\catalog.browser.test.ts:1187:3 › Product catalog screens › An unbuilt surface is honest about itself in both locales and themes
+[16/18] test\browser\catalog.browser.test.ts:1228:3 › Product catalog screens › A direct hash cannot mount a surface the pharmacy is not entitled to
+[17/18] test\browser\catalog.browser.test.ts:1249:3 › Product catalog screens › A direct hash cannot bypass login
+[18/18] test\browser\catalog.browser.test.ts:1274:3 › Product catalog screens › The module bar is reachable by keyboard and never disturbs the shell button order
+  18 passed (48.4s)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/catalog.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+DURATION_SECONDS: 54
+SOURCE_COMMIT: e73b541

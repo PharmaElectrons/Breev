@@ -1,0 +1,27 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > is one finite versioned template recorded on every document 3ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > posts the Primary Supplier Cost on both sides of a debt invoice 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > takes the cash or debt effect from the header context alone 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > posts no allowance line, because settlement owns the allowance 2ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > changes nothing in the journal when only the allowance changes 2ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > keeps the cash effect on the same basis when only the allowance changes 0ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > balances for both contexts across every allowance 2ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > produces lines the wire contract accepts as balanced 4ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > refuses facts whose two cost values do not reconcile 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > refuses a negative or floating point amount 0ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > keeps a zero-cost receipt balanced without inventing money 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > assertBalanced > rejects an entry that is short a line, unbalanced, or both-sided 0ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  00:47:33
+   Duration  594ms (transform 168ms, setup 0ms, import 373ms, tests 19ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/accounting/purchase-posting-template.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

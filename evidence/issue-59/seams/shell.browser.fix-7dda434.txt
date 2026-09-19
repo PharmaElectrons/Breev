@@ -1,0 +1,35 @@
+
+Running 24 tests using 1 worker
+
+[1/24] test\browser\shell.browser.test.ts:119:3 › bilingual desktop shell › the real local API reaches the English light Ready shell
+[2/24] test\browser\shell.browser.test.ts:132:3 › bilingual desktop shell › API loss never creates a fallback and recovers automatically
+[3/24] test\browser\shell.browser.test.ts:155:3 › bilingual desktop shell › version mismatch and the typed repair signal remain distinct
+[4/24] test\browser\shell.browser.test.ts:179:3 › bilingual desktop shell › all seven states pass the locale and theme matrix
+[5/24] test\browser\shell.browser.test.ts:283:3 › bilingual desktop shell › RTL mirrors visually without changing keyboard focus order
+[6/24] test\browser\shell.browser.test.ts:345:3 › bilingual desktop shell › 200% text and minimum targets preserve shell content
+[7/24] test\browser\shell.browser.test.ts:371:3 › bilingual desktop shell › bootstraps the pharmacy through the real API with keyboard-only English light interaction
+[8/24] test\browser\shell.browser.test.ts:436:3 › bilingual desktop shell › shows generic login denial and Arabic dark authenticated states
+[9/24] test\browser\shell.browser.test.ts:517:3 › bilingual desktop shell › requires explicit confirmation for manually enabled central diagnostics
+[10/24] test\browser\shell.browser.test.ts:548:3 › bilingual desktop shell › hides unlicensed paid functions while Free Core survives expiry in both locales and themes
+[11/24] test\browser\shell.browser.test.ts:690:3 › bilingual desktop shell › requires Step-Up to create a default-deny user and enforces denial through the API
+[12/24] test\browser\shell.browser.test.ts:797:3 › bilingual desktop shell › edits a display name and rotates credentials with keyboard-safe controls
+[13/24] test\browser\shell.browser.test.ts:924:3 › bilingual desktop shell › reassigns a user's role with keyboard controls and handles last-owner denial
+[14/24] test\browser\shell.browser.test.ts:1024:3 › bilingual desktop shell › creates a custom role with only the chosen permissions and assigns it by name in both locales
+[15/24] test\browser\shell.browser.test.ts:1199:3 › bilingual desktop shell › custom-role user sees exactly its grants and cannot manage identities
+[16/24] test\browser\shell.browser.test.ts:1269:3 › bilingual desktop shell › Step-Up cancellation returns focus to role actions
+[17/24] test\browser\shell.browser.test.ts:1329:3 › bilingual desktop shell › wrong Step-Up password keeps the role permission draft
+[18/24] test\browser\shell.browser.test.ts:1378:3 › bilingual desktop shell › a role version conflict reloads server truth
+[19/24] test\browser\shell.browser.test.ts:1429:3 › bilingual desktop shell › role counts and checked states reflect each role
+[20/24] test\browser\shell.browser.test.ts:1498:3 › bilingual desktop shell › role editor remains usable at 1024 by 768 and 200 percent text
+[21/24] test\browser\shell.browser.test.ts:1541:3 › bilingual desktop shell › role editor and permission summary never expose raw permission ids
+[22/24] test\browser\shell.browser.test.ts:1586:3 › bilingual desktop shell › configures attendance and roles with Step-Up, then presents a locked login generically
+[23/24] test\browser\shell.browser.test.ts:1674:3 › bilingual desktop shell › surfaces session expiry and removes attendance when its setting is disabled
+[24/24] test\browser\shell.browser.test.ts:1755:3 › bilingual desktop shell › a plain browser cannot mutate through form, fetch, forged headers, or rebound DNS
+  24 passed (1.9m)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/shell.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+STARTED_AT: 19 Sep 2026 09:09:20
+DURATION_SECONDS: 118
+SOURCE_COMMIT: 7dda434

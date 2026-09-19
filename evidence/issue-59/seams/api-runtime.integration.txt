@@ -1,0 +1,42 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ windows/api-runtime.integration.test.mjs > isolated bundled API without development dependencies > ships exact SQL bytes, metadata, legal notices and the native addon without node_modules 1126ms
+ ✓ windows/api-runtime.integration.test.mjs > isolated bundled API without development dependencies > executes the standalone migration runner and denies forced pg-native 3271ms
+ ✓ windows/api-runtime.integration.test.mjs > isolated bundled API without development dependencies > resolves the full Nest dependency graph and reports degraded without a database 691ms
+ ↓ windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL > runs concurrent and repeated shipped migrations with least-privilege roles
+ ↓ windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL > preserves Arabic UTF-8, ICU, PL/pgSQL and rollback
+ ↓ windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL > serves healthy through the bundled Nest API without migration credentials
+ ↓ windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL > dumps/restores and verifies physical backup using only the pruned binaries
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  windows/api-runtime.integration.test.mjs > bundled runtime on real PostgreSQL
+Error: spawn D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\artifacts\windows\payload\postgresql\bin\initdb.exe ENOENT
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -4058, code: 'ENOENT', syscall: 'spawn D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\artifacts\windows\payload\postgresql\bin\initdb.exe', path: 'D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\artifacts\windows\payload\postgresql\bin\initdb.exe', spawnargs: [ '-D', 'C:\Users\kimoo\AppData\Local\Temp\breev-126-runtime-IXLp2F\postgres-data', '--username=fixture_admin', '--pwfile=C:\Users\kimoo\AppData\Local\Temp\breev-126-runtime-IXLp2F\bootstrap-password', '--encoding=UTF8', '--locale=C', '--auth=scram-sha-256', '--data-checksums' ], cmd: 'D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\artifacts\windows\payload\postgresql\bin\initdb.exe -D C:\Users\kimoo\AppData\Local\Temp\breev-126-runtime-IXLp2F\postgres-data --username=fixture_admin --pwfile=C:\Users\kimoo\AppData\Local\Temp\breev-126-runtime-IXLp2F\bootstrap-password --encoding=UTF8 --locale=C --auth=scram-sha-256 --data-checksums', stdout: '', stderr: '' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 passed | 4 skipped (7)
+   Start at  00:53:27
+   Duration  28.30s (transform 248ms, setup 0ms, import 1.05s, tests 26.33s, environment 0ms)
+
+undefined
+D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\local-api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config vitest.config.ts "--reporter=verbose" windows/api-runtime.integration.test.mjs
+
+RESULT: prerequisite missing — the bundled PostgreSQL binaries were absent because package:windows:payload had failed on the tar PATH issue, so initdb.exe could not spawn; 3 of 7 tests still passed and all 7 passed once the payload was built (see api-runtime.integration-rerun.txt)
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose windows/api-runtime.integration.test.mjs
+EXIT: 1
+DURATION_SECONDS: 31
+SOURCE_COMMIT: e73b541
+
+CLASSIFICATION NOTE (W2 analysis, no file outside evidence/issue-59/seams was modified)
+  Failure: spawn ...\artifacts\windows\payload\postgresql\bin\initdb.exe ENOENT.
+  This is downstream of package-windows-payload.txt, which failed before extracting the
+  PostgreSQL archive. The three tests that do not need those binaries passed; the four
+  "bundled runtime on real PostgreSQL" tests were skipped, not failed.
+  After the payload was rebuilt successfully, the identical command passed 7/7 in 85 s -
+  see api-runtime.integration-rerun.txt. Not a product defect.

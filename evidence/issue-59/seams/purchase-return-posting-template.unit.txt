@@ -1,0 +1,16 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/accounting/purchase-return-posting-template.unit.test.ts > Purchase Return posting template > states the two differing values and balances without a variance account 3ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  00:47:38
+   Duration  540ms (transform 160ms, setup 0ms, import 320ms, tests 4ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/accounting/purchase-return-posting-template.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

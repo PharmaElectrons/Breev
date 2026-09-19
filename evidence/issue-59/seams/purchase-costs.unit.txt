@@ -1,0 +1,25 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > stores the pre-discount basis and the calculated Cost After Discount 3ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > reproduces the client's five-invoice allowance example 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > leaves the valuation basis untouched when only the allowance changes 1ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > reconciles the line shares with the invoice totals exactly 1ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > rounds the invoice allowance once instead of once per line 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > stays exact past double precision 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > refuses an invoice with no committed rows 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > refuses a line that is not a positive receipt of a real cost 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > refuses a total that would not survive its bigint column 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > refuses an allowance that is not exact decimal text in range 0ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  00:47:22
+   Duration  309ms (transform 53ms, setup 0ms, import 110ms, tests 8ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/purchasing/purchase-costs.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 1
+SOURCE_COMMIT: e73b541

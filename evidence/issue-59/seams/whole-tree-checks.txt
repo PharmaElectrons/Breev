@@ -1,0 +1,90 @@
+########## pnpm lint ##########
+$ eslint . && pnpm check:boundaries
+$ node tooling/boundaries/check.mjs
+Boundary check passed (390 source files).
+---- pnpm lint EXIT: 0 DURATION_SECONDS: 84 ----
+########## pnpm format:check ##########
+$ prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+---- pnpm format:check EXIT: 0 DURATION_SECONDS: 89 ----
+########## pnpm typecheck ##########
+$ turbo run typecheck
+• turbo 2.10.11
+
+   • Packages in scope: @breev/contracts, @breev/desktop, @breev/local-api
+   • Running typecheck in 3 packages
+   • Remote caching disabled, using shared worktree cache
+
+@breev/contracts:build: cache hit, replaying logs 9e2cf6fe148b1bc9
+@breev/contracts:build: $ tsc -p tsconfig.build.json
+@breev/contracts:typecheck: cache hit, replaying logs a859b7015de4d3f0
+@breev/contracts:typecheck: $ tsc -p tsconfig.json --noEmit
+@breev/desktop:typecheck: cache hit, replaying logs 4664e57caf610d73
+@breev/local-api:typecheck: cache hit, replaying logs bef3266771408497
+@breev/local-api:typecheck: $ tsc -p tsconfig.json --noEmit
+@breev/desktop:typecheck: $ tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.renderer.json --noEmit
+
+ Tasks:    4 successful, 4 total
+Cached:    4 cached, 4 total
+  Time:    1.284s >>> FULL TURBO
+
+---- pnpm typecheck EXIT: 0 DURATION_SECONDS: 13 ----
+########## pnpm check:licence-artifact ##########
+$ node tooling/licensing/check-artifact.mjs
+Inspected 126 Breev artifact files; no signing secret found.
+---- pnpm check:licence-artifact EXIT: 0 DURATION_SECONDS: 21 ----
+
+RESULT: passed — pnpm lint, format:check, typecheck and check:licence-artifact all exited 0; the typecheck capture above was a Turbo cache replay and was re-captured for real with --force (see the re-capture section below)
+COMMAND: pnpm lint ; pnpm format:check ; pnpm typecheck ; pnpm check:licence-artifact
+EXIT: 0
+SOURCE_COMMIT: e73b541
+
+########## RE-CAPTURE: typecheck without the Turbo cache ##########
+Why: the "pnpm typecheck" capture above shows "cache hit, replaying logs" for all
+three packages, so it proved only that a previous run had succeeded, not that tsc
+ran on this commit in this checkout. Re-captured with --force, which bypasses the
+cache. Note the Cached line: 0 cached, 4 total.
+Re-captured: 19 September 2026 (later the same session), from the MAIN worktree
+D:\Cefeldeen-clinic-pos\breef, because the lane worktree had already been removed.
+The other three checks' captures above are unchanged and were genuine executions.
+
+• turbo 2.10.11
+
+   • Packages in scope: @breev/contracts, @breev/desktop, @breev/local-api
+   • Running typecheck in 3 packages
+   • Remote caching disabled
+
+@breev/contracts:typecheck: cache bypass, force executing a859b7015de4d3f0
+@breev/contracts:build: cache bypass, force executing 9e2cf6fe148b1bc9
+@breev/contracts:typecheck: $ tsc -p tsconfig.json --noEmit
+@breev/contracts:build: $ tsc -p tsconfig.build.json
+@breev/desktop:typecheck: cache bypass, force executing 4c2d30b41d5219df
+@breev/local-api:typecheck: cache bypass, force executing bef3266771408497
+@breev/desktop:typecheck: $ tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.renderer.json --noEmit
+@breev/local-api:typecheck: $ tsc -p tsconfig.json --noEmit
+
+ Tasks:    4 successful, 4 total
+Cached:    0 cached, 4 total
+  Time:    28.067s 
+
+
+---- pnpm exec turbo run typecheck --force EXIT: 0 DURATION_SECONDS: 33 ----
+RECAPTURE_RESULT: passed — 4 tasks executed, 0 cached, all successful
+RECAPTURE_COMMAND: pnpm exec turbo run typecheck --force
+RECAPTURE_EXIT: 0
+SOURCE_COMMIT: e73b541
+
+RE-CAPTURE CAVEAT (stated because it affects what this proves)
+  The forced re-capture ran in the MAIN worktree, which at that moment was NOT a clean
+  e73b541 tree: the W1 agent's uncommitted acceptance harness was present
+  (apps/desktop/playwright.acceptance.config.ts, apps/desktop/test/acceptance/**, and
+  their entries in apps/desktop/package.json and apps/desktop/tsconfig.node.json - the
+  last of which adds "playwright.acceptance.config.ts" to the tsconfig include list, so
+  those files WERE in scope of this typecheck).
+  It therefore proves that tsc really executed and passed over e73b541 plus the W1
+  harness, which is a superset of the milestone-2 build, not e73b541 alone. The original
+  cached capture came from the lane worktree, which was a clean e73b541 but replayed
+  rather than executed. The lane worktree had already been removed when this correction
+  was made, so a forced run on a clean e73b541 tree was no longer possible from here.
+  A clean-tree typecheck for this commit exists in CI: Verify run 34946061944.

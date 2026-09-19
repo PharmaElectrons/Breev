@@ -1,0 +1,24 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > creates an audited supplier with append-only effective-dated allowance 68ms
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > copies the invoice-date allowance and never changes the draft snapshot later 173ms
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > warns for the same supplier number, allows saving, and ignores another supplier 95ms
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > rejects a stale version and keeps the committed header 56ms
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > survives an API restart with its version and header intact 1892ms
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > commits exact rows once, resolves concurrent versions, and resumes them after restart 2347ms
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > archives or merges suppliers without rewriting existing draft references 242ms
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > requires explicit discard confirmation and never exposes hard delete 101ms
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > default-denies both supplier and draft commands and audits the denials 560ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  00:46:38
+   Duration  12.24s (transform 208ms, setup 0ms, import 937ms, tests 11.09s, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/purchasing/purchasing.integration.test.ts
+EXIT: 0
+DURATION_SECONDS: 14
+SOURCE_COMMIT: e73b541

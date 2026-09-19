@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "executable": "D:\\a\\Breev\\Breev\\artifacts\\windows\\candidates\\0.0.0\\electron-builder\\app\\Breev.exe",
+  "executableSha256": "8669d6dbf275d0cc1527d1045f39346c5c49431769ea1427c54cca07ed3f2beb",
+  "expected": {
+    "EnableCookieEncryption": 49,
+    "EnableEmbeddedAsarIntegrityValidation": 49,
+    "EnableNodeCliInspectArguments": 48,
+    "EnableNodeOptionsEnvironmentVariable": 48,
+    "GrantFileProtocolExtraPrivileges": 48,
+    "LoadBrowserProcessSpecificV8Snapshot": 48,
+    "OnlyLoadAppFromAsar": 49,
+    "RunAsNode": 48,
+    "WasmTrapHandlers": 49
+  },
+  "actual": {
+    "EnableCookieEncryption": 49,
+    "EnableEmbeddedAsarIntegrityValidation": 49,
+    "EnableNodeCliInspectArguments": 48,
+    "EnableNodeOptionsEnvironmentVariable": 48,
+    "GrantFileProtocolExtraPrivileges": 48,
+    "LoadBrowserProcessSpecificV8Snapshot": 48,
+    "OnlyLoadAppFromAsar": 49,
+    "RunAsNode": 48,
+    "WasmTrapHandlers": 49
+  },
+  "passed": true
+}

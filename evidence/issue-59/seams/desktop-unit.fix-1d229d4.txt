@@ -1,0 +1,17 @@
+$ vitest run --config vitest.config.ts
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef/apps/desktop
+
+
+ Test Files  42 passed (42)
+      Tests  496 passed (496)
+   Start at  10:45:36
+   Duration  3.84s (transform 4.29s, setup 0ms, import 17.05s, tests 3.48s, environment 13ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop test:unit
+EXIT: 0
+STARTED_AT: 19 Sep 2026 10:45:35
+DURATION_SECONDS: 5
+SOURCE_COMMIT: 1d229d4
