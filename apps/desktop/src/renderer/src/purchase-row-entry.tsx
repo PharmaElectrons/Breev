@@ -504,22 +504,33 @@ export function PurchaseRowEntry({
         <table className="purchase-row-table">
           <thead>
             <tr>
-              <th scope="col">#</th>
+              <th scope="col" data-column-field="ordinal">
+                #
+              </th>
               {visibleColumns.map(({ field }) => (
-                <th scope="col" key={field}>
+                <th scope="col" key={field} data-column-field={field}>
                   {copy[FIELD_COPY[field]]}
                 </th>
               ))}
-              <th scope="col">{copy.inventoryUnits}</th>
+              <th scope="col" data-column-field="inventory-units">
+                {copy.inventoryUnits}
+              </th>
             </tr>
           </thead>
           <tbody>
             {draft.rows.map((row, rowIndex) => (
               <tr key={row.id}>
-                <th scope="row">{row.ordinal}</th>
+                <th scope="row" data-column-field="ordinal">
+                  {row.ordinal}
+                </th>
                 {visibleColumns.map(({ field }) => (
                   <td
                     key={field}
+                    data-column-field={field}
+                    // The item name is the one committed value long enough to be
+                    // clipped by its column, so it carries its full text as a
+                    // tooltip. The other columns are short numbers and dates.
+                    title={field === "item" ? row.itemDisplayName : undefined}
                     data-post-row={rowIndex}
                     data-post-field={POST_FIELD[field]}
                     data-post-error={isPostFieldError(
@@ -532,17 +543,21 @@ export function PurchaseRowEntry({
                     {committedValue(field, row, copy)}
                   </td>
                 ))}
-                <td>
+                <td data-column-field="inventory-units">
                   <bdi>{row.inventoryUnitQuantity}</bdi> {row.inventoryUnitName}
                 </td>
               </tr>
             ))}
             <tr className="purchase-entry-row" data-entry-epoch={entryEpoch}>
-              <th scope="row">{draft.rows.length + 1}</th>
+              <th scope="row" data-column-field="ordinal">
+                {draft.rows.length + 1}
+              </th>
               {visibleColumns.map(({ field }) => (
-                <td key={field}>{renderEditor(field)}</td>
+                <td key={field} data-column-field={field}>
+                  {renderEditor(field)}
+                </td>
               ))}
-              <td>
+              <td data-column-field="inventory-units">
                 {product === null
                   ? "—"
                   : previewInventoryUnits(product, unitKey, quantity)}

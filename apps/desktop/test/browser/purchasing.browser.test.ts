@@ -13,7 +13,7 @@ import {
   type PurchaseDraft,
   type PurchasePostResult,
 } from "@breev/contracts/local-rest";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -373,7 +373,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     // inner size as well as the verification viewports.
     const panel = page.locator("aside.purchase-item-panel");
     await expect(panel).toBeVisible();
-    await expect(panel).toBeInViewport();
+    await expect(panel).toBeInViewport({ ratio: 1 });
     await expect(panel.locator("strong")).toHaveText(
       purchaseProduct.displayName,
     );
@@ -395,8 +395,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       { height: 768, width: 1024 },
     ]) {
       await page.setViewportSize(viewport);
-      await expect(panel).toBeInViewport();
-      await expect(panel.locator("dl > div dd").last()).toBeInViewport();
+      await expect(panel).toBeInViewport({ ratio: 1 });
+      await expect(panel.locator("dl > div dd").last()).toBeInViewport({
+        ratio: 1,
+      });
       // Polled: a resize relayouts asynchronously, so a single read can catch
       // the previous layout.
       await expect
@@ -440,6 +442,33 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeEnabled();
     await expect(page.locator(".purchase-review")).toContainText("160000");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+
+    // The base-unit preview is the last column, and it carries the scenario the
+    // pharmacy actually buys by: two Packs of four record eight Strips. A column
+    // that can only be reached by dragging a horizontal scrollbar is a column
+    // nobody reads, so its position is asserted, not just its text.
+    await item.fill("5012345678949");
+    await item.press("Enter");
+    await expect(quantity).toBeFocused();
+    const committedBaseUnits = page.locator(
+      '.purchase-row-table tbody tr:not(.purchase-entry-row) [data-column-field="inventory-units"]',
+    );
+    const entryBaseUnits = page.locator(
+      '.purchase-entry-row [data-column-field="inventory-units"]',
+    );
+    await expect(committedBaseUnits.last()).toHaveText("8 Strip");
+    await expect(entryBaseUnits).toHaveText("4 Strip");
+    for (const viewport of [
+      { height: 768, width: 1024 },
+      { height: 658, width: 1066 },
+      { height: 800, width: 1280 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expectWorkspaceSectionsStacked(page);
+      await expectBaseUnitColumnOnScreen(entryBaseUnits);
+      await expectBaseUnitColumnOnScreen(committedBaseUnits.last());
+    }
+    await page.setViewportSize({ height: 768, width: 1024 });
 
     await item.fill("5012345678956");
     await item.press("Enter");
@@ -720,6 +749,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await entryItem.fill("5012345678949");
         await entryItem.press("Enter");
         const itemPanel = page.locator("aside.purchase-item-panel");
+        const entryBaseUnits = page.locator(
+          '.purchase-entry-row [data-column-field="inventory-units"]',
+        );
+        const committedBaseUnits = page.locator(
+          '.purchase-row-table tbody tr:not(.purchase-entry-row) [data-column-field="inventory-units"]',
+        );
+        await expect(entryBaseUnits).toHaveText("4 Strip");
         await expect(itemPanel).toBeVisible();
         // The packaged window's default inner size, the browser-test viewport,
         // and the 1280x800 verification viewport all fall below the 80rem
@@ -731,10 +767,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           { height: 768, width: 1366 },
         ]) {
           await page.setViewportSize(viewport);
-          await expect(itemPanel).toBeInViewport();
-          await expect(
-            itemPanel.locator("dl > div dd").last(),
-          ).toBeInViewport();
+          await expect(itemPanel).toBeInViewport({ ratio: 1 });
+          await expect(itemPanel.locator("dl > div dd").last()).toBeInViewport({
+            ratio: 1,
+          });
+          // The base-unit preview column, in this direction and theme.
+          await expectWorkspaceSectionsStacked(page);
+          await expectBaseUnitColumnOnScreen(entryBaseUnits);
           await expect
             .poll(() =>
               page.evaluate<boolean>(
@@ -774,6 +813,70 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             `purchase-selected-${locale}-${theme}.png`,
           ),
         });
+        // A committed row's base-unit cell has to be placed too, and it gets its
+        // own draft per pass rather than a row committed into the shared one:
+        // the screenshot above is taken from that shared draft, and all four
+        // passes have to photograph the same invoice for the images to compare
+        // like for like. One Pack of four records four Strips.
+        const unitsInvoice = `BILINGUAL-UNITS-${locale}-${theme}`;
+        const unitsDraft = await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          "/purchases/drafts",
+          {
+            idempotencyKey: uuidV7(),
+            invoiceDate: "2026-09-08",
+            settlementContext: "cash",
+            supplierId,
+            supplierInvoiceNumber: unitsInvoice,
+          },
+        );
+        expect(unitsDraft.status).toBe(201);
+        const unitsHeader = (unitsDraft.body as { draft: PurchaseDraft }).draft;
+        expect(
+          (
+            await apiRequest(
+              apiOrigin,
+              credentials,
+              "POST",
+              purchaseDraftRowsPath(unitsHeader.id),
+              {
+                costFils: "80000",
+                enteredQuantity: "1",
+                expectedVersion: unitsHeader.version,
+                expiryDate: "2029-05-31",
+                idempotencyKey: uuidV7(),
+                itemId: purchaseProduct.id,
+                lotNumber: "BILINGUAL-UNITS",
+                notes: null,
+                pricing: { method: "by-price", retailPriceFils: "120000" },
+                unit: { kind: "package-unit", packageUnitName: "Pack" },
+              },
+            )
+          ).status,
+        ).toBe(201);
+        // The register renders the draft list the renderer loaded at mount, so
+        // a draft created over REST since then is only reachable after a reload.
+        await page.reload();
+        await page
+          .getByRole("button", { name: /Saved drafts|المسودات المحفوظة/ })
+          .click();
+        await page
+          .getByRole("button", { name: new RegExp(unitsInvoice) })
+          .click();
+        await expect(committedBaseUnits.last()).toHaveText("4 Strip");
+        for (const viewport of [
+          { height: 768, width: 1024 },
+          { height: 658, width: 1066 },
+          { height: 800, width: 1280 },
+        ]) {
+          await page.setViewportSize(viewport);
+          await expectWorkspaceSectionsStacked(page);
+          await expectBaseUnitColumnOnScreen(committedBaseUnits.last());
+        }
+        await page.setViewportSize({ height: 768, width: 1366 });
+
         await page
           .getByRole("button", {
             name: locale === "ar" ? "الموردون" : "Suppliers",
@@ -1646,14 +1749,124 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.locator(".purchase-entry-row").scrollIntoViewIfNeeded();
     await item.focus();
     await expect(item).toBeFocused();
-    await expect(item).toBeInViewport();
+    await expect(item).toBeInViewport({ ratio: 1 });
     expect(
       await page.evaluate<number>("document.documentElement.scrollTop"),
     ).toBeGreaterThan(0);
     await expect(panel).toBeVisible();
-    await expect(panel).toBeInViewport();
-    await expect(panel.locator("dl > div dd").last()).toBeInViewport();
+    await expect(panel).toBeInViewport({ ratio: 1 });
+    await expect(panel.locator("dl > div dd").last()).toBeInViewport({
+      ratio: 1,
+    });
     await expect(panel).toContainText("90000");
+  });
+
+  test("brings a refused Purchase Return into view and gives it focus", async ({
+    page,
+  }) => {
+    // Precondition through the REST contract: an eight-line invoice, each line
+    // carrying 4 units, so a return of 5 on the first line is refused by the
+    // server as over-eligible. The renderer does not clamp the field, so this
+    // is the server's refusal and not a local guard. Eight lines also make the
+    // return stage genuinely taller than its scrollport, which is the state the
+    // refusal has to survive.
+    const created = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/purchases/drafts",
+      {
+        idempotencyKey: uuidV7(),
+        invoiceDate: "2026-09-08",
+        settlementContext: "debt",
+        supplierId,
+        supplierInvoiceNumber: "BROWSER-OVER-RETURN",
+      },
+    );
+    expect(created.status).toBe(201);
+    let returnDraft = (created.body as { draft: PurchaseDraft }).draft;
+    for (let row = 0; row < 8; row += 1) {
+      const committed = await apiRequest(
+        apiOrigin,
+        credentials,
+        "POST",
+        purchaseDraftRowsPath(returnDraft.id),
+        {
+          costFils: "80000",
+          enteredQuantity: "4",
+          expectedVersion: returnDraft.version,
+          expiryDate: "2029-05-31",
+          idempotencyKey: uuidV7(),
+          itemId: purchaseProduct.id,
+          lotNumber: `OVER-${String(row)}`,
+          notes: null,
+          pricing: { method: "by-price", retailPriceFils: "120000" },
+          unit: { kind: "inventory-unit" },
+        },
+      );
+      expect(committed.status).toBe(201);
+      returnDraft = (committed.body as { draft: PurchaseDraft }).draft;
+    }
+    expect(
+      (
+        await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          purchaseDraftPostingsPath(returnDraft.id),
+          {
+            expectedVersion: returnDraft.version,
+            idempotencyKey: uuidV7(),
+          },
+        )
+      ).status,
+    ).toBe(201);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByRole("button", { name: "Posted invoices" }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "Posted purchase invoices",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("searchbox", { name: "Search posted purchases" })
+      .fill("BROWSER-OVER-RETURN");
+    await dialog
+      .getByRole("button", { name: /Open invoice P/u })
+      .first()
+      .click();
+    await expect(dialog).toContainText("BROWSER-OVER-RETURN");
+
+    await dialog.getByRole("button", { name: /Purchase return/iu }).click();
+    await dialog.getByLabel("Return reason").fill("Damaged in transit");
+    await dialog
+      .getByLabel("Disposition evidence")
+      .fill("Supplier collection note BROWSER-OVER-1");
+    await dialog
+      .getByRole("button", { name: "Create Purchase Return" })
+      .click();
+    const returnQuantities = dialog.getByRole("textbox", {
+      name: new RegExp(`Return quantity ${purchaseProduct.displayName}`, "u"),
+    });
+    await expect(returnQuantities).toHaveCount(8);
+    const returnQuantity = returnQuantities.first();
+    await returnQuantity.fill("5");
+    await dialog
+      .getByRole("button", { name: "Save and review physical return" })
+      .click();
+
+    // The refusal renders at the top of a stage the user has scrolled down to
+    // reach the action, inside a dialog that scrolls too. Same contract as the
+    // adjustment stage: on screen, focused, and the draft is kept.
+    const refusal = dialog.locator("section.purchase-return p.form-error");
+    await expect(refusal).toContainText("return-over-eligible");
+    await expect(refusal).toBeFocused();
+    await expect(refusal).toBeInViewport({ ratio: 1 });
+    await expect(refusal).toHaveAttribute("role", "alert");
+    await expect(returnQuantity).toHaveValue("5");
+    await expect(
+      dialog.getByRole("button", { name: "Save and review physical return" }),
+    ).toBeVisible();
   });
 
   test("brings a blocked Delta refusal into view and gives it focus", async ({
@@ -1735,7 +1948,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "This Delta is not valid against current stock.",
     );
     await expect(refusal).toBeFocused();
-    await expect(refusal).toBeInViewport();
+    await expect(refusal).toBeInViewport({ ratio: 1 });
     await expect(refusal).toHaveAttribute("role", "alert");
     // The refusal keeps the draft: the Delta is still editable behind it.
     await expect(
@@ -1743,6 +1956,97 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
   });
 });
+
+/**
+ * Proves the row workspace's sections are laid out one after another.
+ *
+ * The workspace is a grid whose table wrapper is a scroll container, so its
+ * automatic minimum height is zero. Get the track sizing wrong and the grid
+ * either crushes the table away or lets it paint over the section below — and
+ * neither shows up in an assertion about any single element, because every
+ * individual rect stays plausible. Comparing consecutive siblings is what
+ * catches it.
+ */
+async function expectWorkspaceSectionsStacked(page: Page): Promise<void> {
+  // Evaluated as source text: this test project carries no DOM library, so a
+  // typed callback cannot name `document`.
+  const overlaps = await page.evaluate<string[]>(
+    `(() => {
+      const workspace = document.querySelector(".purchase-row-workspace");
+      if (workspace === null) return ["no workspace"];
+      const boxes = [...workspace.children].map((child) => {
+        const rect = child.getBoundingClientRect();
+        return {
+          bottom: rect.bottom,
+          name: child.className || child.tagName,
+          top: rect.top,
+        };
+      });
+      const found = [];
+      for (let index = 1; index < boxes.length; index += 1) {
+        const previous = boxes[index - 1];
+        const current = boxes[index];
+        // Half a pixel of rounding is not an overlap; a section drawn over its
+        // neighbour is.
+        if (current.top + 0.5 < previous.bottom) {
+          found.push(
+            previous.name +
+              " (bottom " +
+              Math.round(previous.bottom) +
+              ") overlaps " +
+              current.name +
+              " (top " +
+              Math.round(current.top) +
+              ")",
+          );
+        }
+      }
+      return found;
+    })()`,
+  );
+  expect(overlaps).toEqual([]);
+}
+
+/**
+ * Places the row table's base-unit preview column.
+ *
+ * The defect was horizontal: the column sat past the right edge of the window
+ * (LTR) or past the left (RTL), reachable only by dragging a scrollbar. So the
+ * horizontal claim is asserted directly against the viewport, independently of
+ * where the page happens to be scrolled vertically.
+ */
+async function expectBaseUnitColumnOnScreen(cell: Locator): Promise<void> {
+  // Vertical position is a scrolling question — a long invoice puts the entry
+  // row below the fold at any window size — so the row is brought to the middle
+  // of the viewport first. `inline: "nearest"` keeps that scroll vertical, and
+  // the check below proves the table has nowhere to scroll sideways anyway.
+  await cell.evaluate((element) => {
+    element.scrollIntoView({ block: "center", inline: "nearest" });
+  });
+  // The viewport width is passed in rather than read as `window.innerWidth`:
+  // this test project carries no DOM library, so a typed callback cannot name
+  // browser globals.
+  const viewportWidth = cell.page().viewportSize()?.width ?? 0;
+  await expect
+    .poll(() =>
+      cell.evaluate((element, width) => {
+        const wrap = element.closest(".purchase-row-table-wrap");
+        if (wrap === null) return false;
+        const rect = element.getBoundingClientRect();
+        return (
+          wrap.scrollWidth <= wrap.clientWidth &&
+          wrap.scrollLeft === 0 &&
+          element.ownerDocument.documentElement.scrollLeft === 0 &&
+          rect.width > 0 &&
+          rect.left >= 0 &&
+          rect.right <= width
+        );
+      }, viewportWidth),
+    )
+    .toBe(true);
+  await expect(cell).toBeVisible();
+  await expect(cell).toBeInViewport({ ratio: 1 });
+}
 
 async function createPurchaseWithOneRow(
   page: Page,

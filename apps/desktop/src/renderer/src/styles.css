@@ -3985,9 +3985,18 @@ a:focus-visible,
  * so the whole workspace used to grow past the viewport and scroll sideways
  * instead of letting the table scroll inside its own wrapper.
  */
+/*
+ * `grid-auto-rows: max-content` is load-bearing, not cosmetic. Every row here
+ * is sized to its own content and the workspace scrolls when they do not fit,
+ * which is what `overflow: auto` above is for. Left to `auto`, a row whose item
+ * is a scroll container — the table wrapper — has a base size of zero, so under
+ * height pressure the grid either crushes that row away or, if the wrapper is
+ * given a minimum of its own, lets it spill over the section below it.
+ */
 .purchase-row-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: max-content;
   min-block-size: 0;
   min-inline-size: 0;
   flex: 1 1 auto;
@@ -4005,16 +4014,46 @@ a:focus-visible,
   gap: 1rem;
 }
 
+/*
+ * The wrapper scrolls the table sideways, and only sideways: the workspace
+ * above owns vertical scrolling, and `grid-auto-rows: max-content` there is
+ * what stops this row being compressed. Without it, `overflow-x: auto` makes
+ * the wrapper a scroll container in both axes, its automatic minimum size as a
+ * grid item is therefore zero, and the fixed-height layout above 80rem
+ * collapsed it to nothing whenever it ran short of room — the table vanished,
+ * its rows reachable only through a scrollbar on a zero-height box.
+ */
 .purchase-row-table-wrap {
-  min-width: 0;
+  min-inline-size: 0;
   overflow-x: auto;
-  flex: 1 1 auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
+/*
+ * The seven default columns have to fit the window, because the last of them is
+ * the base-unit preview: it is where "one pack of four" becomes "4 Strip", and a
+ * column the user has to drag a scrollbar to reach is a column the user does not
+ * read. Auto table layout sized every column to its widest cell — a trade name,
+ * a seven-digit fils amount — and pushed that preview past the right edge, so
+ * the layout is fixed and the budget is declared here instead.
+ *
+ * Widths are keyed to the field, not to the column position, so the pharmacy's
+ * saved show/hide and reorder preferences keep working unchanged: a hidden
+ * column stops claiming its width, a reordered one carries its width with it,
+ * and the item column — deliberately the only one without a width — absorbs
+ * whatever is left.
+ *
+ * `.purchase-row-table-wrap` keeps its `overflow-x: auto`, but as a safety net
+ * rather than the normal reading path. Every configurable column (item,
+ * quantity, cost, selling price, expiry) is already in the default set, so the
+ * user cannot add one beyond it; what is left is an operating-system text scale
+ * large enough to burst the budget, and there the table scrolls inside its
+ * wrapper rather than the page scrolling sideways.
+ */
 .purchase-row-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
@@ -4026,16 +4065,56 @@ a:focus-visible,
   border-bottom: 1px solid var(--border);
 }
 
+/* Header labels wrap instead of being cut: a clipped column name in Arabic or
+   English is worse than a two-line one. */
+.purchase-row-table thead th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: bottom;
+}
+
+.purchase-row-table thead th[data-column-field="ordinal"] {
+  width: 3rem;
+}
+
+.purchase-row-table thead th[data-column-field="quantity"] {
+  width: 5.5rem;
+}
+
+.purchase-row-table thead th[data-column-field="cost"],
+.purchase-row-table thead th[data-column-field="selling-price"] {
+  width: 7rem;
+}
+
+/* Wide enough for a native date control's own fields and calendar button. */
+.purchase-row-table thead th[data-column-field="expiry"] {
+  width: 10rem;
+}
+
+.purchase-row-table thead th[data-column-field="inventory-units"] {
+  width: 9rem;
+}
+
+/* Committed values clip with an ellipsis rather than widening their column. */
+.purchase-row-table tbody th,
+.purchase-row-table tbody td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A cell holding an entry control must not clip: the control fills the cell and
+   cannot overflow it, but its focus ring sits outside the cell's padding box. */
+.purchase-entry-row td:has(input) {
+  overflow: visible;
+}
+
 .purchase-entry-row {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .purchase-entry-row input {
-  min-width: 8.5rem;
-}
-
-.purchase-entry-row input[data-enter-field="item"] {
-  min-width: 15rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .purchase-row-table td[data-post-error="true"] {
