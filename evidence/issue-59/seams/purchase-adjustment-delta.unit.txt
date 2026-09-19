@@ -1,0 +1,24 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > posts exactly +4 for the verbatim 4 to 8 case 4ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > creates no movement or value effect for nine unchanged lines 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > extracts cost, retail-price, header, added, and removed changes exactly 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > subtracts prior effects so successive adjustments stand alone 0ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > is empty when the reconstructed copy still equals the original 0ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > scales deltas by pack size multipliers for multi-unit packaging 0ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > emits no ghost row deltas when a prior added row is untouched in a successive adjustment 0ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > emits no ghost row deltas when a prior removed row is untouched in a successive adjustment 0ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > records entered-quantity strings rather than itemIds for added and removed rows 0ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  00:47:20
+   Duration  331ms (transform 64ms, setup 0ms, import 130ms, tests 9ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/purchasing/purchase-adjustment-delta.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

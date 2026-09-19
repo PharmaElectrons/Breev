@@ -15,6 +15,7 @@ import {
 } from "@breev/contracts/local-rest";
 import { searchProducts } from "./catalog-api";
 import { ProductForm } from "./product-form";
+import type { PurchaseItemSelection } from "./purchase-item-details";
 import {
   commitPurchaseDraftRow,
   purchasingCommandAttempt,
@@ -30,6 +31,9 @@ interface PurchaseRowEntryProps {
   readonly baseUrl: string;
   readonly draft: PurchaseDraftDetail;
   readonly onDraftChanged: (draft: PurchaseDraftDetail) => void;
+  readonly onItemSelectionChanged: (
+    selection: PurchaseItemSelection | null,
+  ) => void;
   readonly onPost: () => Promise<void>;
   readonly postDenial: PurchasingDenial | null;
   readonly posting: boolean;
@@ -53,6 +57,7 @@ export function PurchaseRowEntry({
   baseUrl,
   draft,
   onDraftChanged,
+  onItemSelectionChanged,
   onPost,
   postDenial,
   posting,
@@ -104,6 +109,20 @@ export function PurchaseRowEntry({
       live = false;
     };
   }, [baseUrl, copy.apiUnavailable]);
+
+  // The item-details panel is rendered by the screen, in the column the shell
+  // reserves for it, so the row publishes its current item upward instead of
+  // drawing a panel of its own beyond the right edge of the row table. The
+  // cleanup empties the panel when the row entry leaves, so a posted or
+  // discarded invoice never leaves a wholesale price on screen.
+  useEffect(() => {
+    onItemSelectionChanged(
+      product === null
+        ? null
+        : { fields: preferences?.detailsPanelFields ?? [], product },
+    );
+    return () => onItemSelectionChanged(null);
+  }, [onItemSelectionChanged, preferences, product]);
 
   useEffect(() => {
     if (preferences === null || initialFocusDone.current) return;
@@ -481,101 +500,71 @@ export function PurchaseRowEntry({
         </details>
       </div>
 
-      <div className="purchase-row-layout">
-        <div className="purchase-row-table-wrap">
-          <table className="purchase-row-table">
-            <thead>
-              <tr>
-                <th scope="col">#</th>
-                {visibleColumns.map(({ field }) => (
-                  <th scope="col" key={field}>
-                    {copy[FIELD_COPY[field]]}
-                  </th>
-                ))}
-                <th scope="col">{copy.inventoryUnits}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {draft.rows.map((row, rowIndex) => (
-                <tr key={row.id}>
-                  <th scope="row">{row.ordinal}</th>
-                  {visibleColumns.map(({ field }) => (
-                    <td
-                      key={field}
-                      data-post-row={rowIndex}
-                      data-post-field={POST_FIELD[field]}
-                      data-post-error={isPostFieldError(
-                        postDenial,
-                        rowIndex,
-                        POST_FIELD[field],
-                      )}
-                      tabIndex={-1}
-                    >
-                      {committedValue(field, row, copy)}
-                    </td>
-                  ))}
-                  <td>
-                    <bdi>{row.inventoryUnitQuantity}</bdi>{" "}
-                    {row.inventoryUnitName}
-                  </td>
-                </tr>
+      <div className="purchase-row-table-wrap">
+        <table className="purchase-row-table">
+          <thead>
+            <tr>
+              <th scope="col" data-column-field="ordinal">
+                #
+              </th>
+              {visibleColumns.map(({ field }) => (
+                <th scope="col" key={field} data-column-field={field}>
+                  {copy[FIELD_COPY[field]]}
+                </th>
               ))}
-              <tr className="purchase-entry-row" data-entry-epoch={entryEpoch}>
-                <th scope="row">{draft.rows.length + 1}</th>
+              <th scope="col" data-column-field="inventory-units">
+                {copy.inventoryUnits}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {draft.rows.map((row, rowIndex) => (
+              <tr key={row.id}>
+                <th scope="row" data-column-field="ordinal">
+                  {row.ordinal}
+                </th>
                 {visibleColumns.map(({ field }) => (
-                  <td key={field}>{renderEditor(field)}</td>
+                  <td
+                    key={field}
+                    data-column-field={field}
+                    // The item name is the one committed value long enough to be
+                    // clipped by its column, so it carries its full text as a
+                    // tooltip. The other columns are short numbers and dates.
+                    title={field === "item" ? row.itemDisplayName : undefined}
+                    data-post-row={rowIndex}
+                    data-post-field={POST_FIELD[field]}
+                    data-post-error={isPostFieldError(
+                      postDenial,
+                      rowIndex,
+                      POST_FIELD[field],
+                    )}
+                    tabIndex={-1}
+                  >
+                    {committedValue(field, row, copy)}
+                  </td>
                 ))}
-                <td>
-                  {product === null
-                    ? "—"
-                    : previewInventoryUnits(product, unitKey, quantity)}
+                <td data-column-field="inventory-units">
+                  <bdi>{row.inventoryUnitQuantity}</bdi> {row.inventoryUnitName}
                 </td>
               </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <aside
-          className="purchase-item-panel"
-          aria-labelledby="purchase-item-panel-title"
-        >
-          <h3 id="purchase-item-panel-title">{copy.detailsPanel}</h3>
-          {product === null ? (
-            <p>{copy.itemPanelEmpty}</p>
-          ) : (
-            <>
-              <strong>{product.displayName}</strong>
-              <dl>
-                {preferences?.detailsPanelFields.includes("scientific-name") ? (
-                  <div>
-                    <dt>{copy.scientificName}</dt>
-                    <dd>{product.scientificName ?? "—"}</dd>
-                  </div>
-                ) : null}
-                {preferences?.detailsPanelFields.includes("category") ? (
-                  <div>
-                    <dt>{copy.category}</dt>
-                    <dd>{product.category ?? "—"}</dd>
-                  </div>
-                ) : null}
-                {preferences?.detailsPanelFields.includes("packaging") ? (
-                  <div>
-                    <dt>{copy.packaging}</dt>
-                    <dd>{packagingText(product)}</dd>
-                  </div>
-                ) : null}
-                {preferences?.detailsPanelFields.includes("wholesale-price") ? (
-                  <div>
-                    <dt>{copy.wholesalePrice}</dt>
-                    <dd>
-                      <bdi>{product.pricing.wholesalePriceFils ?? "—"}</bdi>
-                    </dd>
-                  </div>
-                ) : null}
-              </dl>
-            </>
-          )}
-        </aside>
+            ))}
+            <tr className="purchase-entry-row" data-entry-epoch={entryEpoch}>
+              <th scope="row" data-column-field="ordinal">
+                {draft.rows.length + 1}
+              </th>
+              {visibleColumns.map(({ field }) => (
+                <td key={field} data-column-field={field}>
+                  {renderEditor(field)}
+                </td>
+              ))}
+              <td data-column-field="inventory-units">
+                {product === null
+                  ? "—"
+                  : previewInventoryUnits(product, unitKey, quantity)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <details
@@ -1053,12 +1042,6 @@ function previewInventoryUnits(
           )?.baseUnitsPerPackage ?? "0",
         );
   return `${(BigInt(quantity) * ratio).toString()} ${product.packaging.inventoryUnitName}`;
-}
-function packagingText(product: Product): string {
-  const packages = product.packaging.packageUnits.map(
-    (unit) => `${unit.name} × ${unit.baseUnitsPerPackage}`,
-  );
-  return [product.packaging.inventoryUnitName, ...packages].join(" · ");
 }
 function looksLikeBarcode(value: string): boolean {
   return /^(?:[0-9]{4,}|BRV-[0-9]{4,})$/u.test(value);

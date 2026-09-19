@@ -1,0 +1,202 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/posting/money.unit.test.ts > FILS_PER_IQD > publishes the exact fils-per-dinar ratio as a bigint 2ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > keeps positive, negative, and zero amounts exactly as given 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > keeps amounts far beyond exact floating point precision 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a whole number because binary floating point cannot carry an amount 1ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a fractional number because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects an accumulated float because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects zero because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects negative zero because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects NaN because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects positive infinity because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects negative infinity because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a value past exact integer precision because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a decimal string 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects null 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects undefined 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a boolean 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects an object 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects an array 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a symbol 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a number at compile time as well as at run time 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > keeps signed movement quantities exactly as given 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a whole number because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a fractional number because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects an accumulated float because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects zero because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects negative zero because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects NaN because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects positive infinity because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects negative infinity because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a value past exact integer precision because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a decimal string 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects null 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects undefined 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a boolean 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects an object 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects an array 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a symbol 0ms
+ ✓ src/posting/money.unit.test.ts > branded exactness > refuses a raw bigint, a number, and the other brand at compile time 1ms
+ ✓ src/posting/money.unit.test.ts > branded exactness > relies on the compiler alone to keep the two brands apart in arithmetic 0ms
+ ✓ src/posting/money.unit.test.ts > branded exactness > stays assignable to bigint, which is what PostgreSQL receives 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 0 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 1 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -1 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 7 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 999 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 1000 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -1000 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 9007199254740991 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 9007199254740993 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -9007199254740993 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 9223372036854775807 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -9223372036854775808 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 123456789012345678901234567890 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -123456789012345678901234567890 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > parses to the exact amount, not to a rounded double 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > reads sign and magnitude separately 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an empty string 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a lone minus sign 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an explicit plus sign 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects negative zero 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a leading zero 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a zero-padded value 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a negative leading zero 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects leading whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects trailing whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a leading tab 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a trailing newline 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects only whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an internal space 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a thousands separator 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a numeric separator 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a trailing decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a leading decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a fractional value 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an exponent 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an uppercase exponent 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a signed exponent 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a hexadecimal literal 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an octal literal 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a binary literal 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects NaN 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects Infinity 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects negative infinity 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects Arabic-Indic digits 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects Arabic-Indic digits mixed with ASCII 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects fullwidth digits 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a trailing sign 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a doubled sign 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a bigint literal suffix 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a currency suffix 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > closes the coercion holes that BigInt would otherwise accept 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a value that did not arrive as a string 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > quotes and truncates a rejected value in the error message 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > stays unbounded, leaving the range to the column that stores it 0ms
+ ✓ src/posting/money.unit.test.ts > formatFilsString > writes zero as the single canonical spelling 0ms
+ ✓ src/posting/money.unit.test.ts > formatFilsString > writes one leading minus sign for a negative amount 0ms
+ ✓ src/posting/money.unit.test.ts > formatFilsString > never writes an exponent for a large amount 0ms
+ ✓ src/posting/money.unit.test.ts > formatFilsString > refuses to put a forged floating point value on the wire 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 0 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 1 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -1 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 7 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 999 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 1000 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -1000 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 9007199254740991 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 9007199254740993 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -9007199254740993 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 9223372036854775807 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -9223372036854775808 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 123456789012345678901234567890 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -123456789012345678901234567890 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > carries signed movements, because an issue reduces stock 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an empty string 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a lone minus sign 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an explicit plus sign 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects negative zero 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a leading zero 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a zero-padded value 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a negative leading zero 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects leading whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects trailing whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a leading tab 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a trailing newline 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects only whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an internal space 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a thousands separator 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a numeric separator 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a trailing decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a leading decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a fractional value 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an exponent 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an uppercase exponent 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a signed exponent 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a hexadecimal literal 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an octal literal 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a binary literal 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects NaN 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects Infinity 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects negative infinity 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects Arabic-Indic digits 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects Arabic-Indic digits mixed with ASCII 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects fullwidth digits 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a trailing sign 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a doubled sign 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a bigint literal suffix 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a currency suffix 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a value that did not arrive as a string 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > refuses to put a forged floating point value on the wire 0ms
+ ✓ src/posting/money.unit.test.ts > addFils > adds exactly past the range doubles can represent 0ms
+ ✓ src/posting/money.unit.test.ts > addFils > adds signed amounts, including back to zero 0ms
+ ✓ src/posting/money.unit.test.ts > addFils > loses nothing across a long chain of additions 0ms
+ ✓ src/posting/money.unit.test.ts > addFils > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > negateFils > reverses the sign 0ms
+ ✓ src/posting/money.unit.test.ts > negateFils > has no negative zero to produce 0ms
+ ✓ src/posting/money.unit.test.ts > negateFils > is its own inverse at any magnitude 0ms
+ ✓ src/posting/money.unit.test.ts > negateFils > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > compareFils and equalsFils > orders amounts as -1, 0, and 1 0ms
+ ✓ src/posting/money.unit.test.ts > compareFils and equalsFils > separates amounts that a double would collapse into one 0ms
+ ✓ src/posting/money.unit.test.ts > compareFils and equalsFils > treats equal amounts as equal whatever their provenance 0ms
+ ✓ src/posting/money.unit.test.ts > compareFils and equalsFils > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > quantity arithmetic > adds and negates movements exactly 0ms
+ ✓ src/posting/money.unit.test.ts > quantity arithmetic > stays exact past double precision 0ms
+ ✓ src/posting/money.unit.test.ts > quantity arithmetic > orders and compares quantities 0ms
+ ✓ src/posting/money.unit.test.ts > quantity arithmetic > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > parseRateString > reads exact decimal text into a scaled integer 0ms
+ ✓ src/posting/money.unit.test.ts > parseRateString > keeps a tenth exactly a tenth 0ms
+ ✓ src/posting/money.unit.test.ts > parseRateString > rejects every non-canonical or floating point spelling 1ms
+ ✓ src/posting/money.unit.test.ts > multiplyFils > multiplies a unit cost by its quantity exactly 0ms
+ ✓ src/posting/money.unit.test.ts > multiplyFils > stays exact past double precision 0ms
+ ✓ src/posting/money.unit.test.ts > multiplyFils > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > divideFilsRounded > rounds an exact half away from zero 0ms
+ ✓ src/posting/money.unit.test.ts > divideFilsRounded > leaves an exact quotient alone and rounds the rest to nearest 1ms
+ ✓ src/posting/money.unit.test.ts > divideFilsRounded > refuses a zero denominator instead of inventing a value 0ms
+ ✓ src/posting/money.unit.test.ts > rateOfFils > takes the supplier allowance share of an invoice 0ms
+ ✓ src/posting/money.unit.test.ts > rateOfFils > rounds once, on the exact product rather than on a per-unit share 0ms
+ ✓ src/posting/money.unit.test.ts > rateOfFils > rejects a forged floating point amount or rate 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > gives every fils of the total to some line 1ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > hands the leftover to the largest remainder, then to the earlier line 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > splits a negative total symmetrically 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > keeps the money when there is no proportion to split by 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > refuses an empty or negatively weighted allocation 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > stays exact past double precision 0ms
+ ✓ src/posting/money.unit.test.ts > rounding policy scope > labels the two engineering defaults its behaviour implements 0ms
+ ✓ src/posting/money.unit.test.ts > rounding policy scope > still offers no escape into binary floating point 0ms
+
+ Test Files  1 passed (1)
+      Tests  187 passed (187)
+   Start at  00:47:32
+   Duration  401ms (transform 122ms, setup 0ms, import 174ms, tests 32ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/posting/money.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

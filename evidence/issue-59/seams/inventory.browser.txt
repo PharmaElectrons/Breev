@@ -1,0 +1,15 @@
+
+Running 5 tests using 1 worker
+
+[1/5] test\browser\inventory.browser.test.ts:152:3 › read-only inventory review › sorts and changes visibility by keyboard while preserving table semantics
+[2/5] test\browser\inventory.browser.test.ts:221:3 › read-only inventory review › opens movement history and the originating purchase, then restores focus
+[3/5] test\browser\inventory.browser.test.ts:257:3 › read-only inventory review › pairs state colour with text and an icon, including forced colours
+[4/5] test\browser\inventory.browser.test.ts:282:3 › read-only inventory review › renders Arabic RTL and English LTR evidence in both themes
+[5/5] test\browser\inventory.browser.test.ts:345:3 › read-only inventory review › shows a recoverable API-down state and owner-only export
+  5 passed (31.8s)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+DURATION_SECONDS: 34
+SOURCE_COMMIT: e73b541

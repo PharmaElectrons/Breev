@@ -1,0 +1,21 @@
+
+Running 5 tests using 1 worker
+
+[1/5] test\browser\inventory.browser.test.ts:152:3 › read-only inventory review › sorts and changes visibility by keyboard while preserving table semantics
+[2/5] test\browser\inventory.browser.test.ts:221:3 › read-only inventory review › opens movement history and the originating purchase, then restores focus
+[3/5] test\browser\inventory.browser.test.ts:257:3 › read-only inventory review › pairs state colour with text and an icon, including forced colours
+[4/5] test\browser\inventory.browser.test.ts:282:3 › read-only inventory review › renders Arabic RTL and English LTR evidence in both themes
+[5/5] test\browser\inventory.browser.test.ts:345:3 › read-only inventory review › shows a recoverable API-down state and owner-only export
+  5 passed (1.1m)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+DURATION_SECONDS: 73
+SOURCE_COMMIT: e73b541
+
+NOTE: idle-host control for the batch-safety readiness investigation, not a W2 list item.
+Same command as inventory.browser.txt, run after the concurrent packaged-desktop harness
+finished. Passing here, together with batch-safety.browser.txt passing 5/5 on the same
+idle host, is what corrects the earlier loaded-host reading recorded in
+host-load-control-inventory.browser.txt.

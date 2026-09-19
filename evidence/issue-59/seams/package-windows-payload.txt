@@ -1,0 +1,45 @@
+$ node apps/local-api/windows/prepare-payload.mjs
+tar: Cannot connect to D: resolve failed
+file:///D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api/windows/prepare-payload.mjs:260
+    throw new Error(`${command} failed with exit code ${result.status}`);
+          ^
+
+Error: tar.exe failed with exit code 128
+    at run (file:///D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api/windows/prepare-payload.mjs:260:11)
+    at extractArchive (file:///D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api/windows/prepare-payload.mjs:241:7)
+    at async file:///D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api/windows/prepare-payload.mjs:73:3
+
+Node.js v24.19.0
+[ELIFECYCLE] Command failed with exit code 1.
+
+RESULT: host-limited — this workstation's PATH resolves tar.exe to Git for Windows GNU tar 1.35, which reads the Windows absolute path "D:..." as a remote host; the same command passed once Windows bsdtar was first on PATH (see package-windows-payload-rerun.txt)
+COMMAND: pnpm package:windows:payload
+EXIT: 1
+DURATION_SECONDS: 19
+SOURCE_COMMIT: e73b541
+
+CLASSIFICATION NOTE (W2 analysis, no file outside evidence/issue-59/seams was modified)
+  Failure: tar.exe exit 128 with "tar: Cannot connect to D: resolve failed", raised by
+  apps/local-api/windows/prepare-payload.mjs:241 (extractArchive) via run() at :260.
+  That message is GNU tar's: it parses "D:\path" as host:path (rsh syntax). Windows
+  bsdtar does not. Resolution on this host:
+    which tar                       -> /usr/bin/tar        (GNU tar 1.35)
+    powershell (Get-Command tar.exe)-> C:\Program Files\Git\usr\bin\tar.exe (GNU tar 1.35)
+    C:\Windows\System32\tar.exe     -> bsdtar 3.8.8 (the Windows-shipped one)
+  So the machine PATH puts Git for Windows' GNU tar ahead of System32 in EVERY shell on
+  this workstation, not just the one this agent used.
+  Where CI actually runs this command (checked, not assumed):
+    .github/workflows/release.yml:151 - the only routine invocation, inside the
+      build-windows job (release.yml:95, runs-on windows-2025), which runs for a release
+      tag, not for ordinary pushes.
+    .github/workflows/verify.yml:127-129 - the windows-candidates job is gated
+      "if: ${{ github.event_name == 'workflow_dispatch' }}", so it is DISPATCH-ONLY. It
+      was SKIPPED in push run 34946061944, the clean-checkout Verify run cited for this
+      commit, and ran only in dispatch run 35395379466, job 105762911820.
+  It would therefore be wrong to say CI routinely builds this payload for this commit's
+  push run. The only proof that the Windows payload builds at e73b541 in this wave is the
+  local PATH-corrected rerun recorded here. Verified by re-running the exact
+  same command with C:\Windows\System32 prepended to PATH and nothing else changed:
+  it succeeded in 225 s and printed
+    Bundled API runtime: {"bundleBytes":7383107,"migrations":26,"nativeFiles":["argon2.glibc.node"]}
+  (package-windows-payload-rerun.txt). No product or tooling code was changed.

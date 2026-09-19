@@ -1,0 +1,20 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > converts 2 packs and 1 strip to 9 strips with a preserved label 2ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > composes arbitrary non-negative integer counts at arbitrary positive ratios 3ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > keeps variance and signed fils splits exact 1ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > conserves WAC quantity and value for both variance directions 2ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > picks the newest eligible batch by receipt time then id 16ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  00:47:26
+   Duration  415ms (transform 80ms, setup 0ms, import 193ms, tests 27ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/inventory/inventory-count.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

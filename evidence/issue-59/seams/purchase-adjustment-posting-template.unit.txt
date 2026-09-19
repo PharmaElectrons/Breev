@@ -1,0 +1,18 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/accounting/purchase-adjustment-posting-template.unit.test.ts > purchase adjustment posting template > posts a positive debt Delta to inventory and supplier payable 2ms
+ ✓ src/accounting/purchase-adjustment-posting-template.unit.test.ts > purchase adjustment posting template > moves a corrected debt between supplier accounts without stock value 1ms
+ ✓ src/accounting/purchase-adjustment-posting-template.unit.test.ts > purchase adjustment posting template > produces no journal lines for a non-financial invoice-number fix 0ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  00:47:36
+   Duration  367ms (transform 114ms, setup 0ms, import 141ms, tests 5ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/accounting/purchase-adjustment-posting-template.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

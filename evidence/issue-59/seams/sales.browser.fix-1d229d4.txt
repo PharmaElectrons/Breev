@@ -1,0 +1,18 @@
+
+Running 7 tests using 1 worker
+
+[1/7] test\browser\sales.browser.test.ts:145:3 › sale drafts and the reorder row action › opens a draft, finds the item by keyboard, and baskets it without touching the draft
+[2/7] test\browser\sales.browser.test.ts:189:3 › sale drafts and the reorder row action › resumes the same draft after a renderer restart with an empty search box
+[3/7] test\browser\sales.browser.test.ts:225:3 › sale drafts and the reorder row action › resumes the identical draft after the local API restarts
+[4/7] test\browser\sales.browser.test.ts:247:3 › sale drafts and the reorder row action › keeps the draft and adds exactly once when the basket call cannot reach the API
+[5/7] test\browser\sales.browser.test.ts:292:3 › sale drafts and the reorder row action › explains an item archived after the search and resolves it
+[6/7] test\browser\sales.browser.test.ts:328:3 › sale drafts and the reorder row action › hides the row action without the basket permission and leaves the draft untouched
+[7/7] test\browser\sales.browser.test.ts:353:3 › sale drafts and the reorder row action › covers Arabic and English RTL/LTR themes, accessibility, and keyboard evidence
+  7 passed (23.9s)
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/sales.browser.test.ts --config playwright.browser.config.ts
+EXIT: 0
+STARTED_AT: 19 Sep 2026 10:49:16
+DURATION_SECONDS: 25
+SOURCE_COMMIT: 1d229d4

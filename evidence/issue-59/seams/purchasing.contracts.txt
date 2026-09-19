@@ -1,0 +1,40 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/packages/contracts
+
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > uses exact percentage strings instead of floating point numbers 5ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > requires the complete header before draft creation 4ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > models the duplicate as a non-blocking typed warning 2ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > requires the explicit populated-draft confirmation token 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > has no supplier, draft, or posting hard-delete route 2ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > requires a version and idempotency key on each row commit 2ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > makes pricing-mode locking structural at the wire boundary 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > requires every configured column once and keeps Item visible 2ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > lets the post command carry nothing the draft already owns 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > carries both cost values and keeps the valuation basis pre-discount 6ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > keeps the supplier balance and the journal on the pre-discount basis 2ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > has no account for an allowance the invoice never posts 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > refuses an unbalanced journal at the wire boundary 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > keeps every posted money value an exact decimal integer string 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > warns rather than blocks on a duplicate supplier invoice number 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > names the failing field and the rule that refused it 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > makes a posted draft a terminal status of its own 0ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > requires an effective date on every supplier default 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > keeps posted purchase facts read-only while allowing linked drafts 0ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > rejects transformed or unknown posted purchase search input 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > makes server-side cost visibility structural in posted review 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > validates an immutable posted detail snapshot without live master fields 3ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > stores return carrying amount and supplier reduction as distinct exact values 5ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > publishes exactly the five mandatory adjustment reasons 1ms
+ ✓ src/local-rest/purchasing.test.ts > supplier and purchase draft contracts > validates durable adjustment drafts, signed summaries, and confirmation 5ms
+
+ Test Files  1 passed (1)
+      Tests  25 passed (25)
+   Start at  00:47:44
+   Duration  915ms (transform 354ms, setup 0ms, import 563ms, tests 55ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/contracts exec vitest run --reporter=verbose src/local-rest/purchasing.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

@@ -1,0 +1,65 @@
+STARTED_AT: 19 Sep 2026 ~01:42:52 (approximate — derived from the wave-runner log line for this run minus its DURATION_SECONDS; the runner recorded duration but not a start timestamp, and the file mtimes were later changed by classification edits)
+
+Running 5 tests using 1 worker
+
+[1/5] test\browser\batch-safety.browser.test.ts:126:3 › batch safety renderer › previews FEFO with a near-expiry warning and expired block
+  1) test\browser\batch-safety.browser.test.ts:126:3 › batch safety renderer › previews FEFO with a near-expiry warning and expired block 
+
+    Error: Local API did not report healthy at http://127.0.0.1:54192 (still running).
+
+       at ..\local-api-process.ts:113
+
+      111 |     await delay(100);
+      112 |   }
+    > 113 |   throw new Error(describeHealthFailure(baseUrl, status, child));
+          |         ^
+      114 | }
+      115 |
+      116 | function describeHealthFailure(
+        at waitForHealth (D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\desktop\test\local-api-process.ts:113:9)
+        at D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\desktop\test\browser\batch-safety.browser.test.ts:89:5
+
+    Error Context: ..\..\test-results\desktop-browser\batch-safety.browser-batch-18966-y-warning-and-expired-block\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\batch-safety.browser-batch-18966-y-warning-and-expired-block\error-context.md
+
+
+[2/5] test\browser\batch-safety.browser.test.ts:163:3 › batch safety renderer › runs review now, quarantines a batch, and preserves focus
+[3/5] test\browser\batch-safety.browser.test.ts:206:3 › batch safety renderer › corrects expiry through Step-Up and retains original history
+[4/5] test\browser\batch-safety.browser.test.ts:247:3 › batch safety renderer › covers keyboard, forced-colors, Arabic/English, and both themes
+[5/5] test\browser\batch-safety.browser.test.ts:338:3 › batch safety renderer › hides actions from a manager without permission and refuses forged POST
+  1 failed
+    test\browser\batch-safety.browser.test.ts:126:3 › batch safety renderer › previews FEFO with a near-expiry warning and expired block 
+  4 did not run
+undefined
+D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test test/browser/batch-safety.browser.test.ts --config playwright.browser.config.ts
+
+RESULT: host-limited — the local API did not answer /health inside the harness 15 s readiness deadline; the identical command passed 5/5 on an idle host (batch-safety.browser.txt)
+COMMAND: pnpm --filter @breev/desktop exec playwright test test/browser/batch-safety.browser.test.ts --config playwright.browser.config.ts
+EXIT: 1
+DURATION_SECONDS: 53
+SOURCE_COMMIT: e73b541
+
+CLASSIFICATION NOTE (W2 analysis, no file outside evidence/issue-59/seams was modified)
+  Failure point: apps/desktop/test/local-api-process.ts:113 (waitForHealth), reached from
+  apps/desktop/test/browser/batch-safety.browser.test.ts:89 inside beforeAll. That helper's
+  deadline is 15_000 ms (local-api-process.ts:90-95) and the child API was reported
+  "still running" - mid-boot, never crashed - so no product assertion was reached.
+  Four attempts failed this way while a second agent's packaged-desktop Playwright harness
+  was loading this workstation: 00:53 (49 s), 00:57 (73 s), 01:04 (36 s), 01:43 (53 s).
+  Once that harness finished and the host went idle, the identical command passed 5/5
+  twice in a row (batch-safety.browser.txt, 61 s), and the idle control inventory.browser
+  also passed 5/5 (host-load-control-inventory.browser-idle.txt).
+  Correction to an earlier reading in this wave: a control run of inventory.browser taken
+  at 01:06 also failed, and was first read as proof that the whole host was too slow. The
+  idle runs show that was only half right - inventory.browser passes on an idle host and
+  batch-safety.browser needed the host to be idle as well. The accurate statement is that
+  the 15 s readiness deadline is marginal on this Windows workstation and fails under
+  concurrent load, with batch-safety.browser the first suite to lose that race because its
+  beforeAll fixture is the heaviest (Testcontainers PostgreSQL, bootstrap, a posted
+  purchase and a second user before the renderer starts).
+  Not a product defect: the suite passes here once the host is free, and Ubuntu CI run
+  34946061944 has it green on this commit.
+  For W5: the 15 s deadline is a harness-robustness limit, in the same family as the 60 s
+  deadline that timed out twice on purchase-posting.integration.

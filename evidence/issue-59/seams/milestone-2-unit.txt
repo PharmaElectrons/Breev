@@ -1,0 +1,310 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > matches the fixed acceptance example "panadol gs" 3ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > matches the fixed acceptance example "extra" wherever it occurs 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > requires query parts to finish in their stated order 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > matches characters in sequence within a part without a prefix anchor 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > normalizes case, whitespace, and simple punctuation identically 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > matches Arabic names under the same ordered subsequence rule 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > does not invent Arabic orthographic normalization 0ms
+ ✓ src/catalog/catalog-search.unit.test.ts > Catalog Product search > does not match an empty or punctuation-only query 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > receiptClassOf > derives the class from product facts Catalog already stores 3ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > receiptClassOf > has a rule for every class it can name 1ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > DEFAULT_RECEIPT_CLASS_RULES > is the current G-02 engineering default, not approved policy 1ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > DEFAULT_RECEIPT_CLASS_RULES > cannot be edited in place by a caller that reads it 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > receiptRuleFor > uses the shipped default when no configuration is supplied 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > receiptRuleFor > uses the pharmacy's configured rule when one is supplied 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > accepts a receipt that carries what its rule requires 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > names the missing evidence rather than refusing without a reason 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > reports the sale-blocking gap first when both are missing 0ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > follows a configured override in both directions 1ms
+ ✓ src/inventory/inventory-receipt-rules.unit.test.ts > checkReceiptEvidence > never requires evidence a rule does not ask for 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > stores the pre-discount basis and the calculated Cost After Discount 5ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > reproduces the client's five-invoice allowance example 1ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > leaves the valuation basis untouched when only the allowance changes 1ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > reconciles the line shares with the invoice totals exactly 2ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > rounds the invoice allowance once instead of once per line 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > stays exact past double precision 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > refuses an invoice with no committed rows 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > refuses a line that is not a positive receipt of a real cost 1ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > refuses a total that would not survive its bigint column 0ms
+ ✓ src/purchasing/purchase-costs.unit.test.ts > calculatePurchaseCosts > refuses an allowance that is not exact decimal text in range 1ms
+ ✓ src/posting/money.unit.test.ts > FILS_PER_IQD > publishes the exact fils-per-dinar ratio as a bigint 3ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > keeps positive, negative, and zero amounts exactly as given 1ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > keeps amounts far beyond exact floating point precision 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a whole number because binary floating point cannot carry an amount 1ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a fractional number because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects an accumulated float because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects zero because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects negative zero because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects NaN because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects positive infinity because binary floating point cannot carry an amount 1ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects negative infinity because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a value past exact integer precision because binary floating point cannot carry an amount 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a decimal string 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects null 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects undefined 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a boolean 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects an object 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects an array 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a symbol 0ms
+ ✓ src/posting/money.unit.test.ts > iqdFils > rejects a number at compile time as well as at run time 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > keeps signed movement quantities exactly as given 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a whole number because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a fractional number because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects an accumulated float because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects zero because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects negative zero because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects NaN because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects positive infinity because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects negative infinity because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a value past exact integer precision because a fractional base unit cannot exist 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a decimal string 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects null 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects undefined 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a boolean 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects an object 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects an array 0ms
+ ✓ src/posting/money.unit.test.ts > inventoryQuantity > rejects a symbol 0ms
+ ✓ src/posting/money.unit.test.ts > branded exactness > refuses a raw bigint, a number, and the other brand at compile time 1ms
+ ✓ src/posting/money.unit.test.ts > branded exactness > relies on the compiler alone to keep the two brands apart in arithmetic 0ms
+ ✓ src/posting/money.unit.test.ts > branded exactness > stays assignable to bigint, which is what PostgreSQL receives 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 0 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 1 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -1 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 7 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 999 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 1000 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -1000 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 9007199254740991 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 9007199254740993 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -9007199254740993 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 9223372036854775807 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -9223372036854775808 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips 123456789012345678901234567890 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > round-trips -123456789012345678901234567890 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > parses to the exact amount, not to a rounded double 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > reads sign and magnitude separately 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an empty string 1ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a lone minus sign 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an explicit plus sign 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects negative zero 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a leading zero 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a zero-padded value 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a negative leading zero 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects leading whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects trailing whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a leading tab 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a trailing newline 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects only whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an internal space 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a thousands separator 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a numeric separator 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a trailing decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a leading decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a fractional value 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an exponent 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an uppercase exponent 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a signed exponent 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a hexadecimal literal 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects an octal literal 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a binary literal 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects NaN 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects Infinity 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects negative infinity 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects Arabic-Indic digits 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects Arabic-Indic digits mixed with ASCII 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects fullwidth digits 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a trailing sign 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a doubled sign 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a bigint literal suffix 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a currency suffix 0ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > closes the coercion holes that BigInt would otherwise accept 1ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > rejects a value that did not arrive as a string 1ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > quotes and truncates a rejected value in the error message 1ms
+ ✓ src/posting/money.unit.test.ts > parseFilsString > stays unbounded, leaving the range to the column that stores it 0ms
+ ✓ src/posting/money.unit.test.ts > formatFilsString > writes zero as the single canonical spelling 0ms
+ ✓ src/posting/money.unit.test.ts > formatFilsString > writes one leading minus sign for a negative amount 0ms
+ ✓ src/posting/money.unit.test.ts > formatFilsString > never writes an exponent for a large amount 0ms
+ ✓ src/posting/money.unit.test.ts > formatFilsString > refuses to put a forged floating point value on the wire 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 0 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 1 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -1 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 7 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 999 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 1000 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -1000 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 9007199254740991 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 9007199254740993 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -9007199254740993 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 9223372036854775807 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -9223372036854775808 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips 123456789012345678901234567890 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > round-trips -123456789012345678901234567890 byte for byte 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > carries signed movements, because an issue reduces stock 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an empty string 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a lone minus sign 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an explicit plus sign 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects negative zero 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a leading zero 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a zero-padded value 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a negative leading zero 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects leading whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects trailing whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a leading tab 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a trailing newline 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects only whitespace 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an internal space 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a thousands separator 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a numeric separator 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a trailing decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a leading decimal point 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a fractional value 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an exponent 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an uppercase exponent 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a signed exponent 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a hexadecimal literal 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects an octal literal 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a binary literal 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects NaN 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects Infinity 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects negative infinity 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects Arabic-Indic digits 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects Arabic-Indic digits mixed with ASCII 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects fullwidth digits 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a trailing sign 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a doubled sign 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a bigint literal suffix 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a currency suffix 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > rejects a value that did not arrive as a string 0ms
+ ✓ src/posting/money.unit.test.ts > quantity wire form > refuses to put a forged floating point value on the wire 0ms
+ ✓ src/posting/money.unit.test.ts > addFils > adds exactly past the range doubles can represent 0ms
+ ✓ src/posting/money.unit.test.ts > addFils > adds signed amounts, including back to zero 0ms
+ ✓ src/posting/money.unit.test.ts > addFils > loses nothing across a long chain of additions 1ms
+ ✓ src/posting/money.unit.test.ts > addFils > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > negateFils > reverses the sign 0ms
+ ✓ src/posting/money.unit.test.ts > negateFils > has no negative zero to produce 0ms
+ ✓ src/posting/money.unit.test.ts > negateFils > is its own inverse at any magnitude 0ms
+ ✓ src/posting/money.unit.test.ts > negateFils > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > compareFils and equalsFils > orders amounts as -1, 0, and 1 0ms
+ ✓ src/posting/money.unit.test.ts > compareFils and equalsFils > separates amounts that a double would collapse into one 0ms
+ ✓ src/posting/money.unit.test.ts > compareFils and equalsFils > treats equal amounts as equal whatever their provenance 0ms
+ ✓ src/posting/money.unit.test.ts > compareFils and equalsFils > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > quantity arithmetic > adds and negates movements exactly 0ms
+ ✓ src/posting/money.unit.test.ts > quantity arithmetic > stays exact past double precision 0ms
+ ✓ src/posting/money.unit.test.ts > quantity arithmetic > orders and compares quantities 0ms
+ ✓ src/posting/money.unit.test.ts > quantity arithmetic > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > parseRateString > reads exact decimal text into a scaled integer 1ms
+ ✓ src/posting/money.unit.test.ts > parseRateString > keeps a tenth exactly a tenth 0ms
+ ✓ src/posting/money.unit.test.ts > parseRateString > rejects every non-canonical or floating point spelling 1ms
+ ✓ src/posting/money.unit.test.ts > multiplyFils > multiplies a unit cost by its quantity exactly 0ms
+ ✓ src/posting/money.unit.test.ts > multiplyFils > stays exact past double precision 0ms
+ ✓ src/posting/money.unit.test.ts > multiplyFils > rejects a forged floating point operand 0ms
+ ✓ src/posting/money.unit.test.ts > divideFilsRounded > rounds an exact half away from zero 0ms
+ ✓ src/posting/money.unit.test.ts > divideFilsRounded > leaves an exact quotient alone and rounds the rest to nearest 1ms
+ ✓ src/posting/money.unit.test.ts > divideFilsRounded > refuses a zero denominator instead of inventing a value 0ms
+ ✓ src/posting/money.unit.test.ts > rateOfFils > takes the supplier allowance share of an invoice 0ms
+ ✓ src/posting/money.unit.test.ts > rateOfFils > rounds once, on the exact product rather than on a per-unit share 0ms
+ ✓ src/posting/money.unit.test.ts > rateOfFils > rejects a forged floating point amount or rate 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > gives every fils of the total to some line 2ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > hands the leftover to the largest remainder, then to the earlier line 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > splits a negative total symmetrically 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > keeps the money when there is no proportion to split by 0ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > refuses an empty or negatively weighted allocation 1ms
+ ✓ src/posting/money.unit.test.ts > allocateFilsProportionally > stays exact past double precision 0ms
+ ✓ src/posting/money.unit.test.ts > rounding policy scope > labels the two engineering defaults its behaviour implements 0ms
+ ✓ src/posting/money.unit.test.ts > rounding policy scope > still offers no escape into binary floating point 0ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > posts exactly +4 for the verbatim 4 to 8 case 8ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > creates no movement or value effect for nine unchanged lines 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > extracts cost, retail-price, header, added, and removed changes exactly 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > subtracts prior effects so successive adjustments stand alone 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > is empty when the reconstructed copy still equals the original 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > scales deltas by pack size multipliers for multi-unit packaging 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > emits no ghost row deltas when a prior added row is untouched in a successive adjustment 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > emits no ghost row deltas when a prior removed row is untouched in a successive adjustment 1ms
+ ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts > purchase adjustment Delta extraction > records entered-quantity strings rather than itemIds for added and removed rows 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > is the one Phase One costing method 3ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > adds the received quantity and its Carrying Amount 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > conserves quantity and carrying amount over any sequence 2ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > never lets a rounded average feed back into the stored value 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > reports the weighted average, not the last purchase cost 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > values only the Primary Supplier Cost, whatever the allowance is 2ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > stays exact past double precision 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > has no average until it has stock 0ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > refuses a receipt that is not a positive, non-negative-value receipt 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageReceipt > refuses a forged floating point operand 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageDepletion > freezes current WAC when it differs from the original purchase cost 1ms
+ ✓ src/inventory/inventory-valuation.unit.test.ts > applyWeightedAverageDepletion > conserves the original whole-fils value and leaves no phantom state 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > treats percentage as margin on the selling price 5ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > returns the supplied By Price retail price without inventing a percentage 1ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > keeps wholesale pricing as stored data outside the calculation 1ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > applies each optional rounding setting after calculating the margin price 2ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > applies the rounding step to the exact price rather than to an already-rounded one 1ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects noncanonical and impossible margins 2ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects negative, noncanonical, and JS-number costs at the authoritative seam 1ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects a By Percentage request with no cost to calculate from 1ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects non-text and noncanonical stored prices 1ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects a rounding value outside the contract 0ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > matches an independent exact oracle across generated margins, costs, and rounding steps 48ms
+ ✓ src/catalog/catalog-pricing.unit.test.ts > catalog pricing > rejects a calculated retail price that cannot fit the bigint store 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > makes the By Price invoice price the item's current price 3ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > rewrites nothing when By Price approved the price the item already has 1ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > calculates the By Percentage price and leaves the item record alone 1ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > recalculates from the current cost rather than the row's stored price 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > uses the item's current rounding step, in one rounding 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > refuses a row whose item changed pricing method since entry 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > refuses a By Percentage row with no percentage to calculate from 0ms
+ ✓ src/purchasing/purchase-price-capture.unit.test.ts > capturePurchaseRetailPrice > refuses a price that is not exact non-negative integer text 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > is one finite versioned template recorded on every document 3ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > posts the Primary Supplier Cost on both sides of a debt invoice 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > takes the cash or debt effect from the header context alone 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > posts no allowance line, because settlement owns the allowance 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > changes nothing in the journal when only the allowance changes 2ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > keeps the cash effect on the same basis when only the allowance changes 0ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > balances for both contexts across every allowance 2ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > produces lines the wire contract accepts as balanced 3ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > refuses facts whose two cost values do not reconcile 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > refuses a negative or floating point amount 0ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > renderPurchaseInvoiceJournal > keeps a zero-cost receipt balanced without inventing money 1ms
+ ✓ src/accounting/purchase-posting-template.unit.test.ts > assertBalanced > rejects an entry that is short a line, unbalanced, or both-sided 0ms
+ ✓ src/accounting/purchase-adjustment-posting-template.unit.test.ts > purchase adjustment posting template > posts a positive debt Delta to inventory and supplier payable 3ms
+ ✓ src/accounting/purchase-adjustment-posting-template.unit.test.ts > purchase adjustment posting template > moves a corrected debt between supplier accounts without stock value 2ms
+ ✓ src/accounting/purchase-adjustment-posting-template.unit.test.ts > purchase adjustment posting template > produces no journal lines for a non-financial invoice-number fix 0ms
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > debits the variance account for a shortage and balances 2ms
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > debits inventory for a surplus and balances 0ms
+ ✓ src/accounting/count-variance-posting-template.unit.test.ts > Inventory Count variance posting template > rejects a zero variance 0ms
+ ✓ src/accounting/purchase-return-posting-template.unit.test.ts > Purchase Return posting template > states the two differing values and balances without a variance account 3ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > converts 2 packs and 1 strip to 9 strips with a preserved label 2ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > composes arbitrary non-negative integer counts at arbitrary positive ratios 4ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > keeps variance and signed fils splits exact 1ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > conserves WAC quantity and value for both variance directions 2ms
+ ✓ src/inventory/inventory-count.unit.test.ts > inventory count domain > picks the newest eligible batch by receipt time then id 11ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > accepts one inventory unit with zero or more larger packages 2ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > refuses a ratio that is not an explicit positive integer 2ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > refuses a unit name that would make a conversion ambiguous 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > refuses an interface default that names no package of this product 1ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > gives each interface its own default unit 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > converts a package to the base unit exactly: 1 pack is 4 strips 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > composes a mixed-unit entry: 2 packs + 1 strip is 9 strips 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > decomposes a base balance for display, largest package first, remainder last 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > refuses a negative count instead of inventing a direction 1ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > keeps the Third Unit out of every stock-affecting conversion 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging unit change > recalculates quantity and unit price exactly when the ratio divides 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging unit change > refuses a change that would leave a fractional base-unit balance 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging unit change > reports a unit price that could not be split exactly instead of hiding it 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging unit change > keeps the base balance whole for arbitrary counts and ratios 44ms
+
+ Test Files  14 passed (14)
+      Tests  295 passed (295)
+   Start at  00:47:11
+   Duration  2.07s (transform 2.40s, setup 0ms, import 6.67s, tests 313ms, environment 3ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/catalog/catalog-search.unit.test.ts src/catalog/catalog-pricing.unit.test.ts src/catalog/catalog-packaging.unit.test.ts src/purchasing/purchase-adjustment-delta.unit.test.ts src/purchasing/purchase-costs.unit.test.ts src/purchasing/purchase-price-capture.unit.test.ts src/inventory/inventory-count.unit.test.ts src/inventory/inventory-valuation.unit.test.ts src/inventory/inventory-receipt-rules.unit.test.ts src/posting/money.unit.test.ts src/accounting/purchase-posting-template.unit.test.ts src/accounting/purchase-adjustment-posting-template.unit.test.ts src/accounting/purchase-return-posting-template.unit.test.ts src/accounting/count-variance-posting-template.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 4
+SOURCE_COMMIT: e73b541

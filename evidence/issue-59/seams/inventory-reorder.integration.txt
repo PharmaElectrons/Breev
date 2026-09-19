@@ -1,0 +1,22 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 1. runs the lifecycle and leaves review and movement facts unchanged 1244ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 2. serializes and replays idempotent adds with deterministic re-add behavior 1438ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 3. replays every transition and every rejected command without a second write 1173ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 4. enforces versions, transitions, inactive products, and merged-product reads 1815ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 5. preserves append-only reorder rows and rejects invalid direct mutations 578ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 6. survives an API restart with durable basket and Ordered Items state 29567ms
+ ✓ src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam > 7. rolls back the row, audit, and result together when recording fails 542ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  00:44:14
+   Duration  76.72s (transform 292ms, setup 0ms, import 1.20s, tests 75.17s, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/inventory/inventory-reorder.integration.test.ts
+EXIT: 0
+DURATION_SECONDS: 80
+SOURCE_COMMIT: e73b541

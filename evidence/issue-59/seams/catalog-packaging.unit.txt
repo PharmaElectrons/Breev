@@ -1,0 +1,29 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > accepts one inventory unit with zero or more larger packages 2ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > refuses a ratio that is not an explicit positive integer 2ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > refuses a unit name that would make a conversion ambiguous 1ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > refuses an interface default that names no package of this product 1ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging definition > gives each interface its own default unit 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > converts a package to the base unit exactly: 1 pack is 4 strips 1ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > composes a mixed-unit entry: 2 packs + 1 strip is 9 strips 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > decomposes a base balance for display, largest package first, remainder last 1ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > refuses a negative count instead of inventing a direction 1ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging conversion > keeps the Third Unit out of every stock-affecting conversion 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging unit change > recalculates quantity and unit price exactly when the ratio divides 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging unit change > refuses a change that would leave a fractional base-unit balance 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging unit change > reports a unit price that could not be split exactly instead of hiding it 0ms
+ ✓ src/catalog/catalog-packaging.unit.test.ts > catalog packaging unit change > keeps the base balance whole for arbitrary counts and ratios 58ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  00:47:18
+   Duration  528ms (transform 123ms, setup 0ms, import 242ms, tests 71ms, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts --reporter=verbose src/catalog/catalog-packaging.unit.test.ts
+EXIT: 0
+DURATION_SECONDS: 2
+SOURCE_COMMIT: e73b541

@@ -1,0 +1,23 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 1. runs the lifecycle, converts mixed units, allocates FEFO, and conserves valuation 1446ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 2. rolls back every posting fault together and reuses the committed number gap 2031ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 3. replays idempotent success and rejection while conflicting bodies are refused 667ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 4. revalidates balances after concurrent purchases and rejects stale versions 864ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 5. protects completed sessions, lines, applications, movements, and journals from mutation 428ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 6. survives an API restart with the same durable lines and version 2862ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 7. rejects direct quantity edits and leaves raw inventory facts unchanged across reads 575ms
+ ✓ src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam > 8. reconciles raw movements, exposes the count reference, and excludes shortage from consumption 610ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  00:43:24
+   Duration  46.78s (transform 160ms, setup 0ms, import 860ms, tests 45.68s, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/inventory/inventory-count.integration.test.ts
+EXIT: 0
+DURATION_SECONDS: 49
+SOURCE_COMMIT: e73b541

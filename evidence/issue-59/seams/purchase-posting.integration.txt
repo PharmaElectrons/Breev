@@ -1,0 +1,28 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a debt purchase atomically with document, snapshots, batch, movement, gross WAC, gross AP, and a balanced journal 609ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > searches stable posted numbers and reads immutable snapshots separately from current master records 1006ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a cash purchase that changes only the Cash Box balance, never a supplier payable 237ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > replays an idempotent retry, rejects a conflicting payload, and lets exactly one of two concurrent keys post 592ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts two different drafts concurrently with distinct numbers and conserved WAC 466ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > warns but still posts a duplicate supplier invoice number 406ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > keeps the draft and names the row rule when receipt evidence is missing 118ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > changes Cost After Discount but never gross WAC or AP when only the allowance percentage differs 343ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > enforces a balanced journal at commit even bypassing the application 179ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back a forced database failure after number allocation, leaving an audited unissued gap a retry reuses and issues 258ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back every earlier write when the final idempotency result cannot be recorded 286ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts only Purchase Adjustment Deltas, preserves the original, numbers A01/A02, replays once, serializes, and blocks consumed stock 1188ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links 1763ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  00:40:59
+   Duration  66.59s (transform 1.44s, setup 0ms, import 24.41s, tests 39.96s, environment 0ms)
+
+
+RESULT: passed — 13/13 tests passed (third attempt; two earlier attempts hit a host-load startup/health timeout, retained as purchase-posting.integration-attempt1-timeout.txt and -attempt2-timeout.txt)
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/purchasing/purchase-posting.integration.test.ts
+EXIT: 0
+DURATION_SECONDS: 71
+SOURCE_COMMIT: e73b541

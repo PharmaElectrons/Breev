@@ -1,0 +1,73 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > enforces FEFO, hard blocks, daily detection, append-only facts, and correction 386ms
+ ✓ src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > rejects direct mutation and preserves the business-date boundary 261ms
+ × src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > recovers the real queue across claim, date-commit, final-commit, and duplicate-delivery crashes 2532ms
+   → expected null to be 'SIGKILL' // Object.is equality
+ ✓ src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > reports an unavailable runtime and audits Step-Up correction denials 126ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam > recovers the real queue across claim, date-commit, final-commit, and duplicate-delivery crashes
+AssertionError: expected null to be 'SIGKILL' // Object.is equality
+
+- Expected:
+"SIGKILL"
+
++ Received:
+null
+
+ ❯ src/inventory/inventory-safety.integration.test.ts:531:56
+    529|             );
+    530|             expect(crashing.point).toBe(scenario.point);
+    531|             expect((await child.waitForExit()).signal).toBe("SIGKILL");
+       |                                                        ^
+    532|             await delay(3_000);
+    533|             await durableJobs.supervise(INVENTORY_BATCH_SAFETY_QUEUE);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  00:46:57
+   Duration  10.70s (transform 818ms, setup 0ms, import 2.73s, tests 7.69s, environment 0ms)
+
+undefined
+D:\Cefeldeen-clinic-pos\breef-lanes\lane-m2-seams\apps\local-api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config vitest.config.ts "--reporter=verbose" src/inventory/inventory-safety.integration.test.ts
+
+RESULT: host-limited (win32 signal reporting); passes on Ubuntu CI run 34946061944 — 3 of 4 tests passed; the 4th asserts a POSIX-only exit signal
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/inventory/inventory-safety.integration.test.ts
+EXIT: 1
+DURATION_SECONDS: 12
+SOURCE_COMMIT: e73b541
+
+CLASSIFICATION NOTE (W2 analysis, no file outside evidence/issue-59/seams was modified)
+  Failing assertion: apps/local-api/src/inventory/inventory-safety.integration.test.ts:531
+    expect((await child.waitForExit()).signal).toBe("SIGKILL")
+  The crash worker self-terminates in
+  apps/local-api/src/inventory/test-helpers/inventory-safety-crash-child.test.ts:37-40
+    function crash(): never { process.kill(process.pid, "SIGKILL"); ... }
+  On win32 Node maps SIGKILL onto TerminateProcess, so the parent's "exit" event
+  reports code 1 with signal null. Probe run on this host:
+    node -e spawn(node -e "process.kill(process.pid,'SIGKILL')")
+    -> {"platform":"win32","code":1,"signal":null}
+  Contrast with the same kill pattern that DOES pass on this Windows host:
+    apps/local-api/src/sales/sale-draft.integration.test.ts:154 case 3
+    "3. survives a killed local API and resumes exactly" issues api.kill("SIGKILL")
+    and then asserts only that the durable state is byte-identical after restart;
+    it never asserts on the exit signal. That test passed here
+    (see sale-draft.integration.txt, 7/7) and is recorded as passing on this same
+    workstation in evidence/issue-58/README.md.
+  The same POSIX-only assertion also exists in
+    apps/local-api/src/identity-access/settings-crash.integration.test.ts:243,274,309
+  (not part of the W2 list) and would fail here for the identical reason.
+  Verdict: test-harness portability defect candidate for W5, NOT a milestone-2
+  product defect. Caveat recorded honestly: because the assertion aborts the test
+  at line 531, the crash-RECOVERY assertions that follow (durableJobs.supervise,
+  the seven-business-date catch-up) were never reached on this host, so local
+  proof of that specific recovery path is absent; Ubuntu CI run 34946061944 covers
+  it, and the neighbouring batch-safety invariants passed here
+  (inventory-safety-no-override.integration.txt, 3/3).

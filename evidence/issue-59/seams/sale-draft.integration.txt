@@ -1,0 +1,22 @@
+
+ RUN  v4.1.11 D:/Cefeldeen-clinic-pos/breef-lanes/lane-m2-seams/apps/local-api
+
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 1. creates, lists, and reads the minimal active draft 139ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 2. resumes at the expected version and preserves creation facts 157ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 3. survives a killed local API and resumes exactly 2167ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 4. lets exactly one concurrent resume advance one version 120ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 5. replays an idempotent resume and rejects a changed request 133ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 6. rejects direct Sale Draft deletion and immutable-fact mutation 63ms
+ ✓ src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam > 7. lets every basket outcome leave the Sale Draft byte-identical 545ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  00:45:37
+   Duration  28.25s (transform 414ms, setup 0ms, import 14.69s, tests 12.74s, environment 0ms)
+
+
+RESULT: passed — suite completed with exit code 0
+COMMAND: pnpm --filter @breev/local-api exec vitest run --config vitest.config.ts --reporter=verbose src/sales/sale-draft.integration.test.ts
+EXIT: 0
+DURATION_SECONDS: 34
+SOURCE_COMMIT: e73b541
