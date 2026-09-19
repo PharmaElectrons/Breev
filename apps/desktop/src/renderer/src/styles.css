@@ -3206,18 +3206,52 @@ a:focus-visible,
   font-size: 0.75rem;
   font-weight: 600;
 }
+/*
+ * The item-details panel. Above 80rem it fills the 20rem column the workspace
+ * keeps clear with `margin-inline-end`, so it is on screen whatever the row
+ * table does horizontally. It scrolls inside itself rather than pushing the
+ * invoice around.
+ */
 .purchase-item-sidebar {
   position: fixed;
   inset-block: 0;
   inset-inline-end: 0;
   display: flex;
   inline-size: 20rem;
+  min-block-size: 0;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: auto;
+  padding: 1rem;
   border-inline-start: 1px solid var(--border);
   background: var(--card);
+}
+.purchase-item-sidebar > h2 {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.purchase-item-facts {
+  display: grid;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  font-size: 0.8rem;
+}
+.purchase-item-facts dl {
+  margin: 0;
+}
+.purchase-item-facts dt {
+  color: var(--muted-foreground);
+}
+.purchase-item-facts dd {
+  margin: 0;
+  font-weight: 600;
 }
 .purchase-item-empty {
   display: flex;
   inline-size: 100%;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -3367,12 +3401,50 @@ a:focus-visible,
     margin-inline-end: 0;
     overflow: visible;
   }
+  /*
+   * Below 80rem — which includes the default 1080x720 window and every
+   * verification viewport — there is no room for a side column, so the panel
+   * becomes a bounded band directly under the invoice header and above the row
+   * table the user is typing in. It is never parked at the page bottom: this
+   * page scrolls at this width, and the details have to be readable without
+   * leaving the row.
+   *
+   * It sticks to the top of the scrollport because the page itself scrolls here
+   * (`.shell-page[data-purchase-workspace]` drops to `overflow: visible` at this
+   * width, so the document is the scroller and nothing between the band and the
+   * viewport establishes another one). Without that, an invoice longer than the
+   * window would carry the band off screen and reintroduce the defect rotated
+   * through 90 degrees.
+   */
   .purchase-item-sidebar {
-    position: static;
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
     inline-size: 100%;
-    min-block-size: 12rem;
+    max-block-size: 12rem;
+    flex: none;
+    gap: 0.4rem;
+    padding: 0.5rem 0.75rem;
     border-inline-start: 0;
-    border-block-start: 1px solid var(--border);
+    border-block-end: 1px solid var(--border);
+  }
+  .purchase-item-facts dl {
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  }
+  .purchase-item-empty {
+    flex: none;
+    align-items: center;
+    justify-content: flex-start;
+    flex-direction: row;
+    gap: 0.6rem;
+    padding: 0;
+    text-align: start;
+  }
+  .purchase-item-symbol {
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    flex: none;
+    margin-block-end: 0;
   }
   .purchase-view-tabs {
     flex-wrap: wrap;
@@ -3907,8 +3979,15 @@ a:focus-visible,
   }
 }
 
+/*
+ * The single explicit column is what keeps the workspace inside the window: an
+ * implicit `auto` track is floored by the min-content width of the row table,
+ * so the whole workspace used to grow past the viewport and scroll sideways
+ * instead of letting the table scroll inside its own wrapper.
+ */
 .purchase-row-workspace {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-block-size: 0;
   min-inline-size: 0;
   flex: 1 1 auto;
@@ -3919,16 +3998,11 @@ a:focus-visible,
 }
 
 .purchase-row-heading,
-.purchase-row-layout,
 .purchase-review-actions {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-}
-
-.purchase-row-layout {
-  align-items: stretch;
 }
 
 .purchase-row-table-wrap {
@@ -3972,14 +4046,6 @@ a:focus-visible,
 
 .purchase-row-table td[data-post-error="true"]:focus {
   outline-width: 0.3rem;
-}
-
-.purchase-item-panel {
-  flex: 0 0 min(18rem, 32%);
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
 }
 
 .purchase-item-panel dl,
@@ -4400,15 +4466,6 @@ a:focus-visible,
 }
 
 @media (max-width: 900px) {
-  .purchase-row-layout {
-    flex-direction: column;
-  }
-
-  .purchase-item-panel {
-    width: 100%;
-    flex-basis: auto;
-  }
-
   .posted-purchase-heading {
     flex-direction: column;
   }

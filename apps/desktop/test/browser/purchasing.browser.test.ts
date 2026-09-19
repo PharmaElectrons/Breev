@@ -366,6 +366,48 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       page.getByText(purchaseProduct.displayName, { exact: true }).last(),
     ).toBeVisible();
 
+    // The item-details panel is the only surface that carries the wholesale
+    // price, so it has to be readable while the row is being typed. Finding it
+    // in the DOM is not enough: it has to be on screen without scrolling the
+    // row table sideways or the page down, at the packaged window's default
+    // inner size as well as the verification viewports.
+    const panel = page.locator("aside.purchase-item-panel");
+    await expect(panel).toBeVisible();
+    await expect(panel).toBeInViewport();
+    await expect(panel.locator("strong")).toHaveText(
+      purchaseProduct.displayName,
+    );
+    await expect(panel.locator("dl > div dd")).toHaveText([
+      "Paracetamol",
+      "Pain relief",
+      "Strip · Pack × 4",
+      "90000",
+    ]);
+    await expect(page.locator("table.purchase-row-table")).not.toContainText(
+      "90000",
+    );
+    // The empty state is not merely hidden while an item is selected: there is
+    // only one panel now, so its placeholder is not in the document at all.
+    await expect(page.locator(".purchase-item-empty")).toHaveCount(0);
+    for (const viewport of [
+      { height: 658, width: 1066 },
+      { height: 800, width: 1280 },
+      { height: 768, width: 1024 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(panel).toBeInViewport();
+      await expect(panel.locator("dl > div dd").last()).toBeInViewport();
+      // Polled: a resize relayouts asynchronously, so a single read can catch
+      // the previous layout.
+      await expect
+        .poll(() =>
+          page.evaluate<boolean>(
+            "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+          ),
+        )
+        .toBe(true);
+    }
+
     await quantity.fill("0");
     await quantity.press("Enter");
     await expect(quantity).toBeFocused();
@@ -670,6 +712,54 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             elements.map((element) => element.getAttribute("data-enter-field")),
           ),
         ).toEqual(["item", "quantity", "cost", "selling-price", "expiry"]);
+
+        // The panel used to sit inside the row table's horizontal overflow,
+        // which put it at a negative inline offset in RTL. Its position is now
+        // asserted in both directions and both themes.
+        const entryItem = entryFields.nth(0);
+        await entryItem.fill("5012345678949");
+        await entryItem.press("Enter");
+        const itemPanel = page.locator("aside.purchase-item-panel");
+        await expect(itemPanel).toBeVisible();
+        // The packaged window's default inner size, the browser-test viewport,
+        // and the 1280x800 verification viewport all fall below the 80rem
+        // breakpoint, where the panel is a band rather than a side column.
+        for (const viewport of [
+          { height: 658, width: 1066 },
+          { height: 800, width: 1280 },
+          { height: 768, width: 1024 },
+          { height: 768, width: 1366 },
+        ]) {
+          await page.setViewportSize(viewport);
+          await expect(itemPanel).toBeInViewport();
+          await expect(
+            itemPanel.locator("dl > div dd").last(),
+          ).toBeInViewport();
+          await expect
+            .poll(() =>
+              page.evaluate<boolean>(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+              ),
+            )
+            .toBe(true);
+        }
+        await expect(itemPanel.locator("strong")).toHaveText(
+          purchaseProduct.displayName,
+        );
+        await expect(itemPanel.locator("dl > div dd")).toHaveCount(4);
+        for (const value of ["Paracetamol", "Pain relief", "Strip", "90000"]) {
+          await expect(itemPanel).toContainText(value);
+        }
+        await expect(page.locator(".purchase-item-empty")).toHaveCount(0);
+        await expect(
+          page.locator("table.purchase-row-table"),
+        ).not.toContainText("90000");
+        // The populated panel is its own accessibility surface: a landmark, a
+        // heading and a description list that only exists once an item is
+        // selected, so it is scanned in that state and not only while empty.
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
         await expect(
           page.getByRole("button", {
             name: locale === "ar" ? "حفظ التغييرات" : "Save changes",
@@ -1477,6 +1567,180 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(invoice).toHaveValue("INVALID-SUPPLIER-1");
     await expect(supplier).toHaveValue(invalidSupplier.id);
     await expect(supplier).toBeFocused();
+  });
+
+  test("keeps the item panel in view on an invoice longer than the window", async ({
+    page,
+  }) => {
+    // Twelve committed rows through the REST contract, so the invoice is taller
+    // than the packaged window and the page — not a nested scroller — is what
+    // moves when the user returns to the item field.
+    const created = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/purchases/drafts",
+      {
+        idempotencyKey: uuidV7(),
+        invoiceDate: "2026-09-08",
+        settlementContext: "cash",
+        supplierId,
+        supplierInvoiceNumber: "BROWSER-LONG-INVOICE",
+      },
+    );
+    expect(created.status).toBe(201);
+    let draft = (created.body as { draft: PurchaseDraft }).draft;
+    for (let row = 0; row < 12; row += 1) {
+      const committed = await apiRequest(
+        apiOrigin,
+        credentials,
+        "POST",
+        purchaseDraftRowsPath(draft.id),
+        {
+          costFils: "80000",
+          enteredQuantity: "1",
+          expectedVersion: draft.version,
+          expiryDate: "2029-05-31",
+          idempotencyKey: uuidV7(),
+          itemId: purchaseProduct.id,
+          lotNumber: `LONG-${String(row)}`,
+          notes: null,
+          pricing: { method: "by-price", retailPriceFils: "120000" },
+          unit: { kind: "inventory-unit" },
+        },
+      );
+      expect(committed.status).toBe(201);
+      draft = (committed.body as { draft: PurchaseDraft }).draft;
+    }
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.setViewportSize({ height: 658, width: 1066 });
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page
+      .getByRole("button", { name: "Saved drafts", exact: true })
+      .click();
+    await page.getByRole("button", { name: /BROWSER-LONG-INVOICE/ }).click();
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(13);
+    await expect
+      .poll(() =>
+        page.evaluate<boolean>(
+          "document.documentElement.scrollHeight > document.documentElement.clientHeight",
+        ),
+      )
+      .toBe(true);
+
+    const item = page.getByRole("textbox", {
+      name: "Item / Barcode",
+      exact: true,
+    });
+    await item.fill("5012345678949");
+    await item.press("Enter");
+    const panel = page.locator("aside.purchase-item-panel");
+    await expect(panel.locator("strong")).toHaveText(
+      purchaseProduct.displayName,
+    );
+
+    // Typing continues at the bottom of a long invoice, which scrolls the page
+    // away from the panel's own place in the document. The details still have to
+    // be on screen there, wholesale price included.
+    await page.locator(".purchase-entry-row").scrollIntoViewIfNeeded();
+    await item.focus();
+    await expect(item).toBeFocused();
+    await expect(item).toBeInViewport();
+    expect(
+      await page.evaluate<number>("document.documentElement.scrollTop"),
+    ).toBeGreaterThan(0);
+    await expect(panel).toBeVisible();
+    await expect(panel).toBeInViewport();
+    await expect(panel.locator("dl > div dd").last()).toBeInViewport();
+    await expect(panel).toContainText("90000");
+  });
+
+  test("brings a blocked Delta refusal into view and gives it focus", async ({
+    page,
+  }) => {
+    // Precondition through the REST contract: an invoice of 4, then a linked
+    // Purchase Return of 3, so a Delta of 4 -> 1 asks the batch for 2 units
+    // that are no longer there and the server refuses it.
+    await postPurchaseForReview(
+      apiOrigin,
+      credentials,
+      supplierId,
+      purchaseProduct.id,
+      "BROWSER-BLOCKED-DELTA",
+    );
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByRole("button", { name: "Posted invoices" }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "Posted purchase invoices",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("searchbox", { name: "Search posted purchases" })
+      .fill("BROWSER-BLOCKED-DELTA");
+    await dialog
+      .getByRole("button", { name: /Open invoice P/u })
+      .first()
+      .click();
+    await expect(dialog).toContainText("BROWSER-BLOCKED-DELTA");
+
+    await dialog.getByRole("button", { name: /Purchase return/iu }).click();
+    await dialog.getByLabel("Return reason").fill("Supplier accepted damage");
+    await dialog
+      .getByLabel("Disposition evidence")
+      .fill("Supplier collection note BROWSER-BLOCKED-1");
+    await dialog
+      .getByRole("button", { name: "Create Purchase Return" })
+      .click();
+    await dialog
+      .getByRole("textbox", {
+        name: new RegExp(`Return quantity ${purchaseProduct.displayName}`, "u"),
+      })
+      .fill("3");
+    await dialog
+      .getByRole("button", { name: "Save and review physical return" })
+      .click();
+    await dialog.getByLabel("Your password").fill(OWNER_PASSWORD);
+    await dialog
+      .getByRole("button", { name: "Approve and post return" })
+      .click();
+    await expect(
+      dialog.getByRole("heading", { name: "Purchase Return posted" }),
+    ).toBeVisible();
+    await dialog
+      .getByRole("button", { name: "Back to original invoice" })
+      .click();
+
+    await dialog.getByRole("button", { name: "Edit Invoice" }).click();
+    await dialog
+      .getByRole("combobox", { name: "Reason" })
+      .selectOption("quantity error");
+    await dialog
+      .getByRole("button", { name: "Create adjustment copy" })
+      .click();
+    await dialog
+      .getByRole("textbox", {
+        name: new RegExp(`Quantity ${purchaseProduct.displayName}`, "u"),
+      })
+      .fill("1");
+    await dialog.getByRole("button", { name: "Save and review Delta" }).click();
+
+    // The refusal renders at the top of a correction stage the user has already
+    // scrolled down, inside a dialog that scrolls too. It is only a refusal the
+    // user can act on if it is on screen and announced, so it takes focus in
+    // the commit that renders it.
+    const refusal = dialog.locator("section.purchase-adjustment p.form-error");
+    await expect(refusal).toContainText(
+      "This Delta is not valid against current stock.",
+    );
+    await expect(refusal).toBeFocused();
+    await expect(refusal).toBeInViewport();
+    await expect(refusal).toHaveAttribute("role", "alert");
+    // The refusal keeps the draft: the Delta is still editable behind it.
+    await expect(
+      dialog.getByRole("button", { name: "Save and review Delta" }),
+    ).toBeVisible();
   });
 });
 
