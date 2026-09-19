@@ -71,7 +71,7 @@ export const helpContent: Record<Locale, Record<ModuleId, ModuleGuide>> = {
     },
     purchases: {
       purpose:
-        "تُسجَّل هنا فواتير الموردين، فتدخل البضاعة إلى المخزن بدفعاتها وتواريخ صلاحيتها. المستند المرحَّل لا يُعدَّل ولا يُحذف.",
+        "تُسجَّل هنا فواتير الموردين، فتدخل البضاعة إلى المخزن بدفعاتها وتواريخ صلاحيتها. المستند المُرحّل لا يُعدَّل ولا يُحذف.",
       tasks: [
         {
           id: "record-invoice",
@@ -84,12 +84,12 @@ export const helpContent: Record<Locale, Record<ModuleId, ModuleGuide>> = {
           ],
         },
         {
-          id: "correct-posted",
-          title: "تصحيح فاتورة مرحَّلة",
+          id: "review-posted",
+          title: "مراجعة فاتورة مُرحّلة",
           steps: [
-            "افتح قائمة الفواتير السابقة واختر الفاتورة.",
-            "اختر تعديلاً إذا كان الخطأ في البيانات، أو إرجاعاً إذا رجعت البضاعة فعلاً إلى المورد.",
-            "يُرحَّل التصحيح مستنداً جديداً مرتبطاً بالأصل، ويبقى الأصل كما هو.",
+            "افتح تبويب الفواتير المُرحّلة واختر الفاتورة.",
+            "اقرأ بيانات المستند والبنود المُرحّلة كما رُحِّلت.",
+            "راجع قيد اليومية الناتج عنها. المستند المُرحّل لا يُعدَّل ولا يُحذف.",
           ],
         },
       ],
@@ -274,12 +274,12 @@ export const helpContent: Record<Locale, Record<ModuleId, ModuleGuide>> = {
           ],
         },
         {
-          id: "correct-posted",
-          title: "Correct a posted invoice",
+          id: "review-posted",
+          title: "Review a posted invoice",
           steps: [
-            "Open the list of previous invoices and select the one to correct.",
-            "Choose an adjustment if the details were wrong, or a return if goods physically went back to the supplier.",
-            "The correction posts as a new document linked to the original, and the original stays untouched.",
+            "Open the posted invoices tab and select the invoice.",
+            "Read the document details and its posted rows exactly as they were posted.",
+            "Review the journal entry it produced. A posted document is never edited or deleted.",
           ],
         },
       ],
@@ -460,7 +460,7 @@ export const tourCopy: Record<Locale, Record<string, TourCopy>> = {
     },
     "purchases-view-tabs": {
       title: "التنقل بين الشراء والموردين",
-      body: "تنتقل من هنا بين فاتورة الشراء وسجل الموردين وقائمة الفواتير السابقة.",
+      body: "تنتقل من هنا بين فاتورة الشراء والمسودات المحفوظة والفواتير المُرحّلة والموردين. لا يظهر لك من هذه التبويبات إلا ما تسمح به صلاحياتك.",
     },
     "purchases-header-form": {
       title: "بيانات الفاتورة أولاً",
@@ -472,11 +472,11 @@ export const tourCopy: Record<Locale, Record<string, TourCopy>> = {
     },
     "inventory-actions": {
       title: "إجراءات المخزن",
-      body: "من هنا تبدأ جلسة جرد أو تفتح مراجعة سلامة الدفعات.",
+      body: "من هنا تبدأ جلسة جرد، أو تصدّر بيانات المخزون الحساسة، أو تفتح سلة الطلبات، أو تغيّر إعدادات الأعمدة.",
     },
     "inventory-columns": {
       title: "أعمدة الجدول",
-      body: "أظهر الأعمدة التي تحتاجها وأخفِ غيرها. يُحفظ اختيارك لهذا الجهاز.",
+      body: "أظهر الأعمدة التي تحتاجها وأخفِ غيرها. تُحفظ اختيارات الأعمدة لهذا المستخدم فقط.",
     },
     "inventory-stock-table": {
       title: "الرصيد الحالي",
@@ -542,7 +542,7 @@ export const tourCopy: Record<Locale, Record<string, TourCopy>> = {
     },
     "purchases-view-tabs": {
       title: "Moving between purchases and suppliers",
-      body: "Switch here between the purchase invoice, the supplier register, and previous invoices.",
+      body: "Switch here between the purchase invoice, saved drafts, posted invoices, and suppliers. You only see the tabs your permissions allow.",
     },
     "purchases-header-form": {
       title: "Invoice details come first",
@@ -554,11 +554,11 @@ export const tourCopy: Record<Locale, Record<string, TourCopy>> = {
     },
     "inventory-actions": {
       title: "Inventory actions",
-      body: "Start a stock count or open the batch safety review from here.",
+      body: "Start a count session, export sensitive inventory data, open the order basket, or change the column settings.",
     },
     "inventory-columns": {
       title: "Table columns",
-      body: "Show the columns you need and hide the rest. Your choice is kept for this device.",
+      body: "Show the columns you need and hide the rest. Column choices are saved for this user only.",
     },
     "inventory-stock-table": {
       title: "Current stock",

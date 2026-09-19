@@ -203,13 +203,32 @@ export function AppShell({
     helpButtonRef.current?.focus();
   };
 
-  const { runningModule, startTour, Tour } = useGuidedTour({
+  const { runningModule, startTour, stopTour, Tour } = useGuidedTour({
     locale,
-    onFinished: (moduleId) => {
-      setCompletedTutorials(markTutorialCompleted(moduleId));
+    onEnded: (moduleId, completed) => {
+      // Skipping, Escape, and a click on the overlay end the tutorial without
+      // teaching it, so only a completed run is recorded; either way the
+      // control that started it takes focus back, as every dialog here does.
+      if (completed) {
+        setCompletedTutorials(markTutorialCompleted(moduleId));
+      }
       helpButtonRef.current?.focus();
     },
   });
+
+  /*
+   * The guide belongs to the screen it was opened from.
+   *
+   * Moving to another module, or the session ending, leaves a panel describing
+   * a screen the user is no longer on and a spotlight anchored to markup that
+   * has gone. Both are dismissed instead, without recording a completion the
+   * user never reached and without taking focus from wherever the new screen
+   * has just put it.
+   */
+  useEffect(() => {
+    setHelpOpen(false);
+    stopTour();
+  }, [activeModuleId, authenticated, stopTour]);
 
   const purchaseWorkspace =
     state === "ready" && authenticated && activeModuleId === "purchases";
@@ -397,7 +416,7 @@ export function AppShell({
         {purchaseWorkspace ? <PurchaseClock locale={locale} /> : null}
       </header>
 
-      {Tour}
+      {authenticated ? Tour : null}
 
       {helpOpen && runningModule === null ? (
         <HelpPanel

@@ -70,6 +70,31 @@ describe("help content", () => {
     }
   });
 
+  it("never offers to adjust or return a purchase invoice", () => {
+    // purchasing-screen.tsx renders the Purchase-return tab and both the
+    // purchase-return-button and purchase-adjust-button `disabled`, titled
+    // "Not available yet". Documenting either one describes an unbuilt screen,
+    // which is exactly what this file's own rule forbids.
+    const english = /adjust|return/i;
+    const arabic = /تعديل|إرجاع/;
+    for (const locale of LOCALES) {
+      const pattern = locale === "en" ? english : arabic;
+      for (const task of helpContent[locale].purchases.tasks) {
+        expect(task.title).not.toMatch(pattern);
+        for (const step of task.steps) {
+          expect(step).not.toMatch(pattern);
+        }
+      }
+      for (const [anchor, entry] of Object.entries(tourCopy[locale])) {
+        if (!anchor.startsWith("purchases-")) {
+          continue;
+        }
+        expect(entry.title, `${locale} ${anchor}`).not.toMatch(pattern);
+        expect(entry.body, `${locale} ${anchor}`).not.toMatch(pattern);
+      }
+    }
+  });
+
   it("never claims a function-key shortcut", () => {
     // docs/workflows.md: Breev will not finalize function keys until the team
     // observes them with pharmacists, Windows, and certified scanners. None are
@@ -156,7 +181,6 @@ describe("help chrome", () => {
       expect(copy.done).not.toBe("");
       expect(copy.skip).not.toBe("");
       expect(copy.panelTitle("Inventory")).toContain("Inventory");
-      expect(copy.tourLabel("Inventory")).toContain("Inventory");
       expect(copy.stepCounter(2, 3)).toContain("2");
       expect(copy.stepCounter(2, 3)).toContain("3");
     }

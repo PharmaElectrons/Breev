@@ -42,8 +42,11 @@ export const tourSteps: Partial<Record<ModuleId, readonly TourStep[]>> = {
   ],
   products: [
     { anchor: "products-search", placement: "bottom" },
-    { anchor: "products-rail", placement: "right" },
-    { anchor: "products-canvas", placement: "left" },
+    // Joyride placements are physical, and this two-pane layout mirrors in
+    // Arabic: "right" would put the tooltip on the wrong side of the rail the
+    // moment the locale changes, so the side is left to the placement engine.
+    { anchor: "products-rail", placement: "auto" },
+    { anchor: "products-canvas", placement: "auto" },
   ],
   basket: [
     { anchor: "basket-view-tabs", placement: "bottom" },

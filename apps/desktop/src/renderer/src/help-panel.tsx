@@ -50,7 +50,7 @@ export function HelpPanel({
       aria-describedby="help-panel-description"
       aria-labelledby="help-panel-title"
       aria-modal="true"
-      className="dialog-backdrop help-backdrop"
+      className="dialog-backdrop"
       ref={dialog}
       role="dialog"
       onKeyDown={(event) => {
@@ -59,12 +59,25 @@ export function HelpPanel({
           return;
         }
         if (event.key === "Tab") {
-          const focusable = dialog.current?.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          const focusable = Array.from(
+            dialog.current?.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ) ?? [],
           );
-          if (focusable === undefined || focusable.length === 0) return;
+          if (focusable.length === 0) return;
           const first = focusable[0];
           const last = focusable[focusable.length - 1];
+          // The panel opens with the heading focused, and the heading is
+          // deliberately outside the tab order, so neither edge test below
+          // matches it. Without this branch the very first Shift+Tab would step
+          // past the heading into the header behind the modal.
+          if (
+            !focusable.some((element) => element === document.activeElement)
+          ) {
+            event.preventDefault();
+            (event.shiftKey ? last : first)?.focus();
+            return;
+          }
           if (event.shiftKey && document.activeElement === first) {
             event.preventDefault();
             last?.focus();

@@ -569,10 +569,7 @@ export function PurchasingRouteView({
             aria-label={copy.scrollLines}
             tabIndex={0}
           >
-            <table
-              className="purchase-lines-table"
-              data-tour="purchases-lines-table"
-            >
+            <table className="purchase-lines-table">
               <caption className="visually-hidden">{copy.invoiceItems}</caption>
               <colgroup>
                 <col className="purchase-line-number" />

@@ -484,12 +484,46 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(panel).toBeVisible();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
+    // The panel opens with its heading focused, and the heading is outside the
+    // tab order. Shift+Tab from there must wrap to the panel's own last
+    // control rather than escaping to the header behind the modal.
+    const close = panel.getByRole("button", { name: "Close" });
+    await expect(
+      panel.getByRole("heading", { name: "Employees & roles guide" }),
+    ).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(close).toBeFocused();
+
     await panel.getByRole("button", { name: "Start tutorial" }).click();
     const tooltip = page.getByRole("alertdialog");
     await expect(tooltip).toBeVisible();
     await expect(tooltip.getByText("Step 1 of 3")).toBeVisible();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
+    // Found by the label it shows, then checked for the name it exposes: an
+    // accessible name that does not contain the visible label fails WCAG 2.5.3
+    // and leaves speech input with nothing to say. Joyride's own close props
+    // would name this control "Close the tutorial" instead.
+    const skip = tooltip.locator("button.tour-skip");
+    await expect(skip).toHaveText("Skip");
+    await expect(skip).toHaveAccessibleName("Skip");
+    await expect(tooltip.locator("[data-action='skip']")).toHaveCount(1);
+
+    // Skipping is not completing. Focus returns to the control that started
+    // the tutorial, and the panel still offers it as something not yet seen.
+    await skip.click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(guide).toBeFocused();
+    await guide.click();
+    await expect(
+      panel.getByRole("button", { name: "Start tutorial" }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("button", { name: "Run the tutorial again" }),
+    ).toHaveCount(0);
+
+    await panel.getByRole("button", { name: "Start tutorial" }).click();
+    await expect(tooltip.getByText("Step 1 of 3")).toBeVisible();
     await tooltip.getByRole("button", { name: "Next" }).click();
     await expect(tooltip.getByText("Step 2 of 3")).toBeVisible();
     await tooltip.getByRole("button", { name: "Next" }).click();
@@ -506,6 +540,18 @@ test.describe.serial("bilingual desktop shell", () => {
       ),
     ).toBe(0);
     expect(await page.evaluate(`window.__blockedStyles`)).toEqual([]);
+
+    // Reaching the last step is what records the tutorial as seen, so the
+    // panel now offers it again rather than as new.
+    await guide.click();
+    await expect(
+      panel.getByRole("button", { name: "Run the tutorial again" }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("button", { name: "Start tutorial" }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
 
     // Escape closes the guide and hands focus back to the control that opened it.
     await guide.click();

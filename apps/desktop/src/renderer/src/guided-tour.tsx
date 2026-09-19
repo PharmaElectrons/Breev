@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   EVENTS,
+  STATUS,
   useJoyride,
   type BeaconRenderProps,
   type Step,
@@ -12,6 +13,27 @@ import { helpMessages } from "./help-messages";
 import type { ModuleId } from "./module-ids";
 import type { Locale } from "./preferences";
 import { tourSteps } from "./tour-steps";
+
+/**
+ * Whether the element an anchor names is on the page and actually showing.
+ *
+ * Presence in the DOM is not enough. A screen keeps its other tabs mounted and
+ * merely `hidden` — the purchasing invoice regions stay in the document while
+ * the user is on Suppliers — so a selector match alone would announce a step
+ * the spotlight cannot frame. `checkVisibility` is what separates the two, and
+ * it is guarded because it is a comparatively recent DOM method: where it is
+ * missing the anchor is treated as showing, which is the behaviour this had
+ * before.
+ */
+function visibleTourTarget(anchor: string): boolean {
+  const element = document.querySelector(`[data-tour="${anchor}"]`);
+  if (element === null) {
+    return false;
+  }
+  return typeof element.checkVisibility === "function"
+    ? element.checkVisibility()
+    : true;
+}
 
 /**
  * Which anchors of a module's tutorial are actually on the page right now.
@@ -26,11 +48,7 @@ export function availableTourAnchors(moduleId: ModuleId): readonly string[] {
   if (steps === undefined) {
     return [];
   }
-  return steps
-    .map((step) => step.anchor)
-    .filter(
-      (anchor) => document.querySelector(`[data-tour="${anchor}"]`) !== null,
-    );
+  return steps.map((step) => step.anchor).filter(visibleTourTarget);
 }
 
 /** Whether a module can offer a tutorial at this moment. */
@@ -57,11 +75,11 @@ function TourLoader(): React.JSX.Element {
 function tourTooltip(locale: Locale) {
   return function TourTooltip({
     backProps,
-    closeProps,
     index,
     isLastStep,
     primaryProps,
     size,
+    skipProps,
     step,
     tooltipProps,
   }: TooltipRenderProps): React.JSX.Element {
@@ -76,8 +94,14 @@ function tourTooltip(locale: Locale) {
         </h2>
         <div className="tour-step-body">{step.content}</div>
         <div className="tour-actions">
+          {/* `skipProps`, not `closeProps`: Joyride labels the close control
+              "Close the tutorial" while this button reads "Skip", and a
+              control whose accessible name does not contain its visible label
+              cannot be operated by name (WCAG 2.5.3). `skipProps` carries the
+              skip label, and its action ends the tour outright instead of
+              stepping forward. */}
           <button
-            {...closeProps}
+            {...skipProps}
             className="quiet-button tour-skip"
             type="button"
           >
@@ -103,6 +127,14 @@ export interface GuidedTour {
   /** Render this in the shell. Null while no tutorial is running. */
   readonly Tour: React.ReactElement | null;
   readonly startTour: (moduleId: ModuleId) => void;
+  /**
+   * Abandon a running tutorial without ending it in the user's name.
+   *
+   * For the shell to use when the ground moves under the tour — the module
+   * changes, or the session ends — so nothing is recorded and no focus is
+   * taken from wherever the new screen put it.
+   */
+  readonly stopTour: () => void;
   readonly runningModule: ModuleId | null;
 }
 
@@ -115,12 +147,22 @@ export interface GuidedTour {
  */
 export function useGuidedTour({
   locale,
-  onFinished,
+  onEnded,
 }: {
   readonly locale: Locale;
-  readonly onFinished: (moduleId: ModuleId) => void;
+  /**
+   * The tutorial stopped running. `completed` is true only when the user
+   * reached the end of it: skipping, Escape, and a click on the overlay all end
+   * the tour without completing it, and must not be recorded as having taught
+   * anything.
+   */
+  readonly onEnded: (moduleId: ModuleId, completed: boolean) => void;
 }): GuidedTour {
   const [runningModule, setRunningModule] = useState<ModuleId | null>(null);
+  // Joyride's event handler needs the module the tour belongs to, and it fires
+  // outside React's render, so the value is mirrored here rather than read from
+  // a state updater where a side effect does not belong.
+  const running = useRef<ModuleId | null>(null);
 
   const steps = useMemo<Step[]>(() => {
     if (runningModule === null) {
@@ -129,10 +171,7 @@ export function useGuidedTour({
     const copy = tourCopy[locale];
     const definitions = tourSteps[runningModule] ?? [];
     return definitions
-      .filter(
-        (definition) =>
-          document.querySelector(`[data-tour="${definition.anchor}"]`) !== null,
-      )
+      .filter((definition) => visibleTourTarget(definition.anchor))
       .map((definition) => ({
         content: copy[definition.anchor]?.body ?? "",
         target: `[data-tour="${definition.anchor}"]`,
@@ -144,37 +183,53 @@ export function useGuidedTour({
   }, [locale, runningModule]);
 
   const startTour = useCallback((moduleId: ModuleId) => {
+    running.current = moduleId;
     setRunningModule(moduleId);
   }, []);
 
-  const finished = useCallback(() => {
-    setRunningModule((current) => {
-      if (current !== null) {
-        onFinished(current);
+  const stopTour = useCallback(() => {
+    running.current = null;
+    setRunningModule(null);
+  }, []);
+
+  const endTour = useCallback(
+    (completed: boolean) => {
+      const moduleId = running.current;
+      running.current = null;
+      setRunningModule(null);
+      if (moduleId !== null) {
+        onEnded(moduleId, completed);
       }
-      return null;
-    });
-  }, [onFinished]);
+    },
+    [onEnded],
+  );
 
   const { Tour } = useJoyride({
     beaconComponent: TourBeacon,
     continuous: true,
+    // `stopTour` abandons a tutorial by unmounting it, so the next one has to
+    // begin at its own first step rather than resume a paused index.
+    initialStepIndex: 0,
     loaderComponent: TourLoader,
     locale: {
       back: helpMessages[locale].back,
-      close: helpMessages[locale].closeTour,
       last: helpMessages[locale].done,
       next: helpMessages[locale].next,
       skip: helpMessages[locale].skip,
     },
     onEvent: (data) => {
       if (data.type === EVENTS.TOUR_END) {
-        finished();
+        // Joyride ends the tour for both outcomes. Only reaching the last step
+        // counts as having been taught the screen.
+        endTour(data.status === STATUS.FINISHED);
       }
     },
     options: {
-      // The spotlight is decoration; the tooltip carries the meaning, so the
-      // page underneath stays interactive and nothing is trapped behind it.
+      // The overlay covers the screen apart from the spotlight cut-out, so the
+      // page underneath is not interactive while a step is showing; only the
+      // highlighted region still takes clicks. Clicking the overlay or pressing
+      // Escape dismisses the current step, which ends the tour on the last one,
+      // and focus is held inside the tooltip until it does.
       overlayColor: "rgba(8, 14, 26, 0.55)",
       showProgress: false,
       skipBeacon: true,
@@ -190,6 +245,7 @@ export function useGuidedTour({
   return {
     runningModule,
     startTour,
+    stopTour,
     Tour,
   };
 }

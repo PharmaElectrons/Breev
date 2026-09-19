@@ -500,7 +500,13 @@ export function PurchaseRowEntry({
         </details>
       </div>
 
-      <div className="purchase-row-table-wrap">
+      {/* The tutorial frames the whole grid, scroll region included: the
+          spotlight has to cover every column the row entry teaches, not just
+          the part of the table that happens to be in view. */}
+      <div
+        className="purchase-row-table-wrap"
+        data-tour="purchases-lines-table"
+      >
         <table className="purchase-row-table">
           <thead>
             <tr>

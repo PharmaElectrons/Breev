@@ -12,17 +12,14 @@ interface HelpCopy {
   readonly scrollGuide: string;
   readonly startTutorial: string;
   readonly restartTutorial: string;
-  readonly tutorialCompleted: string;
   /** Shown where a tutorial would be, when the screen has no steps to show. */
   readonly noTutorial: string;
   readonly noTutorialUnavailableScreen: string;
   /** The tour itself. */
-  readonly tourLabel: (moduleName: string) => string;
   readonly next: string;
   readonly back: string;
   readonly done: string;
   readonly skip: string;
-  readonly closeTour: string;
   readonly stepCounter: (current: number, total: number) => string;
 }
 
@@ -43,16 +40,13 @@ export const helpMessages: Record<Locale, HelpCopy> = {
     scrollGuide: "نص الدليل",
     startTutorial: "ابدأ الشرح التفاعلي",
     restartTutorial: "أعد الشرح التفاعلي",
-    tutorialCompleted: "أكملت هذا الشرح من قبل.",
     noTutorial: "لا يوجد شرح تفاعلي لهذه الشاشة.",
     noTutorialUnavailableScreen:
       "لا يوجد شرح تفاعلي لأن هذه الشاشة لم تُبنَ بعد.",
-    tourLabel: (moduleName) => `شرح تفاعلي: ${moduleName}`,
     next: "التالي",
     back: "السابق",
     done: "إنهاء",
     skip: "تخطٍّ",
-    closeTour: "إغلاق الشرح",
     stepCounter: (current, total) => `الخطوة ${current} من ${total}`,
   },
   en: {
@@ -66,16 +60,13 @@ export const helpMessages: Record<Locale, HelpCopy> = {
     scrollGuide: "Guide text",
     startTutorial: "Start tutorial",
     restartTutorial: "Run the tutorial again",
-    tutorialCompleted: "You have completed this tutorial.",
     noTutorial: "This screen has no tutorial.",
     noTutorialUnavailableScreen:
       "There is no tutorial because this screen is not built yet.",
-    tourLabel: (moduleName) => `Tutorial: ${moduleName}`,
     next: "Next",
     back: "Back",
     done: "Finish",
     skip: "Skip",
-    closeTour: "Close the tutorial",
     stepCounter: (current, total) => `Step ${current} of ${total}`,
   },
 };
