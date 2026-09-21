@@ -102,6 +102,12 @@ export const purchasingMessages = {
     discarded: "Draft discarded after confirmation.",
     error:
       "The change was not saved. Review the highlighted field or refresh the draft.",
+    supplierArchivedError: "This supplier is archived and cannot be modified.",
+    supplierMergedError:
+      "This supplier has been merged into another supplier and cannot be modified.",
+    supplierVersionConflictError:
+      "The supplier was modified by another session. Please refresh.",
+    showArchived: "Show archived",
     archived: "Archived",
     merged: "Merged",
     active: "Active",
@@ -362,6 +368,11 @@ export const purchasingMessages = {
     saved: "تم حفظ المسودة بشكل دائم.",
     discarded: "تم استبعاد المسودة بعد التأكيد.",
     error: "لم يتم حفظ التغيير. راجع الحقل المحدد أو حدّث المسودة.",
+    supplierArchivedError: "هذا المذخر مؤرشف بالفعل ولا يمكن تعديله.",
+    supplierMergedError: "تم دمج هذا المذخر مع مذخر آخر ولا يمكن تعديله.",
+    supplierVersionConflictError:
+      "تم تعديل بيانات المذخر في جلسة أخرى. يرجى التحديث.",
+    showArchived: "إظهار المؤرشفين",
     archived: "مؤرشف",
     merged: "مدمج",
     active: "نشط",

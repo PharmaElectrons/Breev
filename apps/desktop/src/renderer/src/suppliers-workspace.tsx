@@ -6,10 +6,25 @@ import {
   createSupplier,
   editSupplier,
   mergeSupplier,
+  PurchasingApiDenied,
   purchasingCommandAttempt,
   type PurchasingCommandAttempt,
 } from "./purchasing-api";
 import { purchasingMessages } from "./purchasing-messages";
+
+type PurchasingCopy =
+  (typeof purchasingMessages)[keyof typeof purchasingMessages];
+
+function getSupplierErrorMessage(err: unknown, copy: PurchasingCopy): string {
+  if (err instanceof PurchasingApiDenied) {
+    if (err.denial.code === "supplier-archived")
+      return copy.supplierArchivedError;
+    if (err.denial.code === "supplier-merged") return copy.supplierMergedError;
+    if (err.denial.code === "version-conflict")
+      return copy.supplierVersionConflictError;
+  }
+  return copy.error;
+}
 
 interface SupplierExtraDetails {
   phone: string;
@@ -101,9 +116,13 @@ export function SuppliersWorkspace({
   const [duePeriodDays, setDuePeriodDays] = useState(30);
   const [alertWindowDays, setAlertWindowDays] = useState(7);
   const [survivorId, setSurvivorId] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{
+    text: string;
+    isError?: boolean;
+  } | null>(null);
 
   const supplierCommandAttempt = useRef<PurchasingCommandAttempt | null>(null);
 
@@ -111,6 +130,9 @@ export function SuppliersWorkspace({
     () => suppliers.find((s) => s.id === selectedId) ?? null,
     [suppliers, selectedId],
   );
+
+  const isInactive = selected !== null && selected.status !== "active";
+  const isArchived = selected?.status === "archived";
 
   useEffect(() => {
     if (selected) {
@@ -159,8 +181,11 @@ export function SuppliersWorkspace({
 
   const filteredSuppliers = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return suppliers;
     return suppliers.filter((s) => {
+      if (!showArchived && !q && s.status !== "active" && s.id !== selectedId) {
+        return false;
+      }
+      if (!q) return true;
       const details = parseTerms(s.terms);
       return (
         s.name.toLowerCase().includes(q) ||
@@ -168,7 +193,7 @@ export function SuppliersWorkspace({
         details.address.toLowerCase().includes(q)
       );
     });
-  }, [suppliers, query]);
+  }, [suppliers, query, showArchived, selectedId]);
 
   const adjustDiscount = (delta: number) => {
     setDiscountPct((prev) => {
@@ -193,7 +218,7 @@ export function SuppliersWorkspace({
 
   const save = async (event?: React.FormEvent) => {
     event?.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || isInactive) return;
     setBusy(true);
     setMessage(null);
     const details: SupplierExtraDetails = {
@@ -238,17 +263,17 @@ export function SuppliersWorkspace({
               idempotencyKey: attempt.idempotencyKey,
             });
       setSelectedId(saved.id);
-      setMessage(copy.supplierSaved);
+      setMessage({ text: copy.supplierSaved, isError: false });
       await onChanged();
-    } catch {
-      setMessage(copy.error);
+    } catch (err) {
+      setMessage({ text: getSupplierErrorMessage(err, copy), isError: true });
     } finally {
       setBusy(false);
     }
   };
 
   const archive = async () => {
-    if (!selected) return;
+    if (!selected || selected.status !== "active") return;
     if (!window.confirm(copy.archiveSupplier)) return;
     setBusy(true);
     try {
@@ -266,17 +291,17 @@ export function SuppliersWorkspace({
         idempotencyKey: attempt.idempotencyKey,
       });
       setSelectedId(null);
-      setMessage(copy.supplierSaved);
+      setMessage({ text: copy.supplierSaved, isError: false });
       await onChanged();
-    } catch {
-      setMessage(copy.error);
+    } catch (err) {
+      setMessage({ text: getSupplierErrorMessage(err, copy), isError: true });
     } finally {
       setBusy(false);
     }
   };
 
   const merge = async () => {
-    if (!selected || !survivorId) return;
+    if (!selected || selected.status !== "active" || !survivorId) return;
     setBusy(true);
     try {
       const attempt = purchasingCommandAttempt(
@@ -295,10 +320,10 @@ export function SuppliersWorkspace({
         survivorSupplierId: survivorId,
       });
       setSelectedId(null);
-      setMessage(copy.supplierSaved);
+      setMessage({ text: copy.supplierSaved, isError: false });
       await onChanged();
-    } catch {
-      setMessage(copy.error);
+    } catch (err) {
+      setMessage({ text: getSupplierErrorMessage(err, copy), isError: true });
     } finally {
       setBusy(false);
     }
@@ -332,6 +357,15 @@ export function SuppliersWorkspace({
               aria-label={copy.searchSupplierPlaceholder}
             />
           </div>
+          <label className="flex items-center gap-2 mt-2 text-[11px] text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="rounded border-control-border text-primary focus:ring-primary"
+            />
+            <span>{copy.showArchived}</span>
+          </label>
         </div>
         <div className="flex-1 overflow-auto">
           {filteredSuppliers.map((s) => {
@@ -348,10 +382,23 @@ export function SuppliersWorkspace({
                   isSel
                     ? "bg-primary/15 border-inline-start-4 border-inline-start-primary"
                     : ""
-                }`}
+                } ${s.status !== "active" ? "opacity-75" : ""}`}
               >
-                <div className="text-sm font-bold text-foreground truncate">
-                  {s.name}
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="text-sm font-bold text-foreground truncate">
+                    {s.name}
+                  </div>
+                  {s.status !== "active" && (
+                    <span
+                      className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                        s.status === "archived"
+                          ? "bg-muted text-muted-foreground border border-control-border"
+                          : "bg-warning/15 text-warning border border-warning/30"
+                      }`}
+                    >
+                      {s.status === "archived" ? copy.archived : copy.merged}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center justify-between text-[11px] mt-0.5">
                   <span className="text-muted-foreground font-mono">
@@ -393,9 +440,15 @@ export function SuppliersWorkspace({
             <button
               type="button"
               onClick={() => void archive()}
-              disabled={!selectedId || busy}
+              disabled={!selectedId || busy || isInactive}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition bg-danger/15 border-danger/40 text-danger hover:bg-danger/25 disabled:opacity-40"
-              title={copy.archiveSupplier}
+              title={
+                isInactive
+                  ? isArchived
+                    ? copy.archived
+                    : copy.merged
+                  : copy.archiveSupplier
+              }
             >
               <span aria-hidden="true">🗑</span>
               <span>{copy.delete}</span>
@@ -414,7 +467,7 @@ export function SuppliersWorkspace({
           <button
             type="button"
             onClick={() => void save()}
-            disabled={busy || !name.trim()}
+            disabled={busy || !name.trim() || isInactive}
             className="px-4 py-2 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition"
           >
             {busy ? "..." : `💾 ${copy.save}`}
@@ -433,10 +486,14 @@ export function SuppliersWorkspace({
         )}
         {message && (
           <div
-            role="status"
-            className="px-4 py-2 border-b border-border text-xs font-bold bg-primary/10 text-primary"
+            role={message.isError ? "alert" : "status"}
+            className={`px-4 py-2 border-b border-border text-xs font-bold ${
+              message.isError
+                ? "bg-danger/15 text-danger border-danger/30"
+                : "bg-primary/10 text-primary"
+            }`}
           >
-            {message}
+            {message.text}
           </div>
         )}
 
@@ -444,145 +501,163 @@ export function SuppliersWorkspace({
         <div className="flex-1 overflow-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Card 1: Supplier Profile (2 cols) */}
           <div className="lg:col-span-2 bg-card border border-border rounded-xl p-4 space-y-3 shadow-xs">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-primary mb-2">
-              {copy.supplierProfile}
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-primary">
+                {copy.supplierProfile}
+              </h3>
+              {selected && selected.status !== "active" && (
+                <span
+                  className={`px-2 py-0.5 rounded text-xs font-bold ${
+                    selected.status === "archived"
+                      ? "bg-muted text-muted-foreground border border-control-border"
+                      : "bg-warning/15 text-warning border border-warning/30"
+                  }`}
+                >
+                  {selected.status === "archived" ? copy.archived : copy.merged}
+                </span>
+              )}
+            </div>
             <form onSubmit={(e) => void save(e)} className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label htmlFor={nameId} className="block">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    {copy.supplierName}
-                  </span>
-                  <input
-                    id={nameId}
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <label htmlFor={phoneId} className="block">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    {copy.phone}
-                  </span>
-                  <input
-                    id={phoneId}
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <label htmlFor={addressId} className="block">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    {copy.location}
-                  </span>
-                  <input
-                    id={addressId}
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <label htmlFor={paymentTermsId} className="block">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    {copy.defaultPayment}
-                  </span>
-                  <select
-                    id={paymentTermsId}
-                    value={paymentTerms}
-                    onChange={(e) =>
-                      setPaymentTerms(e.target.value as "credit" | "cash")
-                    }
-                    className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="credit">{copy.creditTerm}</option>
-                    <option value="cash">{copy.cashTerm}</option>
-                  </select>
-                </label>
-                <div className="block">
-                  <label
-                    htmlFor={discountId}
-                    className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1"
-                  >
-                    {copy.allowance}
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => adjustDiscount(-0.5)}
-                      className="size-8 grid place-items-center bg-muted border border-control-border rounded-lg hover:bg-danger/20 hover:text-danger text-sm font-bold"
-                      aria-label="Decrease discount by 0.5 percent"
-                    >
-                      －
-                    </button>
+              <fieldset
+                disabled={isInactive || busy}
+                className="space-y-3 border-0 p-0 m-0"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label htmlFor={nameId} className="block">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                      {copy.supplierName}
+                    </span>
                     <input
-                      id={discountId}
+                      id={nameId}
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </label>
+                  <label htmlFor={phoneId} className="block">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                      {copy.phone}
+                    </span>
+                    <input
+                      id={phoneId}
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </label>
+                  <label htmlFor={addressId} className="block">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                      {copy.location}
+                    </span>
+                    <input
+                      id={addressId}
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </label>
+                  <label htmlFor={paymentTermsId} className="block">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                      {copy.defaultPayment}
+                    </span>
+                    <select
+                      id={paymentTermsId}
+                      value={paymentTerms}
+                      onChange={(e) =>
+                        setPaymentTerms(e.target.value as "credit" | "cash")
+                      }
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="credit">{copy.creditTerm}</option>
+                      <option value="cash">{copy.cashTerm}</option>
+                    </select>
+                  </label>
+                  <div className="block">
+                    <label
+                      htmlFor={discountId}
+                      className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1"
+                    >
+                      {copy.allowance}
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => adjustDiscount(-0.5)}
+                        className="size-8 grid place-items-center bg-muted border border-control-border rounded-lg hover:bg-danger/20 hover:text-danger text-sm font-bold"
+                        aria-label="Decrease discount by 0.5 percent"
+                      >
+                        －
+                      </button>
+                      <input
+                        id={discountId}
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.1}
+                        value={discountPct}
+                        onChange={(e) =>
+                          setDiscountPct(Number(e.target.value) || 0)
+                        }
+                        className="flex-1 min-w-0 bg-muted border border-control-border rounded-lg px-3 py-2 text-sm text-center font-mono outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustDiscount(0.5)}
+                        className="size-8 grid place-items-center bg-muted border border-control-border rounded-lg hover:bg-ready/20 hover:text-ready text-sm font-bold"
+                        aria-label="Increase discount by 0.5 percent"
+                      >
+                        ＋
+                      </button>
+                    </div>
+                  </div>
+                  <label htmlFor={creditLimitId} className="block">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                      {copy.creditLimit}
+                    </span>
+                    <input
+                      id={creditLimitId}
                       type="number"
                       min={0}
-                      max={100}
-                      step={0.1}
-                      value={discountPct}
+                      value={creditLimit}
                       onChange={(e) =>
-                        setDiscountPct(Number(e.target.value) || 0)
+                        setCreditLimit(Number(e.target.value) || 0)
                       }
-                      className="flex-1 min-w-0 bg-muted border border-control-border rounded-lg px-3 py-2 text-sm text-center font-mono outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
                     />
-                    <button
-                      type="button"
-                      onClick={() => adjustDiscount(0.5)}
-                      className="size-8 grid place-items-center bg-muted border border-control-border rounded-lg hover:bg-ready/20 hover:text-ready text-sm font-bold"
-                      aria-label="Increase discount by 0.5 percent"
-                    >
-                      ＋
-                    </button>
-                  </div>
+                  </label>
+                  <label htmlFor={duePeriodId} className="block">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                      {copy.duePeriod}
+                    </span>
+                    <input
+                      id={duePeriodId}
+                      type="number"
+                      min={1}
+                      value={duePeriodDays}
+                      onChange={(e) =>
+                        setDuePeriodDays(Number(e.target.value) || 30)
+                      }
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </label>
+                  <label htmlFor={alertWindowId} className="block">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                      {copy.alertWindow}
+                    </span>
+                    <input
+                      id={alertWindowId}
+                      type="number"
+                      min={0}
+                      value={alertWindowDays}
+                      onChange={(e) =>
+                        setAlertWindowDays(Number(e.target.value) || 0)
+                      }
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </label>
                 </div>
-                <label htmlFor={creditLimitId} className="block">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    {copy.creditLimit}
-                  </span>
-                  <input
-                    id={creditLimitId}
-                    type="number"
-                    min={0}
-                    value={creditLimit}
-                    onChange={(e) =>
-                      setCreditLimit(Number(e.target.value) || 0)
-                    }
-                    className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <label htmlFor={duePeriodId} className="block">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    {copy.duePeriod}
-                  </span>
-                  <input
-                    id={duePeriodId}
-                    type="number"
-                    min={1}
-                    value={duePeriodDays}
-                    onChange={(e) =>
-                      setDuePeriodDays(Number(e.target.value) || 30)
-                    }
-                    className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <label htmlFor={alertWindowId} className="block">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    {copy.alertWindow}
-                  </span>
-                  <input
-                    id={alertWindowId}
-                    type="number"
-                    min={0}
-                    value={alertWindowDays}
-                    onChange={(e) =>
-                      setAlertWindowDays(Number(e.target.value) || 0)
-                    }
-                    className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-              </div>
+              </fieldset>
             </form>
             {selected?.status === "active" && activeSuppliers.length > 1 && (
               <div className="pt-3 border-t border-border flex items-center gap-2">

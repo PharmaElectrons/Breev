@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LicensingApiDenied } from "./identity-api";
 import {
+  archiveSupplier,
   clearPendingPurchasePost,
   postPurchase,
+  PurchasingApiDenied,
   purchasingCommandAttempt,
   readPendingPurchasePost,
   requestPostedPurchase,
@@ -283,5 +285,35 @@ describe("Purchasing REST client", () => {
       new URL(`/purchases/posted/${id}`, "http://127.0.0.1:3000"),
       expect.objectContaining({ method: "GET" }),
     );
+  });
+
+  it("keeps supplier archival rejection typed as PurchasingApiDenied", async () => {
+    const id = "018fa000-0000-7000-8000-000000000004";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              code: "supplier-archived",
+              fieldErrors: [],
+              requestId: REQUEST_ID,
+              status: "denied",
+            }),
+            {
+              headers: { "Content-Type": "application/json" },
+              status: 409,
+            },
+          ),
+        ),
+      ),
+    );
+
+    await expect(
+      archiveSupplier("http://127.0.0.1:3000", id, {
+        expectedRevision: "1",
+        idempotencyKey: "018fa000-0000-7000-8000-000000000099",
+      }),
+    ).rejects.toThrow(PurchasingApiDenied);
   });
 });
