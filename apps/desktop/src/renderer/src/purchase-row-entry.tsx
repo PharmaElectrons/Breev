@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -175,6 +176,16 @@ export function PurchaseRowEntry({
     setError(null);
     if (returnToItem) focusField("item");
   }
+
+  const handleQuickCreateCancel = useCallback(() => {
+    setQuickCreateValue(null);
+    focusField("item");
+  }, []);
+
+  const handleQuickCreateSuccess = useCallback((created: Product) => {
+    setQuickCreateValue(null);
+    attachProduct(created, true);
+  }, []);
 
   async function resolveItemAndAdvance(): Promise<void> {
     const query = itemQuery.trim();
@@ -647,14 +658,8 @@ export function PurchaseRowEntry({
         <QuickProductDialog
           baseUrl={baseUrl}
           initialValue={quickCreateValue}
-          onCancel={() => {
-            setQuickCreateValue(null);
-            focusField("item");
-          }}
-          onSuccess={(created) => {
-            setQuickCreateValue(null);
-            attachProduct(created, true);
-          }}
+          onCancel={handleQuickCreateCancel}
+          onSuccess={handleQuickCreateSuccess}
         />
       )}
     </section>
@@ -780,21 +785,33 @@ function QuickProductDialog({
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
   const dialogRef = useRef<HTMLDivElement>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
   useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog === null) return;
+    if (
+      document.activeElement === null ||
+      !dialog.contains(document.activeElement)
+    ) {
+      const focusable = dialog.querySelector<HTMLElement>(
+        "input:not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+      );
+      focusable?.focus();
+    }
+  }, []);
+
+  useEffect(() => {
     const cancelOnEscape = (event: globalThis.KeyboardEvent): void => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      onCancel();
+      onCancelRef.current();
     };
     window.addEventListener("keydown", cancelOnEscape, true);
-    const dialog = dialogRef.current;
-    const focusable = dialog?.querySelector<HTMLElement>(
-      "input:not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled])",
-    );
-    focusable?.focus();
     return () => window.removeEventListener("keydown", cancelOnEscape, true);
-  }, [onCancel]);
+  }, []);
   return (
     <div
       className="dialog-backdrop purchase-product-dialog"
