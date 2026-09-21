@@ -428,7 +428,7 @@ export function PurchasingRouteView({
             <span aria-hidden="true">🏬</span> {copy.suppliers}
           </button>
         ) : null}
-        {canManageDrafts ? (
+        {canManageDrafts && view === "invoice" ? (
           <div className="purchase-document-actions">
             <button
               type="button"
@@ -802,13 +802,6 @@ export function PurchasingRouteView({
         className="purchase-register-dialog"
         aria-labelledby="draft-list-title"
       >
-        <button
-          type="button"
-          className="quiet-button purchase-register-close"
-          onClick={() => registerRef.current?.close()}
-        >
-          {copy.close}
-        </button>
         <section
           className="purchase-register"
           id="purchase-draft-register"
@@ -946,6 +939,15 @@ export function PurchasingRouteView({
             </table>
           </div>
         </section>
+        <footer className="purchase-register-footer">
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => registerRef.current?.close()}
+          >
+            {copy.close}
+          </button>
+        </footer>
       </dialog>
       <PostedPurchaseReview
         baseUrl={baseUrl}

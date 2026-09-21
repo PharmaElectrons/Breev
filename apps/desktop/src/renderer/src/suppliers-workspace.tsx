@@ -431,7 +431,7 @@ export function SuppliersWorkspace({
             <button
               type="button"
               onClick={chooseNew}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition bg-primary/15 border-primary/40 text-primary hover:bg-primary/25"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-lg text-xs font-bold border transition bg-primary/15 border-primary/40 text-primary hover:bg-primary/25"
               title={copy.newSupplier}
             >
               <span aria-hidden="true">＋</span>
@@ -441,7 +441,7 @@ export function SuppliersWorkspace({
               type="button"
               onClick={() => void archive()}
               disabled={!selectedId || busy || isInactive}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition bg-danger/15 border-danger/40 text-danger hover:bg-danger/25 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-lg text-xs font-bold border transition bg-danger/15 border-danger/40 text-danger hover:bg-danger/25 disabled:opacity-40"
               title={
                 isInactive
                   ? isArchived
@@ -457,7 +457,7 @@ export function SuppliersWorkspace({
               type="button"
               onClick={() => setStatementOpen(true)}
               disabled={!selected}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition bg-muted border-control-border text-foreground hover:bg-muted/80 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-lg text-xs font-bold border transition bg-accent/15 border-accent/40 text-accent hover:bg-accent/25 disabled:opacity-40"
               title={copy.statement}
             >
               <span aria-hidden="true">📄</span>
@@ -468,7 +468,7 @@ export function SuppliersWorkspace({
             type="button"
             onClick={() => void save()}
             disabled={busy || !name.trim() || isInactive}
-            className="px-4 py-2 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition"
+            className="px-4 py-1.5 h-8 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:brightness-105 disabled:opacity-40 transition shadow-xs"
           >
             {busy ? "..." : `💾 ${copy.save}`}
           </button>
@@ -502,7 +502,7 @@ export function SuppliersWorkspace({
           {/* Card 1: Supplier Profile (2 cols) */}
           <div className="lg:col-span-2 bg-card border border-border rounded-xl p-4 space-y-3 shadow-xs">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-primary">
+              <h3 className="text-[11px] font-bold uppercase tracking-widest text-primary mb-2">
                 {copy.supplierProfile}
               </h3>
               {selected && selected.status !== "active" && (
@@ -524,7 +524,7 @@ export function SuppliersWorkspace({
               >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <label htmlFor={nameId} className="block">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                       {copy.supplierName}
                     </span>
                     <input
@@ -532,33 +532,33 @@ export function SuppliersWorkspace({
                       required
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </label>
                   <label htmlFor={phoneId} className="block">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                       {copy.phone}
                     </span>
                     <input
                       id={phoneId}
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </label>
                   <label htmlFor={addressId} className="block">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                       {copy.location}
                     </span>
                     <input
                       id={addressId}
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </label>
                   <label htmlFor={paymentTermsId} className="block">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                       {copy.defaultPayment}
                     </span>
                     <select
@@ -567,7 +567,7 @@ export function SuppliersWorkspace({
                       onChange={(e) =>
                         setPaymentTerms(e.target.value as "credit" | "cash")
                       }
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                     >
                       <option value="credit">{copy.creditTerm}</option>
                       <option value="cash">{copy.cashTerm}</option>
@@ -576,7 +576,7 @@ export function SuppliersWorkspace({
                   <div className="block">
                     <label
                       htmlFor={discountId}
-                      className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1"
+                      className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1"
                     >
                       {copy.allowance}
                     </label>
@@ -584,7 +584,7 @@ export function SuppliersWorkspace({
                       <button
                         type="button"
                         onClick={() => adjustDiscount(-0.5)}
-                        className="size-8 grid place-items-center bg-muted border border-control-border rounded-lg hover:bg-danger/20 hover:text-danger text-sm font-bold"
+                        className="size-7 grid place-items-center bg-muted border border-control-border rounded hover:bg-danger/20 hover:text-danger text-xs font-bold"
                         aria-label="Decrease discount by 0.5 percent"
                       >
                         －
@@ -599,12 +599,12 @@ export function SuppliersWorkspace({
                         onChange={(e) =>
                           setDiscountPct(Number(e.target.value) || 0)
                         }
-                        className="flex-1 min-w-0 bg-muted border border-control-border rounded-lg px-3 py-2 text-sm text-center font-mono outline-none focus:ring-2 focus:ring-primary"
+                        className="flex-1 min-w-0 bg-muted border border-control-border rounded-lg px-3 py-1.5 text-sm text-center font-mono outline-none focus:ring-2 focus:ring-primary/40"
                       />
                       <button
                         type="button"
                         onClick={() => adjustDiscount(0.5)}
-                        className="size-8 grid place-items-center bg-muted border border-control-border rounded-lg hover:bg-ready/20 hover:text-ready text-sm font-bold"
+                        className="size-7 grid place-items-center bg-muted border border-control-border rounded hover:bg-ready/20 hover:text-ready text-xs font-bold"
                         aria-label="Increase discount by 0.5 percent"
                       >
                         ＋
@@ -612,7 +612,7 @@ export function SuppliersWorkspace({
                     </div>
                   </div>
                   <label htmlFor={creditLimitId} className="block">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                       {copy.creditLimit}
                     </span>
                     <input
@@ -623,11 +623,11 @@ export function SuppliersWorkspace({
                       onChange={(e) =>
                         setCreditLimit(Number(e.target.value) || 0)
                       }
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </label>
                   <label htmlFor={duePeriodId} className="block">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                       {copy.duePeriod}
                     </span>
                     <input
@@ -638,11 +638,11 @@ export function SuppliersWorkspace({
                       onChange={(e) =>
                         setDuePeriodDays(Number(e.target.value) || 30)
                       }
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </label>
                   <label htmlFor={alertWindowId} className="block">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                       {copy.alertWindow}
                     </span>
                     <input
@@ -653,7 +653,7 @@ export function SuppliersWorkspace({
                       onChange={(e) =>
                         setAlertWindowDays(Number(e.target.value) || 0)
                       }
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </label>
                 </div>
@@ -662,14 +662,14 @@ export function SuppliersWorkspace({
             {selected?.status === "active" && activeSuppliers.length > 1 && (
               <div className="pt-3 border-t border-border flex items-center gap-2">
                 <label htmlFor={mergeId} className="flex-1">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                     {copy.mergeInto}
                   </span>
                   <select
                     id={mergeId}
                     value={survivorId}
                     onChange={(e) => setSurvivorId(e.target.value)}
-                    className="w-full bg-muted border border-control-border rounded-lg px-2 py-1 text-xs outline-none"
+                    className="w-full bg-muted border border-control-border rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-primary/40"
                   >
                     <option value="">{copy.select}</option>
                     {activeSuppliers
@@ -696,7 +696,7 @@ export function SuppliersWorkspace({
           {/* Card 2: Live Balance (1 col) */}
           <div className="bg-card border border-border rounded-xl p-4 flex flex-col justify-between shadow-xs">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-primary mb-2">
+              <h3 className="text-[11px] font-bold uppercase tracking-widest text-primary mb-2">
                 {copy.supplierBalance}
               </h3>
               <p
@@ -706,13 +706,13 @@ export function SuppliersWorkspace({
               >
                 {formatIQD(liveBalance)}
               </p>
-              <p className="text-[11px] text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 {copy.balanceSubtitle}
               </p>
             </div>
             {selected && creditLimit > 0 && (
               <div className="mt-4 pt-4 border-t border-border">
-                <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
                   <span>{copy.creditLimit}</span>
                   <span className="font-mono">{formatIQD(creditLimit)}</span>
                 </div>
@@ -736,16 +736,16 @@ export function SuppliersWorkspace({
           {/* Card 3: Transaction Ledger (3 cols) */}
           <div className="lg:col-span-3 bg-card border border-border rounded-xl p-4 shadow-xs">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-primary">
+              <h3 className="text-[11px] font-bold uppercase tracking-widest text-primary">
                 {copy.invoiceLedger}
               </h3>
-              <span className="text-xs text-muted-foreground font-mono">
+              <span className="text-[10px] text-muted-foreground font-mono">
                 {supplierDrafts.length} {copy.invoicesCount}
               </span>
             </div>
             <div className="overflow-auto max-h-[36vh] border border-border rounded-lg">
               <table className="w-full text-xs">
-                <thead className="text-[10px] uppercase text-muted-foreground bg-muted sticky top-0">
+                <thead className="text-[10px] uppercase font-bold text-muted-foreground bg-muted sticky top-0 tracking-widest">
                   <tr>
                     <th className="px-3 py-2 text-start">#</th>
                     <th className="px-3 py-2 text-start">{copy.date}</th>
@@ -823,7 +823,7 @@ export function SuppliersWorkspace({
             >
               <header className="p-4 border-b border-border flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] text-primary font-bold uppercase tracking-wider">
+                  <p className="text-[10px] text-primary font-bold uppercase tracking-widest">
                     {copy.statement}
                   </p>
                   <h2
@@ -833,21 +833,14 @@ export function SuppliersWorkspace({
                     {selected.name}
                   </h2>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setStatementOpen(false)}
-                  className="px-4 py-2 bg-muted border border-control-border rounded-lg text-xs font-bold hover:bg-muted/80"
-                >
-                  {copy.closeStatement}
-                </button>
               </header>
               <div className="flex-1 overflow-auto p-4 space-y-4">
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-muted border border-border rounded-xl p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">
                       {copy.totalPurchases}
                     </p>
-                    <p className="font-mono font-bold text-base text-foreground">
+                    <p className="font-mono font-bold text-lg text-foreground tabular-nums">
                       {formatIQD(
                         supplierDrafts.reduce(
                           (sum, d) =>
@@ -858,10 +851,10 @@ export function SuppliersWorkspace({
                     </p>
                   </div>
                   <div className="bg-muted border border-border rounded-xl p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">
                       {copy.paid}
                     </p>
-                    <p className="font-mono font-bold text-base text-ready">
+                    <p className="font-mono font-bold text-lg text-ready tabular-nums">
                       {formatIQD(
                         supplierDrafts.reduce(
                           (sum, d) =>
@@ -875,11 +868,11 @@ export function SuppliersWorkspace({
                     </p>
                   </div>
                   <div className="bg-muted border border-border rounded-xl p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">
                       {copy.outstandingBalance}
                     </p>
                     <p
-                      className={`font-mono font-bold text-base ${
+                      className={`font-mono font-bold text-lg tabular-nums ${
                         liveBalance > 0 ? "text-danger" : "text-ready"
                       }`}
                     >
@@ -889,7 +882,7 @@ export function SuppliersWorkspace({
                 </div>
                 <div className="border border-border rounded-lg overflow-hidden">
                   <table className="w-full text-xs">
-                    <thead className="text-[10px] uppercase text-muted-foreground bg-muted">
+                    <thead className="text-[10px] uppercase font-bold text-muted-foreground bg-muted tracking-widest">
                       <tr>
                         <th className="px-3 py-2 text-start">{copy.date}</th>
                         <th className="px-3 py-2 text-start">#</th>
@@ -932,6 +925,15 @@ export function SuppliersWorkspace({
                   </table>
                 </div>
               </div>
+              <footer className="p-3 border-t border-border flex items-center justify-end bg-card">
+                <button
+                  type="button"
+                  onClick={() => setStatementOpen(false)}
+                  className="px-4 py-1.5 h-8 bg-muted border border-control-border rounded-lg text-xs font-bold hover:bg-muted/80"
+                >
+                  {copy.closeStatement}
+                </button>
+              </footer>
             </div>
           </div>
         )}

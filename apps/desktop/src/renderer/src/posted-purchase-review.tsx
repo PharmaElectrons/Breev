@@ -365,21 +365,6 @@ export function PostedPurchaseReview({
             {copy.postedPurchaseRegister}
           </h2>
         </div>
-        <button
-          type="button"
-          className="quiet-button"
-          onClick={() => {
-            if (correction === "adjustment" && adjustmentDraftActive) {
-              setAdjustmentLeaveRequest((value) => value + 1);
-            } else if (correction === "return" && returnDraftActive) {
-              setReturnLeaveRequest((value) => value + 1);
-            } else {
-              dialogRef.current?.close();
-            }
-          }}
-        >
-          {copy.close}
-        </button>
       </header>
 
       <p
@@ -633,6 +618,23 @@ export function PostedPurchaseReview({
           </div>
         </section>
       )}
+      <footer className="posted-dialog-footer">
+        <button
+          type="button"
+          className="quiet-button"
+          onClick={() => {
+            if (correction === "adjustment" && adjustmentDraftActive) {
+              setAdjustmentLeaveRequest((value) => value + 1);
+            } else if (correction === "return" && returnDraftActive) {
+              setReturnLeaveRequest((value) => value + 1);
+            } else {
+              dialogRef.current?.close();
+            }
+          }}
+        >
+          {copy.close}
+        </button>
+      </footer>
     </dialog>
   );
 }
