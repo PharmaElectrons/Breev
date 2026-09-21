@@ -22,7 +22,7 @@ async function main(): Promise<void> {
 
   const applicationPool = new Pool({
     connectionString: applicationUrl,
-    connectionTimeoutMillis: 1_000,
+    connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 1_000,
     max: 1,
   });
