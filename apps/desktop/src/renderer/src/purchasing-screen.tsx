@@ -358,9 +358,9 @@ export function PurchasingRouteView({
   }
 
   const activeIndex = drafts.findIndex((draft) => draft.id === activeDraft?.id);
-  const canUseOcr =
-    identity?.state === "authenticated" &&
-    identity.entitlement.capabilities.includes("purchase-invoice-ocr");
+  // const canUseOcr =
+  //   identity?.state === "authenticated" &&
+  //   identity.entitlement.capabilities.includes("purchase-invoice-ocr");
   const columns = [
     copy.item,
     copy.quantity,
@@ -407,7 +407,8 @@ export function PurchasingRouteView({
         >
           <span aria-hidden="true">🔍</span> {copy.postedInvoices}
         </button>
-        {canManageDrafts ? (
+        {/* Purchase Return workflow is accessed via Posted Invoices (Milestone 2) */}
+        {/* {canManageDrafts ? (
           <button
             type="button"
             className="purchase-view-tab"
@@ -416,7 +417,7 @@ export function PurchasingRouteView({
           >
             <span aria-hidden="true">↩</span> {copy.returnInvoice}
           </button>
-        ) : null}
+        ) : null} */}
         {canManageSuppliers ? (
           <button
             type="button"
@@ -428,7 +429,8 @@ export function PurchasingRouteView({
             <span aria-hidden="true">🏬</span> {copy.suppliers}
           </button>
         ) : null}
-        {canManageDrafts && view === "invoice" ? (
+        {/* Document adjustments and returns are accessed via Posted Invoices; print is Milestone 3/4 */}
+        {/* {canManageDrafts && view === "invoice" ? (
           <div className="purchase-document-actions">
             <button
               type="button"
@@ -456,7 +458,7 @@ export function PurchasingRouteView({
               {copy.adjustInvoice}
             </button>
           </div>
-        ) : null}
+        ) : null} */}
       </div>
       {!canManageDrafts ? <p role="status">{copy.postedReviewOnly}</p> : null}
       <div
@@ -513,13 +515,15 @@ export function PurchasingRouteView({
                   ))}
                 </select>
               </label>
-              <div className="purchase-header-value">
+              {/* Supplier live debt belongs to Milestone 3 accounting */}
+              {/* <div className="purchase-header-value">
                 <span>{copy.supplierDebt}</span>
                 <output aria-label={copy.supplierDebt} title={copy.unavailable}>
                   — {copy.iqd}
                 </output>
-              </div>
-              <label className="purchase-item-search">
+              </div> */}
+              {/* Item search is handled in-table via PurchaseRowEntry (Milestone 2) */}
+              {/* <label className="purchase-item-search">
                 {copy.itemSearch}
                 <input
                   type="search"
@@ -527,7 +531,7 @@ export function PurchasingRouteView({
                   placeholder={copy.itemSearchHint}
                   aria-describedby="purchase-lines-state"
                 />
-              </label>
+              </label> */}
             </div>
           </fieldset>
           {loading ? <p role="status">{copy.loading}</p> : null}
@@ -619,7 +623,8 @@ export function PurchasingRouteView({
         )}
 
         <footer className="purchase-footer" data-purchase-editor>
-          <div className="purchase-totals" aria-label={copy.invoiceTotals}>
+          {/* Invoice totals are dynamically calculated and rendered in PurchaseReview (PurchaseRowEntry) */}
+          {/* <div className="purchase-totals" aria-label={copy.invoiceTotals}>
             <div className="purchase-total">
               <span>{copy.itemsCost}</span>
               <output title={copy.unavailable}>
@@ -660,7 +665,7 @@ export function PurchasingRouteView({
                 — <small>{copy.iqd}</small>
               </output>
             </div>
-          </div>
+          </div> */}
           {activeDraft === null ? null : (
             <dl className="purchase-snapshot" aria-label={copy.activeInvoice}>
               <div>
@@ -717,7 +722,8 @@ export function PurchasingRouteView({
             <button className="quiet-button" type="button" onClick={newDraft}>
               <span aria-hidden="true">＋</span> {copy.newDraft}
             </button>
-            {canUseOcr ? (
+            {/* OCR belongs to Milestone 4; invoice/draft printing belongs to Milestone 3/4 */}
+            {/* {canUseOcr ? (
               <button
                 className="purchase-ocr-button"
                 type="button"
@@ -742,7 +748,7 @@ export function PurchasingRouteView({
               title={copy.unavailable}
             >
               <span aria-hidden="true">↩</span> {copy.printReturn}
-            </button>
+            </button> */}
             <button
               className="danger-button"
               type="button"
