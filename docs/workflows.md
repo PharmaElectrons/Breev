@@ -71,10 +71,17 @@ The sales search button opens the popup list of completed/saved invoices with pr
 
 ### Count
 
-1. Start/resume a Count Session and focus Barcode/Item.
-2. Repeat Barcode/Item → new balance → Enter. The balance may be entered in the base unit or as a combination of large and small units (at 1 pack = 4 strips, "2 packs + 1 strip" = 9 strips); the system converts to an integer base-unit quantity. An input calculator may assist entry.
-3. Show recorded value, converted Inventory Unit count, variance, balances before and after, and required reason/evidence/approval. Applying a variance posts an independent movement that never rewrites prior history; it does not edit Product or Batch quantity.
-4. Return focus to Barcode/Item. The session keeps both the observation and the applied movement for audit/reconciliation.
+1. Open the Count Sessions screen from Inventory. Resume the listed active session when one exists; a new session is available when none is active. An older active session remains open for its unfinished count or pending variance and must be completed explicitly rather than silently discarded. Completed sessions appear separately and remain reviewable.
+2. In the session, scan a full barcode and press Enter, or type at least two characters to choose a product from the live suggestions by mouse or Arrow Up/Down and Enter. Focus moves to the count quantity. Barcode scan plus Enter remains a direct path.
+3. Enter the actual counted balance in the base unit or as a combination of large and small units (at 1 pack = 4 strips, "2 packs + 1 strip" = 9 strips); the system converts to an integer base-unit quantity. Save Balance records a line with Before, After, and Difference and marks a variance `Pending application`. Inventory remains unchanged at this point.
+4. An authorized approver opens Apply difference, enters a nonblank reason and evidence/note, reviews the variance, and applies it. The line becomes Done and an independent movement changes inventory exactly once. The movement never rewrites prior history or edits Product or Batch quantity. A rejected, stale, or failed application leaves the pending line reviewable.
+5. Return focus to Barcode/Item for the next line. Once pending differences are resolved, complete the session; it then appears under Completed Sessions. The session retains both observations and applied movements for audit and reconciliation.
+
+### Inventory review, basket, and sensitive export
+
+The operational Inventory grid is read-only and uses the full available width. Selecting a row gives a visible state and a route to the approved Item Movement Details; no inventory sidebar or branch-transfer control is part of Phase One. The grid has a live search input, sortable balance, value, average cost, and risk columns, column settings, an Order Basket link, protected export, and Count Sessions. Inventory KPI cards and retail-price sorting belong to older QA expectations rather than the approved Phase One inventory view; operational summaries belong on the dashboard. The old prototype's separate Search, Refresh, Print, and Exit toolbar controls are not part of this view: search is already live, reload follows normal data refresh, inventory printing is not approved here, and child pages provide a return route.
+
+Adding an item to the Order Basket gives visible success or failure feedback and updates the basket count. The basket has a direct return link to Inventory. The owner-only sensitive inventory export requires password reauthentication, opens a native save-location dialog, and saves a protected JSON file; success, cancellation, or failure is reported. CSV or Excel, if separately approved, is an additional format and never replaces the protected JSON export.
 
 ### Expiry, recall, quarantine
 
