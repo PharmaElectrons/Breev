@@ -19,9 +19,11 @@ import { ProductForm } from "./product-form";
 import type { PurchaseItemSelection } from "./purchase-item-details";
 import {
   commitPurchaseDraftRow,
+  discardPurchaseDraftRow,
   purchasingCommandAttempt,
   PurchasingApiDenied,
   requestPurchaseEntryPreferences,
+  updatePurchaseDraftRow,
   updatePurchaseEntryPreferences,
   type PurchasingCommandAttempt,
 } from "./purchasing-api";
@@ -79,6 +81,14 @@ export function PurchaseRowEntry({
   const [lotNumber, setLotNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [unitKey, setUnitKey] = useState("inventory-unit");
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [editQuantity, setEditQuantity] = useState("1");
+  const [editCostFils, setEditCostFils] = useState("0");
+  const [editRetailPriceFils, setEditRetailPriceFils] = useState("0");
+  const [editMarginPercentage, setEditMarginPercentage] = useState("0");
+  const [editExpiryDate, setEditExpiryDate] = useState("");
+  const [editLotNumber, setEditLotNumber] = useState("");
+  const [editNotes, setEditNotes] = useState("");
   const [quickCreateValue, setQuickCreateValue] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,10 +136,17 @@ export function PurchaseRowEntry({
   }, [onItemSelectionChanged, preferences, product]);
 
   useEffect(() => {
-    if (preferences === null || initialFocusDone.current) return;
-    initialFocusDone.current = true;
-    const first = purchaseEntryProgression(preferences, null)[0] ?? "item";
-    const timer = window.setTimeout(() => fieldRefs.current[first]?.focus(), 0);
+    if (initialFocusDone.current) return;
+    const first =
+      preferences === null
+        ? "item"
+        : (purchaseEntryProgression(preferences, null)[0] ?? "item");
+    const timer = window.setTimeout(() => {
+      fieldRefs.current[first]?.focus();
+      if (preferences !== null) {
+        initialFocusDone.current = true;
+      }
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [preferences]);
 
@@ -343,6 +360,117 @@ export function PurchaseRowEntry({
     setUnitKey("inventory-unit");
   }
 
+  function startEditingRow(row: PurchaseDraftDetail["rows"][number]): void {
+    setEditingRowId(row.id);
+    setEditQuantity(row.enteredQuantity);
+    setEditCostFils(row.costFils);
+    setEditRetailPriceFils(row.retailPriceFils);
+    setEditMarginPercentage(row.marginPercentage ?? "0");
+    setEditExpiryDate(row.expiryDate ?? "");
+    setEditLotNumber(row.lotNumber ?? "");
+    setEditNotes(row.notes ?? "");
+    setError(null);
+  }
+
+  function cancelEditingRow(): void {
+    setEditingRowId(null);
+  }
+
+  async function saveEditedRow(
+    row: PurchaseDraftDetail["rows"][number],
+  ): Promise<void> {
+    if (!isPositiveInteger(editQuantity)) {
+      setError(copy.quantityInvalid);
+      return;
+    }
+    if (!isUnsignedInteger(editCostFils)) {
+      setError(copy.costInvalid);
+      return;
+    }
+    const pricing =
+      row.pricingMethod === "by-price"
+        ? ({
+            method: "by-price",
+            retailPriceFils: editRetailPriceFils,
+          } as const)
+        : ({
+            marginPercentage: editMarginPercentage,
+            method: "by-percentage",
+          } as const);
+    const body = {
+      costFils: editCostFils,
+      enteredQuantity: editQuantity,
+      expectedVersion: draft.version,
+      expiryDate: editExpiryDate === "" ? null : editExpiryDate,
+      itemId: row.itemId,
+      lotNumber: editLotNumber.trim() === "" ? null : editLotNumber.trim(),
+      notes: editNotes.trim() === "" ? null : editNotes.trim(),
+      pricing,
+      unit: row.unit,
+    };
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await updatePurchaseDraftRow(baseUrl, draft.id, row.id, {
+        ...body,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      onDraftChanged(result.draft);
+      setEditingRowId(null);
+      setMessage(copy.rowUpdated);
+      setError(null);
+    } catch (caught) {
+      setError(
+        caught instanceof PurchasingApiDenied
+          ? copy.rowError
+          : copy.apiUnavailable,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteRow(
+    row: PurchaseDraftDetail["rows"][number],
+  ): Promise<void> {
+    if (!window.confirm(copy.confirmDeleteRow)) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await discardPurchaseDraftRow(baseUrl, draft.id, row.id, {
+        expectedVersion: draft.version,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      onDraftChanged(result);
+      if (editingRowId === row.id) setEditingRowId(null);
+      setMessage(copy.rowDeleted);
+      setError(null);
+    } catch (caught) {
+      setError(
+        caught instanceof PurchasingApiDenied
+          ? copy.rowError
+          : copy.apiUnavailable,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleEditKeyDown(
+    row: PurchaseDraftDetail["rows"][number],
+    event: KeyboardEvent<HTMLElement>,
+  ): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveEditedRow(row);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancelEditingRow();
+    }
+  }
+
   async function savePreferences(): Promise<void> {
     if (settingsDraft === null) return;
     const fingerprint = JSON.stringify(settingsDraft);
@@ -526,39 +654,137 @@ export function PurchaseRowEntry({
               <th scope="col" data-column-field="inventory-units">
                 {copy.inventoryUnits}
               </th>
+              <th scope="col" data-column-field="actions">
+                {copy.rowActions}
+              </th>
             </tr>
           </thead>
           <tbody>
-            {draft.rows.map((row, rowIndex) => (
-              <tr key={row.id}>
-                <th scope="row" data-column-field="ordinal">
-                  {row.ordinal}
-                </th>
-                {visibleColumns.map(({ field }) => (
-                  <td
-                    key={field}
-                    data-column-field={field}
-                    // The item name is the one committed value long enough to be
-                    // clipped by its column, so it carries its full text as a
-                    // tooltip. The other columns are short numbers and dates.
-                    title={field === "item" ? row.itemDisplayName : undefined}
-                    data-post-row={rowIndex}
-                    data-post-field={POST_FIELD[field]}
-                    data-post-error={isPostFieldError(
+            {draft.rows.map((row, rowIndex) => {
+              const isEditing = editingRowId === row.id;
+              return (
+                <tr key={row.id} data-editing={isEditing ? "true" : undefined}>
+                  <th scope="row" data-column-field="ordinal">
+                    {row.ordinal}
+                  </th>
+                  {visibleColumns.map(({ field }) => {
+                    const hasPostError = isPostFieldError(
                       postDenial,
                       rowIndex,
                       POST_FIELD[field],
+                    );
+                    return (
+                      <td
+                        key={field}
+                        data-column-field={field}
+                        title={
+                          field === "item"
+                            ? row.itemDisplayName
+                            : hasPostError
+                              ? copy.editRow
+                              : undefined
+                        }
+                        data-post-row={rowIndex}
+                        data-post-field={POST_FIELD[field]}
+                        data-post-error={hasPostError}
+                        tabIndex={-1}
+                        onClick={
+                          !isEditing && hasPostError
+                            ? () => startEditingRow(row)
+                            : undefined
+                        }
+                        style={
+                          !isEditing && hasPostError
+                            ? { cursor: "pointer" }
+                            : undefined
+                        }
+                      >
+                        {isEditing
+                          ? renderInlineEditor(row, field)
+                          : committedValue(field, row, copy)}
+                      </td>
+                    );
+                  })}
+                  <td data-column-field="inventory-units">
+                    {isEditing ? (
+                      isPositiveInteger(editQuantity) ? (
+                        <>
+                          <bdi>
+                            {(
+                              BigInt(editQuantity) *
+                              BigInt(row.baseUnitsPerEnteredUnit)
+                            ).toString()}
+                          </bdi>{" "}
+                          {row.inventoryUnitName}
+                        </>
+                      ) : (
+                        "—"
+                      )
+                    ) : (
+                      <>
+                        <bdi>{row.inventoryUnitQuantity}</bdi>{" "}
+                        {row.inventoryUnitName}
+                      </>
                     )}
-                    tabIndex={-1}
-                  >
-                    {committedValue(field, row, copy)}
                   </td>
-                ))}
-                <td data-column-field="inventory-units">
-                  <bdi>{row.inventoryUnitQuantity}</bdi> {row.inventoryUnitName}
-                </td>
-              </tr>
-            ))}
+                  <td data-column-field="actions">
+                    <div className="purchase-row-actions-cell">
+                      {isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            className="purchase-row-action-btn save"
+                            disabled={busy}
+                            aria-label={copy.saveRow}
+                            title={copy.saveRow}
+                            onClick={() => void saveEditedRow(row)}
+                          >
+                            <span aria-hidden="true">✓</span>
+                            <span>{copy.saveRow}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="purchase-row-action-btn cancel"
+                            disabled={busy}
+                            aria-label={copy.cancelEdit}
+                            title={copy.cancelEdit}
+                            onClick={cancelEditingRow}
+                          >
+                            <span aria-hidden="true">✕</span>
+                            <span>{copy.cancelEdit}</span>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="purchase-row-action-btn edit"
+                            disabled={busy || posting}
+                            aria-label={`${copy.editRow}: ${row.itemDisplayName}`}
+                            title={copy.editRow}
+                            onClick={() => startEditingRow(row)}
+                          >
+                            <span aria-hidden="true">✎</span>
+                            <span>{copy.editRow}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="purchase-row-action-btn delete"
+                            disabled={busy || posting}
+                            aria-label={`${copy.deleteRow}: ${row.itemDisplayName}`}
+                            title={copy.deleteRow}
+                            onClick={() => void deleteRow(row)}
+                          >
+                            <span aria-hidden="true">🗑</span>
+                            <span>{copy.deleteRow}</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             <tr className="purchase-entry-row" data-entry-epoch={entryEpoch}>
               <th scope="row" data-column-field="ordinal">
                 {draft.rows.length + 1}
@@ -573,6 +799,7 @@ export function PurchaseRowEntry({
                   ? "—"
                   : previewInventoryUnits(product, unitKey, quantity)}
               </td>
+              <td data-column-field="actions" />
             </tr>
           </tbody>
         </table>
@@ -742,6 +969,81 @@ export function PurchaseRowEntry({
             type="date"
             value={expiryDate}
             onChange={(event) => setExpiryDate(event.target.value)}
+          />
+        );
+    }
+  }
+
+  function renderInlineEditor(
+    row: PurchaseDraftDetail["rows"][number],
+    field: PurchaseEntryColumnField,
+  ): React.JSX.Element {
+    switch (field) {
+      case "item":
+        return (
+          <span className="purchase-row-edit-item" title={row.itemDisplayName}>
+            {row.itemDisplayName}
+          </span>
+        );
+      case "quantity":
+        return (
+          <input
+            className="purchase-row-edit-input"
+            aria-label={copy.rowQuantity}
+            inputMode="numeric"
+            value={editQuantity}
+            onChange={(e) => setEditQuantity(e.target.value)}
+            onKeyDown={(e) => handleEditKeyDown(row, e)}
+          />
+        );
+      case "cost":
+        return (
+          <input
+            className="purchase-row-edit-input"
+            aria-label={copy.rowCost}
+            inputMode="numeric"
+            value={editCostFils}
+            onChange={(e) => {
+              setEditCostFils(e.target.value);
+              if (row.pricingMethod === "by-percentage") {
+                setEditRetailPriceFils(
+                  calculatePurchaseRetailPreview(
+                    e.target.value,
+                    editMarginPercentage,
+                    "nearest-250-iqd",
+                  ),
+                );
+              }
+            }}
+            onKeyDown={(e) => handleEditKeyDown(row, e)}
+          />
+        );
+      case "selling-price": {
+        const locked = row.pricingMethod === "by-percentage";
+        return (
+          <input
+            className="purchase-row-edit-input"
+            aria-label={copy.sellingPrice}
+            inputMode="numeric"
+            readOnly={locked}
+            tabIndex={locked ? -1 : 0}
+            title={locked ? copy.lockedByPercentage : undefined}
+            value={editRetailPriceFils}
+            onChange={(e) => setEditRetailPriceFils(e.target.value)}
+            onKeyDown={(e) => handleEditKeyDown(row, e)}
+          />
+        );
+      }
+      case "expiry":
+        return (
+          <input
+            className="purchase-row-edit-input"
+            aria-label={copy.rowExpiry}
+            type="date"
+            autoFocus
+            value={editExpiryDate}
+            onChange={(e) => setEditExpiryDate(e.target.value)}
+            onKeyDown={(e) => handleEditKeyDown(row, e)}
           />
         );
     }
@@ -933,20 +1235,28 @@ function PurchaseReview({
         </ul>
       </div>
       {postDenial === null ? null : (
-        <p
+        <div
           className="form-error purchase-post-denial"
           id="purchase-post-denial"
           role="alert"
           aria-live="assertive"
+          data-denial-code={postDenial.code}
+          data-denial-rule={postDenial.fieldErrors[0]?.rule}
         >
-          {copy.postRejected} <bdi>{postDenial.code}</bdi>
-          {postDenial.fieldErrors[0]?.rule === undefined ? null : (
-            <>
-              {" "}
-              <bdi>{postDenial.fieldErrors[0].rule}</bdi>
-            </>
-          )}
-        </p>
+          {postDenial.code === "expiry-required" ||
+          postDenial.fieldErrors.some(
+            (e) => e.rule === "purchase.post.expiry-required-at-receipt",
+          )
+            ? copy.expiryRequiredPost
+            : postDenial.code === "lot-required" ||
+                postDenial.fieldErrors.some(
+                  (e) => e.rule === "purchase.post.lot-required-at-receipt",
+                )
+              ? copy.lotRequiredPost
+              : postDenial.code === "version-conflict"
+                ? copy.versionConflictPost
+                : copy.postRejected}
+        </div>
       )}
       <div className="purchase-review-actions">
         <button

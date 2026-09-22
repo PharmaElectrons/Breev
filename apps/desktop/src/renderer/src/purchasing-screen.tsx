@@ -129,7 +129,37 @@ export function PurchasingRouteView({
     postRecoveryStarted.current = true;
     const pending = readPendingPurchasePost(purchasePostAddress());
     if (pending === null) return;
-    void performPost(pending);
+    void (async () => {
+      try {
+        const detail = await requestPurchaseDraft(baseUrl, pending.draftId);
+        if (detail.status !== "active") {
+          clearPendingPurchasePost(purchasePostAddress());
+          return;
+        }
+        setActiveDraft(detail);
+        setSupplierInvoiceNumber(detail.supplierInvoiceNumber);
+        setSupplierId(detail.supplierId);
+        setSettlementContext(detail.settlementContext);
+        setInvoiceDate(detail.invoiceDate);
+        if (detail.version !== pending.expectedVersion) {
+          clearPendingPurchasePost(purchasePostAddress());
+          setPostDenial({
+            code: "version-conflict",
+            fieldErrors: [],
+            requestId: crypto.randomUUID(),
+            status: "denied",
+          });
+          return;
+        }
+        if (detail.rows.length === 0) {
+          clearPendingPurchasePost(purchasePostAddress());
+          return;
+        }
+        await performPost(pending);
+      } catch {
+        clearPendingPurchasePost(purchasePostAddress());
+      }
+    })();
   }, [baseUrl]);
 
   useEffect(() => {
@@ -150,6 +180,7 @@ export function PurchasingRouteView({
   async function showDraft(draft: PurchaseDraft): Promise<void> {
     registerRef.current?.close();
     setView("invoice");
+    clearPendingPurchasePost(purchasePostAddress());
 
     draftCommandAttempt.current = null;
     try {
@@ -178,6 +209,7 @@ export function PurchasingRouteView({
   }
 
   function resetDraftFields(): void {
+    clearPendingPurchasePost(purchasePostAddress());
     draftCommandAttempt.current = null;
     setActiveDraft(null);
     setSupplierInvoiceNumber("");
@@ -223,6 +255,21 @@ export function PurchasingRouteView({
       if (caught instanceof PurchasingApiDenied) {
         clearPendingPurchasePost(purchasePostAddress());
         setPostDenial(caught.denial);
+        if (caught.denial.code === "version-conflict") {
+          try {
+            const latest = await requestPurchaseDraft(baseUrl, attempt.draftId);
+            setActiveDraft(latest);
+            setSupplierInvoiceNumber(latest.supplierInvoiceNumber);
+            setSupplierId(latest.supplierId);
+            setSettlementContext(latest.settlementContext);
+            setInvoiceDate(latest.invoiceDate);
+            setDrafts((current) =>
+              current.map((draft) => (draft.id === latest.id ? latest : draft)),
+            );
+          } catch {
+            // Keep existing draft in place if fetch fails
+          }
+        }
       } else {
         setError(copy.postRetryPending);
       }
@@ -231,12 +278,17 @@ export function PurchasingRouteView({
     }
   }
 
-  async function saveDraft(event: React.FormEvent): Promise<void> {
-    event.preventDefault();
+  async function saveDraft(event?: React.FormEvent): Promise<void> {
+    if (event !== undefined) event.preventDefault();
     setError(null);
     setStatus(null);
+    if (supplierInvoiceNumber.trim() === "") {
+      setError(copy.invoiceNumberRequired);
+      invoiceRef.current?.focus();
+      return;
+    }
     if (supplierId === "") {
-      setError(copy.error);
+      setError(copy.supplierRequired);
       supplierRef.current?.focus();
       return;
     }
@@ -245,7 +297,7 @@ export function PurchasingRouteView({
         invoiceDate,
         settlementContext,
         supplierId,
-        supplierInvoiceNumber,
+        supplierInvoiceNumber: supplierInvoiceNumber.trim(),
       };
       const attempt = purchasingCommandAttempt(
         draftCommandAttempt.current,
@@ -271,6 +323,8 @@ export function PurchasingRouteView({
       draftCommandAttempt.current = null;
       const detail = await requestPurchaseDraft(baseUrl, result.draft.id);
       setActiveDraft(detail);
+      clearPendingPurchasePost(purchasePostAddress());
+      setPostDenial(null);
       setWarning(result.warnings.length > 0);
       setStatus(copy.saved);
       await reload();
@@ -292,6 +346,8 @@ export function PurchasingRouteView({
 
   async function confirmDiscard(): Promise<void> {
     if (activeDraft === null || !window.confirm(copy.confirmDiscard)) return;
+    clearPendingPurchasePost(purchasePostAddress());
+    setPostDenial(null);
     try {
       const attempt = purchasingCommandAttempt(
         draftCommandAttempt.current,
@@ -313,6 +369,8 @@ export function PurchasingRouteView({
       await reload();
     } catch {
       setError(copy.error);
+    } finally {
+      draftCommandAttempt.current = null;
     }
   }
 
@@ -481,6 +539,12 @@ export function PurchasingRouteView({
                   required
                   value={invoiceDate}
                   onChange={(event) => setInvoiceDate(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      invoiceRef.current?.focus();
+                    }
+                  }}
                 />
               </label>
               <label>
@@ -491,9 +555,21 @@ export function PurchasingRouteView({
                   maxLength={120}
                   placeholder={copy.invoiceNumberHint}
                   value={supplierInvoiceNumber}
-                  onChange={(event) =>
-                    setSupplierInvoiceNumber(event.target.value)
-                  }
+                  onChange={(event) => {
+                    setSupplierInvoiceNumber(event.target.value);
+                    if (error !== null) setError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      if (supplierInvoiceNumber.trim() === "") {
+                        setError(copy.invoiceNumberRequired);
+                        return;
+                      }
+                      setError(null);
+                      supplierRef.current?.focus();
+                    }
+                  }}
                 />
               </label>
               <label>
@@ -502,7 +578,25 @@ export function PurchasingRouteView({
                   ref={supplierRef}
                   required
                   value={supplierId}
-                  onChange={(event) => setSupplierId(event.target.value)}
+                  onChange={(event) => {
+                    setSupplierId(event.target.value);
+                    if (error !== null) setError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      if (supplierInvoiceNumber.trim() === "") {
+                        setError(copy.invoiceNumberRequired);
+                        invoiceRef.current?.focus();
+                        return;
+                      }
+                      if (supplierId === "") {
+                        setError(copy.supplierRequired);
+                        return;
+                      }
+                      void saveDraft();
+                    }
+                  }}
                 >
                   <option value="">{copy.select}</option>
                   {headerSuppliers.map((supplier) => (
@@ -515,6 +609,18 @@ export function PurchasingRouteView({
                   ))}
                 </select>
               </label>
+              {activeDraft === null ? (
+                <div className="purchase-header-actions">
+                  <button
+                    type="submit"
+                    className="primary-button purchase-header-submit"
+                    disabled={activeSuppliers.length === 0}
+                    title={copy.startItemEntry}
+                  >
+                    <span aria-hidden="true">↵</span> {copy.startItemEntry}
+                  </button>
+                </div>
+              ) : null}
               {/* Supplier live debt belongs to Milestone 3 accounting */}
               {/* <div className="purchase-header-value">
                 <span>{copy.supplierDebt}</span>
@@ -561,228 +667,7 @@ export function PurchasingRouteView({
           selection={itemSelection}
         />
 
-        {activeDraft === null ? (
-          <div
-            className="purchase-lines-wrap"
-            role="group"
-            aria-label={copy.scrollLines}
-            tabIndex={0}
-          >
-            <table className="purchase-lines-table">
-              <caption className="visually-hidden">{copy.invoiceItems}</caption>
-              <colgroup>
-                <col className="purchase-line-number" />
-                <col className="purchase-line-name" />
-                {columns.slice(1).map((column) => (
-                  <col key={column} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  {columns.map((column) => (
-                    <th scope="col" key={column}>
-                      {column}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={12} className="purchase-lines-empty">
-                    <p>{copy.noItems}</p>
-                    <p id="purchase-lines-state">{copy.lineEntryUnavailable}</p>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <PurchaseRowEntry
-            baseUrl={baseUrl}
-            draft={activeDraft}
-            onPost={requestPost}
-            postDenial={postDenial}
-            posting={posting}
-            // `setItemSelection` is a `useState` setter, and it has to stay
-            // referentially stable: the row entry publishes its selection from
-            // an effect that depends on this callback, so a fresh function on
-            // every render would re-run that effect — and its clearing cleanup —
-            // on every keystroke.
-            onItemSelectionChanged={setItemSelection}
-            onDraftChanged={(nextDraft) => {
-              setPostDenial(null);
-              setActiveDraft(nextDraft);
-              setDrafts((current) =>
-                current.map((draft) =>
-                  draft.id === nextDraft.id ? nextDraft : draft,
-                ),
-              );
-            }}
-          />
-        )}
-
-        <footer className="purchase-footer" data-purchase-editor>
-          {/* Invoice totals are dynamically calculated and rendered in PurchaseReview (PurchaseRowEntry) */}
-          {/* <div className="purchase-totals" aria-label={copy.invoiceTotals}>
-            <div className="purchase-total">
-              <span>{copy.itemsCost}</span>
-              <output title={copy.unavailable}>
-                — <small>{copy.iqd}</small>
-              </output>
-            </div>
-            <label>
-              {copy.expenses}
-              <input disabled value="" placeholder="—" />
-            </label>
-            <label>
-              {copy.discountPercentage}
-              <input
-                disabled
-                value={activeDraft?.allowanceSnapshot.percentage ?? ""}
-                placeholder="—"
-              />
-            </label>
-            <label>
-              {copy.discountAmount}
-              <input disabled value="" placeholder="—" />
-            </label>
-            <div className="purchase-total">
-              <span>{copy.afterDiscount}</span>
-              <output title={copy.unavailable}>
-                — <small>{copy.iqd}</small>
-              </output>
-            </div>
-            <div className="purchase-total purchase-grand-total">
-              <span>{copy.grandTotal}</span>
-              <output title={copy.unavailable}>
-                — <small>{copy.iqd}</small>
-              </output>
-            </div>
-            <div className="purchase-total purchase-return-total">
-              <span>{copy.returnTotal}</span>
-              <output title={copy.unavailable}>
-                — <small>{copy.iqd}</small>
-              </output>
-            </div>
-          </div> */}
-          {activeDraft === null ? null : (
-            <dl className="purchase-snapshot" aria-label={copy.activeInvoice}>
-              <div>
-                <dt>{copy.snapshot}</dt>
-                <dd>{activeDraft.allowanceSnapshot.percentage}%</dd>
-              </div>
-              <div>
-                <dt>{copy.basis}</dt>
-                <dd>
-                  <bdi>{activeDraft.allowanceSnapshot.basisFils}</bdi>{" "}
-                  {copy.fils}
-                </dd>
-              </div>
-              <div>
-                <dt>{copy.version}</dt>
-                <dd>{activeDraft.version}</dd>
-              </div>
-            </dl>
-          )}
-          <div className="purchase-actions">
-            <button
-              className="quiet-button"
-              type="button"
-              disabled={
-                drafts.length === 0 || activeIndex === drafts.length - 1
-              }
-              onClick={() => {
-                const draft = drafts[activeIndex + 1];
-                if (draft) void showDraft(draft);
-              }}
-            >
-              <span aria-hidden="true">‹</span> {copy.previous}
-            </button>
-            <button
-              className="quiet-button"
-              type="button"
-              disabled={activeIndex < 0}
-              onClick={() => {
-                const draft = drafts[activeIndex - 1];
-                if (draft) void showDraft(draft);
-                else newDraft();
-              }}
-            >
-              {copy.next} <span aria-hidden="true">›</span>
-            </button>
-            <button
-              className="quiet-button"
-              type="button"
-              onClick={focusDraftRegister}
-              aria-haspopup="dialog"
-            >
-              <span aria-hidden="true">🔍</span> {copy.searchDrafts}
-            </button>
-            <button className="quiet-button" type="button" onClick={newDraft}>
-              <span aria-hidden="true">＋</span> {copy.newDraft}
-            </button>
-            {/* OCR belongs to Milestone 4; invoice/draft printing belongs to Milestone 3/4 */}
-            {/* {canUseOcr ? (
-              <button
-                className="purchase-ocr-button"
-                type="button"
-                disabled
-                title={copy.unavailable}
-              >
-                <span aria-hidden="true">📷</span> {copy.importImage}
-              </button>
-            ) : null}
-            <button
-              className="quiet-button"
-              type="button"
-              disabled
-              title={copy.unavailable}
-            >
-              <span aria-hidden="true">🖨</span> {copy.print}
-            </button>
-            <button
-              className="quiet-button"
-              type="button"
-              disabled
-              title={copy.unavailable}
-            >
-              <span aria-hidden="true">↩</span> {copy.printReturn}
-            </button> */}
-            <button
-              className="danger-button"
-              type="button"
-              disabled={activeDraft === null}
-              onClick={() => void confirmDiscard()}
-            >
-              <span aria-hidden="true">⌫</span> {copy.discard}
-            </button>
-            <div className="purchase-payment-actions">
-              <label className="purchase-payment">
-                <span className="visually-hidden">{copy.context}</span>
-                <select
-                  value={settlementContext}
-                  onChange={(event) =>
-                    setSettlementContext(event.target.value as "cash" | "debt")
-                  }
-                >
-                  <option value="cash">{copy.cash}</option>
-                  <option value="debt">{copy.debt}</option>
-                </select>
-              </label>
-              <button
-                className="primary-button"
-                type="submit"
-                form="purchase-header-form"
-                disabled={activeSuppliers.length === 0}
-              >
-                <span aria-hidden="true">▣</span>{" "}
-                {activeDraft === null ? copy.createDraft : copy.saveHeader}
-              </button>
-            </div>
-          </div>
-        </footer>
-        {postedPurchase === null ? null : (
+        {postedPurchase !== null ? (
           <PostedPurchaseResult
             result={postedPurchase}
             onContinue={() => {
@@ -791,6 +676,169 @@ export function PurchasingRouteView({
               queueMicrotask(() => invoiceRef.current?.focus());
             }}
           />
+        ) : (
+          <>
+            {activeDraft === null ? (
+              <div
+                className="purchase-lines-wrap"
+                role="group"
+                aria-label={copy.scrollLines}
+                tabIndex={0}
+              >
+                <table className="purchase-lines-table">
+                  <caption className="visually-hidden">
+                    {copy.invoiceItems}
+                  </caption>
+                  <colgroup>
+                    <col className="purchase-line-number" />
+                    <col className="purchase-line-name" />
+                    {columns.slice(1).map((column) => (
+                      <col key={column} />
+                    ))}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">#</th>
+                      {columns.map((column) => (
+                        <th scope="col" key={column}>
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colSpan={12} className="purchase-lines-empty">
+                        <p>{copy.noItems}</p>
+                        <p id="purchase-lines-state">{copy.headerPrompt}</p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <PurchaseRowEntry
+                baseUrl={baseUrl}
+                draft={activeDraft}
+                onPost={requestPost}
+                postDenial={postDenial}
+                posting={posting}
+                onItemSelectionChanged={setItemSelection}
+                onDraftChanged={(nextDraft) => {
+                  clearPendingPurchasePost(purchasePostAddress());
+                  setPostDenial(null);
+                  setActiveDraft(nextDraft);
+                  setDrafts((current) =>
+                    current.map((draft) =>
+                      draft.id === nextDraft.id ? nextDraft : draft,
+                    ),
+                  );
+                }}
+              />
+            )}
+
+            <footer className="purchase-footer" data-purchase-editor>
+              {activeDraft === null ? null : (
+                <dl
+                  className="purchase-snapshot"
+                  aria-label={copy.activeInvoice}
+                >
+                  <div>
+                    <dt>{copy.snapshot}</dt>
+                    <dd>{activeDraft.allowanceSnapshot.percentage}%</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.basis}</dt>
+                    <dd>
+                      <bdi>{activeDraft.allowanceSnapshot.basisFils}</bdi>{" "}
+                      {copy.fils}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.version}</dt>
+                    <dd>{activeDraft.version}</dd>
+                  </div>
+                </dl>
+              )}
+              <div className="purchase-actions">
+                <button
+                  className="quiet-button"
+                  type="button"
+                  disabled={
+                    drafts.length === 0 || activeIndex === drafts.length - 1
+                  }
+                  onClick={() => {
+                    if (activeIndex < drafts.length - 1) {
+                      void showDraft(drafts[activeIndex + 1]!);
+                    }
+                  }}
+                >
+                  <span aria-hidden="true">◀</span> {copy.previous}
+                </button>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  disabled={activeIndex <= 0}
+                  onClick={() => {
+                    if (activeIndex > 0) {
+                      void showDraft(drafts[activeIndex - 1]!);
+                    }
+                  }}
+                >
+                  {copy.next} <span aria-hidden="true">▶</span>
+                </button>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  onClick={focusDraftRegister}
+                >
+                  <span aria-hidden="true">🔍</span> {copy.searchDrafts}
+                </button>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  onClick={resetDraftFields}
+                >
+                  <span aria-hidden="true">＋</span> {copy.newDraft}
+                </button>
+                <button
+                  className="danger-button"
+                  type="button"
+                  disabled={activeDraft === null}
+                  onClick={() => void confirmDiscard()}
+                >
+                  <span aria-hidden="true">⌫</span> {copy.discard}
+                </button>
+                <div className="purchase-payment-actions">
+                  <label className="purchase-payment">
+                    <span className="visually-hidden">{copy.context}</span>
+                    <select
+                      value={settlementContext}
+                      onChange={(event) => {
+                        clearPendingPurchasePost(purchasePostAddress());
+                        setPostDenial(null);
+                        setSettlementContext(
+                          event.target.value as "cash" | "debt",
+                        );
+                      }}
+                    >
+                      <option value="cash">{copy.cash}</option>
+                      <option value="debt">{copy.debt}</option>
+                    </select>
+                  </label>
+                  <button
+                    className="primary-button"
+                    type="submit"
+                    form="purchase-header-form"
+                    disabled={activeSuppliers.length === 0}
+                  >
+                    <span aria-hidden="true">▣</span>{" "}
+                    {activeDraft === null ? copy.createDraft : copy.saveHeader}
+                  </button>
+                </div>
+              </div>
+            </footer>
+          </>
         )}
       </div>
       {canManageSuppliers ? (

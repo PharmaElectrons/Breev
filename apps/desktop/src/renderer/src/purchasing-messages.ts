@@ -20,7 +20,12 @@ export const purchasingMessages = {
     invoiceItems: "Invoice items",
     noItems: "No items have been added to this invoice.",
     lineEntryUnavailable:
-      "Item entry is not available yet. You can save the invoice header.",
+      "Item entry will open once the invoice header is completed.",
+    startItemEntry: "Start adding items ↵",
+    headerPrompt:
+      "Enter supplier invoice number and select supplier, then press Enter to start adding items.",
+    invoiceNumberRequired: "Please enter the supplier invoice number.",
+    supplierRequired: "Please select a supplier.",
     invoiceTotals: "Invoice totals",
     itemsCost: "Items cost",
     expenses: "Invoice expenses",
@@ -190,11 +195,28 @@ export const purchasingMessages = {
     post: "Post purchase",
     posting: "Posting…",
     postExplicitHint: "Posting happens only when you activate this button.",
-    postRejected: "Posting was refused. The draft is unchanged. Rule:",
+    postRejected: "Posting refused; the draft remains unchanged.",
+    expiryRequiredPost:
+      "Posting refused: an expiry date is required for medication and cold-chain items.",
+    lotRequiredPost:
+      "Posting refused: a lot number is required before posting.",
+    missingRequiredReceiptEvidence:
+      "Cannot post: one or more items lack a required expiry date.",
+    deleteRow: "Delete item",
+    editRow: "Edit item",
+    saveRow: "Save",
+    cancelEdit: "Cancel",
+    rowActions: "Actions",
+    rowUpdated: "Row updated and saved durably.",
+    rowDeleted: "Row deleted from draft.",
+    confirmDeleteRow: "Remove this row from the draft?",
     postRetryPending:
       "The result could not be confirmed. Breev will retry this same posting safely after reload.",
     postedPurchase: "Posted purchase",
-    postedSuccess: "Purchase posted atomically. A fresh invoice is ready.",
+    postedSuccess:
+      "Purchase invoice posted and inventory updated successfully.",
+    versionConflictPost:
+      "Posting conflict: the draft was modified. Please review and retry.",
     documentNumber: "Purchase document",
     documentSeries: "Series",
     documentSequence: "Sequence",
@@ -289,7 +311,12 @@ export const purchasingMessages = {
     scrollLines: "جدول مواد الفاتورة القابل للتمرير",
     invoiceItems: "مواد الفاتورة",
     noItems: "لم تُضف مواد للفاتورة بعد.",
-    lineEntryUnavailable: "إدخال المواد غير متاح بعد. يمكنك حفظ رأس الفاتورة.",
+    lineEntryUnavailable: "سيتم فتح إدخال المواد بمجرد إكمال رأس الفاتورة.",
+    startItemEntry: "بدء إدخال المواد ↵",
+    headerPrompt:
+      "أدخل رقم فاتورة المورد واختر المورد ثم اضغط Enter لبدء إدخال المواد.",
+    invoiceNumberRequired: "يرجى إدخال رقم فاتورة المورد.",
+    supplierRequired: "يرجى اختيار المورد.",
     invoiceTotals: "إجماليات الفاتورة",
     itemsCost: "مجموع الكلفة",
     expenses: "إضافة مصاريف للفاتورة",
@@ -454,11 +481,26 @@ export const purchasingMessages = {
     post: "ترحيل الشراء",
     posting: "جارٍ الترحيل…",
     postExplicitHint: "لا يتم الترحيل إلا عند تفعيل هذا الزر.",
-    postRejected: "رُفض الترحيل ولم تتغير المسودة. القاعدة:",
+    postRejected: "رُفض الترحيل ولم تتغير المسودة.",
+    expiryRequiredPost:
+      "رُفض الترحيل: تاريخ الانتهاء إلزامي للمنتجات الدوائية والمبردة.",
+    lotRequiredPost: "رُفض الترحيل: رقم التشغيلة إلزامي قبل الترحيل.",
+    missingRequiredReceiptEvidence:
+      "لا يمكن الترحيل: يوجد بند أو أكثر بلا تاريخ انتهاء إلزامي.",
+    deleteRow: "حذف البند",
+    editRow: "تعديل البند",
+    saveRow: "حفظ",
+    cancelEdit: "إلغاء",
+    rowActions: "الإجراءات",
+    rowUpdated: "تم تحديث البند وحفظه بشكل دائم.",
+    rowDeleted: "تم حذف البند من المسودة.",
+    confirmDeleteRow: "هل تريد حذف هذا البند من المسودة؟",
     postRetryPending:
       "تعذر تأكيد النتيجة. سيعيد Breev محاولة الترحيل نفسها بأمان بعد إعادة التحميل.",
     postedPurchase: "شراء مُرحّل",
-    postedSuccess: "تم ترحيل الشراء ذرياً. فاتورة جديدة جاهزة.",
+    postedSuccess: "تم ترحيل فاتورة الشراء وتحديث المخزون بنجاح.",
+    versionConflictPost:
+      "تعارض في النسخة: تم تعديل المسودة. يرجى مراجعتها وإعادة الترحيل.",
     documentNumber: "مستند الشراء",
     documentSeries: "السلسلة",
     documentSequence: "التسلسل",

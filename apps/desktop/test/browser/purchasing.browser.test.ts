@@ -313,6 +313,27 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.getByText("Draft discarded after confirmation."),
     ).toBeVisible();
+
+    // Verify post-discard state: placeholder shows helpful prompt and invoice number is focused
+    await expect(
+      page.getByText(
+        "Enter supplier invoice number and select supplier, then press Enter to start adding items.",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Start adding items ↵" }),
+    ).toBeVisible();
+    await expect(invoice).toBeFocused();
+
+    // Re-enter new invoice seamlessly via keyboard: Enter moves to supplier, Enter creates draft and focuses table
+    await invoice.fill("SUP-2026-RECOVER");
+    await invoice.press("Enter");
+    await expect(supplier).toBeFocused();
+    await supplier.selectOption(supplierId);
+    await supplier.press("Enter");
+
+    await expect(page.getByText("Draft saved and durable.")).toBeVisible();
+    await expect(page.getByPlaceholder("Search to add an item…")).toBeFocused();
   });
 
   test("enters durable rows by scanner and Enter, quick-creates a Product, and follows persisted column order", async ({
@@ -542,6 +563,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "Expiry",
       "Primary cost",
       "Inventory Units",
+      "Actions",
     ]);
 
     await page.reload();
@@ -616,6 +638,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "Expiry",
       "Item / Barcode",
       "Inventory Units",
+      "Actions",
     ]);
     await expect(quantity).toBeFocused();
     await quantity.press("Enter");
@@ -1608,9 +1631,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     await page.getByRole("button", { name: "Post purchase" }).click();
     const alert = page.locator("#purchase-post-denial");
-    await expect(alert).toContainText("expiry-required");
+    await expect(alert).toHaveAttribute("data-denial-code", "expiry-required");
     await expect(alert).toContainText(
-      "purchase.post.expiry-required-at-receipt",
+      "Posting refused: an expiry date is required for medication and cold-chain items.",
     );
     const expiryCell = page.locator(
       '[data-post-row="0"][data-post-field="expiryDate"]',
@@ -1621,6 +1644,67 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "POST-REJECTED-1",
     );
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+  });
+
+  test("allows correcting a missing expiry inline on the draft row and posting successfully", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "POST-REJECTED-FIX-1",
+      "",
+    );
+
+    await page.getByRole("button", { name: "Post purchase" }).click();
+    const alert = page.locator("#purchase-post-denial");
+    await expect(alert).toHaveAttribute("data-denial-code", "expiry-required");
+    await expect(alert).toContainText(
+      "Posting refused: an expiry date is required for medication and cold-chain items.",
+    );
+    const expiryCell = page.locator(
+      '[data-post-row="0"][data-post-field="expiryDate"]',
+    );
+    await expect(expiryCell).toHaveAttribute("data-post-error", "true");
+
+    await page.getByRole("button", { name: /^Edit:/ }).click();
+    const expiryInput = page.locator(
+      'tr[data-editing="true"] input[type="date"]',
+    );
+    await expect(expiryInput).toBeVisible();
+    await expiryInput.fill("2029-06-30");
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(
+      page.getByText("Row updated and saved durably."),
+    ).toBeVisible();
+    await expect(expiryCell).toContainText("2029-06-30");
+
+    await page.getByRole("button", { name: "Post purchase" }).click();
+    await expect(
+      page.getByText("Purchase posted atomically. A fresh invoice is ready."),
+    ).toBeVisible();
+  });
+
+  test("allows deleting a draft row and re-sequencing the remaining rows", async ({
+    page,
+  }) => {
+    page.on("dialog", (dialog) => dialog.accept());
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "DELETE-ROW-1",
+      "2029-12-31",
+    );
+
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+    await page.getByRole("button", { name: /^Delete:/ }).click();
+    await expect(page.getByText("Row deleted from draft.")).toBeVisible();
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(1);
   });
 
   test("preserves an invalid Supplier header and returns focus for correction", async ({

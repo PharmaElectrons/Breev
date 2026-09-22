@@ -18,6 +18,8 @@ import {
   type PurchaseDraftRow,
   type PurchaseDraftRowCommitRequest,
   type PurchaseDraftRowCommitResult,
+  type PurchaseDraftRowDiscardRequest,
+  type PurchaseDraftRowUpdateRequest,
   type PurchaseDraftCreateRequest,
   type PurchaseDraftDiscardRequest,
   type PurchaseDraftResult,
@@ -118,6 +120,8 @@ const COMMANDS = {
   draftUpdate: "purchase.draft.update",
   draftDiscard: "purchase.draft.discard",
   draftRowCommit: "purchase.draft.row.commit",
+  draftRowDiscard: "purchase.draft.row.discard",
+  draftRowUpdate: "purchase.draft.row.update",
   entryPreferencesUpdate: "purchase.entry-preferences.update",
   purchasePost: "purchase.post",
 } as const;
@@ -1946,6 +1950,296 @@ export class PurchasingService {
           beforeState: {
             draftVersion: before!.version,
             rowCount: ordinal - 1,
+          },
+          targetId: draftId,
+          value,
+        };
+      },
+    });
+  }
+
+  public async updateDraftRow(
+    request: Request,
+    draftId: string,
+    rowId: string,
+    input: PurchaseDraftRowUpdateRequest,
+  ): Promise<PurchaseDraftRowCommitResult> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    return await this.executeCommand({
+      commandName: COMMANDS.draftRowUpdate,
+      context,
+      idempotencyKey: input.idempotencyKey,
+      parser: purchaseDraftRowCommitResultSchema,
+      permission: DRAFT_PERMISSION,
+      requestHash: canonicalRequestHash(COMMANDS.draftRowUpdate, {
+        draftId,
+        rowId,
+        input,
+      }),
+      responseStatus: 200,
+      targetId: draftId,
+      work: async (client) => {
+        const before = await lockDraft(client, context.pharmacyId, draftId);
+        requireEditableDraft(before, draftId, input.expectedVersion);
+        const existingRowResult = await client.query<{
+          id: string;
+          primary_supplier_cost_fils: string;
+          entered_quantity: string;
+          ordinal: number;
+        }>(
+          `select id, primary_supplier_cost_fils, entered_quantity, ordinal
+           from purchase_draft_rows
+           where pharmacy_id = $1 and draft_id = $2 and id = $3`,
+          [context.pharmacyId, draftId, rowId],
+        );
+        const existingRow = existingRowResult.rows[0];
+        if (existingRow === undefined) {
+          throw new PurchasingCommandRejected(
+            404,
+            "row-not-found",
+            [{ code: "invalid", path: ["rowId"] }],
+            rowId,
+          );
+        }
+        const product = await resolveCatalogPurchaseProduct(
+          client,
+          context.pharmacyId,
+          input.itemId,
+        );
+        if (product === undefined || product === null) {
+          throw new PurchasingCommandRejected(
+            product === undefined ? 404 : 409,
+            product === undefined ? "item-not-found" : "item-unavailable",
+            [{ code: "invalid", path: ["itemId"] }],
+            input.itemId,
+          );
+        }
+        const prepared = preparePurchaseRow(product, input);
+        if (!prepared.ok) {
+          const mapping = {
+            "cost-invalid": ["costFils"],
+            "money-overflow": ["costFils"],
+            "pricing-mode-conflict": ["pricing"],
+            "quantity-invalid": ["enteredQuantity"],
+            "unit-invalid": ["unit"],
+          } as const;
+          throw new PurchasingCommandRejected(
+            409,
+            prepared.problem === "quantity-invalid" ||
+              prepared.problem === "cost-invalid"
+              ? "body-invalid"
+              : prepared.problem,
+            [{ code: "invalid", path: [...mapping[prepared.problem]] }],
+            draftId,
+          );
+        }
+        const oldLineTotal =
+          BigInt(existingRow.primary_supplier_cost_fils) *
+          BigInt(existingRow.entered_quantity);
+        const newLineTotal =
+          BigInt(prepared.facts.costFils) *
+          BigInt(prepared.facts.enteredQuantity);
+        const newAllowanceBasis =
+          BigInt(before!.allowance_basis_fils) - oldLineTotal + newLineTotal;
+        if (
+          newAllowanceBasis < 0n ||
+          newAllowanceBasis > POSTGRES_BIGINT_MAXIMUM
+        ) {
+          throw new PurchasingCommandRejected(
+            409,
+            "money-overflow",
+            [{ code: "out-of-range", path: ["costFils"] }],
+            draftId,
+          );
+        }
+        await client.query(
+          `update purchase_draft_rows set
+             product_id = $4,
+             item_display_name = $5,
+             inventory_unit_name = $6,
+             entered_unit_kind = $7,
+             entered_package_unit_name = $8,
+             base_units_per_entered_unit = $9::bigint,
+             entered_quantity = $10::bigint,
+             inventory_unit_quantity = $11::bigint,
+             primary_supplier_cost_fils = $12::bigint,
+             pricing_method = $13,
+             retail_price_fils = $14::bigint,
+             margin_percentage = $15::numeric,
+             expiry_date = $16,
+             lot_number = $17,
+             notes = $18
+           where pharmacy_id = $1 and draft_id = $2 and id = $3`,
+          [
+            context.pharmacyId,
+            draftId,
+            rowId,
+            product.id,
+            product.displayName,
+            prepared.facts.inventoryUnitName,
+            prepared.facts.unit.kind,
+            prepared.facts.unit.kind === "package-unit"
+              ? prepared.facts.unit.packageUnitName
+              : null,
+            prepared.facts.baseUnitsPerEnteredUnit,
+            prepared.facts.enteredQuantity,
+            prepared.facts.inventoryUnitQuantity,
+            prepared.facts.costFils,
+            prepared.facts.pricingMethod,
+            prepared.facts.retailPriceFils,
+            prepared.facts.marginPercentage,
+            input.expiryDate,
+            input.lotNumber,
+            input.notes,
+          ],
+        );
+        await client.query(
+          `update purchase_drafts
+           set allowance_basis_fils = $3::bigint,
+               version = version + 1,
+               updated_at = statement_timestamp(),
+               updated_by = $4
+           where pharmacy_id = $1 and id = $2`,
+          [
+            context.pharmacyId,
+            draftId,
+            newAllowanceBasis.toString(),
+            context.actorId,
+          ],
+        );
+        const rowResult = await client.query<DraftRowRecord>(
+          `${DRAFT_ROW_SELECT}
+           where row_record.pharmacy_id = $1 and row_record.id = $2`,
+          [context.pharmacyId, rowId],
+        );
+        const rowRecord = rowResult.rows[0];
+        if (rowRecord === undefined)
+          throw new Error("The updated Purchase row disappeared");
+        const row = purchaseRowView(rowRecord);
+        const updatedDraft = draftView(
+          await requiredDraft(client, context.pharmacyId, draftId),
+        );
+        const value = purchaseDraftRowCommitResultSchema.parse({
+          draft: await draftDetail(client, context.pharmacyId, updatedDraft),
+          row,
+        });
+        return {
+          afterState: {
+            draftVersion: updatedDraft.version,
+            inventoryUnitQuantity: row.inventoryUnitQuantity,
+            itemId: row.itemId,
+            ordinal: row.ordinal,
+          },
+          beforeState: {
+            draftVersion: before!.version,
+            ordinal: existingRow.ordinal,
+          },
+          targetId: draftId,
+          value,
+        };
+      },
+    });
+  }
+
+  public async discardDraftRow(
+    request: Request,
+    draftId: string,
+    rowId: string,
+    input: PurchaseDraftRowDiscardRequest,
+  ): Promise<PurchaseDraftDetail> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    return await this.executeCommand({
+      commandName: COMMANDS.draftRowDiscard,
+      context,
+      idempotencyKey: input.idempotencyKey,
+      parser: purchaseDraftDetailSchema,
+      permission: DRAFT_PERMISSION,
+      requestHash: canonicalRequestHash(COMMANDS.draftRowDiscard, {
+        draftId,
+        rowId,
+        input,
+      }),
+      responseStatus: 200,
+      targetId: draftId,
+      work: async (client) => {
+        const before = await lockDraft(client, context.pharmacyId, draftId);
+        requireEditableDraft(before, draftId, input.expectedVersion);
+        const existingRowResult = await client.query<{
+          id: string;
+          primary_supplier_cost_fils: string;
+          entered_quantity: string;
+          ordinal: number;
+        }>(
+          `select id, primary_supplier_cost_fils, entered_quantity, ordinal
+           from purchase_draft_rows
+           where pharmacy_id = $1 and draft_id = $2 and id = $3`,
+          [context.pharmacyId, draftId, rowId],
+        );
+        const existingRow = existingRowResult.rows[0];
+        if (existingRow === undefined) {
+          throw new PurchasingCommandRejected(
+            404,
+            "row-not-found",
+            [{ code: "invalid", path: ["rowId"] }],
+            rowId,
+          );
+        }
+        const oldLineTotal =
+          BigInt(existingRow.primary_supplier_cost_fils) *
+          BigInt(existingRow.entered_quantity);
+        const newAllowanceBasis =
+          BigInt(before!.allowance_basis_fils) - oldLineTotal;
+
+        await client.query(
+          `delete from purchase_draft_rows
+           where pharmacy_id = $1 and draft_id = $2 and id = $3`,
+          [context.pharmacyId, draftId, rowId],
+        );
+
+        await client.query(
+          `update purchase_draft_rows
+           set ordinal = ordinal - 1
+           where pharmacy_id = $1 and draft_id = $2 and ordinal > $3`,
+          [context.pharmacyId, draftId, existingRow.ordinal],
+        );
+
+        await client.query(
+          `update purchase_drafts
+           set allowance_basis_fils = $3::bigint,
+               version = version + 1,
+               updated_at = statement_timestamp(),
+               updated_by = $4
+           where pharmacy_id = $1 and id = $2`,
+          [
+            context.pharmacyId,
+            draftId,
+            (newAllowanceBasis < 0n ? 0n : newAllowanceBasis).toString(),
+            context.actorId,
+          ],
+        );
+
+        const updatedDraft = draftView(
+          await requiredDraft(client, context.pharmacyId, draftId),
+        );
+        const value = await draftDetail(
+          client,
+          context.pharmacyId,
+          updatedDraft,
+        );
+        return {
+          afterState: {
+            draftVersion: updatedDraft.version,
+            rowCount: value.rows.length,
+          },
+          beforeState: {
+            draftVersion: before!.version,
+            deletedOrdinal: existingRow.ordinal,
           },
           targetId: draftId,
           value,

@@ -33,6 +33,11 @@ import {
   purchaseDraftReadContract,
   purchaseDraftRowCommitContract,
   purchaseDraftRowCommitRequestSchema,
+  purchaseDraftRowDiscardContract,
+  purchaseDraftRowDiscardRequestSchema,
+  purchaseDraftRowSchema,
+  purchaseDraftRowUpdateContract,
+  purchaseDraftRowUpdateRequestSchema,
   purchaseDraftSchema,
   purchaseDraftUpdateContract,
   purchaseDraftUpdateRequestSchema,
@@ -297,6 +302,78 @@ export class PurchasingController {
           id.success ? id.data : undefined,
         );
       return await this.purchasing.commitDraftRow(request, id.data, input.data);
+    });
+  }
+
+  @Put(purchaseDraftRowUpdateContract.path)
+  public async updateDraftRow(
+    @Param("draftId") draftId: string,
+    @Param("rowId") rowId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchaseDraftRowCommitResult> {
+    return await translatePurchasingDenial(async () => {
+      const parsedDraftId = purchaseDraftSchema.shape.id.safeParse(draftId);
+      const parsedRowId = purchaseDraftRowSchema.shape.id.safeParse(rowId);
+      const input = purchaseDraftRowUpdateRequestSchema.safeParse(body);
+      if (!parsedDraftId.success || !parsedRowId.success || !input.success) {
+        const errorPath = !parsedDraftId.success
+          ? ["draftId"]
+          : !parsedRowId.success
+            ? ["rowId"]
+            : undefined;
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.draft.row.update",
+          "purchases.drafts.manage",
+          input.success && errorPath
+            ? [{ code: "invalid", path: errorPath }]
+            : fieldErrors(input.error!),
+          parsedDraftId.success ? parsedDraftId.data : undefined,
+        );
+      }
+      return await this.purchasing.updateDraftRow(
+        request,
+        parsedDraftId.data,
+        parsedRowId.data,
+        input.data,
+      );
+    });
+  }
+
+  @Post(purchaseDraftRowDiscardContract.path)
+  public async discardDraftRow(
+    @Param("draftId") draftId: string,
+    @Param("rowId") rowId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<PurchaseDraftDetail> {
+    return await translatePurchasingDenial(async () => {
+      const parsedDraftId = purchaseDraftSchema.shape.id.safeParse(draftId);
+      const parsedRowId = purchaseDraftRowSchema.shape.id.safeParse(rowId);
+      const input = purchaseDraftRowDiscardRequestSchema.safeParse(body);
+      if (!parsedDraftId.success || !parsedRowId.success || !input.success) {
+        const errorPath = !parsedDraftId.success
+          ? ["draftId"]
+          : !parsedRowId.success
+            ? ["rowId"]
+            : undefined;
+        return await this.purchasing.rejectInvalidBody(
+          request,
+          "purchase.draft.row.discard",
+          "purchases.drafts.manage",
+          input.success && errorPath
+            ? [{ code: "invalid", path: errorPath }]
+            : fieldErrors(input.error!),
+          parsedDraftId.success ? parsedDraftId.data : undefined,
+        );
+      }
+      return await this.purchasing.discardDraftRow(
+        request,
+        parsedDraftId.data,
+        parsedRowId.data,
+        input.data,
+      );
     });
   }
 

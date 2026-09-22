@@ -182,7 +182,7 @@ describe("supplier and purchase draft contracts", () => {
   });
 
   it("has no supplier, draft, or posting hard-delete route", () => {
-    expect(PURCHASING_CONTRACTS).toHaveLength(31);
+    expect(PURCHASING_CONTRACTS).toHaveLength(33);
     expect(
       PURCHASING_CONTRACTS.map((contract) => contract.method),
     ).not.toContain("DELETE");

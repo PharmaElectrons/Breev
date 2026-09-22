@@ -160,7 +160,7 @@ describe("Purchasing REST client", () => {
     );
   });
 
-  it("addresses one post attempt across reloads until the outcome is definitive", () => {
+  it("addresses one post attempt across reloads for the same draft and version", () => {
     const storage = {
       hash: "#/purchases",
       replace(hash: string) {
@@ -170,14 +170,68 @@ describe("Purchasing REST client", () => {
     const draftId = "018fa000-0000-7000-8000-000000000001";
     const first = rememberPurchasePost(storage, draftId, "2");
     const afterReload = readPendingPurchasePost(storage);
-    const reused = rememberPurchasePost(storage, draftId, "3");
-    expect(first.idempotencyKey).toBe(draftId);
+    const reused = rememberPurchasePost(storage, draftId, "2");
+    expect(first.expectedVersion).toBe("2");
     expect(afterReload).toEqual(first);
     expect(reused).toEqual(first);
+    expect(storage.hash).toBe(
+      `#/purchases/posting/${draftId}/2/${first.idempotencyKey}`,
+    );
 
     clearPendingPurchasePost(storage);
     expect(readPendingPurchasePost(storage)).toBeNull();
     expect(storage.hash).toBe("#/purchases");
+  });
+
+  it("replaces the post attempt with a fresh idempotency key when the draft version changes", () => {
+    const storage = {
+      hash: "#/purchases",
+      replace(hash: string) {
+        this.hash = hash;
+      },
+    };
+    const draftId = "018fa000-0000-7000-8000-000000000001";
+    const first = rememberPurchasePost(storage, draftId, "2");
+    const advanced = rememberPurchasePost(storage, draftId, "3");
+    expect(advanced.expectedVersion).toBe("3");
+    expect(advanced.draftId).toBe(draftId);
+    expect(advanced.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(storage.hash).toBe(
+      `#/purchases/posting/${draftId}/3/${advanced.idempotencyKey}`,
+    );
+    expect(readPendingPurchasePost(storage)).toEqual(advanced);
+  });
+
+  it("replaces the post attempt when the draft id changes", () => {
+    const storage = {
+      hash: "#/purchases",
+      replace(hash: string) {
+        this.hash = hash;
+      },
+    };
+    const draftId1 = "018fa000-0000-7000-8000-000000000001";
+    const draftId2 = "018fa000-0000-7000-8000-000000000002";
+    const first = rememberPurchasePost(storage, draftId1, "2");
+    const other = rememberPurchasePost(storage, draftId2, "2");
+    expect(other.draftId).toBe(draftId2);
+    expect(other.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(readPendingPurchasePost(storage)).toEqual(other);
+  });
+
+  it("parses legacy two-segment hashes cleanly", () => {
+    const draftId = "018fa000-0000-7000-8000-000000000001";
+    const storage = {
+      hash: `#/purchases/posting/${draftId}/2`,
+      replace(hash: string) {
+        this.hash = hash;
+      },
+    };
+    const legacy = readPendingPurchasePost(storage);
+    expect(legacy).toEqual({
+      draftId,
+      expectedVersion: "2",
+      idempotencyKey: draftId,
+    });
   });
 
   it("drops a malformed addressed post attempt", () => {
