@@ -3,6 +3,7 @@ import type {
   CountSession,
   CountSessionSummary,
   Product,
+  ProductSearchResult,
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -122,7 +123,7 @@ function CountSessionStart({
   }, [active, completed, requestCommittedFocus]);
 
   async function start(): Promise<void> {
-    if (!canRecord || busy) return;
+    if (!canRecord || busy || (active?.length ?? 0) > 0) return;
     const fingerprint = JSON.stringify({ command: "start-count-session" });
     const attempt = inventoryCommandAttempt(attemptRef.current, fingerprint);
     attemptRef.current = attempt;
@@ -155,7 +156,7 @@ function CountSessionStart({
           <button
             className="primary-button"
             data-count-start-control="start"
-            disabled={busy}
+            disabled={busy || (active?.length ?? 0) > 0}
             type="button"
             onClick={() => void start()}
           >
@@ -163,6 +164,11 @@ function CountSessionStart({
           </button>
         ) : null}
       </header>
+      {active !== null && active.length > 0 ? (
+        <p className="count-active-warning" role="status">
+          {copy.activeSessionWarning}
+        </p>
+      ) : null}
       <p>
         <a href="#/inventory">{inventoryMessages[locale].backToInventory}</a>
       </p>
@@ -303,6 +309,11 @@ function CountSessionLoop({
   const [session, setSession] = useState<CountSession | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [itemQuery, setItemQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<
+    readonly ProductSearchResult[]
+  >([]);
+  const [highlightedSuggestion, setHighlightedSuggestion] = useState(-1);
+  const searchSequence = useRef(0);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [inventoryBalances, setInventoryBalances] = useState<
     ReadonlyMap<string, string>
@@ -380,12 +391,52 @@ function CountSessionLoop({
       : (inventoryBalances.get(selectedProduct.id) ?? null));
   const blockedQuantity = selectedLine?.blockedQuantityAtObservation ?? "0";
 
+  useEffect(() => {
+    const query = itemQuery.trim();
+    if (query.length < 2 || selectedProduct !== null) return;
+    const current = ++searchSequence.current;
+    const timer = window.setTimeout(() => {
+      void searchProducts(baseUrl, { limit: "20", query })
+        .then((result) => {
+          if (searchSequence.current !== current) return;
+          setSuggestions(result.results);
+          setHighlightedSuggestion(result.results.length > 0 ? 0 : -1);
+        })
+        .catch(() => {
+          if (searchSequence.current === current) setSuggestions([]);
+        });
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      searchSequence.current++;
+    };
+  }, [baseUrl, itemQuery, selectedProduct]);
+
   function focusItem(): void {
     requestCommittedFocus(() => document.getElementById("count-item"));
   }
 
   function focusUnit(key: string): void {
     requestCommittedFocus(() => findCountUnitField(key));
+  }
+
+  function selectItem(product: Product): void {
+    setSuggestions([]);
+    setHighlightedSuggestion(-1);
+    if (product.status !== "active") {
+      setError(copy.archivedItem);
+      focusItem();
+      return;
+    }
+    setError(null);
+    setItemQuery(product.displayName);
+    setSelectedProduct(product);
+    setFields({});
+    const defaultKey = countUnitKey(
+      product.packaging.defaultUnits.count,
+      product.packaging.inventoryUnitName,
+    );
+    requestCommittedFocus(() => findCountUnitField(defaultKey));
   }
 
   async function resolveItem(): Promise<void> {
@@ -420,18 +471,7 @@ function CountSessionLoop({
         focusItem();
         return;
       }
-      if (product.status !== "active") {
-        setError(copy.archivedItem);
-        focusItem();
-        return;
-      }
-      setSelectedProduct(product);
-      setFields({});
-      const defaultKey = countUnitKey(
-        product.packaging.defaultUnits.count,
-        product.packaging.inventoryUnitName,
-      );
-      requestCommittedFocus(() => findCountUnitField(defaultKey));
+      selectItem(product);
     } catch (caught) {
       if (sequence.current !== current) return;
       setError(countError(caught, copy));
@@ -548,6 +588,8 @@ function CountSessionLoop({
 
   function onItemChange(value: string): void {
     setItemQuery(value);
+    setSuggestions([]);
+    setHighlightedSuggestion(-1);
     if (selectedProduct !== null && value !== selectedProduct.displayName) {
       setSelectedProduct(null);
       setFields({});
@@ -762,25 +804,82 @@ function CountSessionLoop({
             void saveLine();
           }}
         >
-          <label className="count-item-field" htmlFor="count-item">
-            <span>{copy.item}</span>
-            <input
-              autoComplete="off"
-              data-count-field="item"
-              disabled={busy}
-              id="count-item"
-              placeholder={copy.itemPlaceholder}
-              type="text"
-              value={itemQuery}
-              onChange={(event) => onItemChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void resolveItem();
+          <div className="count-item-search">
+            <label className="count-item-field" htmlFor="count-item">
+              <span>{copy.item}</span>
+              <input
+                autoComplete="off"
+                aria-autocomplete="list"
+                aria-controls="count-item-suggestions"
+                aria-expanded={suggestions.length > 0}
+                aria-activedescendant={
+                  highlightedSuggestion < 0
+                    ? undefined
+                    : `count-suggestion-${highlightedSuggestion}`
                 }
-              }}
-            />
-          </label>
+                role="combobox"
+                data-count-field="item"
+                disabled={busy}
+                id="count-item"
+                placeholder={copy.itemPlaceholder}
+                type="text"
+                value={itemQuery}
+                onChange={(event) => onItemChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" && suggestions.length > 0) {
+                    event.preventDefault();
+                    setHighlightedSuggestion(
+                      (index) => (index + 1) % suggestions.length,
+                    );
+                  } else if (
+                    event.key === "ArrowUp" &&
+                    suggestions.length > 0
+                  ) {
+                    event.preventDefault();
+                    setHighlightedSuggestion(
+                      (index) =>
+                        (index - 1 + suggestions.length) % suggestions.length,
+                    );
+                  } else if (event.key === "Escape") {
+                    setSuggestions([]);
+                    setHighlightedSuggestion(-1);
+                  }
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    const suggestion = suggestions[highlightedSuggestion];
+                    if (suggestion === undefined) void resolveItem();
+                    else selectItem(suggestion.product);
+                  }
+                }}
+              />
+            </label>
+            {suggestions.length > 0 ? (
+              <div
+                className="count-item-suggestions"
+                id="count-item-suggestions"
+                role="listbox"
+              >
+                {suggestions.map((result, index) => (
+                  <button
+                    aria-selected={index === highlightedSuggestion}
+                    id={`count-suggestion-${index}`}
+                    key={result.product.id}
+                    role="option"
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectItem(result.product)}
+                  >
+                    <span>{result.product.displayName}</span>
+                    <small>
+                      {result.matchedBarcode?.value ??
+                        result.product.barcodes[0]?.value ??
+                        ""}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           {selectedProduct === null ? null : (
             <div className="count-resolved-item">
               <div>
