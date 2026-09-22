@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   PurchaseDraft,
   PurchaseDraftDetail,
@@ -78,12 +78,21 @@ export function PurchasingRouteView({
   );
   const invoiceRef = useRef<HTMLInputElement>(null);
   const registerRef = useRef<HTMLDialogElement>(null);
-  const supplierRef = useRef<HTMLSelectElement>(null);
+  const discardDialogRef = useRef<HTMLDialogElement>(null);
+  const supplierRef = useRef<HTMLInputElement>(null);
   const draftCommandAttempt = useRef<PurchasingCommandAttempt | null>(null);
   const postRecoveryStarted = useRef(false);
+  const [discarding, setDiscarding] = useState(false);
 
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
   const [supplierId, setSupplierId] = useState("");
+  const [isSupplierOpen, setIsSupplierOpen] = useState(false);
+  const [supplierSearchText, setSupplierSearchText] = useState("");
+  const [highlightedSupplierIndex, setHighlightedSupplierIndex] = useState(-1);
+  const supplierComboboxRef = useRef<HTMLDivElement>(null);
+  const supplierOptionRefs = useRef<(HTMLLIElement | null)[]>([]);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const draftSavingRef = useRef(false);
   const [settlementContext, setSettlementContext] = useState<"cash" | "debt">(
     "cash",
   );
@@ -170,7 +179,7 @@ export function PurchasingRouteView({
         target.closest("[data-purchase-editor]") !== null;
       if (event.key === "Escape" && activeDraft !== null && isInsideEditor) {
         event.preventDefault();
-        void confirmDiscard();
+        promptDiscard();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -188,6 +197,7 @@ export function PurchasingRouteView({
       setActiveDraft(detail);
       setSupplierInvoiceNumber(detail.supplierInvoiceNumber);
       setSupplierId(detail.supplierId);
+      setSupplierSearchText(detail.supplierNameSnapshot);
       setSettlementContext(detail.settlementContext);
       setInvoiceDate(detail.invoiceDate);
       setWarning(false);
@@ -205,7 +215,7 @@ export function PurchasingRouteView({
     setView("invoice");
     resetDraftFields();
     setPostedPurchase(null);
-    queueMicrotask(() => invoiceRef.current?.focus());
+    requestAnimationFrame(() => invoiceRef.current?.focus());
   }
 
   function resetDraftFields(): void {
@@ -214,6 +224,9 @@ export function PurchasingRouteView({
     setActiveDraft(null);
     setSupplierInvoiceNumber("");
     setSupplierId("");
+    setSupplierSearchText("");
+    setIsSupplierOpen(false);
+    setHighlightedSupplierIndex(-1);
     setSettlementContext("cash");
     setInvoiceDate(today());
     setWarning(false);
@@ -278,26 +291,47 @@ export function PurchasingRouteView({
     }
   }
 
-  async function saveDraft(event?: React.FormEvent): Promise<void> {
+  async function saveDraft(
+    event?: React.FormEvent,
+    overrides?: {
+      invoiceDate?: string;
+      settlementContext?: "cash" | "debt";
+      supplierId?: string;
+      supplierInvoiceNumber?: string;
+    },
+  ): Promise<PurchaseDraftDetail | null> {
     if (event !== undefined) event.preventDefault();
+    if (draftSavingRef.current) return null;
     setError(null);
     setStatus(null);
-    if (supplierInvoiceNumber.trim() === "") {
+
+    const effectiveInvoiceNumber = (
+      overrides?.supplierInvoiceNumber ?? supplierInvoiceNumber
+    ).trim();
+    const effectiveSupplierId = overrides?.supplierId ?? supplierId;
+    const effectiveInvoiceDate = overrides?.invoiceDate ?? invoiceDate;
+    const effectiveSettlementContext =
+      overrides?.settlementContext ?? settlementContext;
+
+    if (effectiveInvoiceNumber === "") {
       setError(copy.invoiceNumberRequired);
       invoiceRef.current?.focus();
-      return;
+      return null;
     }
-    if (supplierId === "") {
+    if (effectiveSupplierId === "") {
       setError(copy.supplierRequired);
       supplierRef.current?.focus();
-      return;
+      return null;
     }
+    const isNewDraft = activeDraft === null;
+    draftSavingRef.current = true;
+    setDraftSaving(true);
     try {
       const header = {
-        invoiceDate,
-        settlementContext,
-        supplierId,
-        supplierInvoiceNumber: supplierInvoiceNumber.trim(),
+        invoiceDate: effectiveInvoiceDate,
+        settlementContext: effectiveSettlementContext,
+        supplierId: effectiveSupplierId,
+        supplierInvoiceNumber: effectiveInvoiceNumber,
       };
       const attempt = purchasingCommandAttempt(
         draftCommandAttempt.current,
@@ -327,7 +361,16 @@ export function PurchasingRouteView({
       setPostDenial(null);
       setWarning(result.warnings.length > 0);
       setStatus(copy.saved);
+      if (isNewDraft) {
+        requestAnimationFrame(() => {
+          const itemInput = document.querySelector<HTMLInputElement>(
+            'input[data-enter-field="item"]',
+          );
+          itemInput?.focus();
+        });
+      }
       await reload();
+      return detail;
     } catch (caught) {
       setError(copy.error);
       if (
@@ -341,11 +384,26 @@ export function PurchasingRouteView({
       ) {
         supplierRef.current?.focus();
       }
+      return null;
+    } finally {
+      draftSavingRef.current = false;
+      setDraftSaving(false);
     }
   }
 
-  async function confirmDiscard(): Promise<void> {
-    if (activeDraft === null || !window.confirm(copy.confirmDiscard)) return;
+  function promptDiscard(): void {
+    if (activeDraft === null || discarding) return;
+    discardDialogRef.current?.showModal();
+  }
+
+  function closeDiscardDialog(): void {
+    discardDialogRef.current?.close();
+  }
+
+  async function executeDiscard(): Promise<void> {
+    if (activeDraft === null || discarding) return;
+    closeDiscardDialog();
+    setDiscarding(true);
     clearPendingPurchasePost(purchasePostAddress());
     setPostDenial(null);
     try {
@@ -363,28 +421,136 @@ export function PurchasingRouteView({
         expectedVersion: activeDraft.version,
         idempotencyKey: attempt.idempotencyKey,
       });
-      draftCommandAttempt.current = null;
-      newDraft();
+      resetDraftFields();
       setStatus(copy.discarded);
       await reload();
     } catch {
       setError(copy.error);
     } finally {
       draftCommandAttempt.current = null;
+      setDiscarding(false);
+      requestAnimationFrame(() => {
+        invoiceRef.current?.focus();
+      });
     }
   }
 
-  const activeSuppliers = suppliers.filter(
-    (supplier) => supplier.status === "active",
+  const activeSuppliers = useMemo(
+    () => suppliers.filter((supplier) => supplier.status === "active"),
+    [suppliers],
   );
-  const currentInactiveSupplier = suppliers.find(
-    (supplier) =>
-      supplier.id === activeDraft?.supplierId && supplier.status !== "active",
+  const currentInactiveSupplier = useMemo(
+    () =>
+      suppliers.find(
+        (supplier) =>
+          supplier.id === activeDraft?.supplierId &&
+          supplier.status !== "active",
+      ),
+    [suppliers, activeDraft?.supplierId],
   );
-  const headerSuppliers =
-    currentInactiveSupplier === undefined
-      ? activeSuppliers
-      : [...activeSuppliers, currentInactiveSupplier];
+  const headerSuppliers = useMemo(
+    () =>
+      currentInactiveSupplier === undefined
+        ? activeSuppliers
+        : [...activeSuppliers, currentInactiveSupplier],
+    [activeSuppliers, currentInactiveSupplier],
+  );
+
+  useEffect(() => {
+    if (supplierId !== "") {
+      const found = headerSuppliers.find((s) => s.id === supplierId);
+      if (found) {
+        setSupplierSearchText(found.name);
+      }
+    }
+  }, [supplierId, headerSuppliers]);
+
+  useEffect(() => {
+    if (!isSupplierOpen) return;
+
+    function handlePointerDown(event: PointerEvent): void {
+      if (
+        supplierComboboxRef.current &&
+        !supplierComboboxRef.current.contains(event.target as Node)
+      ) {
+        setIsSupplierOpen(false);
+        const current = headerSuppliers.find((s) => s.id === supplierId);
+        setSupplierSearchText(current?.name ?? "");
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isSupplierOpen, headerSuppliers, supplierId]);
+
+  useEffect(() => {
+    if (
+      isSupplierOpen &&
+      highlightedSupplierIndex >= 0 &&
+      supplierOptionRefs.current[highlightedSupplierIndex]
+    ) {
+      supplierOptionRefs.current[highlightedSupplierIndex]?.scrollIntoView({
+        block: "nearest",
+      });
+    }
+  }, [isSupplierOpen, highlightedSupplierIndex]);
+
+  const searchWords = useMemo(
+    () =>
+      supplierSearchText
+        .trim()
+        .toLocaleLowerCase(locale)
+        .split(/\s+/)
+        .filter(Boolean),
+    [supplierSearchText, locale],
+  );
+
+  const currentSelectedSupplier = useMemo(
+    () => headerSuppliers.find((s) => s.id === supplierId),
+    [headerSuppliers, supplierId],
+  );
+
+  const filteredSuppliers = useMemo(() => {
+    return headerSuppliers.filter((supplier) => {
+      if (searchWords.length === 0) return true;
+      if (
+        currentSelectedSupplier &&
+        supplierSearchText.trim().toLocaleLowerCase(locale) ===
+          currentSelectedSupplier.name.trim().toLocaleLowerCase(locale)
+      ) {
+        return true;
+      }
+      const nameLower = supplier.name.toLocaleLowerCase(locale);
+      return searchWords.every((word) => nameLower.includes(word));
+    });
+  }, [
+    headerSuppliers,
+    searchWords,
+    currentSelectedSupplier,
+    supplierSearchText,
+    locale,
+  ]);
+
+  function chooseSupplier(chosen: Supplier): void {
+    setSupplierId(chosen.id);
+    setSupplierSearchText(chosen.name);
+    setIsSupplierOpen(false);
+    setHighlightedSupplierIndex(-1);
+    if (error !== null) setError(null);
+
+    if (supplierInvoiceNumber.trim() !== "") {
+      void saveDraft(undefined, {
+        supplierId: chosen.id,
+      });
+    } else {
+      setError(copy.invoiceNumberRequired);
+      requestAnimationFrame(() => {
+        invoiceRef.current?.focus();
+      });
+    }
+  }
 
   const normalizedQuery = draftQuery.trim().toLocaleLowerCase(locale);
   const filteredDrafts = drafts.filter((draft) => {
@@ -552,6 +718,7 @@ export function PurchasingRouteView({
                 <input
                   ref={invoiceRef}
                   required
+                  disabled={draftSaving}
                   maxLength={120}
                   placeholder={copy.invoiceNumberHint}
                   value={supplierInvoiceNumber}
@@ -562,59 +729,273 @@ export function PurchasingRouteView({
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      if (supplierInvoiceNumber.trim() === "") {
+                      const trimmedNumber = supplierInvoiceNumber.trim();
+                      if (trimmedNumber === "") {
                         setError(copy.invoiceNumberRequired);
                         return;
                       }
                       setError(null);
-                      supplierRef.current?.focus();
+                      if (supplierId !== "") {
+                        void saveDraft(undefined, {
+                          supplierInvoiceNumber: trimmedNumber,
+                        });
+                      } else {
+                        supplierRef.current?.focus();
+                      }
                     }
                   }}
                 />
               </label>
               <label>
-                {copy.supplier}
-                <select
-                  ref={supplierRef}
-                  required
-                  value={supplierId}
-                  onChange={(event) => {
-                    setSupplierId(event.target.value);
-                    if (error !== null) setError(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      if (supplierInvoiceNumber.trim() === "") {
-                        setError(copy.invoiceNumberRequired);
-                        invoiceRef.current?.focus();
-                        return;
-                      }
-                      if (supplierId === "") {
-                        setError(copy.supplierRequired);
-                        return;
-                      }
-                      void saveDraft();
-                    }
-                  }}
+                <span className="purchase-supplier-label-row">
+                  <span>{copy.supplier}</span>
+                  {draftSaving ? (
+                    <span
+                      className="status-spinner purchase-supplier-spinner"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </span>
+                <div
+                  ref={supplierComboboxRef}
+                  className="purchase-supplier-combobox"
                 >
-                  <option value="">{copy.select}</option>
-                  {headerSuppliers.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.name}
-                      {supplier.status === "active"
-                        ? ""
-                        : ` · ${copy[supplier.status]}`}
-                    </option>
-                  ))}
-                </select>
+                  <div className="purchase-supplier-control">
+                    <input
+                      ref={supplierRef}
+                      type="text"
+                      role="combobox"
+                      aria-expanded={isSupplierOpen}
+                      aria-haspopup="listbox"
+                      aria-controls="purchase-supplier-listbox"
+                      aria-autocomplete="list"
+                      aria-label={copy.supplier}
+                      aria-activedescendant={
+                        highlightedSupplierIndex >= 0 &&
+                        filteredSuppliers[highlightedSupplierIndex]
+                          ? `purchase-supplier-opt-${filteredSuppliers[highlightedSupplierIndex]!.id}`
+                          : undefined
+                      }
+                      required
+                      disabled={draftSaving}
+                      className="purchase-supplier-search-input"
+                      placeholder={copy.select}
+                      value={supplierSearchText}
+                      onFocus={(event) => {
+                        setIsSupplierOpen(true);
+                        const currentIndex = filteredSuppliers.findIndex(
+                          (s) => s.id === supplierId,
+                        );
+                        setHighlightedSupplierIndex(
+                          currentIndex >= 0 ? currentIndex : 0,
+                        );
+                        event.target.select();
+                      }}
+                      onClick={() => {
+                        if (!isSupplierOpen) {
+                          setIsSupplierOpen(true);
+                          const currentIndex = filteredSuppliers.findIndex(
+                            (s) => s.id === supplierId,
+                          );
+                          setHighlightedSupplierIndex(
+                            currentIndex >= 0 ? currentIndex : 0,
+                          );
+                        }
+                      }}
+                      onChange={(event) => {
+                        setSupplierSearchText(event.target.value);
+                        if (!isSupplierOpen) setIsSupplierOpen(true);
+                        setHighlightedSupplierIndex(0);
+                        if (error !== null) setError(null);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          if (!isSupplierOpen) {
+                            setIsSupplierOpen(true);
+                            const currentIndex = filteredSuppliers.findIndex(
+                              (s) => s.id === supplierId,
+                            );
+                            setHighlightedSupplierIndex(
+                              currentIndex >= 0 ? currentIndex : 0,
+                            );
+                          } else {
+                            setHighlightedSupplierIndex((prev) =>
+                              prev < filteredSuppliers.length - 1
+                                ? prev + 1
+                                : 0,
+                            );
+                          }
+                          return;
+                        }
+                        if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          if (!isSupplierOpen) {
+                            setIsSupplierOpen(true);
+                            setHighlightedSupplierIndex(
+                              filteredSuppliers.length - 1,
+                            );
+                          } else {
+                            setHighlightedSupplierIndex((prev) =>
+                              prev > 0
+                                ? prev - 1
+                                : filteredSuppliers.length - 1,
+                            );
+                          }
+                          return;
+                        }
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          if (
+                            isSupplierOpen &&
+                            highlightedSupplierIndex >= 0 &&
+                            highlightedSupplierIndex < filteredSuppliers.length
+                          ) {
+                            const chosen =
+                              filteredSuppliers[highlightedSupplierIndex];
+                            if (chosen) {
+                              chooseSupplier(chosen);
+                              return;
+                            }
+                          }
+                          if (
+                            isSupplierOpen &&
+                            filteredSuppliers.length === 1
+                          ) {
+                            const chosen = filteredSuppliers[0];
+                            if (chosen) {
+                              chooseSupplier(chosen);
+                              return;
+                            }
+                          }
+                          if (supplierId !== "") {
+                            const current = headerSuppliers.find(
+                              (s) => s.id === supplierId,
+                            );
+                            if (current) {
+                              chooseSupplier(current);
+                              return;
+                            }
+                          }
+                          if (supplierInvoiceNumber.trim() === "") {
+                            setError(copy.invoiceNumberRequired);
+                            invoiceRef.current?.focus();
+                          } else {
+                            setError(copy.supplierRequired);
+                          }
+                          return;
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setIsSupplierOpen(false);
+                          const current = headerSuppliers.find(
+                            (s) => s.id === supplierId,
+                          );
+                          setSupplierSearchText(current?.name ?? "");
+                          return;
+                        }
+                        if (event.key === "Tab") {
+                          setIsSupplierOpen(false);
+                          const current = headerSuppliers.find(
+                            (s) => s.id === supplierId,
+                          );
+                          setSupplierSearchText(current?.name ?? "");
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="purchase-supplier-toggle"
+                      tabIndex={-1}
+                      aria-label={copy.select}
+                      onClick={() => {
+                        setIsSupplierOpen((prev) => {
+                          const next = !prev;
+                          if (next) {
+                            supplierRef.current?.focus();
+                            const currentIndex = filteredSuppliers.findIndex(
+                              (s) => s.id === supplierId,
+                            );
+                            setHighlightedSupplierIndex(
+                              currentIndex >= 0 ? currentIndex : 0,
+                            );
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <span aria-hidden="true">▾</span>
+                    </button>
+                  </div>
+                  {isSupplierOpen ? (
+                    <div className="purchase-supplier-dropdown">
+                      <ul
+                        id="purchase-supplier-listbox"
+                        className="purchase-supplier-menu"
+                        role="listbox"
+                        aria-label={copy.supplier}
+                      >
+                        {filteredSuppliers.length === 0 ? (
+                          <li
+                            className="purchase-supplier-empty"
+                            role="presentation"
+                          >
+                            {copy.noMatchingSuppliers}
+                          </li>
+                        ) : (
+                          filteredSuppliers.map((supplier, idx) => {
+                            const isHighlighted =
+                              idx === highlightedSupplierIndex;
+                            const isSelected = supplier.id === supplierId;
+                            return (
+                              <li
+                                key={supplier.id}
+                                id={`purchase-supplier-opt-${supplier.id}`}
+                                ref={(el) => {
+                                  supplierOptionRefs.current[idx] = el;
+                                }}
+                                role="option"
+                                data-supplier-id={supplier.id}
+                                aria-selected={isSelected}
+                                className={`purchase-supplier-option ${
+                                  isHighlighted ? "is-highlighted" : ""
+                                }`}
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                }}
+                                onClick={() => {
+                                  chooseSupplier(supplier);
+                                }}
+                                onMouseEnter={() => {
+                                  setHighlightedSupplierIndex(idx);
+                                }}
+                              >
+                                <span className="purchase-supplier-option-name">
+                                  {supplier.name}
+                                </span>
+                                {supplier.status !== "active" ? (
+                                  <span className="purchase-supplier-option-status">
+                                    {copy[supplier.status]}
+                                  </span>
+                                ) : null}
+                              </li>
+                            );
+                          })
+                        )}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+                <span className="visually-hidden" aria-live="polite">
+                  {draftSaving ? copy.creatingDraft : ""}
+                </span>
               </label>
               {activeDraft === null ? (
                 <div className="purchase-header-actions">
                   <button
                     type="submit"
                     className="primary-button purchase-header-submit"
-                    disabled={activeSuppliers.length === 0}
+                    disabled={activeSuppliers.length === 0 || draftSaving}
                     title={copy.startItemEntry}
                   >
                     <span aria-hidden="true">↵</span> {copy.startItemEntry}
@@ -797,15 +1178,15 @@ export function PurchasingRouteView({
                 <button
                   className="quiet-button"
                   type="button"
-                  onClick={resetDraftFields}
+                  onClick={newDraft}
                 >
                   <span aria-hidden="true">＋</span> {copy.newDraft}
                 </button>
                 <button
                   className="danger-button"
                   type="button"
-                  disabled={activeDraft === null}
-                  onClick={() => void confirmDiscard()}
+                  disabled={activeDraft === null || discarding}
+                  onClick={promptDiscard}
                 >
                   <span aria-hidden="true">⌫</span> {copy.discard}
                 </button>
@@ -830,7 +1211,7 @@ export function PurchasingRouteView({
                     className="primary-button"
                     type="submit"
                     form="purchase-header-form"
-                    disabled={activeSuppliers.length === 0}
+                    disabled={activeSuppliers.length === 0 || draftSaving}
                   >
                     <span aria-hidden="true">▣</span>{" "}
                     {activeDraft === null ? copy.createDraft : copy.saveHeader}
@@ -1002,6 +1383,37 @@ export function PurchasingRouteView({
             {copy.close}
           </button>
         </footer>
+      </dialog>
+      <dialog
+        ref={discardDialogRef}
+        className="purchase-discard-dialog"
+        aria-labelledby="discard-dialog-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeDiscardDialog();
+        }}
+      >
+        <section className="purchase-discard-card">
+          <h2 id="discard-dialog-title">{copy.discard}</h2>
+          <p>{copy.confirmDiscard}</p>
+          <div className="purchase-discard-actions">
+            <button
+              type="button"
+              className="quiet-button"
+              onClick={closeDiscardDialog}
+            >
+              {copy.close}
+            </button>
+            <button
+              type="button"
+              className="danger-button"
+              disabled={discarding}
+              onClick={() => void executeDiscard()}
+            >
+              {copy.discard}
+            </button>
+          </div>
+        </section>
       </dialog>
       <PostedPurchaseReview
         baseUrl={baseUrl}

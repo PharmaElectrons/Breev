@@ -16,6 +16,7 @@ export const purchasingMessages = {
     itemSearchHint: "Search to add an item…",
     invoiceNumberHint: "Reference",
     loading: "Loading invoice…",
+    creatingDraft: "Creating draft…",
     scrollLines: "Scrollable invoice items table",
     invoiceItems: "Invoice items",
     noItems: "No items have been added to this invoice.",
@@ -97,6 +98,8 @@ export const purchasingMessages = {
     clearFilters: "Clear filters",
     results: "results",
     noMatchingDrafts: "No drafts match these filters.",
+    noMatchingSuppliers: "No suppliers match your search.",
+    searchSupplier: "Search supplier",
     noDrafts: "No active drafts yet.",
     noSuppliers: "Create an active supplier first.",
     duplicate:
@@ -308,6 +311,7 @@ export const purchasingMessages = {
     itemSearchHint: "ابحث لإضافة مادة…",
     invoiceNumberHint: "رقم مرجعي",
     loading: "جارٍ تحميل الفاتورة…",
+    creatingDraft: "جارٍ إنشاء المسودة…",
     scrollLines: "جدول مواد الفاتورة القابل للتمرير",
     invoiceItems: "مواد الفاتورة",
     noItems: "لم تُضف مواد للفاتورة بعد.",
@@ -386,6 +390,8 @@ export const purchasingMessages = {
     clearFilters: "مسح التصفية",
     results: "نتيجة",
     noMatchingDrafts: "لا توجد مسودات مطابقة لهذه التصفية.",
+    noMatchingSuppliers: "لا يوجد موردون يطابقون بحثك.",
+    searchSupplier: "البحث عن مورد",
     noDrafts: "لا توجد مسودات نشطة بعد.",
     noSuppliers: "أنشئ مورداً نشطاً أولاً.",
     duplicate:

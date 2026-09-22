@@ -3028,7 +3028,9 @@ a:focus-visible,
 }
 .purchase-header-fields {
   display: grid;
-  grid-template-columns: 8.125rem 6.875rem 10rem 7.5rem minmax(10rem, 1fr);
+  grid-template-columns:
+    8.125rem 6.875rem minmax(12rem, 16rem)
+    max-content minmax(10rem, 1fr);
   align-items: end;
   gap: 0.5rem;
 }
@@ -3059,6 +3061,120 @@ a:focus-visible,
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+.purchase-supplier-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.purchase-supplier-spinner {
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-width: 1.5px;
+}
+.purchase-supplier-combobox {
+  position: relative;
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+.purchase-supplier-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+}
+.purchase-supplier-search-input {
+  inline-size: 100%;
+  padding-inline-end: 1.75rem !important;
+  text-overflow: ellipsis;
+}
+.purchase-supplier-toggle {
+  position: absolute;
+  inset-inline-end: 0.35rem;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 0.25rem;
+  font-size: 0.65rem;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+.purchase-supplier-toggle:hover {
+  color: var(--foreground);
+}
+.purchase-supplier-dropdown {
+  position: absolute;
+  inset-block-start: calc(100% + 0.25rem);
+  inset-inline-start: 0;
+  inline-size: max(100%, 14rem);
+  max-block-size: 16rem;
+  overflow-y: auto;
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: 0.5rem;
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.3),
+    0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  overscroll-behavior: contain;
+}
+.purchase-supplier-menu {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.purchase-supplier-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--foreground);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+.purchase-supplier-option.is-highlighted,
+.purchase-supplier-option:hover {
+  background: color-mix(in srgb, var(--primary, #3b82f6) 18%, transparent);
+  color: var(--primary, #3b82f6);
+}
+.purchase-supplier-option[aria-selected="true"] {
+  font-weight: 700;
+}
+.purchase-supplier-option-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.purchase-supplier-option-status {
+  font-size: 0.65rem;
+  color: var(--muted-foreground);
+  font-weight: normal;
+  white-space: nowrap;
+}
+.purchase-supplier-empty {
+  padding: 0.75rem 0.65rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  font-style: italic;
 }
 .purchase-header-fields input,
 .purchase-header-fields select,
@@ -3438,6 +3554,37 @@ a:focus-visible,
 .purchase-register-dialog::backdrop {
   background: rgb(0 0 0 / 0.6);
   backdrop-filter: blur(4px);
+}
+.purchase-discard-dialog {
+  inline-size: min(28rem, calc(100vw - 2rem));
+  margin: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 1.5rem 4rem var(--shadow);
+}
+.purchase-discard-dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+  backdrop-filter: blur(4px);
+}
+.purchase-discard-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.purchase-discard-card p {
+  margin: 0 0 1.25rem;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.purchase-discard-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
 }
 .purchase-register-footer {
   display: flex;
