@@ -37,10 +37,6 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
         unavailableReason:
           "دفتر الحسابات والسندات وكشوف الحسابات غير متاحة بعد.",
       },
-      administration: {
-        label: "الموظفون والصلاحيات",
-        unavailableReason: "",
-      },
       basket: {
         label: "سلة الطلبات",
         unavailableReason: "",
@@ -82,8 +78,7 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
       },
       settings: {
         label: "الإعدادات",
-        unavailableReason:
-          "إعدادات الصيدلية والترخيص والأجهزة متاحة حالياً ضمن شاشة الموظفين والصلاحيات.",
+        unavailableReason: "",
       },
     },
   },
@@ -98,10 +93,6 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
         label: "Accounts",
         unavailableReason:
           "The ledger, vouchers, and account statements are not available yet.",
-      },
-      administration: {
-        label: "Employees & roles",
-        unavailableReason: "",
       },
       basket: {
         label: "Order basket",
@@ -146,8 +137,7 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
       },
       settings: {
         label: "Settings",
-        unavailableReason:
-          "Pharmacy settings, licensing, and terminals are reachable today from Employees & roles.",
+        unavailableReason: "",
       },
     },
   },

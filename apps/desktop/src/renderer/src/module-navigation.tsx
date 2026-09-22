@@ -17,21 +17,27 @@ import { usePreferences } from "./preferences-provider";
 export function ModuleNavigation({
   activeModuleId,
   modules,
+  excludeModuleIds = ["accounts", "settings"],
 }: {
   readonly activeModuleId: ModuleId;
   readonly modules: readonly NavigationModule[];
+  readonly excludeModuleIds?: readonly ModuleId[];
 }): React.JSX.Element | null {
   const { locale } = usePreferences();
   const copy = navigationMessages[locale];
 
-  if (modules.length === 0) {
+  const visibleModules = modules.filter(
+    (module) => !excludeModuleIds.includes(module.id),
+  );
+
+  if (visibleModules.length === 0) {
     return null;
   }
 
   return (
     <nav aria-label={copy.moduleNavigation} className="module-nav">
       <ul>
-        {modules.map((module) => (
+        {visibleModules.map((module) => (
           <li key={module.id}>
             <a
               aria-current={module.id === activeModuleId ? "page" : undefined}
