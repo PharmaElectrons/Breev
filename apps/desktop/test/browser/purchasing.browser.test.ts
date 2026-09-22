@@ -549,9 +549,6 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       .getByRole("button", { name: "Move earlier: Quantity" })
       .click();
     await settings
-      .getByRole("radio", { name: "Return to Item / Barcode" })
-      .check();
-    await settings
       .getByRole("button", { name: "Move earlier: Expiry" })
       .click();
     await settings.getByRole("button", { name: "Save entry settings" }).click();
@@ -588,7 +585,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(cost).toBeFocused();
     await cost.press("Enter");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(5);
-    await expect(resumedItem).toBeFocused();
+    await expect(quantity).toBeFocused();
 
     const currentPreferences = await apiRequest(
       apiOrigin,

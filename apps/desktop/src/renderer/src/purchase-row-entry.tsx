@@ -1045,38 +1045,6 @@ export function PurchaseRowEntry({
                 ))}
               </ol>
               <fieldset>
-                <legend>{copy.afterCommit}</legend>
-                <p className="purchase-settings-hint">{copy.afterCommitHint}</p>
-                <label>
-                  <input
-                    type="radio"
-                    name="afterCommitPreference"
-                    checked={settingsDraft.afterCommit === "new-row"}
-                    onChange={() =>
-                      setSettingsDraft({
-                        ...settingsDraft,
-                        afterCommit: "new-row",
-                      })
-                    }
-                  />
-                  {copy.newRow}
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="afterCommitPreference"
-                    checked={settingsDraft.afterCommit === "return-to-item"}
-                    onChange={() =>
-                      setSettingsDraft({
-                        ...settingsDraft,
-                        afterCommit: "return-to-item",
-                      })
-                    }
-                  />
-                  {copy.returnToItem}
-                </label>
-              </fieldset>
-              <fieldset>
                 <legend>{copy.detailsPanel}</legend>
                 {Object.entries(PANEL_COPY).map(([field, message]) => (
                   <label key={field}>
