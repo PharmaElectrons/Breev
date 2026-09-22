@@ -15,11 +15,14 @@ import {
 } from "./error-boundary";
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityShell } from "./identity-shell";
+import { logoutIdentity } from "./identity-api";
 import { BasketRouteView } from "./basket-screen";
 import { SalesRouteView } from "./sales-screen";
 import { InventoryRouteView } from "./inventory-screen";
 import { messages } from "./messages";
 import { ModuleNavigation } from "./module-navigation";
+import { NavbarCollapseMenu } from "./navbar-collapse-menu";
+import { SettingsRouteView } from "./settings-screen";
 import {
   catalogHash,
   DEFAULT_MODULE_ID,
@@ -56,7 +59,8 @@ export function AppShell({
   readonly startup: StartupConnection;
 }): React.JSX.Element {
   const { locale, setLocale, setTheme, theme } = usePreferences();
-  const { state: identityState } = useIdentityState();
+  const { setState: setIdentityState, state: identityState } =
+    useIdentityState();
   const {
     cancelTerminalPairing,
     checkNow,
@@ -139,6 +143,17 @@ export function AppShell({
     }
   };
 
+  const handleLogout = async (): Promise<void> => {
+    if (localApiOrigin === null) {
+      return;
+    }
+    try {
+      await logoutIdentity(localApiOrigin);
+    } finally {
+      setIdentityState({ state: "unauthenticated" });
+    }
+  };
+
   useEffect(() => {
     const handleHashChange = (): void => {
       setCurrentHash(window.location.hash);
@@ -196,6 +211,14 @@ export function AppShell({
     state === "ready" && authenticated && activeModuleId === "basket";
   const salesWorkspace =
     state === "ready" && authenticated && activeModuleId === "sales";
+  const settingsWorkspace =
+    state === "ready" && authenticated && activeModuleId === "settings";
+  const isWorkspace =
+    purchaseWorkspace ||
+    inventoryWorkspace ||
+    basketWorkspace ||
+    salesWorkspace ||
+    settingsWorkspace;
   const connectionCard = (
     <Card className="status-card" data-state={state}>
       <CardHeader className="status-header">
@@ -265,6 +288,7 @@ export function AppShell({
       data-inventory-workspace={inventoryWorkspace || undefined}
       data-sales-workspace={salesWorkspace || undefined}
       data-purchase-workspace={purchaseWorkspace || undefined}
+      data-settings-workspace={settingsWorkspace || undefined}
     >
       <header className="shell-header" aria-label="Breev">
         <div className="brand-lockup">
@@ -273,10 +297,7 @@ export function AppShell({
           </span>
           <span>
             <strong className="brand-name">Breev</strong>
-            {purchaseWorkspace ||
-            inventoryWorkspace ||
-            basketWorkspace ||
-            salesWorkspace ? (
+            {isWorkspace ? (
               <h1 className="brand-description">
                 {navigationCopy.modules[activeModuleId].label}
               </h1>
@@ -293,42 +314,24 @@ export function AppShell({
         <ModuleNavigation activeModuleId={activeModuleId} modules={modules} />
 
         <div className="preference-controls">
-          {authenticated ? (
-            <>
-              <button
-                className="quiet-button"
-                type="button"
-                aria-label={copy.crash.exportDiagnostics}
-                disabled={diagnosticAction === "saving"}
-                onClick={() => void exportDiagnostics()}
-              >
-                <DiagnosticsIcon />
-                <span>{copy.crash.exportDiagnostics}</span>
-              </button>
-              <button
-                className="quiet-button"
-                type="button"
-                aria-label={copy.crash.contactSupport}
-                disabled={supportAction === "opening"}
-                onClick={() => void openSupport()}
-              >
-                <SupportIcon />
-                <span>{copy.crash.contactSupport}</span>
-              </button>
-              {centralSubmissionEnabled ? (
-                <button
-                  className="quiet-button"
-                  type="button"
-                  aria-label={copy.crash.submitDiagnostics}
-                  disabled={submissionAction === "submitting"}
-                  onClick={() => setSubmissionAction("confirming")}
-                >
-                  <SendIcon />
-                  <span>{copy.crash.submitDiagnostics}</span>
-                </button>
-              ) : null}
-            </>
-          ) : null}
+          <NavbarCollapseMenu
+            activeModuleId={activeModuleId}
+            authenticated={authenticated}
+            centralSubmissionEnabled={centralSubmissionEnabled}
+            diagnosticAction={diagnosticAction}
+            exportDiagnostics={exportDiagnostics}
+            locale={locale}
+            onLogout={handleLogout}
+            onOpenSubmissionConfirmation={() =>
+              setSubmissionAction("confirming")
+            }
+            openSupport={openSupport}
+            setLocale={setLocale}
+            setTheme={setTheme}
+            submissionAction={submissionAction}
+            supportAction={supportAction}
+            theme={theme}
+          />
           {purchaseWorkspace ? (
             <details
               className="purchase-connection"
@@ -341,28 +344,6 @@ export function AppShell({
               {connectionCard}
             </details>
           ) : null}
-          <button
-            className="quiet-button"
-            type="button"
-            aria-label={copy.switchLanguage}
-            onClick={() => setLocale(locale === "en" ? "ar" : "en")}
-          >
-            <LanguageIcon />
-            <span>{locale === "en" ? "العربية" : "English"}</span>
-          </button>
-          <button
-            className="quiet-button"
-            type="button"
-            aria-label={
-              theme === "light"
-                ? copy.switchToDarkTheme
-                : copy.switchToLightTheme
-            }
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-          >
-            <ThemeIcon theme={theme} />
-            <span>{theme === "light" ? copy.themeLight : copy.themeDark}</span>
-          </button>
         </div>
         {purchaseWorkspace ? <PurchaseClock locale={locale} /> : null}
       </header>
@@ -375,32 +356,39 @@ export function AppShell({
         />
       ) : null}
 
-      <p className="support-action-status" role="status" aria-live="polite">
-        {diagnosticAction === "saved"
-          ? copy.crash.exportSaved
-          : diagnosticAction === "failed"
-            ? copy.crash.exportFailed
-            : diagnosticAction === "cancelled"
-              ? copy.crash.exportCancelled
-              : supportAction === "opened"
-                ? copy.crash.contactOpened
-                : supportAction === "failed"
-                  ? copy.crash.contactFailed
-                  : supportAction === "unavailable"
-                    ? `${copy.crash.contactUnavailable} ${copy.crash.manualSupportInstructions}`
-                    : submissionAction === "submitted"
-                      ? `${copy.crash.submitted} ${copy.crash.reportReference}: ${submissionReportId ?? ""}`
-                      : submissionAction === "failed"
-                        ? copy.crash.submitFailed
-                        : submissionAction === "unavailable"
-                          ? copy.crash.submitUnavailable
-                          : ""}
-      </p>
+      {diagnosticAction === "saved" ||
+      diagnosticAction === "failed" ||
+      diagnosticAction === "cancelled" ||
+      supportAction === "opened" ||
+      supportAction === "failed" ||
+      supportAction === "unavailable" ||
+      submissionAction === "submitted" ||
+      submissionAction === "failed" ||
+      submissionAction === "unavailable" ? (
+        <p className="support-action-status" role="status" aria-live="polite">
+          {diagnosticAction === "saved"
+            ? copy.crash.exportSaved
+            : diagnosticAction === "failed"
+              ? copy.crash.exportFailed
+              : diagnosticAction === "cancelled"
+                ? copy.crash.exportCancelled
+                : supportAction === "opened"
+                  ? copy.crash.contactOpened
+                  : supportAction === "failed"
+                    ? copy.crash.contactFailed
+                    : supportAction === "unavailable"
+                      ? `${copy.crash.contactUnavailable} ${copy.crash.manualSupportInstructions}`
+                      : submissionAction === "submitted"
+                        ? `${copy.crash.submitted} ${copy.crash.reportReference}: ${submissionReportId ?? ""}`
+                        : submissionAction === "failed"
+                          ? copy.crash.submitFailed
+                          : submissionAction === "unavailable"
+                            ? copy.crash.submitUnavailable
+                            : ""}
+        </p>
+      ) : null}
 
-      {purchaseWorkspace ||
-      inventoryWorkspace ||
-      basketWorkspace ||
-      salesWorkspace ? null : (
+      {isWorkspace ? null : (
         <section className="status-region" aria-label={copy.connectionStatus}>
           <Card className="status-card" data-state={state}>
             <CardHeader className="status-header">
@@ -532,18 +520,15 @@ export function AppShell({
               }}
               hash={currentHash}
             />
+          ) : activeModuleId === "settings" ? (
+            <SettingsRouteView baseUrl={localApiOrigin} hash={currentHash} />
           ) : (
-            <IdentityShell baseUrl={localApiOrigin} />
+            <UnavailableSurface moduleId={activeModuleId} />
           )}
         </WorkspaceErrorBoundary>
       ) : null}
 
-      {purchaseWorkspace ||
-      inventoryWorkspace ||
-      basketWorkspace ||
-      salesWorkspace ? null : (
-        <footer className="shell-footer">Breev</footer>
-      )}
+      {isWorkspace ? null : <footer className="shell-footer">Breev</footer>}
     </main>
   );
 }
@@ -591,40 +576,6 @@ function StatusIcon({ state }: { state: StartupState }): React.JSX.Element {
   );
 }
 
-function LanguageIcon(): React.JSX.Element {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-    </svg>
-  );
-}
-
-function ThemeIcon({ theme }: { theme: "dark" | "light" }): React.JSX.Element {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-    >
-      {theme === "light" ? (
-        <>
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-        </>
-      ) : (
-        <path d="M20 15.3A8.5 8.5 0 0 1 8.7 4 8.5 8.5 0 1 0 20 15.3Z" />
-      )}
-    </svg>
-  );
-}
-
 function PurchaseClock({
   locale,
 }: {
@@ -649,50 +600,5 @@ function PurchaseClock({
         }).format(now)}
       </span>
     </time>
-  );
-}
-
-function DiagnosticsIcon(): React.JSX.Element {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <path
-        d="M5 3h10l4 4v14H5zM15 3v5h4M8 13h8M8 17h5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
-
-function SupportIcon(): React.JSX.Element {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <path
-        d="M4 13v-2a8 8 0 0 1 16 0v2M4 13a2 2 0 0 0 2 2h1v-5H6a2 2 0 0 0-2 2v1Zm16 0a2 2 0 0 1-2 2h-1v-5h1a2 2 0 0 1 2 2v1ZM17 17c0 2-2 3-5 3"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
-
-function SendIcon(): React.JSX.Element {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <path
-        d="m3 11 17-8-7 18-2-7-8-3Zm8 3 9-11"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-    </svg>
   );
 }

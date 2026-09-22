@@ -96,8 +96,14 @@ export function RoleEditor({
       pendingSelection !== null &&
       roles.some((role) => role.id === pendingSelection)
     ) {
+      const targetId = `role-${pendingSelection}-select`;
       setSelectedRoleId(pendingSelection);
       setPendingSelection(null);
+      const focusTarget = (): void => {
+        document.getElementById(targetId)?.focus();
+      };
+      focusTarget();
+      queueMicrotask(focusTarget);
       return;
     }
     if (

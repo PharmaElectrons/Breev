@@ -144,12 +144,14 @@ a:focus-visible,
   isolation: isolate;
   display: grid;
   min-height: 100vh;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto auto 1fr auto;
   overflow-x: hidden;
   background: var(--surface);
 }
 
 .shell-header {
+  position: relative;
+  z-index: 50;
   display: flex;
   min-block-size: 4rem;
   flex-wrap: wrap;
@@ -284,12 +286,89 @@ a:focus-visible,
   gap: 0.4rem;
 }
 
+.collapse-menu {
+  position: relative;
+}
+
+.collapse-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.collapse-menu-dropdown {
+  position: absolute;
+  inset-block-start: calc(100% + 0.35rem);
+  inset-inline-end: 0;
+  min-inline-size: 15rem;
+  z-index: 100;
+  border-radius: 0.625rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--card-foreground);
+  padding: 0.4rem;
+  box-shadow:
+    0 10px 25px -5px var(--shadow),
+    0 8px 10px -6px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.collapse-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  inline-size: 100%;
+  border-radius: 0.375rem;
+  padding-block: 0.45rem;
+  padding-inline: 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--card-foreground);
+  text-decoration: none;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: start;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.collapse-menu-item:hover:not(:disabled) {
+  background: var(--primary-wash);
+}
+
+.collapse-menu-item.active,
+.collapse-menu-item[aria-current="page"] {
+  background: var(--primary-wash);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.collapse-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.collapse-menu-separator {
+  block-size: 1px;
+  background: var(--border);
+  margin-block: 0.25rem;
+  border: none;
+}
+
 .support-action-status {
   min-height: 1.5rem;
   margin: 0;
   padding-inline: clamp(1rem, 3vw, 2.5rem);
   color: var(--muted-foreground);
   font-size: 0.875rem;
+}
+
+.support-action-status:empty {
+  display: none;
 }
 
 .quiet-button {
@@ -1992,6 +2071,43 @@ a:focus-visible,
 .shell-page[data-inventory-workspace] .brand-description,
 .shell-page[data-sales-workspace] .brand-description,
 .shell-page[data-basket-workspace] .brand-description {
+  display: block;
+  margin: 0;
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.shell-page[data-settings-workspace] {
+  block-size: 100dvh;
+  min-block-size: 40rem;
+  overflow-y: auto;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-page[data-settings-workspace] .settings-workspace {
+  flex: 1 0 auto;
+}
+
+.shell-page[data-settings-workspace] .shell-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 20;
+  flex-wrap: nowrap;
+  min-inline-size: 0;
+  padding: 0.5rem 1.5rem;
+}
+
+.shell-page[data-settings-workspace] .brand-lockup > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.shell-page[data-settings-workspace] .brand-description {
   display: block;
   margin: 0;
   border-inline-start: 1px solid var(--border);
@@ -4657,4 +4773,44 @@ a:focus-visible,
 .sales-actions button {
   min-block-size: 2.75rem;
   min-inline-size: 2.75rem;
+}
+
+.settings-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  inline-size: min(100%, 72rem);
+  margin-inline: auto;
+  padding-block: 1.5rem 3rem;
+  padding-inline: 1.5rem;
+  min-block-size: 0;
+}
+
+.settings-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  inline-size: 100%;
+}
+
+.settings-tab-list {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  inline-size: 100%;
+  border-block-end: 1px solid var(--border);
+  padding-block-end: 0;
+  overflow-x: auto;
+}
+
+.tab-pane-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
