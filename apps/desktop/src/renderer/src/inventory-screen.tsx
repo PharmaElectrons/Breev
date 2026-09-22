@@ -631,18 +631,22 @@ function InventoryScreen({
       <div className="inventory-metrics">
         <InventoryMetric
           label={copy.metrics.totalValue}
+          tone="emerald"
           value={metrics.totalValue}
         />
         <InventoryMetric
           label={copy.metrics.averageCost}
+          tone="accent"
           value={metrics.averageCost}
         />
         <InventoryMetric
           label={copy.metrics.distinctItems}
+          tone="emerald"
           value={metrics.distinctItems}
         />
         <InventoryMetric
           label={copy.metrics.itemsWithStock}
+          tone="accent"
           value={metrics.itemsWithStock}
         />
       </div>
@@ -804,13 +808,15 @@ function InventoryScreen({
 
 function InventoryMetric({
   label,
+  tone,
   value,
 }: {
   readonly label: string;
+  readonly tone?: "emerald" | "accent";
   readonly value: string;
 }): React.JSX.Element {
   return (
-    <div className="inventory-metric">
+    <div className="inventory-metric" data-tone={tone}>
       <span>{label}</span>
       <strong>
         <bdi>{value}</bdi>

@@ -2361,6 +2361,24 @@ a:focus-visible,
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+.inventory-metric[data-tone="emerald"] {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  color: var(--primary);
+}
+.inventory-metric[data-tone="emerald"] span {
+  color: var(--primary);
+  opacity: 0.7;
+}
+.inventory-metric[data-tone="accent"] {
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  background: color-mix(in srgb, var(--warning) 5%, transparent);
+  color: var(--warning);
+}
+.inventory-metric[data-tone="accent"] span {
+  color: var(--warning);
+  opacity: 0.7;
+}
 @media (max-width: 60rem) {
   .inventory-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
