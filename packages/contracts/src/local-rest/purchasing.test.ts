@@ -492,6 +492,23 @@ describe("supplier and purchase draft contracts", () => {
   it("rejects transformed or unknown posted purchase search input", () => {
     expect(
       purchasePostedListRequestSchema.parse({
+        dateType: "posted-at",
+        direction: "descending",
+        from: "2026-01-01",
+        query: "INV-100",
+        sort: "posted-at",
+        to: "2026-12-31",
+      }),
+    ).toEqual({
+      dateType: "posted-at",
+      direction: "descending",
+      from: "2026-01-01",
+      query: "INV-100",
+      sort: "posted-at",
+      to: "2026-12-31",
+    });
+    expect(
+      purchasePostedListRequestSchema.parse({
         direction: "descending",
         from: "2026-01-01",
         query: "INV-100",

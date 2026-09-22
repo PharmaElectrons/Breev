@@ -3621,6 +3621,7 @@ export const purchasePostResultSchema = z.strictObject({
 
 export const purchasePostedListRequestSchema = z
   .strictObject({
+    dateType: z.enum(["invoice-date", "posted-at"]).optional(),
     direction: z.enum(["ascending", "descending"]).optional(),
     from: z.iso.date().optional(),
     query: z
@@ -3631,7 +3632,7 @@ export const purchasePostedListRequestSchema = z
       })
       .optional(),
     sort: z
-      .enum(["invoice-date", "number", "primary-cost", "supplier"])
+      .enum(["invoice-date", "number", "primary-cost", "supplier", "posted-at"])
       .optional(),
     to: z.iso.date().optional(),
   })

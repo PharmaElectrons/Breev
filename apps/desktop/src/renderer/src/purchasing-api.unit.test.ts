@@ -257,6 +257,7 @@ describe("Purchasing REST client", () => {
 
     await expect(
       requestPostedPurchases("http://127.0.0.1:3000", {
+        dateType: "posted-at",
         direction: "ascending",
         from: "2026-01-01",
         query: "INV-100",
@@ -267,6 +268,7 @@ describe("Purchasing REST client", () => {
     const [url, init] = fetch.mock.calls[0] as [URL, RequestInit];
     expect(url.pathname).toBe("/purchases/posted");
     expect(Object.fromEntries(url.searchParams)).toEqual({
+      dateType: "posted-at",
       direction: "ascending",
       from: "2026-01-01",
       query: "INV-100",

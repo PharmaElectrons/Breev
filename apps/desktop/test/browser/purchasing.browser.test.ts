@@ -1114,7 +1114,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
 
     delayNextPurchasePostResponse = true;
-    await page.getByRole("button", { name: "ترحيل الشراء" }).click();
+    await page.getByRole("button", { name: "حفظ الفاتورة" }).click();
     await expect(page.getByText(/تعذر تأكيد النتيجة/)).toBeVisible({
       timeout: 7_000,
     });
@@ -1122,7 +1122,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     const receipt = page.locator(".posted-purchase-result");
     await expect(
-      receipt.getByRole("heading", { name: "شراء مُرحّل" }),
+      receipt.getByRole("heading", { name: "فاتورة شراء محفوظة" }),
     ).toBeVisible();
     await expect(receipt).toContainText("POST-RELOAD-1");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -1509,20 +1509,19 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page.goto(`${renderer.origin}#/purchases`);
         await page
           .getByRole("button", {
-            name: locale === "en" ? "Posted invoices" : "الفواتير المُرحّلة",
+            name:
+              locale === "en" ? "Posted invoices" : "فواتير الشراء المحفوظة",
           })
           .click();
         const dialog = page.getByRole("dialog", {
           name:
-            locale === "en"
-              ? "Posted purchase invoices"
-              : "فواتير الشراء المُرحّلة",
+            locale === "en" ? "Posted purchase invoices" : "سجل فواتير الشراء",
         });
         const search = dialog.getByRole("searchbox", {
           name:
             locale === "en"
               ? "Search posted purchases"
-              : "البحث في المشتريات المُرحّلة",
+              : "البحث في فواتير الشراء",
         });
         await search.fill("BROWSER-REVIEW");
         await search.press("Enter");

@@ -5657,7 +5657,62 @@ a:focus-visible,
 }
 
 .posted-purchase-filters {
-  grid-template-columns: minmax(13rem, 2fr) repeat(4, minmax(8rem, 1fr)) auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.posted-purchase-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.posted-purchase-presets {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.preset-pill {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-pill:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--accent) 15%, var(--muted));
+  border-color: var(--accent);
+}
+
+.preset-pill.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.posted-purchase-filter-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr)) auto;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.posted-purchase-error-inline {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--destructive);
+  font-weight: 600;
 }
 
 .posted-purchase-list {
@@ -5882,13 +5937,13 @@ a:focus-visible,
 }
 
 @media (max-width: 72rem) {
-  .posted-purchase-filters {
+  .posted-purchase-filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 37rem) {
-  .posted-purchase-filters {
+  .posted-purchase-filter-row {
     grid-template-columns: 1fr;
   }
 
@@ -5896,6 +5951,31 @@ a:focus-visible,
   .posted-correction-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .posted-purchase-review,
+  .posted-purchase-review * {
+    visibility: visible;
+  }
+  .posted-purchase-review {
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: 0;
+    width: 100%;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .posted-detail-toolbar,
+  .posted-correction-actions,
+  .purchase-filters,
+  .purchase-header-tabs,
+  .posted-detail-actions {
+    display: none !important;
   }
 }
 

@@ -742,6 +742,8 @@ function postedPurchaseOrder(
   switch (sort) {
     case "invoice-date":
       return `posted_row.invoice_date ${direction}, ${suffix}`;
+    case "posted-at":
+      return `posted_row.posted_at ${direction}, ${suffix}`;
     case "primary-cost":
       return `posted_row.primary_supplier_cost_fils ${direction}, ${suffix}`;
     case "supplier":
@@ -1446,6 +1448,7 @@ export class PurchasingService {
       );
       const costsVisible = costVisibility === "visible";
       const query = input.query || null;
+      const dateType = input.dateType ?? "invoice-date";
       const result = await client.query<PostedPurchaseListRow>(
         `${POSTED_PURCHASE_LIST_SELECT}
          where posted_row.pharmacy_id = $1
@@ -1454,10 +1457,23 @@ export class PurchasingService {
              or posted_row.supplier_invoice_number ilike '%' || $2 || '%'
              or ('P' || posted_row.number_value::text || '/'
                  || posted_row.number_year::text) ilike '%' || $2 || '%')
-           and ($3::date is null or posted_row.invoice_date >= $3::date)
-           and ($4::date is null or posted_row.invoice_date <= $4::date)
+           and (
+             case when $5::text = 'posted-at' then
+               ($3::date is null or (posted_row.posted_at at time zone 'UTC')::date >= $3::date)
+               and ($4::date is null or (posted_row.posted_at at time zone 'UTC')::date <= $4::date)
+             else
+               ($3::date is null or posted_row.invoice_date >= $3::date)
+               and ($4::date is null or posted_row.invoice_date <= $4::date)
+             end
+           )
          order by ${postedPurchaseOrder(input, costsVisible)}`,
-        [context.pharmacyId, query, input.from ?? null, input.to ?? null],
+        [
+          context.pharmacyId,
+          query,
+          input.from ?? null,
+          input.to ?? null,
+          dateType,
+        ],
       );
       return purchasePostedListResponseSchema.parse({
         costVisibility,

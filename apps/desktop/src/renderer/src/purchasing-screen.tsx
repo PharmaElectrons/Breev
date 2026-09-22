@@ -1179,6 +1179,13 @@ export function PurchasingRouteView({
                 <button
                   className="quiet-button"
                   type="button"
+                  onClick={() => setPostedReviewOpen(true)}
+                >
+                  <span aria-hidden="true">🧾</span> {copy.postedInvoices}
+                </button>
+                <button
+                  className="quiet-button"
+                  type="button"
                   onClick={newDraft}
                 >
                   <span aria-hidden="true">＋</span> {copy.newDraft}
