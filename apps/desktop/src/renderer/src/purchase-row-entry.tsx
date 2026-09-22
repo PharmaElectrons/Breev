@@ -1371,7 +1371,17 @@ export function PurchaseRowEntry({
         </summary>
         <div className="purchase-optional-controls-body">
           <div className="purchase-optional-header">
-            <strong>{copy.optionalControls}</strong>
+            <div>
+              <strong>{copy.optionalControls}</strong>
+              {product !== null ? (
+                <span
+                  className="purchase-optional-product-tag"
+                  title={product.displayName}
+                >
+                  {product.displayName}
+                </span>
+              ) : null}
+            </div>
             <button
               type="button"
               className="quiet-button purchase-optional-close"
@@ -1383,8 +1393,29 @@ export function PurchaseRowEntry({
               ✕
             </button>
           </div>
+          {product === null ? (
+            <div className="purchase-optional-notice">
+              <span
+                className="purchase-optional-notice-icon"
+                aria-hidden="true"
+              >
+                ℹ
+              </span>
+              <span>{copy.unitHint}</span>
+              <button
+                type="button"
+                className="quiet-button purchase-optional-focus-item-btn"
+                onClick={() => {
+                  if (optionalRef.current) optionalRef.current.open = false;
+                  fieldRefs.current["item"]?.focus();
+                }}
+              >
+                {copy.itemBarcode} ↵
+              </button>
+            </div>
+          ) : null}
           <div className="purchase-optional-fields">
-            <label>
+            <label className="purchase-optional-unit-label">
               <span className="purchase-optional-label-text">
                 {copy.rowUnit}
               </span>
@@ -1392,10 +1423,20 @@ export function PurchaseRowEntry({
                 ref={optionalUnitRef}
                 value={unitKey}
                 disabled={product === null}
+                className={product === null ? "is-disabled" : undefined}
                 onChange={(event) => setUnitKey(event.target.value)}
               >
-                {unitOptions(product)}
+                {unitOptions(product, copy)}
               </select>
+              {product === null ? (
+                <span className="purchase-optional-field-hint">
+                  {copy.unitHint}
+                </span>
+              ) : product.packaging.packageUnits.length === 0 ? (
+                <span className="purchase-optional-field-hint">
+                  {copy.singleUnitOnly}
+                </span>
+              ) : null}
             </label>
             {product?.pricing.method === "by-percentage" ? (
               <label>
@@ -2133,20 +2174,24 @@ function keyToUnit(
     ? { kind: "inventory-unit" }
     : { kind: "package-unit", packageUnitName: key.slice("package:".length) };
 }
-function unitOptions(product: Product | null): React.JSX.Element[] {
+function unitOptions(
+  product: Product | null,
+  copy: { unitSelectProductFirst: string; baseUnitBadge: string },
+): React.JSX.Element[] {
   if (product === null)
     return [
       <option key="none" value="inventory-unit">
-        —
+        {copy.unitSelectProductFirst}
       </option>,
     ];
   return [
     <option key="inventory" value="inventory-unit">
-      {product.packaging.inventoryUnitName}
+      {product.packaging.inventoryUnitName} ({copy.baseUnitBadge})
     </option>,
     ...product.packaging.packageUnits.map((unit) => (
       <option key={unit.name} value={`package:${unit.name}`}>
-        {unit.name}
+        {unit.name} ({unit.baseUnitsPerPackage}{" "}
+        {product.packaging.inventoryUnitName})
       </option>
     )),
   ];

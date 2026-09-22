@@ -188,6 +188,10 @@ export const purchasingMessages = {
     cancel: "Cancel",
     done: "Done",
     optionalActive: "Active",
+    unitSelectProductFirst: "Select product first…",
+    unitHint: "Available units load automatically once an item is selected.",
+    baseUnitBadge: "Base unit",
+    singleUnitOnly: "This item has no additional package units configured.",
     rowCommitted: "Row committed and saved durably.",
     rowError: "The row was not saved. Correct this value and retry.",
     apiUnavailable:
@@ -495,6 +499,10 @@ export const purchasingMessages = {
     cancel: "إلغاء",
     done: "تم",
     optionalActive: "نشط",
+    unitSelectProductFirst: "اختر الصنف أولاً…",
+    unitHint: "تظهر الوحدات المتاحة تلقائياً بعد اختيار الصنف.",
+    baseUnitBadge: "الوحدة الأساسية",
+    singleUnitOnly: "هذا الصنف ليس له وحدات تعبئة إضافية.",
     rowCommitted: "تم حفظ البند بشكل دائم.",
     rowError: "لم يتم حفظ البند. صحح القيمة وأعد المحاولة.",
     apiUnavailable:
