@@ -132,6 +132,7 @@ export function PurchaseRowEntry({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [saveSettingsSuccess, setSaveSettingsSuccess] = useState(false);
   const settingsRef = useRef<HTMLDetailsElement>(null);
+  const optionalRef = useRef<HTMLDetailsElement>(null);
   const saveSuccessTimerRef = useRef<number | null>(null);
 
   const highlightedProduct =
@@ -177,17 +178,24 @@ export function PurchaseRowEntry({
 
   useEffect(() => {
     function handleSettingsOutside(event: MouseEvent): void {
-      if (
-        settingsRef.current?.open &&
-        !settingsRef.current.contains(event.target as Node)
-      ) {
+      const target = event.target as Node;
+      if (settingsRef.current?.open && !settingsRef.current.contains(target)) {
         settingsRef.current.open = false;
+      }
+      if (optionalRef.current?.open && !optionalRef.current.contains(target)) {
+        optionalRef.current.open = false;
       }
     }
     function handleSettingsKeyDown(event: globalThis.KeyboardEvent): void {
-      if (event.key === "Escape" && settingsRef.current?.open) {
-        settingsRef.current.open = false;
-        settingsRef.current.querySelector("summary")?.focus();
+      if (event.key === "Escape") {
+        if (settingsRef.current?.open) {
+          settingsRef.current.open = false;
+          settingsRef.current.querySelector("summary")?.focus();
+        }
+        if (optionalRef.current?.open) {
+          optionalRef.current.open = false;
+          optionalRef.current.querySelector("summary")?.focus();
+        }
       }
     }
     document.addEventListener("mousedown", handleSettingsOutside);
@@ -969,6 +977,14 @@ export function PurchaseRowEntry({
   const visibleColumns =
     preferences?.columns.filter(({ visible }) => visible) ?? [];
 
+  const hasActiveOptionalFields =
+    lotNumber.trim() !== "" ||
+    notes.trim() !== "" ||
+    unitKey !== "inventory-unit" ||
+    (product?.pricing.method === "by-percentage" &&
+      marginPercentage.trim() !== "" &&
+      marginPercentage.trim() !== "0");
+
   return (
     <section
       className="purchase-row-workspace"
@@ -1332,61 +1348,106 @@ export function PurchaseRowEntry({
       </div>
 
       <details
+        ref={optionalRef}
         className="purchase-optional-controls"
         onToggle={(event) => {
-          if (event.currentTarget.open)
+          if (event.currentTarget.open) {
             queueMicrotask(() => optionalUnitRef.current?.focus());
+          }
         }}
       >
-        <summary>{copy.optionalControls}</summary>
-        <div>
-          <label>
-            {copy.rowUnit}
-            <select
-              ref={optionalUnitRef}
-              value={unitKey}
-              disabled={product === null}
-              onChange={(event) => setUnitKey(event.target.value)}
+        <summary className="purchase-optional-summary">
+          <span className="purchase-optional-summary-label">
+            <span className="purchase-optional-icon" aria-hidden="true">
+              ⚙
+            </span>
+            <span>{copy.optionalControls}</span>
+          </span>
+          {hasActiveOptionalFields ? (
+            <span className="purchase-optional-active-badge">
+              {copy.optionalActive}
+            </span>
+          ) : null}
+        </summary>
+        <div className="purchase-optional-controls-body">
+          <div className="purchase-optional-header">
+            <strong>{copy.optionalControls}</strong>
+            <button
+              type="button"
+              className="quiet-button purchase-optional-close"
+              aria-label={copy.closeSettings}
+              onClick={() => {
+                if (optionalRef.current) optionalRef.current.open = false;
+              }}
             >
-              {unitOptions(product)}
-            </select>
-          </label>
-          {product?.pricing.method === "by-percentage" ? (
+              ✕
+            </button>
+          </div>
+          <div className="purchase-optional-fields">
             <label>
-              {copy.rowMargin}
+              <span className="purchase-optional-label-text">
+                {copy.rowUnit}
+              </span>
+              <select
+                ref={optionalUnitRef}
+                value={unitKey}
+                disabled={product === null}
+                onChange={(event) => setUnitKey(event.target.value)}
+              >
+                {unitOptions(product)}
+              </select>
+            </label>
+            {product?.pricing.method === "by-percentage" ? (
+              <label>
+                <span className="purchase-optional-label-text">
+                  {copy.rowMargin}
+                </span>
+                <input
+                  value={marginPercentage}
+                  onChange={(event) => {
+                    setMarginPercentage(event.target.value);
+                    setRetailPriceFils(
+                      calculatePurchaseRetailPreview(
+                        costFils,
+                        event.target.value,
+                        product.pricing.method === "by-percentage"
+                          ? product.pricing.rounding
+                          : "off",
+                      ),
+                    );
+                  }}
+                />
+              </label>
+            ) : null}
+            <label>
+              <span className="purchase-optional-label-text">{copy.lot}</span>
               <input
-                value={marginPercentage}
-                onChange={(event) => {
-                  setMarginPercentage(event.target.value);
-                  setRetailPriceFils(
-                    calculatePurchaseRetailPreview(
-                      costFils,
-                      event.target.value,
-                      product.pricing.method === "by-percentage"
-                        ? product.pricing.rounding
-                        : "off",
-                    ),
-                  );
-                }}
+                maxLength={120}
+                value={lotNumber}
+                onChange={(event) => setLotNumber(event.target.value)}
               />
             </label>
-          ) : null}
-          <label>
-            {copy.lot}
-            <input
-              maxLength={120}
-              value={lotNumber}
-              onChange={(event) => setLotNumber(event.target.value)}
-            />
-          </label>
-          <label>
-            {copy.notes}
-            <textarea
-              maxLength={1000}
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </label>
+            <label className="purchase-optional-notes-field">
+              <span className="purchase-optional-label-text">{copy.notes}</span>
+              <textarea
+                maxLength={1000}
+                rows={3}
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="purchase-optional-footer">
+            <button
+              type="button"
+              className="primary-button purchase-optional-done-btn"
+              onClick={() => {
+                if (optionalRef.current) optionalRef.current.open = false;
+              }}
+            >
+              {copy.done}
+            </button>
+          </div>
         </div>
       </details>
 

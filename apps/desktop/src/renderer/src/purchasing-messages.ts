@@ -186,6 +186,8 @@ export const purchasingMessages = {
     quickCreateHint:
       "No Product matches this value. Create it without leaving the invoice.",
     cancel: "Cancel",
+    done: "Done",
+    optionalActive: "Active",
     rowCommitted: "Row committed and saved durably.",
     rowError: "The row was not saved. Correct this value and retry.",
     apiUnavailable:
@@ -491,6 +493,8 @@ export const purchasingMessages = {
     quickCreate: "إنشاء صنف",
     quickCreateHint: "لا يوجد صنف مطابق. أنشئه من دون مغادرة الفاتورة.",
     cancel: "إلغاء",
+    done: "تم",
+    optionalActive: "نشط",
     rowCommitted: "تم حفظ البند بشكل دائم.",
     rowError: "لم يتم حفظ البند. صحح القيمة وأعد المحاولة.",
     apiUnavailable:
