@@ -249,16 +249,53 @@ export function PurchaseRowEntry({
   // cleanup empties the panel when the row entry leaves, so a posted or
   // discarded invoice never leaves a wholesale price on screen.
   useEffect(() => {
+    const activeRow =
+      selectedRowId !== null
+        ? draft.rows.find((r) => r.id === selectedRowId)
+        : null;
+    const activeExpiry =
+      activeRow?.expiryDate ??
+      (displayedProduct?.id === product?.id ? expiryDate : null);
+    const activeQty =
+      activeRow?.enteredQuantity ??
+      (displayedProduct?.id === product?.id ? quantity : null);
+    const activeUnit =
+      activeRow !== null && activeRow !== undefined
+        ? activeRow.unit.kind === "inventory-unit"
+          ? activeRow.inventoryUnitName
+          : activeRow.unit.packageUnitName
+        : unitKey === "inventory-unit"
+          ? (product?.packaging.inventoryUnitName ?? null)
+          : keyToUnit(unitKey).kind === "package-unit"
+            ? (keyToUnit(unitKey) as { packageUnitName: string })
+                .packageUnitName
+            : null;
+    const activeBaseUnits = activeRow?.inventoryUnitQuantity ?? null;
+
     onItemSelectionChanged(
       displayedProduct === null
         ? null
         : {
             fields: preferences?.detailsPanelFields ?? [],
             product: displayedProduct,
+            expiryDate: activeExpiry || null,
+            rowQuantity: activeQty || null,
+            unit: activeUnit,
+            baseUnits: activeBaseUnits,
           },
     );
     return () => onItemSelectionChanged(null);
-  }, [displayedProduct, onItemSelectionChanged, preferences]);
+  }, [
+    displayedProduct,
+    draft.rows,
+    expiryDate,
+    onItemSelectionChanged,
+    preferences,
+    product,
+    quantity,
+    selectedRowId,
+    unitKey,
+  ]);
 
   useEffect(() => {
     if (
@@ -1282,28 +1319,32 @@ export function PurchaseRowEntry({
                   <td data-column-field="actions">
                     <div className="purchase-row-actions-cell">
                       {isEditing ? (
-                        <>
+                        <div className="purchase-row-action-icons-wrap">
                           <button
                             type="button"
-                            className="purchase-row-action-btn save"
+                            className="purchase-action-icon-btn save"
                             disabled={busy}
                             aria-label={copy.saveRow}
                             title={copy.saveRow}
                             onClick={() => void saveEditedRow(row)}
                           >
-                            <span aria-hidden="true">✓</span>
-                            <span>{copy.saveRow}</span>
+                            <CheckIcon />
+                            <span className="visually-hidden">
+                              {copy.saveRow}
+                            </span>
                           </button>
                           <button
                             type="button"
-                            className="purchase-row-action-btn cancel"
+                            className="purchase-action-icon-btn cancel"
                             disabled={busy}
                             aria-label={copy.cancelEdit}
                             title={copy.cancelEdit}
                             onClick={cancelEditingRow}
                           >
-                            <span aria-hidden="true">✕</span>
-                            <span>{copy.cancelEdit}</span>
+                            <CloseIcon />
+                            <span className="visually-hidden">
+                              {copy.cancelEdit}
+                            </span>
                           </button>
                           <details
                             ref={editOptionalRef}
@@ -1326,7 +1367,7 @@ export function PurchaseRowEntry({
                             }}
                           >
                             <summary
-                              className="purchase-row-action-btn optional"
+                              className="purchase-action-icon-btn optional"
                               aria-label={copy.optionalControls}
                               title={copy.optionalControls}
                             >
@@ -1418,32 +1459,49 @@ export function PurchaseRowEntry({
                               </div>
                             </div>
                           </details>
-                        </>
+                        </div>
                       ) : (
-                        <>
+                        <div className="purchase-row-action-icons-wrap">
                           <button
                             type="button"
-                            className="purchase-row-action-btn edit"
+                            className="purchase-action-icon-btn id-card"
+                            disabled={busy || posting}
+                            aria-label={copy.itemCard}
+                            title={copy.itemCard}
+                            onClick={() => void openMasterCard(row)}
+                          >
+                            <IdCardIcon />
+                            <span className="visually-hidden">
+                              {copy.itemCard}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="purchase-action-icon-btn edit"
                             disabled={busy || posting}
                             aria-label={`${copy.editRow}: ${row.itemDisplayName}`}
                             title={copy.editRow}
                             onClick={() => startEditingRow(row)}
                           >
-                            <span aria-hidden="true">✎</span>
-                            <span>{copy.editRow}</span>
+                            <EditIcon />
+                            <span className="visually-hidden">
+                              {copy.editRow}: {row.itemDisplayName}
+                            </span>
                           </button>
                           <button
                             type="button"
-                            className="purchase-row-action-btn delete"
+                            className="purchase-action-icon-btn delete"
                             disabled={busy || posting}
                             aria-label={`${copy.deleteRow}: ${row.itemDisplayName}`}
                             title={copy.deleteRow}
                             onClick={() => void deleteRow(row)}
                           >
-                            <span aria-hidden="true">🗑</span>
-                            <span>{copy.deleteRow}</span>
+                            <TrashIcon />
+                            <span className="visually-hidden">
+                              {copy.deleteRow}: {row.itemDisplayName}
+                            </span>
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
                   </td>
@@ -1848,7 +1906,9 @@ export function PurchaseRowEntry({
           <input
             {...common}
             aria-label={copy.rowQuantity}
-            inputMode="numeric"
+            type="number"
+            min={1}
+            className="purchase-stepper-input w-full"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
           />
@@ -1858,7 +1918,9 @@ export function PurchaseRowEntry({
           <input
             {...common}
             aria-label={copy.rowCost}
-            inputMode="numeric"
+            type="number"
+            min={0}
+            className="purchase-stepper-input w-full"
             value={costFils}
             onChange={(event) => {
               setCostFils(event.target.value);
@@ -1879,7 +1941,9 @@ export function PurchaseRowEntry({
           <input
             {...common}
             aria-label={copy.sellingPrice}
-            inputMode="numeric"
+            type="number"
+            min={0}
+            className="purchase-stepper-input w-full"
             readOnly={locked}
             tabIndex={locked ? -1 : 0}
             title={locked ? copy.lockedByPercentage : undefined}
@@ -1894,6 +1958,7 @@ export function PurchaseRowEntry({
             {...common}
             aria-label={copy.rowExpiry}
             type="date"
+            className="purchase-date-input"
             value={expiryDate}
             onChange={(event) => setExpiryDate(event.target.value)}
           />
@@ -1915,9 +1980,10 @@ export function PurchaseRowEntry({
       case "quantity":
         return (
           <input
-            className="purchase-row-edit-input"
+            className="purchase-row-edit-input purchase-stepper-input w-full"
             aria-label={copy.rowQuantity}
-            inputMode="numeric"
+            type="number"
+            min={1}
             value={editQuantity}
             onChange={(e) => setEditQuantity(e.target.value)}
             onKeyDown={(e) => handleEditKeyDown(row, e)}
@@ -1926,9 +1992,10 @@ export function PurchaseRowEntry({
       case "cost":
         return (
           <input
-            className="purchase-row-edit-input"
+            className="purchase-row-edit-input purchase-stepper-input w-full"
             aria-label={copy.rowCost}
-            inputMode="numeric"
+            type="number"
+            min={0}
             value={editCostFils}
             onChange={(e) => {
               setEditCostFils(e.target.value);
@@ -1949,9 +2016,10 @@ export function PurchaseRowEntry({
         const locked = row.pricingMethod === "by-percentage";
         return (
           <input
-            className="purchase-row-edit-input"
+            className="purchase-row-edit-input purchase-stepper-input w-full"
             aria-label={copy.sellingPrice}
-            inputMode="numeric"
+            type="number"
+            min={0}
             readOnly={locked}
             tabIndex={locked ? -1 : 0}
             title={locked ? copy.lockedByPercentage : undefined}
@@ -1964,7 +2032,7 @@ export function PurchaseRowEntry({
       case "expiry":
         return (
           <input
-            className="purchase-row-edit-input"
+            className="purchase-row-edit-input purchase-date-input"
             aria-label={copy.rowExpiry}
             type="date"
             autoFocus
@@ -2178,32 +2246,32 @@ function PurchaseReview({
       aria-labelledby="purchase-review-title"
     >
       <h3 id="purchase-review-title">{copy.review}</h3>
-      <dl>
-        <div>
-          <dt>{copy.gross}</dt>
-          <dd>
+      <dl className="purchase-review-stats-grid">
+        <div className="purchase-review-stat">
+          <dt className="purchase-review-stat-label">{copy.gross}</dt>
+          <dd className="purchase-review-stat-value">
             <bdi>{draft.review.grossFils}</bdi> {copy.fils}
           </dd>
         </div>
-        <div>
-          <dt>{copy.discount}</dt>
-          <dd>
+        <div className="purchase-review-stat">
+          <dt className="purchase-review-stat-label">{copy.discount}</dt>
+          <dd className="purchase-review-stat-value">
             <bdi>{draft.review.allowanceFils}</bdi> {copy.fils}
           </dd>
         </div>
-        <div>
-          <dt>{copy.net}</dt>
-          <dd>
+        <div className="purchase-review-stat">
+          <dt className="purchase-review-stat-label">{copy.net}</dt>
+          <dd className="purchase-review-stat-value">
             <bdi>{draft.review.netFils}</bdi> {copy.fils}
           </dd>
         </div>
-        <div>
-          <dt>
+        <div className="purchase-review-stat">
+          <dt className="purchase-review-stat-label">
             {draft.review.settlementEffect.context === "cash"
               ? copy.tenderEffect
               : copy.payableEffect}
           </dt>
-          <dd>
+          <dd className="purchase-review-stat-value is-emphasis">
             <bdi>
               {draft.review.settlementEffect.context === "cash"
                 ? draft.review.settlementEffect.tenderFils
@@ -2503,4 +2571,162 @@ export function updateDraftRowProductAttributes(
     return row;
   });
   return { hasChanges, rows: updatedRows };
+}
+
+export function IdCardIcon({
+  className = "purchase-icon",
+}: {
+  readonly className?: string;
+}): React.JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M16 10h2" />
+      <path d="M16 14h2" />
+      <path d="M6.17 15a3 3 0 0 1 5.66 0" />
+      <circle cx="9" cy="11" r="2" />
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+    </svg>
+  );
+}
+
+export function BarcodeIcon({
+  className = "purchase-icon",
+}: {
+  readonly className?: string;
+}): React.JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M3 5v14" />
+      <path d="M8 5v14" />
+      <path d="M12 5v14" />
+      <path d="M17 5v14" />
+      <path d="M21 5v14" />
+    </svg>
+  );
+}
+
+export function EditIcon({
+  className = "purchase-icon",
+}: {
+  readonly className?: string;
+}): React.JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  );
+}
+
+export function TrashIcon({
+  className = "purchase-icon",
+}: {
+  readonly className?: string;
+}): React.JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      <line x1="10" x2="10" y1="11" y2="17" />
+      <line x1="14" x2="14" y1="11" y2="17" />
+    </svg>
+  );
+}
+
+export function CheckIcon({
+  className = "purchase-icon",
+}: {
+  readonly className?: string;
+}): React.JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+export function CloseIcon({
+  className = "purchase-icon",
+}: {
+  readonly className?: string;
+}): React.JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
 }
