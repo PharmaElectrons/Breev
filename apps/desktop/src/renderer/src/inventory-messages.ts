@@ -57,6 +57,7 @@ export interface InventoryCopy {
   readonly riskIndicators: Record<InventoryRiskIndicator, string>;
   readonly retry: string;
   readonly reviewUnavailable: string;
+  readonly searchLabel: string;
   readonly readOnly: string;
   readonly permissionDenied: string;
   readonly settings: string;
@@ -79,6 +80,7 @@ export interface InventoryCopy {
     readonly start: string;
     readonly resume: string;
     readonly activeSessions: string;
+    readonly activeSessionWarning: string;
     readonly completedSessions: string;
     readonly noActiveSessions: string;
     readonly noCompletedSessions: string;
@@ -332,6 +334,8 @@ const arabicCount: InventoryCopy["count"] = {
   start: "بدء جلسة جرد",
   resume: "استئناف الجرد",
   activeSessions: "الجلسات النشطة",
+  activeSessionWarning:
+    "توجد جلسة جرد نشطة. استأنفها أو أكملها قبل بدء جلسة جديدة.",
   completedSessions: "الجلسات المكتملة",
   noActiveSessions: "لا توجد جلسات جرد نشطة.",
   noCompletedSessions: "لا توجد جلسات مكتملة.",
@@ -399,6 +403,8 @@ const englishCount: InventoryCopy["count"] = {
   start: "Start count session",
   resume: "Resume count",
   activeSessions: "Active sessions",
+  activeSessionWarning:
+    "A count session is already active. Resume or complete it before starting another.",
   completedSessions: "Completed sessions",
   noActiveSessions: "There are no active count sessions.",
   noCompletedSessions: "There are no completed sessions.",
@@ -732,6 +738,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     retry: "إعادة المحاولة",
     reviewUnavailable:
       "تعذر الوصول إلى المخزون. تحقق من الاتصال وحاول مرة أخرى.",
+    searchLabel: "ابحث عن مادة بالاسم أو الباركود",
     riskIndicators: arabicRisks,
     settings: "إعدادات الأعمدة",
     settingsNote: "تُحفظ اختيارات الأعمدة لهذا المستخدم فقط.",
@@ -785,6 +792,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     retry: "Retry",
     reviewUnavailable:
       "Inventory is unavailable. Check the connection and try again.",
+    searchLabel: "Search by item name or barcode",
     riskIndicators: englishRisks,
     settings: "Column settings",
     settingsNote: "Column choices are saved for this user only.",

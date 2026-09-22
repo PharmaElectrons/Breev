@@ -225,6 +225,30 @@ test.describe.serial("read-only inventory review", () => {
     await restorePreferences();
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/inventory`);
+    const search = page.getByRole("searchbox", {
+      name: "Search by item name or barcode",
+    });
+    await search.fill(product.displayName.slice(0, 7));
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await search.fill(product.barcodes[0]!.value);
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await search.fill("");
+    const reviewRow = page.locator("tbody tr:first-child");
+    await reviewRow.locator('td[data-column-field="balance"]').click();
+    await expect(reviewRow).toHaveAttribute("data-selected", "true");
+    await expect(page.locator(".inventory-selection")).toContainText(
+      product.displayName,
+    );
+    await expect(page.locator(".inventory-selection a")).toHaveAttribute(
+      "href",
+      `#/inventory/items/${product.id}/movements`,
+    );
+    await expect(page.locator(".inventory-selection")).toContainText(
+      "Current balance",
+    );
+    await reviewRow.focus();
+    await reviewRow.press("Enter");
+    await expect(reviewRow).toHaveAttribute("data-selected", "true");
     const itemLink = page.locator(
       "tbody tr:first-child td[data-column-field='item'] button.table-link",
     );

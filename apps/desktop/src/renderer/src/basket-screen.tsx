@@ -461,6 +461,9 @@ function BasketScreen({
       </nav>
       <header className="inventory-heading basket-heading">
         <div>
+          <a className="basket-back-link" href="#/inventory">
+            {copy.backToInventory}
+          </a>
           <h2 id="basket-title">
             {route.kind === "basket" ? copy.tabs.basket : copy.tabs.ordered}
           </h2>

@@ -2133,6 +2133,17 @@ a:focus-visible,
   overflow: auto;
   padding-block-end: 2rem;
   background: var(--card);
+  color: var(--card-foreground);
+}
+.basket-workspace p,
+.basket-workspace small {
+  color: var(--muted-foreground);
+}
+.basket-back-link {
+  display: inline-block;
+  margin-block-end: 0.5rem;
+  color: var(--primary);
+  font-weight: 700;
 }
 .basket-heading {
   flex: none;
@@ -2187,7 +2198,15 @@ a:focus-visible,
   min-inline-size: 13rem;
 }
 .inventory-item-cell .quiet-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   white-space: nowrap;
+}
+.inventory-item-cell .quiet-button svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: none;
 }
 .basket-product-state {
   display: inline-flex;
@@ -2257,6 +2276,11 @@ a:focus-visible,
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+}
+.inventory-heading > div:first-child {
+  min-inline-size: 0;
 }
 .inventory-heading h2,
 .inventory-heading p,
@@ -2271,9 +2295,59 @@ a:focus-visible,
 .inventory-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
+  max-inline-size: 100%;
+}
+.inventory-actions > .primary-button,
+.inventory-actions > .quiet-button,
+.inventory-settings > summary {
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  text-decoration: none;
+}
+.inventory-basket-count {
+  display: inline-grid;
+  min-inline-size: 1.5rem;
+  min-block-size: 1.5rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--primary-wash);
+  color: var(--foreground);
+}
+.inventory-basket-feedback,
+.inventory-selection {
+  border: 1px solid var(--control-border);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--ready-soft);
+  color: var(--foreground) !important;
+}
+.inventory-basket-feedback {
+  position: fixed;
+  z-index: 20;
+  inset-block-end: 1.5rem;
+  inset-inline-end: 1.5rem;
+  max-inline-size: min(25rem, calc(100vw - 3rem));
+  box-shadow: 0 0.5rem 1.5rem var(--shadow);
+}
+.inventory-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--primary-wash);
+}
+.inventory-selection a {
+  color: var(--primary);
 }
 .inventory-settings {
   position: relative;
@@ -2324,6 +2398,22 @@ a:focus-visible,
   border: 1px solid var(--border);
   border-radius: 0.7rem;
 }
+.inventory-search {
+  display: grid;
+  max-inline-size: 25rem;
+  gap: 0.3rem;
+  color: var(--foreground);
+  font-weight: 700;
+}
+.inventory-search input {
+  min-block-size: 2.75rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.6rem;
+  padding-inline: 0.8rem;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
 .inventory-table-scroll table {
   inline-size: 100%;
   min-inline-size: 64rem;
@@ -2361,10 +2451,43 @@ a:focus-visible,
 .inventory-table-scroll tbody tr:hover {
   background: var(--primary-wash);
 }
+.inventory-table-scroll tbody tr[data-status="critical"] {
+  background: var(--danger-soft);
+}
+.inventory-table-scroll tbody tr[data-status="expiring"],
+.inventory-table-scroll tbody tr[data-status="reorder"] {
+  background: var(--warning-soft);
+}
+.inventory-table-scroll tbody tr[data-status="stable"] {
+  background: var(--ready-soft);
+}
+.inventory-table-scroll tbody tr[data-selected="true"] {
+  outline: 3px solid var(--primary);
+  outline-offset: -3px;
+  background: var(--primary-wash);
+}
+@media (max-width: 60rem) {
+  .inventory-heading {
+    flex-direction: column;
+  }
+  .inventory-actions {
+    justify-content: flex-start;
+  }
+  .inventory-table-scroll table {
+    min-inline-size: 56rem;
+  }
+}
 
 /* Count sessions keep the scanner path compact and the reconciliation table independent. */
 .count-workspace {
   gap: 0.85rem;
+}
+.count-active-warning {
+  border: 1px solid var(--warning);
+  border-radius: 0.6rem;
+  padding: 0.65rem 0.8rem;
+  background: var(--warning-soft);
+  color: var(--foreground) !important;
 }
 .count-heading {
   align-items: center;
@@ -2440,6 +2563,40 @@ a:focus-visible,
   font-size: 0.86rem;
   font-weight: 700;
   text-align: start;
+}
+.count-item-search {
+  position: relative;
+}
+.count-item-suggestions {
+  position: absolute;
+  z-index: 5;
+  inset-block-start: 100%;
+  inset-inline: 0;
+  max-block-size: 16rem;
+  overflow: auto;
+  border: 1px solid var(--control-border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  box-shadow: 0 0.4rem 1rem var(--shadow);
+}
+.count-item-suggestions button {
+  display: flex;
+  inline-size: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--card);
+  color: var(--card-foreground);
+  text-align: start;
+}
+.count-item-suggestions button[aria-selected="true"],
+.count-item-suggestions button:hover {
+  background: var(--primary-wash);
+}
+.count-item-suggestions small {
+  color: var(--muted-foreground);
 }
 .count-item-field input,
 .count-unit-field input {
