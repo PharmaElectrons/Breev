@@ -19,6 +19,7 @@ These are the client's own open approvals (scope §19 plus items the requirement
 | OCR | Provider, usage budget, and the accepted test-invoice set. | OCR inactive; manual entry complete. |
 | Old-data extraction | Separate quotation after reviewing the legacy database/export, volume, and quality. | No migration work. |
 | Final interface file | The final unified visual PDF, including the quick-stocktake design, as a visual reference that adds no scope. | The client-supplied prototype checked in at `design/prototype/` is the current production visual source. The final PDF may refine appearance; it adds no scope and cannot override written requirements. |
+| Concurrent stocktake sessions | Whether more than one active Count Session is allowed for one pharmacy across users and devices, and how old unfinished sessions should be reconciled. Scope §7.2 describes the count flow but does not set this policy. | The current screen warns and disables Start when an active session is listed; the API's existing session transitions and prior records remain unchanged pending a decision. |
 | Cashbox workflow confirmation | The client's demonstration video of the cashbox process was promised but is not in the record; confirm the documented reconciliation flow matches it. | The start/end reconciliation flow in `domain.md`/`workflows.md`. |
 
 ## Engineering and professional release gates

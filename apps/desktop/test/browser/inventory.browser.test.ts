@@ -158,15 +158,31 @@ test.describe.serial("read-only inventory review", () => {
     await expect(
       page.getByRole("heading", { name: "Inventory review" }),
     ).toBeVisible();
+    await expect(page.getByText("Total inventory value")).toBeVisible();
+    await expect(page.getByText("Distinct items")).toBeVisible();
     const balanceHeader = page.getByRole("columnheader", {
       name: "Current balance",
     });
     const balanceButton = balanceHeader.getByRole("button");
+    await expect(
+      page.getByRole("columnheader", { name: "Item" }),
+    ).toHaveAttribute("aria-sort", "ascending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↕");
+    await expect(
+      page.getByRole("columnheader", { name: "Batches" }),
+    ).not.toHaveAttribute("aria-sort", /.+/u);
+    await expect(
+      page
+        .getByRole("columnheader", { name: "Batches" })
+        .locator(".inventory-sort-icon"),
+    ).toHaveText("↕");
     await balanceButton.focus();
     await pressKeyOnFocused(page, balanceButton, "Enter");
     await expect(balanceHeader).toHaveAttribute("aria-sort", "ascending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↑");
     await pressKeyOnFocused(page, balanceButton, "Enter");
     await expect(balanceHeader).toHaveAttribute("aria-sort", "descending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↓");
     await expect(
       page
         .getByRole("status")
@@ -236,6 +252,11 @@ test.describe.serial("read-only inventory review", () => {
     const reviewRow = page.locator("tbody tr:first-child");
     await reviewRow.locator('td[data-column-field="balance"]').click();
     await expect(reviewRow).toHaveAttribute("data-selected", "true");
+    const cartAction = reviewRow.getByRole("button", {
+      name: `Add ${product.displayName} to the order basket`,
+    });
+    await expect(cartAction).toHaveAttribute("title", "Add to order basket");
+    await expect(cartAction).toHaveText("");
     await expect(page.locator(".inventory-selection")).toContainText(
       product.displayName,
     );
@@ -407,18 +428,34 @@ test.describe.serial("read-only inventory review", () => {
     await expect(page.getByText("Inventory export saved.")).toBeVisible();
     expect(
       await page
-        .evaluate(() =>
-          Boolean(
-            (globalThis as { __inventoryExport?: unknown }).__inventoryExport,
-          ),
+        .evaluate(
+          () =>
+            (globalThis as { __inventoryExport?: { format?: string } })
+              .__inventoryExport?.format,
         )
-        .catch(() => false),
-    ).toBe(true);
+        .catch(() => "missing"),
+    ).toBeUndefined();
+    await page.getByRole("button", { name: "Export inventory CSV" }).click();
+    await dialog.getByLabel("Password", { exact: true }).fill(OWNER_PASSWORD);
+    await dialog.getByRole("button", { name: "Confirm password" }).click();
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(
+            () =>
+              (globalThis as { __inventoryExport?: { format?: string } })
+                .__inventoryExport?.format,
+          ),
+      )
+      .toBe("csv");
 
     await login(MANAGER_USERNAME, MANAGER_PASSWORD);
     await page.reload();
     await expect(
       page.getByRole("button", { name: "Export sensitive inventory data" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Export inventory CSV" }),
     ).toHaveCount(0);
   });
 });

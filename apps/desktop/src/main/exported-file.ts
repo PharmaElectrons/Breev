@@ -3,7 +3,7 @@ import { open, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * Writes a validated JSON payload through a same-directory staging file. The
+ * Writes a validated export payload through a same-directory staging file. The
  * destination is never exposed to the renderer and a partially written file
  * cannot be mistaken for a completed export.
  */

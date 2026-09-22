@@ -62,6 +62,7 @@ import {
   writeDiagnosticBundle,
 } from "./diagnostic-bundle.js";
 import { writeExportedJson } from "./exported-file.js";
+import { serializeInventoryCsv } from "./inventory-export-csv.js";
 import {
   createSupportDestination,
   readSupportConfiguration,
@@ -573,18 +574,23 @@ function registerInventoryExportHandler(
     DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
     async (event, payload: unknown) => {
       const request = guard(toIpcInvocation(event), payload);
+      const format = request.format ?? "json";
       const selection = await dialog.showSaveDialog(window, {
         defaultPath: path.join(
           app.getPath("downloads"),
-          inventoryExportFileName(),
+          inventoryExportFileName(new Date(), format),
         ),
         filters: [
           {
-            extensions: ["json"],
+            extensions: [format],
             name:
               request.locale === "ar"
-                ? "بيانات مخزون Breev"
-                : "Breev inventory data",
+                ? format === "csv"
+                  ? "جدول مخزون Breev"
+                  : "بيانات مخزون Breev"
+                : format === "csv"
+                  ? "Breev inventory CSV"
+                  : "Breev inventory data",
           },
         ],
         properties: ["createDirectory", "showOverwriteConfirmation"],
@@ -599,7 +605,10 @@ function registerInventoryExportHandler(
         });
       }
       try {
-        const serialized = JSON.stringify(request.bundle, null, 2) + "\n";
+        const serialized =
+          format === "csv"
+            ? serializeInventoryCsv(request.bundle)
+            : JSON.stringify(request.bundle, null, 2) + "\n";
         await writeExportedJson(
           selection.filePath,
           serialized,
@@ -617,8 +626,11 @@ function registerInventoryExportHandler(
   );
 }
 
-function inventoryExportFileName(now = new Date()): string {
-  return `breev-inventory-${now.toISOString().replace(/[:.]/gu, "-")}.json`;
+function inventoryExportFileName(
+  now = new Date(),
+  format: "json" | "csv" = "json",
+): string {
+  return `breev-inventory-${now.toISOString().replace(/[:.]/gu, "-")}.${format}`;
 }
 
 function registerRendererIncidentHandler(

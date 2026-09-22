@@ -2140,10 +2140,29 @@ a:focus-visible,
   color: var(--muted-foreground);
 }
 .basket-back-link {
-  display: inline-block;
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
   margin-block-end: 0.5rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  background: var(--primary-wash);
   color: var(--primary);
   font-weight: 700;
+}
+.basket-back-link:hover,
+.basket-back-link:focus-visible {
+  border-color: var(--primary);
+  text-decoration: underline;
+}
+.basket-back-link svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+:dir(rtl) .basket-back-link svg {
+  transform: rotate(180deg);
 }
 .basket-heading {
   flex: none;
@@ -2181,11 +2200,23 @@ a:focus-visible,
   min-inline-size: 12rem;
   font-weight: 700;
 }
-.basket-table tbody tr:hover {
-  background: var(--primary-wash);
+.basket-table tbody tr[data-risk="critical"] {
+  background: var(--danger-soft);
+}
+.basket-table tbody tr[data-risk="expiring"],
+.basket-table tbody tr[data-risk="reorder"] {
+  background: var(--warning-soft);
+}
+.basket-table tbody tr[data-risk="stable"],
+.basket-table tbody tr[data-risk="ordered"] {
+  background: var(--ready-soft);
+}
+.basket-table tbody tr:hover,
+.basket-table tbody tr:focus-within {
+  box-shadow: inset 0 0 0 2px var(--primary);
 }
 .basket-table tr[data-saved="false"] {
-  background: var(--warning-soft);
+  box-shadow: inset 0 0 0 2px var(--danger);
 }
 .basket-item-name,
 .inventory-item-cell {
@@ -2207,6 +2238,20 @@ a:focus-visible,
   inline-size: 1rem;
   block-size: 1rem;
   flex: none;
+}
+.inventory-item-cell .inventory-cart-add {
+  min-inline-size: 2.5rem;
+  min-block-size: 2.5rem;
+  padding: 0.55rem;
+}
+.inventory-item-cell .inventory-cart-add:hover,
+.inventory-item-cell .inventory-cart-add:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-wash);
+}
+.inventory-item-cell .inventory-cart-add svg {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
 }
 .basket-product-state {
   display: inline-flex;
@@ -2291,6 +2336,35 @@ a:focus-visible,
 .inventory-heading p,
 .inventory-workspace > p {
   color: var(--muted-foreground);
+}
+.inventory-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.inventory-metric {
+  display: grid;
+  gap: 0.4rem;
+  min-inline-size: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.8rem;
+  background: var(--background);
+  color: var(--foreground);
+}
+.inventory-metric span {
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+.inventory-metric strong {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 60rem) {
+  .inventory-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .inventory-actions {
   display: flex;
@@ -2444,6 +2518,24 @@ a:focus-visible,
   font: inherit;
   font-weight: 800;
   text-align: start;
+}
+.inventory-table-scroll th .inventory-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-block-size: 1.9rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+}
+.inventory-sort-button:hover,
+.inventory-sort-button:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.inventory-sort-icon {
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
 }
 .inventory-table-scroll tbody tr:last-child td {
   border-block-end: 0;

@@ -34,11 +34,18 @@ export interface InventoryCopy {
   readonly columns: Record<InventoryColumnField, string>;
   readonly empty: string;
   readonly export: string;
+  readonly exportCsv: string;
   readonly exportCancelled: string;
   readonly exportFailed: string;
   readonly exportSaved: string;
   readonly exportStepUp: string;
   readonly loading: string;
+  readonly metrics: {
+    readonly totalValue: string;
+    readonly averageCost: string;
+    readonly distinctItems: string;
+    readonly itemsWithStock: string;
+  };
   readonly movement: {
     readonly adjustment: string;
     readonly date: string;
@@ -710,11 +717,18 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     columns: arabicColumns,
     empty: "لا توجد مواد مخزنية بعد.",
     export: "تصدير بيانات المخزون الحساسة",
+    exportCsv: "تصدير المخزون بصيغة CSV",
     exportCancelled: "أُلغي تصدير بيانات المخزون.",
     exportFailed: "تعذر حفظ تصدير بيانات المخزون.",
     exportSaved: "تم حفظ تصدير بيانات المخزون.",
     exportStepUp: "يتطلب التصدير إعادة التحقق من كلمة المرور.",
     loading: "جارٍ تحميل المخزون...",
+    metrics: {
+      totalValue: "قيمة المخزون الإجمالية",
+      averageCost: "متوسط كلفة المواد",
+      distinctItems: "عدد المواد في المخزون",
+      itemsWithStock: "المواد ذات الرصيد",
+    },
     manual: "يدوي",
     manualNone: "لا يوجد لون يدوي",
     movement: {
@@ -762,11 +776,18 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     columns: englishColumns,
     empty: "There are no inventory items yet.",
     export: "Export sensitive inventory data",
+    exportCsv: "Export inventory CSV",
     exportCancelled: "Inventory export cancelled.",
     exportFailed: "The inventory export could not be saved.",
     exportSaved: "Inventory export saved.",
     exportStepUp: "Export requires password reauthentication.",
     loading: "Loading inventory...",
+    metrics: {
+      totalValue: "Total inventory value",
+      averageCost: "Average unit cost",
+      distinctItems: "Distinct items",
+      itemsWithStock: "Items with stock",
+    },
     manual: "Manual",
     manualNone: "No manual colour",
     movement: {

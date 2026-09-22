@@ -393,6 +393,39 @@ function InventoryScreen({
   const selectedItem = items?.find(
     (item) => item.productId === selectedProductId,
   );
+  const metrics = useMemo(() => {
+    const rows = items ?? [];
+    const costs = rows.flatMap((item) =>
+      item.averageUnitCostFils === null
+        ? []
+        : [BigInt(item.averageUnitCostFils)],
+    );
+    return {
+      distinctItems: formatNumber(BigInt(rows.length), locale),
+      itemsWithStock: formatNumber(
+        BigInt(rows.filter((item) => BigInt(item.balance) > 0n).length),
+        locale,
+      ),
+      totalValue:
+        valuation === "granted"
+          ? formatCurrencyFromFils(
+              rows.reduce(
+                (sum, item) => sum + BigInt(item.valueFils ?? "0"),
+                0n,
+              ),
+              locale,
+            )
+          : "—",
+      averageCost:
+        valuation === "granted" && costs.length > 0
+          ? formatCurrencyFromFils(
+              costs.reduce((sum, cost) => sum + cost, 0n) /
+                BigInt(costs.length),
+              locale,
+            )
+          : "—",
+    };
+  }, [items, locale, valuation]);
 
   function changeSort(field: InventoryColumnField): void {
     const direction: SortDirection =
@@ -456,7 +489,7 @@ function InventoryScreen({
   );
   const stepUp = useStepUp(baseUrl, runStepUp);
 
-  async function beginExport(): Promise<void> {
+  async function beginExport(format: "json" | "csv" = "json"): Promise<void> {
     setExportStatus("idle");
     await stepUp.begin(
       "inventory.sensitive.export",
@@ -470,6 +503,7 @@ function InventoryScreen({
           const result = await window.breevDesktop.saveInventoryExport({
             bundle,
             locale,
+            ...(format === "csv" ? { format } : {}),
           });
           setExportStatus(result.status);
         } catch (caught) {
@@ -536,13 +570,22 @@ function InventoryScreen({
             </a>
           ) : null}
           {canExport ? (
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => void beginExport()}
-            >
-              {copy.export}
-            </button>
+            <>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void beginExport()}
+              >
+                {copy.export}
+              </button>
+              <button
+                className="quiet-button"
+                type="button"
+                onClick={() => void beginExport("csv")}
+              >
+                {copy.exportCsv}
+              </button>
+            </>
           ) : null}
           {canManageReorder ? (
             <a className="quiet-button" href="#/basket">
@@ -585,6 +628,24 @@ function InventoryScreen({
           </details>
         </div>
       </header>
+      <div className="inventory-metrics">
+        <InventoryMetric
+          label={copy.metrics.totalValue}
+          value={metrics.totalValue}
+        />
+        <InventoryMetric
+          label={copy.metrics.averageCost}
+          value={metrics.averageCost}
+        />
+        <InventoryMetric
+          label={copy.metrics.distinctItems}
+          value={metrics.distinctItems}
+        />
+        <InventoryMetric
+          label={copy.metrics.itemsWithStock}
+          value={metrics.itemsWithStock}
+        />
+      </div>
       <p className="visually-hidden" id="inventory-read-only">
         {copy.readOnly}
       </p>
@@ -655,13 +716,26 @@ function InventoryScreen({
               <tr>
                 {visibleFields.map((field) => (
                   <th
-                    aria-sort={sort.field === field ? sort.direction : "none"}
+                    aria-sort={
+                      sort.field === field ? sort.direction : undefined
+                    }
                     data-column-field={field}
                     key={field}
                     scope="col"
                   >
-                    <button type="button" onClick={() => changeSort(field)}>
+                    <button
+                      className="inventory-sort-button"
+                      type="button"
+                      onClick={() => changeSort(field)}
+                    >
                       {copy.columns[field]}
+                      <span aria-hidden="true" className="inventory-sort-icon">
+                        {sort.field !== field
+                          ? "↕"
+                          : sort.direction === "ascending"
+                            ? "↑"
+                            : "↓"}
+                      </span>
                     </button>
                   </th>
                 ))}
@@ -728,6 +802,23 @@ function InventoryScreen({
   );
 }
 
+function InventoryMetric({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}): React.JSX.Element {
+  return (
+    <div className="inventory-metric">
+      <span>{label}</span>
+      <strong>
+        <bdi>{value}</bdi>
+      </strong>
+    </div>
+  );
+}
+
 function InventoryCell({
   adding,
   canManageReorder,
@@ -762,7 +853,7 @@ function InventoryCell({
           {canManageReorder ? (
             <button
               aria-label={copy.addToBasketAriaLabel(item.displayName)}
-              className="quiet-button"
+              className="quiet-button inventory-cart-add"
               disabled={adding}
               data-review-focus={`inventory-basket-add-${item.productId}`}
               title={copy.addToBasket}
@@ -771,14 +862,13 @@ function InventoryCell({
             >
               <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
                 <path
-                  d="M3 4h2l2 10h11l2-7H6M9 19h.01M17 19h.01"
+                  d="M2.5 4h2l2.1 10h10.9l1.2-4M8.5 19h.01M16 19h.01M16.5 3.5v6M13.5 6.5h6"
                   stroke="currentColor"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth="1.8"
                 />
               </svg>
-              {copy.addToBasket}
             </button>
           ) : null}
         </div>
