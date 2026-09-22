@@ -9,12 +9,14 @@ import {
 import {
   PRODUCT_PRICING_FIELD_EDITABILITY,
   type Product,
+  type ProductSearchResult,
   type PurchaseDraftDetail,
   type PurchaseEntryColumnField,
   type PurchaseEntryPreferences,
   type PurchasingDenial,
 } from "@breev/contracts/local-rest";
-import { searchProducts } from "./catalog-api";
+import { requestProduct, searchProducts } from "./catalog-api";
+import { formatFilsToIqd } from "./product-record";
 import { ProductForm } from "./product-form";
 import type { PurchaseItemSelection } from "./purchase-item-details";
 import {
@@ -107,6 +109,31 @@ export function PurchaseRowEntry({
   const initialFocusDone = useRef(false);
   const focusSequence = useRef(0);
 
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [selectedRowProduct, setSelectedRowProduct] = useState<Product | null>(
+    null,
+  );
+  const [masterCardProduct, setMasterCardProduct] = useState<Product | null>(
+    null,
+  );
+  const productCache = useRef<Map<string, Product>>(new Map());
+  const masterCardRowIdRef = useRef<string | null>(null);
+  const activeSelectionRequestId = useRef<string | null>(null);
+
+  const [suggestions, setSuggestions] = useState<ProductSearchResult[]>([]);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimer = useRef<number | null>(null);
+  const comboboxRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<(HTMLLIElement | null)[]>([]);
+  const latestQueryRef = useRef("");
+
+  const highlightedProduct =
+    isSuggestionsOpen && highlightedIndex >= 0 && suggestions[highlightedIndex]
+      ? suggestions[highlightedIndex].product
+      : null;
+
   useEffect(() => {
     let live = true;
     void requestPurchaseEntryPreferences(baseUrl)
@@ -121,6 +148,43 @@ export function PurchaseRowEntry({
     };
   }, [baseUrl, copy.apiUnavailable]);
 
+  useEffect(() => {
+    if (highlightedIndex >= 0 && optionRefs.current[highlightedIndex]) {
+      optionRefs.current[highlightedIndex]?.scrollIntoView({
+        block: "nearest",
+      });
+    }
+  }, [highlightedIndex]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent): void {
+      if (
+        comboboxRef.current &&
+        !comboboxRef.current.contains(event.target as Node)
+      ) {
+        setIsSuggestionsOpen(false);
+        setHighlightedIndex(-1);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current !== null) {
+        window.clearTimeout(searchTimer.current);
+      }
+    };
+  }, []);
+
+  const displayedProduct = determineDisplayedProduct({
+    entryRowProduct: product,
+    highlightedProduct,
+    isRowSelected: selectedRowId !== null,
+    selectedRowProduct,
+  });
+
   // The item-details panel is rendered by the screen, in the column the shell
   // reserves for it, so the row publishes its current item upward instead of
   // drawing a panel of its own beyond the right edge of the row table. The
@@ -128,12 +192,25 @@ export function PurchaseRowEntry({
   // discarded invoice never leaves a wholesale price on screen.
   useEffect(() => {
     onItemSelectionChanged(
-      product === null
+      displayedProduct === null
         ? null
-        : { fields: preferences?.detailsPanelFields ?? [], product },
+        : {
+            fields: preferences?.detailsPanelFields ?? [],
+            product: displayedProduct,
+          },
     );
     return () => onItemSelectionChanged(null);
-  }, [onItemSelectionChanged, preferences, product]);
+  }, [displayedProduct, onItemSelectionChanged, preferences]);
+
+  useEffect(() => {
+    if (
+      selectedRowId !== null &&
+      !draft.rows.some((row) => row.id === selectedRowId)
+    ) {
+      setSelectedRowId(null);
+      setSelectedRowProduct(null);
+    }
+  }, [draft.rows, selectedRowId]);
 
   useEffect(() => {
     if (initialFocusDone.current) return;
@@ -180,9 +257,23 @@ export function PurchaseRowEntry({
     setFocusRequest({ field, sequence: focusSequence.current });
   }
 
+  function closeSuggestions(): void {
+    if (searchTimer.current !== null) {
+      window.clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+    setIsSuggestionsOpen(false);
+    setSuggestions([]);
+    setHighlightedIndex(-1);
+    setIsSearching(false);
+  }
+
   function attachProduct(next: Product, returnToItem = false): void {
+    closeSuggestions();
+    productCache.current.set(next.id, next);
     setProduct(next);
     setItemQuery(next.displayName);
+    latestQueryRef.current = next.displayName;
     setRetailPriceFils(next.pricing.retailPriceFils);
     setMarginPercentage(
       next.pricing.method === "by-percentage"
@@ -200,13 +291,312 @@ export function PurchaseRowEntry({
   }, []);
 
   const handleQuickCreateSuccess = useCallback((created: Product) => {
+    productCache.current.set(created.id, created);
     setQuickCreateValue(null);
     attachProduct(created, true);
   }, []);
 
+  const getOrFetchProduct = useCallback(
+    async (itemId: string): Promise<Product> => {
+      const cached = productCache.current.get(itemId);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const fetched = await requestProduct(baseUrl, itemId);
+      productCache.current.set(itemId, fetched);
+      return fetched;
+    },
+    [baseUrl],
+  );
+
+  const selectRow = useCallback(
+    async (row: PurchaseDraftDetail["rows"][number]): Promise<void> => {
+      setSelectedRowId(row.id);
+      activeSelectionRequestId.current = row.id;
+      const cached = productCache.current.get(row.itemId);
+      if (cached !== undefined) {
+        setSelectedRowProduct(cached);
+        return;
+      }
+      try {
+        const fetched = await getOrFetchProduct(row.itemId);
+        if (activeSelectionRequestId.current === row.id) {
+          setSelectedRowProduct(fetched);
+        }
+      } catch {
+        if (activeSelectionRequestId.current === row.id) {
+          setSelectedRowProduct(null);
+        }
+      }
+    },
+    [getOrFetchProduct],
+  );
+
+  const openMasterCard = useCallback(
+    async (row: PurchaseDraftDetail["rows"][number]): Promise<void> => {
+      masterCardRowIdRef.current = row.id;
+      setBusy(true);
+      setError(null);
+      try {
+        const targetProduct = await getOrFetchProduct(row.itemId);
+        setMasterCardProduct(targetProduct);
+      } catch {
+        setError(copy.apiUnavailable);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [copy.apiUnavailable, getOrFetchProduct],
+  );
+
+  const handleMasterCardCancel = useCallback(() => {
+    const rowId = masterCardRowIdRef.current;
+    setMasterCardProduct(null);
+    masterCardRowIdRef.current = null;
+    if (rowId !== null) {
+      queueMicrotask(() => {
+        document
+          .querySelector<HTMLElement>(
+            `.purchase-row-table tbody tr[data-row-id="${rowId}"]`,
+          )
+          ?.focus();
+      });
+    }
+  }, []);
+
+  const handleMasterCardSuccess = useCallback(
+    (updated: Product) => {
+      const rowId = masterCardRowIdRef.current;
+      productCache.current.set(updated.id, updated);
+      setSelectedRowProduct((current) =>
+        current?.id === updated.id ? updated : current,
+      );
+      if (product?.id === updated.id) {
+        setProduct(updated);
+        setItemQuery(updated.displayName);
+      }
+      const { hasChanges, rows: updatedRows } = updateDraftRowProductAttributes(
+        draft.rows,
+        updated,
+      );
+      if (hasChanges) {
+        onDraftChanged({
+          ...draft,
+          rows: updatedRows,
+        });
+      }
+      setMasterCardProduct(null);
+      masterCardRowIdRef.current = null;
+      if (rowId !== null) {
+        queueMicrotask(() => {
+          document
+            .querySelector<HTMLElement>(
+              `.purchase-row-table tbody tr[data-row-id="${rowId}"]`,
+            )
+            ?.focus();
+        });
+      }
+    },
+    [draft, onDraftChanged, product],
+  );
+
+  function handleRowKeyDown(
+    event: React.KeyboardEvent<HTMLTableRowElement>,
+    row: PurchaseDraftDetail["rows"][number],
+    rowIndex: number,
+  ): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void openMasterCard(row);
+      return;
+    }
+    if (event.key === " " || event.key === "Spacebar") {
+      event.preventDefault();
+      void selectRow(row);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      const nextRow = draft.rows[rowIndex + 1];
+      if (nextRow !== undefined) {
+        const nextElement = document.querySelector<HTMLTableRowElement>(
+          `.purchase-row-table tbody tr[data-row-id="${nextRow.id}"]`,
+        );
+        nextElement?.focus();
+        void selectRow(nextRow);
+      } else {
+        const first =
+          preferences === null
+            ? "item"
+            : (purchaseEntryProgression(preferences, null)[0] ?? "item");
+        fieldRefs.current[first]?.focus();
+      }
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (rowIndex > 0) {
+        const prevRow = draft.rows[rowIndex - 1];
+        if (prevRow !== undefined) {
+          const prevElement = document.querySelector<HTMLTableRowElement>(
+            `.purchase-row-table tbody tr[data-row-id="${prevRow.id}"]`,
+          );
+          prevElement?.focus();
+          void selectRow(prevRow);
+        }
+      }
+      return;
+    }
+  }
+
+  const scheduleSearch = useCallback(
+    (query: string) => {
+      if (searchTimer.current !== null) {
+        window.clearTimeout(searchTimer.current);
+        searchTimer.current = null;
+      }
+      const trimmed = query.trim();
+      if (trimmed.length < 2) {
+        setSuggestions([]);
+        setIsSuggestionsOpen(false);
+        setHighlightedIndex(-1);
+        setIsSearching(false);
+        return;
+      }
+      if (product !== null && trimmed === product.displayName) {
+        setIsSuggestionsOpen(false);
+        setHighlightedIndex(-1);
+        setIsSearching(false);
+        return;
+      }
+      setIsSearching(true);
+      searchTimer.current = window.setTimeout(async () => {
+        try {
+          const result = await searchProducts(baseUrl, {
+            limit: "15",
+            query: trimmed,
+          });
+          for (const item of result.results) {
+            productCache.current.set(item.product.id, item.product);
+          }
+          if (latestQueryRef.current.trim() === trimmed) {
+            setSuggestions(result.results);
+            setIsSuggestionsOpen(true);
+            setHighlightedIndex(-1);
+          }
+        } catch {
+          // Keep current state on transient failure
+        } finally {
+          if (latestQueryRef.current.trim() === trimmed) {
+            setIsSearching(false);
+          }
+        }
+      }, 180);
+    },
+    [baseUrl, product],
+  );
+
+  function handleItemChange(event: React.ChangeEvent<HTMLInputElement>): void {
+    const value = event.target.value;
+    latestQueryRef.current = value;
+    setItemQuery(value);
+    setProduct(null);
+    scheduleSearch(value);
+  }
+
+  function handleItemKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (event.key === "ArrowDown") {
+      if (suggestions.length > 0) {
+        event.preventDefault();
+        if (!isSuggestionsOpen) {
+          setIsSuggestionsOpen(true);
+          setHighlightedIndex(0);
+        } else {
+          setHighlightedIndex((prev) =>
+            prev < suggestions.length - 1 ? prev + 1 : 0,
+          );
+        }
+      }
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      if (isSuggestionsOpen && suggestions.length > 0) {
+        event.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev > 0 ? prev - 1 : suggestions.length - 1,
+        );
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
+      if (isSuggestionsOpen) {
+        event.preventDefault();
+        setIsSuggestionsOpen(false);
+        setHighlightedIndex(-1);
+      }
+      return;
+    }
+
+    if (event.key === "Tab") {
+      if (isSuggestionsOpen) {
+        setIsSuggestionsOpen(false);
+        setHighlightedIndex(-1);
+      }
+      return;
+    }
+
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (busy) return;
+
+      if (
+        isSuggestionsOpen &&
+        highlightedIndex >= 0 &&
+        suggestions[highlightedIndex]
+      ) {
+        const chosen = suggestions[highlightedIndex]!.product;
+        attachProduct(chosen);
+        focusNext("item", chosen);
+        return;
+      }
+
+      if (isSuggestionsOpen) {
+        const query = itemQuery.trim();
+        const exactBarcode = suggestions.find(
+          ({ matchedBarcode }) => matchedBarcode?.value === query,
+        );
+        if (exactBarcode) {
+          attachProduct(exactBarcode.product);
+          focusNext("item", exactBarcode.product);
+          return;
+        }
+        if (suggestions.length === 1 && suggestions[0]) {
+          const single = suggestions[0].product;
+          attachProduct(single);
+          focusNext("item", single);
+          return;
+        }
+        if (suggestions.length > 1) {
+          setHighlightedIndex(0);
+          return;
+        }
+        closeSuggestions();
+        setQuickCreateValue(query);
+        return;
+      }
+
+      void resolveItemAndAdvance();
+      return;
+    }
+  }
+
   async function resolveItemAndAdvance(): Promise<void> {
     const query = itemQuery.trim();
     if (product !== null && query === product.displayName) {
+      closeSuggestions();
       focusNext("item", product);
       return;
     }
@@ -215,21 +605,42 @@ export function PurchaseRowEntry({
       focusField("item");
       return;
     }
+    if (searchTimer.current !== null) {
+      window.clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
     setBusy(true);
     try {
       const result = await searchProducts(baseUrl, { limit: "20", query });
+      for (const item of result.results) {
+        productCache.current.set(item.product.id, item.product);
+      }
       const exactBarcode = result.results.find(
         ({ matchedBarcode }) => matchedBarcode?.value === query,
       );
-      const selected = exactBarcode?.product ?? result.results[0]?.product;
-      if (selected === undefined) {
-        setQuickCreateValue(query);
+      if (exactBarcode) {
+        attachProduct(exactBarcode.product);
+        setBusy(false);
+        focusNext("item", exactBarcode.product);
+        return;
+      }
+      if (result.results.length === 1 && result.results[0]) {
+        const single = result.results[0].product;
+        attachProduct(single);
+        setBusy(false);
+        focusNext("item", single);
+        return;
+      }
+      if (result.results.length > 1) {
+        setSuggestions(result.results);
+        setIsSuggestionsOpen(true);
+        setHighlightedIndex(0);
         setBusy(false);
         return;
       }
-      attachProduct(selected);
+      closeSuggestions();
+      setQuickCreateValue(query);
       setBusy(false);
-      focusNext("item", selected);
     } catch {
       setError(copy.apiUnavailable);
       setBusy(false);
@@ -445,6 +856,10 @@ export function PurchaseRowEntry({
       });
       onDraftChanged(result);
       if (editingRowId === row.id) setEditingRowId(null);
+      if (selectedRowId === row.id) {
+        setSelectedRowId(null);
+        setSelectedRowProduct(null);
+      }
       setMessage(copy.rowDeleted);
       setError(null);
     } catch (caught) {
@@ -639,7 +1054,11 @@ export function PurchaseRowEntry({
         </details>
       </div>
 
-      <div className="purchase-row-table-wrap">
+      <div
+        className={`purchase-row-table-wrap ${
+          isSuggestionsOpen ? "has-suggestions-open" : ""
+        }`}
+      >
         <table className="purchase-row-table">
           <thead>
             <tr>
@@ -662,8 +1081,51 @@ export function PurchaseRowEntry({
           <tbody>
             {draft.rows.map((row, rowIndex) => {
               const isEditing = editingRowId === row.id;
+              const isSelected = selectedRowId === row.id;
               return (
-                <tr key={row.id} data-editing={isEditing ? "true" : undefined}>
+                <tr
+                  key={row.id}
+                  data-row-id={row.id}
+                  data-editing={isEditing ? "true" : undefined}
+                  data-selected={isSelected ? "true" : undefined}
+                  tabIndex={isEditing ? undefined : 0}
+                  aria-selected={isSelected}
+                  onClick={(event) => {
+                    if (
+                      (event.target as HTMLElement).closest(
+                        "button, input, select, textarea",
+                      )
+                    ) {
+                      return;
+                    }
+                    void selectRow(row);
+                  }}
+                  onDoubleClick={(event) => {
+                    if (
+                      (event.target as HTMLElement).closest(
+                        "button, input, select, textarea",
+                      )
+                    ) {
+                      return;
+                    }
+                    void openMasterCard(row);
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      (event.target as HTMLElement).closest(
+                        "button, input, select, textarea",
+                      )
+                    ) {
+                      return;
+                    }
+                    handleRowKeyDown(event, row, rowIndex);
+                  }}
+                  onFocus={(event) => {
+                    if (event.target === event.currentTarget) {
+                      void selectRow(row);
+                    }
+                  }}
+                >
                   <th scope="row" data-column-field="ordinal">
                     {row.ordinal}
                   </th>
@@ -679,7 +1141,7 @@ export function PurchaseRowEntry({
                         data-column-field={field}
                         title={
                           field === "item"
-                            ? row.itemDisplayName
+                            ? `${row.itemDisplayName} (${copy.rowSelectionHint})`
                             : hasPostError
                               ? copy.editRow
                               : undefined
@@ -785,7 +1247,22 @@ export function PurchaseRowEntry({
                 </tr>
               );
             })}
-            <tr className="purchase-entry-row" data-entry-epoch={entryEpoch}>
+            <tr
+              className="purchase-entry-row"
+              data-entry-epoch={entryEpoch}
+              onFocus={() => {
+                if (selectedRowId !== null) {
+                  setSelectedRowId(null);
+                  setSelectedRowProduct(null);
+                }
+              }}
+              onClick={() => {
+                if (selectedRowId !== null) {
+                  setSelectedRowId(null);
+                  setSelectedRowProduct(null);
+                }
+              }}
+            >
               <th scope="row" data-column-field="ordinal">
                 {draft.rows.length + 1}
               </th>
@@ -881,6 +1358,14 @@ export function PurchaseRowEntry({
         postDenial={postDenial}
         posting={posting}
       />
+      {masterCardProduct === null ? null : (
+        <MasterProductDialog
+          baseUrl={baseUrl}
+          product={masterCardProduct}
+          onCancel={handleMasterCardCancel}
+          onSuccess={handleMasterCardSuccess}
+        />
+      )}
       {quickCreateValue === null ? null : (
         <QuickProductDialog
           baseUrl={baseUrl}
@@ -905,16 +1390,139 @@ export function PurchaseRowEntry({
     switch (field) {
       case "item":
         return (
-          <input
-            {...common}
-            aria-label={copy.itemBarcode}
-            autoComplete="off"
-            value={itemQuery}
-            onChange={(event) => {
-              setItemQuery(event.target.value);
-              setProduct(null);
-            }}
-          />
+          <div
+            className="purchase-item-combobox"
+            ref={comboboxRef}
+            role="combobox"
+            aria-expanded={isSuggestionsOpen}
+            aria-haspopup="listbox"
+            aria-owns="purchase-item-suggestions-listbox"
+          >
+            <div className="purchase-item-control">
+              <input
+                {...common}
+                aria-autocomplete="list"
+                aria-controls="purchase-item-suggestions-listbox"
+                aria-activedescendant={
+                  highlightedIndex >= 0 && suggestions[highlightedIndex]
+                    ? `purchase-item-opt-${suggestions[highlightedIndex]!.product.id}`
+                    : undefined
+                }
+                aria-label={copy.itemBarcode}
+                autoComplete="off"
+                value={itemQuery}
+                onChange={handleItemChange}
+                onKeyDown={handleItemKeyDown}
+              />
+              {isSearching ? (
+                <span
+                  className="status-spinner purchase-item-spinner"
+                  aria-hidden="true"
+                />
+              ) : null}
+            </div>
+            {isSuggestionsOpen ? (
+              <div
+                id="purchase-item-suggestions-listbox"
+                className="purchase-item-dropdown"
+                role="listbox"
+                aria-label={copy.searchSuggestions}
+              >
+                {suggestions.length === 0 && !isSearching ? (
+                  <div
+                    className="purchase-item-suggestion-empty"
+                    role="presentation"
+                  >
+                    {copy.noMatchingProducts}
+                  </div>
+                ) : null}
+                {isSearching && suggestions.length === 0 ? (
+                  <div className="purchase-item-searching" role="presentation">
+                    <span
+                      className="status-spinner purchase-item-spinner"
+                      aria-hidden="true"
+                    />
+                    <span>{copy.searching}</span>
+                  </div>
+                ) : null}
+                {suggestions.length > 0 ? (
+                  <ul className="purchase-item-suggestions-list">
+                    {suggestions.map((item, idx) => {
+                      const isHighlighted = idx === highlightedIndex;
+                      return (
+                        <li
+                          key={item.product.id}
+                          id={`purchase-item-opt-${item.product.id}`}
+                          ref={(el) => {
+                            optionRefs.current[idx] = el;
+                          }}
+                          role="option"
+                          aria-selected={isHighlighted}
+                          className={`purchase-item-suggestion ${
+                            isHighlighted ? "is-highlighted" : ""
+                          }`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            attachProduct(item.product);
+                            focusNext("item", item.product);
+                          }}
+                          onMouseEnter={() => setHighlightedIndex(idx)}
+                        >
+                          <div className="purchase-item-suggestion-main">
+                            <div className="purchase-item-suggestion-title">
+                              <span className="purchase-item-name">
+                                {item.product.displayName}
+                              </span>
+                              {item.matchedField === "barcode" &&
+                              item.matchedBarcode ? (
+                                <span className="purchase-item-badge purchase-item-badge-barcode">
+                                  {copy.matchedBarcode}:{" "}
+                                  {item.matchedBarcode.value}
+                                </span>
+                              ) : null}
+                              {item.matchedField === "arabic-name" ? (
+                                <span className="purchase-item-badge purchase-item-badge-arabic">
+                                  {copy.matchedArabic}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="purchase-item-suggestion-meta">
+                              {item.product.arabicSearchName ? (
+                                <span
+                                  className="purchase-item-arabic"
+                                  dir="rtl"
+                                >
+                                  {item.product.arabicSearchName}
+                                </span>
+                              ) : null}
+                              {item.product.scientificName ? (
+                                <span className="purchase-item-scientific">
+                                  {item.product.scientificName}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="purchase-item-suggestion-details">
+                            <span className="purchase-item-unit">
+                              {formatPurchaseDefaultUnit(item.product)}
+                            </span>
+                            {item.product.pricing.retailPriceFils ? (
+                              <span className="purchase-item-price">
+                                {formatFilsToIqd(
+                                  item.product.pricing.retailPriceFils,
+                                  locale,
+                                )}
+                              </span>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         );
       case "quantity":
         return (
@@ -1071,6 +1679,85 @@ export function purchaseEntryProgression(
         PRODUCT_PRICING_FIELD_EDITABILITY[product.pricing.method]
           .retailPrice === "editable",
     );
+}
+
+function MasterProductDialog({
+  baseUrl,
+  product,
+  onCancel,
+  onSuccess,
+}: {
+  readonly baseUrl: string;
+  readonly product: Product;
+  readonly onCancel: () => void;
+  readonly onSuccess: (product: Product) => void;
+}): React.JSX.Element {
+  const { locale } = usePreferences();
+  const copy = purchasingMessages[locale];
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog === null) return;
+    if (
+      document.activeElement === null ||
+      !dialog.contains(document.activeElement)
+    ) {
+      const focusable = dialog.querySelector<HTMLElement>(
+        "input:not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+      );
+      focusable?.focus();
+    }
+  }, []);
+
+  useEffect(() => {
+    const cancelOnEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onCancelRef.current();
+    };
+    window.addEventListener("keydown", cancelOnEscape, true);
+    return () => window.removeEventListener("keydown", cancelOnEscape, true);
+  }, []);
+
+  return (
+    <div
+      className="dialog-backdrop purchase-product-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="master-product-title"
+      ref={dialogRef}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const controls = [
+          ...(dialogRef.current?.querySelectorAll<HTMLElement>(
+            "input:not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary",
+          ) ?? []),
+        ];
+        if (controls.length === 0) return;
+        const current = controls.indexOf(document.activeElement as HTMLElement);
+        const next = event.shiftKey
+          ? controls[(current - 1 + controls.length) % controls.length]
+          : controls[(current + 1) % controls.length];
+        event.preventDefault();
+        next?.focus();
+      }}
+    >
+      <div className="purchase-product-dialog-card">
+        <h2 id="master-product-title">{copy.currentMasterRecord}</h2>
+        <p>{copy.itemMasterRecordHint}</p>
+        <ProductForm
+          baseUrl={baseUrl}
+          initialProduct={product}
+          onCancel={onCancel}
+          onSuccess={onSuccess}
+        />
+      </div>
+    </div>
+  );
 }
 
 function QuickProductDialog({
@@ -1409,4 +2096,64 @@ export function calculatePurchaseRetailPreview(
     (quotient + (remainder * 2n >= denominator ? 1n : 0n)) *
     multiple
   ).toString();
+}
+
+export function formatPurchaseDefaultUnit(product: Product): string {
+  const purchaseUnit = product.packaging.defaultUnits.purchase;
+  if (purchaseUnit.kind === "inventory-unit") {
+    return product.packaging.inventoryUnitName;
+  }
+  const pkg = product.packaging.packageUnits.find(
+    (u) => u.name === purchaseUnit.packageUnitName,
+  );
+  if (pkg) {
+    return `${pkg.name} (${pkg.baseUnitsPerPackage} ${product.packaging.inventoryUnitName})`;
+  }
+  return purchaseUnit.packageUnitName;
+}
+
+export function determineDisplayedProduct({
+  selectedRowProduct,
+  entryRowProduct,
+  highlightedProduct,
+  isRowSelected,
+}: {
+  readonly selectedRowProduct: Product | null;
+  readonly entryRowProduct: Product | null;
+  readonly highlightedProduct?: Product | null;
+  readonly isRowSelected: boolean;
+}): Product | null {
+  if (isRowSelected) return selectedRowProduct;
+  if (highlightedProduct !== undefined && highlightedProduct !== null) {
+    return highlightedProduct;
+  }
+  return entryRowProduct;
+}
+
+export function updateDraftRowProductAttributes(
+  rows: PurchaseDraftDetail["rows"],
+  updatedProduct: Product,
+): {
+  hasChanges: boolean;
+  rows: PurchaseDraftDetail["rows"];
+} {
+  let hasChanges = false;
+  const updatedRows = rows.map((row) => {
+    if (row.itemId !== updatedProduct.id) {
+      return row;
+    }
+    const nameChanged = row.itemDisplayName !== updatedProduct.displayName;
+    const unitChanged =
+      row.inventoryUnitName !== updatedProduct.packaging.inventoryUnitName;
+    if (nameChanged || unitChanged) {
+      hasChanges = true;
+      return {
+        ...row,
+        itemDisplayName: updatedProduct.displayName,
+        inventoryUnitName: updatedProduct.packaging.inventoryUnitName,
+      };
+    }
+    return row;
+  });
+  return { hasChanges, rows: updatedRows };
 }

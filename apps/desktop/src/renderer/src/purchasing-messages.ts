@@ -293,6 +293,16 @@ export const purchasingMessages = {
     returnCarryingAmount: "Inventory carrying amount",
     returnSupplierReduction: "Supplier balance reduction",
     originalInvoice: "Original invoice",
+    itemMasterRecordHint:
+      "Inspect or update product details. Current invoice progress remains intact.",
+    rowSelectionHint:
+      "Click to view details; double-click or press Enter to edit master record",
+    searchSuggestions: "Product suggestions",
+    noMatchingProducts: "No matching products (Press Enter to define new)",
+    searching: "Searching…",
+    matchedBarcode: "Barcode",
+    matchedArabic: "Arabic name",
+    matchedScientific: "Scientific name",
   },
   ar: {
     item: "اسم المادة",
@@ -580,5 +590,15 @@ export const purchasingMessages = {
     returnCarryingAmount: "القيمة الدفترية الخارجة من المخزون",
     returnSupplierReduction: "تخفيض رصيد المورد",
     originalInvoice: "الفاتورة الأصلية",
+    itemMasterRecordHint:
+      "معاينة أو تعديل تفاصيل الصنف. يتم الاحتفاظ بتقدم الفاتورة الحالي.",
+    rowSelectionHint:
+      "انقر لعرض التفاصيل؛ انقر مرتين أو اضغط Enter لتعديل السجل الرئيسي",
+    searchSuggestions: "اقتراحات المواد",
+    noMatchingProducts: "لا توجد مواد مطابقة (اضغط Enter لإضافة مادة جديدة)",
+    searching: "جارٍ البحث…",
+    matchedBarcode: "باركود",
+    matchedArabic: "الاسم العربي",
+    matchedScientific: "الاسم العلمي",
   },
 } as const;

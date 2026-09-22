@@ -4343,6 +4343,11 @@ a:focus-visible,
   border-radius: var(--radius);
 }
 
+.purchase-row-table-wrap:has(.purchase-item-dropdown),
+.purchase-row-table-wrap.has-suggestions-open {
+  overflow: visible;
+}
+
 /*
  * The seven default columns have to fit the window, because the last of them is
  * the base-unit preview: it is where "one pack of four" becomes "4 Strip", and a
@@ -4427,8 +4432,13 @@ a:focus-visible,
 
 .purchase-row-table thead th[data-column-field="actions"],
 .purchase-row-table tbody td[data-column-field="actions"] {
-  width: 9rem;
+  width: 14.5rem;
+  min-width: 14rem;
   text-align: center;
+}
+
+.purchase-row-table tbody td[data-column-field="actions"] {
+  overflow: visible;
 }
 
 .purchase-row-actions-cell {
@@ -4436,6 +4446,7 @@ a:focus-visible,
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
+  white-space: nowrap;
 }
 
 .purchase-row-action-btn {
@@ -4452,6 +4463,7 @@ a:focus-visible,
   font-size: 0.75rem;
   font-weight: 500;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 
@@ -4501,12 +4513,35 @@ a:focus-visible,
   transition: background-color 0.15s ease;
 }
 
-.purchase-row-table tbody tr:hover:not(.purchase-entry-row) {
+.purchase-row-table tbody tr:not(.purchase-entry-row) {
+  cursor: pointer;
+}
+
+.purchase-row-table tbody tr[data-editing="true"] {
+  cursor: default;
+}
+
+.purchase-row-table
+  tbody
+  tr:hover:not(.purchase-entry-row):not([data-editing="true"]) {
   background: color-mix(in srgb, var(--muted) 50%, transparent);
 }
 
 .purchase-row-table tbody tr[data-selected="true"] {
   background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.purchase-row-table
+  tbody
+  tr[data-selected="true"]:hover:not(.purchase-entry-row):not(
+    [data-editing="true"]
+  ) {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+.purchase-row-table tbody tr:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 .purchase-row-table tbody td bdi {
@@ -4525,6 +4560,11 @@ a:focus-visible,
    cannot overflow it, but its focus ring sits outside the cell's padding box. */
 .purchase-entry-row td:has(input) {
   overflow: visible;
+}
+
+.purchase-entry-row td[data-column-field="item"] {
+  overflow: visible;
+  position: relative;
 }
 
 .purchase-entry-row {
@@ -4555,6 +4595,187 @@ a:focus-visible,
 .purchase-entry-row input[inputmode="numeric"] {
   font-family: var(--font-family-mono);
   text-align: center;
+}
+
+.purchase-item-combobox {
+  position: relative;
+  inline-size: 100%;
+}
+
+.purchase-item-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+}
+
+.purchase-item-control input {
+  inline-size: 100%;
+}
+
+.purchase-item-control:has(.purchase-item-spinner) input {
+  padding-inline-end: 2rem !important;
+}
+
+.purchase-item-spinner {
+  position: absolute;
+  inset-inline-end: 0.5rem;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  inline-size: 0.85rem;
+  block-size: 0.85rem;
+  pointer-events: none;
+}
+
+.purchase-item-dropdown {
+  position: absolute;
+  inset-block-start: calc(100% + 0.25rem);
+  inset-inline-start: 0;
+  min-inline-size: 26rem;
+  max-inline-size: 40rem;
+  max-block-size: 18rem;
+  overflow-y: auto;
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: var(--radius, 0.5rem);
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.3),
+    0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  overscroll-behavior: contain;
+}
+
+.purchase-item-suggestions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.purchase-item-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.purchase-item-suggestion.is-highlighted,
+.purchase-item-suggestion:hover {
+  background: color-mix(in srgb, var(--primary, #3b82f6) 18%, transparent);
+}
+
+.purchase-item-suggestion-main {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1 1 auto;
+}
+
+.purchase-item-suggestion-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+
+.purchase-item-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.purchase-item-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.purchase-item-badge-barcode {
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+  color: var(--primary);
+}
+
+.purchase-item-badge-arabic {
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  color: var(--muted-foreground);
+}
+
+.purchase-item-suggestion-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.purchase-item-arabic {
+  font-family: var(--font-family-arabic, inherit);
+}
+
+.purchase-item-scientific {
+  font-style: italic;
+}
+
+.purchase-item-suggestion-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.purchase-item-unit {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.purchase-item-price {
+  font-size: 0.7rem;
+  font-family: var(--font-family-mono);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.purchase-item-suggestion-empty {
+  padding: 0.75rem 0.65rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.purchase-item-searching {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.65rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
 
 .purchase-row-table td[data-post-error="true"] {
