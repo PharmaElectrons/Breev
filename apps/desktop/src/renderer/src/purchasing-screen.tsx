@@ -377,7 +377,11 @@ export function PurchasingRouteView({
 
   return (
     <section className="purchasing-workspace" aria-label={copy.title}>
-      <div className="purchase-view-tabs" aria-label={copy.title}>
+      <div
+        className="purchase-view-tabs"
+        aria-label={copy.title}
+        data-tour="purchases-view-tabs"
+      >
         {canManageDrafts ? (
           <button
             type="button"
@@ -467,6 +471,7 @@ export function PurchasingRouteView({
           id="purchase-header-form"
           className="purchase-header-form"
           data-purchase-editor
+          data-tour="purchases-header-form"
           onSubmit={(event) => void saveDraft(event)}
         >
           <fieldset>

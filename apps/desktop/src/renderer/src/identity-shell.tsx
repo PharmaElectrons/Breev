@@ -527,7 +527,10 @@ function AuthenticatedWorkspace({
             onDismiss={onDismissDenial}
           />
         )}
-        <article className="identity-card workspace-summary">
+        <article
+          className="identity-card workspace-summary"
+          data-tour="admin-workspace-summary"
+        >
           <div>
             <p className="identity-eyebrow">{state.pharmacy.name}</p>
             <h2>
@@ -564,6 +567,7 @@ function AuthenticatedWorkspace({
         <article
           aria-labelledby="change-password-title"
           className="identity-card admin-card"
+          data-tour="admin-change-password"
         >
           <div>
             <h3 id="change-password-title">{copy.changeMyPassword}</h3>
@@ -637,6 +641,7 @@ function AuthenticatedWorkspace({
         <section
           className="licensing-grid"
           aria-label={licensingCopy.licenceStatus}
+          data-tour="admin-licence"
         >
           <article className="identity-card licensing-card">
             <div className="admin-heading">

@@ -433,6 +433,165 @@ test.describe.serial("bilingual desktop shell", () => {
     });
   });
 
+  test("guides the screen by keyboard and runs its tutorial without a blocked style", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+
+    // react-joyride injects a <style> element for its stock beacon and loader
+    // animations, which this renderer's `style-src 'self'` Content Security
+    // Policy blocks. Supplying beaconComponent and loaderComponent is what
+    // makes both injections dead code. Without this proof, dropping either
+    // prop breaks the packaged app silently, and only where the CSP header is
+    // enforced.
+    //
+    // Only style violations are recorded. Playwright's own injected scripts
+    // trip `script-src` under this policy, which says nothing about the
+    // renderer; a blocked Joyride animation would report `style-src`.
+    await page.addInitScript(`
+      window.__blockedStyles = [];
+      document.addEventListener("securitypolicyviolation", (event) => {
+        if (event.violatedDirective.startsWith("style-src")) {
+          window.__blockedStyles.push(event.violatedDirective);
+        }
+      });
+    `);
+
+    await page.goto(renderer.origin);
+    await reachOwnerWorkspace(page);
+
+    const guide = page.getByRole("button", { name: "Guide" });
+    await expect(guide).toBeVisible();
+
+    // The shell's documented button order stays language, theme, check.
+    const language = page.getByRole("button", { name: "Switch to Arabic" });
+    const theme = page.getByRole("button", { name: "Use dark theme" });
+    await guide.focus();
+    await page.keyboard.press("Tab");
+    await expect(language).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(theme).toBeFocused();
+
+    await guide.focus();
+    await page.keyboard.press("Enter");
+    const panel = page.getByRole("dialog", {
+      name: "Employees & roles guide",
+    });
+    await expect(panel).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    // The panel opens with its heading focused, and the heading is outside the
+    // tab order. Shift+Tab from there must wrap to the panel's own last
+    // control rather than escaping to the header behind the modal.
+    const close = panel.getByRole("button", { name: "Close" });
+    await expect(
+      panel.getByRole("heading", { name: "Employees & roles guide" }),
+    ).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(close).toBeFocused();
+
+    await panel.getByRole("button", { name: "Start tutorial" }).click();
+    const tooltip = page.getByRole("alertdialog");
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip.getByText("Step 1 of 3")).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    // Found by the label it shows, then checked for the name it exposes: an
+    // accessible name that does not contain the visible label fails WCAG 2.5.3
+    // and leaves speech input with nothing to say. Joyride's own close props
+    // would name this control "Close the tutorial" instead.
+    const skip = tooltip.locator("button.tour-skip");
+    await expect(skip).toHaveText("Skip");
+    await expect(skip).toHaveAccessibleName("Skip");
+    await expect(tooltip.locator("[data-action='skip']")).toHaveCount(1);
+
+    // Skipping is not completing. Focus returns to the control that started
+    // the tutorial, and the panel still offers it as something not yet seen.
+    await skip.click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(guide).toBeFocused();
+    await guide.click();
+    await expect(
+      panel.getByRole("button", { name: "Start tutorial" }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("button", { name: "Run the tutorial again" }),
+    ).toHaveCount(0);
+
+    await panel.getByRole("button", { name: "Start tutorial" }).click();
+    await expect(tooltip.getByText("Step 1 of 3")).toBeVisible();
+    await tooltip.getByRole("button", { name: "Next" }).click();
+    await expect(tooltip.getByText("Step 2 of 3")).toBeVisible();
+    await tooltip.getByRole("button", { name: "Next" }).click();
+    await expect(tooltip.getByText("Step 3 of 3")).toBeVisible();
+    await tooltip.getByRole("button", { name: "Finish" }).click();
+
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(guide).toBeFocused();
+
+    expect(
+      await page.evaluate(
+        `[document.getElementById("joyride-beacon-animation"),
+          document.getElementById("joyride-loader-animation")].filter(Boolean).length`,
+      ),
+    ).toBe(0);
+    expect(await page.evaluate(`window.__blockedStyles`)).toEqual([]);
+
+    // Reaching the last step is what records the tutorial as seen, so the
+    // panel now offers it again rather than as new.
+    await guide.click();
+    await expect(
+      panel.getByRole("button", { name: "Run the tutorial again" }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("button", { name: "Start tutorial" }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+
+    // Escape closes the guide and hands focus back to the control that opened it.
+    await guide.click();
+    await expect(panel).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(guide).toBeFocused();
+  });
+
+  test("reads the guide in Arabic and says plainly when a screen is not built", async ({
+    page,
+  }) => {
+    renderer.setMode("pass");
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "dark",
+    });
+    await page.goto(renderer.origin);
+    await reachOwnerWorkspace(page);
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+
+    const guide = page.getByRole("button", { name: "الدليل" });
+    await guide.click();
+    const panel = page.getByRole("dialog");
+    await expect(panel).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    // Reports is not built. Its guide must say so rather than describe a screen
+    // Breev cannot show, and must offer no tutorial.
+    await page.evaluate(`window.location.hash = "#/reports"`);
+    await guide.click();
+    await expect(panel).toContainText("هذه الشاشة غير متاحة بعد");
+    await expect(
+      panel.getByRole("button", { name: "ابدأ الشرح التفاعلي" }),
+    ).toHaveCount(0);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+
   test("shows generic login denial and Arabic dark authenticated states", async ({
     page,
   }) => {
@@ -2136,6 +2295,49 @@ async function installDesktopFake(
       theme: options.theme,
     },
   );
+}
+
+/**
+ * Takes a fresh shell to the signed-in owner workspace, so a test about
+ * something else need not restate the identity forms.
+ *
+ * The suite shares one database across the whole file, and the device session
+ * outlives a browser context, so this may land on the bootstrap form, the
+ * sign-in form, or already inside the workspace, depending on what has run
+ * before it. Handling all three keeps a test independent of its position in the
+ * file and runnable on its own with `-g`.
+ */
+async function reachOwnerWorkspace(page: Page): Promise<void> {
+  const bootstrap = page.getByRole("heading", {
+    name: "Set up this pharmacy",
+  });
+  const login = page.getByRole("heading", { name: "Sign in to Breev" });
+  const workspace = page.getByRole("heading", {
+    name: "Welcome, Browser Owner",
+  });
+  await expect(bootstrap.or(login).or(workspace)).toBeVisible();
+
+  if (await workspace.isVisible()) {
+    return;
+  }
+
+  if (await bootstrap.isVisible()) {
+    await page.getByLabel("Pharmacy name").fill("Breev Browser Pharmacy");
+    await page.getByLabel("Display name").fill("Browser Owner");
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page
+      .getByRole("button", { name: "Create pharmacy and owner" })
+      .click();
+  } else {
+    await page.getByLabel("Username").fill("browser.owner");
+    await page.getByLabel("Password").fill("browser owner password is private");
+    await page.getByRole("button", { name: "Sign in" }).click();
+  }
+
+  await expect(
+    page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+  ).toBeVisible();
 }
 
 async function expectBrowserStorageToContainPreferencesOnly(

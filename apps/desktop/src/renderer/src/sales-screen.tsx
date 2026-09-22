@@ -175,7 +175,7 @@ function SaleDraftIndex({
         <p className="sales-description">{copy.description}</p>
       </header>
 
-      <div className="sales-actions">
+      <div className="sales-actions" data-tour="sales-new-draft">
         <button
           data-sale-draft-control="new"
           disabled={busy}
@@ -196,7 +196,7 @@ function SaleDraftIndex({
       ) : drafts.length === 0 ? (
         <p>{copy.empty}</p>
       ) : (
-        <ul className="sale-draft-list">
+        <ul className="sale-draft-list" data-tour="sales-draft-list">
           {drafts.map((draft) => (
             <li className="sale-draft-row" key={draft.id}>
               <span className="sale-draft-facts">
@@ -415,7 +415,7 @@ function SaleDraftScreen({
       )}
 
       {canSearch ? (
-        <div className="sales-search">
+        <div className="sales-search" data-tour="sales-search">
           <label className="sales-search-label" htmlFor="sale-draft-search">
             {copy.searchLabel}
           </label>
@@ -493,7 +493,7 @@ function SaleDraftScreen({
       {results === null ? null : results.results.length === 0 ? (
         <p>{copy.noResults}</p>
       ) : (
-        <div className="sales-results">
+        <div className="sales-results" data-tour="sales-results">
           <table className="sales-results-table">
             <caption className="visually-hidden">
               {copy.searchResultCount(results.resultCount)}

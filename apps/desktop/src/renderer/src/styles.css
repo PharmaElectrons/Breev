@@ -4658,3 +4658,166 @@ a:focus-visible,
   min-block-size: 2.75rem;
   min-inline-size: 2.75rem;
 }
+
+/* Guide panel and interactive tutorial.
+   Every visual here is ordinary CSS against the theme tokens, so the tour
+   inherits light/dark and RTL with the rest of the shell. react-joyride is
+   given only the overlay colour and z-index it cannot express any other way. */
+
+.help-panel {
+  display: flex;
+  flex-direction: column;
+  inline-size: min(100%, 34rem);
+  max-block-size: min(85vh, 44rem);
+  padding: 1.5rem;
+  box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.45);
+  text-align: start;
+}
+
+.help-panel-heading h2 {
+  margin: 0;
+}
+
+.help-panel-heading h2:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.help-panel-heading p {
+  margin-block: 0.35rem 0;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+}
+
+.help-panel-body {
+  flex: 1;
+  min-block-size: 0;
+  overflow: auto;
+  margin-block: 1.1rem;
+  padding-inline-end: 0.25rem;
+}
+
+.help-panel-body h3 {
+  margin-block: 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.help-panel-body section + section {
+  margin-block-start: 1.35rem;
+}
+
+.help-panel-body p {
+  margin-block: 0;
+  line-height: 1.6;
+}
+
+.help-task {
+  margin-block-start: 0.9rem;
+  padding-inline-start: 0.85rem;
+  border-inline-start: 2px solid var(--border);
+}
+
+.help-task h4 {
+  margin-block: 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.help-task ol {
+  margin: 0;
+  padding-inline-start: 1.15rem;
+  line-height: 1.6;
+}
+
+.help-task li + li {
+  margin-block-start: 0.3rem;
+}
+
+.help-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--border);
+}
+
+.help-no-tutorial {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+}
+
+/* The tutorial tooltip. */
+
+.tour-tooltip {
+  inline-size: min(22rem, calc(100vw - 2rem));
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 1rem 3rem var(--shadow);
+  color: var(--card-foreground);
+  text-align: start;
+}
+
+.tour-step-counter {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tour-step-title {
+  margin-block: 0.3rem 0.5rem;
+  font-size: 1rem;
+}
+
+.tour-step-body {
+  line-height: 1.6;
+}
+
+.tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-start: 1.1rem;
+}
+
+.tour-actions-end {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* Supplied so react-joyride never renders its stock beacon or loader, whose
+   injected <style> elements the renderer's `style-src 'self'` Content Security
+   Policy blocks. Both stay visually inert. */
+
+.tour-beacon,
+.tour-loader {
+  display: inline-block;
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+@media (max-width: 40rem) {
+  .help-panel-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tour-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tour-actions-end {
+    justify-content: flex-end;
+  }
+}

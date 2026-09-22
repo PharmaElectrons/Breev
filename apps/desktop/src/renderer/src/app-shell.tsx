@@ -13,6 +13,10 @@ import {
   DiagnosticSubmissionConfirmation,
   WorkspaceErrorBoundary,
 } from "./error-boundary";
+import { hasRunnableTour, useGuidedTour } from "./guided-tour";
+import { HelpButton } from "./help-button";
+import { HelpPanel } from "./help-panel";
+import { markTutorialCompleted, readCompletedTutorials } from "./help-storage";
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityShell } from "./identity-shell";
 import { BasketRouteView } from "./basket-screen";
@@ -73,6 +77,7 @@ export function AppShell({
   } = startup;
 
   const checkButtonRef = useRef<HTMLButtonElement>(null);
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
   const copy = messages[locale];
   const navigationCopy = navigationMessages[locale];
   const status = copy.status[state];
@@ -187,6 +192,43 @@ export function AppShell({
       window.location.hash = fallback;
     }
   }, [authenticated, moduleAllowed]);
+
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [completedTutorials, setCompletedTutorials] = useState<
+    readonly string[]
+  >(() => readCompletedTutorials());
+
+  const closeHelp = (): void => {
+    setHelpOpen(false);
+    helpButtonRef.current?.focus();
+  };
+
+  const { runningModule, startTour, stopTour, Tour } = useGuidedTour({
+    locale,
+    onEnded: (moduleId, completed) => {
+      // Skipping, Escape, and a click on the overlay end the tutorial without
+      // teaching it, so only a completed run is recorded; either way the
+      // control that started it takes focus back, as every dialog here does.
+      if (completed) {
+        setCompletedTutorials(markTutorialCompleted(moduleId));
+      }
+      helpButtonRef.current?.focus();
+    },
+  });
+
+  /*
+   * The guide belongs to the screen it was opened from.
+   *
+   * Moving to another module, or the session ending, leaves a panel describing
+   * a screen the user is no longer on and a spotlight anchored to markup that
+   * has gone. Both are dismissed instead, without recording a completion the
+   * user never reached and without taking focus from wherever the new screen
+   * has just put it.
+   */
+  useEffect(() => {
+    setHelpOpen(false);
+    stopTour();
+  }, [activeModuleId, authenticated, stopTour]);
 
   const purchaseWorkspace =
     state === "ready" && authenticated && activeModuleId === "purchases";
@@ -341,6 +383,13 @@ export function AppShell({
               {connectionCard}
             </details>
           ) : null}
+          {authenticated ? (
+            <HelpButton
+              locale={locale}
+              reference={helpButtonRef}
+              onOpen={() => setHelpOpen(true)}
+            />
+          ) : null}
           <button
             className="quiet-button"
             type="button"
@@ -366,6 +415,22 @@ export function AppShell({
         </div>
         {purchaseWorkspace ? <PurchaseClock locale={locale} /> : null}
       </header>
+
+      {authenticated ? Tour : null}
+
+      {helpOpen && runningModule === null ? (
+        <HelpPanel
+          canRunTour={hasRunnableTour(activeModuleId)}
+          completed={completedTutorials.includes(activeModuleId)}
+          locale={locale}
+          moduleId={activeModuleId}
+          onClose={closeHelp}
+          onStartTour={() => {
+            setHelpOpen(false);
+            startTour(activeModuleId);
+          }}
+        />
+      ) : null}
 
       {submissionAction === "confirming" ? (
         <DiagnosticSubmissionConfirmation
@@ -402,7 +467,11 @@ export function AppShell({
       basketWorkspace ||
       salesWorkspace ? null : (
         <section className="status-region" aria-label={copy.connectionStatus}>
-          <Card className="status-card" data-state={state}>
+          <Card
+            className="status-card"
+            data-state={state}
+            data-tour="dashboard-connection"
+          >
             <CardHeader className="status-header">
               <StatusIcon state={state} />
               <div className="status-copy" role="status" aria-live="polite">

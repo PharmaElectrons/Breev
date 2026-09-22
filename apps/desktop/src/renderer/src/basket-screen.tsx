@@ -439,7 +439,11 @@ function BasketScreen({
 
   return (
     <section className="basket-workspace" aria-labelledby="basket-title">
-      <nav className="purchase-view-tabs" aria-label={copy.title}>
+      <nav
+        className="purchase-view-tabs"
+        aria-label={copy.title}
+        data-tour="basket-view-tabs"
+      >
         <a
           id="basket-tab-basket"
           aria-current={route.kind === "basket" ? "page" : undefined}
@@ -560,7 +564,7 @@ function BasketTable({
   readonly validation: QuantityValidation | null;
 }): React.JSX.Element {
   return (
-    <div className="basket-table-scroll">
+    <div className="basket-table-scroll" data-tour="basket-table">
       <table className="basket-table">
         <caption className="visually-hidden">{copy.tabs.basket}</caption>
         <thead>
@@ -793,7 +797,7 @@ function OrderedTable({
   readonly onReturn: (item: ReorderItem) => void;
 }): React.JSX.Element {
   return (
-    <div className="basket-table-scroll">
+    <div className="basket-table-scroll" data-tour="basket-table">
       <table className="basket-table basket-ordered-table">
         <caption className="visually-hidden">{copy.tabs.ordered}</caption>
         <thead>

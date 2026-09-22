@@ -142,7 +142,7 @@ export function CatalogRouteView({
           refreshList();
         }}
       />
-      <div className="catalog-canvas">
+      <div className="catalog-canvas" data-tour="products-canvas">
         <CatalogCanvas
           baseUrl={baseUrl}
           copy={copy}
@@ -461,7 +461,7 @@ function ProductRail({
   };
 
   return (
-    <div className="catalog-rail">
+    <div className="catalog-rail" data-tour="products-rail">
       <div className="catalog-rail-head">
         <div className="catalog-rail-title">
           <h2>{`${copy.rail.count} (${products.length})`}</h2>
@@ -489,6 +489,7 @@ function ProductRail({
           aria-label={labels.search}
           autoComplete="off"
           className="catalog-rail-search"
+          data-tour="products-search"
           dir="auto"
           placeholder={labels.search}
           type="search"
