@@ -5582,6 +5582,27 @@ a:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+.posted-purchase-audit-details {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.posted-purchase-audit-details summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  user-select: none;
+}
+
+.posted-purchase-audit-details[open] summary {
+  margin-bottom: 0.75rem;
+  color: var(--foreground);
+}
+
 .posted-purchase-dialog {
   position: fixed;
   inset: 0;

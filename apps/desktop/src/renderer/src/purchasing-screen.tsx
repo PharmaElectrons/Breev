@@ -12,6 +12,7 @@ import {
   type PurchaseItemSelection,
 } from "./purchase-item-details";
 import { PurchaseRowEntry } from "./purchase-row-entry";
+import { formatFilsToIqd } from "./product-record";
 import { useIdentityState } from "./identity-state-provider";
 import {
   clearPendingPurchasePost,
@@ -1424,6 +1425,22 @@ export function PurchasingRouteView({
   );
 }
 
+function formatAccountName(accountCode: string, locale: "ar" | "en"): string {
+  const copy = purchasingMessages[locale];
+  switch (accountCode) {
+    case "cash":
+      return copy.accountCash;
+    case "inventory":
+      return copy.accountInventory;
+    case "supplier-payable":
+      return copy.accountSupplierPayable;
+    case "inventory-count-variance":
+      return copy.accountInventoryCountVariance;
+    default:
+      return accountCode;
+  }
+}
+
 function PostedPurchaseResult({
   result,
   onContinue,
@@ -1502,19 +1519,19 @@ function PostedPurchaseResult({
         <div>
           <dt>{copy.primarySupplierCost}</dt>
           <dd>
-            <bdi>{posted.primarySupplierCostFils}</bdi> {copy.fils}
+            <bdi>{formatFilsToIqd(posted.primarySupplierCostFils, locale)}</bdi>
           </dd>
         </div>
         <div>
           <dt>{copy.allowanceAmount}</dt>
           <dd>
-            <bdi>{posted.allowanceFils}</bdi> {copy.fils}
+            <bdi>{formatFilsToIqd(posted.allowanceFils, locale)}</bdi>
           </dd>
         </div>
         <div>
           <dt>{copy.costAfterDiscount}</dt>
           <dd>
-            <bdi>{posted.costAfterDiscountFils}</bdi> {copy.fils}
+            <bdi>{formatFilsToIqd(posted.costAfterDiscountFils, locale)}</bdi>
           </dd>
         </div>
         <div>
@@ -1524,7 +1541,7 @@ function PostedPurchaseResult({
               : copy.payableEffect}
           </dt>
           <dd>
-            <bdi>{settlementAmount}</bdi> {copy.fils}
+            <bdi>{formatFilsToIqd(settlementAmount, locale)}</bdi>
           </dd>
         </div>
       </dl>
@@ -1544,9 +1561,9 @@ function PostedPurchaseResult({
               <th scope="col">{copy.quantity}</th>
               <th scope="col">{copy.primarySupplierCost}</th>
               <th scope="col">{copy.costAfterDiscount}</th>
-              <th scope="col">{copy.batchId}</th>
-              <th scope="col">{copy.movementId}</th>
-              <th scope="col">{copy.priceCapture}</th>
+              <th scope="col">{copy.retail}</th>
+              <th scope="col">{copy.expiry}</th>
+              <th scope="col">{copy.lot}</th>
             </tr>
           </thead>
           <tbody>
@@ -1558,19 +1575,23 @@ function PostedPurchaseResult({
                   <bdi>{row.inventoryUnitQuantity}</bdi> {row.inventoryUnitName}
                 </td>
                 <td>
-                  <bdi>{row.linePrimarySupplierCostFils}</bdi>
+                  <bdi>
+                    {formatFilsToIqd(row.linePrimarySupplierCostFils, locale)}
+                  </bdi>
                 </td>
                 <td>
-                  <bdi>{row.costAfterDiscountFils}</bdi>
+                  <bdi>
+                    {formatFilsToIqd(row.costAfterDiscountFils, locale)}
+                  </bdi>
                 </td>
                 <td>
-                  <bdi>{row.batchId}</bdi>
+                  <bdi>{formatFilsToIqd(row.retailPriceFils, locale)}</bdi>
                 </td>
                 <td>
-                  <bdi>{row.movementId}</bdi>
+                  <bdi>{row.expiryDate ?? "—"}</bdi>
                 </td>
                 <td>
-                  <bdi>{row.priceCapture}</bdi>
+                  <bdi>{row.lotNumber ?? "—"}</bdi>
                 </td>
               </tr>
             ))}
@@ -1578,44 +1599,42 @@ function PostedPurchaseResult({
         </table>
       </div>
 
-      <div
-        className="posted-purchase-table-wrap"
-        role="group"
-        aria-label={copy.journal}
-        tabIndex={0}
-      >
-        <h3>{copy.journal}</h3>
-        <p>
-          {copy.journalTemplate}: <bdi>{posted.journal.templateId}</bdi> ·{" "}
-          {copy.version} <bdi>{posted.journal.templateVersion}</bdi>
-        </p>
-        <table className="posted-purchase-table posted-purchase-journal">
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">{copy.account}</th>
-              <th scope="col">{copy.debit}</th>
-              <th scope="col">{copy.credit}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {posted.journal.lines.map((line) => (
-              <tr key={line.ordinal}>
-                <th scope="row">{line.ordinal}</th>
-                <td>
-                  <bdi>{line.accountCode}</bdi>
-                </td>
-                <td>
-                  <bdi>{line.debitFils}</bdi>
-                </td>
-                <td>
-                  <bdi>{line.creditFils}</bdi>
-                </td>
+      <details className="posted-purchase-audit-details">
+        <summary>{copy.accountingAuditDetails}</summary>
+        <div
+          className="posted-purchase-table-wrap"
+          role="group"
+          aria-label={copy.journal}
+          tabIndex={0}
+        >
+          <table className="posted-purchase-table posted-purchase-journal">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">{copy.account}</th>
+                <th scope="col">{copy.debit}</th>
+                <th scope="col">{copy.credit}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {posted.journal.lines.map((line) => (
+                <tr key={line.ordinal}>
+                  <th scope="row">{line.ordinal}</th>
+                  <td>
+                    <bdi>{formatAccountName(line.accountCode, locale)}</bdi>
+                  </td>
+                  <td>
+                    <bdi>{formatFilsToIqd(line.debitFils, locale)}</bdi>
+                  </td>
+                  <td>
+                    <bdi>{formatFilsToIqd(line.creditFils, locale)}</bdi>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </section>
   );
 }

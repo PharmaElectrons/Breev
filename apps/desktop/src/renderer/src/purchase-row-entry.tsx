@@ -2344,7 +2344,6 @@ function PurchaseReview({
         >
           {posting ? copy.posting : copy.post}
         </button>
-        <p>{copy.postExplicitHint}</p>
       </div>
     </section>
   );

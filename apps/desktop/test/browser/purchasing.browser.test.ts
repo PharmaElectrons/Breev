@@ -1087,11 +1087,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       receipt.getByRole("heading", { name: "Posted purchase" }),
     ).toBeVisible();
     await expect(receipt).toContainText("POST-ATOMIC-1");
-    await expect(receipt).toContainText("purchase.invoice");
     await expect(receipt).toContainText("inventory");
     await expect(receipt).toContainText("cash");
-    await expect(receipt).toContainText("Batch ID");
-    await expect(receipt).toContainText("Movement ID");
+    await expect(receipt).toContainText("Lot");
+    await expect(receipt).toContainText("Expiry");
     await expect(page.getByLabel("Supplier invoice number")).toHaveValue("");
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({
