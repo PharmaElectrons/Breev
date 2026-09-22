@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type {
   Product,
   PurchaseEntryPreferences,
@@ -40,62 +41,107 @@ export function PurchaseItemPanel({
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
+
+  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(null);
+  const prevProductIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentId = selection?.product.id ?? null;
+    if (currentId !== null && currentId !== prevProductIdRef.current) {
+      setUserCollapsed(false);
+    }
+    prevProductIdRef.current = currentId;
+  }, [selection?.product.id]);
+
+  const isCollapsed = userCollapsed ?? selection === null;
+
   return (
-    <aside
-      className="purchase-item-sidebar purchase-item-panel"
-      aria-labelledby="purchase-item-panel-title"
-      hidden={hidden}
-      // The panel scrolls inside itself, and a browser that makes scroll
-      // containers keyboard-focusable would otherwise insert it into the row
-      // entry's Enter-to-advance loop as a tab stop. `-1` keeps it reachable
-      // programmatically and to assistive technology without taking a turn in
-      // the sequential order.
-      tabIndex={-1}
-    >
-      <h2 id="purchase-item-panel-title">{copy.itemDetails}</h2>
-      {selection === null ? (
-        <div className="purchase-item-empty">
-          <span className="purchase-item-symbol" aria-hidden="true">
-            <span />
+    <>
+      {!hidden && isCollapsed && (
+        <button
+          type="button"
+          className="purchase-item-toggle-btn"
+          aria-label={copy.showItemDetails}
+          title={copy.showItemDetails}
+          onClick={() => setUserCollapsed(false)}
+        >
+          <span className="purchase-item-toggle-icon" aria-hidden="true">
+            ℹ
           </span>
-          <p>{copy.noSelectedItem}</p>
-        </div>
-      ) : (
-        <div className="purchase-item-facts">
-          <strong>{selection.product.displayName}</strong>
-          <dl>
-            {selection.fields.includes("scientific-name") ? (
-              <div>
-                <dt>{copy.scientificName}</dt>
-                <dd>{selection.product.scientificName ?? "—"}</dd>
-              </div>
-            ) : null}
-            {selection.fields.includes("category") ? (
-              <div>
-                <dt>{copy.category}</dt>
-                <dd>{selection.product.category ?? "—"}</dd>
-              </div>
-            ) : null}
-            {selection.fields.includes("packaging") ? (
-              <div>
-                <dt>{copy.packaging}</dt>
-                <dd>{packagingText(selection.product)}</dd>
-              </div>
-            ) : null}
-            {selection.fields.includes("wholesale-price") ? (
-              <div>
-                <dt>{copy.wholesalePrice}</dt>
-                <dd>
-                  <bdi>
-                    {selection.product.pricing.wholesalePriceFils ?? "—"}
-                  </bdi>
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-        </div>
+          <span>{copy.itemDetails}</span>
+          {selection !== null && (
+            <span className="purchase-item-toggle-badge" aria-hidden="true" />
+          )}
+        </button>
       )}
-    </aside>
+      <aside
+        className="purchase-item-sidebar purchase-item-panel"
+        aria-labelledby="purchase-item-panel-title"
+        hidden={hidden}
+        data-collapsed={isCollapsed ? "true" : undefined}
+        // The panel scrolls inside itself, and a browser that makes scroll
+        // containers keyboard-focusable would otherwise insert it into the row
+        // entry's Enter-to-advance loop as a tab stop. `-1` keeps it reachable
+        // programmatically and to assistive technology without taking a turn in
+        // the sequential order.
+        tabIndex={-1}
+      >
+        <div className="purchase-item-sidebar-header">
+          <h2 id="purchase-item-panel-title">{copy.itemDetails}</h2>
+          <button
+            type="button"
+            className="quiet-button purchase-item-collapse-btn"
+            aria-label={copy.collapseItemDetails}
+            title={copy.collapseItemDetails}
+            onClick={() => setUserCollapsed(true)}
+          >
+            ✕
+          </button>
+        </div>
+        {selection === null ? (
+          <div className="purchase-item-empty">
+            <span className="purchase-item-symbol" aria-hidden="true">
+              <span />
+            </span>
+            <p>{copy.noSelectedItem}</p>
+          </div>
+        ) : (
+          <div className="purchase-item-facts">
+            <strong>{selection.product.displayName}</strong>
+            <dl>
+              {selection.fields.includes("scientific-name") ? (
+                <div>
+                  <dt>{copy.scientificName}</dt>
+                  <dd>{selection.product.scientificName ?? "—"}</dd>
+                </div>
+              ) : null}
+              {selection.fields.includes("category") ? (
+                <div>
+                  <dt>{copy.category}</dt>
+                  <dd>{selection.product.category ?? "—"}</dd>
+                </div>
+              ) : null}
+              {selection.fields.includes("packaging") ? (
+                <div>
+                  <dt>{copy.packaging}</dt>
+                  <dd>{packagingText(selection.product)}</dd>
+                </div>
+              ) : null}
+              {selection.fields.includes("wholesale-price") ? (
+                <div>
+                  <dt>{copy.wholesalePrice}</dt>
+                  <dd>
+                    <bdi>
+                      {selection.product.pricing.wholesalePriceFils ?? "—"}
+                    </bdi>
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          </div>
+        )}
+      </aside>
+    </>
   );
 }
 

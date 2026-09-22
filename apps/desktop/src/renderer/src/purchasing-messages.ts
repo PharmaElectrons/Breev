@@ -44,6 +44,8 @@ export const purchasingMessages = {
     importImage: "Import from image",
     unavailable: "Not available yet",
     itemDetails: "Item information",
+    collapseItemDetails: "Collapse item details",
+    showItemDetails: "Show item details",
     noSelectedItem:
       "No item selected. Pick an item from the invoice to see its details.",
     close: "Close",
@@ -352,6 +354,8 @@ export const purchasingMessages = {
     importImage: "استيراد من صورة",
     unavailable: "غير متاح بعد",
     itemDetails: "معلومات المادة",
+    collapseItemDetails: "طي تفاصيل المادة",
+    showItemDetails: "عرض تفاصيل المادة",
     noSelectedItem: "لا توجد مادة محددة. اختر مادة من الفاتورة لعرض تفاصيلها.",
     close: "إغلاق",
     title: "المشتريات",
