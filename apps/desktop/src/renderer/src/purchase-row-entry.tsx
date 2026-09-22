@@ -129,6 +129,11 @@ export function PurchaseRowEntry({
   const optionRefs = useRef<(HTMLLIElement | null)[]>([]);
   const latestQueryRef = useRef("");
 
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [saveSettingsSuccess, setSaveSettingsSuccess] = useState(false);
+  const settingsRef = useRef<HTMLDetailsElement>(null);
+  const saveSuccessTimerRef = useRef<number | null>(null);
+
   const highlightedProduct =
     isSuggestionsOpen && highlightedIndex >= 0 && suggestions[highlightedIndex]
       ? suggestions[highlightedIndex].product
@@ -168,6 +173,32 @@ export function PurchaseRowEntry({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    function handleSettingsOutside(event: MouseEvent): void {
+      if (
+        settingsRef.current?.open &&
+        !settingsRef.current.contains(event.target as Node)
+      ) {
+        settingsRef.current.open = false;
+      }
+    }
+    function handleSettingsKeyDown(event: globalThis.KeyboardEvent): void {
+      if (event.key === "Escape" && settingsRef.current?.open) {
+        settingsRef.current.open = false;
+        settingsRef.current.querySelector("summary")?.focus();
+      }
+    }
+    document.addEventListener("mousedown", handleSettingsOutside);
+    document.addEventListener("keydown", handleSettingsKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleSettingsOutside);
+      document.removeEventListener("keydown", handleSettingsKeyDown);
+      if (saveSuccessTimerRef.current !== null) {
+        window.clearTimeout(saveSuccessTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -887,7 +918,9 @@ export function PurchaseRowEntry({
   }
 
   async function savePreferences(): Promise<void> {
-    if (settingsDraft === null) return;
+    if (settingsDraft === null || isSavingSettings) return;
+    setIsSavingSettings(true);
+    setSaveSettingsSuccess(false);
     const fingerprint = JSON.stringify(settingsDraft);
     const attempt = purchasingCommandAttempt(
       preferencesAttempt.current,
@@ -906,8 +939,21 @@ export function PurchaseRowEntry({
       setPreferences(saved);
       setSettingsDraft(saved);
       setMessage(copy.settingsSaved);
+      setSaveSettingsSuccess(true);
+      if (saveSuccessTimerRef.current !== null) {
+        window.clearTimeout(saveSuccessTimerRef.current);
+      }
+      saveSuccessTimerRef.current = window.setTimeout(() => {
+        if (settingsRef.current) {
+          settingsRef.current.open = false;
+        }
+        setSaveSettingsSuccess(false);
+        saveSuccessTimerRef.current = null;
+      }, 750);
     } catch {
       setError(copy.apiUnavailable);
+    } finally {
+      setIsSavingSettings(false);
     }
   }
 
@@ -936,10 +982,23 @@ export function PurchaseRowEntry({
             {draft.rows.length === 0 ? copy.noRows : `${draft.rows.length}`}
           </p>
         </div>
-        <details className="purchase-entry-settings">
+        <details ref={settingsRef} className="purchase-entry-settings">
           <summary>{copy.columnSettings}</summary>
           {settingsDraft === null ? null : (
             <div className="purchase-entry-settings-body">
+              <div className="purchase-settings-header">
+                <strong>{copy.columnSettings}</strong>
+                <button
+                  type="button"
+                  className="quiet-button purchase-settings-close"
+                  aria-label={copy.closeSettings}
+                  onClick={() => {
+                    if (settingsRef.current) settingsRef.current.open = false;
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
               <ol>
                 {settingsDraft.columns.map((column, index) => (
                   <li key={column.field}>
@@ -987,9 +1046,11 @@ export function PurchaseRowEntry({
               </ol>
               <fieldset>
                 <legend>{copy.afterCommit}</legend>
+                <p className="purchase-settings-hint">{copy.afterCommitHint}</p>
                 <label>
                   <input
                     type="radio"
+                    name="afterCommitPreference"
                     checked={settingsDraft.afterCommit === "new-row"}
                     onChange={() =>
                       setSettingsDraft({
@@ -1003,6 +1064,7 @@ export function PurchaseRowEntry({
                 <label>
                   <input
                     type="radio"
+                    name="afterCommitPreference"
                     checked={settingsDraft.afterCommit === "return-to-item"}
                     onChange={() =>
                       setSettingsDraft({
@@ -1042,13 +1104,32 @@ export function PurchaseRowEntry({
                   </label>
                 ))}
               </fieldset>
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => void savePreferences()}
-              >
-                {copy.saveSettings}
-              </button>
+              <div className="purchase-settings-actions">
+                <button
+                  className={`primary-button purchase-settings-save-btn ${saveSettingsSuccess ? "is-success" : ""}`}
+                  type="button"
+                  disabled={isSavingSettings}
+                  aria-label={copy.saveSettings}
+                  onClick={() => void savePreferences()}
+                >
+                  {isSavingSettings ? (
+                    <>
+                      <span
+                        className="purchase-settings-spinner"
+                        aria-hidden="true"
+                      />
+                      <span>{copy.savingSettings}</span>
+                    </>
+                  ) : saveSettingsSuccess ? (
+                    <>
+                      <span aria-hidden="true">✓</span>
+                      <span>{copy.settingsSaved}</span>
+                    </>
+                  ) : (
+                    <span>{copy.saveSettings}</span>
+                  )}
+                </button>
+              </div>
             </div>
           )}
         </details>
