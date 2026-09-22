@@ -40,12 +40,14 @@ type CurrentRecord =
 export function PostedPurchaseReview({
   address,
   baseUrl,
+  inline = false,
   onClose,
   open,
   returnHash = "#/purchases",
 }: {
   readonly address?: { readonly id: string };
   readonly baseUrl: string;
+  readonly inline?: boolean;
   readonly onClose: () => void;
   readonly open: boolean;
   readonly returnHash?: string;
@@ -53,6 +55,7 @@ export function PostedPurchaseReview({
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const detailOpenerRef = useRef<HTMLElement | null>(null);
   const drilldownOpenerRef = useRef<HTMLElement | null>(null);
@@ -146,6 +149,30 @@ export function PostedPurchaseReview({
   }, [baseUrl, dateType, detail, direction, from, open, query, sort, to]);
 
   useEffect(() => {
+    if (inline) {
+      if (open) {
+        setDetail(null);
+        setCurrentRecord(null);
+        setPostedAdjustment(null);
+        setPostedReturn(null);
+        setCorrection(null);
+        setAdjustmentDraftActive(false);
+        setAdjustmentLeaveRequest(0);
+        setReturnDraftActive(false);
+        setReturnLeaveRequest(0);
+        setAnnouncement("");
+        const addressed =
+          address === undefined
+            ? postedPurchaseAddress(window.location.hash)
+            : { correction: null, id: address.id };
+        if (addressed === null) {
+          queueMicrotask(() => searchRef.current?.focus());
+        } else {
+          void loadDetail(addressed.id, undefined, addressed.correction);
+        }
+      }
+      return;
+    }
     const dialog = dialogRef.current;
     if (open && dialog !== null && !dialog.open) {
       dialog.showModal();
@@ -171,7 +198,7 @@ export function PostedPurchaseReview({
     } else if (!open && dialog?.open) {
       dialog.close();
     }
-  }, [address, baseUrl, open, returnHash]);
+  }, [address, baseUrl, inline, open, returnHash]);
 
   async function loadList(input: PurchasePostedListRequest): Promise<void> {
     setLoading(true);
@@ -358,9 +385,10 @@ export function PostedPurchaseReview({
     const focusKey = opener?.dataset.reviewFocus;
     if (focusKey === undefined) return;
     requestCommittedFocus(() =>
-      dialogRef.current?.querySelector<HTMLElement>(
-        `[data-review-focus="${focusKey}"]`,
-      ),
+      (inline
+        ? containerRef.current
+        : dialogRef.current
+      )?.querySelector<HTMLElement>(`[data-review-focus="${focusKey}"]`),
     );
   }
 
@@ -394,35 +422,8 @@ export function PostedPurchaseReview({
   const costsVisible =
     (detail?.costVisibility ?? list?.costVisibility) === "visible";
 
-  return (
-    <dialog
-      ref={dialogRef}
-      className="posted-purchase-dialog"
-      aria-labelledby="posted-purchase-review-title"
-      aria-describedby="posted-purchase-review-boundary"
-      onCancel={(event) => {
-        if (currentRecord !== null) {
-          event.preventDefault();
-          closeDrilldown();
-        } else if (postedAdjustment !== null) {
-          event.preventDefault();
-          closePostedAdjustment();
-        } else if (postedReturn !== null) {
-          event.preventDefault();
-          closePostedReturn();
-        } else if (correction !== null) {
-          event.preventDefault();
-          if (correction === "adjustment" && adjustmentDraftActive) {
-            setAdjustmentLeaveRequest((value) => value + 1);
-          } else if (correction === "return" && returnDraftActive) {
-            setReturnLeaveRequest((value) => value + 1);
-          } else {
-            closeCorrection();
-          }
-        }
-      }}
-      onClose={handleDialogClose}
-    >
+  const content = (
+    <>
       <header className="posted-review-heading">
         <div>
           <p className="purchase-context-label">{copy.historicalSnapshot}</p>
@@ -763,6 +764,8 @@ export function PostedPurchaseReview({
               setAdjustmentLeaveRequest((value) => value + 1);
             } else if (correction === "return" && returnDraftActive) {
               setReturnLeaveRequest((value) => value + 1);
+            } else if (inline) {
+              handleDialogClose();
             } else {
               dialogRef.current?.close();
             }
@@ -771,6 +774,84 @@ export function PostedPurchaseReview({
           {copy.close}
         </button>
       </footer>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <section
+        ref={(el) => {
+          containerRef.current = el;
+        }}
+        className="posted-purchase-view"
+        role="region"
+        aria-label={copy.postedPurchaseRegister}
+        aria-labelledby="posted-purchase-review-title"
+        aria-describedby="posted-purchase-review-boundary"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            if (currentRecord !== null) {
+              event.preventDefault();
+              closeDrilldown();
+            } else if (postedAdjustment !== null) {
+              event.preventDefault();
+              closePostedAdjustment();
+            } else if (postedReturn !== null) {
+              event.preventDefault();
+              closePostedReturn();
+            } else if (correction !== null) {
+              event.preventDefault();
+              if (correction === "adjustment" && adjustmentDraftActive) {
+                setAdjustmentLeaveRequest((value) => value + 1);
+              } else if (correction === "return" && returnDraftActive) {
+                setReturnLeaveRequest((value) => value + 1);
+              } else {
+                closeCorrection();
+              }
+            } else {
+              handleDialogClose();
+            }
+          }
+        }}
+      >
+        {content}
+      </section>
+    );
+  }
+
+  return (
+    <dialog
+      ref={(el) => {
+        dialogRef.current = el;
+        containerRef.current = el;
+      }}
+      className="posted-purchase-dialog"
+      aria-labelledby="posted-purchase-review-title"
+      aria-describedby="posted-purchase-review-boundary"
+      onCancel={(event) => {
+        if (currentRecord !== null) {
+          event.preventDefault();
+          closeDrilldown();
+        } else if (postedAdjustment !== null) {
+          event.preventDefault();
+          closePostedAdjustment();
+        } else if (postedReturn !== null) {
+          event.preventDefault();
+          closePostedReturn();
+        } else if (correction !== null) {
+          event.preventDefault();
+          if (correction === "adjustment" && adjustmentDraftActive) {
+            setAdjustmentLeaveRequest((value) => value + 1);
+          } else if (correction === "return" && returnDraftActive) {
+            setReturnLeaveRequest((value) => value + 1);
+          } else {
+            closeCorrection();
+          }
+        }
+      }}
+      onClose={handleDialogClose}
+    >
+      {content}
     </dialog>
   );
 }

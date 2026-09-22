@@ -2953,9 +2953,9 @@ a:focus-visible,
   flex: none;
   align-items: center;
   gap: 0.35rem;
-  border: 0;
+  border: 1px solid transparent;
   border-block-end: 2px solid transparent;
-  border-radius: 0.5rem 0.5rem 0 0;
+  border-radius: 0.75rem 0.75rem 0 0;
   padding: 0.5rem 1rem;
   background: transparent;
   color: var(--muted-foreground);
@@ -2973,8 +2973,9 @@ a:focus-visible,
 }
 .purchase-view-tab[aria-pressed="true"],
 .purchase-view-tab[aria-current="page"] {
-  border-block-end-color: var(--primary);
-  color: var(--primary);
+  border-color: var(--border) var(--border) transparent var(--border);
+  border-block-end: 2px solid var(--primary);
+  color: var(--foreground);
   background: var(--card);
 }
 .purchase-document-actions {
@@ -4175,15 +4176,38 @@ a:focus-visible,
     display: none;
   }
 }
-#purchase-suppliers-view {
+#purchase-suppliers-view,
+#purchase-drafts-view,
+#purchase-posted-view {
   display: flex;
   flex: 1;
   min-inline-size: 0;
   min-block-size: 0;
-  overflow: hidden;
+  overflow: auto;
 }
-#purchase-suppliers-view[hidden] {
+#purchase-suppliers-view[hidden],
+#purchase-drafts-view[hidden],
+#purchase-posted-view[hidden] {
   display: none !important;
+}
+
+#purchase-drafts-view .purchase-register,
+.posted-purchase-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 1.25rem clamp(1rem, 2vw, 1.5rem);
+  overflow: auto;
+  color: var(--foreground);
+  background: var(--card);
+}
+
+#purchase-drafts-view .purchase-register-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .supplier-manager {
   display: flex;

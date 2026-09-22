@@ -1188,9 +1188,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await opener.focus();
     await pressKeyOnFocused(page, opener, "Enter");
 
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     const search = dialog.getByRole("searchbox", {
       name: "Search posted purchases",
@@ -1420,7 +1418,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(returnLink).toBeFocused();
 
     expect(
-      (await new AxeBuilder({ page }).include("dialog").analyze()).violations,
+      (
+        await new AxeBuilder({ page })
+          .include("#purchase-posted-view")
+          .analyze()
+      ).violations,
     ).toEqual([]);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -1439,9 +1441,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.goto(`${renderer.origin}#/purchases`);
     denyNextPostedListResponse = true;
     await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog.getByRole("alert")).toContainText(
       "Access denied. Audit request:",
     );
@@ -1479,9 +1479,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
 
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Close" }).click();
 
@@ -1513,10 +1511,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
               locale === "en" ? "Posted invoices" : "فواتير الشراء المحفوظة",
           })
           .click();
-        const dialog = page.getByRole("dialog", {
-          name:
-            locale === "en" ? "Posted purchase invoices" : "سجل فواتير الشراء",
-        });
+        const dialog = page.locator("#purchase-posted-view");
         const search = dialog.getByRole("searchbox", {
           name:
             locale === "en"
@@ -1904,9 +1899,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog
       .getByRole("searchbox", { name: "Search posted purchases" })
@@ -1965,9 +1958,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog
       .getByRole("searchbox", { name: "Search posted purchases" })
