@@ -131,6 +131,10 @@ export function PurchaseRowEntry({
 
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [saveSettingsSuccess, setSaveSettingsSuccess] = useState(false);
+  const [isOptionalOpen, setIsOptionalOpen] = useState(false);
+  const [isEditOptionalOpen, setIsEditOptionalOpen] = useState(false);
+  const [optionalOpensUpward, setOptionalOpensUpward] = useState(false);
+  const [editOptionalOpensUpward, setEditOptionalOpensUpward] = useState(false);
   const settingsRef = useRef<HTMLDetailsElement>(null);
   const optionalRef = useRef<HTMLDetailsElement>(null);
   const editOptionalRef = useRef<HTMLDetailsElement>(null);
@@ -185,12 +189,14 @@ export function PurchaseRowEntry({
       }
       if (optionalRef.current?.open && !optionalRef.current.contains(target)) {
         optionalRef.current.open = false;
+        setIsOptionalOpen(false);
       }
       if (
         editOptionalRef.current?.open &&
         !editOptionalRef.current.contains(target)
       ) {
         editOptionalRef.current.open = false;
+        setIsEditOptionalOpen(false);
       }
     }
     function handleSettingsKeyDown(event: globalThis.KeyboardEvent): void {
@@ -201,10 +207,12 @@ export function PurchaseRowEntry({
         }
         if (optionalRef.current?.open) {
           optionalRef.current.open = false;
+          setIsOptionalOpen(false);
           optionalRef.current.querySelector("summary")?.focus();
         }
         if (editOptionalRef.current?.open) {
           editOptionalRef.current.open = false;
+          setIsEditOptionalOpen(false);
           editOptionalRef.current.querySelector("summary")?.focus();
         }
       }
@@ -819,6 +827,8 @@ export function PurchaseRowEntry({
     setLotNumber("");
     setNotes("");
     setUnitKey("inventory-unit");
+    if (optionalRef.current) optionalRef.current.open = false;
+    setIsOptionalOpen(false);
   }
 
   function startEditingRow(row: PurchaseDraftDetail["rows"][number]): void {
@@ -835,6 +845,8 @@ export function PurchaseRowEntry({
 
   function cancelEditingRow(): void {
     setEditingRowId(null);
+    if (editOptionalRef.current) editOptionalRef.current.open = false;
+    setIsEditOptionalOpen(false);
   }
 
   async function saveEditedRow(
@@ -879,6 +891,8 @@ export function PurchaseRowEntry({
       });
       onDraftChanged(result.draft);
       setEditingRowId(null);
+      if (editOptionalRef.current) editOptionalRef.current.open = false;
+      setIsEditOptionalOpen(false);
       setMessage(copy.rowUpdated);
       setError(null);
     } catch (caught) {
@@ -1133,7 +1147,7 @@ export function PurchaseRowEntry({
       <div
         className={`purchase-row-table-wrap ${
           isSuggestionsOpen ? "has-suggestions-open" : ""
-        }`}
+        } ${isOptionalOpen || isEditOptionalOpen ? "has-optional-open" : ""}`}
       >
         <table className="purchase-row-table">
           <thead>
@@ -1293,7 +1307,23 @@ export function PurchaseRowEntry({
                           </button>
                           <details
                             ref={editOptionalRef}
-                            className="purchase-row-optional-details"
+                            className={`purchase-row-optional-details ${
+                              editOptionalOpensUpward ? "opens-upwards" : ""
+                            }`}
+                            onToggle={(event) => {
+                              const isOpen = event.currentTarget.open;
+                              setIsEditOptionalOpen(isOpen);
+                              if (isOpen) {
+                                const rect =
+                                  event.currentTarget.getBoundingClientRect();
+                                const spaceBelow =
+                                  window.innerHeight - rect.bottom;
+                                const spaceAbove = rect.top;
+                                setEditOptionalOpensUpward(
+                                  spaceBelow < 380 && spaceAbove > spaceBelow,
+                                );
+                              }
+                            }}
                           >
                             <summary
                               className="purchase-row-action-btn optional"
@@ -1325,8 +1355,10 @@ export function PurchaseRowEntry({
                                   className="quiet-button purchase-optional-close"
                                   aria-label={copy.closeSettings}
                                   onClick={() => {
-                                    if (editOptionalRef.current)
+                                    if (editOptionalRef.current) {
                                       editOptionalRef.current.open = false;
+                                    }
+                                    setIsEditOptionalOpen(false);
                                   }}
                                 >
                                   ✕
@@ -1375,8 +1407,10 @@ export function PurchaseRowEntry({
                                   type="button"
                                   className="primary-button purchase-optional-done-btn"
                                   onClick={() => {
-                                    if (editOptionalRef.current)
+                                    if (editOptionalRef.current) {
                                       editOptionalRef.current.open = false;
+                                    }
+                                    setIsEditOptionalOpen(false);
                                   }}
                                 >
                                   {copy.done}
@@ -1449,9 +1483,20 @@ export function PurchaseRowEntry({
                 <div className="purchase-row-actions-cell">
                   <details
                     ref={optionalRef}
-                    className="purchase-row-optional-details"
+                    className={`purchase-row-optional-details ${
+                      optionalOpensUpward ? "opens-upwards" : ""
+                    }`}
                     onToggle={(event) => {
-                      if (event.currentTarget.open) {
+                      const isOpen = event.currentTarget.open;
+                      setIsOptionalOpen(isOpen);
+                      if (isOpen) {
+                        const rect =
+                          event.currentTarget.getBoundingClientRect();
+                        const spaceBelow = window.innerHeight - rect.bottom;
+                        const spaceAbove = rect.top;
+                        setOptionalOpensUpward(
+                          spaceBelow < 380 && spaceAbove > spaceBelow,
+                        );
                         queueMicrotask(() => optionalUnitRef.current?.focus());
                       }
                     }}
@@ -1487,8 +1532,10 @@ export function PurchaseRowEntry({
                           className="quiet-button purchase-optional-close"
                           aria-label={copy.closeSettings}
                           onClick={() => {
-                            if (optionalRef.current)
+                            if (optionalRef.current) {
                               optionalRef.current.open = false;
+                            }
+                            setIsOptionalOpen(false);
                           }}
                         >
                           ✕
@@ -1507,8 +1554,10 @@ export function PurchaseRowEntry({
                             type="button"
                             className="quiet-button purchase-optional-focus-item-btn"
                             onClick={() => {
-                              if (optionalRef.current)
+                              if (optionalRef.current) {
                                 optionalRef.current.open = false;
+                              }
+                              setIsOptionalOpen(false);
                               fieldRefs.current["item"]?.focus();
                             }}
                           >
@@ -1593,8 +1642,10 @@ export function PurchaseRowEntry({
                           type="button"
                           className="primary-button purchase-optional-done-btn"
                           onClick={() => {
-                            if (optionalRef.current)
+                            if (optionalRef.current) {
                               optionalRef.current.open = false;
+                            }
+                            setIsOptionalOpen(false);
                           }}
                         >
                           {copy.done}

@@ -4478,7 +4478,9 @@ a:focus-visible,
 }
 
 .purchase-row-table-wrap:has(.purchase-item-dropdown),
-.purchase-row-table-wrap.has-suggestions-open {
+.purchase-row-table-wrap.has-suggestions-open,
+.purchase-row-table-wrap:has(.purchase-row-optional-details[open]),
+.purchase-row-table-wrap.has-optional-open {
   overflow: visible;
 }
 
@@ -5569,9 +5571,20 @@ a:focus-visible,
   }
 }
 
+.purchase-row-table tbody tr:has(.purchase-row-optional-details[open]),
+.purchase-row-table tbody td:has(.purchase-row-optional-details[open]) {
+  position: relative;
+  z-index: 1001;
+}
+
 .purchase-row-optional-details {
   position: relative;
   display: inline-flex;
+}
+
+.purchase-row-optional-details[open] {
+  position: relative;
+  z-index: 1002;
 }
 
 .purchase-row-optional-details > summary {
@@ -5624,7 +5637,7 @@ a:focus-visible,
   inset-block-start: calc(100% + 0.35rem);
   inset-inline-end: 0;
   inset-inline-start: auto;
-  z-index: 1000;
+  z-index: 1003;
   display: grid;
   gap: 0.85rem;
   min-inline-size: 24rem;
@@ -5636,9 +5649,17 @@ a:focus-visible,
   border-radius: var(--radius);
   background: var(--card);
   box-shadow:
-    0 12px 32px -4px rgba(0, 0, 0, 0.2),
-    0 4px 12px -2px rgba(0, 0, 0, 0.1);
+    0 16px 36px -4px rgba(0, 0, 0, 0.28),
+    0 6px 16px -2px rgba(0, 0, 0, 0.12);
   animation: optionalPopoverFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.purchase-row-optional-details.opens-upwards .purchase-optional-controls-body {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + 0.35rem);
+  box-shadow:
+    0 -16px 36px -4px rgba(0, 0, 0, 0.28),
+    0 -6px 16px -2px rgba(0, 0, 0, 0.12);
 }
 
 .purchase-row-item-cell {
