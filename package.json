@@ -31,6 +31,7 @@
     "dev:terminal": "node tooling/dev.mjs terminal",
     "env:check": "node tooling/check-local-env.mjs",
     "format": "prettier --write .",
+    "format:write": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . && pnpm check:boundaries",
     "package:desktop": "pnpm --filter @breev/desktop package",

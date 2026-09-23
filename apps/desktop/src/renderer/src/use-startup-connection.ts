@@ -25,7 +25,7 @@ const PAIRING_FAILED_UNEXPECTED: TerminalPairingState = {
   stage: "failed",
 };
 
-interface StartupConnection {
+export interface StartupConnection {
   readonly cancelTerminalPairing: () => Promise<void>;
   readonly checkNow: () => void;
   readonly deviceProof: "committed" | "denied" | "failed" | "idle" | "running";

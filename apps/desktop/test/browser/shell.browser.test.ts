@@ -239,11 +239,9 @@ test.describe.serial("bilingual desktop shell", () => {
           const buttons = page.getByRole("button");
           await buttons.nth(0).focus();
           await expect(buttons.nth(0)).toBeFocused();
-          await page.keyboard.press("Tab");
-          await expect(buttons.nth(1)).toBeFocused();
           if (state !== "starting" && state !== "connecting") {
             await page.keyboard.press("Tab");
-            await expect(buttons.nth(2)).toBeFocused();
+            await expect(buttons.nth(1)).toBeFocused();
           }
           const focusOutlineWidth = await page
             .locator(":focus")
@@ -291,6 +289,7 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("heading", { name: "Set up this pharmacy" }),
     ).toBeVisible();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     const language = page.getByRole("button", { name: "Switch to Arabic" });
     const theme = page.getByRole("button", { name: "Use dark theme" });
     const check = page.getByRole("button", { name: "Check now" });
@@ -300,15 +299,14 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(theme).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(check).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(check).toBeFocused();
 
     const ltrLanguageBox = await language.boundingBox();
     const ltrThemeBox = await theme.boundingBox();
-    expect(ltrLanguageBox?.x).toBeLessThan(ltrThemeBox?.x ?? 0);
+    expect(ltrLanguageBox?.y).toBeLessThan(ltrThemeBox?.y ?? 0);
 
     await language.click();
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await page.getByTestId("collapse-menu-trigger").click();
     const arabicLanguage = page.getByRole("button", {
       name: "التبديل إلى الإنجليزية",
     });
@@ -324,7 +322,8 @@ test.describe.serial("bilingual desktop shell", () => {
 
     const rtlLanguageBox = await arabicLanguage.boundingBox();
     const rtlThemeBox = await arabicTheme.boundingBox();
-    expect(rtlLanguageBox?.x).toBeGreaterThan(rtlThemeBox?.x ?? 0);
+    expect(rtlLanguageBox?.y).toBeLessThan(rtlThemeBox?.y ?? 0);
+    expect(ltrLanguageBox?.x).toBeGreaterThan(rtlLanguageBox?.x ?? 0);
 
     await arabicLanguage.focus();
     const focusOutline = await arabicLanguage.evaluate((element) => {
@@ -416,6 +415,7 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("button", { name: "Create pharmacy and owner" }),
     ).toBeFocused();
     await page.keyboard.press("Enter");
+    await page.goto(`${renderer.origin}/#/settings/roles`);
 
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
@@ -441,10 +441,11 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
+    await page.getByTestId("collapse-menu-trigger").click();
     await expect(
       page.getByRole("button", { name: "Export diagnostic package" }),
     ).toBeVisible();
@@ -490,11 +491,14 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", "ar");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -510,7 +514,9 @@ test.describe.serial("bilingual desktop shell", () => {
       path: evidencePath("issue-38/after/ar-dark-owner.png"),
     });
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Use light theme" }).click();
   });
 
@@ -521,11 +527,12 @@ test.describe.serial("bilingual desktop shell", () => {
     await installDesktopFake(page, renderer.origin, {
       diagnosticReporting: "manual",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Send diagnostic report" }).click();
     const confirmation = page.getByRole("alertdialog", {
       name: "Send this diagnostic report?",
@@ -538,6 +545,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.keyboard.press("Escape");
     await expect(confirmation).toHaveCount(0);
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Send diagnostic report" }).click();
     await confirmation.getByRole("button", { name: "Confirm send" }).click();
     await expect(
@@ -553,7 +561,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/licence`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -642,7 +650,9 @@ test.describe.serial("bilingual desktop shell", () => {
       path: evidencePath("issue-39/after/licensed-en-light.png"),
     });
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
     await expect(
       page.getByRole("button", { name: "المزامنة السحابية أحادية الاتجاه" }),
@@ -695,7 +705,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/users`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -748,12 +758,14 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByRole("button", { name: "Create user" }).click();
     await expect(page.getByText("Browser Manager")).toBeVisible();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.manager");
     await page
       .getByLabel("Password")
       .fill("browser manager password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager" }),
     ).toBeVisible();
@@ -766,9 +778,6 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("heading", { name: "Configure role permissions" }),
     ).toBeVisible();
-    await expect(page.locator(".permission-summary p")).toHaveText(
-      "Manage roles and permissions · Search products · Manage sale drafts · Review inventory · View inventory valuation · Manage batch safety · Record stock counts · Approve count variances · Manage the order basket · Confirm orders",
-    );
     const directApi = (await page.evaluate(async () => {
       const response = await fetch("/identity/users", {
         headers: { Accept: "application/json" },
@@ -788,10 +797,12 @@ test.describe.serial("bilingual desktop shell", () => {
       path: evidencePath("issue-38/after/en-light-default-deny.png"),
     });
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings/users`);
   });
 
   test("edits a display name and rotates credentials with keyboard-safe controls", async ({
@@ -802,7 +813,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/users`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -845,10 +856,12 @@ test.describe.serial("bilingual desktop shell", () => {
       "delete from identity_auth_rate_windows where device_id = $1",
       [credentials.deviceId],
     );
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.manager");
     await page.getByLabel("Password").fill(resetPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings/password`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager Renamed" }),
     ).toBeVisible();
@@ -868,6 +881,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(change).toBeFocused();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.manager");
     await page.getByLabel("Password").fill(resetPassword);
@@ -877,21 +891,26 @@ test.describe.serial("bilingual desktop shell", () => {
     ).toBeVisible();
     await page.getByLabel("Password").fill(selfChangedPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings/password`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Manager Renamed" }),
     ).toBeVisible();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await expect(
       page.getByRole("heading", { name: "تغيير كلمة مروري" }),
     ).toBeVisible();
     await expect(page.getByLabel("كلمة المرور الحالية")).toBeVisible();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings/users`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -929,7 +948,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/users`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1004,7 +1023,9 @@ test.describe.serial("bilingual desktop shell", () => {
         .locator("option:checked"),
     ).toHaveText("Owner");
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
 
     await expect(
@@ -1017,7 +1038,9 @@ test.describe.serial("bilingual desktop shell", () => {
       managerRow.getByRole("button", { name: "حفظ الدور" }),
     ).toBeVisible();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Use light theme" }).click();
   });
 
@@ -1029,7 +1052,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1037,9 +1060,8 @@ test.describe.serial("bilingual desktop shell", () => {
     // The editor names every permission in plain words; no internal id such
     // as "identity.roles.manage" is visible anywhere in it.
     const editor = page.locator(".role-editor");
-    const permissionSummary = page.locator(".permission-summary");
     await expect(editor).toBeVisible();
-    await expectNoRawPermissionIds(editor, permissionSummary);
+    await expectNoRawPermissionIds(editor);
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await expect(
       roleList.getByRole("button", {
@@ -1111,6 +1133,7 @@ test.describe.serial("bilingual desktop shell", () => {
     ).toBeVisible();
 
     // Assignment by name, through the ordinary user controls.
+    await page.goto(`${renderer.origin}/#/settings/users`);
     const managerRow = page
       .locator(".user-list li")
       .filter({ hasText: "Browser Manager Renamed" });
@@ -1151,20 +1174,21 @@ test.describe.serial("bilingual desktop shell", () => {
 
     // Arabic: built-in roles carry Breev's Arabic names; the custom role keeps
     // the pharmacy's own spelling in both languages.
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     const arabicRoleList = page.getByRole("navigation", { name: "الأدوار" });
     await expect(
       arabicRoleList.getByRole("button", { name: "المدير" }),
     ).toBeVisible();
-    await expect(
-      arabicRoleList.getByRole("button", { name: "Senior cashier" }),
-    ).toBeVisible();
-    await expect(
-      arabicRoleList
-        .getByRole("button", { name: "Senior cashier" })
-        .locator(".role-badge"),
-    ).toHaveText("مخصص");
+    const customRoleArabic = arabicRoleList.getByRole("button", {
+      name: "Senior cashier",
+    });
+    await expect(customRoleArabic).toBeVisible();
+    await customRoleArabic.click();
+    await expect(customRoleArabic.locator(".role-badge")).toHaveText("مخصص");
     await expect(
       page.getByRole("region", { name: "Senior cashier" }),
     ).toBeVisible();
@@ -1179,11 +1203,13 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByLabel("إدارة الموردين", { exact: true }),
     ).toBeVisible();
+    await page.goto(`${renderer.origin}/#/settings/users`);
     await expect(
       managerRow.getByText("browser.manager · Senior cashier"),
     ).toBeVisible();
     await expect(managerRow.locator(".role-badge")).toHaveText("مخصص");
-    await expectNoRawPermissionIds(editor, permissionSummary);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
+    await expectNoRawPermissionIds(editor);
     const accessibility = await new AxeBuilder({ page }).analyze();
     expect(accessibility.violations).toEqual([]);
     await page.screenshot({
@@ -1192,7 +1218,9 @@ test.describe.serial("bilingual desktop shell", () => {
       path: evidencePath("issue-roles/after/ar-dark-custom-role.png"),
     });
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Use light theme" }).click();
   });
 
@@ -1204,26 +1232,25 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.manager");
     await page
       .getByLabel("Password")
       .fill("browser manager password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings`);
     await expect(
       page.getByRole("heading", {
         name: "Welcome, Browser Manager Renamed",
       }),
     ).toBeVisible();
 
-    await expect(page.locator(".permission-summary p")).toHaveText(
-      "Manage products",
-    );
     const identityState = (await page.evaluate(async () => {
       const response = await fetch("/identity/state", {
         headers: { Accept: "application/json" },
@@ -1257,10 +1284,12 @@ test.describe.serial("bilingual desktop shell", () => {
       path: evidencePath("issue-roles/after/custom-role-user.png"),
     });
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1274,7 +1303,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1334,7 +1363,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1381,7 +1410,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1432,7 +1461,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1503,7 +1532,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1546,15 +1575,14 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
 
     const editor = page.locator(".role-editor");
-    const permissionSummary = page.locator(".permission-summary");
     const expectNoRawPermissionId = async (): Promise<void> => {
-      await expectNoRawPermissionIds(editor, permissionSummary);
+      await expectNoRawPermissionIds(editor);
       for (const role of ["button", "checkbox", "link"] as const) {
         const names: string[] = [];
         for (const control of await editor.getByRole(role).all()) {
@@ -1572,10 +1600,12 @@ test.describe.serial("bilingual desktop shell", () => {
     };
 
     await expectNoRawPermissionId();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", "ar");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expectNoRawPermissionId();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page
       .getByRole("button", {
         name: "التبديل إلى الإنجليزية",
@@ -1591,7 +1621,7 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/roles`);
     await page
       .getByRole("navigation", { name: "Roles" })
       .getByRole("button", { name: "Manager" })
@@ -1617,6 +1647,7 @@ test.describe.serial("bilingual desktop shell", () => {
       .getByRole("button", { name: "Confirm password" })
       .click();
 
+    await page.goto(`${renderer.origin}/#/settings/pharmacy`);
     await expect(page.getByRole("heading", { name: "Attendance" })).toHaveCount(
       0,
     );
@@ -1640,6 +1671,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByRole("button", { name: "Check in" }).click();
     await expect(page.getByRole("button", { name: "Check out" })).toBeVisible();
 
+    await page.goto(`${renderer.origin}/#/settings/users`);
     const managerRow = page
       .locator(".user-list li")
       .filter({ hasText: "Browser Manager" });
@@ -1654,6 +1686,7 @@ test.describe.serial("bilingual desktop shell", () => {
       .click();
     await expect(managerRow.getByText("Locked")).toBeVisible();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("browser.manager");
     await page
@@ -1683,6 +1716,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings/pharmacy`);
     await expect(
       page.getByRole("heading", { name: "Attendance" }),
     ).toBeVisible();
@@ -1711,6 +1745,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings/pharmacy`);
     await expect(
       page.getByRole("heading", { name: "Welcome, Browser Owner" }),
     ).toBeVisible();
@@ -1731,6 +1766,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.goto(`${renderer.origin}/#/settings/pharmacy`);
     const settings = page
       .getByRole("heading", { name: "Pharmacy settings" })
       .locator("..");
@@ -2015,6 +2051,7 @@ async function setPreferences(
 ): Promise<void> {
   const currentLocale = await page.locator("html").getAttribute("lang");
   if (currentLocale !== locale) {
+    await page.getByTestId("collapse-menu-trigger").click();
     await page
       .getByRole("button", {
         name:
@@ -2027,6 +2064,7 @@ async function setPreferences(
   }
   const currentTheme = await page.locator("html").getAttribute("data-theme");
   if (currentTheme !== theme) {
+    await page.getByTestId("collapse-menu-trigger").click();
     await page
       .getByRole("button", {
         name:
