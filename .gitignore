@@ -33,3 +33,6 @@ notes.md
 !.agents/skills/ci-failure-prevention/**
 !.agents/rules/
 !.agents/rules/**
+.agents
+evidence/
+today/
