@@ -48,7 +48,7 @@ test.describe("offline licence feature hiding", () => {
   }) => {
     renderer.setState(freeCoreState());
     await installDesktopFake(page, renderer.origin);
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/licence`);
 
     await expect(
       page
@@ -110,12 +110,14 @@ test.describe("offline licence feature hiding", () => {
     ).toBeVisible();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Use dark theme" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect(
       page.getByRole("button", { name: "One-way cloud sync" }),
     ).toHaveCount(0);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", "ar");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -128,15 +130,18 @@ test.describe("offline licence feature hiding", () => {
       }),
     ).toHaveCount(0);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "استخدام الوضع الفاتح" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
 
     renderer.setState(licensedState());
     await page.reload();
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Use dark theme" }).click();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({
@@ -144,6 +149,7 @@ test.describe("offline licence feature hiding", () => {
       fullPage: true,
       path: evidencePath("licensed-en-dark.png"),
     });
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await expect(
       page.getByRole("button", {
@@ -157,6 +163,7 @@ test.describe("offline licence feature hiding", () => {
       path: evidencePath("licensed-ar-dark.png"),
     });
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "استخدام الوضع الفاتح" }).click();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({
@@ -164,6 +171,7 @@ test.describe("offline licence feature hiding", () => {
       fullPage: true,
       path: evidencePath("licensed-ar-light.png"),
     });
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "استخدام الوضع الداكن" }).click();
 
     renderer.setState(expiredState());
@@ -235,6 +243,7 @@ test.describe("offline licence feature hiding", () => {
 
     for (const locale of ["en", "ar"] as const) {
       if (locale === "ar") {
+        await page.getByTestId("collapse-menu-trigger").click();
         await page.getByRole("button", { name: "Switch to Arabic" }).click();
         await expect(
           page.getByRole("heading", {
@@ -281,7 +290,7 @@ test.describe("offline licence feature hiding", () => {
   }) => {
     renderer.setState(licensedState());
     await installDesktopFake(page, renderer.origin);
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/licence`);
     const card = page.getByRole("region", { name: "Licence status" });
     for (const fact of [
       "Issued",
@@ -379,7 +388,9 @@ test.describe("offline licence feature hiding", () => {
       path: evidencePath("grace-en-light.png"),
     });
 
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Use dark theme" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await expect(
       page.getByText("انتهى الترخيص — ضمن فترة السماح"),
@@ -397,7 +408,9 @@ test.describe("offline licence feature hiding", () => {
       fullPage: true,
       path: evidencePath("grace-ar-dark.png"),
     });
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "التبديل إلى الإنجليزية" }).click();
+    await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Use light theme" }).click();
   });
 
@@ -406,7 +419,7 @@ test.describe("offline licence feature hiding", () => {
   }) => {
     renderer.setState(licensedWithoutLicensingManagementState());
     await installDesktopFake(page, renderer.origin);
-    await page.goto(renderer.origin);
+    await page.goto(`${renderer.origin}/#/settings/licence`);
 
     const card = page.getByRole("region", { name: "Licence status" });
     await expect(card.getByText("professional", { exact: true })).toBeVisible();

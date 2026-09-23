@@ -45,6 +45,6 @@ describe("feature surfaces", () => {
       "additional-device-pos",
     );
     expect(requiredCapabilityFor("sales")).toBeNull();
-    expect(requiredCapabilityFor("administration")).toBeNull();
+    expect(requiredCapabilityFor("settings")).toBeNull();
   });
 });

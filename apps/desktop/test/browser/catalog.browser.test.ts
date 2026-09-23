@@ -1243,7 +1243,7 @@ test.describe.serial("Product catalog screens", () => {
     await expect(page.getByTestId("unavailable-surface")).toHaveCount(0);
 
     // The request lands on an allowed default instead.
-    await expect.poll(() => new URL(page.url()).hash).toBe("#/administration");
+    await expect.poll(() => new URL(page.url()).hash).toBe("#/dashboard");
   });
 
   test("A direct hash cannot bypass login", async ({ page }) => {
@@ -1284,7 +1284,9 @@ test.describe.serial("Product catalog screens", () => {
     // Navigation is links, not buttons, so it does not disturb the header's
     // diagnostic, language, and theme control order. Central submission is
     // intentionally disabled by default (G-16), so it is absent here.
-    const buttons = page.locator(".preference-controls").getByRole("button");
+    await page.getByTestId("collapse-menu-trigger").click();
+    const dropdown = page.getByTestId("collapse-menu-dropdown");
+    const buttons = dropdown.getByRole("button");
     for (const [index, label] of [
       "Export diagnostic package",
       "Contact support",
@@ -1293,6 +1295,7 @@ test.describe.serial("Product catalog screens", () => {
     ].entries()) {
       await expect(buttons.nth(index)).toHaveAttribute("aria-label", label);
     }
+    await page.keyboard.press("Escape");
 
     const products = page
       .getByRole("navigation", { name: "Modules" })

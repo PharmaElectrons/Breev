@@ -61,9 +61,25 @@ export async function createSeparatedDatabaseRolesFromUrl(
   const administrator = new Pool({ connectionString: administratorUrl });
   try {
     await administrator.query(
-      `revoke create on schema public from public;
-       create role breev_schema_owner login password '${migrationPassword}';
-       create role breev_app login password '${applicationPassword}';
+      `drop schema if exists public cascade;
+       create schema public;
+       drop schema if exists breev_migrations cascade;
+       drop schema if exists pgboss cascade;
+       revoke create on schema public from public;
+       do $$
+       begin
+         if not exists (select from pg_roles where rolname = 'breev_schema_owner') then
+           create role breev_schema_owner login password '${migrationPassword}';
+         else
+           alter role breev_schema_owner login password '${migrationPassword}';
+         end if;
+         if not exists (select from pg_roles where rolname = 'breev_app') then
+           create role breev_app login password '${applicationPassword}';
+         else
+           alter role breev_app login password '${applicationPassword}';
+         end if;
+       end
+       $$;
        grant create on database "${databaseName}" to breev_schema_owner;
        grant usage, create on schema public to breev_schema_owner;
        grant usage on schema public to breev_app;`,

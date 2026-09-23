@@ -12,7 +12,7 @@ import type { ModuleId } from "./module-ids";
  * completely, not shown as disabled buttons — and UI hiding is never the
  * enforcement boundary." This registry is the one place that says which
  * screen or panel each signed capability reveals, so the module bar and the
- * administration workspace cannot drift apart. It is presentation only: the
+ * settings workspace cannot drift apart. It is presentation only: the
  * local API gates each operation with its own `requireCapability`, and a
  * capability with no built surface yet maps to nothing rather than to a
  * speculative gate.
