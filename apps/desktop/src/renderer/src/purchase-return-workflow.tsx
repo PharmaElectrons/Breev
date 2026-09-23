@@ -18,6 +18,7 @@ import {
 } from "./purchasing-api";
 import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
+import { formatFilsToIqd } from "./product-record";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
 
@@ -48,7 +49,7 @@ const text = {
   ar: {
     back: "العودة إلى الفاتورة الأصلية",
     carrying: "القيمة الدفترية الخارجة من المخزون",
-    confirm: "الموافقة وترحيل مردود الشراء",
+    confirm: "الموافقة وحفظ مردود الشراء",
     continue: "متابعة المسودة",
     delete: "حذف المسودة",
     difference: "الفرق بانتظار اعتماد G-01",
@@ -58,7 +59,7 @@ const text = {
     evidenceHint: "إثبات إلزامي لسبب وكيفية خروج البضاعة",
     item: "المادة والتشغيلة",
     password: "كلمة مرورك",
-    posted: "تم ترحيل مردود الشراء",
+    posted: "تم حفظ مردود الشراء",
     quantity: "كمية المردود",
     reason: "سبب المردود",
     saveReview: "حفظ ومراجعة مردود البضاعة",
@@ -438,8 +439,9 @@ export function PurchaseReturnWorkflow({
           <ul>
             {summary.rows.map((row) => (
               <li key={row.originalPurchaseRowId}>
-                {row.itemDisplayName}: {row.quantity} · {row.carryingAmountFils}{" "}
-                / {row.supplierReductionFils}
+                {row.itemDisplayName}: {row.quantity} ·{" "}
+                {formatFilsToIqd(row.carryingAmountFils, locale)} /{" "}
+                {formatFilsToIqd(row.supplierReductionFils, locale)}
               </li>
             ))}
           </ul>
@@ -467,6 +469,13 @@ export function PurchaseReturnWorkflow({
           <p>
             <bdi>{postedNumber}</bdi>
           </p>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => window.print()}
+          >
+            🖨️ {locale === "ar" ? "طباعة فاتورة المرتجع" : "Print return slip"}
+          </button>
         </div>
       ) : null}
       <button

@@ -220,7 +220,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       exact: true,
     });
     await expect(supplier).toBeFocused();
-    await supplier.selectOption(supplierId);
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
     const paymentContext = page.getByRole("combobox", {
       name: /^Payment context/,
     });
@@ -239,36 +239,29 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page
         .locator(".purchase-snapshot")
-        .getByText("Version", { exact: true })
-        .locator(".."),
-    ).toContainText("1");
-    await page
-      .getByRole("button", { name: "Search invoices", exact: true })
-      .click();
-    const search = page.getByRole("searchbox", { name: "Search invoices" });
+        .getByText("Al-Nahrain Medical", { exact: true }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Saved drafts" }).click();
+    const search = page.getByPlaceholder("Search drafts");
     await search.fill("SUP-2026-0042");
     await expect(
-      page.locator(".purchase-draft-table tbody tr", {
-        hasText: "SUP-2026-0042",
+      page.getByRole("button", {
+        name: /SUP-2026-0042/,
       }),
     ).toBeVisible();
-    let filterOpenedDiscard = false;
-    page.once("dialog", async (dialog) => {
-      filterOpenedDiscard = true;
-      await dialog.dismiss();
-    });
     await search.press("Escape");
     await expect(search).toHaveValue("");
     await search.press("Escape");
     await page.waitForTimeout(50);
-    expect(filterOpenedDiscard).toBe(false);
-    page.removeAllListeners("dialog");
+    await expect(page.locator(".purchase-discard-dialog")).toBeHidden();
     await expect(page.getByRole("dialog")).toBeHidden();
     await page.getByRole("button", { name: /Saved drafts/ }).click();
     await search.fill("missing invoice");
     await expect(
       page.getByText("No drafts match these filters."),
     ).toBeVisible();
+    await search.press("Escape");
     await page.getByRole("button", { name: "Clear filters" }).click();
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: /Saved drafts/ }).click();
@@ -295,7 +288,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     await page.getByRole("button", { name: "New invoice" }).click();
     await invoice.fill("SUP-2026-0042");
-    await supplier.selectOption(supplierId);
+    await supplier.click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
     await page.getByRole("button", { name: "Save draft" }).click();
     const warning = page.getByRole("alert");
@@ -303,16 +297,46 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(warning).toContainText("Current rule: warn");
     await expect(page.getByText("Draft saved and durable.")).toBeVisible();
 
-    page.once("dialog", (dialog) => dialog.dismiss());
     await page.keyboard.press("Escape");
+    await expect(page.locator(".purchase-discard-dialog")).toBeVisible();
+    await page
+      .locator(".purchase-discard-dialog")
+      .getByRole("button", { name: "Close" })
+      .click();
     await expect(
       page.locator(".purchase-snapshot").getByText("2.5%", { exact: true }),
     ).toBeVisible();
-    page.once("dialog", (dialog) => dialog.accept());
+
     await page.keyboard.press("Escape");
+    await expect(page.locator(".purchase-discard-dialog")).toBeVisible();
+    await page
+      .locator(".purchase-discard-dialog")
+      .getByRole("button", { name: "Discard draft" })
+      .click();
     await expect(
       page.getByText("Draft discarded after confirmation."),
     ).toBeVisible();
+
+    // Verify post-discard state: placeholder shows helpful prompt and invoice number is focused
+    await expect(
+      page.getByText(
+        "Enter supplier invoice number and select supplier, then press Enter to start adding items.",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Start adding items ↵" }),
+    ).toBeVisible();
+    await expect(invoice).toBeFocused();
+
+    // Re-enter new invoice seamlessly via keyboard: Enter moves to supplier, Enter creates draft and focuses table
+    await invoice.fill("SUP-2026-RECOVER");
+    await invoice.press("Enter");
+    await expect(supplier).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByText("Draft saved and durable.")).toBeVisible();
+    await expect(page.getByPlaceholder("Search to add an item…")).toBeFocused();
   });
 
   test("enters durable rows by scanner and Enter, quick-creates a Product, and follows persisted column order", async ({
@@ -332,9 +356,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByRole("button", { name: "New invoice" }).click();
     await page.getByLabel("Supplier invoice number").fill("ROWS-49");
-    await page
-      .getByRole("combobox", { name: "Supplier", exact: true })
-      .selectOption(supplierId);
+    await page.getByRole("combobox", { name: "Supplier", exact: true }).click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-09-07");
     await page.getByRole("button", { name: "Save draft" }).click();
 
@@ -526,9 +549,6 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       .getByRole("button", { name: "Move earlier: Quantity" })
       .click();
     await settings
-      .getByRole("radio", { name: "Return to Item / Barcode" })
-      .check();
-    await settings
       .getByRole("button", { name: "Move earlier: Expiry" })
       .click();
     await settings.getByRole("button", { name: "Save entry settings" }).click();
@@ -542,6 +562,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "Expiry",
       "Primary cost",
       "Inventory Units",
+      "Actions",
     ]);
 
     await page.reload();
@@ -564,7 +585,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(cost).toBeFocused();
     await cost.press("Enter");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(5);
-    await expect(resumedItem).toBeFocused();
+    await expect(quantity).toBeFocused();
 
     const currentPreferences = await apiRequest(
       apiOrigin,
@@ -616,6 +637,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "Expiry",
       "Item / Barcode",
       "Inventory Units",
+      "Actions",
     ]);
     await expect(quantity).toBeFocused();
     await quantity.press("Enter");
@@ -907,9 +929,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByLabel("Supplier invoice number").fill("UNSAVED-HEADER");
-    await page
-      .getByRole("combobox", { name: "Supplier", exact: true })
-      .selectOption(supplierId);
+    await page.getByRole("combobox", { name: "Supplier", exact: true }).click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
     const suppliersView = page.getByRole("button", {
       name: "Suppliers",
       exact: true,
@@ -929,7 +950,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
     await expect(
       page.getByRole("combobox", { name: "Supplier", exact: true }),
-    ).toHaveValue(supplierId);
+    ).toHaveValue("Al-Nahrain Medical");
     await suppliersView.click();
     await expect(page.getByLabel("Supplier name", { exact: true })).toHaveValue(
       "Unfinished supplier",
@@ -1018,9 +1039,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByLabel("Supplier invoice number").fill("TIMEOUT-RETRY-1");
-    await page
-      .getByRole("combobox", { name: "Supplier", exact: true })
-      .selectOption(supplierId);
+    await page.getByRole("combobox", { name: "Supplier", exact: true }).click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
 
     delayNextDraftCreateResponse = true;
@@ -1067,11 +1087,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       receipt.getByRole("heading", { name: "Posted purchase" }),
     ).toBeVisible();
     await expect(receipt).toContainText("POST-ATOMIC-1");
-    await expect(receipt).toContainText("purchase.invoice");
     await expect(receipt).toContainText("inventory");
     await expect(receipt).toContainText("cash");
-    await expect(receipt).toContainText("Batch ID");
-    await expect(receipt).toContainText("Movement ID");
+    await expect(receipt).toContainText("Lot");
+    await expect(receipt).toContainText("Expiry");
     await expect(page.getByLabel("Supplier invoice number")).toHaveValue("");
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({
@@ -1095,7 +1114,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
 
     delayNextPurchasePostResponse = true;
-    await page.getByRole("button", { name: "ترحيل الشراء" }).click();
+    await page.getByRole("button", { name: "حفظ الفاتورة" }).click();
     await expect(page.getByText(/تعذر تأكيد النتيجة/)).toBeVisible({
       timeout: 7_000,
     });
@@ -1103,7 +1122,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     const receipt = page.locator(".posted-purchase-result");
     await expect(
-      receipt.getByRole("heading", { name: "شراء مُرحّل" }),
+      receipt.getByRole("heading", { name: "فاتورة شراء محفوظة" }),
     ).toBeVisible();
     await expect(receipt).toContainText("POST-RELOAD-1");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -1169,9 +1188,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await opener.focus();
     await pressKeyOnFocused(page, opener, "Enter");
 
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     const search = dialog.getByRole("searchbox", {
       name: "Search posted purchases",
@@ -1401,7 +1418,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(returnLink).toBeFocused();
 
     expect(
-      (await new AxeBuilder({ page }).include("dialog").analyze()).violations,
+      (
+        await new AxeBuilder({ page })
+          .include("#purchase-posted-view")
+          .analyze()
+      ).violations,
     ).toEqual([]);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -1420,9 +1441,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.goto(`${renderer.origin}#/purchases`);
     denyNextPostedListResponse = true;
     await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog.getByRole("alert")).toContainText(
       "Access denied. Audit request:",
     );
@@ -1460,9 +1479,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
 
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Close" }).click();
 
@@ -1490,20 +1507,16 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page.goto(`${renderer.origin}#/purchases`);
         await page
           .getByRole("button", {
-            name: locale === "en" ? "Posted invoices" : "الفواتير المُرحّلة",
+            name:
+              locale === "en" ? "Posted invoices" : "فواتير الشراء المحفوظة",
           })
           .click();
-        const dialog = page.getByRole("dialog", {
-          name:
-            locale === "en"
-              ? "Posted purchase invoices"
-              : "فواتير الشراء المُرحّلة",
-        });
+        const dialog = page.locator("#purchase-posted-view");
         const search = dialog.getByRole("searchbox", {
           name:
             locale === "en"
               ? "Search posted purchases"
-              : "البحث في المشتريات المُرحّلة",
+              : "البحث في فواتير الشراء",
         });
         await search.fill("BROWSER-REVIEW");
         await search.press("Enter");
@@ -1608,9 +1621,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     await page.getByRole("button", { name: "Post purchase" }).click();
     const alert = page.locator("#purchase-post-denial");
-    await expect(alert).toContainText("expiry-required");
+    await expect(alert).toHaveAttribute("data-denial-code", "expiry-required");
     await expect(alert).toContainText(
-      "purchase.post.expiry-required-at-receipt",
+      "Posting refused: an expiry date is required for medication and cold-chain items.",
     );
     const expiryCell = page.locator(
       '[data-post-row="0"][data-post-field="expiryDate"]',
@@ -1621,6 +1634,67 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "POST-REJECTED-1",
     );
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+  });
+
+  test("allows correcting a missing expiry inline on the draft row and posting successfully", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "POST-REJECTED-FIX-1",
+      "",
+    );
+
+    await page.getByRole("button", { name: "Post purchase" }).click();
+    const alert = page.locator("#purchase-post-denial");
+    await expect(alert).toHaveAttribute("data-denial-code", "expiry-required");
+    await expect(alert).toContainText(
+      "Posting refused: an expiry date is required for medication and cold-chain items.",
+    );
+    const expiryCell = page.locator(
+      '[data-post-row="0"][data-post-field="expiryDate"]',
+    );
+    await expect(expiryCell).toHaveAttribute("data-post-error", "true");
+
+    await page.getByRole("button", { name: /^Edit:/ }).click();
+    const expiryInput = page.locator(
+      'tr[data-editing="true"] input[type="date"]',
+    );
+    await expect(expiryInput).toBeVisible();
+    await expiryInput.fill("2029-06-30");
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(
+      page.getByText("Row updated and saved durably."),
+    ).toBeVisible();
+    await expect(expiryCell).toContainText("2029-06-30");
+
+    await page.getByRole("button", { name: "Post purchase" }).click();
+    await expect(
+      page.getByText("Purchase posted atomically. A fresh invoice is ready."),
+    ).toBeVisible();
+  });
+
+  test("allows deleting a draft row and re-sequencing the remaining rows", async ({
+    page,
+  }) => {
+    page.on("dialog", (dialog) => dialog.accept());
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "DELETE-ROW-1",
+      "2029-12-31",
+    );
+
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+    await page.getByRole("button", { name: /^Delete:/ }).click();
+    await expect(page.getByText("Row deleted from draft.")).toBeVisible();
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(1);
   });
 
   test("preserves an invalid Supplier header and returns focus for correction", async ({
@@ -1648,7 +1722,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       exact: true,
     });
     await invoice.fill("INVALID-SUPPLIER-1");
-    await supplier.selectOption(invalidSupplier.id);
+    await supplier.click();
+    await page.getByRole("option", { name: invalidSupplier.name }).click();
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
     expect(
       (
@@ -1824,9 +1899,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog
       .getByRole("searchbox", { name: "Search posted purchases" })
@@ -1885,9 +1958,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog
       .getByRole("searchbox", { name: "Search posted purchases" })
@@ -2084,7 +2155,8 @@ async function createPurchaseWithOneRow(
   await page.getByLabel(labels.invoice).fill(invoiceNumber);
   await page
     .getByRole("combobox", { name: labels.supplier, exact: true })
-    .selectOption(supplierId);
+    .click();
+  await page.locator(`[data-supplier-id="${supplierId}"]`).click();
   await page
     .getByLabel(locale === "ar" ? "تاريخ الفاتورة" : "Invoice date", {
       exact: true,

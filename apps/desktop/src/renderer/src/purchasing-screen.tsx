@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   PurchaseDraft,
   PurchaseDraftDetail,
@@ -12,6 +12,7 @@ import {
   type PurchaseItemSelection,
 } from "./purchase-item-details";
 import { PurchaseRowEntry } from "./purchase-row-entry";
+import { formatFilsToIqd } from "./product-record";
 import { useIdentityState } from "./identity-state-provider";
 import {
   clearPendingPurchasePost,
@@ -72,18 +73,29 @@ export function PurchasingRouteView({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"invoice" | "suppliers">("invoice");
-  const [postedReviewOpen, setPostedReviewOpen] = useState(() =>
-    window.location.hash.startsWith("#/purchases/posted/"),
-  );
+  type PurchasingView = "invoice" | "drafts" | "posted" | "suppliers" | "idle";
+  const [view, setView] = useState<PurchasingView>(() => {
+    if (window.location.hash.startsWith("#/purchases/posted/")) {
+      return "posted";
+    }
+    return !canManageDrafts ? "posted" : "invoice";
+  });
   const invoiceRef = useRef<HTMLInputElement>(null);
-  const registerRef = useRef<HTMLDialogElement>(null);
-  const supplierRef = useRef<HTMLSelectElement>(null);
+  const discardDialogRef = useRef<HTMLDialogElement>(null);
+  const supplierRef = useRef<HTMLInputElement>(null);
   const draftCommandAttempt = useRef<PurchasingCommandAttempt | null>(null);
   const postRecoveryStarted = useRef(false);
+  const [discarding, setDiscarding] = useState(false);
 
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
   const [supplierId, setSupplierId] = useState("");
+  const [isSupplierOpen, setIsSupplierOpen] = useState(false);
+  const [supplierSearchText, setSupplierSearchText] = useState("");
+  const [highlightedSupplierIndex, setHighlightedSupplierIndex] = useState(-1);
+  const supplierComboboxRef = useRef<HTMLDivElement>(null);
+  const supplierOptionRefs = useRef<(HTMLLIElement | null)[]>([]);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const draftSavingRef = useRef(false);
   const [settlementContext, setSettlementContext] = useState<"cash" | "debt">(
     "cash",
   );
@@ -119,17 +131,62 @@ export function PurchasingRouteView({
   }, [baseUrl, canManageDrafts, copy.error]);
 
   useEffect(() => {
-    if (identity?.state === "authenticated" && !canManageDrafts) {
-      setPostedReviewOpen(true);
+    if (
+      identity?.state === "authenticated" &&
+      !canManageDrafts &&
+      view !== "suppliers" &&
+      view !== "idle"
+    ) {
+      setView("posted");
     }
-  }, [canManageDrafts, identity?.state]);
+  }, [canManageDrafts, identity?.state, view]);
+
+  useEffect(() => {
+    const handleHashChange = (): void => {
+      if (window.location.hash.startsWith("#/purchases/posted/")) {
+        setView("posted");
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   useEffect(() => {
     if (postRecoveryStarted.current) return;
     postRecoveryStarted.current = true;
     const pending = readPendingPurchasePost(purchasePostAddress());
     if (pending === null) return;
-    void performPost(pending);
+    void (async () => {
+      try {
+        const detail = await requestPurchaseDraft(baseUrl, pending.draftId);
+        if (detail.status !== "active") {
+          clearPendingPurchasePost(purchasePostAddress());
+          return;
+        }
+        setActiveDraft(detail);
+        setSupplierInvoiceNumber(detail.supplierInvoiceNumber);
+        setSupplierId(detail.supplierId);
+        setSettlementContext(detail.settlementContext);
+        setInvoiceDate(detail.invoiceDate);
+        if (detail.version !== pending.expectedVersion) {
+          clearPendingPurchasePost(purchasePostAddress());
+          setPostDenial({
+            code: "version-conflict",
+            fieldErrors: [],
+            requestId: crypto.randomUUID(),
+            status: "denied",
+          });
+          return;
+        }
+        if (detail.rows.length === 0) {
+          clearPendingPurchasePost(purchasePostAddress());
+          return;
+        }
+        await performPost(pending);
+      } catch {
+        clearPendingPurchasePost(purchasePostAddress());
+      }
+    })();
   }, [baseUrl]);
 
   useEffect(() => {
@@ -140,7 +197,7 @@ export function PurchasingRouteView({
         target.closest("[data-purchase-editor]") !== null;
       if (event.key === "Escape" && activeDraft !== null && isInsideEditor) {
         event.preventDefault();
-        void confirmDiscard();
+        promptDiscard();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -148,8 +205,8 @@ export function PurchasingRouteView({
   });
 
   async function showDraft(draft: PurchaseDraft): Promise<void> {
-    registerRef.current?.close();
     setView("invoice");
+    clearPendingPurchasePost(purchasePostAddress());
 
     draftCommandAttempt.current = null;
     try {
@@ -157,6 +214,7 @@ export function PurchasingRouteView({
       setActiveDraft(detail);
       setSupplierInvoiceNumber(detail.supplierInvoiceNumber);
       setSupplierId(detail.supplierId);
+      setSupplierSearchText(detail.supplierNameSnapshot);
       setSettlementContext(detail.settlementContext);
       setInvoiceDate(detail.invoiceDate);
       setWarning(false);
@@ -174,14 +232,18 @@ export function PurchasingRouteView({
     setView("invoice");
     resetDraftFields();
     setPostedPurchase(null);
-    queueMicrotask(() => invoiceRef.current?.focus());
+    requestAnimationFrame(() => invoiceRef.current?.focus());
   }
 
   function resetDraftFields(): void {
+    clearPendingPurchasePost(purchasePostAddress());
     draftCommandAttempt.current = null;
     setActiveDraft(null);
     setSupplierInvoiceNumber("");
     setSupplierId("");
+    setSupplierSearchText("");
+    setIsSupplierOpen(false);
+    setHighlightedSupplierIndex(-1);
     setSettlementContext("cash");
     setInvoiceDate(today());
     setWarning(false);
@@ -223,6 +285,21 @@ export function PurchasingRouteView({
       if (caught instanceof PurchasingApiDenied) {
         clearPendingPurchasePost(purchasePostAddress());
         setPostDenial(caught.denial);
+        if (caught.denial.code === "version-conflict") {
+          try {
+            const latest = await requestPurchaseDraft(baseUrl, attempt.draftId);
+            setActiveDraft(latest);
+            setSupplierInvoiceNumber(latest.supplierInvoiceNumber);
+            setSupplierId(latest.supplierId);
+            setSettlementContext(latest.settlementContext);
+            setInvoiceDate(latest.invoiceDate);
+            setDrafts((current) =>
+              current.map((draft) => (draft.id === latest.id ? latest : draft)),
+            );
+          } catch {
+            // Keep existing draft in place if fetch fails
+          }
+        }
       } else {
         setError(copy.postRetryPending);
       }
@@ -231,21 +308,47 @@ export function PurchasingRouteView({
     }
   }
 
-  async function saveDraft(event: React.FormEvent): Promise<void> {
-    event.preventDefault();
+  async function saveDraft(
+    event?: React.FormEvent,
+    overrides?: {
+      invoiceDate?: string;
+      settlementContext?: "cash" | "debt";
+      supplierId?: string;
+      supplierInvoiceNumber?: string;
+    },
+  ): Promise<PurchaseDraftDetail | null> {
+    if (event !== undefined) event.preventDefault();
+    if (draftSavingRef.current) return null;
     setError(null);
     setStatus(null);
-    if (supplierId === "") {
-      setError(copy.error);
-      supplierRef.current?.focus();
-      return;
+
+    const effectiveInvoiceNumber = (
+      overrides?.supplierInvoiceNumber ?? supplierInvoiceNumber
+    ).trim();
+    const effectiveSupplierId = overrides?.supplierId ?? supplierId;
+    const effectiveInvoiceDate = overrides?.invoiceDate ?? invoiceDate;
+    const effectiveSettlementContext =
+      overrides?.settlementContext ?? settlementContext;
+
+    if (effectiveInvoiceNumber === "") {
+      setError(copy.invoiceNumberRequired);
+      invoiceRef.current?.focus();
+      return null;
     }
+    if (effectiveSupplierId === "") {
+      setError(copy.supplierRequired);
+      supplierRef.current?.focus();
+      return null;
+    }
+    const isNewDraft = activeDraft === null;
+    draftSavingRef.current = true;
+    setDraftSaving(true);
     try {
       const header = {
-        invoiceDate,
-        settlementContext,
-        supplierId,
-        supplierInvoiceNumber,
+        invoiceDate: effectiveInvoiceDate,
+        settlementContext: effectiveSettlementContext,
+        supplierId: effectiveSupplierId,
+        supplierInvoiceNumber: effectiveInvoiceNumber,
       };
       const attempt = purchasingCommandAttempt(
         draftCommandAttempt.current,
@@ -271,9 +374,20 @@ export function PurchasingRouteView({
       draftCommandAttempt.current = null;
       const detail = await requestPurchaseDraft(baseUrl, result.draft.id);
       setActiveDraft(detail);
+      clearPendingPurchasePost(purchasePostAddress());
+      setPostDenial(null);
       setWarning(result.warnings.length > 0);
       setStatus(copy.saved);
+      if (isNewDraft) {
+        requestAnimationFrame(() => {
+          const itemInput = document.querySelector<HTMLInputElement>(
+            'input[data-enter-field="item"]',
+          );
+          itemInput?.focus();
+        });
+      }
       await reload();
+      return detail;
     } catch (caught) {
       setError(copy.error);
       if (
@@ -287,11 +401,28 @@ export function PurchasingRouteView({
       ) {
         supplierRef.current?.focus();
       }
+      return null;
+    } finally {
+      draftSavingRef.current = false;
+      setDraftSaving(false);
     }
   }
 
-  async function confirmDiscard(): Promise<void> {
-    if (activeDraft === null || !window.confirm(copy.confirmDiscard)) return;
+  function promptDiscard(): void {
+    if (activeDraft === null || discarding) return;
+    discardDialogRef.current?.showModal();
+  }
+
+  function closeDiscardDialog(): void {
+    discardDialogRef.current?.close();
+  }
+
+  async function executeDiscard(): Promise<void> {
+    if (activeDraft === null || discarding) return;
+    closeDiscardDialog();
+    setDiscarding(true);
+    clearPendingPurchasePost(purchasePostAddress());
+    setPostDenial(null);
     try {
       const attempt = purchasingCommandAttempt(
         draftCommandAttempt.current,
@@ -307,26 +438,136 @@ export function PurchasingRouteView({
         expectedVersion: activeDraft.version,
         idempotencyKey: attempt.idempotencyKey,
       });
-      draftCommandAttempt.current = null;
-      newDraft();
+      resetDraftFields();
       setStatus(copy.discarded);
       await reload();
     } catch {
       setError(copy.error);
+    } finally {
+      draftCommandAttempt.current = null;
+      setDiscarding(false);
+      requestAnimationFrame(() => {
+        invoiceRef.current?.focus();
+      });
     }
   }
 
-  const activeSuppliers = suppliers.filter(
-    (supplier) => supplier.status === "active",
+  const activeSuppliers = useMemo(
+    () => suppliers.filter((supplier) => supplier.status === "active"),
+    [suppliers],
   );
-  const currentInactiveSupplier = suppliers.find(
-    (supplier) =>
-      supplier.id === activeDraft?.supplierId && supplier.status !== "active",
+  const currentInactiveSupplier = useMemo(
+    () =>
+      suppliers.find(
+        (supplier) =>
+          supplier.id === activeDraft?.supplierId &&
+          supplier.status !== "active",
+      ),
+    [suppliers, activeDraft?.supplierId],
   );
-  const headerSuppliers =
-    currentInactiveSupplier === undefined
-      ? activeSuppliers
-      : [...activeSuppliers, currentInactiveSupplier];
+  const headerSuppliers = useMemo(
+    () =>
+      currentInactiveSupplier === undefined
+        ? activeSuppliers
+        : [...activeSuppliers, currentInactiveSupplier],
+    [activeSuppliers, currentInactiveSupplier],
+  );
+
+  useEffect(() => {
+    if (supplierId !== "") {
+      const found = headerSuppliers.find((s) => s.id === supplierId);
+      if (found) {
+        setSupplierSearchText(found.name);
+      }
+    }
+  }, [supplierId, headerSuppliers]);
+
+  useEffect(() => {
+    if (!isSupplierOpen) return;
+
+    function handlePointerDown(event: PointerEvent): void {
+      if (
+        supplierComboboxRef.current &&
+        !supplierComboboxRef.current.contains(event.target as Node)
+      ) {
+        setIsSupplierOpen(false);
+        const current = headerSuppliers.find((s) => s.id === supplierId);
+        setSupplierSearchText(current?.name ?? "");
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isSupplierOpen, headerSuppliers, supplierId]);
+
+  useEffect(() => {
+    if (
+      isSupplierOpen &&
+      highlightedSupplierIndex >= 0 &&
+      supplierOptionRefs.current[highlightedSupplierIndex]
+    ) {
+      supplierOptionRefs.current[highlightedSupplierIndex]?.scrollIntoView({
+        block: "nearest",
+      });
+    }
+  }, [isSupplierOpen, highlightedSupplierIndex]);
+
+  const searchWords = useMemo(
+    () =>
+      supplierSearchText
+        .trim()
+        .toLocaleLowerCase(locale)
+        .split(/\s+/)
+        .filter(Boolean),
+    [supplierSearchText, locale],
+  );
+
+  const currentSelectedSupplier = useMemo(
+    () => headerSuppliers.find((s) => s.id === supplierId),
+    [headerSuppliers, supplierId],
+  );
+
+  const filteredSuppliers = useMemo(() => {
+    return headerSuppliers.filter((supplier) => {
+      if (searchWords.length === 0) return true;
+      if (
+        currentSelectedSupplier &&
+        supplierSearchText.trim().toLocaleLowerCase(locale) ===
+          currentSelectedSupplier.name.trim().toLocaleLowerCase(locale)
+      ) {
+        return true;
+      }
+      const nameLower = supplier.name.toLocaleLowerCase(locale);
+      return searchWords.every((word) => nameLower.includes(word));
+    });
+  }, [
+    headerSuppliers,
+    searchWords,
+    currentSelectedSupplier,
+    supplierSearchText,
+    locale,
+  ]);
+
+  function chooseSupplier(chosen: Supplier): void {
+    setSupplierId(chosen.id);
+    setSupplierSearchText(chosen.name);
+    setIsSupplierOpen(false);
+    setHighlightedSupplierIndex(-1);
+    if (error !== null) setError(null);
+
+    if (supplierInvoiceNumber.trim() !== "") {
+      void saveDraft(undefined, {
+        supplierId: chosen.id,
+      });
+    } else {
+      setError(copy.invoiceNumberRequired);
+      requestAnimationFrame(() => {
+        invoiceRef.current?.focus();
+      });
+    }
+  }
 
   const normalizedQuery = draftQuery.trim().toLocaleLowerCase(locale);
   const filteredDrafts = drafts.filter((draft) => {
@@ -351,16 +592,18 @@ export function PurchasingRouteView({
   }
 
   function focusDraftRegister(): void {
-    registerRef.current?.showModal();
-    const heading = document.getElementById("draft-list-title");
-    heading?.scrollIntoView({ block: "start" });
-    heading?.focus();
+    setView("drafts");
+    queueMicrotask(() => {
+      const heading = document.getElementById("draft-list-title");
+      heading?.scrollIntoView({ block: "start" });
+      heading?.focus();
+    });
   }
 
   const activeIndex = drafts.findIndex((draft) => draft.id === activeDraft?.id);
-  const canUseOcr =
-    identity?.state === "authenticated" &&
-    identity.entitlement.capabilities.includes("purchase-invoice-ocr");
+  // const canUseOcr =
+  //   identity?.state === "authenticated" &&
+  //   identity.entitlement.capabilities.includes("purchase-invoice-ocr");
   const columns = [
     copy.item,
     copy.quantity,
@@ -393,8 +636,9 @@ export function PurchasingRouteView({
           <button
             type="button"
             className="purchase-view-tab"
+            aria-pressed={view === "drafts"}
+            aria-controls="purchase-drafts-view"
             onClick={focusDraftRegister}
-            aria-haspopup="dialog"
           >
             <span aria-hidden="true">📂</span> {copy.savedInvoices}
           </button>
@@ -402,12 +646,14 @@ export function PurchasingRouteView({
         <button
           type="button"
           className="purchase-view-tab"
-          onClick={() => setPostedReviewOpen(true)}
-          aria-haspopup="dialog"
+          aria-pressed={view === "posted"}
+          aria-controls="purchase-posted-view"
+          onClick={() => setView("posted")}
         >
           <span aria-hidden="true">🔍</span> {copy.postedInvoices}
         </button>
-        {canManageDrafts ? (
+        {/* Purchase Return workflow is accessed via Posted Invoices (Milestone 2) */}
+        {/* {canManageDrafts ? (
           <button
             type="button"
             className="purchase-view-tab"
@@ -416,7 +662,7 @@ export function PurchasingRouteView({
           >
             <span aria-hidden="true">↩</span> {copy.returnInvoice}
           </button>
-        ) : null}
+        ) : null} */}
         {canManageSuppliers ? (
           <button
             type="button"
@@ -428,7 +674,8 @@ export function PurchasingRouteView({
             <span aria-hidden="true">🏬</span> {copy.suppliers}
           </button>
         ) : null}
-        {canManageDrafts ? (
+        {/* Document adjustments and returns are accessed via Posted Invoices; print is Milestone 3/4 */}
+        {/* {canManageDrafts && view === "invoice" ? (
           <div className="purchase-document-actions">
             <button
               type="button"
@@ -456,7 +703,7 @@ export function PurchasingRouteView({
               {copy.adjustInvoice}
             </button>
           </div>
-        ) : null}
+        ) : null} */}
       </div>
       {!canManageDrafts ? <p role="status">{copy.postedReviewOnly}</p> : null}
       <div
@@ -479,6 +726,12 @@ export function PurchasingRouteView({
                   required
                   value={invoiceDate}
                   onChange={(event) => setInvoiceDate(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      invoiceRef.current?.focus();
+                    }
+                  }}
                 />
               </label>
               <label>
@@ -486,40 +739,299 @@ export function PurchasingRouteView({
                 <input
                   ref={invoiceRef}
                   required
+                  disabled={draftSaving}
                   maxLength={120}
                   placeholder={copy.invoiceNumberHint}
                   value={supplierInvoiceNumber}
-                  onChange={(event) =>
-                    setSupplierInvoiceNumber(event.target.value)
-                  }
+                  onChange={(event) => {
+                    setSupplierInvoiceNumber(event.target.value);
+                    if (error !== null) setError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      const trimmedNumber = supplierInvoiceNumber.trim();
+                      if (trimmedNumber === "") {
+                        setError(copy.invoiceNumberRequired);
+                        return;
+                      }
+                      setError(null);
+                      if (supplierId !== "") {
+                        void saveDraft(undefined, {
+                          supplierInvoiceNumber: trimmedNumber,
+                        });
+                      } else {
+                        supplierRef.current?.focus();
+                      }
+                    }
+                  }}
                 />
               </label>
               <label>
-                {copy.supplier}
-                <select
-                  ref={supplierRef}
-                  required
-                  value={supplierId}
-                  onChange={(event) => setSupplierId(event.target.value)}
+                <span className="purchase-supplier-label-row">
+                  <span>{copy.supplier}</span>
+                  {draftSaving ? (
+                    <span
+                      className="status-spinner purchase-supplier-spinner"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </span>
+                <div
+                  ref={supplierComboboxRef}
+                  className="purchase-supplier-combobox"
                 >
-                  <option value="">{copy.select}</option>
-                  {headerSuppliers.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.name}
-                      {supplier.status === "active"
-                        ? ""
-                        : ` · ${copy[supplier.status]}`}
-                    </option>
-                  ))}
-                </select>
+                  <div className="purchase-supplier-control">
+                    <input
+                      ref={supplierRef}
+                      type="text"
+                      role="combobox"
+                      aria-expanded={isSupplierOpen}
+                      aria-haspopup="listbox"
+                      aria-controls="purchase-supplier-listbox"
+                      aria-autocomplete="list"
+                      aria-label={copy.supplier}
+                      aria-activedescendant={
+                        highlightedSupplierIndex >= 0 &&
+                        filteredSuppliers[highlightedSupplierIndex]
+                          ? `purchase-supplier-opt-${filteredSuppliers[highlightedSupplierIndex]!.id}`
+                          : undefined
+                      }
+                      required
+                      disabled={draftSaving}
+                      className="purchase-supplier-search-input"
+                      placeholder={copy.select}
+                      value={supplierSearchText}
+                      onFocus={(event) => {
+                        setIsSupplierOpen(true);
+                        const currentIndex = filteredSuppliers.findIndex(
+                          (s) => s.id === supplierId,
+                        );
+                        setHighlightedSupplierIndex(
+                          currentIndex >= 0 ? currentIndex : 0,
+                        );
+                        event.target.select();
+                      }}
+                      onClick={() => {
+                        if (!isSupplierOpen) {
+                          setIsSupplierOpen(true);
+                          const currentIndex = filteredSuppliers.findIndex(
+                            (s) => s.id === supplierId,
+                          );
+                          setHighlightedSupplierIndex(
+                            currentIndex >= 0 ? currentIndex : 0,
+                          );
+                        }
+                      }}
+                      onChange={(event) => {
+                        setSupplierSearchText(event.target.value);
+                        if (!isSupplierOpen) setIsSupplierOpen(true);
+                        setHighlightedSupplierIndex(0);
+                        if (error !== null) setError(null);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          if (!isSupplierOpen) {
+                            setIsSupplierOpen(true);
+                            const currentIndex = filteredSuppliers.findIndex(
+                              (s) => s.id === supplierId,
+                            );
+                            setHighlightedSupplierIndex(
+                              currentIndex >= 0 ? currentIndex : 0,
+                            );
+                          } else {
+                            setHighlightedSupplierIndex((prev) =>
+                              prev < filteredSuppliers.length - 1
+                                ? prev + 1
+                                : 0,
+                            );
+                          }
+                          return;
+                        }
+                        if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          if (!isSupplierOpen) {
+                            setIsSupplierOpen(true);
+                            setHighlightedSupplierIndex(
+                              filteredSuppliers.length - 1,
+                            );
+                          } else {
+                            setHighlightedSupplierIndex((prev) =>
+                              prev > 0
+                                ? prev - 1
+                                : filteredSuppliers.length - 1,
+                            );
+                          }
+                          return;
+                        }
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          if (
+                            isSupplierOpen &&
+                            highlightedSupplierIndex >= 0 &&
+                            highlightedSupplierIndex < filteredSuppliers.length
+                          ) {
+                            const chosen =
+                              filteredSuppliers[highlightedSupplierIndex];
+                            if (chosen) {
+                              chooseSupplier(chosen);
+                              return;
+                            }
+                          }
+                          if (
+                            isSupplierOpen &&
+                            filteredSuppliers.length === 1
+                          ) {
+                            const chosen = filteredSuppliers[0];
+                            if (chosen) {
+                              chooseSupplier(chosen);
+                              return;
+                            }
+                          }
+                          if (supplierId !== "") {
+                            const current = headerSuppliers.find(
+                              (s) => s.id === supplierId,
+                            );
+                            if (current) {
+                              chooseSupplier(current);
+                              return;
+                            }
+                          }
+                          if (supplierInvoiceNumber.trim() === "") {
+                            setError(copy.invoiceNumberRequired);
+                            invoiceRef.current?.focus();
+                          } else {
+                            setError(copy.supplierRequired);
+                          }
+                          return;
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setIsSupplierOpen(false);
+                          const current = headerSuppliers.find(
+                            (s) => s.id === supplierId,
+                          );
+                          setSupplierSearchText(current?.name ?? "");
+                          return;
+                        }
+                        if (event.key === "Tab") {
+                          setIsSupplierOpen(false);
+                          const current = headerSuppliers.find(
+                            (s) => s.id === supplierId,
+                          );
+                          setSupplierSearchText(current?.name ?? "");
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="purchase-supplier-toggle"
+                      tabIndex={-1}
+                      aria-label={copy.select}
+                      onClick={() => {
+                        setIsSupplierOpen((prev) => {
+                          const next = !prev;
+                          if (next) {
+                            supplierRef.current?.focus();
+                            const currentIndex = filteredSuppliers.findIndex(
+                              (s) => s.id === supplierId,
+                            );
+                            setHighlightedSupplierIndex(
+                              currentIndex >= 0 ? currentIndex : 0,
+                            );
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <span aria-hidden="true">▾</span>
+                    </button>
+                  </div>
+                  {isSupplierOpen ? (
+                    <div className="purchase-supplier-dropdown">
+                      <ul
+                        id="purchase-supplier-listbox"
+                        className="purchase-supplier-menu"
+                        role="listbox"
+                        aria-label={copy.supplier}
+                      >
+                        {filteredSuppliers.length === 0 ? (
+                          <li
+                            className="purchase-supplier-empty"
+                            role="presentation"
+                          >
+                            {copy.noMatchingSuppliers}
+                          </li>
+                        ) : (
+                          filteredSuppliers.map((supplier, idx) => {
+                            const isHighlighted =
+                              idx === highlightedSupplierIndex;
+                            const isSelected = supplier.id === supplierId;
+                            return (
+                              <li
+                                key={supplier.id}
+                                id={`purchase-supplier-opt-${supplier.id}`}
+                                ref={(el) => {
+                                  supplierOptionRefs.current[idx] = el;
+                                }}
+                                role="option"
+                                data-supplier-id={supplier.id}
+                                aria-selected={isSelected}
+                                className={`purchase-supplier-option ${
+                                  isHighlighted ? "is-highlighted" : ""
+                                }`}
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                }}
+                                onClick={() => {
+                                  chooseSupplier(supplier);
+                                }}
+                                onMouseEnter={() => {
+                                  setHighlightedSupplierIndex(idx);
+                                }}
+                              >
+                                <span className="purchase-supplier-option-name">
+                                  {supplier.name}
+                                </span>
+                                {supplier.status !== "active" ? (
+                                  <span className="purchase-supplier-option-status">
+                                    {copy[supplier.status]}
+                                  </span>
+                                ) : null}
+                              </li>
+                            );
+                          })
+                        )}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+                <span className="visually-hidden" aria-live="polite">
+                  {draftSaving ? copy.creatingDraft : ""}
+                </span>
               </label>
-              <div className="purchase-header-value">
+              {activeDraft === null ? (
+                <div className="purchase-header-actions">
+                  <button
+                    type="submit"
+                    className="primary-button purchase-header-submit"
+                    disabled={activeSuppliers.length === 0 || draftSaving}
+                    title={copy.startItemEntry}
+                  >
+                    <span aria-hidden="true">↵</span> {copy.startItemEntry}
+                  </button>
+                </div>
+              ) : null}
+              {/* Supplier live debt belongs to Milestone 3 accounting */}
+              {/* <div className="purchase-header-value">
                 <span>{copy.supplierDebt}</span>
                 <output aria-label={copy.supplierDebt} title={copy.unavailable}>
                   — {copy.iqd}
                 </output>
-              </div>
-              <label className="purchase-item-search">
+              </div> */}
+              {/* Item search is handled in-table via PurchaseRowEntry (Milestone 2) */}
+              {/* <label className="purchase-item-search">
                 {copy.itemSearch}
                 <input
                   type="search"
@@ -527,7 +1039,7 @@ export function PurchasingRouteView({
                   placeholder={copy.itemSearchHint}
                   aria-describedby="purchase-lines-state"
                 />
-              </label>
+              </label> */}
             </div>
           </fieldset>
           {loading ? <p role="status">{copy.loading}</p> : null}
@@ -557,226 +1069,7 @@ export function PurchasingRouteView({
           selection={itemSelection}
         />
 
-        {activeDraft === null ? (
-          <div
-            className="purchase-lines-wrap"
-            role="group"
-            aria-label={copy.scrollLines}
-            tabIndex={0}
-          >
-            <table className="purchase-lines-table">
-              <caption className="visually-hidden">{copy.invoiceItems}</caption>
-              <colgroup>
-                <col className="purchase-line-number" />
-                <col className="purchase-line-name" />
-                {columns.slice(1).map((column) => (
-                  <col key={column} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  {columns.map((column) => (
-                    <th scope="col" key={column}>
-                      {column}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={12} className="purchase-lines-empty">
-                    <p>{copy.noItems}</p>
-                    <p id="purchase-lines-state">{copy.lineEntryUnavailable}</p>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <PurchaseRowEntry
-            baseUrl={baseUrl}
-            draft={activeDraft}
-            onPost={requestPost}
-            postDenial={postDenial}
-            posting={posting}
-            // `setItemSelection` is a `useState` setter, and it has to stay
-            // referentially stable: the row entry publishes its selection from
-            // an effect that depends on this callback, so a fresh function on
-            // every render would re-run that effect — and its clearing cleanup —
-            // on every keystroke.
-            onItemSelectionChanged={setItemSelection}
-            onDraftChanged={(nextDraft) => {
-              setPostDenial(null);
-              setActiveDraft(nextDraft);
-              setDrafts((current) =>
-                current.map((draft) =>
-                  draft.id === nextDraft.id ? nextDraft : draft,
-                ),
-              );
-            }}
-          />
-        )}
-
-        <footer className="purchase-footer" data-purchase-editor>
-          <div className="purchase-totals" aria-label={copy.invoiceTotals}>
-            <div className="purchase-total">
-              <span>{copy.itemsCost}</span>
-              <output title={copy.unavailable}>
-                — <small>{copy.iqd}</small>
-              </output>
-            </div>
-            <label>
-              {copy.expenses}
-              <input disabled value="" placeholder="—" />
-            </label>
-            <label>
-              {copy.discountPercentage}
-              <input
-                disabled
-                value={activeDraft?.allowanceSnapshot.percentage ?? ""}
-                placeholder="—"
-              />
-            </label>
-            <label>
-              {copy.discountAmount}
-              <input disabled value="" placeholder="—" />
-            </label>
-            <div className="purchase-total">
-              <span>{copy.afterDiscount}</span>
-              <output title={copy.unavailable}>
-                — <small>{copy.iqd}</small>
-              </output>
-            </div>
-            <div className="purchase-total purchase-grand-total">
-              <span>{copy.grandTotal}</span>
-              <output title={copy.unavailable}>
-                — <small>{copy.iqd}</small>
-              </output>
-            </div>
-            <div className="purchase-total purchase-return-total">
-              <span>{copy.returnTotal}</span>
-              <output title={copy.unavailable}>
-                — <small>{copy.iqd}</small>
-              </output>
-            </div>
-          </div>
-          {activeDraft === null ? null : (
-            <dl className="purchase-snapshot" aria-label={copy.activeInvoice}>
-              <div>
-                <dt>{copy.snapshot}</dt>
-                <dd>{activeDraft.allowanceSnapshot.percentage}%</dd>
-              </div>
-              <div>
-                <dt>{copy.basis}</dt>
-                <dd>
-                  <bdi>{activeDraft.allowanceSnapshot.basisFils}</bdi>{" "}
-                  {copy.fils}
-                </dd>
-              </div>
-              <div>
-                <dt>{copy.version}</dt>
-                <dd>{activeDraft.version}</dd>
-              </div>
-            </dl>
-          )}
-          <div className="purchase-actions">
-            <button
-              className="quiet-button"
-              type="button"
-              disabled={
-                drafts.length === 0 || activeIndex === drafts.length - 1
-              }
-              onClick={() => {
-                const draft = drafts[activeIndex + 1];
-                if (draft) void showDraft(draft);
-              }}
-            >
-              <span aria-hidden="true">‹</span> {copy.previous}
-            </button>
-            <button
-              className="quiet-button"
-              type="button"
-              disabled={activeIndex < 0}
-              onClick={() => {
-                const draft = drafts[activeIndex - 1];
-                if (draft) void showDraft(draft);
-                else newDraft();
-              }}
-            >
-              {copy.next} <span aria-hidden="true">›</span>
-            </button>
-            <button
-              className="quiet-button"
-              type="button"
-              onClick={focusDraftRegister}
-              aria-haspopup="dialog"
-            >
-              <span aria-hidden="true">🔍</span> {copy.searchDrafts}
-            </button>
-            <button className="quiet-button" type="button" onClick={newDraft}>
-              <span aria-hidden="true">＋</span> {copy.newDraft}
-            </button>
-            {canUseOcr ? (
-              <button
-                className="purchase-ocr-button"
-                type="button"
-                disabled
-                title={copy.unavailable}
-              >
-                <span aria-hidden="true">📷</span> {copy.importImage}
-              </button>
-            ) : null}
-            <button
-              className="quiet-button"
-              type="button"
-              disabled
-              title={copy.unavailable}
-            >
-              <span aria-hidden="true">🖨</span> {copy.print}
-            </button>
-            <button
-              className="quiet-button"
-              type="button"
-              disabled
-              title={copy.unavailable}
-            >
-              <span aria-hidden="true">↩</span> {copy.printReturn}
-            </button>
-            <button
-              className="danger-button"
-              type="button"
-              disabled={activeDraft === null}
-              onClick={() => void confirmDiscard()}
-            >
-              <span aria-hidden="true">⌫</span> {copy.discard}
-            </button>
-            <div className="purchase-payment-actions">
-              <label className="purchase-payment">
-                <span className="visually-hidden">{copy.context}</span>
-                <select
-                  value={settlementContext}
-                  onChange={(event) =>
-                    setSettlementContext(event.target.value as "cash" | "debt")
-                  }
-                >
-                  <option value="cash">{copy.cash}</option>
-                  <option value="debt">{copy.debt}</option>
-                </select>
-              </label>
-              <button
-                className="primary-button"
-                type="submit"
-                form="purchase-header-form"
-                disabled={activeSuppliers.length === 0}
-              >
-                <span aria-hidden="true">▣</span>{" "}
-                {activeDraft === null ? copy.createDraft : copy.saveHeader}
-              </button>
-            </div>
-          </div>
-        </footer>
-        {postedPurchase === null ? null : (
+        {postedPurchase !== null ? (
           <PostedPurchaseResult
             result={postedPurchase}
             onContinue={() => {
@@ -785,6 +1078,176 @@ export function PurchasingRouteView({
               queueMicrotask(() => invoiceRef.current?.focus());
             }}
           />
+        ) : (
+          <>
+            {activeDraft === null ? (
+              <div
+                className="purchase-lines-wrap"
+                role="group"
+                aria-label={copy.scrollLines}
+                tabIndex={0}
+              >
+                <table className="purchase-lines-table">
+                  <caption className="visually-hidden">
+                    {copy.invoiceItems}
+                  </caption>
+                  <colgroup>
+                    <col className="purchase-line-number" />
+                    <col className="purchase-line-name" />
+                    {columns.slice(1).map((column) => (
+                      <col key={column} />
+                    ))}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">#</th>
+                      {columns.map((column) => (
+                        <th scope="col" key={column}>
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colSpan={12} className="purchase-lines-empty">
+                        <p>{copy.noItems}</p>
+                        <p id="purchase-lines-state">{copy.headerPrompt}</p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <PurchaseRowEntry
+                baseUrl={baseUrl}
+                draft={activeDraft}
+                onPost={requestPost}
+                postDenial={postDenial}
+                posting={posting}
+                onItemSelectionChanged={setItemSelection}
+                onDraftChanged={(nextDraft) => {
+                  clearPendingPurchasePost(purchasePostAddress());
+                  setPostDenial(null);
+                  setActiveDraft(nextDraft);
+                  setDrafts((current) =>
+                    current.map((draft) =>
+                      draft.id === nextDraft.id ? nextDraft : draft,
+                    ),
+                  );
+                }}
+              />
+            )}
+
+            <footer className="purchase-footer" data-purchase-editor>
+              {activeDraft === null ? null : (
+                <dl
+                  className="purchase-snapshot"
+                  aria-label={copy.activeInvoice}
+                >
+                  <div>
+                    <dt>{copy.snapshot}</dt>
+                    <dd>{activeDraft.allowanceSnapshot.percentage}%</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.basis}</dt>
+                    <dd>
+                      <bdi>{activeDraft.allowanceSnapshot.basisFils}</bdi>{" "}
+                      {copy.fils}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.version}</dt>
+                    <dd>{activeDraft.version}</dd>
+                  </div>
+                </dl>
+              )}
+              <div className="purchase-actions">
+                <button
+                  className="quiet-button"
+                  type="button"
+                  disabled={
+                    drafts.length === 0 || activeIndex === drafts.length - 1
+                  }
+                  onClick={() => {
+                    if (activeIndex < drafts.length - 1) {
+                      void showDraft(drafts[activeIndex + 1]!);
+                    }
+                  }}
+                >
+                  <span aria-hidden="true">◀</span> {copy.previous}
+                </button>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  disabled={activeIndex <= 0}
+                  onClick={() => {
+                    if (activeIndex > 0) {
+                      void showDraft(drafts[activeIndex - 1]!);
+                    }
+                  }}
+                >
+                  {copy.next} <span aria-hidden="true">▶</span>
+                </button>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  onClick={focusDraftRegister}
+                >
+                  <span aria-hidden="true">🔍</span> {copy.searchDrafts}
+                </button>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  onClick={() => setView("posted")}
+                >
+                  <span aria-hidden="true">🧾</span> {copy.postedInvoices}
+                </button>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  onClick={newDraft}
+                >
+                  <span aria-hidden="true">＋</span> {copy.newDraft}
+                </button>
+                <button
+                  className="danger-button"
+                  type="button"
+                  disabled={activeDraft === null || discarding}
+                  onClick={promptDiscard}
+                >
+                  <span aria-hidden="true">⌫</span> {copy.discard}
+                </button>
+                <div className="purchase-payment-actions">
+                  <label className="purchase-payment">
+                    <span className="visually-hidden">{copy.context}</span>
+                    <select
+                      value={settlementContext}
+                      onChange={(event) => {
+                        clearPendingPurchasePost(purchasePostAddress());
+                        setPostDenial(null);
+                        setSettlementContext(
+                          event.target.value as "cash" | "debt",
+                        );
+                      }}
+                    >
+                      <option value="cash">{copy.cash}</option>
+                      <option value="debt">{copy.debt}</option>
+                    </select>
+                  </label>
+                  <button
+                    className="primary-button"
+                    type="submit"
+                    form="purchase-header-form"
+                    disabled={activeSuppliers.length === 0 || draftSaving}
+                  >
+                    <span aria-hidden="true">▣</span>{" "}
+                    {activeDraft === null ? copy.createDraft : copy.saveHeader}
+                  </button>
+                </div>
+              </div>
+            </footer>
+          </>
         )}
       </div>
       {canManageSuppliers ? (
@@ -797,163 +1260,217 @@ export function PurchasingRouteView({
           />
         </div>
       ) : null}
-      <dialog
-        ref={registerRef}
-        className="purchase-register-dialog"
-        aria-labelledby="draft-list-title"
-      >
-        <button
-          type="button"
-          className="quiet-button purchase-register-close"
-          onClick={() => registerRef.current?.close()}
-        >
-          {copy.close}
-        </button>
-        <section
-          className="purchase-register"
-          id="purchase-draft-register"
-          aria-labelledby="draft-list-title"
-        >
-          <div className="purchase-register-heading">
-            <div>
-              <h2 id="draft-list-title" tabIndex={-1}>
-                {copy.draftRegister}
-              </h2>
-              <p aria-live="polite">
-                {filteredDrafts.length} {copy.results}
-              </p>
-            </div>
-          </div>
-          <div className="purchase-filters">
-            <label className="purchase-search-filter">
-              {copy.searchDrafts}
-              <input
-                type="search"
-                placeholder={copy.searchDraftsHint}
-                value={draftQuery}
-                onChange={(event) => setDraftQuery(event.target.value)}
-              />
-            </label>
-            <label>
-              {copy.filterDate}
-              <input
-                type="date"
-                value={draftDate}
-                onChange={(event) => setDraftDate(event.target.value)}
-              />
-            </label>
-            <label>
-              {copy.filterContext}
-              <select
-                value={draftContext}
-                onChange={(event) =>
-                  setDraftContext(event.target.value as "all" | "cash" | "debt")
-                }
-              >
-                <option value="all">{copy.allContexts}</option>
-                <option value="cash">{copy.cash}</option>
-                <option value="debt">{copy.debt}</option>
-              </select>
-            </label>
-            <button
-              className="quiet-button purchase-filter-clear"
-              type="button"
-              disabled={
-                draftQuery === "" && draftDate === "" && draftContext === "all"
-              }
-              onClick={clearDraftFilters}
-            >
-              {copy.clearFilters}
-            </button>
-          </div>
-
-          <div
-            className="purchase-table-wrap"
-            role="group"
-            aria-label={copy.scrollDrafts}
-            tabIndex={0}
+      {canManageDrafts ? (
+        <div id="purchase-drafts-view" hidden={view !== "drafts"}>
+          <section
+            className="purchase-register"
+            id="purchase-draft-register"
+            aria-labelledby="draft-list-title"
           >
-            <table className="purchase-draft-table">
-              <caption className="visually-hidden">
-                {copy.draftRegister}
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  <th scope="col">{copy.invoiceNumber}</th>
-                  <th scope="col">{copy.supplier}</th>
-                  <th scope="col">{copy.invoiceDate}</th>
-                  <th scope="col">{copy.context}</th>
-                  <th scope="col">{copy.snapshot}</th>
-                  <th scope="col">{copy.version}</th>
-                  <th scope="col">{copy.updatedAt}</th>
-                  <th scope="col">{copy.actions}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredDrafts.length === 0 ? (
+            <div className="purchase-register-heading">
+              <div>
+                <h2 id="draft-list-title" tabIndex={-1}>
+                  {copy.draftRegister}
+                </h2>
+                <p aria-live="polite">
+                  {filteredDrafts.length} {copy.results}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={() => setView("invoice")}
+              >
+                {copy.close}
+              </button>
+            </div>
+            <div className="purchase-filters">
+              <label className="purchase-search-filter">
+                {copy.searchDrafts}
+                <input
+                  type="search"
+                  placeholder={copy.searchDraftsHint}
+                  value={draftQuery}
+                  onChange={(event) => setDraftQuery(event.target.value)}
+                />
+              </label>
+              <label>
+                {copy.filterDate}
+                <input
+                  type="date"
+                  value={draftDate}
+                  onChange={(event) => setDraftDate(event.target.value)}
+                />
+              </label>
+              <label>
+                {copy.filterContext}
+                <select
+                  value={draftContext}
+                  onChange={(event) =>
+                    setDraftContext(
+                      event.target.value as "all" | "cash" | "debt",
+                    )
+                  }
+                >
+                  <option value="all">{copy.allContexts}</option>
+                  <option value="cash">{copy.cash}</option>
+                  <option value="debt">{copy.debt}</option>
+                </select>
+              </label>
+              <button
+                className="quiet-button purchase-filter-clear"
+                type="button"
+                disabled={
+                  draftQuery === "" &&
+                  draftDate === "" &&
+                  draftContext === "all"
+                }
+                onClick={clearDraftFilters}
+              >
+                {copy.clearFilters}
+              </button>
+            </div>
+
+            <div
+              className="purchase-table-wrap"
+              role="group"
+              aria-label={copy.scrollDrafts}
+              tabIndex={0}
+            >
+              <table className="purchase-draft-table">
+                <caption className="visually-hidden">
+                  {copy.draftRegister}
+                </caption>
+                <thead>
                   <tr>
-                    <td className="purchase-table-empty" colSpan={9}>
-                      {drafts.length === 0
-                        ? copy.noDrafts
-                        : copy.noMatchingDrafts}
-                    </td>
+                    <th scope="col">#</th>
+                    <th scope="col">{copy.invoiceNumber}</th>
+                    <th scope="col">{copy.supplier}</th>
+                    <th scope="col">{copy.invoiceDate}</th>
+                    <th scope="col">{copy.context}</th>
+                    <th scope="col">{copy.snapshot}</th>
+                    <th scope="col">{copy.version}</th>
+                    <th scope="col">{copy.updatedAt}</th>
+                    <th scope="col">{copy.actions}</th>
                   </tr>
-                ) : (
-                  filteredDrafts.map((draft, index) => (
-                    <tr
-                      key={draft.id}
-                      data-selected={activeDraft?.id === draft.id}
-                    >
-                      <td>{index + 1}</td>
-                      <th scope="row">
-                        <bdi>{draft.supplierInvoiceNumber}</bdi>
-                      </th>
-                      <td>{draft.supplierNameSnapshot}</td>
-                      <td>
-                        <bdi>{draft.invoiceDate}</bdi>
-                      </td>
-                      <td>{copy[draft.settlementContext]}</td>
-                      <td>{draft.allowanceSnapshot.percentage}%</td>
-                      <td>{draft.version}</td>
-                      <td>
-                        <bdi>
-                          {formatDraftTimestamp(draft.updatedAt, locale)}
-                        </bdi>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="purchase-open-draft"
-                          aria-current={
-                            activeDraft?.id === draft.id ? "true" : undefined
-                          }
-                          onClick={() => void showDraft(draft)}
-                        >
-                          {copy.resume} {draft.supplierInvoiceNumber}
-                          {activeDraft?.id === draft.id ? (
-                            <span className="visually-hidden">
-                              {" "}
-                              · {copy.activeInvoice}
-                            </span>
-                          ) : null}
-                        </button>
+                </thead>
+                <tbody>
+                  {filteredDrafts.length === 0 ? (
+                    <tr>
+                      <td className="purchase-table-empty" colSpan={9}>
+                        {drafts.length === 0
+                          ? copy.noDrafts
+                          : copy.noMatchingDrafts}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredDrafts.map((draft, index) => (
+                      <tr
+                        key={draft.id}
+                        data-selected={activeDraft?.id === draft.id}
+                      >
+                        <td>{index + 1}</td>
+                        <th scope="row">
+                          <bdi>{draft.supplierInvoiceNumber}</bdi>
+                        </th>
+                        <td>{draft.supplierNameSnapshot}</td>
+                        <td>
+                          <bdi>{draft.invoiceDate}</bdi>
+                        </td>
+                        <td>{copy[draft.settlementContext]}</td>
+                        <td>{draft.allowanceSnapshot.percentage}%</td>
+                        <td>{draft.version}</td>
+                        <td>
+                          <bdi>
+                            {formatDraftTimestamp(draft.updatedAt, locale)}
+                          </bdi>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="purchase-open-draft"
+                            aria-current={
+                              activeDraft?.id === draft.id ? "true" : undefined
+                            }
+                            onClick={() => void showDraft(draft)}
+                          >
+                            {copy.resume} {draft.supplierInvoiceNumber}
+                            {activeDraft?.id === draft.id ? (
+                              <span className="visually-hidden">
+                                {" "}
+                                · {copy.activeInvoice}
+                              </span>
+                            ) : null}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      <div id="purchase-posted-view" hidden={view !== "posted"}>
+        <PostedPurchaseReview
+          baseUrl={baseUrl}
+          inline={true}
+          open={view === "posted"}
+          onClose={() => {
+            setView(canManageDrafts ? "invoice" : "idle");
+          }}
+        />
+      </div>
+      <dialog
+        ref={discardDialogRef}
+        className="purchase-discard-dialog"
+        aria-labelledby="discard-dialog-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeDiscardDialog();
+        }}
+      >
+        <section className="purchase-discard-card">
+          <h2 id="discard-dialog-title">{copy.discard}</h2>
+          <p>{copy.confirmDiscard}</p>
+          <div className="purchase-discard-actions">
+            <button
+              type="button"
+              className="quiet-button"
+              onClick={closeDiscardDialog}
+            >
+              {copy.close}
+            </button>
+            <button
+              type="button"
+              className="danger-button"
+              disabled={discarding}
+              onClick={() => void executeDiscard()}
+            >
+              {copy.discard}
+            </button>
           </div>
         </section>
       </dialog>
-      <PostedPurchaseReview
-        baseUrl={baseUrl}
-        open={postedReviewOpen}
-        onClose={() => setPostedReviewOpen(false)}
-      />
     </section>
   );
+}
+
+function formatAccountName(accountCode: string, locale: "ar" | "en"): string {
+  const copy = purchasingMessages[locale];
+  switch (accountCode) {
+    case "cash":
+      return copy.accountCash;
+    case "inventory":
+      return copy.accountInventory;
+    case "supplier-payable":
+      return copy.accountSupplierPayable;
+    case "inventory-count-variance":
+      return copy.accountInventoryCountVariance;
+    default:
+      return accountCode;
+  }
 }
 
 function PostedPurchaseResult({
@@ -1034,19 +1551,19 @@ function PostedPurchaseResult({
         <div>
           <dt>{copy.primarySupplierCost}</dt>
           <dd>
-            <bdi>{posted.primarySupplierCostFils}</bdi> {copy.fils}
+            <bdi>{formatFilsToIqd(posted.primarySupplierCostFils, locale)}</bdi>
           </dd>
         </div>
         <div>
           <dt>{copy.allowanceAmount}</dt>
           <dd>
-            <bdi>{posted.allowanceFils}</bdi> {copy.fils}
+            <bdi>{formatFilsToIqd(posted.allowanceFils, locale)}</bdi>
           </dd>
         </div>
         <div>
           <dt>{copy.costAfterDiscount}</dt>
           <dd>
-            <bdi>{posted.costAfterDiscountFils}</bdi> {copy.fils}
+            <bdi>{formatFilsToIqd(posted.costAfterDiscountFils, locale)}</bdi>
           </dd>
         </div>
         <div>
@@ -1056,7 +1573,7 @@ function PostedPurchaseResult({
               : copy.payableEffect}
           </dt>
           <dd>
-            <bdi>{settlementAmount}</bdi> {copy.fils}
+            <bdi>{formatFilsToIqd(settlementAmount, locale)}</bdi>
           </dd>
         </div>
       </dl>
@@ -1076,9 +1593,9 @@ function PostedPurchaseResult({
               <th scope="col">{copy.quantity}</th>
               <th scope="col">{copy.primarySupplierCost}</th>
               <th scope="col">{copy.costAfterDiscount}</th>
-              <th scope="col">{copy.batchId}</th>
-              <th scope="col">{copy.movementId}</th>
-              <th scope="col">{copy.priceCapture}</th>
+              <th scope="col">{copy.retail}</th>
+              <th scope="col">{copy.expiry}</th>
+              <th scope="col">{copy.lot}</th>
             </tr>
           </thead>
           <tbody>
@@ -1090,19 +1607,23 @@ function PostedPurchaseResult({
                   <bdi>{row.inventoryUnitQuantity}</bdi> {row.inventoryUnitName}
                 </td>
                 <td>
-                  <bdi>{row.linePrimarySupplierCostFils}</bdi>
+                  <bdi>
+                    {formatFilsToIqd(row.linePrimarySupplierCostFils, locale)}
+                  </bdi>
                 </td>
                 <td>
-                  <bdi>{row.costAfterDiscountFils}</bdi>
+                  <bdi>
+                    {formatFilsToIqd(row.costAfterDiscountFils, locale)}
+                  </bdi>
                 </td>
                 <td>
-                  <bdi>{row.batchId}</bdi>
+                  <bdi>{formatFilsToIqd(row.retailPriceFils, locale)}</bdi>
                 </td>
                 <td>
-                  <bdi>{row.movementId}</bdi>
+                  <bdi>{row.expiryDate ?? "—"}</bdi>
                 </td>
                 <td>
-                  <bdi>{row.priceCapture}</bdi>
+                  <bdi>{row.lotNumber ?? "—"}</bdi>
                 </td>
               </tr>
             ))}
@@ -1110,44 +1631,42 @@ function PostedPurchaseResult({
         </table>
       </div>
 
-      <div
-        className="posted-purchase-table-wrap"
-        role="group"
-        aria-label={copy.journal}
-        tabIndex={0}
-      >
-        <h3>{copy.journal}</h3>
-        <p>
-          {copy.journalTemplate}: <bdi>{posted.journal.templateId}</bdi> ·{" "}
-          {copy.version} <bdi>{posted.journal.templateVersion}</bdi>
-        </p>
-        <table className="posted-purchase-table posted-purchase-journal">
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">{copy.account}</th>
-              <th scope="col">{copy.debit}</th>
-              <th scope="col">{copy.credit}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {posted.journal.lines.map((line) => (
-              <tr key={line.ordinal}>
-                <th scope="row">{line.ordinal}</th>
-                <td>
-                  <bdi>{line.accountCode}</bdi>
-                </td>
-                <td>
-                  <bdi>{line.debitFils}</bdi>
-                </td>
-                <td>
-                  <bdi>{line.creditFils}</bdi>
-                </td>
+      <details className="posted-purchase-audit-details">
+        <summary>{copy.accountingAuditDetails}</summary>
+        <div
+          className="posted-purchase-table-wrap"
+          role="group"
+          aria-label={copy.journal}
+          tabIndex={0}
+        >
+          <table className="posted-purchase-table posted-purchase-journal">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">{copy.account}</th>
+                <th scope="col">{copy.debit}</th>
+                <th scope="col">{copy.credit}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {posted.journal.lines.map((line) => (
+                <tr key={line.ordinal}>
+                  <th scope="row">{line.ordinal}</th>
+                  <td>
+                    <bdi>{formatAccountName(line.accountCode, locale)}</bdi>
+                  </td>
+                  <td>
+                    <bdi>{formatFilsToIqd(line.debitFils, locale)}</bdi>
+                  </td>
+                  <td>
+                    <bdi>{formatFilsToIqd(line.creditFils, locale)}</bdi>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </section>
   );
 }

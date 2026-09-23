@@ -183,6 +183,13 @@
       "when": 1789747200000,
       "tag": "0025_sale_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1789833600000,
+      "tag": "0026_mutable_purchase_draft_rows",
+      "breakpoints": true
     }
   ]
 }

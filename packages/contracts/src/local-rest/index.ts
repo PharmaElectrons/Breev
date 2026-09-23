@@ -3323,6 +3323,12 @@ export const purchaseDraftRowCommitRequestSchema = z.strictObject({
   pricing: purchaseRowPricingInputSchema,
   unit: inventoryCapableUnitSchema,
 });
+export const purchaseDraftRowUpdateRequestSchema =
+  purchaseDraftRowCommitRequestSchema;
+export const purchaseDraftRowDiscardRequestSchema = z.strictObject({
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
 export const purchaseDraftRowSchema = z.strictObject({
   baseUnitsPerEnteredUnit: packageUnitRatioSchema,
   costFils: priceFilsSchema,
@@ -3615,6 +3621,7 @@ export const purchasePostResultSchema = z.strictObject({
 
 export const purchasePostedListRequestSchema = z
   .strictObject({
+    dateType: z.enum(["invoice-date", "posted-at"]).optional(),
     direction: z.enum(["ascending", "descending"]).optional(),
     from: z.iso.date().optional(),
     query: z
@@ -3625,7 +3632,7 @@ export const purchasePostedListRequestSchema = z
       })
       .optional(),
     sort: z
-      .enum(["invoice-date", "number", "primary-cost", "supplier"])
+      .enum(["invoice-date", "number", "primary-cost", "supplier", "posted-at"])
       .optional(),
     to: z.iso.date().optional(),
   })
@@ -4227,6 +4234,7 @@ export const PURCHASING_DENIAL_CODES = [
   "supplier-archived",
   "supplier-merged",
   "supplier-not-found",
+  "row-not-found",
   "version-conflict",
 ] as const;
 export const purchasingDenialSchema = z.strictObject({
@@ -4327,6 +4335,24 @@ export const purchaseDraftRowCommitContract = {
   request: { body: purchaseDraftRowCommitRequestSchema },
   responses: {
     201: purchaseDraftRowCommitResultSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseDraftRowUpdateContract = {
+  method: "PUT",
+  path: "/purchases/drafts/:draftId/rows/:rowId",
+  request: { body: purchaseDraftRowUpdateRequestSchema },
+  responses: {
+    200: purchaseDraftRowCommitResultSchema,
+    ...purchasingCommandDenialResponses,
+  },
+} as const;
+export const purchaseDraftRowDiscardContract = {
+  method: "POST",
+  path: "/purchases/drafts/:draftId/rows/:rowId/discards",
+  request: { body: purchaseDraftRowDiscardRequestSchema },
+  responses: {
+    200: purchaseDraftDetailSchema,
     ...purchasingCommandDenialResponses,
   },
 } as const;
@@ -4529,6 +4555,12 @@ export const purchaseDraftDiscardPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/discards`;
 export const purchaseDraftRowsPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/rows`;
+export const purchaseDraftRowPath = (draftId: string, rowId: string): string =>
+  `/purchases/drafts/${draftId}/rows/${rowId}`;
+export const purchaseDraftRowDiscardPath = (
+  draftId: string,
+  rowId: string,
+): string => `/purchases/drafts/${draftId}/rows/${rowId}/discards`;
 export const purchaseDraftPostingsPath = (draftId: string): string =>
   `/purchases/drafts/${draftId}/postings`;
 export const purchasePostedPath = (purchaseId: string): string =>
@@ -4570,6 +4602,8 @@ export const PURCHASING_CONTRACTS = [
   purchaseDraftListContract,
   purchaseDraftReadContract,
   purchaseDraftRowCommitContract,
+  purchaseDraftRowDiscardContract,
+  purchaseDraftRowUpdateContract,
   purchaseDraftUpdateContract,
   purchaseEntryPreferencesReadContract,
   purchaseEntryPreferencesUpdateContract,
@@ -4763,7 +4797,14 @@ export const TERMINAL_PAIRING_CONTRACTS = [
   pairingChannelStateContract,
   pairingCertificateContract,
 ] as const;
-export const RENDERER_CONTRACTS = [
+export interface RendererContract {
+  readonly method: "GET" | "POST" | "PUT" | "PATCH";
+  readonly path: string;
+  readonly request?: unknown;
+  readonly responses: Readonly<Record<number, unknown>>;
+}
+
+export const RENDERER_CONTRACTS: readonly RendererContract[] = [
   ...LOCAL_RUNTIME_CONTRACTS,
   ...IDENTITY_CONTRACTS,
   ...PHARMACY_CONTRACTS,
@@ -4773,7 +4814,7 @@ export const RENDERER_CONTRACTS = [
   ...INVENTORY_CONTRACTS,
   ...PURCHASING_CONTRACTS,
   ...SALES_CONTRACTS,
-] as const;
+];
 export const DEVICE_CHANNEL_CONTRACTS = [
   ...TERMINAL_PAIRING_CONTRACTS,
 ] as const;
@@ -5099,6 +5140,12 @@ export type PurchaseDraftDetail = z.infer<typeof purchaseDraftDetailSchema>;
 export type PurchaseDraftRow = z.infer<typeof purchaseDraftRowSchema>;
 export type PurchaseDraftRowCommitRequest = z.infer<
   typeof purchaseDraftRowCommitRequestSchema
+>;
+export type PurchaseDraftRowUpdateRequest = z.infer<
+  typeof purchaseDraftRowUpdateRequestSchema
+>;
+export type PurchaseDraftRowDiscardRequest = z.infer<
+  typeof purchaseDraftRowDiscardRequestSchema
 >;
 export type PurchaseDraftRowCommitResult = z.infer<
   typeof purchaseDraftRowCommitResultSchema

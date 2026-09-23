@@ -23,6 +23,14 @@ import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
 import { PurchaseReturnWorkflow } from "./purchase-return-workflow";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
+import { formatFilsToIqd } from "./product-record";
+
+const formatDateInput = (date: Date): string =>
+  [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 
 type CorrectionKind = "adjustment" | "return";
 type CurrentRecord =
@@ -32,12 +40,14 @@ type CurrentRecord =
 export function PostedPurchaseReview({
   address,
   baseUrl,
+  inline = false,
   onClose,
   open,
   returnHash = "#/purchases",
 }: {
   readonly address?: { readonly id: string };
   readonly baseUrl: string;
+  readonly inline?: boolean;
   readonly onClose: () => void;
   readonly open: boolean;
   readonly returnHash?: string;
@@ -45,6 +55,7 @@ export function PostedPurchaseReview({
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const detailOpenerRef = useRef<HTMLElement | null>(null);
   const drilldownOpenerRef = useRef<HTMLElement | null>(null);
@@ -74,12 +85,94 @@ export function PostedPurchaseReview({
   const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const dateType: NonNullable<PurchasePostedListRequest["dateType"]> =
+    "posted-at";
   const [sort, setSort] =
     useState<NonNullable<PurchasePostedListRequest["sort"]>>("number");
   const [direction, setDirection] =
     useState<NonNullable<PurchasePostedListRequest["direction"]>>("descending");
+  const [dateError, setDateError] = useState<string | null>(null);
+
+  function applyPreset(
+    preset: "today" | "yesterday" | "last7" | "month" | "all",
+  ): void {
+    setDateError(null);
+    const now = new Date();
+    if (preset === "today") {
+      const t = formatDateInput(now);
+      setFrom(t);
+      setTo(t);
+    } else if (preset === "yesterday") {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      const yStr = formatDateInput(y);
+      setFrom(yStr);
+      setTo(yStr);
+    } else if (preset === "last7") {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      setFrom(formatDateInput(d));
+      setTo(formatDateInput(now));
+    } else if (preset === "month") {
+      const m = new Date(now.getFullYear(), now.getMonth(), 1);
+      setFrom(formatDateInput(m));
+      setTo(formatDateInput(now));
+    } else if (preset === "all") {
+      setFrom("");
+      setTo("");
+    }
+  }
 
   useEffect(() => {
+    if (!open || detail !== null) return;
+    if (from !== "" && to !== "" && from > to) {
+      setDateError(copy.dateRangeInvalid);
+      return;
+    }
+    setDateError(null);
+
+    const timer = setTimeout(
+      () => {
+        void loadList({
+          dateType,
+          direction,
+          ...(from === "" ? {} : { from }),
+          ...(query.trim() === "" ? {} : { query: query.trim() }),
+          sort,
+          ...(to === "" ? {} : { to }),
+        });
+      },
+      query.trim() !== "" ? 250 : 0,
+    );
+
+    return () => clearTimeout(timer);
+  }, [baseUrl, dateType, detail, direction, from, open, query, sort, to]);
+
+  useEffect(() => {
+    if (inline) {
+      if (open) {
+        setDetail(null);
+        setCurrentRecord(null);
+        setPostedAdjustment(null);
+        setPostedReturn(null);
+        setCorrection(null);
+        setAdjustmentDraftActive(false);
+        setAdjustmentLeaveRequest(0);
+        setReturnDraftActive(false);
+        setReturnLeaveRequest(0);
+        setAnnouncement("");
+        const addressed =
+          address === undefined
+            ? postedPurchaseAddress(window.location.hash)
+            : { correction: null, id: address.id };
+        if (addressed === null) {
+          queueMicrotask(() => searchRef.current?.focus());
+        } else {
+          void loadDetail(addressed.id, undefined, addressed.correction);
+        }
+      }
+      return;
+    }
     const dialog = dialogRef.current;
     if (open && dialog !== null && !dialog.open) {
       dialog.showModal();
@@ -98,7 +191,6 @@ export function PostedPurchaseReview({
           ? postedPurchaseAddress(window.location.hash)
           : { correction: null, id: address.id };
       if (addressed === null) {
-        void loadList({});
         queueMicrotask(() => searchRef.current?.focus());
       } else {
         void loadDetail(addressed.id, undefined, addressed.correction);
@@ -106,7 +198,7 @@ export function PostedPurchaseReview({
     } else if (!open && dialog?.open) {
       dialog.close();
     }
-  }, [address, baseUrl, open, returnHash]);
+  }, [address, baseUrl, inline, open, returnHash]);
 
   async function loadList(input: PurchasePostedListRequest): Promise<void> {
     setLoading(true);
@@ -293,9 +385,10 @@ export function PostedPurchaseReview({
     const focusKey = opener?.dataset.reviewFocus;
     if (focusKey === undefined) return;
     requestCommittedFocus(() =>
-      dialogRef.current?.querySelector<HTMLElement>(
-        `[data-review-focus="${focusKey}"]`,
-      ),
+      (inline
+        ? containerRef.current
+        : dialogRef.current
+      )?.querySelector<HTMLElement>(`[data-review-focus="${focusKey}"]`),
     );
   }
 
@@ -329,35 +422,8 @@ export function PostedPurchaseReview({
   const costsVisible =
     (detail?.costVisibility ?? list?.costVisibility) === "visible";
 
-  return (
-    <dialog
-      ref={dialogRef}
-      className="posted-purchase-dialog"
-      aria-labelledby="posted-purchase-review-title"
-      aria-describedby="posted-purchase-review-boundary"
-      onCancel={(event) => {
-        if (currentRecord !== null) {
-          event.preventDefault();
-          closeDrilldown();
-        } else if (postedAdjustment !== null) {
-          event.preventDefault();
-          closePostedAdjustment();
-        } else if (postedReturn !== null) {
-          event.preventDefault();
-          closePostedReturn();
-        } else if (correction !== null) {
-          event.preventDefault();
-          if (correction === "adjustment" && adjustmentDraftActive) {
-            setAdjustmentLeaveRequest((value) => value + 1);
-          } else if (correction === "return" && returnDraftActive) {
-            setReturnLeaveRequest((value) => value + 1);
-          } else {
-            closeCorrection();
-          }
-        }
-      }}
-      onClose={handleDialogClose}
-    >
+  const content = (
+    <>
       <header className="posted-review-heading">
         <div>
           <p className="purchase-context-label">{copy.historicalSnapshot}</p>
@@ -365,21 +431,6 @@ export function PostedPurchaseReview({
             {copy.postedPurchaseRegister}
           </h2>
         </div>
-        <button
-          type="button"
-          className="quiet-button"
-          onClick={() => {
-            if (correction === "adjustment" && adjustmentDraftActive) {
-              setAdjustmentLeaveRequest((value) => value + 1);
-            } else if (correction === "return" && returnDraftActive) {
-              setReturnLeaveRequest((value) => value + 1);
-            } else {
-              dialogRef.current?.close();
-            }
-          }}
-        >
-          {copy.close}
-        </button>
       </header>
 
       <p
@@ -483,7 +534,13 @@ export function PostedPurchaseReview({
             className="purchase-filters posted-purchase-filters"
             onSubmit={(event) => {
               event.preventDefault();
+              if (from !== "" && to !== "" && from > to) {
+                setDateError(copy.dateRangeInvalid);
+                return;
+              }
+              setDateError(null);
               void loadList({
+                dateType,
                 direction,
                 ...(from === "" ? {} : { from }),
                 ...(query.trim() === "" ? {} : { query: query.trim() }),
@@ -492,63 +549,118 @@ export function PostedPurchaseReview({
               });
             }}
           >
-            <label className="purchase-search-filter">
-              {copy.searchPosted}
-              <input
-                ref={searchRef}
-                type="search"
-                value={query}
-                placeholder={copy.searchPostedHint}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <label>
-              {copy.fromDate}
-              <input
-                type="date"
-                value={from}
-                onChange={(event) => setFrom(event.target.value)}
-              />
-            </label>
-            <label>
-              {copy.toDate}
-              <input
-                type="date"
-                value={to}
-                onChange={(event) => setTo(event.target.value)}
-              />
-            </label>
-            <label>
-              {copy.sortBy}
-              <select
-                value={sort}
-                onChange={(event) => setSort(event.target.value as typeof sort)}
+            <div className="posted-purchase-filter-header">
+              <label className="purchase-search-filter">
+                {copy.searchPosted}
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={query}
+                  placeholder={copy.searchPostedHint}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </label>
+
+              <div
+                className="posted-purchase-presets"
+                role="group"
+                aria-label={copy.filterDate}
               >
-                <option value="number">{copy.documentNumber}</option>
-                <option value="invoice-date">{copy.invoiceDate}</option>
-                <option value="supplier">{copy.supplier}</option>
-                {costsVisible ? (
-                  <option value="primary-cost">
-                    {copy.primarySupplierCost}
-                  </option>
-                ) : null}
-              </select>
-            </label>
-            <label>
-              {copy.sortDirection}
-              <select
-                value={direction}
-                onChange={(event) =>
-                  setDirection(event.target.value as typeof direction)
-                }
-              >
-                <option value="descending">{copy.descending}</option>
-                <option value="ascending">{copy.ascending}</option>
-              </select>
-            </label>
-            <button type="submit" className="primary-button">
-              {copy.search}
-            </button>
+                <button
+                  type="button"
+                  className={`preset-pill ${from === formatDateInput(new Date()) && to === formatDateInput(new Date()) ? "active" : ""}`}
+                  onClick={() => applyPreset("today")}
+                >
+                  {copy.todayPreset}
+                </button>
+                <button
+                  type="button"
+                  className="preset-pill"
+                  onClick={() => applyPreset("yesterday")}
+                >
+                  {copy.yesterdayPreset}
+                </button>
+                <button
+                  type="button"
+                  className="preset-pill"
+                  onClick={() => applyPreset("last7")}
+                >
+                  {copy.last7DaysPreset}
+                </button>
+                <button
+                  type="button"
+                  className="preset-pill"
+                  onClick={() => applyPreset("month")}
+                >
+                  {copy.thisMonthPreset}
+                </button>
+                <button
+                  type="button"
+                  className="preset-pill"
+                  onClick={() => applyPreset("all")}
+                >
+                  {copy.allDatesPreset}
+                </button>
+              </div>
+            </div>
+
+            <div className="posted-purchase-filter-row">
+              <label>
+                {copy.fromDate}
+                <input
+                  type="date"
+                  value={from}
+                  onChange={(event) => setFrom(event.target.value)}
+                />
+              </label>
+              <label>
+                {copy.toDate}
+                <input
+                  type="date"
+                  value={to}
+                  onChange={(event) => setTo(event.target.value)}
+                />
+              </label>
+              <label>
+                {copy.sortBy}
+                <select
+                  value={sort}
+                  onChange={(event) =>
+                    setSort(event.target.value as typeof sort)
+                  }
+                >
+                  <option value="number">{copy.documentNumber}</option>
+                  <option value="posted-at">{copy.postingDate}</option>
+                  <option value="supplier">{copy.supplier}</option>
+                  {costsVisible ? (
+                    <option value="primary-cost">
+                      {copy.primarySupplierCost}
+                    </option>
+                  ) : null}
+                </select>
+              </label>
+              <label>
+                {copy.sortDirection}
+                <select
+                  value={direction}
+                  onChange={(event) =>
+                    setDirection(event.target.value as typeof direction)
+                  }
+                >
+                  <option value="descending">{copy.descending}</option>
+                  <option value="ascending">{copy.ascending}</option>
+                </select>
+              </label>
+              <button type="submit" className="primary-button">
+                {copy.search}
+              </button>
+            </div>
+
+            {dateError !== null ? (
+              <p className="posted-purchase-error-inline" role="alert">
+                {dateError}
+              </p>
+            ) : null}
           </form>
 
           {list?.costVisibility === "hidden-by-permission" ? (
@@ -569,7 +681,7 @@ export function PostedPurchaseReview({
               <thead>
                 <tr>
                   <th scope="col">{copy.documentNumber}</th>
-                  <th scope="col">{copy.invoiceDate}</th>
+                  <th scope="col">{copy.postingDate}</th>
                   <th scope="col">{copy.supplier}</th>
                   <th scope="col">{copy.supplierInvoice}</th>
                   <th scope="col">{copy.items}</th>
@@ -596,7 +708,7 @@ export function PostedPurchaseReview({
                         <bdi>{formatNumber(purchase)}</bdi>
                       </th>
                       <td>
-                        <bdi>{purchase.invoiceDate}</bdi>
+                        <bdi>{purchase.postedAt.slice(0, 10)}</bdi>
                       </td>
                       <td>{purchase.supplierNameSnapshot}</td>
                       <td>
@@ -605,12 +717,22 @@ export function PostedPurchaseReview({
                       <td>{purchase.itemCount}</td>
                       {costsVisible ? (
                         <td>
-                          <bdi>{purchase.primarySupplierCostFils}</bdi>
+                          <bdi>
+                            {formatFilsToIqd(
+                              purchase.primarySupplierCostFils,
+                              locale,
+                            )}
+                          </bdi>
                         </td>
                       ) : null}
                       {costsVisible ? (
                         <td>
-                          <bdi>{purchase.costAfterDiscountFils}</bdi>
+                          <bdi>
+                            {formatFilsToIqd(
+                              purchase.costAfterDiscountFils,
+                              locale,
+                            )}
+                          </bdi>
                         </td>
                       ) : null}
                       <td>
@@ -633,6 +755,103 @@ export function PostedPurchaseReview({
           </div>
         </section>
       )}
+      <footer className="posted-dialog-footer">
+        <button
+          type="button"
+          className="quiet-button"
+          onClick={() => {
+            if (correction === "adjustment" && adjustmentDraftActive) {
+              setAdjustmentLeaveRequest((value) => value + 1);
+            } else if (correction === "return" && returnDraftActive) {
+              setReturnLeaveRequest((value) => value + 1);
+            } else if (inline) {
+              handleDialogClose();
+            } else {
+              dialogRef.current?.close();
+            }
+          }}
+        >
+          {copy.close}
+        </button>
+      </footer>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <section
+        ref={(el) => {
+          containerRef.current = el;
+        }}
+        className="posted-purchase-view"
+        role="region"
+        aria-label={copy.postedPurchaseRegister}
+        aria-labelledby="posted-purchase-review-title"
+        aria-describedby="posted-purchase-review-boundary"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            if (currentRecord !== null) {
+              event.preventDefault();
+              closeDrilldown();
+            } else if (postedAdjustment !== null) {
+              event.preventDefault();
+              closePostedAdjustment();
+            } else if (postedReturn !== null) {
+              event.preventDefault();
+              closePostedReturn();
+            } else if (correction !== null) {
+              event.preventDefault();
+              if (correction === "adjustment" && adjustmentDraftActive) {
+                setAdjustmentLeaveRequest((value) => value + 1);
+              } else if (correction === "return" && returnDraftActive) {
+                setReturnLeaveRequest((value) => value + 1);
+              } else {
+                closeCorrection();
+              }
+            } else {
+              handleDialogClose();
+            }
+          }
+        }}
+      >
+        {content}
+      </section>
+    );
+  }
+
+  return (
+    <dialog
+      ref={(el) => {
+        dialogRef.current = el;
+        containerRef.current = el;
+      }}
+      className="posted-purchase-dialog"
+      aria-labelledby="posted-purchase-review-title"
+      aria-describedby="posted-purchase-review-boundary"
+      onCancel={(event) => {
+        if (currentRecord !== null) {
+          event.preventDefault();
+          closeDrilldown();
+        } else if (postedAdjustment !== null) {
+          event.preventDefault();
+          closePostedAdjustment();
+        } else if (postedReturn !== null) {
+          event.preventDefault();
+          closePostedReturn();
+        } else if (correction !== null) {
+          event.preventDefault();
+          if (correction === "adjustment" && adjustmentDraftActive) {
+            setAdjustmentLeaveRequest((value) => value + 1);
+          } else if (correction === "return" && returnDraftActive) {
+            setReturnLeaveRequest((value) => value + 1);
+          } else {
+            closeCorrection();
+          }
+        }
+      }}
+      onClose={handleDialogClose}
+    >
+      {content}
     </dialog>
   );
 }
@@ -678,17 +897,37 @@ function PostedPurchaseDetailView({
           className="quiet-button"
           aria-disabled={detail.navigation.previousId === null}
           onClick={() => navigate("previous")}
+          title={copy.reviewPrevious}
         >
-          ← {copy.previous}
+          {copy.reviewPrevious}
         </button>
         <button
           type="button"
           className="quiet-button"
           aria-disabled={detail.navigation.nextId === null}
           onClick={() => navigate("next")}
+          title={copy.reviewNext}
         >
-          {copy.next} →
+          {copy.reviewNext}
         </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => window.print()}
+          title={copy.printInvoice}
+        >
+          🖨️ {copy.printInvoice}
+        </button>
+        {detail.returns.length > 0 ? (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => window.print()}
+            title={copy.printReturnSlip}
+          >
+            ↩️ {copy.printReturnSlip}
+          </button>
+        ) : null}
       </div>
       <header>
         <p className="purchase-context-label">{copy.historicalSnapshot}</p>
@@ -714,7 +953,9 @@ function PostedPurchaseDetailView({
           <div>
             <dt>{copy.primarySupplierCost}</dt>
             <dd>
-              <bdi>{detail.primarySupplierCostFils}</bdi> {copy.fils}
+              <bdi>
+                {formatFilsToIqd(detail.primarySupplierCostFils, locale)}
+              </bdi>
             </dd>
           </div>
         ) : null}
@@ -722,7 +963,7 @@ function PostedPurchaseDetailView({
           <div>
             <dt>{copy.allowanceAmount}</dt>
             <dd>
-              <bdi>{detail.allowanceFils}</bdi> {copy.fils}
+              <bdi>{formatFilsToIqd(detail.allowanceFils, locale)}</bdi>
             </dd>
           </div>
         ) : null}
@@ -730,7 +971,7 @@ function PostedPurchaseDetailView({
           <div>
             <dt>{copy.costAfterDiscount}</dt>
             <dd>
-              <bdi>{detail.costAfterDiscountFils}</bdi> {copy.fils}
+              <bdi>{formatFilsToIqd(detail.costAfterDiscountFils, locale)}</bdi>
             </dd>
           </div>
         ) : null}
@@ -792,16 +1033,20 @@ function PostedPurchaseDetailView({
                 </td>
                 <td>{row.inventoryUnitName}</td>
                 <td>
-                  <bdi>{row.retailPriceFils}</bdi>
+                  <bdi>{formatFilsToIqd(row.retailPriceFils, locale)}</bdi>
                 </td>
                 {costsVisible ? (
                   <td>
-                    <bdi>{row.linePrimarySupplierCostFils}</bdi>
+                    <bdi>
+                      {formatFilsToIqd(row.linePrimarySupplierCostFils, locale)}
+                    </bdi>
                   </td>
                 ) : null}
                 {costsVisible ? (
                   <td>
-                    <bdi>{row.costAfterDiscountFils}</bdi>
+                    <bdi>
+                      {formatFilsToIqd(row.costAfterDiscountFils, locale)}
+                    </bdi>
                   </td>
                 ) : null}
                 <td>

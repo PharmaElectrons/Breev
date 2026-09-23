@@ -116,15 +116,15 @@ const TEXT = {
   ar: {
     adjustmentBlocked:
       "هذا الفرق غير صالح مقابل المخزون الحالي. عالجه بجرد المخزون أو مردود شراء أو تصحيح آخر، ثم أعد المحاولة.",
-    adjustmentPosted: "تم ترحيل التعديل",
+    adjustmentPosted: "تم حفظ التعديل",
     countIntegerOnly: "استخدم أعداداً صحيحة غير سالبة.",
     draftSaved: "تم حفظ المسودة بشكل دائم.",
     movementAdjustment: "تعديل شراء",
     newInvoice: "فاتورة جديدة",
     movementReceipt: "استلام شراء",
-    postedInvoices: "الفواتير المُرحّلة",
+    postedInvoices: "فواتير الشراء المحفوظة",
     quantityInvalid: "أدخل كمية صحيحة موجبة.",
-    returnPosted: "تم ترحيل مردود الشراء",
+    returnPosted: "تم حفظ مردود الشراء",
     rowCommitted: "تم حفظ البند بشكل دائم.",
     unchangedLines: "الأسطر التي لم تتغير لا تنشئ حركة مخزون أو أثر قيمة.",
   },
