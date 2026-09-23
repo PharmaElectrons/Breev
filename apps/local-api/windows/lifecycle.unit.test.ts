@@ -1,10 +1,14 @@
 import { readFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const lifecycle = readFileSync(
   new URL("./lifecycle.ps1", import.meta.url),
   "utf8",
 );
+const execute = promisify(execFile);
 
 function expectOrdered(source: string, values: readonly string[]): void {
   let previousIndex = -1;
@@ -16,6 +20,29 @@ function expectOrdered(source: string, values: readonly string[]): void {
 }
 
 describe("Windows role-aware lifecycle", () => {
+  it.skipIf(process.platform !== "win32")(
+    "selects the connected physical Wi-Fi address ahead of a lower-metric WSL adapter",
+    async () => {
+      const environment = { ...process.env };
+      delete environment.PSModulePath;
+      await execute(
+        "powershell.exe",
+        [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          fileURLToPath(
+            new URL("./test-resolve-lan-ipv4.ps1", import.meta.url),
+          ),
+        ],
+        { timeout: 60_000, env: environment },
+      );
+    },
+  );
+
   it("uses only bundled deployment entrypoints without changing initialization durability", () => {
     expect(lifecycle).toContain('"local-api\\dist\\main.cjs"');
     expect(lifecycle).toContain('"local-api\\dist\\migrate.cjs"');
