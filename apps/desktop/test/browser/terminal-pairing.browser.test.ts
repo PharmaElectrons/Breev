@@ -545,6 +545,10 @@ async function setPreferences(
 ): Promise<void> {
   const currentLocale = await page.locator("html").getAttribute("lang");
   if (currentLocale !== locale) {
+    const trigger = page.getByTestId("collapse-menu-trigger");
+    if (await trigger.isVisible()) {
+      await trigger.click();
+    }
     await pressButton(
       page,
       currentLocale === "ar" ? "التبديل إلى الإنجليزية" : "Switch to Arabic",
@@ -553,6 +557,10 @@ async function setPreferences(
   }
   const currentTheme = await page.locator("html").getAttribute("data-theme");
   if (currentTheme !== theme) {
+    const trigger = page.getByTestId("collapse-menu-trigger");
+    if (await trigger.isVisible()) {
+      await trigger.click();
+    }
     await pressButton(
       page,
       locale === "ar"
