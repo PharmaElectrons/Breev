@@ -30,11 +30,15 @@ import { usePreferences } from "./preferences-provider";
 import { RoleEditor } from "./role-editor";
 import { DenialAlert, LabeledInput, StepUpDialog, useStepUp } from "./step-up";
 import { UserManagementPanel } from "./user-management-panel";
+import { SystemOverview } from "./system-overview";
+import { messages } from "./messages";
+import type { StartupConnection } from "./use-startup-connection";
 
 const EXPIRY_WARNING_DAYS = 14;
 
 type AccessDenial = IdentityDenial | LicensingDenial;
-type SettingsTab = "password" | "pharmacy" | "users" | "roles" | "licence";
+type SettingsTab =
+  "password" | "pharmacy" | "users" | "roles" | "licence" | "connection";
 
 interface RunOptions {
   readonly preserveDenial?: boolean;
@@ -67,6 +71,8 @@ function parseTabFromHash(
   if (hash.includes("/pharmacy")) return "pharmacy";
   if (hash.includes("/users")) return "users";
   if (hash.includes("/roles")) return "roles";
+  if (hash.includes("/connection") || hash.includes("/status"))
+    return "connection";
   if (hash.includes("/licence")) return "licence";
   if (hash.includes("/password")) return "password";
   return canManageSettings ? "pharmacy" : "password";
@@ -75,9 +81,11 @@ function parseTabFromHash(
 export function SettingsRouteView({
   baseUrl,
   hash,
+  startup,
 }: {
   readonly baseUrl: string;
   readonly hash?: string;
+  readonly startup?: StartupConnection;
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = identityMessages[locale];
@@ -332,6 +340,9 @@ export function SettingsRouteView({
                 {locale === "ar" ? "الأدوار والصلاحيات" : "Roles & permissions"}
               </TabsTrigger>
             ) : null}
+            <TabsTrigger value="connection">
+              {messages[locale].connectionStatus}
+            </TabsTrigger>
             <TabsTrigger value="licence">
               {locale === "ar" ? "الترخيص والأجهزة" : "Licence & devices"}
             </TabsTrigger>
@@ -531,6 +542,19 @@ export function SettingsRouteView({
               </div>
             </TabsContent>
           ) : null}
+
+          <TabsContent value="connection">
+            <div className="tab-pane-content">
+              {startup &&
+              startup.handshake !== null &&
+              startup.startupConfig !== null ? (
+                <SystemOverview
+                  handshake={startup.handshake}
+                  startupConfig={startup.startupConfig}
+                />
+              ) : null}
+            </div>
+          </TabsContent>
 
           <TabsContent value="licence">
             <div className="tab-pane-content">

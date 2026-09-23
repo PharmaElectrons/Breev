@@ -315,4 +315,53 @@ describe("SettingsRouteView", () => {
 
     expect(markup).not.toContain('value="pharmacy"');
   });
+
+  it("renders connection tab trigger and overview when startup is provided", () => {
+    vi.spyOn(preferencesModule, "usePreferences").mockReturnValue({
+      direction: "ltr",
+      locale: "en",
+      setLocale: vi.fn(),
+      setTheme: vi.fn(),
+      theme: "light",
+    });
+
+    vi.spyOn(identityStateModule, "useIdentityState").mockReturnValue({
+      refresh: vi.fn(async () => {}),
+      setState: vi.fn(),
+      state: buildMockAuthenticatedState(),
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(SettingsRouteView, {
+        baseUrl: "http://127.0.0.1:4000",
+        hash: "#/settings/connection",
+        startup: {
+          cancelTerminalPairing: vi.fn(async () => {}),
+          checkNow: vi.fn(),
+          deviceProof: "committed",
+          handshake: {
+            apiVersion: "18",
+            database: "available",
+            schemaVersion: "18",
+            status: "healthy",
+          },
+          lastCheckedAt: new Date("2026-09-23T12:00:00Z"),
+          localApiOrigin: "http://127.0.0.1:4000",
+          runDeviceProof: vi.fn(async () => {}),
+          startupConfig: {
+            diagnosticReporting: "manual",
+            localApiOrigin: "http://127.0.0.1:4000",
+            role: "main",
+          },
+          state: "ready",
+          submitManualEndpoint: vi.fn(async () => {}),
+          submitPairingInvitation: vi.fn(async () => {}),
+          terminalPairing: null,
+        },
+      }),
+    );
+
+    expect(markup).toContain("Connection status");
+    expect(markup).toContain("system-overview");
+  });
 });
