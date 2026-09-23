@@ -35,3 +35,6 @@ notes.md
 !.agents/skills/breev-today-tasks/**
 !.agents/rules/
 !.agents/rules/**
+today/
+.agents/
+evidence/
