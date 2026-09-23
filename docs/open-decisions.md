@@ -9,6 +9,7 @@ These are the client's own open approvals (scope §19 plus items the requirement
 | Decision | Required approval | Working default while open |
 |---|---|---|
 | Final account names | Account names, classifications, and viewing permissions within the chart of accounts. | The main-accounts structure in `domain.md`. |
+| Automatic Sale Draft selection | Whether entering Sales should automatically select and resume a draft, including how to choose when several pharmacy drafts exist. | Keep explicit cashier selection from the server-provided pharmacy-scoped list under `sales.drafts.manage`; do not select a candidate automatically while this decision is open. |
 | Duplicate supplier invoice number | Block, or allow after a permission-controlled warning, for the same supplier. | Warn. |
 | Wholesale/special price selection | How the wholesale price is selected during a sale — quantity threshold or user permission. | Wholesale price visible in the item panel only; retail price used in the sales table. |
 | Paid-plan expiry rule | The exact unavailable/read-only behavior when a subscription expires. | Implemented as the working default, **not approved**: the local API honours the licence's signed `graceEndsAt`. Between the signed `expiresAt` and `graceEndsAt`, paid capabilities continue and new terminal pairing is refused; at `graceEndsAt` the pharmacy falls to Free Core without deleting data. The proposed seven inclusive days are set by the issuer in the signed document, never by local code. |
