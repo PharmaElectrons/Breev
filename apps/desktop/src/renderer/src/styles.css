@@ -5125,3 +5125,222 @@ a:focus-visible,
   flex-direction: column;
   gap: 1.5rem;
 }
+
+/* Home dashboard styles */
+.home-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-block: clamp(1.25rem, 3vh, 2.5rem);
+  padding-inline: clamp(1rem, 3vw, 2.5rem);
+  max-inline-size: 80rem;
+  margin-inline: auto;
+  inline-size: 100%;
+}
+
+.home-header {
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: linear-gradient(
+    135deg,
+    var(--card) 0%,
+    color-mix(in srgb, var(--primary-wash) 40%, var(--card)) 100%
+  );
+  padding: clamp(1.25rem, 2.5vw, 2rem);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.home-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  margin-block-end: 0.75rem;
+}
+
+.home-status-dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 9999px;
+  background: #16a34a;
+}
+
+.home-title {
+  margin: 0;
+  font-size: clamp(1.35rem, 2.5vw, 1.85rem);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+.pharmacy-highlight {
+  color: var(--primary);
+}
+
+.home-subtitle {
+  margin: 0.4rem 0 0;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+.home-section-title h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 750;
+  color: var(--foreground);
+}
+
+.home-launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 1rem;
+}
+
+.home-launcher-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 1.25rem;
+  text-decoration: none;
+  color: var(--card-foreground);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    border-color 150ms ease;
+}
+
+.home-launcher-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px -4px var(--shadow);
+  border-color: var(--primary);
+}
+
+.home-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: 0.85rem;
+}
+
+.home-card-icon-wrap {
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: 0.55rem;
+  background: var(--primary-wash);
+  color: var(--primary);
+}
+
+.home-card-icon {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+.home-card-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.35rem;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.home-card-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: var(--foreground);
+}
+
+.home-card-desc {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  line-height: 1.45;
+}
+
+.home-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-start: 1rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--border);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  color: var(--primary);
+}
+
+.home-card-arrow {
+  inline-size: 1rem;
+  block-size: 1rem;
+  transition: transform 150ms ease;
+}
+
+.home-launcher-card:hover .home-card-arrow {
+  transform: translateX(3px);
+}
+
+[dir="rtl"] .home-launcher-card:hover .home-card-arrow {
+  transform: translateX(-3px);
+}
+
+.home-system-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1rem;
+}
+
+.home-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.home-summary-icon-wrap {
+  display: grid;
+  place-items: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: 0.5rem;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.home-summary-info {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.home-summary-info h4 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.home-summary-info p {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+
+.home-summary-link {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+}
