@@ -42,7 +42,7 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
         unavailableReason: "",
       },
       dashboard: {
-        label: "القائمة الرئيسية",
+        label: "الرئيسية",
         unavailableReason: "",
       },
       inventory: {
@@ -99,7 +99,7 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
         unavailableReason: "",
       },
       dashboard: {
-        label: "Main dashboard",
+        label: "Home",
         unavailableReason: "",
       },
       inventory: {
