@@ -96,6 +96,32 @@ describe("NavbarCollapseMenu", () => {
     );
     expect(markup).toContain('aria-current="page"');
   });
+
+  it("renders connection status, version pills, and actions when connectionInfo is provided and user is authenticated", () => {
+    const markup = renderToStaticMarkup(
+      createElement(NavbarCollapseMenu, {
+        ...DEFAULT_PROPS,
+        connectionInfo: {
+          checkNow: vi.fn(),
+          deviceProof: "committed",
+          handshake: {
+            apiVersion: "18",
+            database: "available",
+            schemaVersion: "18",
+            status: "healthy",
+          },
+          isChecking: false,
+          lastCheckedAt: new Date("2026-09-23T12:00:00Z"),
+          runDeviceProof: vi.fn(),
+          state: "ready",
+        },
+      }),
+    );
+    expect(markup).toContain("collapse-menu-connection");
+    expect(markup).toContain("18");
+    expect(markup).toContain("Check now");
+    expect(markup).toContain("collapse-menu-device-proof");
+  });
 });
 
 describe("ModuleNavigation exclusion", () => {

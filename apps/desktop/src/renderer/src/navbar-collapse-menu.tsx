@@ -13,10 +13,26 @@ import type { ModuleId } from "./navigation";
 import { navigationMessages } from "./navigation-messages";
 import type { Locale, Theme } from "./preferences";
 
+import type { LocalHealthSuccess } from "@breev/contracts/local-rest";
+import type { StartupState } from "./startup-state";
+import { formatDateTime } from "./preferences";
+import { StatusIcon } from "./status-icon";
+
+export interface NavbarConnectionInfo {
+  readonly checkNow: () => Promise<void> | void;
+  readonly deviceProof: "committed" | "denied" | "failed" | "idle" | "running";
+  readonly handshake: LocalHealthSuccess | null;
+  readonly isChecking?: boolean;
+  readonly lastCheckedAt: Date | null;
+  readonly runDeviceProof: () => Promise<void> | void;
+  readonly state: StartupState;
+}
+
 export interface NavbarCollapseMenuProps {
   readonly activeModuleId: ModuleId;
   readonly authenticated: boolean;
   readonly centralSubmissionEnabled: boolean;
+  readonly connectionInfo?: NavbarConnectionInfo | undefined;
   readonly diagnosticAction:
     "cancelled" | "failed" | "idle" | "saved" | "saving";
   readonly exportDiagnostics: () => Promise<void>;
@@ -43,6 +59,7 @@ export function NavbarCollapseMenu({
   activeModuleId,
   authenticated,
   centralSubmissionEnabled,
+  connectionInfo,
   defaultOpen = false,
   diagnosticAction,
   exportDiagnostics,
@@ -113,6 +130,88 @@ export function NavbarCollapseMenu({
           className="collapse-menu-dropdown"
           data-testid="collapse-menu-dropdown"
         >
+          {authenticated && connectionInfo ? (
+            <div
+              className="collapse-menu-connection"
+              data-state={connectionInfo.state}
+            >
+              <div className="collapse-menu-connection-header">
+                <StatusIcon state={connectionInfo.state} />
+                <div className="collapse-menu-connection-text">
+                  <span className="collapse-menu-connection-kicker">
+                    {copy.connectionStatus}
+                  </span>
+                  <strong data-testid="shell-state">
+                    {copy.status[connectionInfo.state]?.title ??
+                      connectionInfo.state}
+                  </strong>
+                  <p>{copy.status[connectionInfo.state]?.description ?? ""}</p>
+                </div>
+              </div>
+
+              {connectionInfo.state === "ready" &&
+              connectionInfo.handshake !== null ? (
+                <div className="collapse-menu-versions">
+                  <div className="collapse-menu-version-pill">
+                    <span className="version-label">{copy.apiVersion}</span>
+                    <span className="version-val">
+                      {connectionInfo.handshake.apiVersion}
+                    </span>
+                  </div>
+                  <div className="collapse-menu-version-pill">
+                    <span className="version-label">{copy.schemaVersion}</span>
+                    <span className="version-val">
+                      {connectionInfo.handshake.schemaVersion}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="collapse-menu-connection-actions">
+                <p className="collapse-menu-last-checked">
+                  {connectionInfo.lastCheckedAt === null
+                    ? ""
+                    : `${copy.lastChecked}: ${formatDateTime(connectionInfo.lastCheckedAt, locale)}`}
+                </p>
+                <div className="collapse-menu-buttons">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={connectionInfo.isChecking}
+                    onClick={() => void connectionInfo.checkNow()}
+                  >
+                    {connectionInfo.isChecking
+                      ? copy.checking
+                      : copy.checkAgain}
+                  </button>
+                  {connectionInfo.state === "ready" ? (
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      disabled={connectionInfo.deviceProof === "running"}
+                      onClick={() => void connectionInfo.runDeviceProof()}
+                    >
+                      {copy.deviceProofAction}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {connectionInfo.deviceProof === "idle" ? null : (
+                <p
+                  className="collapse-menu-device-proof"
+                  role="status"
+                  aria-live="polite"
+                  data-proof-status={connectionInfo.deviceProof}
+                >
+                  {copy.deviceProof[connectionInfo.deviceProof]}
+                </p>
+              )}
+
+              <hr className="collapse-menu-separator" />
+            </div>
+          ) : null}
+
           {authenticated ? (
             <>
               <a
