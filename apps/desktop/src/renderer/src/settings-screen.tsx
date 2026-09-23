@@ -16,12 +16,11 @@ import {
   IdentityApiDenied,
   installOfflineLicence,
   LicensingApiDenied,
-  logoutIdentity,
   requestIdentityRoles,
   requestIdentityState,
   updatePharmacySettings,
 } from "./identity-api";
-import { identityMessages, roleDisplayName } from "./identity-messages";
+import { identityMessages } from "./identity-messages";
 import { useIdentityState } from "./identity-state-provider";
 import { daysUntil } from "./licence-dates";
 import { licensingMessages } from "./licensing-messages";
@@ -315,36 +314,6 @@ export function SettingsRouteView({
         className="settings-container"
         inert={pendingStepUp === null ? undefined : true}
       >
-        <article className="identity-card compact-card" id="current-user">
-          <div>
-            <h3 id="current-user-title">
-              {copy.welcome}, {state.user.displayName}
-            </h3>
-            <p className="field-hint">
-              {roleDisplayName(state.user.role, copy)} · @{state.user.username}
-            </p>
-          </div>
-          <div className="action-row">
-            <button
-              className="quiet-button"
-              disabled={busy}
-              type="button"
-              onClick={() =>
-                void run(async () => {
-                  await logoutIdentity(baseUrl);
-                  return true;
-                }).then((result) => {
-                  if (result !== undefined) {
-                    setState({ state: "unauthenticated" });
-                  }
-                })
-              }
-            >
-              {copy.logout}
-            </button>
-          </div>
-        </article>
-
         <Tabs
           className="settings-tabs"
           orientation="horizontal"

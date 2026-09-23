@@ -121,8 +121,8 @@ describe("SettingsRouteView", () => {
     );
 
     expect(markup).toContain("change-password-submit");
-    expect(markup).toContain("current-user");
-    expect(markup).toContain("Test Manager");
+    expect(markup).toContain("currentPassword");
+    expect(markup).toContain("newPassword");
   });
 
   it("renders tabs in Arabic when locale is ar", () => {
