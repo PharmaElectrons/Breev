@@ -236,6 +236,7 @@ export const desktopExportDiagnosticsResponseSchema = z.discriminatedUnion(
 
 export const desktopSaveInventoryExportRequestSchema = z.strictObject({
   bundle: inventorySensitiveExportSchema,
+  format: z.enum(["json", "csv"]).optional(),
   locale: z.enum(["ar", "en"]),
 });
 export const desktopSaveInventoryExportResponseSchema = z.discriminatedUnion(
@@ -400,6 +401,7 @@ export interface BreevDesktopApi {
   saveInventoryExport(request: {
     readonly locale: "ar" | "en";
     readonly bundle: InventorySensitiveExport;
+    readonly format?: "json" | "csv";
   }): Promise<DesktopSaveInventoryExportResponse>;
   getStartupConfig(): Promise<DesktopStartupConfig>;
   getTerminalPairingState(): Promise<TerminalPairingState>;

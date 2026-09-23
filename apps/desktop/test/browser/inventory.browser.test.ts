@@ -158,15 +158,31 @@ test.describe.serial("read-only inventory review", () => {
     await expect(
       page.getByRole("heading", { name: "Inventory review" }),
     ).toBeVisible();
+    await expect(page.getByText("Total inventory value")).toBeVisible();
+    await expect(page.getByText("Distinct items")).toBeVisible();
     const balanceHeader = page.getByRole("columnheader", {
       name: "Current balance",
     });
     const balanceButton = balanceHeader.getByRole("button");
+    await expect(
+      page.getByRole("columnheader", { name: "Item" }),
+    ).toHaveAttribute("aria-sort", "ascending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↕");
+    await expect(
+      page.getByRole("columnheader", { name: "Batches" }),
+    ).not.toHaveAttribute("aria-sort", /.+/u);
+    await expect(
+      page
+        .getByRole("columnheader", { name: "Batches" })
+        .locator(".inventory-sort-icon"),
+    ).toHaveText("↕");
     await balanceButton.focus();
     await pressKeyOnFocused(page, balanceButton, "Enter");
     await expect(balanceHeader).toHaveAttribute("aria-sort", "ascending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↑");
     await pressKeyOnFocused(page, balanceButton, "Enter");
     await expect(balanceHeader).toHaveAttribute("aria-sort", "descending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↓");
     await expect(
       page
         .getByRole("status")
@@ -225,6 +241,35 @@ test.describe.serial("read-only inventory review", () => {
     await restorePreferences();
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/inventory`);
+    const search = page.getByRole("searchbox", {
+      name: "Search by item name or barcode",
+    });
+    await search.fill(product.displayName.slice(0, 7));
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await search.fill(product.barcodes[0]!.value);
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await search.fill("");
+    const reviewRow = page.locator("tbody tr:first-child");
+    await reviewRow.locator('td[data-column-field="balance"]').click();
+    await expect(reviewRow).toHaveAttribute("data-selected", "true");
+    const cartAction = reviewRow.getByRole("button", {
+      name: `Add ${product.displayName} to the order basket`,
+    });
+    await expect(cartAction).toHaveAttribute("title", "Add to order basket");
+    await expect(cartAction).toHaveText("");
+    await expect(page.locator(".inventory-selection")).toContainText(
+      product.displayName,
+    );
+    await expect(page.locator(".inventory-selection a")).toHaveAttribute(
+      "href",
+      `#/inventory/items/${product.id}/movements`,
+    );
+    await expect(page.locator(".inventory-selection")).toContainText(
+      "Current balance",
+    );
+    await reviewRow.focus();
+    await reviewRow.press("Enter");
+    await expect(reviewRow).toHaveAttribute("data-selected", "true");
     const itemLink = page.locator(
       "tbody tr:first-child td[data-column-field='item'] button.table-link",
     );
@@ -383,18 +428,34 @@ test.describe.serial("read-only inventory review", () => {
     await expect(page.getByText("Inventory export saved.")).toBeVisible();
     expect(
       await page
-        .evaluate(() =>
-          Boolean(
-            (globalThis as { __inventoryExport?: unknown }).__inventoryExport,
-          ),
+        .evaluate(
+          () =>
+            (globalThis as { __inventoryExport?: { format?: string } })
+              .__inventoryExport?.format,
         )
-        .catch(() => false),
-    ).toBe(true);
+        .catch(() => "missing"),
+    ).toBeUndefined();
+    await page.getByRole("button", { name: "Export inventory CSV" }).click();
+    await dialog.getByLabel("Password", { exact: true }).fill(OWNER_PASSWORD);
+    await dialog.getByRole("button", { name: "Confirm password" }).click();
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(
+            () =>
+              (globalThis as { __inventoryExport?: { format?: string } })
+                .__inventoryExport?.format,
+          ),
+      )
+      .toBe("csv");
 
     await login(MANAGER_USERNAME, MANAGER_PASSWORD);
     await page.reload();
     await expect(
       page.getByRole("button", { name: "Export sensitive inventory data" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Export inventory CSV" }),
     ).toHaveCount(0);
   });
 });

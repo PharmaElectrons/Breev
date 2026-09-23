@@ -216,6 +216,56 @@ describe("desktop preload API", () => {
     ).rejects.toThrow();
   });
 
+  it("saves inventory export through a validated pathless request with optional format", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      status: "saved",
+    });
+    const api = createBreevDesktopApi(invoke);
+    const bundle = {
+      counts: { batches: "0", items: "0", movements: "0" },
+      exportedAt: "2026-09-22T00:00:00.000Z",
+      exportedBy: {
+        displayName: "Owner",
+        id: "01990abc-1234-7123-8123-123456789abc",
+      },
+      items: [],
+      pharmacyId: "01990abc-1234-7123-8123-123456789abe",
+      valuationMethod: "weighted-average-cost" as const,
+    };
+
+    await expect(
+      api.saveInventoryExport({ bundle, locale: "en" }),
+    ).resolves.toEqual({ status: "saved" });
+    expect(invoke).toHaveBeenCalledWith("breev:desktop:save-inventory-export", {
+      bundle,
+      locale: "en",
+    });
+
+    await expect(
+      api.saveInventoryExport({ bundle, format: "csv", locale: "ar" }),
+    ).resolves.toEqual({ status: "saved" });
+    expect(invoke).toHaveBeenCalledWith("breev:desktop:save-inventory-export", {
+      bundle,
+      format: "csv",
+      locale: "ar",
+    });
+
+    await expect(
+      api.saveInventoryExport({
+        bundle,
+        format: "xml" as never,
+        locale: "en",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      api.saveInventoryExport({
+        bundle,
+        locale: "en",
+        path: "C:\\outside",
+      } as never),
+    ).rejects.toThrow();
+  });
+
   it("opens only the main-owned configured support destination", async () => {
     const invoke = vi.fn().mockResolvedValue({
       channel: "portal",

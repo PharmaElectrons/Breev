@@ -2409,6 +2409,36 @@ a:focus-visible,
   overflow: auto;
   padding-block-end: 2rem;
   background: var(--card);
+  color: var(--card-foreground);
+}
+.basket-workspace p,
+.basket-workspace small {
+  color: var(--muted-foreground);
+}
+.basket-back-link {
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-end: 0.5rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  background: var(--primary-wash);
+  color: var(--primary);
+  font-weight: 700;
+}
+.basket-back-link:hover,
+.basket-back-link:focus-visible {
+  border-color: var(--primary);
+  text-decoration: underline;
+}
+.basket-back-link svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+:dir(rtl) .basket-back-link svg {
+  transform: rotate(180deg);
 }
 .basket-heading {
   flex: none;
@@ -2446,11 +2476,23 @@ a:focus-visible,
   min-inline-size: 12rem;
   font-weight: 700;
 }
-.basket-table tbody tr:hover {
-  background: var(--primary-wash);
+.basket-table tbody tr[data-risk="critical"] {
+  background: var(--danger-soft);
+}
+.basket-table tbody tr[data-risk="expiring"],
+.basket-table tbody tr[data-risk="reorder"] {
+  background: var(--warning-soft);
+}
+.basket-table tbody tr[data-risk="stable"],
+.basket-table tbody tr[data-risk="ordered"] {
+  background: var(--ready-soft);
+}
+.basket-table tbody tr:hover,
+.basket-table tbody tr:focus-within {
+  box-shadow: inset 0 0 0 2px var(--primary);
 }
 .basket-table tr[data-saved="false"] {
-  background: var(--warning-soft);
+  box-shadow: inset 0 0 0 2px var(--danger);
 }
 .basket-item-name,
 .inventory-item-cell {
@@ -2463,7 +2505,29 @@ a:focus-visible,
   min-inline-size: 13rem;
 }
 .inventory-item-cell .quiet-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   white-space: nowrap;
+}
+.inventory-item-cell .quiet-button svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: none;
+}
+.inventory-item-cell .inventory-cart-add {
+  min-inline-size: 2.5rem;
+  min-block-size: 2.5rem;
+  padding: 0.55rem;
+}
+.inventory-item-cell .inventory-cart-add:hover,
+.inventory-item-cell .inventory-cart-add:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-wash);
+}
+.inventory-item-cell .inventory-cart-add svg {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
 }
 .basket-product-state {
   display: inline-flex;
@@ -2533,6 +2597,11 @@ a:focus-visible,
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+}
+.inventory-heading > div:first-child {
+  min-inline-size: 0;
 }
 .inventory-heading h2,
 .inventory-heading p,
@@ -2544,12 +2613,109 @@ a:focus-visible,
 .inventory-workspace > p {
   color: var(--muted-foreground);
 }
+.inventory-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.inventory-metric {
+  display: grid;
+  gap: 0.4rem;
+  min-inline-size: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.8rem;
+  background: var(--background);
+  color: var(--foreground);
+}
+.inventory-metric span {
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+.inventory-metric strong {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.inventory-metric[data-tone="emerald"] {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  color: var(--primary);
+}
+.inventory-metric[data-tone="emerald"] span {
+  color: var(--primary);
+  opacity: 0.7;
+}
+.inventory-metric[data-tone="accent"] {
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  background: color-mix(in srgb, var(--warning) 5%, transparent);
+  color: var(--warning);
+}
+.inventory-metric[data-tone="accent"] span {
+  color: var(--warning);
+  opacity: 0.7;
+}
+@media (max-width: 60rem) {
+  .inventory-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 .inventory-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
+  max-inline-size: 100%;
+}
+.inventory-actions > .primary-button,
+.inventory-actions > .quiet-button,
+.inventory-settings > summary {
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  text-decoration: none;
+}
+.inventory-basket-count {
+  display: inline-grid;
+  min-inline-size: 1.5rem;
+  min-block-size: 1.5rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--primary-wash);
+  color: var(--foreground);
+}
+.inventory-basket-feedback,
+.inventory-selection {
+  border: 1px solid var(--control-border);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--ready-soft);
+  color: var(--foreground) !important;
+}
+.inventory-basket-feedback {
+  position: fixed;
+  z-index: 20;
+  inset-block-end: 1.5rem;
+  inset-inline-end: 1.5rem;
+  max-inline-size: min(25rem, calc(100vw - 3rem));
+  box-shadow: 0 0.5rem 1.5rem var(--shadow);
+}
+.inventory-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--primary-wash);
+}
+.inventory-selection a {
+  color: var(--primary);
 }
 .inventory-settings {
   position: relative;
@@ -2600,6 +2766,22 @@ a:focus-visible,
   border: 1px solid var(--border);
   border-radius: 0.7rem;
 }
+.inventory-search {
+  display: grid;
+  max-inline-size: 25rem;
+  gap: 0.3rem;
+  color: var(--foreground);
+  font-weight: 700;
+}
+.inventory-search input {
+  min-block-size: 2.75rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.6rem;
+  padding-inline: 0.8rem;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
 .inventory-table-scroll table {
   inline-size: 100%;
   min-inline-size: 64rem;
@@ -2631,16 +2813,67 @@ a:focus-visible,
   font-weight: 800;
   text-align: start;
 }
+.inventory-table-scroll th .inventory-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-block-size: 1.9rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+}
+.inventory-sort-button:hover,
+.inventory-sort-button:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.inventory-sort-icon {
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+}
 .inventory-table-scroll tbody tr:last-child td {
   border-block-end: 0;
 }
 .inventory-table-scroll tbody tr:hover {
   background: var(--primary-wash);
 }
+.inventory-table-scroll tbody tr[data-status="critical"] {
+  background: var(--danger-soft);
+}
+.inventory-table-scroll tbody tr[data-status="expiring"],
+.inventory-table-scroll tbody tr[data-status="reorder"] {
+  background: var(--warning-soft);
+}
+.inventory-table-scroll tbody tr[data-status="stable"] {
+  background: var(--ready-soft);
+}
+.inventory-table-scroll tbody tr[data-selected="true"] {
+  outline: 3px solid var(--primary);
+  outline-offset: -3px;
+  background: var(--primary-wash);
+}
+@media (max-width: 60rem) {
+  .inventory-heading {
+    flex-direction: column;
+  }
+  .inventory-actions {
+    justify-content: flex-start;
+  }
+  .inventory-table-scroll table {
+    min-inline-size: 56rem;
+  }
+}
 
 /* Count sessions keep the scanner path compact and the reconciliation table independent. */
 .count-workspace {
   gap: 0.85rem;
+}
+.count-active-warning {
+  border: 1px solid var(--warning);
+  border-radius: 0.6rem;
+  padding: 0.65rem 0.8rem;
+  background: var(--warning-soft);
+  color: var(--foreground) !important;
 }
 .count-heading {
   align-items: center;
@@ -2716,6 +2949,40 @@ a:focus-visible,
   font-size: 0.86rem;
   font-weight: 700;
   text-align: start;
+}
+.count-item-search {
+  position: relative;
+}
+.count-item-suggestions {
+  position: absolute;
+  z-index: 5;
+  inset-block-start: 100%;
+  inset-inline: 0;
+  max-block-size: 16rem;
+  overflow: auto;
+  border: 1px solid var(--control-border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  box-shadow: 0 0.4rem 1rem var(--shadow);
+}
+.count-item-suggestions button {
+  display: flex;
+  inline-size: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--card);
+  color: var(--card-foreground);
+  text-align: start;
+}
+.count-item-suggestions button[aria-selected="true"],
+.count-item-suggestions button:hover {
+  background: var(--primary-wash);
+}
+.count-item-suggestions small {
+  color: var(--muted-foreground);
 }
 .count-item-field input,
 .count-unit-field input {

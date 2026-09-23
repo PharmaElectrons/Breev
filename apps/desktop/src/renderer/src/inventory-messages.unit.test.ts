@@ -26,6 +26,12 @@ describe("inventory translations", () => {
         inventoryMessages[locale].addToBasketAriaLabel("Panadol"),
       ).not.toBe("");
       expect(inventoryMessages[locale].openBasket).not.toBe("");
+      expect(inventoryMessages[locale].export).not.toBe("");
+      expect(inventoryMessages[locale].exportCsv).not.toBe("");
+      expect(inventoryMessages[locale].metrics.totalValue).not.toBe("");
+      expect(inventoryMessages[locale].metrics.averageCost).not.toBe("");
+      expect(inventoryMessages[locale].metrics.distinctItems).not.toBe("");
+      expect(inventoryMessages[locale].metrics.itemsWithStock).not.toBe("");
       for (const status of BATCH_ELIGIBILITY_STATUSES) {
         expect(inventoryMessages[locale].safety.statusLabels[status]).not.toBe(
           "",
