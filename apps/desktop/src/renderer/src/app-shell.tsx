@@ -36,10 +36,10 @@ import { navigationMessages } from "./navigation-messages";
 import { formatDateTime } from "./preferences";
 import { usePreferences } from "./preferences-provider";
 import { PurchasingRouteView } from "./purchasing-screen";
-import type { StartupState } from "./startup-state";
-import { SystemOverview } from "./system-overview";
 import { TerminalPairingScreen } from "./terminal-pairing-screen";
 import { UnavailableSurface } from "./unavailable-surface";
+import { HomeScreen } from "./home-screen";
+import { StatusIcon } from "./status-icon";
 import type { useStartupConnection } from "./use-startup-connection";
 
 export type StartupConnection = ReturnType<typeof useStartupConnection>;
@@ -211,67 +211,6 @@ export function AppShell({
   const settingsWorkspace = isWorkspace && activeModuleId === "settings";
   const dashboardWorkspace = isWorkspace && activeModuleId === "dashboard";
   const productsWorkspace = isWorkspace && activeModuleId === "products";
-  const connectionCard = (
-    <Card className="status-card" data-state={state}>
-      <CardHeader className="status-header">
-        <StatusIcon state={state} />
-        <div className="status-copy" role="status" aria-live="polite">
-          <p className="status-kicker">{copy.connectionStatus}</p>
-          <CardTitle data-testid="shell-state">{status.title}</CardTitle>
-          <CardDescription>{status.description}</CardDescription>
-        </div>
-      </CardHeader>
-
-      <CardContent className="status-content">
-        {state === "ready" && handshake !== null ? (
-          <dl className="version-list">
-            <div>
-              <dt>{copy.apiVersion}</dt>
-              <dd>{handshake.apiVersion}</dd>
-            </div>
-            <div>
-              <dt>{copy.schemaVersion}</dt>
-              <dd>{handshake.schemaVersion}</dd>
-            </div>
-          </dl>
-        ) : null}
-
-        <div className="status-actions">
-          <p className="last-checked">
-            {lastCheckedAt === null
-              ? " "
-              : `${copy.lastChecked}: ${formatDateTime(lastCheckedAt, locale)}`}
-          </p>
-          <div className="status-buttons">
-            <button
-              ref={checkButtonRef}
-              className="primary-button"
-              type="button"
-              disabled={isChecking}
-              onClick={checkNow}
-            >
-              {isChecking ? copy.checking : copy.checkAgain}
-            </button>
-            {state === "ready" ? (
-              <button
-                className="quiet-button"
-                type="button"
-                disabled={deviceProof === "running"}
-                onClick={() => void runDeviceProof()}
-              >
-                {copy.deviceProofAction}
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {deviceProof === "idle" ? null : (
-          <p className="device-proof-status" role="status" aria-live="polite">
-            {copy.deviceProof[deviceProof]}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
 
   return (
     <main
@@ -311,6 +250,19 @@ export function AppShell({
               activeModuleId={activeModuleId}
               authenticated={authenticated}
               centralSubmissionEnabled={centralSubmissionEnabled}
+              connectionInfo={
+                authenticated
+                  ? {
+                      checkNow,
+                      deviceProof,
+                      handshake,
+                      isChecking,
+                      lastCheckedAt,
+                      runDeviceProof,
+                      state,
+                    }
+                  : undefined
+              }
               diagnosticAction={diagnosticAction}
               exportDiagnostics={exportDiagnostics}
               locale={locale}
@@ -325,20 +277,6 @@ export function AppShell({
               supportAction={supportAction}
               theme={theme}
             />
-            {authenticated ? (
-              <details
-                className="purchase-connection"
-                aria-label={copy.connectionStatus}
-              >
-                <summary>
-                  <StatusIcon state={state} />
-                  <span className="visually-hidden">
-                    {copy.connectionStatus}
-                  </span>
-                </summary>
-                {connectionCard}
-              </details>
-            ) : null}
           </div>
           {authenticated ? <PurchaseClock locale={locale} /> : null}
         </div>
@@ -482,13 +420,8 @@ export function AppShell({
           {!authenticated ? (
             // IdentityShell owns loading, bootstrap, login, expiry, and revocation.
             <IdentityShell baseUrl={localApiOrigin} />
-          ) : activeModuleId === "dashboard" &&
-            handshake !== null &&
-            startupConfig !== null ? (
-            <SystemOverview
-              handshake={handshake}
-              startupConfig={startupConfig}
-            />
+          ) : activeModuleId === "dashboard" ? (
+            <HomeScreen startup={startup} />
           ) : !moduleImplemented(activeModuleId) ? (
             <UnavailableSurface moduleId={activeModuleId} />
           ) : activeModuleId === "products" ? (
@@ -517,7 +450,11 @@ export function AppShell({
               hash={currentHash}
             />
           ) : activeModuleId === "settings" ? (
-            <SettingsRouteView baseUrl={localApiOrigin} hash={currentHash} />
+            <SettingsRouteView
+              baseUrl={localApiOrigin}
+              hash={currentHash}
+              startup={startup}
+            />
           ) : (
             <UnavailableSurface moduleId={activeModuleId} />
           )}
@@ -526,49 +463,6 @@ export function AppShell({
 
       {isWorkspace ? null : <footer className="shell-footer">Breev</footer>}
     </main>
-  );
-}
-
-function StatusIcon({ state }: { state: StartupState }): React.JSX.Element {
-  const icon =
-    state === "ready" ? (
-      <path d="m7 12 3 3 7-7" />
-    ) : state === "repair-required" ? (
-      <>
-        <path d="M14.5 6.5a4 4 0 0 0-5 5L4 17l3 3 5.5-5.5a4 4 0 0 0 5-5l-3 3-3-3 3-3Z" />
-      </>
-    ) : state === "incompatible-version" ? (
-      <>
-        <path d="M8 7h9l-2-2" />
-        <path d="m17 17-9 0 2 2" />
-        <path d="m17 7-2 2" />
-        <path d="m8 17 2-2" />
-      </>
-    ) : state === "main-unavailable" ? (
-      <>
-        <path d="M6 8h12v8H6z" />
-        <path d="m4 4 16 16" />
-      </>
-    ) : state === "unpaired" ? (
-      <>
-        <path d="M9 4v5" />
-        <path d="M15 4v5" />
-        <path d="M7 9h10v3a5 5 0 0 1-10 0Z" />
-        <path d="M12 17v3" />
-      </>
-    ) : (
-      <>
-        <circle cx="12" cy="12" r="8" />
-        <path d="M12 8v4l3 2" />
-      </>
-    );
-
-  return (
-    <span className="status-icon" data-icon-state={state} aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        {icon}
-      </svg>
-    </span>
   );
 }
 
