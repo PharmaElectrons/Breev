@@ -203,22 +203,14 @@ export function AppShell({
     }
   }, [authenticated, moduleAllowed]);
 
-  const purchaseWorkspace =
-    state === "ready" && authenticated && activeModuleId === "purchases";
-  const inventoryWorkspace =
-    state === "ready" && authenticated && activeModuleId === "inventory";
-  const basketWorkspace =
-    state === "ready" && authenticated && activeModuleId === "basket";
-  const salesWorkspace =
-    state === "ready" && authenticated && activeModuleId === "sales";
-  const settingsWorkspace =
-    state === "ready" && authenticated && activeModuleId === "settings";
-  const isWorkspace =
-    purchaseWorkspace ||
-    inventoryWorkspace ||
-    basketWorkspace ||
-    salesWorkspace ||
-    settingsWorkspace;
+  const isWorkspace = state === "ready" && authenticated;
+  const purchaseWorkspace = isWorkspace && activeModuleId === "purchases";
+  const inventoryWorkspace = isWorkspace && activeModuleId === "inventory";
+  const basketWorkspace = isWorkspace && activeModuleId === "basket";
+  const salesWorkspace = isWorkspace && activeModuleId === "sales";
+  const settingsWorkspace = isWorkspace && activeModuleId === "settings";
+  const dashboardWorkspace = isWorkspace && activeModuleId === "dashboard";
+  const productsWorkspace = isWorkspace && activeModuleId === "products";
   const connectionCard = (
     <Card className="status-card" data-state={state}>
       <CardHeader className="status-header">
@@ -284,68 +276,72 @@ export function AppShell({
   return (
     <main
       className="shell-page"
+      data-workspace={isWorkspace || undefined}
       data-basket-workspace={basketWorkspace || undefined}
+      data-dashboard-workspace={dashboardWorkspace || undefined}
       data-inventory-workspace={inventoryWorkspace || undefined}
-      data-sales-workspace={salesWorkspace || undefined}
+      data-products-workspace={productsWorkspace || undefined}
       data-purchase-workspace={purchaseWorkspace || undefined}
+      data-sales-workspace={salesWorkspace || undefined}
       data-settings-workspace={settingsWorkspace || undefined}
     >
-      <header className="shell-header" aria-label="Breev">
-        <div className="brand-lockup">
+      <header
+        className="shell-header"
+        data-testid="shell-header"
+        aria-label="Breev"
+      >
+        <div className="brand-lockup" data-testid="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
             B
           </span>
           <span>
             <strong className="brand-name">Breev</strong>
-            {isWorkspace ? (
-              <h1 className="brand-description">
-                {navigationCopy.modules[activeModuleId].label}
-              </h1>
-            ) : (
-              <span className="brand-description">
-                {modules.length > 0
-                  ? navigationCopy.modules[activeModuleId].label
-                  : copy.brandDescription}
-              </span>
-            )}
+            <span className="brand-description">{copy.brandDescription}</span>
+            <h1 className="visually-hidden">
+              {navigationCopy.modules[activeModuleId].label}
+            </h1>
           </span>
         </div>
 
         <ModuleNavigation activeModuleId={activeModuleId} modules={modules} />
 
-        <div className="preference-controls">
-          <NavbarCollapseMenu
-            activeModuleId={activeModuleId}
-            authenticated={authenticated}
-            centralSubmissionEnabled={centralSubmissionEnabled}
-            diagnosticAction={diagnosticAction}
-            exportDiagnostics={exportDiagnostics}
-            locale={locale}
-            onLogout={handleLogout}
-            onOpenSubmissionConfirmation={() =>
-              setSubmissionAction("confirming")
-            }
-            openSupport={openSupport}
-            setLocale={setLocale}
-            setTheme={setTheme}
-            submissionAction={submissionAction}
-            supportAction={supportAction}
-            theme={theme}
-          />
-          {purchaseWorkspace ? (
-            <details
-              className="purchase-connection"
-              aria-label={copy.connectionStatus}
-            >
-              <summary>
-                <StatusIcon state={state} />
-                <span className="visually-hidden">{copy.connectionStatus}</span>
-              </summary>
-              {connectionCard}
-            </details>
-          ) : null}
+        <div className="shell-header-end" data-testid="shell-header-end">
+          <div className="preference-controls">
+            <NavbarCollapseMenu
+              activeModuleId={activeModuleId}
+              authenticated={authenticated}
+              centralSubmissionEnabled={centralSubmissionEnabled}
+              diagnosticAction={diagnosticAction}
+              exportDiagnostics={exportDiagnostics}
+              locale={locale}
+              onLogout={handleLogout}
+              onOpenSubmissionConfirmation={() =>
+                setSubmissionAction("confirming")
+              }
+              openSupport={openSupport}
+              setLocale={setLocale}
+              setTheme={setTheme}
+              submissionAction={submissionAction}
+              supportAction={supportAction}
+              theme={theme}
+            />
+            {authenticated ? (
+              <details
+                className="purchase-connection"
+                aria-label={copy.connectionStatus}
+              >
+                <summary>
+                  <StatusIcon state={state} />
+                  <span className="visually-hidden">
+                    {copy.connectionStatus}
+                  </span>
+                </summary>
+                {connectionCard}
+              </details>
+            ) : null}
+          </div>
+          {authenticated ? <PurchaseClock locale={locale} /> : null}
         </div>
-        {purchaseWorkspace ? <PurchaseClock locale={locale} /> : null}
       </header>
 
       {submissionAction === "confirming" ? (
