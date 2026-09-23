@@ -152,16 +152,17 @@ a:focus-visible,
 .shell-header {
   position: relative;
   z-index: 50;
-  display: flex;
-  min-block-size: 4rem;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
+  block-size: 3.75rem;
+  min-block-size: 3.75rem;
+  box-sizing: border-box;
   gap: 1rem;
   border-block-end: 1px solid var(--border);
-  padding-block: 0.6rem;
+  padding-block: 0.5rem;
   padding-inline: clamp(0.75rem, 2vw, 1.5rem);
-  background: var(--header);
-  backdrop-filter: blur(18px);
+  background: var(--card);
 }
 
 .brand-lockup,
@@ -173,9 +174,17 @@ a:focus-visible,
 }
 
 .brand-lockup {
+  grid-column: 1;
+  justify-self: start;
   min-inline-size: 0;
-  flex: none;
   gap: 0.65rem;
+}
+
+.brand-lockup > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-inline-size: 0;
 }
 
 .brand-mark {
@@ -192,57 +201,89 @@ a:focus-visible,
   font-weight: 800;
 }
 
-.brand-name,
-.brand-description {
-  display: block;
-}
-
 .brand-name {
+  display: block;
   color: var(--primary);
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .brand-description {
-  margin-block-start: 0.05rem;
+  display: block;
+  margin: 0;
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 0.6rem;
   color: var(--muted-foreground);
-  font-size: 0.72rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* The module tab bar. Every entry is a link, never a button, so the shell's
    documented button focus order stays exactly as it was. */
 .module-nav {
+  grid-column: 2;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-inline-size: 0;
-  flex: 1 1 12rem;
+  max-inline-size: 100%;
+  overflow: hidden;
 }
 
 .module-nav ul {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   min-inline-size: 0;
-  gap: 0.15rem;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  gap: 0.25rem;
   overflow-x: auto;
   margin: 0;
   border: 1px solid var(--border);
-  border-radius: 0.55rem;
-  padding: 0.2rem;
+  border-radius: 0.65rem;
+  padding: 0.25rem;
   background: var(--muted);
   list-style: none;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.module-nav ul::-webkit-scrollbar {
+  display: none;
+}
+
+.module-nav li {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .module-tab {
+  position: relative;
   display: inline-flex;
-  min-block-size: 1.75rem;
+  min-block-size: 1.875rem;
   align-items: center;
-  border-radius: 0.4rem;
+  justify-content: center;
+  border-radius: 0.45rem;
   padding-block: 0.25rem;
-  padding-inline: 0.7rem;
+  padding-inline: 0.75rem;
   color: var(--muted-foreground);
-  font-size: 0.78rem;
-  font-weight: 650;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
   text-decoration: none;
   white-space: nowrap;
+  transition:
+    background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
 }
 
 .module-tab:hover {
@@ -253,6 +294,8 @@ a:focus-visible,
 .module-tab[aria-current="page"] {
   background: var(--primary);
   color: var(--primary-foreground);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 /*
@@ -264,7 +307,7 @@ a:focus-visible,
   border-block-end: 2px dashed var(--control-border);
   border-end-start-radius: 0;
   border-end-end-radius: 0;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .module-tab[data-availability="unavailable"][aria-current="page"] {
@@ -272,8 +315,18 @@ a:focus-visible,
   color: var(--foreground);
 }
 
+.shell-header-end {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-inline-size: 0;
+}
+
 .visually-hidden {
   position: absolute;
+  inset-inline-start: 0;
   inline-size: 1px;
   block-size: 1px;
   overflow: hidden;
@@ -2034,153 +2087,44 @@ a:focus-visible,
   line-height: 1.6;
 }
 
-/* Purchase invoice composition measured from the rendered client prototype. */
+/* Workspaces composition measured from the rendered client prototype. */
+.shell-page[data-workspace],
 .shell-page[data-purchase-workspace],
 .shell-page[data-inventory-workspace],
 .shell-page[data-sales-workspace],
-.shell-page[data-basket-workspace] {
+.shell-page[data-basket-workspace],
+.shell-page[data-settings-workspace],
+.shell-page[data-dashboard-workspace],
+.shell-page[data-products-workspace] {
   block-size: 100dvh;
   min-block-size: 40rem;
+  grid-template-rows: 3.75rem minmax(0, 1fr);
   overflow: hidden;
   background: var(--card);
-}
-.shell-page[data-purchase-workspace] {
-  grid-template-rows: 4rem minmax(0, 1fr);
-  margin-inline-end: 20rem;
-}
-.shell-page[data-inventory-workspace],
-.shell-page[data-sales-workspace],
-.shell-page[data-basket-workspace] {
-  grid-template-rows: 4rem auto minmax(0, 1fr);
-}
-.shell-page[data-inventory-workspace] .shell-header,
-.shell-page[data-sales-workspace] .shell-header,
-.shell-page[data-basket-workspace] .shell-header {
-  flex-wrap: nowrap;
-  min-inline-size: 0;
-  padding: 0.5rem 1.5rem;
-  background: var(--card);
-}
-.shell-page[data-inventory-workspace] .brand-lockup > span:last-child,
-.shell-page[data-sales-workspace] .brand-lockup > span:last-child,
-.shell-page[data-basket-workspace] .brand-lockup > span:last-child {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.shell-page[data-inventory-workspace] .brand-description,
-.shell-page[data-sales-workspace] .brand-description,
-.shell-page[data-basket-workspace] .brand-description {
-  display: block;
-  margin: 0;
-  border-inline-start: 1px solid var(--border);
-  padding-inline-start: 0.6rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-
-.shell-page[data-settings-workspace] {
-  block-size: 100dvh;
-  min-block-size: 40rem;
-  overflow-y: auto;
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
+  margin-inline-end: 0;
 }
 
 .shell-page[data-settings-workspace] .settings-workspace {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
 }
 
-.shell-page[data-settings-workspace] .shell-header {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 20;
-  flex-wrap: nowrap;
-  min-inline-size: 0;
-  padding: 0.5rem 1.5rem;
-}
-
-.shell-page[data-settings-workspace] .brand-lockup > span:last-child {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.shell-page[data-settings-workspace] .brand-description {
-  display: block;
-  margin: 0;
-  border-inline-start: 1px solid var(--border);
-  padding-inline-start: 0.6rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-.shell-page[data-inventory-workspace] .module-nav,
-.shell-page[data-basket-workspace] .module-nav {
-  flex: 1 1 0;
-  min-inline-size: 8rem;
-}
-.shell-page[data-inventory-workspace] .preference-controls,
-.shell-page[data-basket-workspace] .preference-controls {
-  gap: 0.3rem;
-}
-.shell-page[data-purchase-workspace]:has(.purchase-item-sidebar[hidden]) {
-  margin-inline-end: 0;
-}
 .purchase-item-sidebar[hidden] {
   display: none !important;
 }
-.shell-page[data-purchase-workspace] .shell-header {
-  flex-wrap: nowrap;
-  min-inline-size: 0;
-  gap: 0.75rem;
-  padding: 0.5rem 1.5rem;
-  background: var(--card);
-}
-.shell-page[data-purchase-workspace] .brand-lockup > span:last-child {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.shell-page[data-purchase-workspace] .brand-name {
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-.shell-page[data-purchase-workspace] .brand-description {
-  display: block;
-  margin: 0;
-  border-inline-start: 1px solid var(--border);
-  padding-inline-start: 0.6rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-.shell-page[data-purchase-workspace] .module-nav {
-  flex: 1 1 0;
-  min-inline-size: 8rem;
-}
-.shell-page[data-purchase-workspace] .module-nav ul {
-  background: var(--card);
-  scrollbar-width: none;
-}
-.shell-page[data-purchase-workspace] .module-tab {
-  position: relative;
-  padding-inline: 0.85rem;
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-.shell-page[data-purchase-workspace] .preference-controls {
-  gap: 0.3rem;
-}
-.shell-page[data-purchase-workspace] .preference-controls > button {
-  font-size: 0.7rem;
-}
+
 .purchase-clock {
   display: grid;
   flex: none;
   gap: 0.1rem;
   color: var(--muted-foreground);
-  font-size: 0.6rem;
+  font-size: 0.65rem;
   text-align: center;
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 0.65rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .purchase-clock span:first-child {
   font-family: var(--font-family-mono);
@@ -2228,6 +2172,11 @@ a:focus-visible,
   min-inline-size: 0;
   flex-direction: column;
   background: var(--card);
+  margin-inline-end: 20rem;
+}
+
+.purchasing-workspace:has(.purchase-item-sidebar[hidden]) {
+  margin-inline-end: 0;
 }
 
 .inventory-workspace {
@@ -3330,7 +3279,8 @@ a:focus-visible,
  */
 .purchase-item-sidebar {
   position: fixed;
-  inset-block: 0;
+  inset-block-start: 3.75rem;
+  inset-block-end: 0;
   inset-inline-end: 0;
   display: flex;
   inline-size: 20rem;
@@ -3512,10 +3462,13 @@ a:focus-visible,
 @media (max-width: 80rem) {
   .shell-page[data-purchase-workspace] {
     block-size: auto;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: 3.75rem minmax(0, 1fr);
     min-block-size: 100dvh;
     margin-inline-end: 0;
     overflow: visible;
+  }
+  .purchasing-workspace {
+    margin-inline-end: 0;
   }
   /*
    * Below 80rem — which includes the default 1080x720 window and every
@@ -3573,9 +3526,6 @@ a:focus-visible,
   }
 }
 @media (max-width: 60rem) {
-  .shell-page[data-purchase-workspace] .shell-header {
-    flex-wrap: wrap;
-  }
   .purchase-header-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3648,7 +3598,32 @@ a:focus-visible,
 
 @media (max-width: 37rem) {
   .shell-header {
-    align-items: flex-start;
+    block-size: auto;
+    min-block-size: 3.75rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 0.5rem;
+    align-items: center;
+    overflow-x: clip;
+  }
+
+  .brand-lockup {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .shell-header-end {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .module-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: center;
+    inline-size: 100%;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow: hidden;
   }
 
   .shell-clock,
@@ -3732,10 +3707,6 @@ a:focus-visible,
   .workspace-actions,
   .user-actions {
     justify-content: space-between;
-  }
-
-  .module-nav {
-    flex-basis: 100%;
   }
 
   .catalog-workspace {
@@ -4804,9 +4775,16 @@ a:focus-visible,
   align-items: center;
   gap: 0.5rem;
   inline-size: 100%;
-  border-block-end: 1px solid var(--border);
+  border-block-end: none;
+  box-shadow: inset 0 -1px 0 0 var(--border);
   padding-block-end: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.settings-tab-list::-webkit-scrollbar {
+  display: none;
 }
 
 .tab-pane-content {
