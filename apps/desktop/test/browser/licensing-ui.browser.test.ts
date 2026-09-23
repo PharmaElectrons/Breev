@@ -209,8 +209,7 @@ test.describe("offline licence feature hiding", () => {
       deviceId: DEVICE_ID,
       installationId,
     });
-    await page.goto(renderer.origin);
-    await page.getByRole("link", { name: "Main dashboard" }).click();
+    await page.goto(`${renderer.origin}/#/settings/connection`);
 
     await expect(
       page.getByRole("heading", {
@@ -276,7 +275,7 @@ test.describe("offline licence feature hiding", () => {
       installationId,
       role: "terminal",
     });
-    await terminalPage.goto(`${renderer.origin}/#/dashboard`);
+    await terminalPage.goto(`${renderer.origin}/#/settings/connection`);
     await expect(
       terminalPage.getByText("نقطة بيع إضافية", { exact: true }),
     ).toBeVisible();
