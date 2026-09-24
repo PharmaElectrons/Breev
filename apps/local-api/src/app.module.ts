@@ -41,6 +41,10 @@ import { RecoveryController } from "./recovery/recovery.controller.js";
 import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.js";
 import { SaleDraftController } from "./sales/sale-draft.controller.js";
 import { SaleDraftService } from "./sales/sale-draft.service.js";
+import { PatientsController } from "./patients/patients.controller.js";
+import { PatientsService } from "./patients/patients.service.js";
+import { PatientsRepository } from "./patients/patients.repository.js";
+import { DevPatientAuthorization } from "./patients/patient-auth.dev.js";
 
 @Module({
   controllers: [
@@ -57,6 +61,7 @@ import { SaleDraftService } from "./sales/sale-draft.service.js";
     PurchasingController,
     RecoveryController,
     SaleDraftController,
+    PatientsController,
   ],
   providers: [
     CatalogService,
@@ -86,6 +91,12 @@ import { SaleDraftService } from "./sales/sale-draft.service.js";
     RecoveryJobService,
     SettingsPostCommitService,
     SaleDraftService,
+    PatientsService,
+    PatientsRepository,
+    {
+      provide: "PatientAuthorizationPort",
+      useClass: DevPatientAuthorization,
+    },
   ],
 })
 export class AppModule {}

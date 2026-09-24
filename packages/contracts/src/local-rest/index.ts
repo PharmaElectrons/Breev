@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PATIENTS_CONTRACTS } from "./patients.js";
 
 export const LOCAL_API_VERSION = "18" as const;
 export const LOCAL_SCHEMA_VERSION = "18" as const;
@@ -103,6 +104,10 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "inventory.review",
   "inventory.valuation.view",
   "licensing.manage",
+  "patients.discounts.manage",
+  "patients.manage",
+  "patients.notes.manage",
+  "patients.view",
   "pharmacy.settings.manage",
   "purchases.adjustments.manage",
   "purchases.costs.view",
@@ -4773,6 +4778,7 @@ export const RENDERER_CONTRACTS = [
   ...INVENTORY_CONTRACTS,
   ...PURCHASING_CONTRACTS,
   ...SALES_CONTRACTS,
+  ...PATIENTS_CONTRACTS,
 ] as const;
 export const DEVICE_CHANNEL_CONTRACTS = [
   ...TERMINAL_PAIRING_CONTRACTS,
@@ -5505,3 +5511,5 @@ function throwOnVersionMismatch(payload: unknown): void {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+export * from "./patients.js";

@@ -21,7 +21,8 @@ export type PermissionGroupId =
   | "products"
   | "sales"
   | "inventory"
-  | "purchasing";
+  | "purchasing"
+  | "patients";
 
 export interface PermissionGroup {
   readonly id: PermissionGroupId;
@@ -45,6 +46,15 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
   {
     id: "sales",
     permissions: ["sales.drafts.manage"],
+  },
+  {
+    id: "patients",
+    permissions: [
+      "patients.view",
+      "patients.manage",
+      "patients.notes.manage",
+      "patients.discounts.manage",
+    ],
   },
   {
     id: "purchasing",

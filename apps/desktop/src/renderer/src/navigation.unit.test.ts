@@ -16,6 +16,7 @@ const FREE_CORE_ACCESS = {
     "catalog.item.manage",
     "inventory.reorder.manage",
     "inventory.review",
+    "patients.view",
     "purchases.drafts.manage",
     "sales.drafts.manage",
   ],

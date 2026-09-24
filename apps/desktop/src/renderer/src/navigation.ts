@@ -76,8 +76,8 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   {
     hash: "#/patients",
     id: "patients",
-    implemented: false,
-    requiredPermissionsAny: [],
+    implemented: true,
+    requiredPermissionsAny: ["patients.view"],
   },
   {
     hash: "#/messages",

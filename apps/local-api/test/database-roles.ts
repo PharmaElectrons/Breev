@@ -62,8 +62,19 @@ export async function createSeparatedDatabaseRolesFromUrl(
   try {
     await administrator.query(
       `revoke create on schema public from public;
-       create role breev_schema_owner login password '${migrationPassword}';
-       create role breev_app login password '${applicationPassword}';
+       do $$
+       begin
+         if not exists (select from pg_roles where rolname = 'breev_schema_owner') then
+           create role breev_schema_owner login password '${migrationPassword}';
+         else
+           alter role breev_schema_owner with login password '${migrationPassword}';
+         end if;
+         if not exists (select from pg_roles where rolname = 'breev_app') then
+           create role breev_app login password '${applicationPassword}';
+         else
+           alter role breev_app with login password '${applicationPassword}';
+         end if;
+       end $$;
        grant create on database "${databaseName}" to breev_schema_owner;
        grant usage, create on schema public to breev_schema_owner;
        grant usage on schema public to breev_app;`,
