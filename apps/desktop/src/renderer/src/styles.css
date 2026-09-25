@@ -309,6 +309,10 @@ a:focus-visible,
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
+.module-nav-overflow-cue {
+  display: none;
+}
+
 /*
  * An unavailable module is marked by a dashed underline as well as by muted
  * colour, and carries visually hidden text, so the state never depends on
@@ -1179,6 +1183,11 @@ a:focus-visible,
 
 .catalog-rail-list li + li {
   border-block-start: 1px solid var(--border);
+}
+
+.catalog-rail-load-more {
+  min-block-size: 2.75rem;
+  margin: 0.5rem 0;
 }
 
 .catalog-rail-item {
@@ -2275,16 +2284,24 @@ a:focus-visible,
   transition: margin-inline-end 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .shell-page[data-inventory-workspace],
-.shell-page[data-sales-workspace],
 .shell-page[data-basket-workspace] {
   grid-template-rows: 4rem auto minmax(0, 1fr);
 }
+.shell-page[data-sales-workspace] {
+  grid-template-rows: 3.5rem auto minmax(0, 1fr);
+}
 .shell-page[data-inventory-workspace] .shell-header,
-.shell-page[data-sales-workspace] .shell-header,
 .shell-page[data-basket-workspace] .shell-header {
   flex-wrap: nowrap;
   min-inline-size: 0;
   padding: 0.5rem 1.5rem;
+  background: var(--card);
+}
+.shell-page[data-sales-workspace] .shell-header {
+  flex-wrap: nowrap;
+  min-inline-size: 0;
+  min-block-size: 3.5rem;
+  padding: 0.35rem 1.25rem;
   background: var(--card);
 }
 .shell-page[data-inventory-workspace] .brand-lockup > span:last-child,
@@ -2305,11 +2322,13 @@ a:focus-visible,
   font-weight: 500;
 }
 .shell-page[data-inventory-workspace] .module-nav,
+.shell-page[data-sales-workspace] .module-nav,
 .shell-page[data-basket-workspace] .module-nav {
   flex: 1 1 0;
   min-inline-size: 8rem;
 }
 .shell-page[data-inventory-workspace] .preference-controls,
+.shell-page[data-sales-workspace] .preference-controls,
 .shell-page[data-basket-workspace] .preference-controls {
   gap: 0.3rem;
 }
@@ -7209,52 +7228,240 @@ a:focus-visible,
   }
 }
 
-/*
- * Sale Draft surface (#27).
- *
- * A plain page rather than one of the dense fixed-height workspaces: this
- * slice has a search field and a row list and nothing else. The results
- * region scrolls on its own so the row actions stay inside the 1280x800
- * verification viewport at every locale and text size.
- */
-.sales-screen {
+/* M2 Sales: screenshot-aligned desktop POS layout, responsive and accessible. */
+.sales-workspace {
+  display: grid;
+  grid-template-columns: clamp(17rem, 18.5vw, 20rem) minmax(0, 1fr);
   inline-size: 100%;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.5rem;
+  block-size: 100%;
+  min-inline-size: 0;
   min-block-size: 0;
+  overflow: hidden;
+  background: var(--surface);
 }
-.sales-header {
+
+.sales-draft-tray {
   display: flex;
+  min-inline-size: 0;
+  min-block-size: 0;
   flex-direction: column;
-  gap: 0.25rem;
+  overflow: hidden;
+  border-inline-end: 1px solid var(--border);
+  background: var(--card);
 }
-.sales-description {
+
+.sales-draft-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-block-end: 1px solid var(--border);
+  padding: 0.85rem 1.15rem;
+  background: var(--card);
+}
+
+.sales-draft-tray-heading-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+
+.sales-draft-tray-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--foreground);
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.sales-draft-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 1.35rem;
+  min-block-size: 1.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
   color: var(--muted-foreground);
-  max-inline-size: 60ch;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
 }
-.sale-draft-meta {
-  color: var(--muted-foreground);
-  font-size: 0.9rem;
+
+.sales-new-draft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-block-size: 2.5rem;
+  padding-inline: 0.95rem;
+  border: 1px solid var(--primary);
+  border-radius: 0.5rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+  font-size: 0.82rem;
+  line-height: 1;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
+  transition: all 150ms ease;
+  white-space: nowrap;
+  cursor: pointer;
 }
-.sales-actions {
+
+.sales-btn-icon {
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+  flex: none;
+}
+
+.sales-new-draft:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px 0 rgb(0 0 0 / 0.12);
+}
+
+.sales-new-draft:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.sales-new-draft:disabled,
+.sales-draft-tray-row button:disabled,
+.sales-draft-list-error button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.sales-new-confirm {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  border-block-end: 1px solid var(--border);
+  padding: 0.65rem;
+  background: var(--primary-wash);
 }
-.sales-search {
-  display: flex;
-  flex-direction: column;
+
+.sales-new-confirm p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.sales-new-confirm button {
+  border: 1px solid var(--control-border);
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.sales-draft-tray-content {
+  flex: 1 1 0;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.75rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.sales-calculator-slot:not(:empty) {
+  flex: none;
+  max-block-size: min(27rem, 68vh);
+  overflow: auto;
+  border-block-start: 1px solid var(--border);
+}
+
+.sales-calculator {
+  display: grid;
   gap: 0.35rem;
-  max-inline-size: 40rem;
+  padding: 0.65rem;
 }
-.sales-search input {
-  min-block-size: 2.75rem;
-  padding-inline: 0.75rem;
+
+.sales-calculator h3 {
+  margin: 0;
+  font-size: 0.85rem;
 }
-.sale-draft-list {
+
+.sales-calculator-targets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.sales-calculator-targets button,
+.sales-calculator-keys button,
+.sales-calculator-apply {
+  border: 1px solid var(--control-border);
+  border-radius: 0.35rem;
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.sales-calculator-targets button {
+  min-block-size: 2.3rem;
+  padding: 0.2rem;
+  font-size: 0.7rem;
+}
+
+.sales-calculator-targets button[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary-wash);
+  color: var(--primary);
+}
+
+.sales-calculator input {
+  inline-size: 100%;
+  min-block-size: 2.3rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--card);
+  color: var(--foreground);
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.sales-calculator-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.sales-calculator-keys button {
+  min-block-size: 1.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sales-calculator-keys button:last-child {
+  grid-column: 2 / 4;
+}
+
+.sales-calculator button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sales-calculator p[role="alert"] {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.sales-calculator-apply {
+  min-block-size: 2rem;
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+}
+
+.sales-draft-tray-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -7262,60 +7469,1213 @@ a:focus-visible,
   padding: 0;
   list-style: none;
 }
-.sale-draft-row {
+
+.sales-draft-tray-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-inline-size: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--card);
+  transition: all 150ms ease;
+}
+
+.sales-draft-tray-row:hover {
+  background: var(--surface);
+  border-color: var(--control-border);
+}
+
+.sales-draft-tray-row[data-current="true"] {
+  background: var(--primary-wash);
+  border-color: var(--primary);
+}
+
+.sales-draft-tray-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-inline-size: 0;
+}
+
+.sales-draft-tray-title {
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--foreground);
+  line-height: 1.35;
+}
+
+.sales-draft-tray-meta {
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.sales-draft-current {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid hsl(173 80% 30% / 0.35);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  background: var(--card);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sales-draft-tray-row button[data-sale-draft-control="resume"] {
+  min-block-size: 2.25rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 650;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.sales-draft-tray-row
+  button[data-sale-draft-control="resume"]:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-wash);
+  color: var(--primary);
+}
+
+.sales-draft-list-state {
+  margin: 0;
+  padding: 1.5rem 1rem;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.sales-draft-list-error {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  background: var(--danger-soft);
+  color: var(--danger);
+  margin-block-end: 0.75rem;
+}
+
+.sales-draft-list-error p {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.sales-draft-list-error button {
+  justify-self: start;
+  min-block-size: 2.25rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.375rem;
+  background: var(--card);
+  color: var(--danger);
+  font-weight: 650;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.sales-workspace-main {
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.sales-draft-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(16rem, 18vw, 19rem);
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.sales-draft-layout[data-draft-loaded="false"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sales-draft-context {
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-inline-start: 1px solid var(--border);
+  padding: 0.9rem;
+  background: var(--surface);
+}
+
+.sales-draft-context-card {
+  gap: 0;
+  border-color: var(--border);
+  border-radius: 0.75rem;
+  padding: 0;
+  background: var(--card);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+}
+
+.sales-draft-context-header {
+  border-block-end: 1px solid var(--border);
+  padding: 0.85rem 1rem;
+}
+
+.sales-draft-context-header h3 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.sales-draft-context-content {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+}
+
+.sales-draft-context-content p {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sales-draft-context-label {
+  color: var(--muted-foreground);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.sales-item-context {
+  margin-block-end: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  padding: 0.8rem;
+  background: var(--card);
+}
+
+.sales-item-context h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.sales-item-context > strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+}
+
+.sales-item-context dl {
+  margin: 0.75rem 0 0;
+}
+
+.sales-item-context dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-block-start: 1px solid var(--border);
+  padding-block: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.sales-item-context dt {
+  color: var(--muted-foreground);
+}
+
+.sales-item-context dd {
+  margin: 0;
+  max-inline-size: 60%;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+  text-align: end;
+}
+
+.sales-item-batches {
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 0.65rem;
+}
+
+.sales-item-batches h4 {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+}
+
+.sales-item-batches ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sales-item-batches li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.45rem;
+  font-size: 0.7rem;
+}
+
+.sales-item-batches li span:last-child {
+  grid-column: 1 / -1;
+  color: var(--muted-foreground);
+}
+
+.sales-screen {
+  inline-size: 100%;
+  block-size: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem 1.1rem;
+  min-block-size: 0;
+}
+
+.sales-screen[data-draft-loaded="true"] .sales-header {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-block-end: 1px solid var(--border);
+  padding: 0.15rem 0 0.75rem;
+}
+
+.sales-screen[data-draft-loaded="true"] .sales-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.sales-screen[data-draft-loaded="false"] .sales-header {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1.5rem 1.75rem;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.sales-screen[data-draft-loaded="false"] .sales-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 750;
+  color: var(--foreground);
+}
+
+.sales-description {
+  color: var(--muted-foreground);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  margin: 0;
+  max-inline-size: 65ch;
+}
+
+.sales-selection-prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin: 0;
+  border: 1.5px solid hsl(173 80% 30% / 0.25);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--primary-wash);
+  color: var(--foreground);
+  font-size: 0.95rem;
+  font-weight: 550;
+  line-height: 1.6;
+}
+
+.sales-search {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  inline-size: 100%;
+}
+
+.sales-search-label {
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--foreground);
+}
+
+.sales-search input {
+  inline-size: 100%;
+  min-block-size: 3rem;
+  padding-inline: 1.15rem;
+  border: 1.5px solid var(--control-border);
+  border-radius: 0.625rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.98rem;
+  font-weight: 500;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  transition: all 150ms ease;
+}
+
+.sales-search input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-wash);
+}
+
+.sales-search input::placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.85;
+}
+
+.sales-misc-add > button {
+  border: 1px solid var(--control-border);
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.8rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.sales-misc-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.65rem;
+  margin-block-start: 0.55rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.625rem;
+  padding: 0.75rem;
+  background: var(--card);
+}
+
+.sales-misc-form label {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 6rem;
+  font-size: 0.8rem;
+}
+
+.sales-misc-form input {
+  max-inline-size: 10rem;
+  min-block-size: 2.25rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.4rem;
+  padding-inline: 0.5rem;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.sales-misc-form button {
+  min-block-size: 2.25rem;
+  border-radius: 0.4rem;
+  padding-inline: 0.8rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.sales-misc-form p {
+  margin: 0;
+  color: var(--danger);
+}
+
+.sales-line-open-product {
+  margin-inline-start: 0.35rem;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.sales-item-record-dialog {
+  display: grid;
+  gap: 0.7rem;
+  max-inline-size: 34rem;
+  padding: 1.25rem;
+}
+
+.sales-item-record-dialog h3 {
+  margin: 0;
+}
+
+.sales-item-record-dialog dl {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.sales-item-record-dialog dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-block-end: 1px solid var(--border);
+  padding-block: 0.25rem;
+}
+
+.sales-item-record-dialog dd {
+  margin: 0;
+  text-align: end;
+}
+
+.sales-quick-access {
+  display: grid;
+  gap: 0.55rem;
+  max-block-size: 12rem;
+  overflow: auto;
+  flex-shrink: 0;
+  border: 1px solid var(--control-border);
+  border-radius: 0.65rem;
+  padding: 0.65rem;
+  background: var(--card);
+}
+
+.sales-quick-access > header,
+.sales-quick-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sales-quick-access h3,
+.sales-quick-access p {
+  margin: 0;
+}
+
+.sales-quick-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-block-start: 0.4rem;
+}
+
+.sales-quick-tile {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--control-border);
+  border-radius: 0.45rem;
+  background: var(--background);
+}
+
+.sales-quick-tile-add {
+  display: grid;
+  gap: 0.15rem;
+  min-inline-size: 9rem;
+  padding: 0.45rem;
+  text-align: start;
+}
+
+.sales-quick-tile-add span {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.sales-quick-order {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sales-quick-order button {
+  min-inline-size: 1.5rem;
+  border-inline-start: 1px solid var(--control-border);
+}
+
+.sales-quick-pin-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.55rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.55rem;
+  padding: 0.65rem;
+  background: var(--card);
+}
+
+.sales-quick-pin-form label {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.sales-quick-pin-form input,
+.sales-quick-pin-form select {
+  min-block-size: 2.25rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.4rem;
+  padding-inline: 0.5rem;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.sales-screen .denial-alert {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 0.625rem;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.sales-screen .denial-alert button {
+  min-block-size: 2.25rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.375rem;
+  background: var(--card);
+  color: var(--danger);
+  font-weight: 650;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sales-results {
+  flex: 1 1 0;
+  inline-size: 100%;
+  overflow-y: auto;
+  min-block-size: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--card);
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04);
+}
+
+.sales-no-results {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem;
+}
+
+.sales-no-results p {
+  margin: 0;
+}
+
+.sales-no-results button {
+  border: 1px solid var(--primary);
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  cursor: pointer;
+}
+
+.sales-create-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 0.55);
+}
+
+.sales-create-dialog {
+  inline-size: min(70rem, 100%);
+  max-block-size: calc(100dvh - 2rem);
+  overflow: auto;
+  border-radius: 0.75rem;
+  background: var(--surface);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 0.25);
+}
+
+.sales-price-dialog {
+  inline-size: min(28rem, 100%);
+  padding: 1.5rem;
+}
+
+.sales-price-dialog h3 {
+  margin-block: 0 0.75rem;
+}
+
+.sales-price-dialog form,
+.sales-price-dialog label {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sales-price-dialog form {
+  gap: 1rem;
+}
+
+.sales-price-dialog input,
+.sales-price-dialog textarea {
+  inline-size: 100%;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-  background: var(--card);
+  padding: 0.65rem;
+  background: var(--surface);
+  color: var(--foreground);
 }
-.sale-draft-facts {
+
+.sales-price-dialog-actions {
   display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-inline-size: 0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
-.sales-results {
-  overflow: auto;
-  min-block-size: 0;
+
+.sales-price-dialog-actions button,
+.sales-line-price-button {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface);
+  color: var(--foreground);
+  cursor: pointer;
 }
+
+.sales-line-price-button:hover,
+.sales-line-price-button:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 .sales-results-table {
   inline-size: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
+
 .sales-results-table th,
 .sales-results-table td {
-  padding: 0.6rem 0.75rem;
+  padding: 0.85rem 1.25rem;
   text-align: start;
   border-block-end: 1px solid var(--border);
-  vertical-align: top;
+  vertical-align: middle;
 }
+
+.sales-results-table th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--surface);
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sales-results-table tbody tr {
+  transition: background 120ms ease;
+}
+
+.sales-results-table tbody tr:hover {
+  background: var(--primary-wash);
+}
+
+.sales-results-table tbody tr:last-child td {
+  border-block-end: none;
+}
+
 .sale-result-name {
   display: block;
-  font-weight: 600;
+  font-weight: 650;
+  font-size: 0.95rem;
+  color: var(--foreground);
+  line-height: 1.4;
 }
+
 .sale-result-arabic {
   display: block;
   text-align: start;
   color: var(--muted-foreground);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  margin-block-start: 0.15rem;
+  line-height: 1.4;
 }
-.sale-result-status {
+
+.sales-results-table button[data-sale-basket-add] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.5rem;
+  min-inline-size: 2.75rem;
+  border: 1.5px solid var(--control-border);
+  border-radius: 0.5rem;
+  padding: 0.45rem 1rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 650;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.sales-results-table button[data-sale-basket-add]:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-wash);
+  color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.05);
+}
+
+.sales-results-table button[data-sale-basket-add]:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.sale-basket-feedback {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  margin-block-start: 0.25rem;
-  font-size: 0.85rem;
+  inline-size: fit-content;
+  max-inline-size: 24rem;
+  margin-block-start: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 0.375rem;
+  background: var(--primary-wash);
+  color: var(--primary);
+  border: 1px solid hsl(173 80% 30% / 0.25);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.sales-load-more {
+  display: block;
+  margin: 1rem auto;
+  min-block-size: 2.75rem;
+  padding: 0.5rem 1.75rem;
+  border: 1.5px solid var(--control-border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 650;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.sales-load-more:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-wash);
+  color: var(--primary);
+}
+
+/* The sale invoice owns the remaining height; results stay available above it. */
+.sales-screen[data-draft-loaded="true"] {
+  gap: 0.5rem;
+  overflow: hidden;
+  padding: 0.65rem;
+}
+
+.sales-screen[data-draft-loaded="true"] .sales-search input {
+  min-block-size: 2.5rem;
+}
+
+.sales-screen[data-draft-loaded="true"] .sales-results {
+  flex: none;
+  min-block-size: 0;
+  max-block-size: min(10rem, 24vh);
+  border-radius: 0.5rem;
+}
+
+.sales-screen[data-draft-loaded="true"] .sales-results-table th,
+.sales-screen[data-draft-loaded="true"] .sales-results-table td {
+  padding: 0.4rem 0.65rem;
+}
+
+.sales-results-table button[data-sale-line-add] {
+  min-block-size: 2.25rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--primary);
+  border-radius: 0.45rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sales-results-table button[data-sale-line-add]:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.sales-invoice {
+  display: flex;
+  flex: 1 1 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  flex-direction: column;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--card);
+}
+
+.sales-invoice-heading,
+.sales-invoice-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.55rem 0.8rem;
+}
+
+.sales-invoice-heading {
+  border-block-end: 1px solid var(--border);
+}
+
+.sales-invoice-heading h3 {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.sales-invoice-heading span {
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+
+.sales-invoice-table-wrap {
+  flex: 1 1 0;
+  min-block-size: 6rem;
+  overflow: auto;
+}
+
+.sales-invoice-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.8rem;
+}
+
+.sales-invoice-table th:nth-child(1) {
+  inline-size: 5%;
+}
+.sales-invoice-table th:nth-child(2) {
+  inline-size: 32%;
+}
+.sales-invoice-table th:nth-child(3) {
+  inline-size: 11%;
+}
+.sales-invoice-table th:nth-child(4) {
+  inline-size: 15%;
+}
+.sales-invoice-table th:nth-child(5) {
+  inline-size: 15%;
+}
+.sales-invoice-table th:nth-child(6) {
+  inline-size: 10%;
+}
+.sales-invoice-table th:nth-child(7) {
+  inline-size: 12%;
+}
+
+.sales-invoice-table th,
+.sales-invoice-table td {
+  border-block-end: 1px solid var(--border);
+  padding: 0.45rem 0.55rem;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.sales-invoice-table th {
+  background: var(--surface);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+
+.sales-invoice-table tr[data-selected="true"] {
+  background: var(--primary-wash);
+}
+
+.sales-line-select {
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 700;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.sales-quantity-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sales-quantity-cell button {
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.3rem;
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.sales-invoice-empty {
+  margin: 1rem;
   color: var(--muted-foreground);
 }
-.sales-results-table button,
-.sale-draft-row button,
-.sales-actions button {
-  min-block-size: 2.75rem;
-  min-inline-size: 2.75rem;
+
+.sales-line-editor,
+.sales-invoice-summary {
+  flex-shrink: 0;
+  border-block-start: 1px solid var(--border);
+  padding: 0.55rem 0.8rem;
+}
+
+.sales-line-editor {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sales-line-editor > strong {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+}
+
+.sales-line-editor label,
+.sales-invoice-summary form {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.sales-line-editor input,
+.sales-line-editor select,
+.sales-invoice-summary input {
+  inline-size: 5rem;
+  min-block-size: 2rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.35rem;
+  padding: 0.25rem;
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.sales-line-editor-actions,
+.sales-invoice-actions,
+.sales-invoice-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sales-line-editor button,
+.sales-invoice-summary button,
+.sales-invoice-actions button {
+  min-block-size: 2rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.sales-invoice-summary dl {
+  display: flex;
+  gap: 1rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+}
+
+.sales-invoice-summary dl > div {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.sales-invoice-summary dt {
+  color: var(--muted-foreground);
+}
+
+.sales-invoice-summary dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.sales-invoice-final {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-block-start: 0.45rem;
+  font-weight: 700;
+}
+
+.sales-invoice-final strong {
+  color: var(--primary);
+  font-size: clamp(1.2rem, 2vw, 1.8rem);
+}
+
+.sales-invoice-actions {
+  justify-content: flex-start;
+  border-block-start: 1px solid var(--border);
+}
+
+.sales-invoice-confirm span {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 75rem) {
+  .sales-workspace {
+    grid-template-columns: 17rem minmax(0, 1fr);
+  }
+
+  .sales-draft-layout[data-draft-loaded="true"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .sales-draft-context {
+    display: block;
+    max-block-size: 5rem;
+    overflow: auto;
+    border-block-start: 1px solid var(--border);
+    border-inline-start: 0;
+    padding: 0.25rem;
+  }
+
+  .sales-item-context {
+    display: none;
+  }
+
+  .sales-draft-context-card,
+  .sales-draft-context-content {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .sales-draft-context-header,
+  .sales-draft-context-content {
+    border: 0;
+    padding: 0.25rem 0.5rem;
+  }
+}
+
+@media (max-width: 56rem) {
+  .sales-screen[data-draft-loaded="true"] {
+    overflow: visible;
+  }
+
+  .sales-invoice {
+    min-block-size: 23rem;
+  }
+}
+.shell-page[data-sales-workspace] .module-nav ul {
+  scrollbar-color: var(--primary) var(--muted);
+  scrollbar-width: auto;
+}
+.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar {
+  block-size: 0.5rem;
+}
+.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: var(--muted);
+}
+.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar-thumb {
+  border: 1px solid var(--muted);
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+@media (max-width: 85.375rem) {
+  .shell-page[data-sales-workspace]
+    .module-nav:has(> ul > li:nth-child(n + 7)) {
+    position: relative;
+    padding-inline-end: 1.5rem;
+  }
+  .shell-page[data-sales-workspace]
+    .module-nav:has(> ul > li:nth-child(n + 7))
+    .module-nav-overflow-cue {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    display: grid;
+    inline-size: 1.25rem;
+    place-items: center;
+    background: var(--card);
+    color: var(--primary);
+    font-size: 1.2rem;
+    font-weight: 800;
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 56rem) {
+  .shell-page[data-sales-workspace] {
+    block-size: auto;
+    min-block-size: 100dvh;
+    overflow: visible;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .sales-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(24rem, auto) minmax(24rem, 1fr);
+    block-size: auto;
+    min-block-size: calc(100dvh - 8rem);
+    overflow: visible;
+  }
+  .sales-draft-tray {
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border);
+  }
+  .sales-draft-tray-header {
+    padding-block: 0.65rem;
+  }
+  .sales-draft-tray-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-block: 0.55rem;
+  }
+  .sales-workspace-main {
+    min-block-size: 24rem;
+    overflow: visible;
+  }
+  .sales-draft-layout {
+    block-size: auto;
+    min-block-size: 24rem;
+    overflow: visible;
+  }
+  .sales-draft-layout[data-draft-loaded="true"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(20rem, 1fr) auto;
+  }
+  .sales-draft-context {
+    border-block-start: 1px solid var(--border);
+    border-inline-start: 0;
+  }
+  .sales-screen {
+    min-block-size: 24rem;
+    block-size: auto;
+  }
 }
 
 .settings-workspace {

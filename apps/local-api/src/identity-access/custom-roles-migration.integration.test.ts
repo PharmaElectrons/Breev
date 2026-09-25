@@ -178,9 +178,9 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
       const after = rolesAfter.find((role) => role.id === before.id);
       expect(after?.revision, before.role_key ?? before.id).toBe(
         before.role_key === "owner"
-          ? String(BigInt(before.revision) + 10n)
+          ? String(BigInt(before.revision) + 13n)
           : before.role_key === "manager"
-            ? String(BigInt(before.revision) + 7n)
+            ? String(BigInt(before.revision) + 10n)
             : before.revision,
       );
     }
@@ -188,6 +188,16 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     expect(await snapshotGrants()).toEqual(
       [
         ...grantsBefore,
+        {
+          granted_by: ownerId,
+          permission_name: "draft.price.override",
+          role_id: managerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "draft.price.override",
+          role_id: ownerRoleId,
+        },
         {
           granted_by: ownerId,
           permission_name: "catalog.item.search",
@@ -310,12 +320,32 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
         },
         {
           granted_by: ownerId,
+          permission_name: "sales.misc.manage",
+          role_id: managerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "sales.misc.manage",
+          role_id: ownerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "sales.quick_access.manage",
+          role_id: managerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "sales.quick_access.manage",
+          role_id: ownerRoleId,
+        },
+        {
+          granted_by: ownerId,
           permission_name: "suppliers.manage",
           role_id: ownerRoleId,
         },
       ].sort(compareGrants),
     );
-    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 11n));
+    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 14n));
 
     const actions = await application.query<{ name: string }>(
       `select name from step_up_action_definitions
@@ -334,7 +364,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     // Running the migrations again changes nothing more.
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshotRoles()).toEqual(rolesAfter);
-    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 11n));
+    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 14n));
   }, 120_000);
 
   it("enforces one identity per role, unique custom names, and the owner floor in PostgreSQL", async () => {

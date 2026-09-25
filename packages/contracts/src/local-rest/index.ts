@@ -93,6 +93,7 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "catalog.item.manage",
   "catalog.item.search",
   "devices.pair",
+  "draft.price.override",
   "identity.roles.manage",
   "identity.users.manage",
   "inventory.batch_safety.manage",
@@ -110,6 +111,8 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "purchases.posted.view",
   "purchases.returns.manage",
   "sales.drafts.manage",
+  "sales.misc.manage",
+  "sales.quick_access.manage",
   "suppliers.manage",
 ] as const;
 export type ImplementedPermissionName =
@@ -1989,8 +1992,10 @@ export const productMergeContract = {
 const productSearchLimitSchema = z
   .string()
   .regex(/^(?:[1-9]|[1-9][0-9]|100)$/u);
+const productSearchOffsetSchema = z.string().regex(/^(?:0|[1-9][0-9]{0,8})$/u);
 export const productSearchRequestSchema = z.strictObject({
   limit: productSearchLimitSchema.optional(),
+  offset: productSearchOffsetSchema.optional(),
   query: z
     .string()
     .min(1)
@@ -2130,6 +2135,7 @@ export const catalogMatchingApprovalPath = (suggestionId: string): string =>
   `/catalog/matching-suggestions/${suggestionId}/approvals`;
 export function productSearchPath(input: {
   readonly limit?: string;
+  readonly offset?: string;
   readonly query: string;
 }): string {
   const query = `query=${encodeURIComponent(input.query)}`;
@@ -2137,7 +2143,11 @@ export function productSearchPath(input: {
     input.limit === undefined
       ? ""
       : `&limit=${encodeURIComponent(input.limit)}`;
-  return `${productSearchContract.path}?${query}${limit}`;
+  const offset =
+    input.offset === undefined
+      ? ""
+      : `&offset=${encodeURIComponent(input.offset)}`;
+  return `${productSearchContract.path}?${query}${limit}${offset}`;
 }
 
 /**
@@ -4626,20 +4636,64 @@ export const PURCHASING_CONTRACTS = [
   purchaseReturnSummaryReadContract,
 ] as const;
 
-export const SALE_DRAFT_STATUSES = ["active"] as const;
+export const SALE_DRAFT_STATUSES = [
+  "active",
+  "suspended",
+  "discarded",
+] as const;
 
-/**
- * The minimal durable Sale Draft: identity, tenant, actor, state, version, and
- * times. Lines, prices, discounts, patient, and settlement are deliberately
- * absent — #31 extends this record rather than replacing it. The device the
- * draft was last opened on is persisted for audit and the device boundary; it
- * is not on the wire, matching the Count Session.
- */
+const saleMoneySchema = z
+  .string()
+  .regex(/^(0|[1-9]\d*)$/u)
+  .refine(
+    (value) =>
+      !/^(0|[1-9]\d*)$/u.test(value) ||
+      BigInt(value) <= 9_223_372_036_854_775_807n,
+  );
+const saleQuantitySchema = decimalRevisionSchema;
+export const saleLineDiscountPercentageSchema = z
+  .string()
+  .regex(/^(100|[1-9]?\d)$/u);
+export const saleDraftLineSchema = z.strictObject({
+  id: z.uuidv7(),
+  kind: z.enum(["catalog", "misc"]),
+  productId: z.uuidv7().nullable(),
+  displayName: z.string().min(1),
+  unitId: z.uuidv7().nullable(),
+  unitName: z.string().min(1),
+  eligibleUnits: z.array(
+    z.strictObject({
+      unitId: z.uuidv7(),
+      unitName: z.string().min(1),
+      baseUnitsPerUnit: saleQuantitySchema,
+    }),
+  ),
+  quantity: saleQuantitySchema,
+  unitPriceFils: saleMoneySchema,
+  priceSource: z.enum(["retail", "misc", "manual"]),
+  priceOverrideReason: z.string().min(1).max(250).nullable(),
+  priceVersion: decimalRevisionSchema.nullable(),
+  priceCapturedAt: z.iso.datetime(),
+  lineDiscountPercentage: saleLineDiscountPercentageSchema,
+  grossFils: saleMoneySchema,
+  discountFils: saleMoneySchema,
+  totalFils: saleMoneySchema,
+});
+export const saleDraftTotalsSchema = z.strictObject({
+  grossFils: saleMoneySchema,
+  lineDiscountFils: saleMoneySchema,
+  invoiceDiscountFils: saleMoneySchema,
+  totalFils: saleMoneySchema,
+});
+
 export const saleDraftSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   createdBy: countPersonSchema,
   id: z.uuidv7(),
+  invoiceDiscountFils: saleMoneySchema,
+  lines: z.array(saleDraftLineSchema),
   status: z.enum(SALE_DRAFT_STATUSES),
+  totals: saleDraftTotalsSchema,
   updatedAt: z.iso.datetime(),
   updatedBy: countPersonSchema,
   version: decimalRevisionSchema,
@@ -4651,14 +4705,158 @@ export const saleDraftResumeRequestSchema = z.strictObject({
   expectedVersion: decimalRevisionSchema,
   idempotencyKey: z.uuid(),
 });
+const saleDraftMutationRequestSchema = z.strictObject({
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+});
+export const saleDraftLineAddRequestSchema =
+  saleDraftMutationRequestSchema.extend({
+    productId: z.uuidv7(),
+    unitId: z.uuidv7().optional(),
+  });
+export const saleDraftMiscLineAddRequestSchema =
+  saleDraftMutationRequestSchema.extend({
+    displayName: z.string().trim().min(1).max(160),
+    unitName: z.string().trim().min(1).max(64),
+    quantity: saleQuantitySchema,
+    unitPriceFils: saleMoneySchema,
+  });
+export const saleDraftLineChangeRequestSchema = saleDraftMutationRequestSchema
+  .extend({
+    unitId: z.uuidv7().optional(),
+    quantity: saleQuantitySchema.optional(),
+    lineDiscountPercentage: saleLineDiscountPercentageSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      value.unitId !== undefined ||
+      value.quantity !== undefined ||
+      value.lineDiscountPercentage !== undefined,
+  );
+export const saleDraftLinePriceOverrideRequestSchema =
+  saleDraftMutationRequestSchema.extend({
+    unitPriceFils: saleMoneySchema,
+    reason: z.string().trim().min(1).max(250),
+  });
+export const saleDraftLineRemoveRequestSchema = saleDraftMutationRequestSchema;
+export const saleDraftInvoiceDiscountRequestSchema =
+  saleDraftMutationRequestSchema.extend({
+    invoiceDiscountFils: saleMoneySchema,
+  });
+export const saleDraftClearRequestSchema = saleDraftMutationRequestSchema;
+export const saleDraftSuspendRequestSchema = saleDraftMutationRequestSchema;
+export const saleDraftDiscardRequestSchema = saleDraftMutationRequestSchema;
 export const saleDraftListQuerySchema = z.strictObject({
   status: z.enum(SALE_DRAFT_STATUSES).optional(),
+});
+export const saleProductSearchResultSchema = z.strictObject({
+  matchedField: productSearchMatchFieldSchema,
+  product: z.strictObject({
+    id: z.uuidv7(),
+    displayName: z.string().min(1),
+    arabicSearchName: optionalProductTextSchema(160),
+    retailPriceFils: saleMoneySchema,
+  }),
+});
+export const saleProductSearchResponseSchema = z.strictObject({
+  hasMore: z.boolean(),
+  query: z.string().min(1).max(160),
+  resultCount: z.number().int().min(0),
+  results: z.array(saleProductSearchResultSchema).max(100),
+});
+export const saleProductContextSchema = z.strictObject({
+  id: z.uuidv7(),
+  displayName: z.string().min(1),
+  scientificName: optionalProductTextSchema(160),
+  currentRetailPriceFils: saleMoneySchema,
+  inventoryUnitName: productUnitNameSchema,
+  packageUnits: z.array(
+    z.strictObject({
+      name: productUnitNameSchema,
+      baseUnitsPerPackage: saleQuantitySchema,
+    }),
+  ),
+  eligibleUnits: z.array(
+    z.strictObject({
+      unitId: z.uuidv7(),
+      unitName: productUnitNameSchema,
+      baseUnitsPerUnit: saleQuantitySchema,
+    }),
+  ),
+  stockLevels: z.strictObject({
+    minimumLevel: nonNegativeIntegerStringSchema.nullable(),
+    maximumLevel: nonNegativeIntegerStringSchema.nullable(),
+  }),
+  inventory: z.strictObject({
+    onHandBaseUnits: signedIntegerStringSchema.nullable(),
+    estimatedSurplusBaseUnits: nonNegativeIntegerStringSchema.nullable(),
+    batches: z.array(
+      z.strictObject({
+        batchId: z.uuidv7(),
+        balanceBaseUnits: nonNegativeIntegerStringSchema,
+        effectiveExpiryDate: z.iso.date().nullable(),
+        daysRemaining: z.number().int().nullable(),
+        lotNumber: z.string().nullable(),
+        status: z.enum([
+          "eligible",
+          "near-expiry",
+          "expired",
+          "recalled",
+          "quarantined",
+          "postponed-blocked",
+        ]),
+      }),
+    ),
+  }),
+});
+
+const saleQuickAccessCategoryInputSchema = z.strictObject({
+  name: z.string().trim().min(1).max(64),
+  tiles: z
+    .array(
+      z.strictObject({
+        productId: z.uuidv7(),
+        unitId: z.uuidv7(),
+      }),
+    )
+    .max(30),
+});
+export const saleQuickAccessReplaceRequestSchema = z.strictObject({
+  expectedVersion: decimalRevisionSchema,
+  idempotencyKey: z.uuid(),
+  categories: z.array(saleQuickAccessCategoryInputSchema).max(12),
+});
+export const saleQuickAccessSchema = z.strictObject({
+  version: decimalRevisionSchema,
+  categories: z.array(
+    z.strictObject({
+      name: z.string().min(1),
+      tiles: z.array(
+        z.strictObject({
+          productId: z.uuidv7(),
+          unitId: z.uuidv7(),
+          available: z.boolean(),
+          displayName: z.string().min(1).nullable(),
+          unitName: z.string().min(1).nullable(),
+          currentUnitPriceFils: saleMoneySchema.nullable(),
+        }),
+      ),
+    }),
+  ),
 });
 
 export const SALES_DENIAL_CODES = [
   "body-invalid",
   "idempotency-conflict",
   "sale-draft-not-found",
+  "sale-line-not-found",
+  "sale-product-unavailable",
+  "sale-unit-invalid",
+  "sale-price-invalid",
+  "sale-quick-access-invalid",
+  "sale-quantity-invalid",
+  "sale-discount-invalid",
+  "sale-draft-inactive",
   "version-conflict",
 ] as const;
 export const salesDenialCodeSchema = z.enum(SALES_DENIAL_CODES);
@@ -4670,6 +4868,7 @@ export const salesDenialSchema = z.strictObject({
   fieldErrors: z.array(salesFieldErrorSchema),
   requestId: z.uuidv7(),
   status: z.literal("denied"),
+  currentDraft: saleDraftSchema.optional(),
 });
 const salesReadDenialResponses = {
   401: identityDenialSchema,
@@ -4690,6 +4889,37 @@ export const saleDraftListContract = {
     200: z.strictObject({ drafts: z.array(saleDraftSchema) }),
     ...salesReadDenialResponses,
   },
+} as const;
+export const saleProductSearchContract = {
+  method: "GET",
+  path: "/sales/product-search",
+  request: { query: productSearchRequestSchema },
+  responses: {
+    200: saleProductSearchResponseSchema,
+    400: salesDenialSchema,
+    ...salesReadDenialResponses,
+  },
+} as const;
+export const saleProductContextContract = {
+  method: "GET",
+  path: "/sales/products/:productId/context",
+  responses: {
+    200: saleProductContextSchema,
+    400: salesDenialSchema,
+    404: salesDenialSchema,
+    ...salesReadDenialResponses,
+  },
+} as const;
+export const saleQuickAccessReadContract = {
+  method: "GET",
+  path: "/sales/quick-access",
+  responses: { 200: saleQuickAccessSchema, ...salesReadDenialResponses },
+} as const;
+export const saleQuickAccessReplaceContract = {
+  method: "POST",
+  path: "/sales/quick-access",
+  request: { body: saleQuickAccessReplaceRequestSchema },
+  responses: { 200: saleQuickAccessSchema, ...salesCommandDenialResponses },
 } as const;
 export const saleDraftReadContract = {
   method: "GET",
@@ -4713,17 +4943,113 @@ export const saleDraftResumeContract = {
   responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
 } as const;
 
+export const saleDraftLineAddContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/lines",
+  request: { body: saleDraftLineAddRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftMiscLineAddContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/misc-lines",
+  request: { body: saleDraftMiscLineAddRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftLineChangeContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/lines/:lineId/changes",
+  request: { body: saleDraftLineChangeRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftLinePriceOverrideContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/lines/:lineId/price-override",
+  request: { body: saleDraftLinePriceOverrideRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftLineRemoveContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/lines/:lineId/removals",
+  request: { body: saleDraftLineRemoveRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftInvoiceDiscountContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/discount",
+  request: { body: saleDraftInvoiceDiscountRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftClearContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/clear",
+  request: { body: saleDraftClearRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftSuspendContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/suspensions",
+  request: { body: saleDraftSuspendRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+export const saleDraftDiscardContract = {
+  method: "POST",
+  path: "/sales/drafts/:draftId/discards",
+  request: { body: saleDraftDiscardRequestSchema },
+  responses: { 200: saleDraftSchema, ...salesCommandDenialResponses },
+} as const;
+
 export const saleDraftsPath = (): string => "/sales/drafts";
+export const saleProductSearchPath = (): string => "/sales/product-search";
+export const saleProductContextPath = (productId: string): string =>
+  `/sales/products/${productId}/context`;
+export const saleQuickAccessPath = (): string => "/sales/quick-access";
 export const saleDraftPath = (draftId: string): string =>
   `/sales/drafts/${draftId}`;
 export const saleDraftResumptionsPath = (draftId: string): string =>
   `/sales/drafts/${draftId}/resumptions`;
+export const saleDraftLinesPath = (draftId: string): string =>
+  `/sales/drafts/${draftId}/lines`;
+export const saleDraftMiscLinesPath = (draftId: string): string =>
+  `/sales/drafts/${draftId}/misc-lines`;
+export const saleDraftLineChangesPath = (
+  draftId: string,
+  lineId: string,
+): string => `/sales/drafts/${draftId}/lines/${lineId}/changes`;
+export const saleDraftLinePriceOverridePath = (
+  draftId: string,
+  lineId: string,
+): string => `/sales/drafts/${draftId}/lines/${lineId}/price-override`;
+export const saleDraftLineRemovalsPath = (
+  draftId: string,
+  lineId: string,
+): string => `/sales/drafts/${draftId}/lines/${lineId}/removals`;
+export const saleDraftDiscountPath = (draftId: string): string =>
+  `/sales/drafts/${draftId}/discount`;
+export const saleDraftClearPath = (draftId: string): string =>
+  `/sales/drafts/${draftId}/clear`;
+export const saleDraftSuspensionsPath = (draftId: string): string =>
+  `/sales/drafts/${draftId}/suspensions`;
+export const saleDraftDiscardsPath = (draftId: string): string =>
+  `/sales/drafts/${draftId}/discards`;
 
 export const SALES_CONTRACTS = [
+  saleProductSearchContract,
+  saleProductContextContract,
+  saleQuickAccessReadContract,
+  saleQuickAccessReplaceContract,
   saleDraftListContract,
   saleDraftReadContract,
   saleDraftCreateContract,
   saleDraftResumeContract,
+  saleDraftLineAddContract,
+  saleDraftMiscLineAddContract,
+  saleDraftLineChangeContract,
+  saleDraftLinePriceOverrideContract,
+  saleDraftLineRemoveContract,
+  saleDraftInvoiceDiscountContract,
+  saleDraftClearContract,
+  saleDraftSuspendContract,
+  saleDraftDiscardContract,
 ] as const;
 
 /*
@@ -5127,6 +5453,26 @@ export type PurchaseSettlementContext = z.infer<
 >;
 export type PurchaseDraft = z.infer<typeof purchaseDraftSchema>;
 export type SaleDraft = z.infer<typeof saleDraftSchema>;
+export type SaleDraftLine = z.infer<typeof saleDraftLineSchema>;
+export type SaleDraftTotals = z.infer<typeof saleDraftTotalsSchema>;
+export type SaleDraftLineAddRequest = z.infer<
+  typeof saleDraftLineAddRequestSchema
+>;
+export type SaleDraftMiscLineAddRequest = z.infer<
+  typeof saleDraftMiscLineAddRequestSchema
+>;
+export type SaleDraftLineChangeRequest = z.infer<
+  typeof saleDraftLineChangeRequestSchema
+>;
+export type SaleDraftLinePriceOverrideRequest = z.infer<
+  typeof saleDraftLinePriceOverrideRequestSchema
+>;
+export type SaleDraftLineRemoveRequest = z.infer<
+  typeof saleDraftLineRemoveRequestSchema
+>;
+export type SaleDraftInvoiceDiscountRequest = z.infer<
+  typeof saleDraftInvoiceDiscountRequestSchema
+>;
 export type SaleDraftCreateRequest = z.infer<
   typeof saleDraftCreateRequestSchema
 >;
@@ -5134,6 +5480,14 @@ export type SaleDraftResumeRequest = z.infer<
   typeof saleDraftResumeRequestSchema
 >;
 export type SaleDraftListQuery = z.infer<typeof saleDraftListQuerySchema>;
+export type SaleProductSearchResponse = z.infer<
+  typeof saleProductSearchResponseSchema
+>;
+export type SaleProductContext = z.infer<typeof saleProductContextSchema>;
+export type SaleQuickAccess = z.infer<typeof saleQuickAccessSchema>;
+export type SaleQuickAccessReplaceRequest = z.infer<
+  typeof saleQuickAccessReplaceRequestSchema
+>;
 export type SalesDenial = z.infer<typeof salesDenialSchema>;
 export type SalesDenialCode = z.infer<typeof salesDenialCodeSchema>;
 export type PurchaseDraftDetail = z.infer<typeof purchaseDraftDetailSchema>;

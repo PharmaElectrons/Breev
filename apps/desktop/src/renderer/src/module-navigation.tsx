@@ -83,7 +83,14 @@ export function ModuleNavigation({
   }
 
   return (
-    <nav aria-label={copy.moduleNavigation} className="module-nav">
+    <nav
+      aria-describedby="module-navigation-scroll-hint"
+      aria-label={copy.moduleNavigation}
+      className="module-nav"
+    >
+      <span className="visually-hidden" id="module-navigation-scroll-hint">
+        {copy.moduleScrollHint}
+      </span>
       <ul>
         {visibleModules.map((module) => (
           <li key={module.id}>
@@ -93,6 +100,12 @@ export function ModuleNavigation({
               data-availability={module.availability}
               data-module={module.id}
               href={module.hash}
+              onFocus={(event) => {
+                event.currentTarget.scrollIntoView({
+                  block: "nearest",
+                  inline: "nearest",
+                });
+              }}
             >
               <ModuleIcon moduleId={module.id} />
               <span className="module-tab-label">
@@ -107,6 +120,9 @@ export function ModuleNavigation({
           </li>
         ))}
       </ul>
+      <span aria-hidden="true" className="module-nav-overflow-cue">
+        {copy.moduleScrollCue}
+      </span>
     </nav>
   );
 }
