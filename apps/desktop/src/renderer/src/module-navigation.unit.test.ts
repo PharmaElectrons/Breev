@@ -29,7 +29,15 @@ describe("ModuleNavigation unit tests", () => {
       ),
     );
 
-    expect(markup).toContain('<nav aria-label="Modules" class="module-nav">');
+    expect(markup).toContain(
+      '<nav aria-describedby="module-navigation-scroll-hint" aria-label="Modules" class="module-nav">',
+    );
+    expect(markup).toContain(
+      '<span class="visually-hidden" id="module-navigation-scroll-hint">If a module is not visible, scroll horizontally to find it.</span>',
+    );
+    expect(markup).toContain(
+      '<span aria-hidden="true" class="module-nav-overflow-cue">›</span>',
+    );
     expect(markup).toContain("<ul>");
   });
 

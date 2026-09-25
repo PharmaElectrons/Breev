@@ -1353,7 +1353,7 @@ test.describe.serial("Product catalog screens", () => {
     // intentionally disabled by default (G-16), so it is absent here.
     await page.getByTestId("collapse-menu-trigger").click();
     const dropdown = page.getByTestId("collapse-menu-dropdown");
-    const buttons = dropdown.getByRole("button");
+    const buttons = dropdown.locator("button.collapse-menu-item");
     for (const [index, label] of [
       "Export diagnostic package",
       "Contact support",
