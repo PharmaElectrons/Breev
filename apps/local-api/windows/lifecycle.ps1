@@ -845,12 +845,20 @@ function Configure-Service {
 }
 
 function Resolve-LanIPv4Address {
-  # A pharmacy machine usually holds several IPv4 addresses at once: Ethernet,
-  # Wi-Fi, and any hypervisor host adapter. The listener has to name one
-  # concrete address, so the choice is the address Windows itself would route
-  # from first. A real DHCP or manual address outranks a 169.254 self
-  # assignment, then the lower interface metric wins, then the interface index,
-  # so two runs on the same machine always agree.
+  # A pharmacy machine can hold IPv4 addresses on Ethernet/Wi-Fi and on virtual
+  # adapters such as WSL. Terminals need the address on the physical pharmacy
+  # network, so prefer an active physical adapter before considering virtual
+  # ones. If no active physical adapter has an IPv4 address (for example, a
+  # virtualized Windows host), retain the deterministic connected-address
+  # fallback. DHCP/manual addresses outrank 169.254 self-assignment, then the
+  # lower interface metric and interface index break ties.
+  $physicalInterfaceIndexes = @{}
+  foreach ($adapter in @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue)) {
+    if ($adapter.Status -eq "Up") {
+      $physicalInterfaceIndexes[[string] $adapter.ifIndex] = $true
+    }
+  }
+
   $connectedMetrics = @{}
   foreach ($interface in @(Get-NetIPInterface -AddressFamily IPv4 -ErrorAction SilentlyContinue)) {
     if ($interface.ConnectionState -eq "Connected") {
@@ -868,9 +876,14 @@ function Resolve-LanIPv4Address {
     if ($address.IPAddress -match "^169\.254\.") {
       $selfAssigned = 1
     }
+    $physicalRank = 1
+    if ($physicalInterfaceIndexes.ContainsKey($interfaceKey)) {
+      $physicalRank = 0
+    }
     [void] $candidates.Add([PSCustomObject] @{
       Address = [string] $address.IPAddress
       SelfAssigned = $selfAssigned
+      PhysicalRank = $physicalRank
       Metric = $connectedMetrics[$interfaceKey]
       InterfaceIndex = [int] $address.InterfaceIndex
     })
@@ -879,7 +892,7 @@ function Resolve-LanIPv4Address {
     throw "Breev found no connected IPv4 address for the LAN listener. Connect this machine to the pharmacy network and run the repair, or install with -LanApiHost disabled for a single-machine installation."
   }
 
-  $ordered = @($candidates | Sort-Object -Property SelfAssigned, Metric, InterfaceIndex)
+  $ordered = @($candidates | Sort-Object -Property SelfAssigned, PhysicalRank, Metric, InterfaceIndex)
   return $ordered[0].Address
 }
 
