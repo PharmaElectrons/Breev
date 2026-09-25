@@ -8562,6 +8562,10 @@ a:focus-visible,
     padding: 0.25rem;
   }
 
+  .sales-screen[data-draft-loaded="true"] {
+    block-size: auto;
+  }
+
   .sales-item-context {
     display: none;
   }
@@ -8590,6 +8594,17 @@ a:focus-visible,
     min-block-size: 23rem;
   }
 }
+
+@media (max-width: 75rem) and (max-height: 50rem) and (min-width: 56.01rem) {
+  .sales-screen[data-draft-loaded="true"] {
+    overflow-y: auto;
+  }
+
+  .sales-screen[data-draft-loaded="true"] .sales-invoice {
+    flex: 0 0 18rem;
+  }
+}
+
 .shell-page[data-sales-workspace] .module-nav ul {
   scrollbar-color: var(--primary) var(--muted);
   scrollbar-width: auto;
