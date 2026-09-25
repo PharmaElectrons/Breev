@@ -289,6 +289,11 @@ export function PostedPurchaseReview({
         kind: "item",
         value: await requestProduct(baseUrl, itemId),
       });
+      requestCommittedFocus(() =>
+        containerRef.current?.querySelector<HTMLElement>(
+          '[data-review-focus="current-record-back"]',
+        ),
+      );
     } catch (caught) {
       handleFailure(caught);
     } finally {
@@ -307,6 +312,11 @@ export function PostedPurchaseReview({
         kind: "supplier",
         value: await requestSupplier(baseUrl, detail.supplierId),
       });
+      requestCommittedFocus(() =>
+        containerRef.current?.querySelector<HTMLElement>(
+          '[data-review-focus="current-record-back"]',
+        ),
+      );
     } catch (caught) {
       handleFailure(caught);
     } finally {
@@ -1203,7 +1213,12 @@ function CurrentRecordView({
           </>
         )}
       </dl>
-      <button type="button" className="quiet-button" onClick={onBack}>
+      <button
+        type="button"
+        className="quiet-button"
+        data-review-focus="current-record-back"
+        onClick={onBack}
+      >
         {copy.backToInvoice}
       </button>
     </section>

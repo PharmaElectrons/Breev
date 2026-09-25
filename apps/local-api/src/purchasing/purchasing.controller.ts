@@ -342,6 +342,7 @@ export class PurchasingController {
   }
 
   @Post(purchaseDraftRowDiscardContract.path)
+  @HttpCode(200)
   public async discardDraftRow(
     @Param("draftId") draftId: string,
     @Param("rowId") rowId: string,

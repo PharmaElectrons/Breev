@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { catalogMessages, type CatalogCopy } from "./catalog-messages";
+import { useCommittedFocus } from "./committed-focus";
 import {
   approveCatalogMatchingSuggestion,
   newIdempotencyKey,
@@ -297,6 +298,7 @@ function ProductRail({
   readonly products: readonly Product[];
 }): React.JSX.Element {
   const { locale } = usePreferences();
+  const requestCommittedFocus = useCommittedFocus();
   const inputRef = useRef<HTMLInputElement>(null);
   const matchingButtonRef = useRef<HTMLButtonElement>(null);
   const matchingDialogRef = useRef<HTMLDivElement>(null);
@@ -392,18 +394,13 @@ function ProductRail({
   const openMatching = async (): Promise<void> => {
     setMatchingBusy(true);
     setMatchingError(null);
+    let opened = false;
     try {
-      const opened = await openCatalogMatchingBatch(baseUrl, {
+      const batch = await openCatalogMatchingBatch(baseUrl, {
         idempotencyKey: newIdempotencyKey(),
       });
-      setMatchingBatch(opened);
-      requestAnimationFrame(() => {
-        matchingDialogRef.current
-          ?.querySelector<HTMLElement>(
-            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-          )
-          ?.focus();
-      });
+      setMatchingBatch(batch);
+      opened = true;
     } catch (matchingFailure) {
       setMatchingError(
         matchingFailure instanceof Error
@@ -411,6 +408,13 @@ function ProductRail({
           : String(matchingFailure),
       );
     } finally {
+      if (opened) {
+        requestCommittedFocus(() =>
+          matchingDialogRef.current?.querySelector<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        );
+      }
       setMatchingBusy(false);
     }
   };
@@ -418,7 +422,7 @@ function ProductRail({
   const closeMatching = (): void => {
     setMatchingBatch(null);
     setMatchingError(null);
-    requestAnimationFrame(() => matchingButtonRef.current?.focus());
+    requestCommittedFocus(() => matchingButtonRef.current);
   };
 
   const approveSuggestion = async (
@@ -427,6 +431,7 @@ function ProductRail({
   ): Promise<void> => {
     setMatchingBusy(true);
     setMatchingError(null);
+    let approved = false;
     try {
       const updated = await approveCatalogMatchingSuggestion(
         baseUrl,
@@ -444,11 +449,7 @@ function ProductRail({
               ),
             },
       );
-      requestAnimationFrame(() => {
-        matchingDialogRef.current
-          ?.querySelector<HTMLElement>("button:not([disabled])")
-          ?.focus();
-      });
+      approved = true;
     } catch (matchingFailure) {
       setMatchingError(
         matchingFailure instanceof Error
@@ -456,6 +457,13 @@ function ProductRail({
           : String(matchingFailure),
       );
     } finally {
+      if (approved) {
+        requestCommittedFocus(() =>
+          matchingDialogRef.current?.querySelector<HTMLElement>(
+            "button:not([disabled])",
+          ),
+        );
+      }
       setMatchingBusy(false);
     }
   };

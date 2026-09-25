@@ -1234,7 +1234,8 @@ function ApplyVarianceDialog({
           className="batch-safety-dialog-form"
           onSubmit={(event) => {
             event.preventDefault();
-            const data = new FormData(event.currentTarget);
+            const form = event.currentTarget;
+            const data = new FormData(form);
             const reason = String(data.get("reason") ?? "").trim();
             const evidence = String(data.get("evidence") ?? "").trim();
             if (reason === "" || evidence === "") {
@@ -1244,7 +1245,7 @@ function ApplyVarianceDialog({
               requestCommittedFocus(() =>
                 reason === ""
                   ? reasonRef.current
-                  : event.currentTarget.querySelector<HTMLTextAreaElement>(
+                  : form.querySelector<HTMLTextAreaElement>(
                       'textarea[name="evidence"]',
                     ),
               );

@@ -665,8 +665,10 @@ async function installDesktopFake(
           request: Parameters<BreevDesktopApi["saveInventoryExport"]>[0],
         ) => {
           assertExportKeys(request.bundle);
-          (globalThis as { __inventoryExport?: unknown }).__inventoryExport =
-            request.bundle;
+          (globalThis as { __inventoryExport?: unknown }).__inventoryExport = {
+            ...request.bundle,
+            format: request.format,
+          };
           return { status: "saved" as const };
         },
         submitDiagnostics: async () => ({ status: "unavailable" as const }),
