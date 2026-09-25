@@ -269,7 +269,7 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
     });
   });
 
-  it("commits exact rows once, resolves concurrent versions, and resumes them after restart", async () => {
+  it("commits exact rows once, resolves concurrent versions, resumes after restart, and keeps active rows editable", async () => {
     const productResponse = await request(
       "POST",
       "/catalog/products",
@@ -364,12 +364,14 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       notes: "keyboard row",
     });
     expect(detail.version).toBe(draft.version);
-    await expect(
-      administrator.query(
-        `update purchase_draft_rows set notes = 'rewritten' where id = $1`,
-        [detail.rows[0]?.id],
-      ),
-    ).rejects.toMatchObject({ code: "55000" });
+    const rewritten = await administrator.query<{ notes: string }>(
+      `update purchase_draft_rows
+       set notes = 'rewritten'
+       where id = $1
+       returning notes`,
+      [detail.rows[0]?.id],
+    );
+    expect(rewritten.rows).toEqual([{ notes: "rewritten" }]);
   });
 
   it("archives or merges suppliers without rewriting existing draft references", async () => {
