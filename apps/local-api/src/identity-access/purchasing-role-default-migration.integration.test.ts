@@ -133,11 +133,10 @@ describe.sequential("purchasing role default migrations", () => {
       "catalog.item.search",
       "suppliers.manage",
     ]);
-    // 0018, 0019, 0020, 0021, 0022, 0023, 0024, and 0025 each advance the
-    // pharmacy identity revision when their new permission is granted to the
-    // owner. This customized purchasing role remains untouched by every
-    // default migration.
-    expect(await revisions()).toEqual({ pharmacy: "9", role: "1" });
+    // 0018–0025 and 0027–0029 each advance the pharmacy identity revision
+    // when their new permission is granted to the owner. This customized
+    // purchasing role remains untouched by every default migration.
+    expect(await revisions()).toEqual({ pharmacy: "12", role: "1" });
 
     // Recreate the exact legacy default and execute the migration body to
     // prove the eligible path independently of Drizzle's migration journal.
@@ -156,7 +155,7 @@ describe.sequential("purchasing role default migrations", () => {
       "catalog.item.search",
       "purchases.drafts.manage",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "10", role: "2" });
+    expect(await revisions()).toEqual({ pharmacy: "13", role: "2" });
 
     const reviewMigrationSql = await readFile(
       path.join(MIGRATIONS_FOLDER, "0018_review_posted_purchases.sql"),
@@ -169,7 +168,7 @@ describe.sequential("purchasing role default migrations", () => {
       "purchases.drafts.manage",
       "purchases.posted.view",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "11", role: "3" });
+    expect(await revisions()).toEqual({ pharmacy: "14", role: "3" });
 
     // Replaying the previous migration must not add duplicate grants or
     // advance either revision.
@@ -180,7 +179,7 @@ describe.sequential("purchasing role default migrations", () => {
       "purchases.drafts.manage",
       "purchases.posted.view",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "11", role: "3" });
+    expect(await revisions()).toEqual({ pharmacy: "14", role: "3" });
   }, 120_000);
 
   async function purchasingGrants(): Promise<string[]> {

@@ -628,6 +628,73 @@ test.describe.serial("Product catalog screens", () => {
     await context.close();
   });
 
+  test("continues Catalog search beyond the first 50 matching products", async ({
+    browser,
+    page,
+  }) => {
+    let lastProduct: Product | undefined;
+    for (let index = 0; index < 52; index += 1) {
+      const request = sampleMedicationRequest(
+        `5000167${String(index).padStart(6, "0")}`,
+      );
+      const definition = request.definition;
+      if (definition.mode !== "medication") {
+        throw new Error("The Catalog search fixture must be a medication");
+      }
+      lastProduct = await createCatalogProduct(apiOrigin, credentials, {
+        ...request,
+        barcodes: [],
+        definition: {
+          mode: "medication",
+          fields: {
+            ...definition.fields,
+            tradeName: `Catalog Pageprobe ${String(index).padStart(2, "0")}`,
+          },
+        },
+      });
+    }
+
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    const search = page.getByRole("searchbox", {
+      name: "Search Arabic name, English name, or barcode",
+    });
+    await search.fill("catalog pageprobe");
+
+    await expect(
+      page.getByRole("status").filter({ hasText: "Search results: 52" }),
+    ).toBeAttached();
+    const rows = page.locator(".catalog-rail-item");
+    await expect(rows).toHaveCount(50);
+    await page.getByRole("button", { name: "Load more results" }).click();
+    await expect(rows).toHaveCount(52);
+    expect(lastProduct).toBeDefined();
+    await expect(
+      page.locator(
+        `.catalog-rail-item[href="#/catalog/products/${lastProduct!.id}"]`,
+      ),
+    ).toBeVisible();
+
+    const arabicContext = await browser.newContext();
+    const arabicPage = await arabicContext.newPage();
+    await installDesktopFake(arabicPage, renderer.origin, {
+      locale: "ar",
+      theme: "light",
+    });
+    await arabicPage.goto(`${renderer.origin}#/catalog/products`);
+    await arabicPage.getByRole("searchbox").fill("catalog pageprobe");
+    const arabicRows = arabicPage.locator(".catalog-rail-item");
+    await expect(arabicRows).toHaveCount(50);
+    await arabicPage
+      .getByRole("button", { name: "عرض المزيد من النتائج" })
+      .click();
+    await expect(arabicRows).toHaveCount(52);
+    await arabicContext.close();
+  });
+
   test("Search failure retains scanner value and focus; barcode suggest, print, and matching work without a mouse", async ({
     page,
   }) => {

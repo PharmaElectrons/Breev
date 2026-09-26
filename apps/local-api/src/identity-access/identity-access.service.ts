@@ -594,6 +594,30 @@ export class IdentityAccessService {
            and role_key in ('manager', 'pharmacist', 'sales_employee')`,
         [pharmacyId, ownerId],
       );
+      await client.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         select $1, id, 'sales.misc.manage', $2
+         from pharmacy_roles
+         where pharmacy_id = $1 and role_key = 'manager'`,
+        [pharmacyId, ownerId],
+      );
+      await client.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         select $1, id, 'sales.quick_access.manage', $2
+         from pharmacy_roles
+         where pharmacy_id = $1 and role_key = 'manager'`,
+        [pharmacyId, ownerId],
+      );
+      await client.query(
+        `insert into role_permission_grants
+           (pharmacy_id, role_id, permission_name, granted_by)
+         select $1, id, 'draft.price.override', $2
+         from pharmacy_roles
+         where pharmacy_id = $1 and role_key = 'manager'`,
+        [pharmacyId, ownerId],
+      );
       // Purchasing employees can perform their core draft and posted-review
       // workflows by default. Supplier master-data changes stay separately
       // grantable, and costs remain a distinct permission for custom roles.
@@ -2929,6 +2953,40 @@ export class IdentityAccessService {
       client,
       expected,
       "sales.drafts.manage",
+    );
+  }
+
+  public async revalidateSalePriceOverride(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "sales.drafts.manage",
+    );
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "draft.price.override",
+    );
+  }
+
+  public async revalidateSaleQuickAccess(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "sales.drafts.manage",
+    );
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "sales.quick_access.manage",
     );
   }
 

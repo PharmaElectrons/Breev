@@ -93,6 +93,8 @@ describe("identity authorization", () => {
       "purchases.posted.view",
       "purchases.returns.manage",
       "sales.drafts.manage",
+      "sales.misc.manage",
+      "sales.quick_access.manage",
       "sales.invoice.reverse",
       "sales.return.post",
       "suppliers.manage",
@@ -101,14 +103,15 @@ describe("identity authorization", () => {
   });
 
   it("restricts the implemented set to names that back a live operation", () => {
-    // The five names with no operation behind them yet must never be
-    // grantable: draft.price.override, pricing.below_cost,
+    // The four names with no operation behind them yet must never be
+    // grantable: pricing.below_cost,
     // sales.invoice.reverse, sales.return.post, and sync.conflict.resolve.
     expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
       "attendance.record",
       "catalog.item.manage",
       "catalog.item.search",
       "devices.pair",
+      "draft.price.override",
       "identity.roles.manage",
       "identity.users.manage",
       "inventory.batch_safety.manage",
@@ -126,6 +129,8 @@ describe("identity authorization", () => {
       "purchases.posted.view",
       "purchases.returns.manage",
       "sales.drafts.manage",
+      "sales.misc.manage",
+      "sales.quick_access.manage",
       "suppliers.manage",
     ]);
     for (const permission of IMPLEMENTED_PERMISSION_NAMES) {

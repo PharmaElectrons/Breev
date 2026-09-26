@@ -31,5 +31,10 @@ notes.md
 !.agents/skills/pr-review-remediate/**
 !.agents/skills/ci-failure-prevention/
 !.agents/skills/ci-failure-prevention/**
+!.agents/skills/breev-today-tasks/
+!.agents/skills/breev-today-tasks/**
 !.agents/rules/
 !.agents/rules/**
+today/
+.agents/
+evidence/

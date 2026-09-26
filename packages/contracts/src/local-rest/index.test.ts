@@ -11,6 +11,7 @@ import {
   productBarcodePrintRequestSchema,
   productBarcodeSuggestRequestSchema,
   productSearchRequestSchema,
+  productSearchPath,
   productSearchResponseSchema,
   productArchiveContract,
   productArchivePath,
@@ -410,6 +411,7 @@ describe("local REST health contract", () => {
       "catalog.item.manage",
       "catalog.item.search",
       "devices.pair",
+      "draft.price.override",
       "identity.roles.manage",
       "identity.users.manage",
       "inventory.batch_safety.manage",
@@ -427,6 +429,8 @@ describe("local REST health contract", () => {
       "purchases.posted.view",
       "purchases.returns.manage",
       "sales.drafts.manage",
+      "sales.misc.manage",
+      "sales.quick_access.manage",
       "suppliers.manage",
     ]);
   });
@@ -1269,8 +1273,15 @@ describe("catalog product contracts", () => {
 describe("catalog search, barcode, and matching contracts", () => {
   it("validates one reusable search request and response shape", () => {
     expect(
-      productSearchRequestSchema.parse({ limit: "50", query: "panadol gs" }),
-    ).toEqual({ limit: "50", query: "panadol gs" });
+      productSearchRequestSchema.parse({
+        limit: "50",
+        offset: "50",
+        query: "panadol gs",
+      }),
+    ).toEqual({ limit: "50", offset: "50", query: "panadol gs" });
+    expect(
+      productSearchPath({ limit: "50", offset: "50", query: "panadol gs" }),
+    ).toBe("/catalog/product-search?query=panadol%20gs&limit=50&offset=50");
     expect(
       productSearchResponseSchema.parse({
         hasMore: false,
@@ -1287,12 +1298,13 @@ describe("catalog search, barcode, and matching contracts", () => {
     ).toBe(PRODUCT_ID);
     const invalid = productSearchRequestSchema.safeParse({
       limit: "0",
+      offset: "01",
       query: " panadol ",
     });
     expect(invalid.success).toBe(false);
     if (!invalid.success) {
       expect(invalid.error.issues.map(({ path }) => path)).toEqual(
-        expect.arrayContaining([["limit"], ["query"]]),
+        expect.arrayContaining([["limit"], ["offset"], ["query"]]),
       );
     }
   });

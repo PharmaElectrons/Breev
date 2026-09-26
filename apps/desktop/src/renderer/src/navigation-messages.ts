@@ -10,6 +10,8 @@ interface ModuleCopy {
 interface NavigationCopy {
   readonly modules: Record<ModuleId, ModuleCopy>;
   readonly moduleNavigation: string;
+  readonly moduleScrollCue: string;
+  readonly moduleScrollHint: string;
   readonly unavailableBadge: string;
   readonly unavailableHeading: string;
   readonly unavailableLead: string;
@@ -27,6 +29,9 @@ interface NavigationCopy {
 export const navigationMessages: Record<Locale, NavigationCopy> = {
   ar: {
     moduleNavigation: "أقسام النظام",
+    moduleScrollCue: "‹",
+    moduleScrollHint:
+      "إذا لم يظهر أحد الأقسام، مرّر القائمة أفقيًا للعثور عليه.",
     unavailableBadge: "غير متاح بعد",
     unavailableHeading: "هذه الشاشة غير متاحة بعد",
     unavailableLead:
@@ -84,6 +89,9 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
   },
   en: {
     moduleNavigation: "Modules",
+    moduleScrollCue: "›",
+    moduleScrollHint:
+      "If a module is not visible, scroll horizontally to find it.",
     unavailableBadge: "Not available yet",
     unavailableHeading: "This screen is not available yet",
     unavailableLead:
