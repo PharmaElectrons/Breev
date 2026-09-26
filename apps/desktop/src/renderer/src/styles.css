@@ -4329,7 +4329,7 @@ a:focus-visible,
   padding: 0.45rem 0.75rem;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--primary);
+  color: var(--foreground);
   background: var(--card);
   border: 1px solid var(--border);
   border-inline-end: 0;
@@ -4337,22 +4337,10 @@ a:focus-visible,
   border-end-start-radius: var(--radius);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
   cursor: pointer;
-  animation: toggleFadeIn 0.2s ease-out;
   transition:
     background-color 0.15s ease,
     color 0.15s ease,
     transform 0.15s ease;
-}
-
-@keyframes toggleFadeIn {
-  from {
-    opacity: 0;
-    transform: translateX(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
 }
 
 .purchase-item-toggle-btn:hover {
