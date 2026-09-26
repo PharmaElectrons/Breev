@@ -26,6 +26,7 @@ test-results
 .terminal-state/
 skills-lock.json
 notes.md
+repair-lan-ip.bat
 
 !.agents/skills/pr-review-remediate/
 !.agents/skills/pr-review-remediate/**
