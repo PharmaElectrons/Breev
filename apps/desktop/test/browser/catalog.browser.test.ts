@@ -1352,7 +1352,7 @@ test.describe.serial("Product catalog screens", () => {
     // controls ahead of the diagnostic, language, and theme controls.
     await page.getByTestId("collapse-menu-trigger").click();
     const dropdown = page.getByTestId("collapse-menu-dropdown");
-    const buttons = dropdown.locator("button.collapse-menu-item");
+    const buttons = dropdown.getByRole("button");
     for (const [index, label] of [
       "Check now",
       "Verify Main device",

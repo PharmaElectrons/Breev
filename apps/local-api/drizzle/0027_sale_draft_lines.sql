@@ -118,7 +118,7 @@ alter table posting_command_results drop constraint posting_command_results_name
       'purchase.adjustment-draft.create', 'purchase.adjustment-draft.discard',
       'purchase.adjustment-draft.update', 'purchase.adjustment.post',
       'purchase.draft.create', 'purchase.draft.discard',
-      'purchase.draft.row.commit', 'purchase.draft.update',
+      'purchase.draft.row.commit', 'purchase.draft.row.delete', 'purchase.draft.row.discard', 'purchase.draft.row.update', 'purchase.draft.update',
       'purchase.entry-preferences.update', 'purchase.post',
       'purchase.return-draft.create', 'purchase.return-draft.discard',
       'purchase.return-draft.update', 'purchase.return.post',
