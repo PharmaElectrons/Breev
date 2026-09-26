@@ -473,6 +473,7 @@ function SaleDraftScreen({
   const [basketDenial, setBasketDenial] = useState<AnyDenial | null>(null);
   const [retryProductId, setRetryProductId] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
+  const [isContextCollapsed, setIsContextCollapsed] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const pendingEdit = useRef<{
     readonly request: (
@@ -978,6 +979,7 @@ function SaleDraftScreen({
     <div
       className="sales-draft-layout"
       data-draft-loaded={draft === null ? "false" : "true"}
+      data-context-collapsed={isContextCollapsed ? "true" : undefined}
     >
       <section
         aria-labelledby="sales-draft-title"
@@ -1546,8 +1548,24 @@ function SaleDraftScreen({
           selectedLine={selectedLine}
           itemContext={itemContext}
           itemContextUnavailable={itemContextUnavailable}
+          onToggleCollapse={() => setIsContextCollapsed((prev) => !prev)}
         />
       )}
+      {isContextCollapsed && draft !== null ? (
+        <button
+          type="button"
+          className="sales-context-toggle-btn"
+          aria-label={locale === "ar" ? "إظهار تفاصيل المادة" : "Show product details"}
+          title={locale === "ar" ? "إظهار تفاصيل المادة" : "Show product details"}
+          onClick={() => setIsContextCollapsed(false)}
+        >
+          <span className="sales-context-toggle-icon" aria-hidden="true">ℹ</span>
+          <span>{locale === "ar" ? "تفاصيل المادة" : "Product details"}</span>
+          {selectedLine !== null ? (
+            <span className="sales-context-toggle-badge" aria-hidden="true" />
+          ) : null}
+        </button>
+      ) : null}
       {draft?.status === "active" && calculatorSlot !== null
         ? createPortal(
             <SalesCalculator

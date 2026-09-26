@@ -22,6 +22,7 @@ export function SalesCalculator({
   const [target, setTarget] = useState<SalesCalculatorTarget>("quantity");
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   useEffect(() => {
     setTarget(line === null ? "invoice-discount" : "quantity");
     setValue("");
@@ -38,6 +39,8 @@ export function SalesCalculator({
           clear: "مسح",
           backspace: "حذف آخر رقم",
           invalid: "أدخل قيمة صالحة لهذا الهدف.",
+          collapse: "طي الحاسبة",
+          expand: "فتح الحاسبة",
         }
       : {
           heading: "Calculator",
@@ -49,6 +52,8 @@ export function SalesCalculator({
           clear: "Clear",
           backspace: "Delete last digit",
           invalid: "Enter a valid value for this target.",
+          collapse: "Collapse calculator",
+          expand: "Open calculator",
         };
 
   function append(key: string): void {
@@ -94,8 +99,27 @@ export function SalesCalculator({
   }
 
   return (
-    <section aria-label={copy.heading} className="sales-calculator">
-      <h3>{copy.heading}</h3>
+    <section
+      aria-label={copy.heading}
+      className="sales-calculator"
+      data-collapsed={isCollapsed ? "true" : undefined}
+    >
+      <div className="sales-calculator-header">
+        <h3>{copy.heading}</h3>
+        <button
+          type="button"
+          className="sales-collapse-toggle-btn sales-calc-collapse-btn"
+          aria-expanded={!isCollapsed}
+          aria-label={isCollapsed ? copy.expand : copy.collapse}
+          title={isCollapsed ? copy.expand : copy.collapse}
+          onClick={() => setIsCollapsed((prev) => !prev)}
+        >
+          <span className="sales-collapse-icon" aria-hidden="true">
+            {isCollapsed ? "▲" : "▼"}
+          </span>
+          <span>{isCollapsed ? copy.expand : copy.collapse}</span>
+        </button>
+      </div>
       <div className="sales-calculator-targets">
         <button
           aria-pressed={target === "quantity"}

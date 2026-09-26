@@ -36,6 +36,8 @@ interface InvoiceCopy {
   readonly awaiting: string;
   readonly unavailable: string;
   readonly selectLine: string;
+  readonly collapse: string;
+  readonly expand: string;
 }
 
 const invoiceCopy: Record<Locale, InvoiceCopy> = {
@@ -68,6 +70,8 @@ const invoiceCopy: Record<Locale, InvoiceCopy> = {
     awaiting: "بانتظار تأكيد الحفظ — أعد المحاولة",
     unavailable: "لا يمكن تعديل هذه المسودة.",
     selectLine: "اختر سطراً لتعديله",
+    collapse: "طي الفاتورة",
+    expand: "توسيع الفاتورة",
   },
   en: {
     heading: "Current sale invoice",
@@ -99,6 +103,8 @@ const invoiceCopy: Record<Locale, InvoiceCopy> = {
     awaiting: "Save unconfirmed — retry the edit",
     unavailable: "This draft cannot be edited.",
     selectLine: "Select a line to edit it",
+    collapse: "Collapse invoice",
+    expand: "Expand invoice",
   },
 };
 
@@ -274,6 +280,7 @@ export function SalesInvoiceView({
   const [confirmation, setConfirmation] = useState<"clear" | "discard" | null>(
     null,
   );
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const selectedLine =
     draft.lines.find((line) => line.id === selectedLineId) ?? null;
   useEffect(() => {
@@ -286,16 +293,41 @@ export function SalesInvoiceView({
       aria-label={copy.heading}
       className="sales-invoice"
       data-sale-invoice={draft.id}
+      data-collapsed={isCollapsed ? "true" : undefined}
     >
       <div className="sales-invoice-heading">
-        <h3>{copy.heading}</h3>
-        <span aria-live="polite" role="status">
-          {pendingConfirmation
-            ? copy.awaiting
-            : busy
-              ? copy.saving
-              : copy.saved}
-        </span>
+        <div className="sales-invoice-heading-left">
+          <h3>{copy.heading}</h3>
+          {draft.lines.length > 0 && isCollapsed ? (
+            <span className="sales-invoice-heading-pill">
+              {locale === "ar"
+                ? `${draft.lines.length} مواد · ${currency(draft.totals.totalFils, locale)}`
+                : `${draft.lines.length} items · ${currency(draft.totals.totalFils, locale)}`}
+            </span>
+          ) : null}
+        </div>
+        <div className="sales-invoice-heading-actions">
+          <span aria-live="polite" role="status">
+            {pendingConfirmation
+              ? copy.awaiting
+              : busy
+                ? copy.saving
+                : copy.saved}
+          </span>
+          <button
+            type="button"
+            className="sales-collapse-toggle-btn sales-invoice-collapse-btn"
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? copy.expand : copy.collapse}
+            title={isCollapsed ? copy.expand : copy.collapse}
+            onClick={() => setIsCollapsed((prev) => !prev)}
+          >
+            <span className="sales-collapse-icon" aria-hidden="true">
+              {isCollapsed ? "▼" : "▲"}
+            </span>
+            <span>{isCollapsed ? copy.expand : copy.collapse}</span>
+          </button>
+        </div>
       </div>
       <div className="sales-invoice-table-wrap">
         {draft.lines.length === 0 ? (

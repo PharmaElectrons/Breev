@@ -39,6 +39,7 @@ export interface SalesDraftContextPanelProps {
   readonly selectedLine: SaleDraftLine | null;
   readonly itemContext: SaleProductContext | null;
   readonly itemContextUnavailable: boolean;
+  readonly onToggleCollapse?: () => void;
 }
 
 export function SalesDraftContextPanel({
@@ -48,6 +49,7 @@ export function SalesDraftContextPanel({
   selectedLine,
   itemContext,
   itemContextUnavailable,
+  onToggleCollapse,
 }: SalesDraftContextPanelProps): React.JSX.Element {
   const updatedAt = new Date(draft.updatedAt);
   const itemCopy =
@@ -125,7 +127,20 @@ export function SalesDraftContextPanel({
     >
       {selectedLine === null ? null : (
         <section className="sales-item-context" aria-label={itemCopy.heading}>
-          <h3>{itemCopy.heading}</h3>
+          <div className="sales-item-context-header">
+            <h3>{itemCopy.heading}</h3>
+            {onToggleCollapse ? (
+              <button
+                type="button"
+                className="sales-collapse-toggle-btn sales-context-collapse-btn"
+                aria-label={locale === "ar" ? "طي تفاصيل المادة" : "Collapse product details"}
+                title={locale === "ar" ? "طي تفاصيل المادة" : "Collapse product details"}
+                onClick={onToggleCollapse}
+              >
+                ✕
+              </button>
+            ) : null}
+          </div>
           <strong>{selectedLine.displayName}</strong>
           <dl>
             <div>
@@ -247,6 +262,17 @@ export function SalesDraftContextPanel({
       <Card className="sales-draft-context-card" data-sale-draft-id={draft.id}>
         <header className="sales-draft-context-header">
           <h3 id="sales-draft-context-title">{copy.activeDraft}</h3>
+          {onToggleCollapse ? (
+            <button
+              type="button"
+              className="sales-collapse-toggle-btn sales-context-collapse-btn"
+              aria-label={locale === "ar" ? "طي تفاصيل المادة" : "Collapse product details"}
+              title={locale === "ar" ? "طي تفاصيل المادة" : "Collapse product details"}
+              onClick={onToggleCollapse}
+            >
+              ✕
+            </button>
+          ) : null}
         </header>
         <CardContent className="sales-draft-context-content">
           <p>{copy.openedBy(draft.createdBy.displayName)}</p>

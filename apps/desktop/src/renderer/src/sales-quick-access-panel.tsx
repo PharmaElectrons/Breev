@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SaleQuickAccess } from "@breev/contracts/local-rest";
 
 import { formatCurrencyFromFils } from "./preferences";
@@ -33,18 +34,53 @@ export function SaleQuickAccessPanel({
   readonly onMoveCategory: (categoryIndex: number, change: -1 | 1) => void;
 }): React.JSX.Element {
   const ar = locale === "ar";
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const totalTiles =
+    value?.categories.reduce((acc, cat) => acc + cat.tiles.length, 0) ?? 0;
+
   return (
     <section
       className="sales-quick-access"
       aria-label={ar ? "الوصول السريع" : "Quick access"}
+      data-collapsed={isCollapsed ? "true" : undefined}
     >
       <header>
-        <h3>{ar ? "الوصول السريع" : "Quick access"}</h3>
-        {error === null ? null : (
-          <button type="button" onClick={onReload}>
-            {ar ? "إعادة التحميل" : "Reload"}
+        <div className="sales-quick-access-title-wrap">
+          <h3>{ar ? "الوصول السريع" : "Quick access"}</h3>
+          {totalTiles > 0 ? (
+            <span className="sales-quick-count-pill">
+              {ar ? `${totalTiles} مادة` : `${totalTiles} items`}
+            </span>
+          ) : null}
+        </div>
+        <div className="sales-quick-access-header-actions">
+          {error === null ? null : (
+            <button type="button" onClick={onReload}>
+              {ar ? "إعادة التحميل" : "Reload"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="sales-collapse-toggle-btn"
+            aria-expanded={!isCollapsed}
+            aria-label={
+              isCollapsed
+                ? ar ? "توسيع الوصول السريع" : "Expand quick access"
+                : ar ? "طي الوصول السريع" : "Collapse quick access"
+            }
+            title={
+              isCollapsed
+                ? ar ? "توسيع الوصول السريع" : "Expand quick access"
+                : ar ? "طي الوصول السريع" : "Collapse quick access"
+            }
+            onClick={() => setIsCollapsed((prev) => !prev)}
+          >
+            <span className="sales-collapse-icon" aria-hidden="true">
+              {isCollapsed ? "▼" : "▲"}
+            </span>
+            <span>{isCollapsed ? (ar ? "توسيع" : "Expand") : (ar ? "طي" : "Collapse")}</span>
           </button>
-        )}
+        </div>
       </header>
       {error === null ? null : <p role="status">{error}</p>}
       {value !== null && value.categories.length === 0 && canManage ? (
