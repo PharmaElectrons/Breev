@@ -92,10 +92,14 @@ export function PostedPurchaseReview({
   const [direction, setDirection] =
     useState<NonNullable<PurchasePostedListRequest["direction"]>>("descending");
   const [dateError, setDateError] = useState<string | null>(null);
+  const [activePreset, setActivePreset] = useState<
+    "today" | "yesterday" | "last7" | "month" | "all" | "custom"
+  >("all");
 
   function applyPreset(
     preset: "today" | "yesterday" | "last7" | "month" | "all",
   ): void {
+    setActivePreset(preset);
     setDateError(null);
     const now = new Date();
     if (preset === "today") {
@@ -447,7 +451,8 @@ export function PostedPurchaseReview({
         id="posted-purchase-review-boundary"
         className="posted-review-boundary"
       >
-        {copy.snapshotBoundary}
+        <span aria-hidden="true">ℹ</span>
+        <span>{copy.snapshotBoundary}</span>
       </p>
       <p role="status" aria-live="polite" className="visually-hidden">
         {announcement}
@@ -559,12 +564,13 @@ export function PostedPurchaseReview({
               });
             }}
           >
-            <div className="posted-purchase-filter-header">
-              <label className="purchase-search-filter">
-                {copy.searchPosted}
+            <div className="posted-purchase-toolbar-top">
+              <label className="purchase-search-filter posted-purchase-search-wrap">
+                <span className="visually-hidden">{copy.searchPosted}</span>
                 <input
                   ref={searchRef}
                   type="search"
+                  aria-label={copy.searchPosted}
                   value={query}
                   placeholder={copy.searchPostedHint}
                   onChange={(event) => setQuery(event.target.value)}
@@ -578,35 +584,35 @@ export function PostedPurchaseReview({
               >
                 <button
                   type="button"
-                  className={`preset-pill ${from === formatDateInput(new Date()) && to === formatDateInput(new Date()) ? "active" : ""}`}
+                  className={`preset-pill ${activePreset === "today" ? "active" : ""}`}
                   onClick={() => applyPreset("today")}
                 >
                   {copy.todayPreset}
                 </button>
                 <button
                   type="button"
-                  className="preset-pill"
+                  className={`preset-pill ${activePreset === "yesterday" ? "active" : ""}`}
                   onClick={() => applyPreset("yesterday")}
                 >
                   {copy.yesterdayPreset}
                 </button>
                 <button
                   type="button"
-                  className="preset-pill"
+                  className={`preset-pill ${activePreset === "last7" ? "active" : ""}`}
                   onClick={() => applyPreset("last7")}
                 >
                   {copy.last7DaysPreset}
                 </button>
                 <button
                   type="button"
-                  className="preset-pill"
+                  className={`preset-pill ${activePreset === "month" ? "active" : ""}`}
                   onClick={() => applyPreset("month")}
                 >
                   {copy.thisMonthPreset}
                 </button>
                 <button
                   type="button"
-                  className="preset-pill"
+                  className={`preset-pill ${activePreset === "all" ? "active" : ""}`}
                   onClick={() => applyPreset("all")}
                 >
                   {copy.allDatesPreset}
@@ -616,23 +622,29 @@ export function PostedPurchaseReview({
 
             <div className="posted-purchase-filter-row">
               <label>
-                {copy.fromDate}
+                <span>{copy.fromDate}</span>
                 <input
                   type="date"
                   value={from}
-                  onChange={(event) => setFrom(event.target.value)}
+                  onChange={(event) => {
+                    setFrom(event.target.value);
+                    setActivePreset("custom");
+                  }}
                 />
               </label>
               <label>
-                {copy.toDate}
+                <span>{copy.toDate}</span>
                 <input
                   type="date"
                   value={to}
-                  onChange={(event) => setTo(event.target.value)}
+                  onChange={(event) => {
+                    setTo(event.target.value);
+                    setActivePreset("custom");
+                  }}
                 />
               </label>
               <label>
-                {copy.sortBy}
+                <span>{copy.sortBy}</span>
                 <select
                   value={sort}
                   onChange={(event) =>
@@ -650,7 +662,7 @@ export function PostedPurchaseReview({
                 </select>
               </label>
               <label>
-                {copy.sortDirection}
+                <span>{copy.sortDirection}</span>
                 <select
                   value={direction}
                   onChange={(event) =>
@@ -664,6 +676,42 @@ export function PostedPurchaseReview({
               <button type="submit" className="primary-button">
                 {copy.search}
               </button>
+              {from !== "" ||
+              to !== "" ||
+              query.trim() !== "" ||
+              sort !== "number" ||
+              direction !== "descending" ? (
+                <button
+                  type="button"
+                  className="quiet-button"
+                  onClick={() => {
+                    setQuery("");
+                    setFrom("");
+                    setTo("");
+                    setActivePreset("all");
+                    setSort("number");
+                    setDirection("descending");
+                    setDateError(null);
+                  }}
+                >
+                  {copy.clearFilters}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="posted-purchase-status-strip">
+              <div className="purchase-table-count-badge">
+                <span aria-hidden="true">🧾</span>
+                <span>
+                  {list
+                    ? `${list.purchases.length} ${copy.invoiceCountUnit}`
+                    : "—"}
+                </span>
+              </div>
+              <div className="purchase-table-hint">
+                <span aria-hidden="true">💡</span>
+                <span>{copy.doubleClickHint}</span>
+              </div>
             </div>
 
             {dateError !== null ? (
@@ -690,10 +738,13 @@ export function PostedPurchaseReview({
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">{copy.documentNumber}</th>
-                  <th scope="col">{copy.postingDate}</th>
+                  <th scope="col">#</th>
+                  <th scope="col">{copy.invoiceType}</th>
+                  <th scope="col">{copy.supplierDocketNumber}</th>
+                  <th scope="col">{copy.refNumber}</th>
+                  <th scope="col">{copy.invoiceDate}</th>
+                  <th scope="col">{copy.paymentTerms}</th>
                   <th scope="col">{copy.supplier}</th>
-                  <th scope="col">{copy.supplierInvoice}</th>
                   <th scope="col">{copy.items}</th>
                   {costsVisible ? (
                     <th scope="col">{copy.primarySupplierCost}</th>
@@ -701,66 +752,217 @@ export function PostedPurchaseReview({
                   {costsVisible ? (
                     <th scope="col">{copy.costAfterDiscount}</th>
                   ) : null}
+                  <th scope="col">{copy.settlementStatus}</th>
                   <th scope="col">{copy.actions}</th>
                 </tr>
               </thead>
               <tbody>
                 {list?.purchases.length === 0 ? (
                   <tr>
-                    <td colSpan={costsVisible ? 8 : 6}>
+                    <td
+                      className="purchase-table-empty"
+                      colSpan={costsVisible ? 12 : 10}
+                    >
                       {copy.noPostedPurchases}
                     </td>
                   </tr>
                 ) : (
-                  list?.purchases.map((purchase) => (
-                    <tr key={purchase.id}>
-                      <th scope="row">
-                        <bdi>{formatNumber(purchase)}</bdi>
-                      </th>
-                      <td>
-                        <bdi>{purchase.postedAt.slice(0, 10)}</bdi>
-                      </td>
-                      <td>{purchase.supplierNameSnapshot}</td>
-                      <td>
-                        <bdi>{purchase.supplierInvoiceNumber}</bdi>
-                      </td>
-                      <td>{purchase.itemCount}</td>
-                      {costsVisible ? (
-                        <td>
-                          <bdi>
-                            {formatFilsToIqd(
-                              purchase.primarySupplierCostFils,
-                              locale,
-                            )}
-                          </bdi>
-                        </td>
-                      ) : null}
-                      {costsVisible ? (
-                        <td>
-                          <bdi>
-                            {formatFilsToIqd(
-                              purchase.costAfterDiscountFils,
-                              locale,
-                            )}
-                          </bdi>
-                        </td>
-                      ) : null}
-                      <td>
-                        <button
-                          type="button"
-                          className="purchase-open-posted"
-                          data-review-focus={`posted-${purchase.id}`}
-                          onClick={(event) =>
-                            void loadDetail(purchase.id, event.currentTarget)
+                  list?.purchases.map((purchase, index) => {
+                    const isPrimaryCostNegative =
+                      purchase.primarySupplierCostFils !== null &&
+                      BigInt(purchase.primarySupplierCostFils) < 0n;
+                    const isCostAfterDiscountNegative =
+                      purchase.costAfterDiscountFils !== null &&
+                      BigInt(purchase.costAfterDiscountFils) < 0n;
+
+                    return (
+                      <tr
+                        key={purchase.id}
+                        tabIndex={0}
+                        onDoubleClick={() => void loadDetail(purchase.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            if (
+                              (event.target as HTMLElement).tagName !== "BUTTON"
+                            ) {
+                              event.preventDefault();
+                              void loadDetail(purchase.id);
+                            }
                           }
-                        >
-                          {copy.openInvoice} {formatNumber(purchase)}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                        }}
+                      >
+                        <th scope="row">
+                          <bdi>{index + 1}</bdi>
+                        </th>
+                        <td>
+                          <span className="purchase-badge purchase-badge-type-purchase">
+                            {copy.typePurchase}
+                          </span>
+                        </td>
+                        <td>
+                          <bdi className="font-mono">
+                            {purchase.supplierInvoiceNumber}
+                          </bdi>
+                        </td>
+                        <td>
+                          <bdi className="font-mono font-bold text-primary">
+                            {formatNumber(purchase)}
+                          </bdi>
+                        </td>
+                        <td>
+                          <bdi>
+                            {purchase.invoiceDate ||
+                              purchase.postedAt.slice(0, 10)}
+                          </bdi>
+                        </td>
+                        <td>
+                          <span className="purchase-terms-text">
+                            {copy[purchase.settlementContext]}
+                          </span>
+                        </td>
+                        <td>{purchase.supplierNameSnapshot}</td>
+                        <td>
+                          <bdi>{purchase.itemCount}</bdi>
+                        </td>
+                        {costsVisible ? (
+                          <td>
+                            <bdi
+                              className={
+                                isPrimaryCostNegative
+                                  ? "purchase-negative-money"
+                                  : undefined
+                              }
+                            >
+                              {formatFilsToIqd(
+                                purchase.primarySupplierCostFils,
+                                locale,
+                              )}
+                            </bdi>
+                          </td>
+                        ) : null}
+                        {costsVisible ? (
+                          <td>
+                            <bdi
+                              className={
+                                isCostAfterDiscountNegative
+                                  ? "purchase-negative-money"
+                                  : undefined
+                              }
+                            >
+                              {formatFilsToIqd(
+                                purchase.costAfterDiscountFils,
+                                locale,
+                              )}
+                            </bdi>
+                          </td>
+                        ) : null}
+                        <td>
+                          {purchase.settlementContext === "cash" ? (
+                            <span className="purchase-badge purchase-badge-settled">
+                              {copy.settled}
+                            </span>
+                          ) : (
+                            <span className="purchase-badge purchase-badge-unpaid">
+                              {copy.unpaid}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="purchase-open-posted"
+                            data-review-focus={`posted-${purchase.id}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void loadDetail(purchase.id, event.currentTarget);
+                            }}
+                          >
+                            {copy.openInvoice} {formatNumber(purchase)}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
+              {list && list.purchases.length > 0 ? (
+                <tfoot className="purchase-table-tfoot">
+                  <tr>
+                    <td colSpan={7} className="purchase-totals-label">
+                      <strong>{copy.totalSummary}</strong>
+                    </td>
+                    <td className="purchase-totals-items">
+                      <bdi>
+                        <strong>
+                          {list.purchases.reduce(
+                            (acc, p) => acc + p.itemCount,
+                            0,
+                          )}
+                        </strong>
+                      </bdi>
+                    </td>
+                    {costsVisible ? (
+                      <td className="purchase-totals-cost">
+                        {(() => {
+                          const totalPrimary = list.purchases.reduce(
+                            (acc, p) => {
+                              if (!p.primarySupplierCostFils) return acc;
+                              return acc + BigInt(p.primarySupplierCostFils);
+                            },
+                            0n,
+                          );
+                          return (
+                            <bdi
+                              className={
+                                totalPrimary < 0n
+                                  ? "purchase-negative-money"
+                                  : undefined
+                              }
+                            >
+                              <strong>
+                                {formatFilsToIqd(
+                                  totalPrimary.toString(),
+                                  locale,
+                                )}
+                              </strong>
+                            </bdi>
+                          );
+                        })()}
+                      </td>
+                    ) : null}
+                    {costsVisible ? (
+                      <td className="purchase-totals-cost">
+                        {(() => {
+                          const totalAfterDiscount = list.purchases.reduce(
+                            (acc, p) => {
+                              if (!p.costAfterDiscountFils) return acc;
+                              return acc + BigInt(p.costAfterDiscountFils);
+                            },
+                            0n,
+                          );
+                          return (
+                            <bdi
+                              className={
+                                totalAfterDiscount < 0n
+                                  ? "purchase-negative-money"
+                                  : undefined
+                              }
+                            >
+                              <strong>
+                                {formatFilsToIqd(
+                                  totalAfterDiscount.toString(),
+                                  locale,
+                                )}
+                              </strong>
+                            </bdi>
+                          );
+                        })()}
+                      </td>
+                    ) : null}
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              ) : null}
             </table>
           </div>
         </section>
