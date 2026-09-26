@@ -1111,8 +1111,8 @@ a:focus-visible,
 
 .catalog-workspace {
   display: grid;
-  min-block-size: 0;
-  grid-template-columns: 16rem minmax(0, 1fr);
+  min-block-size: calc(100dvh - 3.75rem);
+  grid-template-columns: 18rem minmax(0, 1fr);
   border-block-start: 1px solid var(--border);
   background: var(--surface);
 }
@@ -1123,6 +1123,10 @@ a:focus-visible,
   flex-direction: column;
   border-inline-end: 1px solid var(--border);
   background: var(--card);
+  position: sticky;
+  inset-block-start: 3.75rem;
+  max-block-size: calc(100dvh - 3.75rem);
+  overflow: hidden;
 }
 
 .catalog-rail-head {
@@ -1174,8 +1178,9 @@ a:focus-visible,
 .catalog-rail-list {
   display: grid;
   align-content: start;
+  flex: 1 1 auto;
+  min-block-size: 0;
   overflow-y: auto;
-  max-block-size: 60vh;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1250,7 +1255,6 @@ a:focus-visible,
 .catalog-matching-list {
   display: grid;
   gap: 0.6rem;
-  max-block-size: 55vh;
   overflow-y: auto;
   margin: 0.75rem 0;
   padding: 0;
@@ -2269,13 +2273,21 @@ a:focus-visible,
 .shell-page[data-sales-workspace],
 .shell-page[data-basket-workspace],
 .shell-page[data-settings-workspace],
-.shell-page[data-dashboard-workspace],
-.shell-page[data-products-workspace] {
+.shell-page[data-dashboard-workspace] {
   block-size: 100dvh;
   min-block-size: 40rem;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   background: var(--card);
+  margin-inline-end: 0;
+}
+
+.shell-page[data-products-workspace] {
+  block-size: auto;
+  min-block-size: 100dvh;
+  grid-template-rows: auto 1fr;
+  overflow: visible;
+  background: var(--surface);
   margin-inline-end: 0;
 }
 .shell-page[data-purchase-workspace] {
@@ -4915,12 +4927,14 @@ a:focus-visible,
   }
 
   .catalog-rail {
+    position: static;
+    max-block-size: none;
     border-inline-end: 0;
     border-block-end: 1px solid var(--border);
   }
 
   .catalog-rail-list {
-    max-block-size: 30vh;
+    max-block-size: 40vh;
   }
 }
 
