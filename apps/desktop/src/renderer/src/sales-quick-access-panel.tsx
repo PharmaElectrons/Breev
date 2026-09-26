@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { SaleQuickAccess } from "@breev/contracts/local-rest";
 
 import { formatCurrencyFromFils } from "./preferences";
@@ -34,7 +33,6 @@ export function SaleQuickAccessPanel({
   readonly onMoveCategory: (categoryIndex: number, change: -1 | 1) => void;
 }): React.JSX.Element {
   const ar = locale === "ar";
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const totalTiles =
     value?.categories.reduce((acc, cat) => acc + cat.tiles.length, 0) ?? 0;
 
@@ -42,7 +40,6 @@ export function SaleQuickAccessPanel({
     <section
       className="sales-quick-access"
       aria-label={ar ? "الوصول السريع" : "Quick access"}
-      data-collapsed={isCollapsed ? "true" : undefined}
     >
       <header>
         <div className="sales-quick-access-title-wrap">
@@ -59,27 +56,6 @@ export function SaleQuickAccessPanel({
               {ar ? "إعادة التحميل" : "Reload"}
             </button>
           )}
-          <button
-            type="button"
-            className="sales-collapse-toggle-btn"
-            aria-expanded={!isCollapsed}
-            aria-label={
-              isCollapsed
-                ? ar ? "توسيع الوصول السريع" : "Expand quick access"
-                : ar ? "طي الوصول السريع" : "Collapse quick access"
-            }
-            title={
-              isCollapsed
-                ? ar ? "توسيع الوصول السريع" : "Expand quick access"
-                : ar ? "طي الوصول السريع" : "Collapse quick access"
-            }
-            onClick={() => setIsCollapsed((prev) => !prev)}
-          >
-            <span className="sales-collapse-icon" aria-hidden="true">
-              {isCollapsed ? "▼" : "▲"}
-            </span>
-            <span>{isCollapsed ? (ar ? "توسيع" : "Expand") : (ar ? "طي" : "Collapse")}</span>
-          </button>
         </div>
       </header>
       {error === null ? null : <p role="status">{error}</p>}

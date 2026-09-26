@@ -25,6 +25,7 @@ import {
   formatCurrencyFromFils,
   formatDateTime,
   formatNumber,
+  type Locale,
 } from "./preferences";
 import { usePreferences } from "./preferences-provider";
 import { ProductForm } from "./product-form";
@@ -197,14 +198,18 @@ function SaleDraftWorkspace({
           readSaleDrafts(baseUrl, { status: "suspended" }),
         ]);
         if (sequence !== listRequestSequence.current) return;
-        const combined = [...active.drafts, ...suspended.drafts];
+        const combined = [...active.drafts, ...suspended.drafts].sort(
+          (left, right) =>
+            new Date(right.updatedAt).getTime() -
+            new Date(left.updatedAt).getTime(),
+        );
         setDrafts(combined);
         setNewDraftReconciliationRequired(false);
         if (focusDraftList) {
           commitFocus(() =>
             document.querySelector<HTMLElement>(
-              combined.length === 1
-                ? '[data-sale-draft-control="resume"]'
+              combined.length > 0
+                ? '[data-sale-draft-control="select"]'
                 : '[data-sale-draft-control="new"]',
             ),
           );
@@ -319,6 +324,12 @@ function SaleDraftWorkspace({
       onResumeDraft={(draft) => {
         void resume(draft);
       }}
+      onSelectDraft={(draft) => {
+        window.location.hash = `#/sales/drafts/${draft.id}`;
+      }}
+      onFocusEditor={() => {
+        document.querySelector<HTMLInputElement>("#sale-draft-search")?.focus();
+      }}
     >
       {route.kind === "draft" ? (
         <SaleDraftScreen
@@ -348,6 +359,7 @@ function SaleDraftWorkspace({
             copy={copy}
           />
           <p className="sales-selection-prompt">{copy.selectDraftPrompt}</p>
+          <SalesFooter locale={locale} state="no-draft" />
         </section>
       )}
     </SalesWorkspaceView>
@@ -410,6 +422,20 @@ function SaleDraftScreen({
   const [draftLoading, setDraftLoading] = useState(true);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [scanQuery, setScanQuery] = useState("");
+  const [focusedResult, setFocusedResult] = useState(0);
+  const [quickLinksOpen, setQuickLinksOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  useEffect(() => {
+    if (!quickLinksOpen) return;
+    const close = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      setQuickLinksOpen(false);
+      document.querySelector<HTMLElement>("[data-sale-quick-toggle]")?.focus();
+    };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [quickLinksOpen]);
   const [createProductOpen, setCreateProductOpen] = useState(false);
   const [miscOpen, setMiscOpen] = useState(false);
   const [miscName, setMiscName] = useState("");
@@ -451,9 +477,6 @@ function SaleDraftScreen({
   const [calculatorSlot, setCalculatorSlot] = useState<HTMLElement | null>(
     null,
   );
-  useEffect(() => {
-    setCalculatorSlot(document.getElementById("sales-calculator-slot"));
-  }, []);
   useEffect(() => {
     if (createProductOpen)
       commitFocus(() =>
@@ -736,12 +759,19 @@ function SaleDraftScreen({
   }
 
   function addToSale(productId: string): void {
-    void mutateDraft((expectedVersion, idempotencyKey) =>
-      addSaleDraftLine(baseUrl, draftId, {
-        productId,
-        expectedVersion,
-        idempotencyKey,
-      }),
+    void mutateDraft(
+      (expectedVersion, idempotencyKey) =>
+        addSaleDraftLine(baseUrl, draftId, {
+          productId,
+          expectedVersion,
+          idempotencyKey,
+        }),
+      () => {
+        setQuery("");
+        setScanQuery("");
+        setResults(null);
+        commitFocus(() => searchRef.current);
+      },
     );
   }
 
@@ -979,6 +1009,7 @@ function SaleDraftScreen({
     <div
       className="sales-draft-layout"
       data-draft-loaded={draft === null ? "false" : "true"}
+      data-has-selection={selectedLine === null ? "false" : "true"}
       data-context-collapsed={isContextCollapsed ? "true" : undefined}
     >
       <section
@@ -1024,42 +1055,101 @@ function SaleDraftScreen({
         ) : null}
 
         {canSearch && draft?.status === "active" ? (
-          <div className="sales-search">
-            <label className="sales-search-label" htmlFor="sale-draft-search">
-              {copy.searchLabel}
-            </label>
-            <input
-              aria-label={copy.searchLabel}
-              dir="auto"
-              id="sale-draft-search"
-              placeholder={copy.searchPlaceholder}
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                requestSequence.current += 1;
-                setResults(null);
-                setSearchError(null);
-                setSearching(false);
-              }}
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  canCreateProduct &&
-                  results?.results.length === 0
-                ) {
+          <div className="sales-entry-row">
+            <button
+              aria-controls="sale-quick-links-panel"
+              aria-expanded={quickLinksOpen}
+              className="sales-quick-toggle"
+              data-sale-quick-toggle
+              onClick={() => setQuickLinksOpen((open) => !open)}
+              type="button"
+            >
+              {locale === "ar" ? "روابط سريعة" : "Quick Links"}
+            </button>
+            <div className="sales-search">
+              <label className="sales-search-label" htmlFor="sale-draft-search">
+                {copy.searchLabel}
+              </label>
+              <input
+                aria-label={copy.searchLabel}
+                aria-controls="sale-search-results"
+                dir="auto"
+                id="sale-draft-search"
+                placeholder={copy.searchPlaceholder}
+                type="search"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  requestSequence.current += 1;
+                  setResults(null);
+                  setSearchError(null);
+                  setSearching(false);
+                  setFocusedResult(0);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" && results?.results.length) {
+                    event.preventDefault();
+                    setFocusedResult((index) =>
+                      Math.min(index + 1, results.results.length - 1),
+                    );
+                    return;
+                  }
+                  if (event.key === "ArrowUp" && results?.results.length) {
+                    event.preventDefault();
+                    setFocusedResult((index) => Math.max(index - 1, 0));
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    setResults(null);
+                    return;
+                  }
+                  if (
+                    event.key === "Enter" &&
+                    results?.results[focusedResult]
+                  ) {
+                    event.preventDefault();
+                    addToSale(results.results[focusedResult]!.product.id);
+                    return;
+                  }
+                  if (
+                    event.key === "Enter" &&
+                    canCreateProduct &&
+                    results?.results.length === 0
+                  ) {
+                    event.preventDefault();
+                    setCreateProductOpen(true);
+                  }
+                }}
+              />
+            </div>
+            <div className="sales-search sales-scan">
+              <label className="sales-search-label" htmlFor="sale-draft-scan">
+                {locale === "ar" ? "الباركود / مسح" : "Barcode / scan"}
+              </label>
+              <input
+                id="sale-draft-scan"
+                ref={searchRef}
+                type="search"
+                autoComplete="off"
+                value={scanQuery}
+                onChange={(event) => setScanQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
                   event.preventDefault();
-                  setCreateProductOpen(true);
-                }
-              }}
-            />
+                  const code = scanQuery.trim();
+                  if (code.length === 0) return;
+                  setQuery(code);
+                  setResults(null);
+                  setFocusedResult(0);
+                }}
+              />
+            </div>
           </div>
         ) : draft?.status === "suspended" ? (
           <p className="sales-selection-prompt" role="status">
             {locale === "ar"
-              ? "هذه المسودة معلقة. اضغط استئناف في قائمة المسودات لتعديلها."
-              : "This draft is suspended. Resume it from the draft list to edit it."}
+              ? "هذه المسودة معلقة. اضغط تعديل لاستئنافها."
+              : "This draft is suspended. Press Edit to resume it."}
           </p>
         ) : (
           <p className="denial-alert" role="status" aria-live="polite">
@@ -1148,6 +1238,11 @@ function SaleDraftScreen({
               : copy.searchResultCount(results.resultCount)}
         </p>
         <p className="visually-hidden" role="status" aria-live="polite">
+          {results?.results[focusedResult]
+            ? `${formatNumber(BigInt(focusedResult + 1), locale)}: ${results.results[focusedResult]!.product.displayName}`
+            : ""}
+        </p>
+        <p className="visually-hidden" role="status" aria-live="polite">
           {announcement ?? ""}
         </p>
 
@@ -1221,7 +1316,7 @@ function SaleDraftScreen({
             ) : null}
           </div>
         ) : (
-          <div className="sales-results">
+          <div className="sales-results" id="sale-search-results">
             <table className="sales-results-table">
               <caption className="visually-hidden">
                 {copy.searchResultCount(results.resultCount)}
@@ -1246,11 +1341,19 @@ function SaleDraftScreen({
                 </tr>
               </thead>
               <tbody>
-                {results.results.map((result) => (
-                  <tr key={result.product.id}>
+                {results.results.map((result, index) => (
+                  <tr
+                    data-focused={focusedResult === index ? "true" : undefined}
+                    id={`sale-search-result-${index}`}
+                    key={result.product.id}
+                  >
                     <td>
                       <span className="sale-result-name">
                         {result.product.displayName}
+                      </span>
+                      <span className="sale-result-code" dir="ltr">
+                        {result.product.barcodeValue ??
+                          (locale === "ar" ? "بلا باركود" : "No barcode")}
                       </span>
                       {result.product.arabicSearchName === null ? null : (
                         <span className="sale-result-arabic" lang="ar">
@@ -1399,7 +1502,19 @@ function SaleDraftScreen({
         (canManageQuickAccess ||
           quickAccess?.categories.length ||
           quickError !== null) ? (
-          <>
+          <div
+            id="sale-quick-links-panel"
+            className="sales-quick-panel"
+            hidden={!quickLinksOpen}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setQuickLinksOpen(false);
+                document
+                  .querySelector<HTMLElement>("[data-sale-quick-toggle]")
+                  ?.focus();
+              }
+            }}
+          >
             <SaleQuickAccessPanel
               value={quickAccess}
               locale={locale}
@@ -1472,11 +1587,12 @@ function SaleDraftScreen({
                   : "Retry quick access save"}
               </button>
             )}
-          </>
+          </div>
         ) : null}
-        {draft?.status !== "active" ? null : (
+        {draft === null ? null : (
           <SalesInvoiceView
             busy={editBusy || pendingEdit.current !== null}
+            readOnly={draft.status === "suspended"}
             canOverridePrice={canOverridePrice}
             pendingConfirmation={!editBusy && pendingEdit.current !== null}
             selectedLineId={selectedLine?.id ?? null}
@@ -1521,45 +1637,71 @@ function SaleDraftScreen({
                 }),
               );
             }}
-            onSuspend={() => {
-              void mutateDraft((expectedVersion, idempotencyKey) =>
-                suspendSaleDraft(baseUrl, draftId, {
-                  expectedVersion,
-                  idempotencyKey,
-                }),
-              );
-            }}
-            onDiscard={() => {
-              void mutateDraft((expectedVersion, idempotencyKey) =>
-                discardSaleDraft(baseUrl, draftId, {
-                  expectedVersion,
-                  idempotencyKey,
-                }),
-              );
-            }}
           />
         )}
-      </section>
-      {draft === null ? null : (
-        <SalesDraftContextPanel
-          copy={copy}
-          draft={draft}
+        <SalesFooter
           locale={locale}
-          selectedLine={selectedLine}
-          itemContext={itemContext}
-          itemContextUnavailable={itemContextUnavailable}
-          onToggleCollapse={() => setIsContextCollapsed((prev) => !prev)}
+          state={
+            draft?.status === "active" || draft?.status === "suspended"
+              ? draft.status
+              : "no-draft"
+          }
+          busy={editBusy || pendingEdit.current !== null}
+          deleteConfirm={deleteConfirm}
+          onPause={() => {
+            void mutateDraft((expectedVersion, idempotencyKey) =>
+              suspendSaleDraft(baseUrl, draftId, {
+                expectedVersion,
+                idempotencyKey,
+              }),
+            );
+          }}
+          onDelete={() => {
+            void mutateDraft((expectedVersion, idempotencyKey) =>
+              discardSaleDraft(baseUrl, draftId, {
+                expectedVersion,
+                idempotencyKey,
+              }),
+            );
+            setDeleteConfirm(false);
+          }}
+          onRequestDelete={() => setDeleteConfirm(true)}
+          onCancelDelete={() => setDeleteConfirm(false)}
         />
+      </section>
+      {draft === null || selectedLine === null ? null : (
+        <div className="sales-side-stack">
+          <SalesDraftContextPanel
+            copy={copy}
+            draft={draft}
+            locale={locale}
+            selectedLine={selectedLine}
+            itemContext={itemContext}
+            itemContextUnavailable={itemContextUnavailable}
+            onToggleCollapse={() => setIsContextCollapsed((prev) => !prev)}
+          />
+          <div
+            className="sales-calculator-slot"
+            id="sales-calculator-slot"
+            ref={setCalculatorSlot}
+          />
+        </div>
       )}
       {isContextCollapsed && draft !== null ? (
         <button
           type="button"
           className="sales-context-toggle-btn"
-          aria-label={locale === "ar" ? "إظهار تفاصيل المادة" : "Show product details"}
-          title={locale === "ar" ? "إظهار تفاصيل المادة" : "Show product details"}
+          aria-label={
+            locale === "ar" ? "إظهار تفاصيل المادة" : "Show product details"
+          }
+          title={
+            locale === "ar" ? "إظهار تفاصيل المادة" : "Show product details"
+          }
           onClick={() => setIsContextCollapsed(false)}
         >
-          <span className="sales-context-toggle-icon" aria-hidden="true">ℹ</span>
+          <span className="sales-context-toggle-icon" aria-hidden="true">
+            ℹ
+          </span>
           <span>{locale === "ar" ? "تفاصيل المادة" : "Product details"}</span>
           {selectedLine !== null ? (
             <span className="sales-context-toggle-badge" aria-hidden="true" />
@@ -1757,6 +1899,102 @@ function SaleDraftScreen({
         </div>
       )}
     </div>
+  );
+}
+
+function SalesFooter({
+  locale,
+  state,
+  busy = false,
+  deleteConfirm = false,
+  onPause,
+  onDelete,
+  onRequestDelete,
+  onCancelDelete,
+}: {
+  readonly locale: Locale;
+  readonly state: "active" | "suspended" | "no-draft";
+  readonly busy?: boolean;
+  readonly deleteConfirm?: boolean;
+  readonly onPause?: () => void;
+  readonly onDelete?: () => void;
+  readonly onRequestDelete?: () => void;
+  readonly onCancelDelete?: () => void;
+}): React.JSX.Element {
+  const ar = locale === "ar";
+  const [returnOpen, setReturnOpen] = useState(false);
+  const disabledReason = ar
+    ? "إتمام البيع والبحث في الفواتير والطباعة غير متاحة حتى اعتماد قواعد المحاسبة والصلاحيات. تغييرات المسودة المؤكدة محفوظة تلقائياً."
+    : "Checkout, completed invoices, and printing are unavailable until accounting rules and permissions are approved. Confirmed draft edits are saved automatically.";
+  return (
+    <footer
+      className="sales-action-footer"
+      aria-label={ar ? "إجراءات البيع" : "Sales actions"}
+    >
+      <div className="sales-action-buttons">
+        <button disabled type="button">
+          {ar ? "طباعة" : "Print"}
+        </button>
+        <button disabled type="button">
+          {ar ? "بحث" : "Search"}
+        </button>
+        <button disabled type="button">
+          {ar ? "نقد" : "Cash"}
+        </button>
+        <button
+          aria-expanded={returnOpen}
+          disabled={state === "no-draft"}
+          onClick={() => setReturnOpen((open) => !open)}
+          type="button"
+        >
+          {ar ? "إرجاع" : "Return"}
+        </button>
+        <button disabled aria-describedby="sales-save-gate" type="button">
+          {ar ? "حفظ" : "Save"}
+        </button>
+        <button
+          disabled={busy || state !== "active"}
+          onClick={onPause}
+          type="button"
+        >
+          {ar ? "تعليق" : "Pause"}
+        </button>
+        <button
+          disabled={busy || state === "no-draft"}
+          onClick={onRequestDelete}
+          type="button"
+        >
+          {ar ? "حذف" : "Delete"}
+        </button>
+      </div>
+      {deleteConfirm ? (
+        <div
+          role="group"
+          className="sales-footer-confirm"
+          aria-label={ar ? "تأكيد الحذف" : "Confirm delete"}
+        >
+          <span>
+            {ar ? "استبعاد هذه المسودة فقط؟" : "Discard this draft only?"}
+          </span>
+          <button disabled={busy} onClick={onDelete} type="button">
+            {ar ? "تأكيد الحذف" : "Confirm delete"}
+          </button>
+          <button onClick={onCancelDelete} type="button">
+            {ar ? "إلغاء" : "Cancel"}
+          </button>
+        </div>
+      ) : null}
+      {returnOpen ? (
+        <p role="status">
+          {ar
+            ? "يفتح الإرجاع من فاتورة مكتملة. نشر الإرجاع ينتظر اعتماد قواعد التصرف في البضاعة G-02 وأمثلة المحاسبة G-01."
+            : "Start a return from a completed invoice. Return posting awaits approved G-02 disposition rules and G-01 accounting examples."}
+        </p>
+      ) : null}
+      <p id="sales-save-gate" role="status">
+        {disabledReason}
+      </p>
+    </footer>
   );
 }
 

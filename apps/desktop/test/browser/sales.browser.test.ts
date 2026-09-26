@@ -161,26 +161,26 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await pressKeyOnFocused(page, newDraft, "Enter");
 
     const search = page.locator("#sale-draft-search");
-    await expect(search).toBeFocused();
+    await expect(page.locator("#sale-draft-scan")).toBeFocused();
     const draftId = await currentDraftId(page);
-    const activeRow = page.locator(`[data-sale-draft-row="${draftId}"]`);
-    await expect(activeRow).toHaveAttribute("data-current", "true");
-    await expect(activeRow).toContainText("Current draft");
     await expect(
-      activeRow.locator('[data-sale-draft-control="resume"]'),
-    ).toHaveCount(0);
+      page.locator('[data-sale-draft-control="select"]'),
+    ).toHaveValue(draftId);
     const before = await apiRequest("GET", saleDraftPath(draftId));
     expect(before.status).toBe(200);
     const beforeVersion = await page
       .locator("[data-sale-draft-version]")
       .textContent();
 
-    await page.keyboard.type("panadol gs");
+    await search.fill("panadol gs");
     await expect(
       page.getByRole("status").filter({ hasText: "Search results: 2" }),
     ).toBeVisible();
     const addButton = page.locator(`[data-sale-basket-add="${panadol.id}"]`);
     await expect(addButton).toBeVisible();
+    await expect(
+      addButton.locator("xpath=ancestor::tr").locator(".sale-result-code"),
+    ).toHaveText(panadol.barcodes[0]!.value);
     // The action is the next tab stop after the row it belongs to.
     await addButton.focus();
     await pressKeyOnFocused(page, addButton, "Enter");
@@ -201,6 +201,56 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     expect(basket.status).toBe(200);
     const items = (basket.body as { items: ReorderItem[] }).items;
     expect(items.map((item) => item.productId)).toContain(panadol.id);
+
+    const footer = page.locator(".sales-action-footer");
+    for (const label of [
+      "Print",
+      "Search",
+      "Cash",
+      "Return",
+      "Pause",
+      "Save",
+      "Delete",
+    ]) {
+      await expect(footer.getByRole("button", { name: label })).toBeVisible();
+    }
+    for (const viewport of [
+      { width: 1280, height: 800 },
+      { width: 1366, height: 768 },
+    ]) {
+      await page.setViewportSize(viewport);
+      for (const button of await footer.getByRole("button").all()) {
+        await expect(button).toBeInViewport();
+      }
+    }
+    await page.evaluate('document.documentElement.style.fontSize = "200%"');
+    for (const viewport of [
+      { width: 1280, height: 800 },
+      { width: 1366, height: 768 },
+    ]) {
+      await page.setViewportSize(viewport);
+      for (const button of await footer.getByRole("button").all()) {
+        await expect(button).toBeInViewport();
+      }
+    }
+    await page.evaluate('document.documentElement.style.fontSize = ""');
+    await search.focus();
+    await search.press("ArrowDown");
+    await expect(page.locator("#sale-search-result-1")).toHaveAttribute(
+      "data-focused",
+      "true",
+    );
+    await search.press("Escape");
+    await expect(page.locator("#sale-search-results")).toHaveCount(0);
+    const scan = page.locator("#sale-draft-scan");
+    await scan.fill(panadol.barcodes[0]!.value);
+    await scan.press("Enter");
+    await expect(
+      page.locator(`[data-sale-line-add="${panadol.id}"]`),
+    ).toBeVisible();
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      before.body,
+    );
   });
 
   test("resumes the same draft after a renderer restart with an empty search box", async ({
@@ -226,15 +276,15 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     ).toBeVisible();
 
     await page.goto(`${renderer.origin}#/sales`);
-    const resume = page.locator('[data-sale-draft-control="resume"]');
-    await expect(resume).toBeFocused();
-    await pressKeyOnFocused(page, resume, "Enter");
-    await expect(page.locator("#sale-draft-search")).toBeFocused();
+    const select = page.locator('[data-sale-draft-control="select"]');
+    await expect(select).toBeFocused();
+    await select.selectOption(draft.id);
+    await expect(page.locator("#sale-draft-scan")).toBeVisible();
 
     const resumed = await apiRequest("GET", saleDraftPath(draft.id));
     expect((resumed.body as SaleDraft).id).toBe(draft.id);
     expect(BigInt((resumed.body as SaleDraft).version)).toBe(
-      BigInt(draft.version) + 1n,
+      BigInt(draft.version),
     );
     await context.close();
   });
@@ -424,15 +474,8 @@ test.describe.serial("sale drafts and the reorder row action", () => {
           const workspaceBounds = await page
             .locator(".sales-workspace-main")
             .evaluate((element) => element.getBoundingClientRect().toJSON());
-          if (locale === "ar") {
-            expect(trayBounds.x).toBeGreaterThanOrEqual(
-              workspaceBounds.x + workspaceBounds.width - 1,
-            );
-          } else {
-            expect(trayBounds.x + trayBounds.width).toBeLessThanOrEqual(
-              workspaceBounds.x + 1,
-            );
-          }
+          expect(trayBounds.y).toBeGreaterThanOrEqual(workspaceBounds.y - 1);
+          expect(trayBounds.width).toBeLessThan(workspaceBounds.width);
           const moduleList = page.locator(".module-nav ul");
           const navState = await moduleList.evaluate((list) => ({
             clientWidth: list.clientWidth,
@@ -476,34 +519,16 @@ test.describe.serial("sale drafts and the reorder row action", () => {
           );
 
           const draftId = await openFreshDraft(page);
-          const activeRow = page.locator(`[data-sale-draft-row="${draftId}"]`);
-          await expect(activeRow).toHaveAttribute("data-current", "true");
           await expect(
             page.locator(".sales-draft-tray-content"),
           ).toHaveAttribute("aria-busy", "false");
           await expect(
-            activeRow.locator('[data-sale-draft-control="resume"]'),
-          ).toHaveCount(0);
+            page.locator('[data-sale-draft-control="select"]'),
+          ).toHaveValue(draftId);
           const contextPanel = page.locator(
             '[data-sales-pane="draft-context"]',
           );
-          await expect(contextPanel).toBeVisible();
-          await expect(contextPanel.getByRole("button")).toHaveCount(0);
-          const contextBounds = await contextPanel.evaluate((element) =>
-            element.getBoundingClientRect().toJSON(),
-          );
-          const searchBounds = await page
-            .locator("#sale-draft-search")
-            .evaluate((element) => element.getBoundingClientRect().toJSON());
-          if (locale === "ar") {
-            expect(contextBounds.x + contextBounds.width).toBeLessThanOrEqual(
-              searchBounds.x + 1,
-            );
-          } else {
-            expect(contextBounds.x).toBeGreaterThanOrEqual(
-              searchBounds.x + searchBounds.width - 1,
-            );
-          }
+          await expect(contextPanel).toHaveCount(0);
           await page.screenshot({
             path: evidencePath(
               "issue-62",
@@ -645,7 +670,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await reload.click();
     await expect(reload).toHaveCount(0);
     await expect(
-      page.locator('[data-sale-draft-control="resume"]').first(),
+      page.locator('[data-sale-draft-control="select"]'),
     ).toBeVisible();
   });
 
@@ -749,7 +774,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await reload.click();
     await expect(page.locator("#sale-draft-search")).toBeVisible();
     await expect(
-      page.locator(`[data-sale-draft-id="${draft.id}"]`),
+      page.locator(`[data-sale-invoice="${draft.id}"]`),
     ).toBeVisible();
   });
 
@@ -868,9 +893,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await itemRecord
       .getByRole("button", { name: "Return to sale invoice" })
       .click();
-    await expect(page.locator("#sale-draft-search")).toHaveValue(
-      "Panadol Extra",
-    );
+    await expect(page.locator("#sale-draft-search")).toHaveValue("");
     await expect(
       page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
     ).toHaveCount(1);
@@ -896,10 +919,8 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await expect(page.locator("#sale-draft-search")).toHaveValue("");
     await page.goto(`${renderer.origin}#/sales`);
     await page
-      .locator(
-        `[data-sale-draft-row="${draftId}"] [data-sale-draft-control="resume"]`,
-      )
-      .click();
+      .locator('[data-sale-draft-control="select"]')
+      .selectOption(draftId);
     await expect(
       page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
     ).toHaveCount(1);
@@ -1055,11 +1076,14 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await pin.getByLabel("Category").fill("Favorites");
     const unitId = await pin.getByLabel("Selling unit").inputValue();
     await pin.getByRole("button", { name: "Save pin" }).click();
+    await expect(page.locator("#sale-quick-links-panel")).toBeHidden();
+    await page.locator("[data-sale-quick-toggle]").click();
     await expect(
       page.locator(`[data-sale-quick-add="${panadol.id}"]`),
     ).toBeVisible();
     await login(SELLER_USERNAME, SELLER_PASSWORD);
     await page.reload();
+    await page.locator("[data-sale-quick-toggle]").click();
     await expect(
       page.getByRole("button", { name: /Pin to quick access/ }),
     ).toHaveCount(0);
@@ -1087,8 +1111,9 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/sales`);
     const draftId = await openFreshDraft(page);
-    const search = page.locator("#sale-draft-search");
-    await search.fill("9876543210012");
+    const scan = page.locator("#sale-draft-scan");
+    await scan.fill("9876543210012");
+    await scan.press("Enter");
     const create = page.getByRole("button", { name: "Create new item" });
     await expect(create).toBeVisible();
     await create.click();
@@ -1096,7 +1121,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(search).toHaveValue("9876543210012");
+    await expect(scan).toHaveValue("9876543210012");
     expect(
       ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
         .lines,
@@ -1110,7 +1135,9 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await dialog.getByLabel("Food timing").selectOption("after-food");
     await dialog.getByRole("button", { name: "Create product" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(search).toHaveValue("Quick Sale Item");
+    await expect(page.locator("#sale-draft-search")).toHaveValue(
+      "Quick Sale Item",
+    );
     const found = await apiRequest(
       "GET",
       `${saleProductSearchPath()}?query=Quick%20Sale%20Item`,
@@ -1129,6 +1156,66 @@ test.describe.serial("sale drafts and the reorder row action", () => {
         (await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft
       ).lines.map((line) => line.productId),
     ).toEqual([productId]);
+  });
+
+  test("navigates open drafts without resuming, then pauses, edits, and discards one", async ({
+    page,
+  }) => {
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    const firstResponse = await apiRequest("POST", saleDraftsPath(), {
+      idempotencyKey: uuidV7(),
+    });
+    const secondResponse = await apiRequest("POST", saleDraftsPath(), {
+      idempotencyKey: uuidV7(),
+    });
+    expect(firstResponse.status).toBe(201);
+    expect(secondResponse.status).toBe(201);
+    const first = firstResponse.body as SaleDraft;
+    const second = secondResponse.body as SaleDraft;
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await page
+      .locator('[data-sale-draft-control="select"]')
+      .selectOption(second.id);
+    await page.locator('[data-sale-draft-control="next"]').click();
+    await expect(
+      page.locator('[data-sale-draft-control="select"]'),
+    ).toHaveValue(first.id);
+    expect(
+      ((await apiRequest("GET", saleDraftPath(first.id))).body as SaleDraft)
+        .version,
+    ).toBe(first.version);
+    await page
+      .locator(".sales-action-footer")
+      .getByRole("button", { name: "Pause" })
+      .click();
+    await expect(
+      page.locator('[data-sale-draft-control="select"]'),
+    ).toHaveValue("");
+    await page
+      .locator('[data-sale-draft-control="select"]')
+      .selectOption(first.id);
+    await expect(
+      page.locator(`[data-sale-invoice="${first.id}"]`),
+    ).toContainText("read only");
+    await expect(page.locator("#sale-draft-search")).toHaveCount(0);
+    await page.locator('[data-sale-draft-control="edit"]').click();
+    await expect(page.locator("#sale-draft-scan")).toBeVisible();
+    await page
+      .locator(".sales-action-footer")
+      .getByRole("button", { name: "Delete" })
+      .click();
+    await page
+      .getByRole("group", { name: "Confirm delete" })
+      .getByRole("button", { name: "Confirm delete" })
+      .click();
+    await expect(
+      page.locator('[data-sale-draft-control="select"]'),
+    ).toHaveValue("");
+    expect(
+      ((await apiRequest("GET", saleDraftPath(first.id))).body as SaleDraft)
+        .status,
+    ).toBe("discarded");
   });
 });
 

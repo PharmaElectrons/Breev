@@ -30,6 +30,8 @@ export interface SalesWorkspaceViewProps {
   readonly onCancelNewDraft: () => void;
   readonly onReloadDrafts: () => void;
   readonly onResumeDraft: (draft: SaleDraft) => void;
+  readonly onSelectDraft: (draft: SaleDraft) => void;
+  readonly onFocusEditor: () => void;
 }
 
 export interface SalesDraftContextPanelProps {
@@ -133,8 +135,16 @@ export function SalesDraftContextPanel({
               <button
                 type="button"
                 className="sales-collapse-toggle-btn sales-context-collapse-btn"
-                aria-label={locale === "ar" ? "طي تفاصيل المادة" : "Collapse product details"}
-                title={locale === "ar" ? "طي تفاصيل المادة" : "Collapse product details"}
+                aria-label={
+                  locale === "ar"
+                    ? "طي تفاصيل المادة"
+                    : "Collapse product details"
+                }
+                title={
+                  locale === "ar"
+                    ? "طي تفاصيل المادة"
+                    : "Collapse product details"
+                }
                 onClick={onToggleCollapse}
               >
                 ✕
@@ -266,8 +276,16 @@ export function SalesDraftContextPanel({
             <button
               type="button"
               className="sales-collapse-toggle-btn sales-context-collapse-btn"
-              aria-label={locale === "ar" ? "طي تفاصيل المادة" : "Collapse product details"}
-              title={locale === "ar" ? "طي تفاصيل المادة" : "Collapse product details"}
+              aria-label={
+                locale === "ar"
+                  ? "طي تفاصيل المادة"
+                  : "Collapse product details"
+              }
+              title={
+                locale === "ar"
+                  ? "طي تفاصيل المادة"
+                  : "Collapse product details"
+              }
               onClick={onToggleCollapse}
             >
               ✕
@@ -329,25 +347,107 @@ export function SalesWorkspaceView({
   onCancelNewDraft,
   onReloadDrafts,
   onResumeDraft,
+  onSelectDraft,
+  onFocusEditor,
 }: SalesWorkspaceViewProps): React.JSX.Element {
+  const ordered = [...(drafts ?? [])].sort(
+    (left, right) =>
+      new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  );
+  const position = ordered.findIndex((draft) => draft.id === activeDraftId);
+  const selected = position < 0 ? null : ordered[position]!;
   return (
     <div className="sales-workspace">
-      <aside
+      <section
         aria-labelledby="sales-draft-tray-title"
         className="sales-draft-tray"
       >
         <div className="sales-draft-tray-header">
           <div className="sales-draft-tray-heading-group">
             <h2 id="sales-draft-tray-title">{copy.draftsHeading}</h2>
-            {drafts !== null && drafts.length > 0 ? (
+            {ordered.length > 0 ? (
               <span
                 aria-label={copy.draftsHeading}
                 className="sales-draft-count-badge"
               >
-                {formatNumber(BigInt(drafts.length), locale)}
+                {formatNumber(BigInt(ordered.length), locale)}
               </span>
             ) : null}
           </div>
+          <div className="sales-draft-navigation">
+            <select
+              aria-label={locale === "ar" ? "اختيار مسودة" : "Choose draft"}
+              data-sale-draft-control="select"
+              disabled={busy || ordered.length === 0}
+              onChange={(event) => {
+                const draft = ordered.find(
+                  (item) => item.id === event.target.value,
+                );
+                if (draft) onSelectDraft(draft);
+              }}
+              value={selected?.id ?? ""}
+            >
+              <option value="">
+                {locale === "ar" ? "اختر مسودة" : "Choose draft"}
+              </option>
+              {ordered.map((draft, index) => (
+                <option key={draft.id} value={draft.id}>
+                  {formatNumber(BigInt(index + 1), locale)} ·{" "}
+                  {draft.status === "active" ? activeDraftLabel : copy.resume}
+                </option>
+              ))}
+            </select>
+            <button
+              aria-label={
+                locale === "ar" ? "المسودة السابقة" : "Previous draft"
+              }
+              data-sale-draft-control="previous"
+              disabled={busy || position <= 0}
+              onClick={() => onSelectDraft(ordered[position - 1]!)}
+              type="button"
+            >
+              ‹
+            </button>
+            <span
+              aria-live="polite"
+              data-sale-draft-version={selected?.version}
+            >
+              {selected === null
+                ? locale === "ar"
+                  ? "لم تُحدد مسودة"
+                  : "No draft selected"
+                : `${formatNumber(BigInt(position + 1), locale)} / ${formatNumber(BigInt(ordered.length), locale)} · ${selected.status === "active" ? (locale === "ar" ? "نشطة" : "Active") : locale === "ar" ? "معلقة" : "Suspended"}`}
+            </span>
+            <button
+              aria-label={locale === "ar" ? "المسودة التالية" : "Next draft"}
+              data-sale-draft-control="next"
+              disabled={busy || position < 0 || position >= ordered.length - 1}
+              onClick={() => onSelectDraft(ordered[position + 1]!)}
+              type="button"
+            >
+              ›
+            </button>
+          </div>
+          <button
+            data-sale-draft-control="edit"
+            disabled={busy || selected === null}
+            onClick={() =>
+              selected?.status === "suspended"
+                ? onResumeDraft(selected)
+                : onFocusEditor()
+            }
+            type="button"
+          >
+            {locale === "ar" ? "تعديل" : "Edit"}
+          </button>
+          <button
+            data-sale-draft-control="save"
+            disabled
+            aria-describedby="sales-save-gate"
+            type="button"
+          >
+            {locale === "ar" ? "حفظ" : "Save"}
+          </button>
           <button
             className="sales-new-draft"
             data-sale-draft-control="new"
@@ -356,7 +456,7 @@ export function SalesWorkspaceView({
             onClick={onCreateDraft}
           >
             <PlusIcon />
-            <span>{copy.newDraft}</span>
+            <span>{locale === "ar" ? "جديد" : "New"}</span>
           </button>
         </div>
 
@@ -406,61 +506,24 @@ export function SalesWorkspaceView({
                 {copy.loading}
               </p>
             ) : null
-          ) : drafts.length === 0 ? (
+          ) : ordered.length === 0 ? (
             <p className="sales-draft-list-state">{copy.empty}</p>
-          ) : (
-            <ul className="sales-draft-tray-list">
-              {drafts.map((draft) => {
-                const createdAt = formatDateTime(
-                  new Date(draft.createdAt),
-                  locale,
-                );
-                const isActive = draft.id === activeDraftId;
-
-                return (
-                  <li
-                    aria-current={isActive ? "true" : undefined}
-                    className="sales-draft-tray-row"
-                    data-current={isActive ? "true" : undefined}
-                    data-sale-draft-row={draft.id}
-                    key={draft.id}
-                  >
-                    <span className="sales-draft-tray-facts">
-                      <span className="sales-draft-tray-title">
-                        {copy.draftHeading(createdAt)}
-                      </span>
-                      <span className="sales-draft-tray-meta">
-                        {copy.openedBy(draft.createdBy.displayName)} ·{" "}
-                        {copy.versionLabel(
-                          formatNumber(BigInt(draft.version), locale),
-                        )}
-                      </span>
-                    </span>
-                    {isActive && draft.status === "active" ? (
-                      <span className="sales-draft-current">
-                        {activeDraftLabel}
-                      </span>
-                    ) : (
-                      <button
-                        aria-label={copy.resumeAriaLabel(createdAt)}
-                        data-sale-draft-control="resume"
-                        disabled={busy}
-                        type="button"
-                        onClick={() => {
-                          onResumeDraft(draft);
-                        }}
-                      >
-                        {copy.resume}
-                      </button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+          ) : selected === null ? null : (
+            <p
+              className="sales-draft-tray-meta"
+              data-sale-draft-row={selected.id}
+            >
+              {copy.draftHeading(
+                formatDateTime(new Date(selected.createdAt), locale),
+              )}{" "}
+              · {copy.openedBy(selected.createdBy.displayName)} ·{" "}
+              {copy.versionLabel(
+                formatNumber(BigInt(selected.version), locale),
+              )}
+            </p>
           )}
         </div>
-        <div className="sales-calculator-slot" id="sales-calculator-slot" />
-      </aside>
+      </section>
 
       <div className="sales-workspace-main">{children}</div>
     </div>

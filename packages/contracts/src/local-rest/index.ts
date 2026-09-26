@@ -4755,6 +4755,7 @@ export const saleProductSearchResultSchema = z.strictObject({
     id: z.uuidv7(),
     displayName: z.string().min(1),
     arabicSearchName: optionalProductTextSchema(160),
+    barcodeValue: productBarcodeValueSchema.nullable(),
     retailPriceFils: saleMoneySchema,
   }),
 });

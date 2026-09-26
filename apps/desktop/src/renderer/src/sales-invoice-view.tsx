@@ -120,6 +120,7 @@ export interface SalesInvoiceViewProps {
   readonly busy: boolean;
   readonly canOverridePrice: boolean;
   readonly pendingConfirmation: boolean;
+  readonly readOnly?: boolean;
   readonly selectedLineId: string | null;
   readonly onSelectLine: (lineId: string | null) => void;
   readonly onOpenProduct: (line: SaleDraftLine) => void;
@@ -128,8 +129,6 @@ export interface SalesInvoiceViewProps {
   readonly onRemoveLine: (lineId: string) => void;
   readonly onSetInvoiceDiscount: (fils: string) => void;
   readonly onClear: () => void;
-  readonly onSuspend: () => void;
-  readonly onDiscard: () => void;
 }
 
 function currency(value: string, locale: Locale): string {
@@ -261,6 +260,7 @@ export function SalesInvoiceView({
   busy,
   canOverridePrice,
   pendingConfirmation,
+  readOnly = false,
   selectedLineId,
   onSelectLine,
   onOpenProduct,
@@ -269,17 +269,13 @@ export function SalesInvoiceView({
   onRemoveLine,
   onSetInvoiceDiscount,
   onClear,
-  onSuspend,
-  onDiscard,
 }: SalesInvoiceViewProps): React.JSX.Element {
   const copy = invoiceCopy[locale];
   const [discountInput, setDiscountInput] = useState(
     iqdInput(draft.invoiceDiscountFils),
   );
   const [discountError, setDiscountError] = useState(false);
-  const [confirmation, setConfirmation] = useState<"clear" | "discard" | null>(
-    null,
-  );
+  const [confirmation, setConfirmation] = useState<"clear" | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const selectedLine =
     draft.lines.find((line) => line.id === selectedLineId) ?? null;
@@ -308,11 +304,15 @@ export function SalesInvoiceView({
         </div>
         <div className="sales-invoice-heading-actions">
           <span aria-live="polite" role="status">
-            {pendingConfirmation
-              ? copy.awaiting
-              : busy
-                ? copy.saving
-                : copy.saved}
+            {readOnly
+              ? locale === "ar"
+                ? "مسودة معلقة · للقراءة فقط"
+                : "Suspended draft · read only"
+              : pendingConfirmation
+                ? copy.awaiting
+                : busy
+                  ? copy.saving
+                  : copy.saved}
           </span>
           <button
             type="button"
@@ -322,9 +322,20 @@ export function SalesInvoiceView({
             title={isCollapsed ? copy.expand : copy.collapse}
             onClick={() => setIsCollapsed((prev) => !prev)}
           >
-            <span className="sales-collapse-icon" aria-hidden="true">
-              {isCollapsed ? "▼" : "▲"}
-            </span>
+            <svg
+              aria-hidden="true"
+              className="sales-collapse-icon"
+              fill="none"
+              height="14"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              width="14"
+            >
+              <path d={isCollapsed ? "M6 9l6 6 6-6" : "M6 15l6-6 6 6"} />
+            </svg>
             <span>{isCollapsed ? copy.expand : copy.collapse}</span>
           </button>
         </div>
@@ -378,7 +389,7 @@ export function SalesInvoiceView({
                   <td className="sales-quantity-cell">
                     <button
                       aria-label={`${copy.decrease}: ${line.displayName}`}
-                      disabled={busy || line.quantity === "1"}
+                      disabled={readOnly || busy || line.quantity === "1"}
                       type="button"
                       onClick={() =>
                         onChangeLine(line.id, {
@@ -391,7 +402,7 @@ export function SalesInvoiceView({
                     <span>{formatNumber(BigInt(line.quantity), locale)}</span>
                     <button
                       aria-label={`${copy.increase}: ${line.displayName}`}
-                      disabled={busy}
+                      disabled={readOnly || busy}
                       type="button"
                       onClick={() =>
                         onChangeLine(line.id, {
@@ -403,7 +414,9 @@ export function SalesInvoiceView({
                     </button>
                   </td>
                   <td>
-                    {canOverridePrice && line.kind === "catalog" ? (
+                    {!readOnly &&
+                    canOverridePrice &&
+                    line.kind === "catalog" ? (
                       <button
                         aria-label={`${locale === "ar" ? "تغيير سعر السطر" : "Change line price"}: ${line.displayName}`}
                         className="sales-line-price-button"
@@ -427,7 +440,7 @@ export function SalesInvoiceView({
           </table>
         )}
       </div>
-      {selectedLine === null ? null : (
+      {selectedLine === null || readOnly ? null : (
         <LineEditor
           busy={busy}
           key={selectedLine.id}
@@ -441,6 +454,10 @@ export function SalesInvoiceView({
         />
       )}
       <div className="sales-invoice-summary">
+        <span className="sales-invoice-item-count">
+          {locale === "ar" ? "المواد" : "Items"}:{" "}
+          {formatNumber(BigInt(draft.lines.length), locale)}
+        </span>
         <dl>
           <div>
             <dt>{copy.gross}</dt>
@@ -451,94 +468,83 @@ export function SalesInvoiceView({
             <dd>{currency(draft.totals.lineDiscountFils, locale)}</dd>
           </div>
         </dl>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const fils = parseIqd(discountInput);
-            if (fils === null) {
-              setDiscountError(true);
-              return;
-            }
-            setDiscountError(false);
-            onSetInvoiceDiscount(fils);
-          }}
-        >
-          <label htmlFor="sale-invoice-discount">{copy.invoiceDiscount}</label>
-          <input
-            disabled={busy}
-            id="sale-invoice-discount"
-            inputMode="decimal"
-            type="text"
-            value={discountInput}
-            onChange={(event) => setDiscountInput(event.target.value)}
-          />
-          <button disabled={busy} type="submit">
-            {copy.apply}
-          </button>
-          {discountError ? (
-            <span role="alert">{copy.invalidDiscount}</span>
-          ) : null}
-        </form>
+        {readOnly ? null : (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const fils = parseIqd(discountInput);
+              if (fils === null) {
+                setDiscountError(true);
+                return;
+              }
+              setDiscountError(false);
+              onSetInvoiceDiscount(fils);
+            }}
+          >
+            <label htmlFor="sale-invoice-discount">
+              {copy.invoiceDiscount}
+            </label>
+            <input
+              disabled={busy}
+              id="sale-invoice-discount"
+              inputMode="decimal"
+              type="text"
+              value={discountInput}
+              onChange={(event) => setDiscountInput(event.target.value)}
+            />
+            <button disabled={busy} type="submit">
+              {copy.apply}
+            </button>
+            {discountError ? (
+              <span role="alert">{copy.invalidDiscount}</span>
+            ) : null}
+          </form>
+        )}
         <div className="sales-invoice-final">
           <span>{copy.total}</span>
           <strong>{currency(draft.totals.totalFils, locale)}</strong>
         </div>
       </div>
-      <div className="sales-invoice-actions">
-        {confirmation === null ? (
-          <>
-            <button
-              disabled={busy || draft.lines.length === 0}
-              type="button"
-              onClick={() => setConfirmation("clear")}
+      {readOnly ? null : (
+        <div className="sales-invoice-actions">
+          {confirmation === null ? (
+            <>
+              <button
+                disabled={busy || draft.lines.length === 0}
+                type="button"
+                onClick={() => setConfirmation("clear")}
+              >
+                {copy.clear}
+              </button>
+            </>
+          ) : (
+            <div
+              className="sales-invoice-confirm"
+              role="group"
+              aria-label={copy.confirmClear}
             >
-              {copy.clear}
-            </button>
-            <button disabled={busy} type="button" onClick={onSuspend}>
-              {copy.suspend}
-            </button>
-            <button
-              disabled={busy}
-              type="button"
-              onClick={() => setConfirmation("discard")}
-            >
-              {copy.discard}
-            </button>
-          </>
-        ) : (
-          <div
-            className="sales-invoice-confirm"
-            role="group"
-            aria-label={
-              confirmation === "clear" ? copy.confirmClear : copy.confirmDiscard
-            }
-          >
-            <span>
-              {confirmation === "clear"
-                ? copy.confirmClear
-                : copy.confirmDiscard}
-            </span>
-            <button
-              disabled={busy}
-              type="button"
-              onClick={() => {
-                if (confirmation === "clear") onClear();
-                else onDiscard();
-                setConfirmation(null);
-              }}
-            >
-              {confirmation === "clear" ? copy.clear : copy.discard}
-            </button>
-            <button
-              disabled={busy}
-              type="button"
-              onClick={() => setConfirmation(null)}
-            >
-              {copy.cancel}
-            </button>
-          </div>
-        )}
-      </div>
+              <span>{copy.confirmClear}</span>
+              <button
+                disabled={busy}
+                type="button"
+                onClick={() => {
+                  onClear();
+                  setConfirmation(null);
+                }}
+              >
+                {copy.clear}
+              </button>
+              <button
+                disabled={busy}
+                type="button"
+                onClick={() => setConfirmation(null)}
+              >
+                {copy.cancel}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
