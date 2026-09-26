@@ -1283,9 +1283,6 @@ export function PurchasingRouteView({
                 <h2 id="draft-list-title" tabIndex={-1}>
                   {copy.draftRegister}
                 </h2>
-                <p aria-live="polite">
-                  {filteredDrafts.length} {copy.results}
-                </p>
               </div>
               <button
                 type="button"
@@ -1296,50 +1293,68 @@ export function PurchasingRouteView({
               </button>
             </div>
             <div className="purchase-filters">
-              <label className="purchase-search-filter">
-                {copy.searchDrafts}
-                <input
-                  type="search"
-                  placeholder={copy.searchDraftsHint}
-                  value={draftQuery}
-                  onChange={(event) => setDraftQuery(event.target.value)}
-                />
-              </label>
-              <label>
-                {copy.filterDate}
-                <input
-                  type="date"
-                  value={draftDate}
-                  onChange={(event) => setDraftDate(event.target.value)}
-                />
-              </label>
-              <label>
-                {copy.filterContext}
-                <select
-                  value={draftContext}
-                  onChange={(event) =>
-                    setDraftContext(
-                      event.target.value as "all" | "cash" | "debt",
-                    )
-                  }
-                >
-                  <option value="all">{copy.allContexts}</option>
-                  <option value="cash">{copy.cash}</option>
-                  <option value="debt">{copy.debt}</option>
-                </select>
-              </label>
-              <button
-                className="quiet-button purchase-filter-clear"
-                type="button"
-                disabled={
-                  draftQuery === "" &&
-                  draftDate === "" &&
-                  draftContext === "all"
-                }
-                onClick={clearDraftFilters}
-              >
-                {copy.clearFilters}
-              </button>
+              <div className="purchase-draft-toolbar-top">
+                <label className="purchase-search-filter purchase-draft-search-wrap">
+                  <span className="visually-hidden">{copy.searchDrafts}</span>
+                  <input
+                    type="search"
+                    aria-label={copy.searchDrafts}
+                    placeholder={copy.searchDraftsHint}
+                    value={draftQuery}
+                    onChange={(event) => setDraftQuery(event.target.value)}
+                  />
+                </label>
+                <div className="purchase-draft-filter-controls">
+                  <label>
+                    <span>{copy.filterDate}</span>
+                    <input
+                      type="date"
+                      value={draftDate}
+                      onChange={(event) => setDraftDate(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>{copy.filterContext}</span>
+                    <select
+                      value={draftContext}
+                      onChange={(event) =>
+                        setDraftContext(
+                          event.target.value as "all" | "cash" | "debt",
+                        )
+                      }
+                    >
+                      <option value="all">{copy.allContexts}</option>
+                      <option value="cash">{copy.cash}</option>
+                      <option value="debt">{copy.debt}</option>
+                    </select>
+                  </label>
+                  <button
+                    className="quiet-button purchase-filter-clear"
+                    type="button"
+                    disabled={
+                      draftQuery === "" &&
+                      draftDate === "" &&
+                      draftContext === "all"
+                    }
+                    onClick={clearDraftFilters}
+                  >
+                    {copy.clearFilters}
+                  </button>
+                </div>
+              </div>
+
+              <div className="purchase-draft-status-strip">
+                <div className="purchase-table-count-badge">
+                  <span aria-hidden="true">📂</span>
+                  <span>
+                    {filteredDrafts.length} {copy.draftCountUnit}
+                  </span>
+                </div>
+                <div className="purchase-table-hint">
+                  <span aria-hidden="true">💡</span>
+                  <span>{copy.doubleClickDraftHint}</span>
+                </div>
+              </div>
             </div>
 
             <div
@@ -1355,11 +1370,13 @@ export function PurchasingRouteView({
                 <thead>
                   <tr>
                     <th scope="col">#</th>
-                    <th scope="col">{copy.invoiceNumber}</th>
+                    <th scope="col">{copy.invoiceType}</th>
+                    <th scope="col">{copy.supplierDocketNumber}</th>
                     <th scope="col">{copy.supplier}</th>
                     <th scope="col">{copy.invoiceDate}</th>
-                    <th scope="col">{copy.context}</th>
-                    <th scope="col">{copy.snapshot}</th>
+                    <th scope="col">{copy.paymentTerms}</th>
+                    <th scope="col">{copy.discountPercentage}</th>
+                    <th scope="col">{copy.settlementStatus}</th>
                     <th scope="col">{copy.version}</th>
                     <th scope="col">{copy.updatedAt}</th>
                     <th scope="col">{copy.actions}</th>
@@ -1368,7 +1385,7 @@ export function PurchasingRouteView({
                 <tbody>
                   {filteredDrafts.length === 0 ? (
                     <tr>
-                      <td className="purchase-table-empty" colSpan={9}>
+                      <td className="purchase-table-empty" colSpan={11}>
                         {drafts.length === 0
                           ? copy.noDrafts
                           : copy.noMatchingDrafts}
@@ -1379,18 +1396,58 @@ export function PurchasingRouteView({
                       <tr
                         key={draft.id}
                         data-selected={activeDraft?.id === draft.id}
+                        tabIndex={0}
+                        onDoubleClick={() => void showDraft(draft)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            if (
+                              (event.target as HTMLElement).tagName !== "BUTTON"
+                            ) {
+                              event.preventDefault();
+                              void showDraft(draft);
+                            }
+                          }
+                        }}
                       >
-                        <td>{index + 1}</td>
                         <th scope="row">
-                          <bdi>{draft.supplierInvoiceNumber}</bdi>
+                          <bdi>{index + 1}</bdi>
                         </th>
+                        <td>
+                          <span className="purchase-badge purchase-badge-type-purchase">
+                            {copy.typePurchase}
+                          </span>
+                        </td>
+                        <td>
+                          <bdi className="font-mono">
+                            {draft.supplierInvoiceNumber}
+                          </bdi>
+                        </td>
                         <td>{draft.supplierNameSnapshot}</td>
                         <td>
                           <bdi>{draft.invoiceDate}</bdi>
                         </td>
-                        <td>{copy[draft.settlementContext]}</td>
-                        <td>{draft.allowanceSnapshot.percentage}%</td>
-                        <td>{draft.version}</td>
+                        <td>
+                          <span className="purchase-terms-text">
+                            {copy[draft.settlementContext]}
+                          </span>
+                        </td>
+                        <td>
+                          <bdi>{draft.allowanceSnapshot.percentage}%</bdi>
+                        </td>
+                        <td>
+                          {draft.settlementContext === "cash" ? (
+                            <span className="purchase-badge purchase-badge-settled">
+                              {copy.draftBadge} · {copy.cash}
+                            </span>
+                          ) : (
+                            <span className="purchase-badge purchase-badge-unpaid">
+                              {copy.draftBadge} · {copy.debt}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <bdi>{draft.version}</bdi>
+                        </td>
                         <td>
                           <bdi>
                             {formatDraftTimestamp(draft.updatedAt, locale)}
@@ -1403,7 +1460,10 @@ export function PurchasingRouteView({
                             aria-current={
                               activeDraft?.id === draft.id ? "true" : undefined
                             }
-                            onClick={() => void showDraft(draft)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void showDraft(draft);
+                            }}
                           >
                             {copy.resume} {draft.supplierInvoiceNumber}
                             {activeDraft?.id === draft.id ? (

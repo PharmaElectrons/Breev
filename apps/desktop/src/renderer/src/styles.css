@@ -4521,19 +4521,44 @@ a:focus-visible,
   font-size: 0.75rem;
 }
 .purchase-filters {
-  display: grid;
-  grid-template-columns:
-    minmax(12rem, 2fr) minmax(10rem, 1fr) minmax(10rem, 1fr)
-    auto;
-  align-items: end;
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
   border-block-end: 1px solid var(--border);
   padding: 0.75rem 1rem;
   background: var(--card);
 }
+.purchase-draft-toolbar-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.purchase-draft-search-wrap {
+  flex: 1 1 16rem;
+  min-inline-size: 14rem;
+}
+.purchase-draft-filter-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.purchase-draft-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-block-start: 0.5rem;
+  border-block-start: 1px dashed var(--border);
+}
 .purchase-table-wrap {
-  max-block-size: 50vh;
+  max-block-size: 55vh;
   overflow: auto;
+  min-height: 0;
+  min-block-size: 0;
 }
 .purchase-draft-table {
   inline-size: 100%;
@@ -4544,24 +4569,34 @@ a:focus-visible,
 .purchase-draft-table th,
 .purchase-draft-table td {
   border-block-end: 1px solid var(--border);
-  padding: 0.55rem 0.75rem;
+  padding: 0.6rem 0.75rem;
   text-align: start;
   white-space: nowrap;
+  vertical-align: middle;
 }
 .purchase-draft-table thead th {
   position: sticky;
   inset-block-start: 0;
   background: var(--muted);
   color: var(--muted-foreground);
-  font-size: 0.625rem;
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-block-end: 1px solid var(--border);
+  z-index: 1;
+}
+.purchase-draft-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 .purchase-draft-table tbody tr:hover,
 .purchase-draft-table tbody tr[data-selected="true"] {
   background: var(--primary-wash);
+}
+.purchase-draft-table tbody tr:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 .purchase-table-empty {
   block-size: 8rem;
@@ -6350,25 +6385,41 @@ a:focus-visible,
 }
 
 .posted-review-boundary {
-  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
   color: var(--muted-foreground);
-  background: var(--muted);
-  border-inline-start: 0.25rem solid var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-inline-start: 0.25rem solid var(--primary);
   border-radius: var(--radius);
+  font-size: 0.75rem;
+  margin-block-end: 0.75rem;
 }
 
 .posted-purchase-filters {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-block-end: 0.75rem;
 }
 
-.posted-purchase-filter-header {
+.posted-purchase-toolbar-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.posted-purchase-search-wrap {
+  flex: 1 1 20rem;
+  min-inline-size: 16rem;
 }
 
 .posted-purchase-presets {
@@ -6392,21 +6443,110 @@ a:focus-visible,
 
 .preset-pill:hover {
   color: var(--foreground);
-  background: color-mix(in srgb, var(--accent) 15%, var(--muted));
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--primary) 15%, var(--muted));
+  border-color: var(--primary);
 }
 
 .preset-pill.active {
   color: #fff;
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .posted-purchase-filter-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(8rem, 1fr)) auto;
-  gap: 0.5rem;
+  display: flex;
   align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.posted-purchase-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-block-start: 0.5rem;
+  border-block-start: 1px dashed var(--border);
+}
+
+.purchase-table-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.purchase-table-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+/* Badges System */
+.purchase-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  line-height: 1.2;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.purchase-badge-type-purchase {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+
+.purchase-badge-type-adjustment {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.purchase-badge-type-return {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.purchase-badge-settled {
+  background: var(--ready-soft);
+  color: var(--ready);
+  border-color: color-mix(in srgb, var(--ready) 30%, transparent);
+}
+
+.purchase-badge-unpaid {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.purchase-terms-text {
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--foreground);
+}
+
+.purchase-negative-money {
+  color: var(--danger) !important;
+  font-weight: 700;
 }
 
 .posted-purchase-error-inline {
@@ -6417,31 +6557,72 @@ a:focus-visible,
 }
 
 .posted-purchase-list {
-  width: 100%;
+  inline-size: 100%;
   border-collapse: collapse;
-}
-
-.posted-purchase-list th {
-  padding: 0.65rem 0.75rem;
-  text-align: start;
-  border-bottom: 1px solid var(--border);
-  background: var(--muted);
-  color: var(--muted-foreground);
-  font-size: 0.625rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.posted-purchase-list td {
-  padding: 0.65rem 0.75rem;
-  text-align: start;
-  border-bottom: 1px solid var(--border);
   font-size: 0.75rem;
 }
 
+.posted-purchase-list th,
+.posted-purchase-list td {
+  padding: 0.6rem 0.75rem;
+  text-align: start;
+  border-block-end: 1px solid var(--border);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.posted-purchase-list thead th {
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-block-end: 1px solid var(--border);
+  z-index: 1;
+}
+
+.posted-purchase-list tbody tr {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
 .posted-purchase-list tbody tr:hover {
-  background: color-mix(in srgb, var(--muted) 50%, transparent);
+  background: var(--primary-wash);
+}
+
+.posted-purchase-list tbody tr:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.purchase-table-tfoot {
+  position: sticky;
+  inset-block-end: 0;
+  background: var(--surface);
+  border-block-start: 2px solid var(--border);
+  font-weight: 700;
+  font-size: 0.75rem;
+  box-shadow: 0 -2px 6px -1px rgb(0 0 0 / 0.06);
+  z-index: 1;
+}
+
+.purchase-table-tfoot td {
+  padding: 0.65rem 0.75rem;
+  border-block-end: none;
+}
+
+.purchase-totals-label {
+  text-align: start;
+  font-size: 0.8rem;
+}
+
+.purchase-totals-items,
+.purchase-totals-cost {
+  text-align: start;
+  font-size: 0.8rem;
 }
 
 .purchase-open-posted {
