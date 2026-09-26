@@ -415,11 +415,14 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("button", { name: "Create pharmacy and owner" }),
     ).toBeFocused();
     await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("heading", {
+        name: "Welcome to Breev Browser Pharmacy",
+      }),
+    ).toBeVisible();
     await page.goto(`${renderer.origin}/#/settings/roles`);
 
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expect(page.locator(".shell-header")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Configure role permissions" }),
     ).toBeVisible();
@@ -441,10 +444,42 @@ test.describe.serial("bilingual desktop shell", () => {
       locale: "en",
       theme: "light",
     });
-    await page.goto(`${renderer.origin}/#/settings`);
+    await page.goto(renderer.origin);
+    const setupHeading = page.getByRole("heading", {
+      name: "Set up this pharmacy",
+    });
+    const signInHeading = page.getByRole("heading", {
+      name: "Sign in to Breev",
+    });
+    const authenticatedShell = page.getByRole("navigation", {
+      name: "Modules",
+    });
     await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
+      setupHeading.or(signInHeading).or(authenticatedShell),
     ).toBeVisible();
+    if (await setupHeading.isVisible()) {
+      await page
+        .getByLabel("Pharmacy name")
+        .fill("Breev Shell Browser Pharmacy");
+      await page.getByLabel("Display name").fill("Browser Owner");
+      await page.getByLabel("Username").fill("browser.owner");
+      await page
+        .getByLabel("Password")
+        .fill("browser owner password is private");
+      await page
+        .getByRole("button", { name: "Create pharmacy and owner" })
+        .click();
+      await expect(authenticatedShell).toBeVisible();
+    } else if (await signInHeading.isVisible()) {
+      await page.getByLabel("Username").fill("browser.owner");
+      await page
+        .getByLabel("Password")
+        .fill("browser owner password is private");
+      await page.getByRole("button", { name: "Sign in" }).click();
+      await expect(authenticatedShell).toBeVisible();
+    }
+    await page.goto(`${renderer.origin}/#/settings`);
+    await expectReadyModule(page, "Settings");
     await page.getByTestId("collapse-menu-trigger").click();
     await expect(
       page.getByRole("button", { name: "Export diagnostic package" }),
@@ -491,10 +526,9 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Username").fill("browser.owner");
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(authenticatedShell).toBeVisible();
     await page.goto(`${renderer.origin}/#/settings`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
@@ -504,7 +538,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect(
-      page.getByRole("heading", { name: "مرحباً, Browser Owner" }),
+      page.getByRole("heading", { name: "الإعدادات", level: 1 }),
     ).toBeVisible();
     const accessibility = await new AxeBuilder({ page }).analyze();
     expect(accessibility.violations).toEqual([]);
@@ -528,9 +562,7 @@ test.describe.serial("bilingual desktop shell", () => {
       diagnosticReporting: "manual",
     });
     await page.goto(`${renderer.origin}/#/settings`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Send diagnostic report" }).click();
@@ -562,9 +594,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/licence`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     for (const capability of ["Local sales", "Backup", "Licence renewal"]) {
       await expect(
@@ -706,9 +736,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/users`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     await expectStepUpStateMatrix(page);
     const addUser = page.getByRole("button", { name: "Add user" });
@@ -766,9 +794,7 @@ test.describe.serial("bilingual desktop shell", () => {
       .fill("browser manager password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${renderer.origin}/#/settings/roles`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Manager" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
     // The built-in manager role is seeded with role administration, Product
     // search, inventory review, and inventory valuation; the role editor is
     // offered and user management is not.
@@ -814,9 +840,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/users`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     const managerRow = page
       .locator(".user-list li")
@@ -862,9 +886,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Password").fill(resetPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${renderer.origin}/#/settings/password`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Manager Renamed" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     const selfChange = page
       .getByRole("heading", { name: "Change my password" })
@@ -892,9 +914,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Password").fill(selfChangedPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${renderer.origin}/#/settings/password`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Manager Renamed" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
@@ -911,9 +931,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${renderer.origin}/#/settings/users`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     // Leave the shared serial fixture on its documented credential for the
     // custom-role login and the later locked-login case.
@@ -949,9 +967,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/users`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     const managerRow = page
       .locator(".user-list li")
@@ -1053,9 +1069,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/roles`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     // The editor names every permission in plain words; no internal id such
     // as "identity.roles.manage" is visible anywhere in it.
@@ -1073,8 +1087,12 @@ test.describe.serial("bilingual desktop shell", () => {
     const addRole = page.getByRole("button", { name: "Add role" });
     await addRole.focus();
     await page.keyboard.press("Enter");
-    const newRole = page.getByRole("region", { name: "New role" });
+    const newRole = page.getByRole("dialog", { name: "New role" });
     await expect(newRole.getByLabel("Role name")).toBeFocused();
+    await page.keyboard.type("Senior cashier");
+    await newRole
+      .getByRole("tab", { name: /Purchasing and suppliers/ })
+      .click();
     await expect(
       newRole.getByRole("group", { name: "Purchasing and suppliers" }),
     ).toBeVisible();
@@ -1094,7 +1112,7 @@ test.describe.serial("bilingual desktop shell", () => {
         "Create, edit, archive, and merge supplier records and maintain their terms.",
       ),
     ).toBeVisible();
-    await page.keyboard.type("Senior cashier");
+    await newRole.getByRole("tab", { name: /^Products/ }).click();
     await newRole.getByLabel("Manage products", { exact: true }).check();
     const createRole = newRole.getByRole("button", { name: "Create role" });
     await createRole.focus();
@@ -1192,6 +1210,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       page.getByRole("region", { name: "Senior cashier" }),
     ).toBeVisible();
+    await page.getByRole("tab", { name: /المشتريات والموردون/ }).click();
     await expect(
       page.getByLabel("إدارة مسودات المشتريات", { exact: true }),
     ).toBeVisible();
@@ -1233,9 +1252,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     await page.getByTestId("collapse-menu-trigger").click();
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -1245,11 +1262,7 @@ test.describe.serial("bilingual desktop shell", () => {
       .fill("browser manager password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${renderer.origin}/#/settings`);
-    await expect(
-      page.getByRole("heading", {
-        name: "Welcome, Browser Manager Renamed",
-      }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     const identityState = (await page.evaluate(async () => {
       const response = await fetch("/identity/state", {
@@ -1290,9 +1303,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${renderer.origin}/#/settings`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
   });
 
   test("Step-Up cancellation returns focus to role actions", async ({
@@ -1304,9 +1315,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/roles`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await roleList
@@ -1318,6 +1327,7 @@ test.describe.serial("bilingual desktop shell", () => {
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
+    await managerRole.getByRole("tab", { name: /Attendance/ }).click();
     await managerRole.getByLabel("Record attendance", { exact: true }).check();
     const savePermissions = managerRole.getByRole("button", {
       name: "Save permissions",
@@ -1343,15 +1353,18 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(stableSaveButton).toBeFocused();
 
     await page.getByRole("button", { name: "Add role" }).click();
-    const newRole = page.getByRole("region", { name: "New role" });
+    const newRole = page.getByRole("dialog", { name: "New role" });
     await newRole.getByLabel("Role name").fill("Cancelled role draft");
     const createRole = newRole.getByRole("button", { name: "Create role" });
     await createRole.click();
-    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: "Confirm password" }),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(newRole).toBeVisible();
     await expect(createRole).toBeFocused();
-    await newRole.getByRole("button", { name: "Cancel" }).click();
+    await newRole.getByRole("button", { name: "Cancel" }).last().click();
     await expect(managerRole).toBeVisible();
   });
 
@@ -1364,9 +1377,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/roles`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     await page
       .getByRole("navigation", { name: "Roles" })
@@ -1378,6 +1389,7 @@ test.describe.serial("bilingual desktop shell", () => {
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
+    await managerRole.getByRole("tab", { name: /Attendance/ }).click();
     const attendance = managerRole.getByLabel("Record attendance", {
       exact: true,
     });
@@ -1411,9 +1423,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/roles`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     await page
       .getByRole("navigation", { name: "Roles" })
@@ -1425,6 +1435,7 @@ test.describe.serial("bilingual desktop shell", () => {
       })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
+    await managerRole.getByRole("tab", { name: /Attendance/ }).click();
     const attendance = managerRole.getByLabel("Record attendance", {
       exact: true,
     });
@@ -1462,9 +1473,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/roles`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     const roleList = page.getByRole("navigation", { name: "Roles" });
     await expect(
@@ -1533,9 +1542,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/roles`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     const originalViewport = page.viewportSize();
     try {
@@ -1576,9 +1583,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/roles`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
 
     const editor = page.locator(".role-editor");
     const expectNoRawPermissionId = async (): Promise<void> => {
@@ -1622,6 +1627,7 @@ test.describe.serial("bilingual desktop shell", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}/#/settings/roles`);
+    await expectReadyModule(page, "Settings");
     await page
       .getByRole("navigation", { name: "Roles" })
       .getByRole("button", { name: "Manager" })
@@ -1631,12 +1637,12 @@ test.describe.serial("bilingual desktop shell", () => {
     await expect(
       managerRole.getByRole("button", { name: "Save permissions" }),
     ).toBeDisabled();
-    for (const permission of [
-      "Record attendance",
-      "Change pharmacy settings",
-    ]) {
-      await managerRole.getByLabel(permission, { exact: true }).check();
-    }
+    await managerRole.getByRole("tab", { name: "Attendance" }).click();
+    await managerRole.getByLabel("Record attendance", { exact: true }).check();
+    await managerRole.getByRole("tab", { name: "Administration" }).click();
+    await managerRole
+      .getByLabel("Change pharmacy settings", { exact: true })
+      .check();
     await managerRole.getByRole("button", { name: "Save permissions" }).click();
     await page
       .getByRole("dialog")
@@ -1660,8 +1666,8 @@ test.describe.serial("bilingual desktop shell", () => {
       page.getByRole("heading", { name: "Attendance" }),
     ).toBeVisible();
     await expectIdentityStateMatrix(page, {
-      arabicHeading: "مرحباً, Browser Owner",
-      englishHeading: "Welcome, Browser Owner",
+      arabicHeading: "الإعدادات",
+      englishHeading: "Settings",
       evidenceName: "attendance-enabled",
       focusLabel: {
         ar: "تفعيل تسجيل الحضور والانصراف اليدوي",
@@ -1746,9 +1752,7 @@ test.describe.serial("bilingual desktop shell", () => {
     await page.getByLabel("Password").fill("browser owner password is private");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${renderer.origin}/#/settings/pharmacy`);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Browser Owner" }),
-    ).toBeVisible();
+    await expectReadyModule(page, "Settings");
     await administrator.query(
       `update identity_sessions
        set revoked_at = statement_timestamp(), revocation_reason = 'administrative'
@@ -1776,8 +1780,8 @@ test.describe.serial("bilingual desktop shell", () => {
       0,
     );
     await expectIdentityStateMatrix(page, {
-      arabicHeading: "مرحباً, Browser Owner",
-      englishHeading: "Welcome, Browser Owner",
+      arabicHeading: "الإعدادات",
+      englishHeading: "Settings",
       evidenceName: "attendance-disabled",
       focusLabel: {
         ar: "تفعيل تسجيل الحضور والانصراف اليدوي",
@@ -1930,6 +1934,14 @@ async function expectNoRawPermissionIds(
   }
 }
 
+async function expectReadyModule(page: Page, module: string): Promise<void> {
+  const workspace = page.locator('.shell-page[data-workspace="true"]');
+  await expect(workspace).toBeVisible({ timeout: 30_000 });
+  await expect(workspace.locator(".shell-header h1")).toHaveText(module, {
+    timeout: 30_000,
+  });
+}
+
 async function expectIdentityStateMatrix(
   page: Page,
   state: IdentityStateMatrix,
@@ -1949,11 +1961,16 @@ async function expectIdentityStateMatrix(
         locale === "ar" ? "rtl" : "ltr",
       );
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      await expect(
-        page.getByRole("heading", {
-          name: locale === "ar" ? state.arabicHeading : state.englishHeading,
-        }),
-      ).toBeVisible();
+      const expectedHeading =
+        locale === "ar" ? state.arabicHeading : state.englishHeading;
+      const shellHeading = page.locator(".shell-header h1");
+      if ((await shellHeading.textContent())?.trim() === expectedHeading) {
+        await expect(shellHeading).toBeVisible();
+      } else {
+        await expect(
+          page.getByRole("heading", { name: expectedHeading }),
+        ).toBeVisible();
+      }
       const focusTarget = page.getByLabel(state.focusLabel[locale]).last();
       await focusTarget.focus();
       await expect(focusTarget).toBeFocused();

@@ -353,7 +353,7 @@ test.describe("terminal pairing screen", () => {
     await captureSpread(page, "terminal-main-unavailable");
 
     renderer.setMode("pass");
-    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
     await expectBrowserStorageToContainPreferencesOnly(page);
     await screen.context.close();
   });

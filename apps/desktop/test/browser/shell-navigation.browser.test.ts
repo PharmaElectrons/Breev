@@ -348,7 +348,7 @@ test.describe.serial("Shell Header and Navbar Stability Across Tabs", () => {
         id: "dashboard",
         name: "Dashboard",
         selector: 'a.module-tab[data-module="dashboard"]',
-        workspaceSelector: ".system-overview",
+        workspaceSelector: ".home-dashboard",
       },
       {
         id: "sales",
@@ -379,7 +379,7 @@ test.describe.serial("Shell Header and Navbar Stability Across Tabs", () => {
     // 1. Initial load at Dashboard
     await page.goto(`${renderer.origin}#/`);
     await expect(page.locator(".shell-header")).toBeVisible();
-    await expect(page.locator(".system-overview")).toBeVisible();
+    await expect(page.locator(".home-dashboard")).toBeVisible();
 
     for (const [i, tab] of tabsToTest.entries()) {
       if (tab.id === "settings") {

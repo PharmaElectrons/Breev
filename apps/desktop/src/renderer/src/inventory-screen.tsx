@@ -859,8 +859,8 @@ function InventoryCell({
           {canManageReorder ? (
             <button
               aria-label={copy.addToBasketAriaLabel(item.displayName)}
+              aria-disabled={adding}
               className="quiet-button inventory-cart-add"
-              disabled={adding}
               data-review-focus={`inventory-basket-add-${item.productId}`}
               title={copy.addToBasket}
               type="button"
