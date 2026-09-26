@@ -7596,6 +7596,7 @@ a:focus-visible,
 .sales-workspace-main {
   min-inline-size: 0;
   min-block-size: 0;
+  block-size: 100%;
   overflow: hidden;
   background: var(--surface);
 }
@@ -8674,6 +8675,7 @@ a:focus-visible,
     padding-block: 0.55rem;
   }
   .sales-workspace-main {
+    block-size: auto;
     min-block-size: 24rem;
     overflow: visible;
   }
