@@ -34,6 +34,7 @@ import { usePreferences } from "./preferences-provider";
 import { PostedPurchaseReview } from "./posted-purchase-review";
 import { SuppliersWorkspace } from "./suppliers-workspace";
 import { useCommittedFocus } from "./committed-focus";
+import { filterPurchaseDrafts } from "./purchasing-draft-filter";
 
 const today = (): string => {
   const date = new Date();
@@ -104,6 +105,7 @@ export function PurchasingRouteView({
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [draftQuery, setDraftQuery] = useState("");
   const [draftDate, setDraftDate] = useState("");
+  const [isDraftDateInvalid, setIsDraftDateInvalid] = useState(false);
   const [draftContext, setDraftContext] = useState<"all" | "cash" | "debt">(
     "all",
   );
@@ -580,25 +582,18 @@ export function PurchasingRouteView({
     }
   }
 
-  const normalizedQuery = draftQuery.trim().toLocaleLowerCase(locale);
-  const filteredDrafts = drafts.filter((draft) => {
-    const matchesQuery =
-      normalizedQuery === "" ||
-      draft.supplierInvoiceNumber
-        .toLocaleLowerCase(locale)
-        .includes(normalizedQuery) ||
-      draft.supplierNameSnapshot
-        .toLocaleLowerCase(locale)
-        .includes(normalizedQuery);
-    const matchesDate = draftDate === "" || draft.invoiceDate === draftDate;
-    const matchesContext =
-      draftContext === "all" || draft.settlementContext === draftContext;
-    return matchesQuery && matchesDate && matchesContext;
+  const filteredDrafts = filterPurchaseDrafts(drafts, {
+    context: draftContext,
+    date: draftDate,
+    isDateInvalid: isDraftDateInvalid,
+    locale,
+    query: draftQuery,
   });
 
   function clearDraftFilters(): void {
     setDraftQuery("");
     setDraftDate("");
+    setIsDraftDateInvalid(false);
     setDraftContext("all");
   }
 
@@ -1305,13 +1300,40 @@ export function PurchasingRouteView({
                   />
                 </label>
                 <div className="purchase-draft-filter-controls">
-                  <label>
+                  <label className="purchase-draft-date-filter-label">
                     <span>{copy.filterDate}</span>
                     <input
                       type="date"
                       value={draftDate}
-                      onChange={(event) => setDraftDate(event.target.value)}
+                      aria-invalid={isDraftDateInvalid || undefined}
+                      aria-describedby={
+                        isDraftDateInvalid
+                          ? "purchase-draft-date-error"
+                          : undefined
+                      }
+                      className={
+                        isDraftDateInvalid ? "input-invalid" : undefined
+                      }
+                      onChange={(event) => {
+                        const input = event.currentTarget;
+                        if (input.validity.badInput) {
+                          setDraftDate("");
+                          setIsDraftDateInvalid(true);
+                        } else {
+                          setDraftDate(input.value);
+                          setIsDraftDateInvalid(false);
+                        }
+                      }}
                     />
+                    {isDraftDateInvalid ? (
+                      <span
+                        id="purchase-draft-date-error"
+                        className="purchase-draft-date-error"
+                        role="alert"
+                      >
+                        {copy.invalidDate}
+                      </span>
+                    ) : null}
                   </label>
                   <label>
                     <span>{copy.filterContext}</span>
@@ -1334,6 +1356,7 @@ export function PurchasingRouteView({
                     disabled={
                       draftQuery === "" &&
                       draftDate === "" &&
+                      !isDraftDateInvalid &&
                       draftContext === "all"
                     }
                     onClick={clearDraftFilters}

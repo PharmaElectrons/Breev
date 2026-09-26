@@ -92,6 +92,8 @@ export function PostedPurchaseReview({
   const [direction, setDirection] =
     useState<NonNullable<PurchasePostedListRequest["direction"]>>("descending");
   const [dateError, setDateError] = useState<string | null>(null);
+  const [fromInvalid, setFromInvalid] = useState(false);
+  const [toInvalid, setToInvalid] = useState(false);
   const [activePreset, setActivePreset] = useState<
     "today" | "yesterday" | "last7" | "month" | "all" | "custom"
   >("all");
@@ -101,6 +103,8 @@ export function PostedPurchaseReview({
   ): void {
     setActivePreset(preset);
     setDateError(null);
+    setFromInvalid(false);
+    setToInvalid(false);
     const now = new Date();
     if (preset === "today") {
       const t = formatDateInput(now);
@@ -129,6 +133,10 @@ export function PostedPurchaseReview({
 
   useEffect(() => {
     if (!open || detail !== null) return;
+    if (fromInvalid || toInvalid) {
+      setDateError(copy.invalidDate);
+      return;
+    }
     if (from !== "" && to !== "" && from > to) {
       setDateError(copy.dateRangeInvalid);
       return;
@@ -150,7 +158,21 @@ export function PostedPurchaseReview({
     );
 
     return () => clearTimeout(timer);
-  }, [baseUrl, dateType, detail, direction, from, open, query, sort, to]);
+  }, [
+    baseUrl,
+    copy.dateRangeInvalid,
+    copy.invalidDate,
+    dateType,
+    detail,
+    direction,
+    from,
+    fromInvalid,
+    open,
+    query,
+    sort,
+    to,
+    toInvalid,
+  ]);
 
   useEffect(() => {
     if (inline) {
@@ -626,8 +648,16 @@ export function PostedPurchaseReview({
                 <input
                   type="date"
                   value={from}
+                  aria-invalid={fromInvalid || undefined}
                   onChange={(event) => {
-                    setFrom(event.target.value);
+                    const input = event.currentTarget;
+                    if (input.validity.badInput) {
+                      setFrom("");
+                      setFromInvalid(true);
+                    } else {
+                      setFrom(input.value);
+                      setFromInvalid(false);
+                    }
                     setActivePreset("custom");
                   }}
                 />
@@ -637,8 +667,16 @@ export function PostedPurchaseReview({
                 <input
                   type="date"
                   value={to}
+                  aria-invalid={toInvalid || undefined}
                   onChange={(event) => {
-                    setTo(event.target.value);
+                    const input = event.currentTarget;
+                    if (input.validity.badInput) {
+                      setTo("");
+                      setToInvalid(true);
+                    } else {
+                      setTo(input.value);
+                      setToInvalid(false);
+                    }
                     setActivePreset("custom");
                   }}
                 />

@@ -180,8 +180,8 @@ const permissionLabels: Record<
       name: "إدارة مسودات المشتريات",
     },
     "purchases.posted.view": {
-      description: "البحث في فواتير الشراء المحفوظة وفتح نسخها التاريخية.",
-      name: "عرض فواتير الشراء المحفوظة",
+      description: "البحث في فواتير الشراء المُرحّلة وفتح نسخها التاريخية.",
+      name: "عرض فواتير الشراء المُرحّلة",
     },
     "purchases.returns.manage": {
       description:

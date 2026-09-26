@@ -1518,7 +1518,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page.goto(`${renderer.origin}#/purchases`);
         const postedInvoices = postedInvoicesTab(page);
         await expect(postedInvoices).toHaveAccessibleName(
-          locale === "en" ? "Posted invoices" : "فواتير الشراء المحفوظة",
+          locale === "en" ? "Posted invoices" : "فواتير الشراء المُرحّلة",
         );
         await postedInvoices.click();
         const dialog = page.locator("#purchase-posted-view");
