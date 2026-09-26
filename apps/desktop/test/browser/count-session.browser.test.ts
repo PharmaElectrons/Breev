@@ -295,6 +295,40 @@ test.describe.serial("durable count sessions", () => {
     await expect(item).toBeFocused();
   });
 
+  test("offers mouse and keyboard count search suggestions while keeping barcode Enter", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/inventory/count`);
+    await expect(page.locator(".count-active-warning")).toContainText(
+      "already active",
+    );
+    await expect(
+      page.getByRole("button", { name: "Start count session" }),
+    ).toBeDisabled();
+    await page.locator('[data-count-start-control="resume"]').first().click();
+    const item = page.locator("#count-item");
+    await item.fill("Count He");
+    const suggestion = page.getByRole("option", {
+      name: /Count Healthy Item/u,
+    });
+    await expect(suggestion).toBeVisible();
+    await expect(suggestion).toContainText(healthyBarcode);
+    await item.press("ArrowDown");
+    await item.press("ArrowUp");
+    await item.press("Enter");
+    await expect(page.locator(".count-resolved-item")).toContainText(
+      healthyProduct.displayName,
+    );
+    await item.fill("Count He");
+    await expect(suggestion).toBeVisible();
+    await suggestion.click();
+    await expect(page.locator(".count-resolved-item")).toContainText(
+      healthyProduct.displayName,
+    );
+  });
+
   test("applies a variance and drills from movement history into the session review", async ({
     page,
   }) => {
@@ -332,7 +366,24 @@ test.describe.serial("durable count sessions", () => {
     ).toBeFocused();
     await reopened
       .getByRole("textbox", { name: "Application reason", exact: true })
+      .fill("   ");
+    await reopened
+      .getByRole("textbox", { name: "Evidence", exact: true })
+      .fill("Signed count sheet 56-1");
+    await reopened
+      .getByRole("button", { name: "Apply variance", exact: true })
+      .click();
+    await expect(reopened.getByRole("alert")).toContainText("required");
+    await reopened
+      .getByRole("textbox", { name: "Application reason", exact: true })
       .fill("Counted surplus on shelf");
+    await reopened
+      .getByRole("textbox", { name: "Evidence", exact: true })
+      .fill("   ");
+    await reopened
+      .getByRole("button", { name: "Apply variance", exact: true })
+      .click();
+    await expect(reopened.getByRole("alert")).toContainText("required");
     await reopened
       .getByRole("textbox", { name: "Evidence", exact: true })
       .fill("Signed count sheet 56-1");

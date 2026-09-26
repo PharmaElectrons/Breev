@@ -20,6 +20,7 @@ import {
 } from "./purchasing-api";
 import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
+import { formatFilsToIqd } from "./product-record";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
 
@@ -57,7 +58,7 @@ const text = {
     back: "العودة إلى الفاتورة الأصلية",
     blocked:
       "هذا الفرق غير صالح مقابل المخزون الحالي. عالجه بجرد المخزون أو مردود شراء أو تصحيح آخر، ثم أعد المحاولة.",
-    confirm: "تأكيد وترحيل الفرق",
+    confirm: "تأكيد وحفظ التعديل",
     continue: "متابعة المسودة",
     cost: "كلفة المورد الأساسية (فلس)",
     delete: "حذف المسودة",
@@ -67,7 +68,7 @@ const text = {
     evidence: "دليل السبب",
     invoice: "رقم فاتورة المورد",
     item: "المادة",
-    posted: "تم ترحيل التعديل",
+    posted: "تم حفظ التعديل",
     quantity: "الكمية",
     reason: "السبب",
     remove: "حذف السطر",
@@ -557,7 +558,12 @@ export function PurchaseAdjustmentWorkflow({
             <div>
               <dt>{copy.cost}</dt>
               <dd>
-                <bdi>{summary.primarySupplierCostDeltaFils}</bdi>
+                <bdi>
+                  {formatFilsToIqd(
+                    summary.primarySupplierCostDeltaFils,
+                    locale,
+                  )}
+                </bdi>
               </dd>
             </div>
           </dl>
@@ -568,7 +574,7 @@ export function PurchaseAdjustmentWorkflow({
                 {row.before?.enteredQuantity ?? "0"} →{" "}
                 {row.after?.enteredQuantity ?? "0"} ({row.quantityDelta})
                 {row.primarySupplierCostDeltaFils !== "0"
-                  ? ` · ${row.primarySupplierCostDeltaFils} fils`
+                  ? ` · ${formatFilsToIqd(row.primarySupplierCostDeltaFils, locale)}`
                   : null}
               </li>
             ))}

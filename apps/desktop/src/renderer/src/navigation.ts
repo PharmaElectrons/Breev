@@ -107,25 +107,19 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
     requiredPermissionsAny: [],
   },
   {
-    hash: "#/administration",
-    id: "administration",
-    implemented: true,
-    requiredPermissionsAny: [],
-  },
-  {
     hash: "#/settings",
     id: "settings",
-    implemented: false,
+    implemented: true,
     requiredPermissionsAny: [],
   },
 ] as const;
 
-export const DEFAULT_MODULE_ID: ModuleId = "administration";
+export const DEFAULT_MODULE_ID: ModuleId = "dashboard";
 
 /**
  * Where a request for a surface the user may not have lands instead.
  *
- * Administration carries neither a permission nor a capability requirement, so
+ * Dashboard carries neither a permission nor a capability requirement, so
  * it is always in an authenticated user's allowed navigation and can never
  * bounce a redirect back to itself.
  */
@@ -204,8 +198,7 @@ export function moduleImplemented(id: ModuleId): boolean {
  *
  * Catalog owns a family of hashes (`#/catalog/products/<id>`, `/new`, `/edit`),
  * so prefix matching, not equality, decides. An unknown or empty hash falls
- * back to the administration workspace, which is what the shell has always
- * shown at the bare origin.
+ * back to the default module (dashboard) at the bare origin.
  */
 export function moduleIdForHash(hash: string): ModuleId {
   const normalized = normalizeHash(hash);

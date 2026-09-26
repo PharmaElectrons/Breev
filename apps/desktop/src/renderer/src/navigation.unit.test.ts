@@ -79,7 +79,7 @@ describe("navigationModules", () => {
       modules.map((module) => [module.id, module.availability]),
     );
     expect(availability.get("products")).toBe("available");
-    expect(availability.get("administration")).toBe("available");
+    expect(availability.get("settings")).toBe("available");
     expect(availability.get("dashboard")).toBe("available");
     expect(availability.get("sales")).toBe("available");
     expect(availability.get("purchases")).toBe("available");
@@ -98,17 +98,16 @@ describe("navigationModules", () => {
       "basket",
       "reports",
       "accounts",
-      "administration",
       "settings",
     ]);
   });
 });
 
 describe("moduleIdForHash", () => {
-  it("falls back to the administration workspace at the bare origin", () => {
-    expect(moduleIdForHash("")).toBe("administration");
-    expect(moduleIdForHash("#")).toBe("administration");
-    expect(moduleIdForHash("#/")).toBe("administration");
+  it("falls back to the dashboard workspace at the bare origin", () => {
+    expect(moduleIdForHash("")).toBe("dashboard");
+    expect(moduleIdForHash("#")).toBe("dashboard");
+    expect(moduleIdForHash("#/")).toBe("dashboard");
   });
 
   it("resolves the whole Catalog hash family", () => {
@@ -142,8 +141,8 @@ describe("moduleIdForHash", () => {
   });
 
   it("sends an unknown hash to the default workspace", () => {
-    expect(moduleIdForHash("#/clinic")).toBe("administration");
-    expect(moduleIdForHash("#/delivery")).toBe("administration");
+    expect(moduleIdForHash("#/clinic")).toBe("dashboard");
+    expect(moduleIdForHash("#/delivery")).toBe("dashboard");
   });
 });
 
@@ -151,7 +150,7 @@ describe("moduleImplemented", () => {
   it("does not consult permissions, because hiding is never enforcement", () => {
     expect(moduleImplemented("products")).toBe(true);
     expect(moduleImplemented("purchases")).toBe(true);
-    expect(moduleImplemented("administration")).toBe(true);
+    expect(moduleImplemented("settings")).toBe(true);
     expect(moduleImplemented("dashboard")).toBe(true);
     expect(moduleImplemented("sales")).toBe(true);
     expect(moduleImplemented("messages")).toBe(false);

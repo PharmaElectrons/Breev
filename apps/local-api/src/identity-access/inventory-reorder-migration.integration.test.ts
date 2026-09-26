@@ -344,19 +344,18 @@ describe.sequential("migration 0024: inventory reorder basket", () => {
  * The revisions a role gains between this test's baseline and migration head.
  *
  * `runMigrations` replays every migration after the baseline, not only the one
- * under test, so a role advances once per role-granting migration that names
- * it. Migration 0025 grants `sales.drafts.manage` to owner, manager,
- * pharmacist, and sales employee, so those four advance twice from here while
- * the rest advance once. A later migration that grants a default adds its own
- * entry rather than silently breaking this assertion.
+ * under test. Migration 0025 grants `sales.drafts.manage` to owner, manager,
+ * pharmacist, and sales employee; migrations 0027–0029 each grant another
+ * permission to owner and manager. Keep those independent later grants
+ * explicit in the expected revision deltas.
  */
-const LATER_GRANT_ROLES: ReadonlySet<string> = new Set([
-  "owner",
-  "manager",
-  "pharmacist",
-  "sales_employee",
-]);
-const LATER_PHARMACY_REVISIONS = 1n;
+const LATER_ROLE_REVISION_INCREMENTS: Readonly<Record<string, bigint>> = {
+  owner: 4n,
+  manager: 4n,
+  pharmacist: 1n,
+  sales_employee: 1n,
+};
+const LATER_PHARMACY_REVISIONS = 4n;
 
 function expectRevisionDelta(
   before: DatabaseSnapshot,
@@ -367,7 +366,7 @@ function expectRevisionDelta(
     Object.entries(before.revisions).map(([roleKey, revision]) => {
       const increments =
         (touchedRoles.has(roleKey) ? 1n : 0n) +
-        (LATER_GRANT_ROLES.has(roleKey) ? 1n : 0n);
+        (LATER_ROLE_REVISION_INCREMENTS[roleKey] ?? 0n);
       return [roleKey, String(BigInt(revision) + increments)];
     }),
   );

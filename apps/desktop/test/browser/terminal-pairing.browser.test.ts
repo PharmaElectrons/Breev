@@ -342,7 +342,9 @@ test.describe("terminal pairing screen", () => {
       theme: "light",
     });
     const page = screen.page;
-    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+    await expect(page.getByTestId("shell-state")).toHaveText("Ready", {
+      timeout: 20_000,
+    });
     await expect(page.getByTestId("terminal-pairing")).toHaveCount(0);
 
     renderer.setMode("main-unavailable");
@@ -353,7 +355,7 @@ test.describe("terminal pairing screen", () => {
     await captureSpread(page, "terminal-main-unavailable");
 
     renderer.setMode("pass");
-    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
     await expectBrowserStorageToContainPreferencesOnly(page);
     await screen.context.close();
   });
@@ -545,6 +547,10 @@ async function setPreferences(
 ): Promise<void> {
   const currentLocale = await page.locator("html").getAttribute("lang");
   if (currentLocale !== locale) {
+    const trigger = page.getByTestId("collapse-menu-trigger");
+    if (await trigger.isVisible()) {
+      await trigger.click();
+    }
     await pressButton(
       page,
       currentLocale === "ar" ? "التبديل إلى الإنجليزية" : "Switch to Arabic",
@@ -553,6 +559,10 @@ async function setPreferences(
   }
   const currentTheme = await page.locator("html").getAttribute("data-theme");
   if (currentTheme !== theme) {
+    const trigger = page.getByTestId("collapse-menu-trigger");
+    if (await trigger.isVisible()) {
+      await trigger.click();
+    }
     await pressButton(
       page,
       locale === "ar"

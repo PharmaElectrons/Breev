@@ -136,8 +136,11 @@ test.describe.serial("Main pairing screen", () => {
     ).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(
-      page.getByRole("heading", { name: "Welcome, Devices Owner" }),
+      page.getByRole("heading", {
+        name: "Welcome to Breev Devices Pharmacy",
+      }),
     ).toBeVisible();
+    await openDevicesPanel(page, renderer.origin);
 
     // The devices section exists for a user who holds devices.pair AND the
     // additional-device-pos entitlement. On Free Core, it is completely absent.
@@ -234,9 +237,8 @@ test.describe.serial("Main pairing screen", () => {
   }) => {
     await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Devices Owner" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+    await openDevicesPanel(page, renderer.origin);
     const startAgain = page.getByRole("button", {
       name: "Start a new session",
     });
@@ -299,9 +301,7 @@ test.describe.serial("Main pairing screen", () => {
   }) => {
     await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Devices Owner" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 
     await createUser(apiOrigin, credentials, {
       displayName: "Devices Approver",
@@ -311,9 +311,8 @@ test.describe.serial("Main pairing screen", () => {
     });
 
     await signIn(page, "devices.approver", APPROVER_PASSWORD);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Devices Approver" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+    await openDevicesPanel(page, renderer.origin);
     await expect(
       page.getByRole("heading", { name: "Additional POS terminals" }),
     ).toHaveCount(0);
@@ -332,12 +331,16 @@ test.describe.serial("Main pairing screen", () => {
     });
 
     await signIn(page, "devices.owner", OWNER_PASSWORD);
+    await openSettingsTab(page, renderer.origin, "Roles & permissions");
     await page
       .getByRole("navigation", { name: "Roles" })
       .getByRole("button", { name: "Manager" })
       .click();
     const managerRole = page.getByRole("region", { name: "Manager" });
     await expect(managerRole).toBeVisible();
+    await managerRole
+      .getByRole("tab", { name: /Devices and licensing/u })
+      .click();
     await managerRole
       .getByLabel("Pair and manage terminals", { exact: true })
       .check();
@@ -350,6 +353,7 @@ test.describe.serial("Main pairing screen", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
     await signIn(page, "devices.approver", APPROVER_PASSWORD);
+    await openDevicesPanel(page, renderer.origin);
     await expect(
       page.getByRole("heading", { name: "Additional POS terminals" }),
     ).toBeVisible();
@@ -361,9 +365,8 @@ test.describe.serial("Main pairing screen", () => {
   }) => {
     await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Devices Owner" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+    await openDevicesPanel(page, renderer.origin);
     await page.getByRole("button", { name: "Paired devices" }).click();
 
     const device = deviceRow(page, terminalDeviceName);
@@ -439,9 +442,8 @@ test.describe.serial("Main pairing screen", () => {
   }) => {
     await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Devices Owner" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+    await openDevicesPanel(page, renderer.origin);
 
     const invitationUri = await startPairingSession(page);
     const mismatched = await joinAsTerminal({
@@ -481,9 +483,8 @@ test.describe.serial("Main pairing screen", () => {
   }) => {
     await installDesktopFake(page, renderer.origin);
     await page.goto(renderer.origin);
-    await expect(
-      page.getByRole("heading", { name: "Welcome, Devices Owner" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+    await openDevicesPanel(page, renderer.origin);
 
     await startPairingSession(page);
     // The five-minute deadline is the server's, so the session is aged in the
@@ -545,6 +546,21 @@ async function startPairingSession(page: Page): Promise<string> {
   return (await page.locator("code.pairing-uri").innerText()).trim();
 }
 
+async function openDevicesPanel(page: Page, origin: string): Promise<void> {
+  await openSettingsTab(page, origin, "Licence & devices");
+}
+
+async function openSettingsTab(
+  page: Page,
+  origin: string,
+  name: string,
+): Promise<void> {
+  await page.goto(`${origin}#/settings`);
+  const tab = page.getByRole("tab", { name });
+  await expect(tab).toBeVisible();
+  await tab.click();
+}
+
 async function expectFingerprintGroups(
   page: Page,
   digits: string,
@@ -573,19 +589,25 @@ async function signIn(
   username: string,
   password: string,
 ): Promise<void> {
-  const signOut = page.getByRole("button", { name: "Sign out" });
-  if ((await signOut.count()) > 0) {
-    await signOut.click();
+  const signInHeading = page.getByRole("heading", {
+    name: "Sign in to Breev",
+  });
+  if ((await signInHeading.count()) === 0) {
+    const menu = page.getByTestId("collapse-menu-dropdown");
+    if (!(await menu.isVisible())) {
+      await page.getByTestId("collapse-menu-trigger").focus();
+      await page.keyboard.press("Enter");
+      await expect(menu).toBeVisible();
+    }
+    const signOut = page.getByRole("button", { name: "Sign out" });
+    await signOut.focus();
+    await page.keyboard.press("Enter");
   }
-  await expect(
-    page.getByRole("heading", { name: "Sign in to Breev" }),
-  ).toBeVisible();
+  await expect(signInHeading).toBeVisible();
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(
-    page.getByRole("heading", { name: /^Welcome, /u }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 }
 
 /**
@@ -650,10 +672,22 @@ async function setPreferences(
 }
 
 async function pressButton(page: Page, name: string): Promise<void> {
+  const menu = page.getByTestId("collapse-menu-dropdown");
+  const menuWasOpen = await menu.isVisible();
+  const menuTrigger = page.getByTestId("collapse-menu-trigger");
+  if (!menuWasOpen) {
+    await menuTrigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(menu).toBeVisible();
+  }
   const button = page.getByRole("button", { name });
   await button.focus();
   await expect(button).toBeFocused();
   await page.keyboard.press("Enter");
+  if (!menuWasOpen) {
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+  }
 }
 
 function evidenceDirectory(): string {

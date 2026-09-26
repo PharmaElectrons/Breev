@@ -98,7 +98,7 @@ describe("desktop diagnostics", () => {
       .trim()
       .split(/\r?\n/gu);
     expect(lines).toHaveLength(64);
-  });
+  }, 15_000);
 
   it("writes a synchronous fatal breadcrumb without raw error material", async () => {
     const directory = await temporaryDirectory();

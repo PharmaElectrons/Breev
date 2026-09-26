@@ -41,6 +41,8 @@ import { RecoveryController } from "./recovery/recovery.controller.js";
 import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.js";
 import { SaleDraftController } from "./sales/sale-draft.controller.js";
 import { SaleDraftService } from "./sales/sale-draft.service.js";
+import { SaleQuickAccessController } from "./sales/sale-quick-access.controller.js";
+import { SaleQuickAccessService } from "./sales/sale-quick-access.service.js";
 
 @Module({
   controllers: [
@@ -57,6 +59,7 @@ import { SaleDraftService } from "./sales/sale-draft.service.js";
     PurchasingController,
     RecoveryController,
     SaleDraftController,
+    SaleQuickAccessController,
   ],
   providers: [
     CatalogService,
@@ -86,6 +89,7 @@ import { SaleDraftService } from "./sales/sale-draft.service.js";
     RecoveryJobService,
     SettingsPostCommitService,
     SaleDraftService,
+    SaleQuickAccessService,
   ],
 })
 export class AppModule {}

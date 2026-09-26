@@ -224,6 +224,11 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await expect(statusRegion(page)).toContainText(
       `Added 52 Strip for ${productA.displayName} to the order basket.`,
     );
+    await expect(page.locator(".inventory-basket-feedback")).toContainText(
+      productA.displayName,
+    );
+    await expect(page.locator(".inventory-basket-count")).toHaveText("1");
+    await expect(productRow).toHaveAttribute("data-selected", "false");
     await expect(addButton).toBeFocused();
     await expect(gridRows).toHaveCount(5);
     await expect(gridRows).toHaveText(initialRows);
@@ -256,6 +261,13 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await openBasket.click();
     await expect(page).toHaveURL(/#\/basket$/u);
     await expect(page.locator("section.basket-workspace")).toBeVisible();
+    await expect(
+      page.locator(".basket-table tbody tr[data-risk]").first(),
+    ).toHaveAttribute("data-risk", /critical|expiring|reorder|stable/u);
+    const back = page.getByRole("link", { name: "Back to Inventory" });
+    await expect(back).toHaveCSS("display", "inline-flex");
+    await back.click();
+    await expect(page).toHaveURL(/#\/inventory$/u);
   });
 
   test("shows live basket facts, warnings, captions, and validation focus", async ({

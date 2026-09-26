@@ -461,6 +461,18 @@ function BasketScreen({
       </nav>
       <header className="inventory-heading basket-heading">
         <div>
+          <a className="basket-back-link" href="#/inventory">
+            <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+              <path
+                d="M19 12H5m6-6-6 6 6 6"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {copy.backToInventory}
+          </a>
           <h2 id="basket-title">
             {route.kind === "basket" ? copy.tabs.basket : copy.tabs.ordered}
           </h2>
@@ -658,6 +670,7 @@ function BasketRow({
   return (
     <tr
       data-basket-row={item.id}
+      data-risk={basketRowRisk(item)}
       data-saved={failed ? "false" : undefined}
       id={`basket-row-${item.id}`}
     >
@@ -810,6 +823,7 @@ function OrderedTable({
           {items.map((item) => (
             <tr
               data-basket-row={item.id}
+              data-risk="ordered"
               id={`basket-row-${item.id}`}
               key={item.id}
             >
@@ -870,6 +884,23 @@ function OrderedTable({
       </table>
     </div>
   );
+}
+
+function basketRowRisk(item: ReorderItem): string {
+  const indicators = item.inventory.riskIndicators;
+  if (
+    indicators.includes("expired") ||
+    indicators.includes("out-of-stock") ||
+    item.inventory.stateColour.effective === "red"
+  )
+    return "critical";
+  if (indicators.includes("expiring-soon")) return "expiring";
+  if (
+    indicators.includes("below-minimum") ||
+    indicators.includes("at-or-below-reorder-point")
+  )
+    return "reorder";
+  return "stable";
 }
 
 function BasketItemName({

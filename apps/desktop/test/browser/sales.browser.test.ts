@@ -9,7 +9,10 @@ import {
   reorderBasketPath,
   reorderItemsPath,
   saleDraftPath,
+  saleDraftMiscLinesPath,
+  saleDraftLinePriceOverridePath,
   saleDraftsPath,
+  saleProductSearchPath,
   type Product,
   type ProductCreateRequest,
   type ReorderItem,
@@ -86,6 +89,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
   test.beforeAll("sale draft fixture", async () => {
     test.setTimeout(180_000);
     await mkdir(evidencePath("issue-58", "after"), { recursive: true });
+    await mkdir(evidencePath("issue-62", "workspace"), { recursive: true });
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
     if (administratorUrl === undefined) {
       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
@@ -102,7 +106,9 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${String(apiPort)}`;
     api = startApi(apiPort);
-    await waitForHealth(apiOrigin, "healthy", api);
+    // The cold PostgreSQL schema and durable-job migrations can exceed the
+    // shared 15-second readiness window on Windows.
+    await waitForHealth(apiOrigin, "healthy", api, 60_000);
 
     const bootstrap = await apiRequest("POST", "/identity/bootstrap", {
       owner: {
@@ -151,11 +157,18 @@ test.describe.serial("sale drafts and the reorder row action", () => {
 
     const newDraft = page.locator('[data-sale-draft-control="new"]');
     await expect(newDraft).toBeFocused();
+    await expect(page.locator("#sale-draft-search")).toHaveCount(0);
     await pressKeyOnFocused(page, newDraft, "Enter");
 
     const search = page.locator("#sale-draft-search");
     await expect(search).toBeFocused();
     const draftId = await currentDraftId(page);
+    const activeRow = page.locator(`[data-sale-draft-row="${draftId}"]`);
+    await expect(activeRow).toHaveAttribute("data-current", "true");
+    await expect(activeRow).toContainText("Current draft");
+    await expect(
+      activeRow.locator('[data-sale-draft-control="resume"]'),
+    ).toHaveCount(0);
     const before = await apiRequest("GET", saleDraftPath(draftId));
     expect(before.status).toBe(200);
     const beforeVersion = await page
@@ -171,7 +184,11 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     // The action is the next tab stop after the row it belongs to.
     await addButton.focus();
     await pressKeyOnFocused(page, addButton, "Enter");
-    await expect(page.getByText(/Added .* to the order basket/u)).toBeVisible();
+    const basketSuccess = page.locator(
+      `[data-sale-basket-feedback="${panadol.id}"]`,
+    );
+    await expect(basketSuccess).toBeVisible();
+    await expect(basketSuccess).toContainText("Added");
     await expect(addButton).toBeFocused();
 
     const after = await apiRequest("GET", saleDraftPath(draftId));
@@ -353,91 +370,765 @@ test.describe.serial("sale drafts and the reorder row action", () => {
   test("covers Arabic and English RTL/LTR themes, accessibility, and keyboard evidence", async ({
     browser,
   }) => {
+    test.setTimeout(240_000);
     await login(SELLER_USERNAME, SELLER_PASSWORD);
     const videoPath = path.resolve(
       import.meta.dirname,
-      "../../../../test-results/issue-58-video/sale-draft-keyboard.webm",
+      "../../../../test-results/issue-62-video/sale-draft-keyboard.webm",
     );
     await mkdir(path.dirname(videoPath), { recursive: true });
     let englishOrder: readonly string[] | undefined;
+    const viewports = [
+      { height: 800, name: "1280x800", width: 1280 },
+      { height: 768, name: "1366x768", width: 1366 },
+      { height: 832, name: "1599x832", width: 1599 },
+    ] as const;
 
     for (const locale of ["en", "ar"] as const) {
       for (const theme of ["light", "dark"] as const) {
-        const context = await browser.newContext({
-          ...(locale === "en" && theme === "light"
-            ? {
-                recordVideo: {
-                  dir: path.dirname(videoPath),
-                  size: { height: 768, width: 1280 },
-                },
-              }
-            : {}),
-          viewport: { height: 768, width: 1280 },
-        });
-        const page = await context.newPage();
-        await installDesktopFake(page, renderer.origin, locale, theme);
-        await page.goto(`${renderer.origin}#/sales`);
-        await expect(page.locator("html")).toHaveAttribute("lang", locale);
-        await expect(page.locator("html")).toHaveAttribute(
-          "dir",
-          locale === "ar" ? "rtl" : "ltr",
-        );
-        await expect(
-          page.locator('[data-sale-draft-control="new"]'),
-        ).toBeVisible();
-        await page.screenshot({
-          path: evidencePath(
-            "issue-58",
-            "after",
-            `sale-draft-index-${locale}-${theme}.png`,
-          ),
-          fullPage: true,
-        });
-        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
-          [],
-        );
-
-        const draftId = await openFreshDraft(page);
-        await page.locator("#sale-draft-search").fill("panadol gs");
-        await expect(
-          page.locator(`[data-sale-basket-add="${panadol.id}"]`),
-        ).toBeVisible();
-        await page.screenshot({
-          path: evidencePath(
-            "issue-58",
-            "after",
-            `sale-draft-search-results-${locale}-${theme}.png`,
-          ),
-          fullPage: true,
-        });
-        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
-          [],
-        );
-        await expect(
-          page.locator(`[data-sale-basket-add="${panadol.id}"]`),
-        ).toBeInViewport();
-
-        if (theme === "light") {
-          // Logical order must not depend on the visual direction.
-          const order = await page
-            .locator("table.sales-results-table tbody tr")
-            .first()
-            .locator("span.sale-result-name, button[data-sale-basket-add]")
-            .evaluateAll((nodes) =>
-              nodes.map((node) => node.tagName.toLowerCase()),
+        for (const viewport of viewports) {
+          const context = await browser.newContext({
+            ...(locale === "en" &&
+            theme === "light" &&
+            viewport.name === "1280x800"
+              ? {
+                  recordVideo: {
+                    dir: path.dirname(videoPath),
+                    size: { height: viewport.height, width: viewport.width },
+                  },
+                }
+              : {}),
+            viewport: { height: viewport.height, width: viewport.width },
+          });
+          const page = await context.newPage();
+          await installDesktopFake(page, renderer.origin, locale, theme);
+          await page.goto(`${renderer.origin}#/sales`);
+          await expect(page.locator("html")).toHaveAttribute("lang", locale);
+          await expect(page.locator("html")).toHaveAttribute(
+            "dir",
+            locale === "ar" ? "rtl" : "ltr",
+          );
+          await expect(
+            page.locator('[data-sale-draft-control="new"]'),
+          ).toBeVisible();
+          await expect(page.locator("#sale-draft-search")).toHaveCount(0);
+          await expect(
+            page.locator('[data-sales-pane="draft-context"]'),
+          ).toHaveCount(0);
+          await expect(
+            page.locator(".sales-draft-tray-content"),
+          ).toHaveAttribute("aria-busy", "false");
+          const trayBounds = await page
+            .locator(".sales-draft-tray")
+            .evaluate((element) => element.getBoundingClientRect().toJSON());
+          const workspaceBounds = await page
+            .locator(".sales-workspace-main")
+            .evaluate((element) => element.getBoundingClientRect().toJSON());
+          if (locale === "ar") {
+            expect(trayBounds.x).toBeGreaterThanOrEqual(
+              workspaceBounds.x + workspaceBounds.width - 1,
             );
-          if (locale === "en") englishOrder = order;
-          else expect(order).toEqual(englishOrder);
-        }
+          } else {
+            expect(trayBounds.x + trayBounds.width).toBeLessThanOrEqual(
+              workspaceBounds.x + 1,
+            );
+          }
+          const moduleList = page.locator(".module-nav ul");
+          const navState = await moduleList.evaluate((list) => ({
+            clientWidth: list.clientWidth,
+            scrollLeft: list.scrollLeft,
+            scrollWidth: list.scrollWidth,
+          }));
+          if (navState.scrollWidth > navState.clientWidth) {
+            await expect(
+              page.locator(".module-nav-overflow-cue"),
+            ).toBeVisible();
+            await expect(moduleList).toHaveCSS("scrollbar-width", "auto");
 
-        expect(draftId).toMatch(/^\S+$/u);
-        const video = page.video();
-        await context.close();
-        if (video !== null && locale === "en" && theme === "light") {
-          await video.saveAs(videoPath);
+            const lastModule = page.locator(".module-tab").last();
+            await lastModule.focus();
+            const reachedLastModule = await lastModule.evaluate((link) => {
+              const list = link.closest("ul");
+              if (list === null) return false;
+              const linkBounds = link.getBoundingClientRect();
+              const listBounds = list.getBoundingClientRect();
+              return (
+                linkBounds.left >= listBounds.left &&
+                linkBounds.right <= listBounds.right
+              );
+            });
+            expect(reachedLastModule).toBe(true);
+            await moduleList.evaluate((list, scrollLeft) => {
+              list.scrollLeft = scrollLeft;
+            }, navState.scrollLeft);
+            await lastModule.evaluate((link) => link.blur());
+          }
+          await page.screenshot({
+            path: evidencePath(
+              "issue-62",
+              "workspace",
+              `sales-index-${viewport.name}-${locale}-${theme}.png`,
+            ),
+            fullPage: true,
+          });
+          expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+            [],
+          );
+
+          const draftId = await openFreshDraft(page);
+          const activeRow = page.locator(`[data-sale-draft-row="${draftId}"]`);
+          await expect(activeRow).toHaveAttribute("data-current", "true");
+          await expect(
+            page.locator(".sales-draft-tray-content"),
+          ).toHaveAttribute("aria-busy", "false");
+          await expect(
+            activeRow.locator('[data-sale-draft-control="resume"]'),
+          ).toHaveCount(0);
+          const contextPanel = page.locator(
+            '[data-sales-pane="draft-context"]',
+          );
+          await expect(contextPanel).toBeVisible();
+          await expect(contextPanel.getByRole("button")).toHaveCount(0);
+          const contextBounds = await contextPanel.evaluate((element) =>
+            element.getBoundingClientRect().toJSON(),
+          );
+          const searchBounds = await page
+            .locator("#sale-draft-search")
+            .evaluate((element) => element.getBoundingClientRect().toJSON());
+          if (locale === "ar") {
+            expect(contextBounds.x + contextBounds.width).toBeLessThanOrEqual(
+              searchBounds.x + 1,
+            );
+          } else {
+            expect(contextBounds.x).toBeGreaterThanOrEqual(
+              searchBounds.x + searchBounds.width - 1,
+            );
+          }
+          await page.screenshot({
+            path: evidencePath(
+              "issue-62",
+              "workspace",
+              `sales-active-${viewport.name}-${locale}-${theme}.png`,
+            ),
+            fullPage: true,
+          });
+          await page.locator("#sale-draft-search").fill("panadol gs");
+          await expect(
+            page.locator(`[data-sale-basket-add="${panadol.id}"]`),
+          ).toBeVisible();
+          await page.screenshot({
+            path: evidencePath(
+              "issue-62",
+              "workspace",
+              `sales-results-${viewport.name}-${locale}-${theme}.png`,
+            ),
+            fullPage: true,
+          });
+          expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+            [],
+          );
+          await expect(
+            page.locator(`[data-sale-basket-add="${panadol.id}"]`),
+          ).toBeInViewport();
+
+          if (theme === "light") {
+            // Logical order must not depend on the visual direction.
+            const order = await page
+              .locator("table.sales-results-table tbody tr")
+              .first()
+              .locator("span.sale-result-name, button[data-sale-basket-add]")
+              .evaluateAll((nodes) =>
+                nodes.map((node) => node.tagName.toLowerCase()),
+              );
+            if (locale === "en" && englishOrder === undefined)
+              englishOrder = order;
+            else expect(order).toEqual(englishOrder);
+          }
+
+          expect(draftId).toMatch(/^\S+$/u);
+          const video = page.video();
+          await context.close();
+          if (
+            video !== null &&
+            locale === "en" &&
+            theme === "light" &&
+            viewport.name === "1280x800"
+          ) {
+            await video.saveAs(videoPath);
+          }
         }
       }
     }
+  });
+
+  test("continues Sales search beyond the first 50 matching products", async ({
+    browser,
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    let lastProduct: Product | undefined;
+    for (let index = 0; index < 52; index += 1) {
+      lastProduct = await createProduct(
+        `Pageprobe Marker ${String(index).padStart(2, "0")}`,
+      );
+    }
+
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+    await page.locator("#sale-draft-search").fill("pageprobe");
+
+    await expect(
+      page.getByRole("status").filter({ hasText: "Search results: 52" }),
+    ).toBeVisible();
+    const rows = page.locator(".sales-results-table tbody tr");
+    await expect(rows).toHaveCount(50);
+    await page.getByRole("button", { name: "Load more results" }).click();
+    await expect(rows).toHaveCount(52);
+    expect(lastProduct).toBeDefined();
+    await expect(
+      page.locator(`[data-sale-basket-add="${lastProduct!.id}"]`),
+    ).toBeVisible();
+
+    const arabicContext = await browser.newContext();
+    const arabicPage = await arabicContext.newPage();
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await installDesktopFake(arabicPage, renderer.origin, "ar", "light");
+    await arabicPage.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(arabicPage);
+    await arabicPage.locator("#sale-draft-search").fill("pageprobe");
+    const arabicRows = arabicPage.locator(".sales-results-table tbody tr");
+    await expect(arabicRows).toHaveCount(50);
+    await arabicPage
+      .getByRole("button", { name: "عرض المزيد من النتائج" })
+      .click();
+    await expect(arabicRows).toHaveCount(52);
+    await arabicContext.close();
+  });
+
+  test("keeps a failed draft-list read unknown and offers reload", async ({
+    page,
+  }) => {
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    let failedFirstRead = false;
+    await page.route(
+      (url) =>
+        url.pathname === saleDraftsPath() &&
+        url.searchParams.get("status") === "active",
+      async (route) => {
+        if (!failedFirstRead && route.request().method() === "GET") {
+          failedFirstRead = true;
+          await route.abort("failed");
+          return;
+        }
+        await route.continue();
+      },
+    );
+
+    await page.goto(`${renderer.origin}#/sales`);
+    await expect(
+      page.getByText(
+        "The sale draft is unavailable. Check the connection and try again.",
+      ),
+    ).toBeVisible();
+    await expect(page.getByText("There are no open sale drafts.")).toHaveCount(
+      0,
+    );
+    await expect(page.getByText("Loading…")).toHaveCount(0);
+
+    const reload = page.locator(
+      '[data-sale-draft-control="draft-list-reload"]',
+    );
+    await expect(reload).toBeVisible();
+    await reload.click();
+    await expect(reload).toHaveCount(0);
+    await expect(
+      page.locator('[data-sale-draft-control="resume"]').first(),
+    ).toBeVisible();
+  });
+
+  test("retries an uncertain New command with its original idempotency key", async ({
+    page,
+  }) => {
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    const before = await apiRequest("GET", `${saleDraftsPath()}?status=active`);
+    const beforeIds = new Set(
+      (before.body as { drafts: SaleDraft[] }).drafts.map(({ id }) => id),
+    );
+    const idempotencyKeys: string[] = [];
+    let committedResponseLost = false;
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.route(
+      (url) => url.pathname === saleDraftsPath(),
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        idempotencyKeys.push(
+          String(
+            (route.request().postDataJSON() as { idempotencyKey: string })
+              .idempotencyKey,
+          ),
+        );
+        if (!committedResponseLost) {
+          committedResponseLost = true;
+          const response = await route.fetch();
+          expect(response.status()).toBe(201);
+          await route.abort("failed");
+          return;
+        }
+        await route.continue();
+      },
+    );
+
+    await page.goto(`${renderer.origin}#/sales`);
+    const newDraft = page.locator('[data-sale-draft-control="new"]');
+    await newDraft.click();
+    await expect(
+      page.getByText(
+        "The sale draft is unavailable. Check the connection and try again.",
+      ),
+    ).toBeVisible();
+    await expect(newDraft).toBeEnabled();
+    const reconciled = await apiRequest(
+      "GET",
+      `${saleDraftsPath()}?status=active`,
+    );
+    const visibleCreated = (
+      reconciled.body as { drafts: SaleDraft[] }
+    ).drafts.filter(({ id }) => !beforeIds.has(id));
+    expect(visibleCreated).toHaveLength(1);
+    await newDraft.click();
+    await expect(page.locator("#sale-draft-search")).toBeVisible();
+
+    expect(idempotencyKeys).toHaveLength(2);
+    expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
+    const after = await apiRequest("GET", `${saleDraftsPath()}?status=active`);
+    const created = (after.body as { drafts: SaleDraft[] }).drafts.filter(
+      ({ id }) => !beforeIds.has(id),
+    );
+    expect(created).toHaveLength(1);
+  });
+
+  test("recovers a draft read in place after a temporary API failure", async ({
+    page,
+  }) => {
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    const created = await apiRequest("POST", saleDraftsPath(), {
+      idempotencyKey: uuidV7(),
+    });
+    expect(created.status).toBe(201);
+    const draft = created.body as SaleDraft;
+    let failedFirstRead = false;
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.route(
+      (url) => url.pathname === saleDraftPath(draft.id),
+      async (route) => {
+        if (!failedFirstRead && route.request().method() === "GET") {
+          failedFirstRead = true;
+          await route.abort("failed");
+          return;
+        }
+        await route.continue();
+      },
+    );
+
+    await page.goto(`${renderer.origin}#/sales/drafts/${draft.id}`);
+    await expect(
+      page.getByText(
+        "The sale draft is unavailable. Check the connection and try again.",
+      ),
+    ).toBeVisible();
+    const reload = page.locator('[data-sale-draft-control="draft-reload"]');
+    await expect(reload).toBeVisible();
+    await reload.click();
+    await expect(page.locator("#sale-draft-search")).toBeVisible();
+    await expect(
+      page.locator(`[data-sale-draft-id="${draft.id}"]`),
+    ).toBeVisible();
+  });
+
+  test("does not leave old actionable products after a search failure", async ({
+    page,
+  }) => {
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+
+    const search = page.locator("#sale-draft-search");
+    await search.fill("Panadol Extra");
+    const previousResult = page.locator(
+      `[data-sale-basket-add="${panadol.id}"]`,
+    );
+    await expect(previousResult).toBeVisible();
+
+    await page.route(
+      (url) =>
+        url.pathname === "/sales/product-search" &&
+        url.searchParams.get("query") === "Amoxil",
+      async (route) => {
+        await route.abort("failed");
+      },
+    );
+    await search.fill("Amoxil");
+    await expect(
+      page.getByText(
+        "The search is unavailable. Check the connection and try again.",
+      ),
+    ).toBeVisible();
+    await expect(previousResult).toHaveCount(0);
+  });
+
+  test("adds a product to the sale invoice and keeps it after reopening the draft", async ({
+    browser,
+    page,
+  }) => {
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    const draftId = await openFreshDraft(page);
+    const basketBefore = await apiRequest("GET", reorderBasketPath());
+
+    await page.locator("#sale-draft-search").fill("Panadol Extra");
+    const add = page.locator(`[data-sale-line-add="${panadol.id}"]`);
+    await expect(add).toBeVisible();
+    await add.click();
+    const invoice = page.locator(`[data-sale-invoice="${draftId}"]`);
+    await expect(invoice.locator("[data-sale-line-id]")).toHaveCount(1);
+    await expect(invoice).toContainText("Panadol Extra GSK");
+    await expect(page.locator(".sales-item-context")).toContainText(
+      "No stock movement recorded",
+    );
+    const calculator = page.getByRole("region", { name: "Calculator" });
+    await calculator.getByRole("textbox", { name: "Calculator" }).fill("2");
+    await calculator.getByRole("button", { name: "Apply to draft" }).click();
+    await expect
+      .poll(
+        async () =>
+          ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+            .lines[0]?.quantity,
+      )
+      .toBe("2");
+    await calculator.getByRole("button", { name: "Line discount %" }).click();
+    await calculator.getByRole("textbox", { name: "Calculator" }).fill("10");
+    await calculator.getByRole("button", { name: "Apply to draft" }).click();
+    await expect
+      .poll(
+        async () =>
+          ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+            .lines[0]?.lineDiscountPercentage,
+      )
+      .toBe("10");
+    await calculator.getByRole("button", { name: "Invoice discount" }).click();
+    await calculator.getByRole("textbox", { name: "Calculator" }).fill("1");
+    await calculator.getByRole("button", { name: "Apply to draft" }).click();
+    await expect
+      .poll(
+        async () =>
+          ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+            .invoiceDiscountFils,
+      )
+      .toBe("1000");
+    await page.screenshot({
+      path: evidencePath("issue-62", "workspace", "sale-invoice-en-light.png"),
+    });
+    const saved = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    expect(saved.lines.map((line) => line.productId)).toEqual([panadol.id]);
+    expect(BigInt(saved.totals.totalFils)).toBeGreaterThan(0n);
+    expect((await apiRequest("GET", reorderBasketPath())).body).toEqual(
+      basketBefore.body,
+    );
+
+    for (const viewport of [
+      { width: 1280, height: 800 },
+      { width: 1366, height: 768 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(invoice.locator(".sales-invoice-final")).toBeInViewport();
+      await expect(invoice.locator(".sales-invoice-actions")).toBeInViewport();
+      await page.screenshot({
+        path: evidencePath(
+          "issue-62",
+          "workspace",
+          `sale-invoice-${viewport.width}x${viewport.height}-en-light.png`,
+        ),
+      });
+    }
+
+    await invoice.getByRole("button", { name: /Open item record/ }).click();
+    const itemRecord = page.getByRole("dialog", { name: "Item record" });
+    await expect(itemRecord).toContainText("Panadol Extra GSK");
+    await itemRecord
+      .getByRole("button", { name: "Return to sale invoice" })
+      .click();
+    await expect(page.locator("#sale-draft-search")).toHaveValue(
+      "Panadol Extra",
+    );
+    await expect(
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      saved,
+    );
+
+    await page.locator('[data-sale-draft-control="new"]').click();
+    const newConfirmation = page.getByRole("group", {
+      name: "Confirm new sale draft",
+    });
+    await expect(newConfirmation).toBeVisible();
+    await newConfirmation.getByRole("button", { name: "Cancel" }).click();
+    await expect(newConfirmation).toHaveCount(0);
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      saved,
+    );
+
+    await page.reload();
+    await expect(
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+    await expect(page.locator("#sale-draft-search")).toHaveValue("");
+    await page.goto(`${renderer.origin}#/sales`);
+    await page
+      .locator(
+        `[data-sale-draft-row="${draftId}"] [data-sale-draft-control="resume"]`,
+      )
+      .click();
+    await expect(
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+
+    const arabicContext = await browser.newContext({
+      viewport: { width: 1878, height: 1002 },
+    });
+    const arabicPage = await arabicContext.newPage();
+    await installDesktopFake(arabicPage, renderer.origin, "ar", "light");
+    await arabicPage.goto(`${renderer.origin}#/sales/drafts/${draftId}`);
+    const arabicInvoice = arabicPage.locator(
+      `[data-sale-invoice="${draftId}"]`,
+    );
+    await expect(arabicInvoice.locator("[data-sale-line-id]")).toHaveCount(1);
+    await expect(
+      arabicInvoice.locator(".sales-invoice-final"),
+    ).toBeInViewport();
+    await expect(
+      arabicInvoice.locator(".sales-invoice-actions"),
+    ).toBeInViewport();
+    await arabicPage.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sale-invoice-1878x1002-ar-light.png",
+      ),
+    });
+    await arabicContext.close();
+  });
+
+  test("Quick Add saves a misc line for the owner and denies the sales role", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    const draftId = await openFreshDraft(page);
+    await page.locator("[data-sale-misc-open]").click();
+    const form = page.locator(".sales-misc-form");
+    await form.getByLabel("Name").fill("Delivery service");
+    await form.getByLabel("Unit", { exact: true }).fill("service");
+    await form.getByLabel("Quantity").fill("2");
+    await form.getByLabel("Unit price (IQD)").fill("12.5");
+    await form.getByRole("button", { name: "Add to sale" }).click();
+    await expect
+      .poll(
+        async () =>
+          ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+            .lines.length,
+      )
+      .toBe(1);
+    const added = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    expect(added.lines[0]).toMatchObject({
+      kind: "misc",
+      productId: null,
+      totalFils: "25000",
+    });
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await page.reload();
+    await expect(page.locator("[data-sale-misc-open]")).toHaveCount(0);
+    const denied = await apiRequest("POST", saleDraftMiscLinesPath(draftId), {
+      displayName: "Should be denied",
+      unitName: "service",
+      quantity: "1",
+      unitPriceFils: "1000",
+      expectedVersion: added.version,
+      idempotencyKey: uuidV7(),
+    });
+    expect(denied.status).toBe(403);
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      added,
+    );
+  });
+
+  test("records an authorized price override and keeps it after reopening", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    const draftId = await openFreshDraft(page);
+    await page.locator("#sale-draft-search").fill("Panadol Extra");
+    await page.locator(`[data-sale-line-add="${panadol.id}"]`).click();
+    await expect
+      .poll(
+        async () =>
+          ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+            .lines.length,
+      )
+      .toBe(1);
+    const before = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    const line = before.lines[0]!;
+    await page
+      .getByRole("button", { name: /Change line price: Panadol Extra/ })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Change line price" });
+    await dialog.getByLabel("Unit price (IQD)").fill("77.5");
+    await dialog.getByLabel("Reason").fill("Approved local promotion");
+    await dialog.getByRole("button", { name: "Save price" }).click();
+    await expect(dialog).toHaveCount(0);
+    const saved = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    expect(saved.lines[0]).toMatchObject({
+      id: line.id,
+      unitPriceFils: "77500",
+      priceSource: "manual",
+      priceOverrideReason: "Approved local promotion",
+    });
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: /Change line price: Panadol Extra/ }),
+    ).toBeVisible();
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      saved,
+    );
+
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: /Change line price/ }),
+    ).toHaveCount(0);
+    const denied = await apiRequest(
+      "POST",
+      saleDraftLinePriceOverridePath(draftId, line.id),
+      {
+        expectedVersion: saved.version,
+        idempotencyKey: uuidV7(),
+        unitPriceFils: "80000",
+        reason: "Unapproved change",
+      },
+    );
+    expect(denied.status).toBe(403);
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      saved,
+    );
+  });
+
+  test("a manager pin persists and a sales tile adds its configured catalog unit", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    const draftId = await openFreshDraft(page);
+    await page.locator("#sale-draft-search").fill("Panadol Extra");
+    await page
+      .getByRole("button", { name: /Pin to quick access: Panadol Extra/ })
+      .click();
+    const pin = page.locator(".sales-quick-pin-form");
+    await expect(pin).toBeVisible();
+    await pin.getByLabel("Category").fill("Favorites");
+    const unitId = await pin.getByLabel("Selling unit").inputValue();
+    await pin.getByRole("button", { name: "Save pin" }).click();
+    await expect(
+      page.locator(`[data-sale-quick-add="${panadol.id}"]`),
+    ).toBeVisible();
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: /Pin to quick access/ }),
+    ).toHaveCount(0);
+    await page.locator(`[data-sale-quick-add="${panadol.id}"]`).click();
+    await expect
+      .poll(
+        async () =>
+          ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+            .lines.length,
+      )
+      .toBe(1);
+    const saved = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    expect(saved.lines[0]).toMatchObject({ productId: panadol.id, unitId });
+    await page.reload();
+    await expect(
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+  });
+
+  test("opens Product creation from an unknown scan and returns to the unchanged draft", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    const draftId = await openFreshDraft(page);
+    const search = page.locator("#sale-draft-search");
+    await search.fill("9876543210012");
+    const create = page.getByRole("button", { name: "Create new item" });
+    await expect(create).toBeVisible();
+    await create.click();
+    const dialog = page.getByRole("dialog", { name: "Create new item" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(search).toHaveValue("9876543210012");
+    expect(
+      ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+        .lines,
+    ).toHaveLength(0);
+
+    await create.click();
+    await dialog.getByLabel("Trade name *").fill("Quick Sale Item");
+    await dialog.getByLabel("Inventory Unit (base unit) *").fill("Piece");
+    await dialog.getByLabel("Retail price (fils) *").fill("120000");
+    await dialog.getByLabel("Uses per day").fill("1");
+    await dialog.getByLabel("Food timing").selectOption("after-food");
+    await dialog.getByRole("button", { name: "Create product" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(search).toHaveValue("Quick Sale Item");
+    const found = await apiRequest(
+      "GET",
+      `${saleProductSearchPath()}?query=Quick%20Sale%20Item`,
+    );
+    expect(found.status).toBe(200);
+    const productId = String(
+      (found.body as { results: { product: { id: string } }[] }).results[0]
+        ?.product.id,
+    );
+    await page.locator(`[data-sale-line-add="${productId}"]`).click();
+    await expect(
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+    expect(
+      (
+        (await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft
+      ).lines.map((line) => line.productId),
+    ).toEqual([productId]);
   });
 });
 

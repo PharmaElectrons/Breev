@@ -12,6 +12,8 @@ import {
   desktopPairingInvitationRequestSchema,
   desktopReportRendererIncidentRequestSchema,
   desktopReportRendererIncidentResponseSchema,
+  desktopSaveInventoryExportRequestSchema,
+  desktopSaveInventoryExportResponseSchema,
   desktopStartupConfigRequestSchema,
   desktopStartupConfigResponseSchema,
   desktopSubmitDiagnosticsRequestSchema,
@@ -22,6 +24,33 @@ import {
 
 const installationId = "0192f0a0-1c2d-7e3f-8a4b-5c6d7e8f9a0b";
 const deviceId = "0192f0a0-1c2d-7e3f-8a4b-5c6d7e8f9a0c";
+const sampleInventoryBundle = {
+  counts: { batches: "0", items: "1", movements: "0" },
+  exportedAt: "2026-09-22T00:00:00.000Z",
+  exportedBy: {
+    displayName: "Owner",
+    id: "01990abc-1234-7123-8123-123456789abc",
+  },
+  items: [
+    {
+      averageUnitCostFils: null,
+      balance: "10",
+      batches: [],
+      displayName: "Panadol",
+      productId: "01990abc-1234-7123-8123-123456789abd",
+      status: "active" as const,
+      stockLevels: {
+        minimumLevel: null,
+        maximumLevel: null,
+        reorderPoint: null,
+      },
+      suppliers: [],
+      valueFils: null,
+    },
+  ],
+  pharmacyId: "01990abc-1234-7123-8123-123456789abe",
+  valuationMethod: "weighted-average-cost" as const,
+};
 
 describe("desktop preload contract", () => {
   it("accepts the startup configuration exchange for both device roles", () => {
@@ -270,6 +299,70 @@ describe("desktop preload contract", () => {
       desktopExportDiagnosticsResponseSchema.parse({
         path: "C:\\Users\\Cashier\\Desktop",
         status: "saved",
+      }),
+    ).toThrow();
+  });
+
+  it("validates the sensitive inventory export save request and response", () => {
+    expect(
+      desktopSaveInventoryExportRequestSchema.parse({
+        bundle: sampleInventoryBundle,
+        locale: "ar",
+      }),
+    ).toEqual({
+      bundle: sampleInventoryBundle,
+      locale: "ar",
+    });
+    expect(
+      desktopSaveInventoryExportRequestSchema.parse({
+        bundle: sampleInventoryBundle,
+        format: "csv",
+        locale: "en",
+      }),
+    ).toEqual({
+      bundle: sampleInventoryBundle,
+      format: "csv",
+      locale: "en",
+    });
+    expect(
+      desktopSaveInventoryExportRequestSchema.parse({
+        bundle: sampleInventoryBundle,
+        format: "json",
+        locale: "en",
+      }),
+    ).toEqual({
+      bundle: sampleInventoryBundle,
+      format: "json",
+      locale: "en",
+    });
+    for (const status of ["saved", "cancelled", "failed"] as const) {
+      expect(
+        desktopSaveInventoryExportResponseSchema.parse({ status }),
+      ).toEqual({ status });
+    }
+    expect(() =>
+      desktopSaveInventoryExportRequestSchema.parse({
+        bundle: sampleInventoryBundle,
+        format: "xml",
+        locale: "en",
+      }),
+    ).toThrow();
+    expect(() =>
+      desktopSaveInventoryExportRequestSchema.parse({
+        bundle: sampleInventoryBundle,
+        locale: "fr",
+      }),
+    ).toThrow();
+    expect(() =>
+      desktopSaveInventoryExportRequestSchema.parse({
+        bundle: sampleInventoryBundle,
+        locale: "en",
+        path: "C:\\outside",
+      }),
+    ).toThrow();
+    expect(() =>
+      desktopSaveInventoryExportResponseSchema.parse({
+        status: "corrupted",
       }),
     ).toThrow();
   });

@@ -1,5 +1,8 @@
 import {
   identityResourceIdSchema,
+  productSearchRequestSchema,
+  saleProductSearchContract,
+  saleProductContextContract,
   saleDraftCreateContract,
   saleDraftCreateRequestSchema,
   saleDraftListContract,
@@ -7,6 +10,24 @@ import {
   saleDraftReadContract,
   saleDraftResumeContract,
   saleDraftResumeRequestSchema,
+  saleDraftLineAddContract,
+  saleDraftLineAddRequestSchema,
+  saleDraftMiscLineAddContract,
+  saleDraftMiscLineAddRequestSchema,
+  saleDraftLineChangeContract,
+  saleDraftLineChangeRequestSchema,
+  saleDraftLinePriceOverrideContract,
+  saleDraftLinePriceOverrideRequestSchema,
+  saleDraftLineRemoveContract,
+  saleDraftLineRemoveRequestSchema,
+  saleDraftInvoiceDiscountContract,
+  saleDraftInvoiceDiscountRequestSchema,
+  saleDraftClearContract,
+  saleDraftClearRequestSchema,
+  saleDraftSuspendContract,
+  saleDraftSuspendRequestSchema,
+  saleDraftDiscardContract,
+  saleDraftDiscardRequestSchema,
   type CatalogFieldError,
 } from "@breev/contracts/local-rest";
 import {
@@ -28,6 +49,42 @@ import { SaleDraftDenied, SaleDraftService } from "./sale-draft.service.js";
 @Controller()
 export class SaleDraftController {
   public constructor(private readonly drafts: SaleDraftService) {}
+
+  @Get(saleProductSearchContract.path)
+  public async searchProducts(
+    @Query() query: unknown,
+    @Req() request: Request,
+  ) {
+    return await translateSaleDraftDenial(async () => {
+      const input = productSearchRequestSchema.safeParse(query ?? {});
+      if (!input.success) {
+        throw await this.drafts.rejectInvalidBody(
+          request,
+          "sales.product-search",
+          fieldErrors(input.error),
+        );
+      }
+      return await this.drafts.searchProducts(request, input.data);
+    });
+  }
+
+  @Get(saleProductContextContract.path)
+  public async readProductContext(
+    @Param("productId") productId: string,
+    @Req() request: Request,
+  ) {
+    return await translateSaleDraftDenial(async () => {
+      const parsedId = identityResourceIdSchema.safeParse(productId);
+      if (!parsedId.success) {
+        throw await this.drafts.rejectInvalidBody(
+          request,
+          "sales.product-context.read",
+          [{ code: "invalid", path: ["productId"] }],
+        );
+      }
+      return await this.drafts.readProductContext(request, parsedId.data);
+    });
+  }
 
   @Get(saleDraftListContract.path)
   public async list(@Query() query: unknown, @Req() request: Request) {
@@ -103,6 +160,205 @@ export class SaleDraftController {
         parsedDraftId.data,
         input.data,
       );
+    });
+  }
+
+  @Post(saleDraftLineAddContract.path)
+  @HttpCode(200)
+  public async addLine(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.line.add",
+      draftId,
+      saleDraftLineAddRequestSchema,
+      body,
+      (id, input) => this.drafts.addLine(request, id, input),
+    );
+  }
+
+  @Post(saleDraftMiscLineAddContract.path)
+  @HttpCode(200)
+  public async addMiscLine(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.misc-line.add",
+      draftId,
+      saleDraftMiscLineAddRequestSchema,
+      body,
+      (id, input) => this.drafts.addMiscLine(request, id, input),
+    );
+  }
+
+  @Post(saleDraftLineChangeContract.path)
+  @HttpCode(200)
+  public async changeLine(
+    @Param("draftId") draftId: string,
+    @Param("lineId") lineId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.line.change",
+      draftId,
+      saleDraftLineChangeRequestSchema,
+      body,
+      (id, input) => this.drafts.changeLine(request, id, lineId, input),
+      lineId,
+    );
+  }
+
+  @Post(saleDraftLinePriceOverrideContract.path)
+  @HttpCode(200)
+  public async overrideLinePrice(
+    @Param("draftId") draftId: string,
+    @Param("lineId") lineId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.line.price-override",
+      draftId,
+      saleDraftLinePriceOverrideRequestSchema,
+      body,
+      (id, input) => this.drafts.overrideLinePrice(request, id, lineId, input),
+      lineId,
+    );
+  }
+
+  @Post(saleDraftLineRemoveContract.path)
+  @HttpCode(200)
+  public async removeLine(
+    @Param("draftId") draftId: string,
+    @Param("lineId") lineId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.line.remove",
+      draftId,
+      saleDraftLineRemoveRequestSchema,
+      body,
+      (id, input) => this.drafts.removeLine(request, id, lineId, input),
+      lineId,
+    );
+  }
+
+  @Post(saleDraftInvoiceDiscountContract.path)
+  @HttpCode(200)
+  public async discount(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.discount",
+      draftId,
+      saleDraftInvoiceDiscountRequestSchema,
+      body,
+      (id, input) => this.drafts.setInvoiceDiscount(request, id, input),
+    );
+  }
+
+  @Post(saleDraftClearContract.path)
+  @HttpCode(200)
+  public async clear(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.clear",
+      draftId,
+      saleDraftClearRequestSchema,
+      body,
+      (id, input) => this.drafts.clearDraft(request, id, input),
+    );
+  }
+
+  @Post(saleDraftSuspendContract.path)
+  @HttpCode(200)
+  public async suspend(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.suspend",
+      draftId,
+      saleDraftSuspendRequestSchema,
+      body,
+      (id, input) => this.drafts.suspendDraft(request, id, input),
+    );
+  }
+
+  @Post(saleDraftDiscardContract.path)
+  @HttpCode(200)
+  public async discard(
+    @Param("draftId") draftId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return await this.mutation(
+      request,
+      "sale.draft.discard",
+      draftId,
+      saleDraftDiscardRequestSchema,
+      body,
+      (id, input) => this.drafts.discardDraft(request, id, input),
+    );
+  }
+
+  private async mutation<T>(
+    request: Request,
+    action: string,
+    draftId: string,
+    schema: {
+      safeParse(
+        value: unknown,
+      ):
+        | { success: true; data: T }
+        | { success: false; error: { issues: readonly ValidationIssue[] } };
+    },
+    body: unknown,
+    work: (id: string, input: T) => Promise<unknown>,
+    lineId?: string,
+  ) {
+    return await translateSaleDraftDenial(async () => {
+      const parsedId = identityResourceIdSchema.safeParse(draftId);
+      const parsedLineId =
+        lineId === undefined
+          ? undefined
+          : identityResourceIdSchema.safeParse(lineId);
+      const parsed = schema.safeParse(body);
+      if (
+        !parsedId.success ||
+        parsedLineId?.success === false ||
+        !parsed.success
+      )
+        throw await this.drafts.rejectInvalidBody(request, action, [
+          ...(parsedId.success
+            ? []
+            : [{ code: "invalid" as const, path: ["draftId"] }]),
+          ...(parsedLineId === undefined || parsedLineId.success
+            ? []
+            : [{ code: "invalid" as const, path: ["lineId"] }]),
+          ...(parsed.success ? [] : fieldErrors(parsed.error)),
+        ]);
+      return await work(parsedId.data, parsed.data);
     });
   }
 }

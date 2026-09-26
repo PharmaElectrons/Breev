@@ -162,7 +162,6 @@ describe("production renderer data boundaries", () => {
       "basket",
       "reports",
       "accounts",
-      "administration",
       "settings",
     ]);
     for (const definition of MODULE_DEFINITIONS) {

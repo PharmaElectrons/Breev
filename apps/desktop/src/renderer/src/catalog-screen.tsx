@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { catalogMessages, type CatalogCopy } from "./catalog-messages";
+import { useCommittedFocus } from "./committed-focus";
 import {
   approveCatalogMatchingSuggestion,
   newIdempotencyKey,
@@ -297,6 +298,7 @@ function ProductRail({
   readonly products: readonly Product[];
 }): React.JSX.Element {
   const { locale } = usePreferences();
+  const requestCommittedFocus = useCommittedFocus();
   const inputRef = useRef<HTMLInputElement>(null);
   const matchingButtonRef = useRef<HTMLButtonElement>(null);
   const matchingDialogRef = useRef<HTMLDivElement>(null);
@@ -332,6 +334,8 @@ function ProductRail({
           search: "Search Arabic name, English name, or barcode",
           searching: "Searching…",
         };
+  const loadMoreLabel =
+    locale === "ar" ? "عرض المزيد من النتائج" : "Load more results";
 
   const performSearch = async (selectSingle: boolean): Promise<void> => {
     const normalizedQuery = query.trim();
@@ -344,6 +348,7 @@ function ProductRail({
     }
     setSearching(true);
     setSearchError(null);
+    setSearchResponse(null);
     try {
       const response = await searchProducts(baseUrl, {
         limit: "50",
@@ -354,6 +359,45 @@ function ProductRail({
       if (selectSingle && response.results.length === 1) {
         window.location.hash = `#/catalog/products/${response.results[0]!.product.id}`;
       }
+    } catch (searchFailure) {
+      if (sequence !== requestSequence.current) return;
+      setSearchError(
+        searchFailure instanceof Error
+          ? searchFailure.message
+          : String(searchFailure),
+      );
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } finally {
+      if (sequence === requestSequence.current) setSearching(false);
+    }
+  };
+
+  const loadMore = async (): Promise<void> => {
+    if (searchResponse === null || !searchResponse.hasMore || searching) return;
+    const sequence = ++requestSequence.current;
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const response = await searchProducts(baseUrl, {
+        limit: "50",
+        offset: String(searchResponse.results.length),
+        query: searchResponse.query,
+      });
+      if (sequence !== requestSequence.current) return;
+      setSearchResponse((current) => {
+        if (current === null || current.query !== response.query)
+          return current;
+        const existingIds = new Set(
+          current.results.map(({ product }) => product.id),
+        );
+        const appended = response.results.filter(
+          ({ product }) => !existingIds.has(product.id),
+        );
+        return {
+          ...response,
+          results: [...current.results, ...appended],
+        };
+      });
     } catch (searchFailure) {
       if (sequence !== requestSequence.current) return;
       setSearchError(
@@ -381,9 +425,9 @@ function ProductRail({
   }, [matchingBusy, matchingError]);
 
   const matches =
-    searchResponse === null
+    query.trim().length === 0
       ? products
-      : searchResponse.results.map((result) => result.product);
+      : (searchResponse?.results.map((result) => result.product) ?? []);
   const resultCount =
     query.trim().length === 0
       ? products.length
@@ -392,18 +436,13 @@ function ProductRail({
   const openMatching = async (): Promise<void> => {
     setMatchingBusy(true);
     setMatchingError(null);
+    let opened = false;
     try {
-      const opened = await openCatalogMatchingBatch(baseUrl, {
+      const batch = await openCatalogMatchingBatch(baseUrl, {
         idempotencyKey: newIdempotencyKey(),
       });
-      setMatchingBatch(opened);
-      requestAnimationFrame(() => {
-        matchingDialogRef.current
-          ?.querySelector<HTMLElement>(
-            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-          )
-          ?.focus();
-      });
+      setMatchingBatch(batch);
+      opened = true;
     } catch (matchingFailure) {
       setMatchingError(
         matchingFailure instanceof Error
@@ -411,6 +450,13 @@ function ProductRail({
           : String(matchingFailure),
       );
     } finally {
+      if (opened) {
+        requestCommittedFocus(() =>
+          matchingDialogRef.current?.querySelector<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        );
+      }
       setMatchingBusy(false);
     }
   };
@@ -418,7 +464,7 @@ function ProductRail({
   const closeMatching = (): void => {
     setMatchingBatch(null);
     setMatchingError(null);
-    requestAnimationFrame(() => matchingButtonRef.current?.focus());
+    requestCommittedFocus(() => matchingButtonRef.current);
   };
 
   const approveSuggestion = async (
@@ -427,6 +473,7 @@ function ProductRail({
   ): Promise<void> => {
     setMatchingBusy(true);
     setMatchingError(null);
+    let approved = false;
     try {
       const updated = await approveCatalogMatchingSuggestion(
         baseUrl,
@@ -444,11 +491,7 @@ function ProductRail({
               ),
             },
       );
-      requestAnimationFrame(() => {
-        matchingDialogRef.current
-          ?.querySelector<HTMLElement>("button:not([disabled])")
-          ?.focus();
-      });
+      approved = true;
     } catch (matchingFailure) {
       setMatchingError(
         matchingFailure instanceof Error
@@ -456,6 +499,13 @@ function ProductRail({
           : String(matchingFailure),
       );
     } finally {
+      if (approved) {
+        requestCommittedFocus(() =>
+          matchingDialogRef.current?.querySelector<HTMLElement>(
+            "button:not([disabled])",
+          ),
+        );
+      }
       setMatchingBusy(false);
     }
   };
@@ -493,7 +543,14 @@ function ProductRail({
           placeholder={labels.search}
           type="search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            const nextQuery = event.target.value;
+            setQuery(nextQuery);
+            requestSequence.current += 1;
+            setSearchResponse(null);
+            setSearchError(null);
+            setSearching(nextQuery.trim().length > 0);
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
@@ -514,6 +571,10 @@ function ProductRail({
       {searchError !== null ? (
         <p className="catalog-rail-empty" role="alert">
           {searchError}
+        </p>
+      ) : searching && query.trim().length > 0 && searchResponse === null ? (
+        <p className="catalog-rail-empty" role="status">
+          {labels.searching}
         </p>
       ) : loading && query.trim().length === 0 ? (
         <p className="catalog-rail-empty" role="status">
@@ -554,6 +615,16 @@ function ProductRail({
           ))}
         </ul>
       )}
+      {searchResponse?.hasMore ? (
+        <button
+          className="catalog-rail-load-more"
+          disabled={searching}
+          type="button"
+          onClick={() => void loadMore()}
+        >
+          {loadMoreLabel}
+        </button>
+      ) : null}
       {matchingBatch === null ? null : (
         <div
           ref={matchingDialogRef}

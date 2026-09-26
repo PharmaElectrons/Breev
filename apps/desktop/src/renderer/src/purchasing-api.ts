@@ -37,6 +37,10 @@ import {
   purchaseDraftResultSchema,
   purchaseDraftRowCommitContract,
   purchaseDraftRowCommitResultSchema,
+  purchaseDraftRowDiscardContract,
+  purchaseDraftRowDiscardPath,
+  purchaseDraftRowPath,
+  purchaseDraftRowUpdateContract,
   purchaseDraftRowsPath,
   purchaseDraftSchema,
   purchaseEntryPreferencesReadContract,
@@ -88,6 +92,8 @@ import {
   type PurchaseDraftResult,
   type PurchaseDraftRowCommitRequest,
   type PurchaseDraftRowCommitResult,
+  type PurchaseDraftRowDiscardRequest,
+  type PurchaseDraftRowUpdateRequest,
   type PurchaseDraftUpdateRequest,
   type PurchaseEntryPreferences,
   type PurchaseEntryPreferencesUpdateRequest,
@@ -244,6 +250,34 @@ export const commitPurchaseDraftRow = async (
     purchaseDraftRowCommitContract.method,
     201,
     purchaseDraftRowCommitResultSchema,
+    body,
+  );
+export const updatePurchaseDraftRow = async (
+  baseUrl: string,
+  draftId: string,
+  rowId: string,
+  body: PurchaseDraftRowUpdateRequest,
+): Promise<PurchaseDraftRowCommitResult> =>
+  await requestJson(
+    baseUrl,
+    purchaseDraftRowPath(draftId, rowId),
+    purchaseDraftRowUpdateContract.method,
+    200,
+    purchaseDraftRowCommitResultSchema,
+    body,
+  );
+export const discardPurchaseDraftRow = async (
+  baseUrl: string,
+  draftId: string,
+  rowId: string,
+  body: PurchaseDraftRowDiscardRequest,
+): Promise<PurchaseDraftDetail> =>
+  await requestJson(
+    baseUrl,
+    purchaseDraftRowDiscardPath(draftId, rowId),
+    purchaseDraftRowDiscardContract.method,
+    200,
+    purchaseDraftDetailSchema,
     body,
   );
 export const createPurchaseDraft = async (
@@ -539,15 +573,20 @@ export function readPendingPurchasePost(
   address: PurchasingAttemptAddress,
 ): PendingPurchasePost | null {
   if (!address.hash.startsWith(PURCHASE_POST_ATTEMPT_PREFIX)) return null;
-  const [draftId, expectedVersion, ...extra] = address.hash
+  const segments = address.hash
     .slice(PURCHASE_POST_ATTEMPT_PREFIX.length)
     .split("/");
+  if (segments.length < 2 || segments.length > 3) {
+    address.replace("#/purchases");
+    return null;
+  }
+  const [draftId, expectedVersion, hashKey] = segments;
+  const idempotencyKey = hashKey ?? draftId;
   const request = purchasePostRequestSchema.safeParse({
     expectedVersion,
-    idempotencyKey: draftId,
+    idempotencyKey,
   });
   if (
-    extra.length > 0 ||
     typeof draftId !== "string" ||
     !purchaseDraftSchema.shape.id.safeParse(draftId).success ||
     !request.success
@@ -566,16 +605,23 @@ export function rememberPurchasePost(
   address: PurchasingAttemptAddress,
   draftId: string,
   expectedVersion: string,
+  createKey: () => string = newPurchasingIdempotencyKey,
 ): PendingPurchasePost {
   const pending = readPendingPurchasePost(address);
-  if (pending !== null) return pending;
+  if (
+    pending !== null &&
+    pending.draftId === draftId &&
+    pending.expectedVersion === expectedVersion
+  ) {
+    return pending;
+  }
   const next = purchasePostRequestSchema.parse({
     expectedVersion,
-    idempotencyKey: draftId,
+    idempotencyKey: createKey(),
   });
   const value = { draftId, ...next };
   address.replace(
-    `${PURCHASE_POST_ATTEMPT_PREFIX}${draftId}/${next.expectedVersion}`,
+    `${PURCHASE_POST_ATTEMPT_PREFIX}${draftId}/${next.expectedVersion}/${next.idempotencyKey}`,
   );
   return value;
 }

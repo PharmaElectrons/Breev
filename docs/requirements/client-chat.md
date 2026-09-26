@@ -371,3 +371,11 @@ At 9:22 PM, Saifaldeen sent a revised 3.78 MB project brief. At 9:40 PM, Mohamed
 ## 12 August 2026
 
 The source conversation records this date but contains no further messages.
+
+## 23 September 2026
+
+The stakeholder clarified Sale Draft access for issue #62:
+
+- Any pharmacy user with `sales.drafts.manage` may list, read, and resume any Sale Draft in that pharmacy from a device that passes the existing authentication and device-trust checks.
+- The draft creator and device remain audit metadata; they do not restrict visibility or resumption.
+- This decision does not define automatic selection when Sales opens. Keep draft selection explicit until that behavior is approved separately.

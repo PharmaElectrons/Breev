@@ -5,7 +5,9 @@ import {
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   saleDraftPath,
+  saleDraftLinePriceOverridePath,
   saleDraftsPath,
+  saleQuickAccessPath,
   type SaleDraft,
 } from "@breev/contracts/local-rest";
 import {
@@ -146,6 +148,48 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
       expect(read.status, diagnostics(read)).toBe(200);
       expect(read.body).toEqual(created);
     }
+  });
+
+  it("lets cashiers read quick access while only managers may replace settings", async () => {
+    await loginAs(actors.owner);
+    const original = await request("GET", saleQuickAccessPath());
+    expect(original.status, diagnostics(original)).toBe(200);
+    await loginAs(actors.salesEmployee);
+    const read = await request("GET", saleQuickAccessPath());
+    expect(read.status, diagnostics(read)).toBe(200);
+    expect(read.body).toEqual(original.body);
+    const deniedChange = await request("POST", saleQuickAccessPath(), {
+      expectedVersion: "1",
+      idempotencyKey: uuidV7(),
+      categories: [],
+    });
+    expect(deniedChange.status, diagnostics(deniedChange)).toBe(403);
+    await expectIdentityAudit(deniedChange, "sales.quick_access.manage");
+    await loginAs(actors.owner);
+    expect((await request("GET", saleQuickAccessPath())).body).toEqual(
+      original.body,
+    );
+  });
+
+  it("denies a Sales cashier a manual price override before touching the draft", async () => {
+    await loginAs(actors.owner);
+    const draft = await createDraft();
+    const before = await draftSnapshot(draft.id);
+    await loginAs(actors.salesEmployee);
+    const denied = await request(
+      "POST",
+      saleDraftLinePriceOverridePath(draft.id, uuidV7()),
+      {
+        expectedVersion: draft.version,
+        idempotencyKey: uuidV7(),
+        unitPriceFils: "1",
+        reason: "Unauthorized request",
+      },
+    );
+    expect(denied.status, diagnostics(denied)).toBe(403);
+    await expectIdentityAudit(denied, "draft.price.override");
+    await loginAs(actors.owner);
+    expect(await draftSnapshot(draft.id)).toEqual(before);
   });
 
   it("denies a custom role with no sales grant and leaves the draft byte-identical", async () => {

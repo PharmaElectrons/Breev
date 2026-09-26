@@ -3,14 +3,50 @@ import {
   BREEV_CSRF_VALUE,
   identityDenialSchema,
   saleDraftCreateContract,
+  saleDraftClearContract,
+  saleDraftClearPath,
+  saleDraftDiscardsPath,
+  saleDraftDiscardContract,
+  saleDraftDiscountPath,
+  saleDraftInvoiceDiscountContract,
+  saleDraftLineAddContract,
+  saleDraftMiscLineAddContract,
+  saleDraftMiscLinesPath,
+  saleDraftLineChangeContract,
+  saleDraftLinePriceOverrideContract,
+  saleDraftLinePriceOverridePath,
+  saleDraftLineChangesPath,
+  saleDraftLineRemoveContract,
+  saleDraftLineRemovalsPath,
+  saleDraftLinesPath,
   saleDraftListContract,
   saleDraftPath,
   saleDraftReadContract,
   saleDraftResumeContract,
   saleDraftResumptionsPath,
+  saleDraftSuspendContract,
+  saleDraftSuspensionsPath,
   saleDraftsPath,
+  saleProductSearchContract,
+  saleProductSearchPath,
+  saleProductContextPath,
+  saleProductContextContract,
+  saleQuickAccessPath,
+  saleQuickAccessReadContract,
+  saleQuickAccessReplaceContract,
   salesDenialSchema,
   type SaleDraft,
+  type SaleDraftLineAddRequest,
+  type SaleDraftMiscLineAddRequest,
+  type SaleDraftLineChangeRequest,
+  type SaleDraftLinePriceOverrideRequest,
+  type SaleDraftLineRemoveRequest,
+  type SaleDraftInvoiceDiscountRequest,
+  type ProductSearchRequest,
+  type SaleProductSearchResponse,
+  type SaleProductContext,
+  type SaleQuickAccess,
+  type SaleQuickAccessReplaceRequest,
   type SalesDenial,
 } from "@breev/contracts/local-rest";
 
@@ -37,9 +73,64 @@ interface PayloadParser<T> {
   parse(value: unknown): T;
 }
 
+export async function searchSaleProducts(
+  baseUrl: string,
+  input: ProductSearchRequest,
+): Promise<SaleProductSearchResponse> {
+  const query = new URLSearchParams({ query: input.query });
+  if (input.limit !== undefined) query.set("limit", input.limit);
+  if (input.offset !== undefined) query.set("offset", input.offset);
+  return await requestJson(
+    baseUrl,
+    `${saleProductSearchPath()}?${query.toString()}`,
+    saleProductSearchContract.method,
+    200,
+    saleProductSearchContract.responses[200],
+  );
+}
+
+export async function readSaleProductContext(
+  baseUrl: string,
+  productId: string,
+): Promise<SaleProductContext> {
+  return await requestJson(
+    baseUrl,
+    saleProductContextPath(productId),
+    saleProductContextContract.method,
+    200,
+    saleProductContextContract.responses[200],
+  );
+}
+
+export async function readSaleQuickAccess(
+  baseUrl: string,
+): Promise<SaleQuickAccess> {
+  return await requestJson(
+    baseUrl,
+    saleQuickAccessPath(),
+    saleQuickAccessReadContract.method,
+    200,
+    saleQuickAccessReadContract.responses[200],
+  );
+}
+
+export async function replaceSaleQuickAccess(
+  baseUrl: string,
+  body: SaleQuickAccessReplaceRequest,
+): Promise<SaleQuickAccess> {
+  return await requestJson(
+    baseUrl,
+    saleQuickAccessPath(),
+    saleQuickAccessReplaceContract.method,
+    200,
+    saleQuickAccessReplaceContract.responses[200],
+    body,
+  );
+}
+
 export async function readSaleDrafts(
   baseUrl: string,
-  query: { readonly status?: "active" } = {},
+  query: { readonly status?: "active" | "suspended" } = {},
 ): Promise<{ readonly drafts: readonly SaleDraft[] }> {
   const path =
     query.status === undefined
@@ -95,6 +186,145 @@ export async function resumeSaleDraft(
     saleDraftResumeContract.method,
     200,
     saleDraftResumeContract.responses[200],
+    body,
+  );
+}
+
+export async function addSaleDraftLine(
+  baseUrl: string,
+  draftId: string,
+  body: SaleDraftLineAddRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftLinesPath(draftId),
+    saleDraftLineAddContract,
+    body,
+  );
+}
+
+export async function addSaleDraftMiscLine(
+  baseUrl: string,
+  draftId: string,
+  body: SaleDraftMiscLineAddRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftMiscLinesPath(draftId),
+    saleDraftMiscLineAddContract,
+    body,
+  );
+}
+
+export async function changeSaleDraftLine(
+  baseUrl: string,
+  draftId: string,
+  lineId: string,
+  body: SaleDraftLineChangeRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftLineChangesPath(draftId, lineId),
+    saleDraftLineChangeContract,
+    body,
+  );
+}
+
+export async function overrideSaleDraftLinePrice(
+  baseUrl: string,
+  draftId: string,
+  lineId: string,
+  body: SaleDraftLinePriceOverrideRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftLinePriceOverridePath(draftId, lineId),
+    saleDraftLinePriceOverrideContract,
+    body,
+  );
+}
+
+export async function removeSaleDraftLine(
+  baseUrl: string,
+  draftId: string,
+  lineId: string,
+  body: SaleDraftLineRemoveRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftLineRemovalsPath(draftId, lineId),
+    saleDraftLineRemoveContract,
+    body,
+  );
+}
+
+export async function setSaleDraftDiscount(
+  baseUrl: string,
+  draftId: string,
+  body: SaleDraftInvoiceDiscountRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftDiscountPath(draftId),
+    saleDraftInvoiceDiscountContract,
+    body,
+  );
+}
+
+export async function clearSaleDraft(
+  baseUrl: string,
+  draftId: string,
+  body: SaleDraftLineRemoveRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftClearPath(draftId),
+    saleDraftClearContract,
+    body,
+  );
+}
+
+export async function suspendSaleDraft(
+  baseUrl: string,
+  draftId: string,
+  body: SaleDraftLineRemoveRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftSuspensionsPath(draftId),
+    saleDraftSuspendContract,
+    body,
+  );
+}
+
+export async function discardSaleDraft(
+  baseUrl: string,
+  draftId: string,
+  body: SaleDraftLineRemoveRequest,
+): Promise<SaleDraft> {
+  return await saleDraftCommand(
+    baseUrl,
+    saleDraftDiscardsPath(draftId),
+    saleDraftDiscardContract,
+    body,
+  );
+}
+
+function saleDraftCommand(
+  baseUrl: string,
+  path: string,
+  contract: {
+    readonly method: string;
+    readonly responses: { readonly 200: PayloadParser<SaleDraft> };
+  },
+  body: unknown,
+): Promise<SaleDraft> {
+  return requestJson(
+    baseUrl,
+    path,
+    contract.method,
+    200,
+    contract.responses[200],
     body,
   );
 }

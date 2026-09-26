@@ -171,7 +171,7 @@ const permissionLabels: Record<
     },
     "purchases.adjustments.manage": {
       description:
-        "إنشاء تصحيحات فواتير الشراء ومراجعة فروقها وترحيلها دون تغيير الأصل.",
+        "إنشاء تصحيحات فواتير الشراء ومراجعة فروقها وحفظها دون تغيير الأصل.",
       name: "إدارة تصحيحات فواتير الشراء",
     },
     "purchases.drafts.manage": {
@@ -180,12 +180,12 @@ const permissionLabels: Record<
       name: "إدارة مسودات المشتريات",
     },
     "purchases.posted.view": {
-      description: "البحث في فواتير الشراء المُرحّلة وفتح نسخها التاريخية.",
-      name: "عرض المشتريات المُرحّلة",
+      description: "البحث في فواتير الشراء المحفوظة وفتح نسخها التاريخية.",
+      name: "عرض فواتير الشراء المحفوظة",
     },
     "purchases.returns.manage": {
       description:
-        "إنشاء مرتجعات شراء للبضاعة التي غادرت الصيدلية ومراجعتها وترحيلها.",
+        "إنشاء مرتجعات شراء للبضاعة التي غادرت الصيدلية ومراجعتها وحفظها.",
       name: "إدارة مرتجعات المشتريات",
     },
     "purchases.costs.view": {
@@ -196,6 +196,18 @@ const permissionLabels: Record<
     "sales.drafts.manage": {
       description: "فتح مسودات البيع واستئنافها وعرض المفتوح منها.",
       name: "إدارة مسودات البيع",
+    },
+    "sales.misc.manage": {
+      description: "إضافة مادة أو خدمة متفرقة إلى مسودة البيع دون حركة مخزون.",
+      name: "إضافة مواد بيع متفرقة",
+    },
+    "sales.quick_access.manage": {
+      description: "تكوين فئات ومواد الوصول السريع لجميع مستخدمي الصيدلية.",
+      name: "إدارة الوصول السريع للبيع",
+    },
+    "draft.price.override": {
+      description: "تغيير سعر وحدة مادة البيع مع تسجيل سبب التغيير.",
+      name: "تغيير سعر البيع",
     },
     "suppliers.manage": {
       description:
@@ -301,6 +313,20 @@ const permissionLabels: Record<
     "sales.drafts.manage": {
       description: "Open and resume sale drafts and list the open ones.",
       name: "Manage sale drafts",
+    },
+    "sales.misc.manage": {
+      description:
+        "Add a miscellaneous item or service to a sale draft without a stock movement.",
+      name: "Add miscellaneous sale lines",
+    },
+    "sales.quick_access.manage": {
+      description:
+        "Configure quick-access categories and items for the pharmacy.",
+      name: "Manage sale quick access",
+    },
+    "draft.price.override": {
+      description: "Change a sale item's unit price with a recorded reason.",
+      name: "Override sale price",
     },
     "suppliers.manage": {
       description:

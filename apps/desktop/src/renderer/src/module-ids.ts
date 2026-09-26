@@ -1,6 +1,5 @@
 export type ModuleId =
   | "accounts"
-  | "administration"
   | "basket"
   | "dashboard"
   | "inventory"
