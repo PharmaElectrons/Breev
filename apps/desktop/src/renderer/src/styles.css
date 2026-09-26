@@ -52,7 +52,7 @@
   --card-foreground: #1e2a33;
   --foreground: #1e2a33;
   --muted: #f5f8fa;
-  --muted-foreground: #566d7e;
+  --muted-foreground: #3f5360;
   --primary: #4a6b82;
   --primary-foreground: #ffffff;
   --primary-wash: #eef2f5;
@@ -2382,7 +2382,6 @@ a:focus-visible,
   min-inline-size: 0;
   flex-direction: column;
   background: var(--card);
-  margin-inline-end: 20rem;
 }
 
 .purchasing-workspace:has(.purchase-item-sidebar[hidden]) {
@@ -2642,8 +2641,7 @@ a:focus-visible,
   color: var(--primary);
 }
 .inventory-metric[data-tone="emerald"] span {
-  color: var(--primary);
-  opacity: 0.7;
+  color: var(--muted-foreground);
 }
 .inventory-metric[data-tone="accent"] {
   border-color: color-mix(in srgb, var(--warning) 30%, transparent);
@@ -2651,8 +2649,7 @@ a:focus-visible,
   color: var(--warning);
 }
 .inventory-metric[data-tone="accent"] span {
-  color: var(--warning);
-  opacity: 0.7;
+  color: var(--muted-foreground);
 }
 @media (max-width: 60rem) {
   .inventory-metrics {
@@ -3946,8 +3943,11 @@ a:focus-visible,
 .purchase-actions > .quiet-button:disabled,
 .purchase-actions > .primary-button:disabled,
 .purchase-actions > .danger-button:disabled {
-  opacity: 0.4;
+  opacity: 1;
   cursor: not-allowed;
+}
+.purchase-actions > .quiet-button:disabled {
+  color: var(--muted-foreground);
 }
 .purchase-actions > .primary-button {
   background: var(--primary);
@@ -4619,6 +4619,12 @@ a:focus-visible,
     margin-inline-end: 0;
     overflow: visible;
   }
+  .purchasing-workspace {
+    margin-inline-end: 0;
+  }
+  #purchase-invoice-view:not([hidden]) {
+    overflow: visible;
+  }
   /*
    * Below 80rem — which includes the default 1080x720 window and every
    * verification viewport — there is no room for a side column, so the panel
@@ -4639,12 +4645,29 @@ a:focus-visible,
     inset-block-start: 0;
     z-index: 1;
     inline-size: 100%;
-    max-block-size: 12rem;
+    block-size: 14rem;
+    max-block-size: 14rem;
     flex: none;
     gap: 0.4rem;
     padding: 0.5rem 0.75rem;
     border-inline-start: 0;
     border-block-end: 1px solid var(--border);
+  }
+  .purchase-item-body {
+    gap: 0.5rem;
+  }
+  .purchase-item-names-block {
+    order: 0;
+  }
+  .purchase-item-divider {
+    order: 1;
+  }
+  .purchase-fact-card {
+    order: 2;
+    flex: none;
+  }
+  .purchase-item-section {
+    order: 3;
   }
   .purchase-item-sidebar[data-collapsed="true"] {
     max-block-size: 0;
@@ -5240,7 +5263,7 @@ a:focus-visible,
 }
 
 .permission-item:has(input:disabled) {
-  opacity: 0.75;
+  background: var(--surface);
 }
 
 .permission-item .check-row {
@@ -5581,7 +5604,7 @@ a:focus-visible,
 .purchase-review-stat-value.is-emphasis {
   font-size: 1.45rem;
   font-weight: 900;
-  color: #4a6b82;
+  color: var(--primary);
 }
 
 .purchase-row-table tbody td[data-column-field="actions"] {

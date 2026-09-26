@@ -1281,19 +1281,20 @@ test.describe.serial("Product catalog screens", () => {
     await page.goto(`${renderer.origin}#/catalog/products`);
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
 
-    // Navigation is links, not buttons, so it does not disturb the header's
-    // diagnostic, language, and theme control order. Central submission is
-    // intentionally disabled by default (G-16), so it is absent here.
+    // Navigation is links, not buttons. The ready connection check adds two
+    // controls ahead of the diagnostic, language, and theme controls.
     await page.getByTestId("collapse-menu-trigger").click();
     const dropdown = page.getByTestId("collapse-menu-dropdown");
     const buttons = dropdown.getByRole("button");
     for (const [index, label] of [
+      "Check now",
+      "Verify Main device",
       "Export diagnostic package",
       "Contact support",
       "Switch to Arabic",
       "Use dark theme",
     ].entries()) {
-      await expect(buttons.nth(index)).toHaveAttribute("aria-label", label);
+      await expect(buttons.nth(index)).toHaveAccessibleName(label);
     }
     await page.keyboard.press("Escape");
 

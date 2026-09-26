@@ -33,6 +33,7 @@ import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
 import { PostedPurchaseReview } from "./posted-purchase-review";
 import { SuppliersWorkspace } from "./suppliers-workspace";
+import { useCommittedFocus } from "./committed-focus";
 
 const today = (): string => {
   const date = new Date();
@@ -85,6 +86,7 @@ export function PurchasingRouteView({
   const supplierRef = useRef<HTMLInputElement>(null);
   const draftCommandAttempt = useRef<PurchasingCommandAttempt | null>(null);
   const postRecoveryStarted = useRef(false);
+  const requestCommittedFocus = useCommittedFocus();
   const [discarding, setDiscarding] = useState(false);
 
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
@@ -159,6 +161,12 @@ export function PurchasingRouteView({
     void (async () => {
       try {
         const detail = await requestPurchaseDraft(baseUrl, pending.draftId);
+        if (detail.status === "posted") {
+          // The original request may have committed before its response was
+          // lost. Replaying its key retrieves that exact stored receipt.
+          await performPost(pending);
+          return;
+        }
         if (detail.status !== "active") {
           clearPendingPurchasePost(purchasePostAddress());
           return;
@@ -341,6 +349,7 @@ export function PurchasingRouteView({
       return null;
     }
     const isNewDraft = activeDraft === null;
+    let focusSupplierAfterFailure = false;
     draftSavingRef.current = true;
     setDraftSaving(true);
     try {
@@ -379,12 +388,11 @@ export function PurchasingRouteView({
       setWarning(result.warnings.length > 0);
       setStatus(copy.saved);
       if (isNewDraft) {
-        requestAnimationFrame(() => {
-          const itemInput = document.querySelector<HTMLInputElement>(
+        requestCommittedFocus(() =>
+          document.querySelector<HTMLInputElement>(
             'input[data-enter-field="item"]',
-          );
-          itemInput?.focus();
-        });
+          ),
+        );
       }
       await reload();
       return detail;
@@ -399,12 +407,15 @@ export function PurchasingRouteView({
             (fieldError) => fieldError.path[0] === "supplierId",
           ))
       ) {
-        supplierRef.current?.focus();
+        focusSupplierAfterFailure = true;
       }
       return null;
     } finally {
       draftSavingRef.current = false;
       setDraftSaving(false);
+      if (focusSupplierAfterFailure) {
+        requestCommittedFocus(() => supplierRef.current);
+      }
     }
   }
 
@@ -708,12 +719,12 @@ export function PurchasingRouteView({
       {!canManageDrafts ? <p role="status">{copy.postedReviewOnly}</p> : null}
       <div
         id="purchase-invoice-view"
+        data-purchase-editor
         hidden={!canManageDrafts || view !== "invoice"}
       >
         <form
           id="purchase-header-form"
           className="purchase-header-form"
-          data-purchase-editor
           onSubmit={(event) => void saveDraft(event)}
         >
           <fieldset>
@@ -1139,7 +1150,7 @@ export function PurchasingRouteView({
               />
             )}
 
-            <footer className="purchase-footer" data-purchase-editor>
+            <footer className="purchase-footer">
               {activeDraft === null ? null : (
                 <dl
                   className="purchase-snapshot"
@@ -1419,6 +1430,11 @@ export function PurchasingRouteView({
           open={view === "posted"}
           onClose={() => {
             setView(canManageDrafts ? "invoice" : "idle");
+            requestCommittedFocus(() =>
+              document.querySelector<HTMLButtonElement>(
+                'button.purchase-view-tab[aria-controls="purchase-posted-view"]',
+              ),
+            );
           }}
         />
       </div>

@@ -211,16 +211,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
 
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
-    const invoice = page.getByLabel("Supplier invoice number");
-    await invoice.focus();
-    await page.keyboard.type("SUP-2026-0042");
-    await page.keyboard.press("Tab");
     const supplier = page.getByRole("combobox", {
       name: "Supplier",
       exact: true,
     });
-    await expect(supplier).toBeFocused();
+    await supplier.click();
     await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
+    const invoice = page.getByLabel("Supplier invoice number");
+    await invoice.focus();
+    await page.keyboard.type("SUP-2026-0042");
     const paymentContext = page.getByRole("combobox", {
       name: /^Payment context/,
     });
@@ -235,15 +234,14 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.locator(".purchase-snapshot").getByText("2.5%", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText("Draft saved and durable.")).toBeVisible();
     await expect(
-      page
-        .locator(".purchase-snapshot")
-        .getByText("Al-Nahrain Medical", { exact: true }),
-    ).toBeVisible();
+      page.getByRole("textbox", { name: "Item / Barcode", exact: true }),
+    ).toBeFocused();
+    await expect(page.getByText("Draft saved and durable.")).toBeVisible();
+    await expect(supplier).toHaveValue("Al-Nahrain Medical");
 
     await page.getByRole("button", { name: "Saved drafts" }).click();
-    const search = page.getByPlaceholder("Search drafts");
+    const search = page.getByRole("searchbox", { name: "Search invoices" });
     await search.fill("SUP-2026-0042");
     await expect(
       page.getByRole("button", {
@@ -261,8 +259,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.getByText("No drafts match these filters."),
     ).toBeVisible();
-    await search.press("Escape");
     await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(search).toHaveValue("");
+    await expect(
+      page.getByRole("button", {
+        name: /SUP-2026-0042/,
+      }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: /Saved drafts/ }).click();
     await expect(
@@ -287,15 +290,20 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
 
     await page.getByRole("button", { name: "New invoice" }).click();
-    await invoice.fill("SUP-2026-0042");
+    await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
     await supplier.click();
     await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
-    await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
+    await invoice.fill("SUP-2026-0042");
     await page.getByRole("button", { name: "Save draft" }).click();
     const warning = page.getByRole("alert");
     await expect(warning).toContainText("already recorded");
     await expect(warning).toContainText("Current rule: warn");
     await expect(page.getByText("Draft saved and durable.")).toBeVisible();
+    // The asynchronous create commits its item-entry focus before accepting
+    // another keyboard action from the user.
+    await expect(
+      page.getByRole("textbox", { name: "Item / Barcode", exact: true }),
+    ).toBeFocused();
 
     await page.keyboard.press("Escape");
     await expect(page.locator(".purchase-discard-dialog")).toBeVisible();
@@ -336,7 +344,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await page.keyboard.press("Enter");
 
     await expect(page.getByText("Draft saved and durable.")).toBeVisible();
-    await expect(page.getByPlaceholder("Search to add an item…")).toBeFocused();
+    await expect(
+      page.getByRole("textbox", { name: "Item / Barcode", exact: true }),
+    ).toBeFocused();
   });
 
   test("enters durable rows by scanner and Enter, quick-creates a Product, and follows persisted column order", async ({
@@ -355,9 +365,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByRole("button", { name: "New invoice" }).click();
-    await page.getByLabel("Supplier invoice number").fill("ROWS-49");
     await page.getByRole("combobox", { name: "Supplier", exact: true }).click();
     await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
+    await page.getByLabel("Supplier invoice number").fill("ROWS-49");
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-09-07");
     await page.getByRole("button", { name: "Save draft" }).click();
 
@@ -365,15 +375,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: "Item / Barcode",
       exact: true,
     });
-    const quantity = page.getByRole("textbox", {
+    const quantity = page.getByRole("spinbutton", {
       name: "Quantity",
       exact: true,
     });
-    const cost = page.getByRole("textbox", {
+    const cost = page.getByRole("spinbutton", {
       name: "Primary cost",
       exact: true,
     });
-    const sellingPrice = page.getByRole("textbox", {
+    const sellingPrice = page.getByRole("spinbutton", {
       name: "Selling price",
       exact: true,
     });
@@ -386,8 +396,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await item.press("Enter");
     await expect(quantity).toBeFocused();
     await expect(
-      page.getByText(purchaseProduct.displayName, { exact: true }).last(),
-    ).toBeVisible();
+      page.locator("aside.purchase-item-panel .purchase-item-trade-name"),
+    ).toHaveText(purchaseProduct.displayName);
 
     // The item-details panel is the only surface that carries the wholesale
     // price, so it has to be readable while the row is being typed. Finding it
@@ -419,9 +429,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ]) {
       await page.setViewportSize(viewport);
       await expect(panel).toBeInViewport({ ratio: 1 });
-      await expect(panel.locator("dl > div dd").last()).toBeInViewport({
-        ratio: 1,
-      });
+      await expect(
+        panel.locator(".purchase-fact-row:nth-child(3) .purchase-fact-value"),
+      ).toBeInViewport({ ratio: 1 });
       // Polled: a resize relayouts asynchronously, so a single read can catch
       // the previous layout.
       await expect
@@ -496,8 +506,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await item.fill("5012345678956");
     await item.press("Enter");
     await expect(
-      page.getByText(percentageProduct.displayName).last(),
-    ).toBeVisible();
+      page.locator("aside.purchase-item-panel .purchase-item-trade-name"),
+    ).toHaveText(percentageProduct.displayName);
     await quantity.press("Enter");
     await cost.fill("80000");
     await cost.press("Enter");
@@ -553,8 +563,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       .click();
     await settings.getByRole("button", { name: "Save entry settings" }).click();
     await expect(
-      page.getByText("Purchase entry settings saved."),
-    ).toBeVisible();
+      page.getByRole("region", { name: "Invoice rows" }).getByRole("status"),
+    ).toHaveText("Purchase entry settings saved.");
     await expect(page.locator(".purchase-row-table thead th")).toHaveText([
       "#",
       "Quantity",
@@ -779,9 +789,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         );
         await expect(entryBaseUnits).toHaveText("4 Strip");
         await expect(itemPanel).toBeVisible();
-        // The packaged window's default inner size, the browser-test viewport,
-        // and the 1280x800 verification viewport all fall below the 80rem
-        // breakpoint, where the panel is a band rather than a side column.
+        // The first three viewports use the narrow band layout below 80rem;
+        // the final viewport verifies the fixed side panel above that
+        // breakpoint.
         for (const viewport of [
           { height: 658, width: 1066 },
           { height: 800, width: 1280 },
@@ -790,9 +800,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         ]) {
           await page.setViewportSize(viewport);
           await expect(itemPanel).toBeInViewport({ ratio: 1 });
-          await expect(itemPanel.locator("dl > div dd").last()).toBeInViewport({
-            ratio: 1,
-          });
+          await expect(
+            itemPanel.locator(
+              ".purchase-fact-row:nth-child(3) .purchase-fact-value",
+            ),
+          ).toBeInViewport({ ratio: 1 });
           // The base-unit preview column, in this direction and theme.
           await expectWorkspaceSectionsStacked(page);
           await expectBaseUnitColumnOnScreen(entryBaseUnits);
@@ -804,7 +816,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             )
             .toBe(true);
         }
-        await expect(itemPanel.locator("strong")).toHaveText(
+        await expect(itemPanel.locator(".purchase-item-trade-name")).toHaveText(
           purchaseProduct.displayName,
         );
         await expect(itemPanel.locator("dl > div dd")).toHaveCount(4);
@@ -1014,23 +1026,24 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await expect(page.getByLabel("Supplier invoice number")).toBeVisible();
-    await expect(page.getByTestId("shell-state")).toBeHidden();
-    const statusToggle = page.locator(".purchase-connection > summary");
-    await statusToggle.focus();
+    const menu = page.getByTestId("collapse-menu-dropdown");
+    await expect(menu).toBeHidden();
+    await page.getByTestId("collapse-menu-trigger").focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
-    await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
-    await statusToggle.press("Enter");
-    await expect(page.getByTestId("shell-state")).toBeHidden();
+    await expect(menu).toBeVisible();
+    await expect(menu.getByTestId("shell-state")).toHaveText("Ready");
+    await expect(menu.getByRole("button", { name: "Check now" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
     await expect(
       page.getByRole("button", { name: "Import from image" }),
     ).toHaveCount(0);
-    await expect(page.getByLabel("Barcode / item search")).toBeDisabled();
     await expect(
-      page
-        .locator(".purchase-actions")
-        .getByRole("button", { name: "Print invoice", exact: true }),
-    ).toBeDisabled();
+      page.getByRole("textbox", { name: "Item / Barcode", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Print invoice", exact: true }),
+    ).toHaveCount(0);
   });
 
   test("retries an uncertain draft creation without creating a duplicate", async ({
@@ -1038,9 +1051,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   }) => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
-    await page.getByLabel("Supplier invoice number").fill("TIMEOUT-RETRY-1");
     await page.getByRole("combobox", { name: "Supplier", exact: true }).click();
     await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
+    await page.getByLabel("Supplier invoice number").fill("TIMEOUT-RETRY-1");
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
 
     delayNextDraftCreateResponse = true;
@@ -1088,7 +1101,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
     await expect(receipt).toContainText("POST-ATOMIC-1");
     await expect(receipt).toContainText("inventory");
-    await expect(receipt).toContainText("cash");
+    await expect(receipt).toContainText("Cash / Drawer");
     await expect(receipt).toContainText("Lot");
     await expect(receipt).toContainText("Expiry");
     await expect(page.getByLabel("Supplier invoice number")).toHaveValue("");
@@ -1184,7 +1197,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     const page = await context.newPage();
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
-    const opener = page.getByRole("button", { name: "Posted invoices" });
+    const opener = postedInvoicesTab(page);
     await opener.focus();
     await pressKeyOnFocused(page, opener, "Enter");
 
@@ -1440,7 +1453,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     denyNextPostedListResponse = true;
-    await page.getByRole("button", { name: "Posted invoices" }).click();
+    await postedInvoicesTab(page).click();
     const dialog = page.locator("#purchase-posted-view");
     await expect(dialog.getByRole("alert")).toContainText(
       "Access denied. Audit request:",
@@ -1452,7 +1465,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await dialog.getByRole("button", { name: "Close" }).click();
 
     failNextPostedListResponse = true;
-    await page.getByRole("button", { name: "Posted invoices" }).click();
+    await postedInvoicesTab(page).click();
     await expect(dialog.getByRole("alert")).toContainText(
       "The local API is unavailable.",
     );
@@ -1488,9 +1501,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         "Your role can review posted purchases. Purchase draft entry is hidden because this role does not have draft-management permission.",
       ),
     ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Posted invoices" }),
-    ).toBeVisible();
+    await expect(postedInvoicesTab(page)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Purchase invoice" }),
     ).toHaveCount(0);
@@ -1505,12 +1516,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page.goto("about:blank");
         await installDesktopFake(page, renderer.origin, locale, theme);
         await page.goto(`${renderer.origin}#/purchases`);
-        await page
-          .getByRole("button", {
-            name:
-              locale === "en" ? "Posted invoices" : "فواتير الشراء المحفوظة",
-          })
-          .click();
+        const postedInvoices = postedInvoicesTab(page);
+        await expect(postedInvoices).toHaveAccessibleName(
+          locale === "en" ? "Posted invoices" : "فواتير الشراء المحفوظة",
+        );
+        await postedInvoices.click();
         const dialog = page.locator("#purchase-posted-view");
         const search = dialog.getByRole("searchbox", {
           name:
@@ -1659,7 +1669,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
     await expect(expiryCell).toHaveAttribute("data-post-error", "true");
 
-    await page.getByRole("button", { name: /^Edit:/ }).click();
+    await page.getByRole("button", { name: /^Edit item:/ }).click();
     const expiryInput = page.locator(
       'tr[data-editing="true"] input[type="date"]',
     );
@@ -1673,9 +1683,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(expiryCell).toContainText("2029-06-30");
 
     await page.getByRole("button", { name: "Post purchase" }).click();
+    const receipt = page.locator(".posted-purchase-result");
     await expect(
-      page.getByText("Purchase posted atomically. A fresh invoice is ready."),
+      receipt.getByRole("heading", { name: "Posted purchase" }),
     ).toBeVisible();
+    await expect(receipt).toContainText("POST-REJECTED-FIX-1");
   });
 
   test("allows deleting a draft row and re-sequencing the remaining rows", async ({
@@ -1692,7 +1704,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
 
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
-    await page.getByRole("button", { name: /^Delete:/ }).click();
+    await page.getByRole("button", { name: /^Delete item:/ }).click();
     await expect(page.getByText("Row deleted from draft.")).toBeVisible();
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(1);
   });
@@ -1721,9 +1733,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: "Supplier",
       exact: true,
     });
-    await invoice.fill("INVALID-SUPPLIER-1");
     await supplier.click();
     await page.getByRole("option", { name: invalidSupplier.name }).click();
+    await invoice.fill("INVALID-SUPPLIER-1");
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
     expect(
       (
@@ -1740,10 +1752,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       ).status,
     ).toBe(201);
 
-    await page.getByRole("button", { name: "Save draft" }).click();
+    await page.getByRole("button", { name: /Start adding items/ }).click();
     await expect(page.getByText(/The change was not saved/)).toBeVisible();
     await expect(invoice).toHaveValue("INVALID-SUPPLIER-1");
-    await expect(supplier).toHaveValue(invalidSupplier.id);
+    await expect(supplier).toHaveValue(invalidSupplier.name);
     await expect(supplier).toBeFocused();
   });
 
@@ -1814,7 +1826,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await item.fill("5012345678949");
     await item.press("Enter");
     const panel = page.locator("aside.purchase-item-panel");
-    await expect(panel.locator("strong")).toHaveText(
+    await expect(panel.locator(".purchase-item-trade-name")).toHaveText(
       purchaseProduct.displayName,
     );
 
@@ -1830,9 +1842,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeGreaterThan(0);
     await expect(panel).toBeVisible();
     await expect(panel).toBeInViewport({ ratio: 1 });
-    await expect(panel.locator("dl > div dd").last()).toBeInViewport({
-      ratio: 1,
-    });
+    await expect(
+      panel.locator(".purchase-fact-row:nth-child(3) .purchase-fact-value"),
+    ).toBeInViewport({ ratio: 1 });
     await expect(panel).toContainText("90000");
   });
 
@@ -1898,7 +1910,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBe(201);
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
-    await page.getByRole("button", { name: "Posted invoices" }).click();
+    await postedInvoicesTab(page).click();
     const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog
@@ -1957,7 +1969,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
-    await page.getByRole("button", { name: "Posted invoices" }).click();
+    await postedInvoicesTab(page).click();
     const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog
@@ -2119,6 +2131,12 @@ async function expectBaseUnitColumnOnScreen(cell: Locator): Promise<void> {
   await expect(cell).toBeInViewport({ ratio: 1 });
 }
 
+function postedInvoicesTab(page: Page): Locator {
+  return page.locator(
+    'button.purchase-view-tab[aria-controls="purchase-posted-view"]',
+  );
+}
+
 async function createPurchaseWithOneRow(
   page: Page,
   rendererOrigin: string,
@@ -2166,19 +2184,10 @@ async function createPurchaseWithOneRow(
   await expect(page.getByText(labels.saved)).toBeVisible();
 
   const item = page.getByRole("textbox", { name: labels.item, exact: true });
-  const quantity = page.getByRole("textbox", {
-    name: labels.quantity,
-    exact: true,
-  });
-  const cost = page.getByRole("textbox", { name: labels.cost, exact: true });
-  const sellingPrice = page.getByRole("textbox", {
-    name: labels.sellingPrice,
-    exact: true,
-  });
-  const expiry = page.getByRole("textbox", {
-    name: labels.expiry,
-    exact: true,
-  });
+  const quantity = page.getByLabel(labels.quantity, { exact: true });
+  const cost = page.getByLabel(labels.cost, { exact: true });
+  const sellingPrice = page.getByLabel(labels.sellingPrice, { exact: true });
+  const expiry = page.getByLabel(labels.expiry, { exact: true });
   await item.fill("5012345678949");
   await item.press("Enter");
   await quantity.fill("2");

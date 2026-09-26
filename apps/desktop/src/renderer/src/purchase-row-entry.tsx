@@ -1773,13 +1773,21 @@ export function PurchaseRowEntry({
             role="combobox"
             aria-expanded={isSuggestionsOpen}
             aria-haspopup="listbox"
-            aria-owns="purchase-item-suggestions-listbox"
+            aria-owns={
+              isSuggestionsOpen
+                ? "purchase-item-suggestions-listbox"
+                : undefined
+            }
           >
             <div className="purchase-item-control">
               <input
                 {...common}
                 aria-autocomplete="list"
-                aria-controls="purchase-item-suggestions-listbox"
+                aria-controls={
+                  isSuggestionsOpen
+                    ? "purchase-item-suggestions-listbox"
+                    : undefined
+                }
                 aria-activedescendant={
                   highlightedIndex >= 0 && suggestions[highlightedIndex]
                     ? `purchase-item-opt-${suggestions[highlightedIndex]!.product.id}`
@@ -2099,7 +2107,7 @@ function MasterProductDialog({
     }
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const cancelOnEscape = (event: globalThis.KeyboardEvent): void => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -2178,7 +2186,7 @@ function QuickProductDialog({
     }
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const cancelOnEscape = (event: globalThis.KeyboardEvent): void => {
       if (event.key !== "Escape") return;
       event.preventDefault();
