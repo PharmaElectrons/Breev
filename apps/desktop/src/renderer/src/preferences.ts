@@ -55,7 +55,14 @@ export function formatCurrencyFromFils(value: bigint, locale: Locale): string {
   const decimalValue = `${sign}${absoluteValue / 1_000n}.${String(
     absoluteValue % 1_000n,
   ).padStart(3, "0")}`;
-  const formatter = new Intl.NumberFormat(localeTags[locale], {
+  if (locale === "ar") {
+    const amount = new Intl.NumberFormat(localeTags.ar, {
+      maximumFractionDigits: 3,
+      minimumFractionDigits: 3,
+    }).format(decimalValue as unknown as number);
+    return `${amount} د.ع`;
+  }
+  const formatter = new Intl.NumberFormat(localeTags.en, {
     currency: "IQD",
     currencyDisplay: "code",
     maximumFractionDigits: 3,

@@ -33,6 +33,7 @@ export interface InventoryCopy {
   readonly backToInventory: string;
   readonly columns: Record<InventoryColumnField, string>;
   readonly empty: string;
+  readonly panelEmpty: string;
   readonly export: string;
   readonly exportCsv: string;
   readonly exportCancelled: string;
@@ -69,6 +70,8 @@ export interface InventoryCopy {
   readonly permissionDenied: string;
   readonly settings: string;
   readonly settingsNote: string;
+  readonly statusColumn: string;
+  readonly actionsColumn: string;
   readonly sortAnnouncement: (
     column: string,
     direction: "ascending" | "descending",
@@ -716,6 +719,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     count: arabicCount,
     columns: arabicColumns,
     empty: "لا توجد مواد مخزنية بعد.",
+    panelEmpty: "لا توجد مادة محددة. اختر صفاً من الجدول لعرض تفاصيلها.",
     export: "تصدير بيانات المخزون الحساسة",
     exportCsv: "تصدير المخزون بصيغة CSV",
     exportCancelled: "أُلغي تصدير بيانات المخزون.",
@@ -756,6 +760,8 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     riskIndicators: arabicRisks,
     settings: "إعدادات الأعمدة",
     settingsNote: "تُحفظ اختيارات الأعمدة لهذا المستخدم فقط.",
+    statusColumn: "الحالة",
+    actionsColumn: "الإجراءات",
     sortAnnouncement: (column, direction) =>
       "تم ترتيب " +
       column +
@@ -775,6 +781,7 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     count: englishCount,
     columns: englishColumns,
     empty: "There are no inventory items yet.",
+    panelEmpty: "No item selected. Choose a row to see its details.",
     export: "Export sensitive inventory data",
     exportCsv: "Export inventory CSV",
     exportCancelled: "Inventory export cancelled.",
@@ -817,6 +824,8 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     riskIndicators: englishRisks,
     settings: "Column settings",
     settingsNote: "Column choices are saved for this user only.",
+    statusColumn: "Status",
+    actionsColumn: "Actions",
     sortAnnouncement: (column, direction) =>
       column + " sorted " + direction + ".",
     stateColours: englishColours,

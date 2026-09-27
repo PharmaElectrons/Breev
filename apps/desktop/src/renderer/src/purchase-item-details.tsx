@@ -25,9 +25,14 @@ export interface PurchaseItemSelection {
  * Redesigned to match the client prototype design pixel-perfect with 100% dynamic data.
  */
 export function PurchaseItemPanel({
+  defaultExpanded = false,
+  emptyMessage,
   hidden,
   selection,
 }: {
+  /** Inventory keeps the same panel open before a row is selected. */
+  readonly defaultExpanded?: boolean;
+  readonly emptyMessage?: string;
   readonly hidden: boolean;
   readonly selection: PurchaseItemSelection | null;
 }): React.JSX.Element {
@@ -46,7 +51,8 @@ export function PurchaseItemPanel({
     prevProductIdRef.current = currentId;
   }, [selection?.product.id]);
 
-  const isCollapsed = userCollapsed ?? selection === null;
+  const isCollapsed =
+    userCollapsed ?? (defaultExpanded ? false : selection === null);
 
   const product = selection?.product;
 
@@ -168,7 +174,7 @@ export function PurchaseItemPanel({
             <div className="purchase-item-empty-icon-box">
               <span className="purchase-item-empty-dot" />
             </div>
-            <p>{copy.noSelectedItem}</p>
+            <p>{emptyMessage ?? copy.noSelectedItem}</p>
           </div>
         ) : (
           <div className="purchase-item-body">

@@ -4,8 +4,10 @@ import {
   type InventoryColumnField,
   type InventoryDenial,
   type InventoryItem,
+  type InventoryRiskIndicator,
   type InventoryMovement,
   type LicensingDenial,
+  type Product,
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -27,7 +29,11 @@ import {
 import { BatchSafetyReview } from "./batch-safety-review";
 import { BatchSafetyPanel } from "./batch-safety-panel";
 import { basketMessages } from "./basket-messages";
-import { searchProducts } from "./catalog-api";
+import { requestProduct, searchProducts } from "./catalog-api";
+import {
+  PurchaseItemPanel,
+  type PurchaseItemSelection,
+} from "./purchase-item-details";
 import { inventoryMessages, type InventoryCopy } from "./inventory-messages";
 import { createInventoryPreferenceSaveQueue } from "./inventory-preferences-save";
 import { useIdentityState } from "./identity-state-provider";
@@ -44,7 +50,7 @@ import {
 import { PostedPurchaseReview } from "./posted-purchase-review";
 import { CountSessionReview } from "./count-session-review";
 import { CountSessionScreen } from "./count-session-screen";
-import { StateColourIndicators } from "./state-indicator";
+import { StateIndicator } from "./state-indicator";
 import { StepUpDialog, useStepUp } from "./step-up";
 
 type SortDirection = "ascending" | "descending";
@@ -190,6 +196,7 @@ function InventoryScreen({
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
     null,
   );
+  const [panelProduct, setPanelProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIds, setSearchIds] = useState<ReadonlySet<string> | null>(null);
   const searchSequenceRef = useRef(0);
@@ -254,6 +261,24 @@ function InventoryScreen({
       searchSequenceRef.current++;
     };
   }, [baseUrl, canSearchCatalog, searchQuery]);
+
+  useEffect(() => {
+    if (selectedProductId === null) {
+      setPanelProduct(null);
+      return;
+    }
+    let active = true;
+    void requestProduct(baseUrl, selectedProductId)
+      .then((product) => {
+        if (active) setPanelProduct(product);
+      })
+      .catch(() => {
+        if (active) setPanelProduct(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [baseUrl, selectedProductId]);
 
   async function addItemToBasket(item: InventoryItem): Promise<void> {
     if (!canManageReorder || addingProductId !== null) return;
@@ -393,6 +418,14 @@ function InventoryScreen({
   const selectedItem = items?.find(
     (item) => item.productId === selectedProductId,
   );
+  const panelSelection: PurchaseItemSelection | null =
+    panelProduct === null || panelProduct.id !== selectedProductId
+      ? null
+      : {
+          product: panelProduct,
+          baseUnits: selectedItem?.balance ?? null,
+          expiryDate: selectedItem?.batches.earliestExpiry ?? null,
+        };
   const metrics = useMemo(() => {
     const rows = items ?? [];
     const costs = rows.flatMap((item) =>
@@ -433,7 +466,9 @@ function InventoryScreen({
         ? "descending"
         : "ascending";
     setSort({ direction, field });
-    setAnnouncement(copy.sortAnnouncement(copy.columns[field], direction));
+    setAnnouncement(
+      copy.sortAnnouncement(inventoryColumnLabel(copy, field), direction),
+    );
   }
 
   async function changeVisibility(
@@ -548,47 +583,81 @@ function InventoryScreen({
   }
 
   return (
-    <section className="inventory-workspace" aria-labelledby="inventory-title">
-      <header className="inventory-heading">
-        <div>
-          <h2 id="inventory-title">{copy.title}</h2>
-          <p>{copy.readOnly}</p>
-          <p className="inventory-safety-summary">
-            {safetyStatus === null
-              ? copy.safety.unavailable
-              : copy.safety.dailyStatus(
-                  safetyStatus.state,
-                  safetyStatus.lastCompletedBusinessDate,
-                )}{" "}
-            <a href="#/inventory/safety-review">{copy.safety.review}</a>
-          </p>
-        </div>
-        <div className="inventory-actions">
+    <section
+      className="inventory-workspace inventory-review"
+      aria-labelledby="inventory-title"
+    >
+      <h2 className="visually-hidden" id="inventory-title">
+        {copy.title}
+      </h2>
+      <div className="inventory-metrics">
+        <InventoryMetric
+          label={copy.metrics.totalValue}
+          tone="emerald"
+          value={metrics.totalValue}
+        />
+        <InventoryMetric
+          label={copy.metrics.averageCost}
+          tone="accent"
+          value={metrics.averageCost}
+        />
+        <InventoryMetric
+          label={copy.metrics.distinctItems}
+          tone="emerald"
+          value={metrics.distinctItems}
+        />
+        <InventoryMetric
+          label={copy.metrics.itemsWithStock}
+          tone="accent"
+          value={metrics.itemsWithStock}
+        />
+      </div>
+      <div className="inventory-toolbar">
+        <label className="inventory-search">
+          <span className="visually-hidden">{copy.searchLabel}</span>
+          <input
+            autoComplete="off"
+            placeholder={copy.searchLabel}
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="M16 16.5 20 20.5" />
+          </svg>
+        </label>
+        <div className="inventory-toolbar-actions">
           {canRecordCount ? (
-            <a className="primary-button" href="#/inventory/count">
+            <a
+              className="inventory-chip inventory-chip-primary"
+              href="#/inventory/count"
+            >
               {copy.count.start}
             </a>
           ) : null}
           {canExport ? (
             <>
               <button
-                className="primary-button"
+                aria-label={copy.export}
+                className="inventory-chip"
                 type="button"
                 onClick={() => void beginExport()}
               >
-                {copy.export}
+                {locale === "ar" ? "تصدير" : "Export"}
               </button>
               <button
-                className="quiet-button"
+                aria-label={copy.exportCsv}
+                className="inventory-chip"
                 type="button"
                 onClick={() => void beginExport("csv")}
               >
-                {copy.exportCsv}
+                {locale === "ar" ? "تصدير CSV" : "Export CSV"}
               </button>
             </>
           ) : null}
           {canManageReorder ? (
-            <a className="quiet-button" href="#/basket">
+            <a className="inventory-chip" href="#/basket">
               {copy.openBasket}
               {basketCount === null ? null : (
                 <span aria-hidden="true" className="inventory-basket-count">
@@ -619,7 +688,7 @@ function InventoryScreen({
                         void changeVisibility(field, event.target.checked)
                       }
                     />
-                    <span>{copy.columns[field]}</span>
+                    <span>{inventoryColumnLabel(copy, field)}</span>
                   </label>
                 );
               })}
@@ -627,41 +696,19 @@ function InventoryScreen({
             </div>
           </details>
         </div>
-      </header>
-      <div className="inventory-metrics">
-        <InventoryMetric
-          label={copy.metrics.totalValue}
-          tone="emerald"
-          value={metrics.totalValue}
-        />
-        <InventoryMetric
-          label={copy.metrics.averageCost}
-          tone="accent"
-          value={metrics.averageCost}
-        />
-        <InventoryMetric
-          label={copy.metrics.distinctItems}
-          tone="emerald"
-          value={metrics.distinctItems}
-        />
-        <InventoryMetric
-          label={copy.metrics.itemsWithStock}
-          tone="accent"
-          value={metrics.itemsWithStock}
-        />
       </div>
+      <p className="inventory-safety-summary">
+        {safetyStatus === null
+          ? copy.safety.unavailable
+          : copy.safety.dailyStatus(
+              safetyStatus.state,
+              safetyStatus.lastCompletedBusinessDate,
+            )}{" "}
+        <a href="#/inventory/safety-review">{copy.safety.review}</a>
+      </p>
       <p className="visually-hidden" id="inventory-read-only">
         {copy.readOnly}
       </p>
-      <label className="inventory-search">
-        <span>{copy.searchLabel}</span>
-        <input
-          autoComplete="off"
-          type="search"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-        />
-      </label>
       <p className="visually-hidden" role="status" aria-live="polite">
         {announcement}
       </p>
@@ -671,7 +718,7 @@ function InventoryScreen({
         </p>
       )}
       {selectedItem === undefined ? null : (
-        <p className="inventory-selection" role="status">
+        <p className="inventory-selection visually-hidden" role="status">
           <strong>{selectedItem.displayName}</strong>
           <span>
             {copy.columns.balance}:{" "}
@@ -683,6 +730,22 @@ function InventoryScreen({
           </a>
         </p>
       )}
+      <ul aria-label={copy.statusColumn} className="inventory-tint-legend">
+        {(
+          [
+            ["stable", statusMeaning(copy.stateColours.green)],
+            ["reorder", statusMeaning(copy.stateColours.orange)],
+            ["expiring", statusMeaning(copy.stateColours.yellow)],
+            ["over-maximum", statusMeaning(copy.stateColours.purple)],
+            ["critical", statusMeaning(copy.stateColours.red)],
+          ] as const
+        ).map(([status, label]) => (
+          <li data-status={status} key={status}>
+            <span aria-hidden="true" className="inventory-tint-swatch" />
+            <span>{label}</span>
+          </li>
+        ))}
+      </ul>
       {denial === null ? null : (
         <div className="denial-alert" role="alert">
           <p>
@@ -735,7 +798,7 @@ function InventoryScreen({
                       type="button"
                       onClick={() => changeSort(field)}
                     >
-                      {copy.columns[field]}
+                      {inventoryColumnLabel(copy, field)}
                       <span aria-hidden="true" className="inventory-sort-icon">
                         {sort.field !== field
                           ? "↕"
@@ -746,6 +809,9 @@ function InventoryScreen({
                     </button>
                   </th>
                 ))}
+                <th data-column-field="actions" scope="col">
+                  {copy.actionsColumn}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -782,18 +848,54 @@ function InventoryScreen({
                         field={field}
                         item={item}
                         locale={locale}
-                        canManageReorder={canManageReorder}
-                        adding={addingProductId === item.productId}
-                        onAddToBasket={() => void addItemToBasket(item)}
                       />
                     </td>
                   ))}
+                  <td
+                    className="inventory-actions-cell"
+                    data-column-field="actions"
+                  >
+                    {canManageReorder ? (
+                      <button
+                        aria-label={copy.addToBasketAriaLabel(item.displayName)}
+                        aria-disabled={addingProductId === item.productId}
+                        className="quiet-button inventory-cart-add"
+                        data-review-focus={`inventory-basket-add-${item.productId}`}
+                        title={copy.addToBasket}
+                        type="button"
+                        onClick={() => void addItemToBasket(item)}
+                      >
+                        <BasketIcon />
+                      </button>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      <div className="inventory-bottom-bar">
+        {canRecordCount ? (
+          <a
+            aria-hidden="true"
+            className="inventory-tool inventory-tool-strong"
+            href="#/inventory/count"
+            tabIndex={-1}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M7 7h10M7 12h10M7 17h6" />
+            </svg>
+            {copy.count.start}
+          </a>
+        ) : null}
+      </div>
+      <PurchaseItemPanel
+        defaultExpanded
+        emptyMessage={copy.panelEmpty}
+        hidden={false}
+        selection={panelSelection}
+      />
       {stepUp.pending === null ? null : (
         <StepUpDialog
           busy={false}
@@ -829,21 +931,15 @@ function InventoryMetric({
 }
 
 function InventoryCell({
-  adding,
-  canManageReorder,
   copy,
   field,
   item,
   locale,
-  onAddToBasket,
 }: {
-  readonly adding: boolean;
   readonly copy: InventoryCopy;
   readonly field: InventoryColumnField;
   readonly item: InventoryItem;
   readonly locale: "ar" | "en";
-  readonly canManageReorder: boolean;
-  readonly onAddToBasket: () => void;
 }): React.JSX.Element {
   switch (field) {
     case "item":
@@ -859,27 +955,6 @@ function InventoryCell({
           >
             {item.displayName}
           </button>
-          {canManageReorder ? (
-            <button
-              aria-label={copy.addToBasketAriaLabel(item.displayName)}
-              aria-disabled={adding}
-              className="quiet-button inventory-cart-add"
-              data-review-focus={`inventory-basket-add-${item.productId}`}
-              title={copy.addToBasket}
-              type="button"
-              onClick={onAddToBasket}
-            >
-              <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
-                <path
-                  d="M2.5 4h2l2.1 10h10.9l1.2-4M8.5 19h.01M16 19h.01M16.5 3.5v6M13.5 6.5h6"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
-            </button>
-          ) : null}
         </div>
       );
     case "balance":
@@ -917,14 +992,87 @@ function InventoryCell({
         <bdi>{formatNumber(BigInt(item.consumptionRatePer30Days), locale)}</bdi>
       );
     case "risk":
-      return (
-        <StateColourIndicators
-          copy={copy}
-          riskIndicators={item.riskIndicators}
-          stateColour={item.stateColour}
-        />
-      );
+      return <InventoryStatusBadges copy={copy} item={item} />;
   }
+}
+
+const STATUS_RISK_PRIORITY = [
+  "expired",
+  "out-of-stock",
+  "expiring-soon",
+  "below-minimum",
+  "at-or-below-reorder-point",
+  "above-maximum",
+  "cold-storage",
+  "missing-barcode",
+] as const satisfies readonly InventoryRiskIndicator[];
+
+function InventoryStatusBadges({
+  copy,
+  item,
+}: {
+  readonly copy: InventoryCopy;
+  readonly item: InventoryItem;
+}): React.JSX.Element {
+  const colourLabel = copy.stateColours[item.stateColour.effective];
+  const ordered = STATUS_RISK_PRIORITY.filter((indicator) =>
+    item.riskIndicators.includes(indicator),
+  );
+  const primary = ordered[0];
+  if (primary === undefined) {
+    return (
+      <span className="inventory-status-badges">
+        <StateIndicator
+          assistiveLabel={colourLabel}
+          colour={item.stateColour.effective}
+          kind="state"
+          label={statusMeaning(colourLabel)}
+        />
+      </span>
+    );
+  }
+  return (
+    <span className="inventory-status-badges">
+      <StateIndicator
+        assistiveLabel={colourLabel}
+        indicator={primary}
+        kind="risk"
+        label={copy.riskIndicators[primary]}
+      />
+      {ordered.slice(1).map((indicator) => (
+        <span data-indicator={indicator} key={indicator}>
+          {copy.riskIndicators[indicator]}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function BasketIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <path d="m15 11-1 9" />
+      <path d="m19 11-4-7" />
+      <path d="M2 11h20" />
+      <path d="m3.5 11 1.6 7.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6l1.7-7.4" />
+      <path d="M4.5 15.5h15" />
+      <path d="m5 11 4-7" />
+      <path d="m9 11 1 9" />
+    </svg>
+  );
+}
+
+function inventoryColumnLabel(
+  copy: InventoryCopy,
+  field: InventoryColumnField,
+): string {
+  return field === "risk" ? copy.statusColumn : copy.columns[field];
+}
+
+function statusMeaning(label: string): string {
+  const separator = " — ";
+  const index = label.indexOf(separator);
+  return index === -1 ? label : label.slice(index + separator.length);
 }
 
 function inventoryRowStatus(item: InventoryItem): string {
@@ -940,6 +1088,11 @@ function inventoryRowStatus(item: InventoryItem): string {
     item.riskIndicators.includes("at-or-below-reorder-point")
   )
     return "reorder";
+  if (
+    item.riskIndicators.includes("above-maximum") ||
+    item.stateColour.effective === "purple"
+  )
+    return "over-maximum";
   return "stable";
 }
 

@@ -202,9 +202,9 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await login(OWNER_USERNAME, OWNER_PASSWORD);
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/inventory`);
-    await expect(
-      page.getByRole("heading", { name: "Inventory review" }),
-    ).toBeVisible();
+    await expect(page.locator("#inventory-title")).toHaveText(
+      "Inventory review",
+    );
 
     const gridRows = page.locator("table tbody tr");
     await expect(gridRows).toHaveCount(5);
@@ -227,6 +227,7 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await expect(page.locator(".inventory-basket-feedback")).toContainText(
       productA.displayName,
     );
+    await expect.poll(() => feedbackClearsTheItemPanel(page)).toBe("clear");
     await expect(page.locator(".inventory-basket-count")).toHaveText("1");
     await expect(productRow).toHaveAttribute("data-selected", "false");
     await expect(addButton).toBeFocused();
@@ -1057,6 +1058,34 @@ async function startRendererServer(
   });
   const port = await listen(server);
   return { origin: `http://127.0.0.1:${String(port)}`, server };
+}
+
+async function feedbackClearsTheItemPanel(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const feedback = document.querySelector(".inventory-basket-feedback");
+    const panel = document.querySelector(".purchase-item-sidebar");
+    if (!(feedback instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+      return "missing";
+    }
+    const message = feedback.getBoundingClientRect();
+    const itemPanel = panel.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const insideViewport =
+      message.left >= 0 &&
+      message.top >= 0 &&
+      message.right <= viewportWidth &&
+      message.bottom <= viewportHeight &&
+      message.width > 0 &&
+      message.height > 0;
+    const separated =
+      message.right <= itemPanel.left ||
+      itemPanel.right <= message.left ||
+      message.bottom <= itemPanel.top ||
+      itemPanel.bottom <= message.top;
+    if (!insideViewport) return "clipped";
+    return separated ? "clear" : "overlap";
+  });
 }
 
 function isApiRoute(url: string | undefined): boolean {

@@ -155,14 +155,14 @@ test.describe.serial("read-only inventory review", () => {
     await login(OWNER_USERNAME, OWNER_PASSWORD);
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/inventory`);
-    await expect(
-      page.getByRole("heading", { name: "Inventory review" }),
-    ).toBeVisible();
+    await expect(page.locator("#inventory-title")).toHaveText(
+      "Inventory review",
+    );
     await expect(page.getByText("Total inventory value")).toBeVisible();
     await expect(page.getByText("Distinct items")).toBeVisible();
     await expect(
       page.locator(".inventory-metric[data-tone='accent']").first(),
-    ).toHaveCSS("color", "rgb(43, 95, 128)");
+    ).toHaveCSS("color", "rgb(30, 42, 51)");
     const settingsSummary = page.getByText("Column settings", { exact: true });
     const exportButton = page.getByRole("button", {
       name: "Export sensitive inventory data",
@@ -353,11 +353,9 @@ test.describe.serial("read-only inventory review", () => {
           "dir",
           locale === "ar" ? "rtl" : "ltr",
         );
-        await expect(
-          page.getByRole("heading", {
-            name: locale === "ar" ? "مراجعة المخزون" : "Inventory review",
-          }),
-        ).toBeVisible();
+        await expect(page.locator("#inventory-title")).toHaveText(
+          locale === "ar" ? "مراجعة المخزون" : "Inventory review",
+        );
         await assertInventoryRow(page, locale);
         for (const viewport of [
           { height: 900, width: 1440 },
