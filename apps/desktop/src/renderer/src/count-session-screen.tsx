@@ -880,22 +880,26 @@ function CountSessionLoop({
               </div>
             ) : null}
           </div>
-          {selectedProduct === null ? null : (
+          {selectedProduct === null ? (
+            <p className="count-entry-prompt">{copy.itemPlaceholder}</p>
+          ) : (
             <div className="count-resolved-item">
-              <div>
+              <div className="count-status-card">
                 <h3>{selectedProduct.displayName}</h3>
-                <p>
-                  {copy.currentBalance}:{" "}
-                  {selectedBalance === null ? (
-                    "—"
-                  ) : (
-                    <BalanceDecomposition
-                      locale={locale}
-                      packaging={selectedProduct.packaging}
-                      quantity={selectedBalance}
-                    />
-                  )}
-                </p>
+                <div className="count-balance-row">
+                  <span>{copy.currentBalance}</span>
+                  <strong className="count-balance-value">
+                    {selectedBalance === null ? (
+                      "—"
+                    ) : (
+                      <BalanceDecomposition
+                        locale={locale}
+                        packaging={selectedProduct.packaging}
+                        quantity={selectedBalance}
+                      />
+                    )}
+                  </strong>
+                </div>
                 {BigInt(blockedQuantity) > 0n ? (
                   <p>
                     {copy.blockedStock(
@@ -935,13 +939,15 @@ function CountSessionLoop({
                   packaging={selectedProduct.packaging}
                 />
               )}
-              <button
-                className="primary-button count-save-button"
-                disabled={busy}
-                type="submit"
-              >
-                {copy.save}
-              </button>
+              <div className="count-entry-actions">
+                <button
+                  className="primary-button count-save-button"
+                  disabled={busy}
+                  type="submit"
+                >
+                  {copy.save}
+                </button>
+              </div>
             </div>
           )}
         </form>

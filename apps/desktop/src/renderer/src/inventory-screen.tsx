@@ -714,7 +714,10 @@ function InventoryScreen({
         <p role="status">{copy.empty}</p>
       ) : (
         <div className="inventory-table-scroll">
-          <table aria-describedby="inventory-read-only">
+          <table
+            aria-describedby="inventory-read-only"
+            className="inventory-review-table"
+          >
             <caption className="visually-hidden">{copy.title}</caption>
             <thead>
               <tr>

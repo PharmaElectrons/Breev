@@ -766,7 +766,7 @@ interface MovementReference {
   readonly openable: boolean;
 }
 
-function movementReference(
+export function movementReference(
   movement: ProductMovement,
   purchaseReferences: ReadonlyMap<string, PostedPurchaseReference>,
   adjustmentReferences: ReadonlyMap<string, PostedPurchaseAdjustmentReference>,
@@ -784,7 +784,7 @@ function movementReference(
             ? movement.sourceDocumentType
             : `P${reference.number.value}/${reference.number.year} · ${reference.supplierName}`,
         number: reference?.number ?? null,
-        openable: true,
+        openable: reference !== undefined,
       };
     }
     case "purchase-adjustment": {
@@ -799,7 +799,7 @@ function movementReference(
             ? movement.sourceDocumentType
             : `P${reference.number.value}/${reference.number.year}-${reference.suffixValue} · ${reference.supplierNameSnapshot}`,
         number: reference?.number ?? null,
-        openable: true,
+        openable: reference !== undefined,
       };
     }
     case "purchase-return": {
@@ -814,7 +814,7 @@ function movementReference(
             ? movement.sourceDocumentType
             : `PR${reference.returnNumber.value}/${reference.returnNumber.year} · P${reference.originalNumber.value}/${reference.originalNumber.year} · ${reference.supplierNameSnapshot}`,
         number: reference?.originalNumber ?? null,
-        openable: true,
+        openable: reference !== undefined,
       };
     }
     case "count-session": {
@@ -826,7 +826,7 @@ function movementReference(
           reference?.labels.get(movement.sourceRowOrdinal) ??
           `Count session ${movement.sourceDocumentId} · line ${movement.sourceRowOrdinal}`,
         number: reference?.number ?? null,
-        openable: true,
+        openable: reference !== undefined,
       };
     }
     default:

@@ -30,6 +30,7 @@
     "dev:main": "node tooling/dev.mjs main",
     "dev:terminal": "node tooling/dev.mjs terminal",
     "env:check": "node tooling/check-local-env.mjs",
+    "seed:inventory": "node tooling/dev-inventory-seed.mjs",
     "format": "prettier --write .",
     "format:write": "prettier --write .",
     "format:check": "prettier --check .",

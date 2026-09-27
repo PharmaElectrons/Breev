@@ -160,6 +160,18 @@ test.describe.serial("read-only inventory review", () => {
     ).toBeVisible();
     await expect(page.getByText("Total inventory value")).toBeVisible();
     await expect(page.getByText("Distinct items")).toBeVisible();
+    await expect(
+      page.locator(".inventory-metric[data-tone='accent']").first(),
+    ).toHaveCSS("color", "rgb(43, 95, 128)");
+    const settingsSummary = page.getByText("Column settings", { exact: true });
+    const exportButton = page.getByRole("button", {
+      name: "Export sensitive inventory data",
+    });
+    await expect(settingsSummary).toBeVisible();
+    await expect(exportButton).toBeVisible();
+    const settingsBox = await settingsSummary.boundingBox();
+    const exportBox = await exportButton.boundingBox();
+    expect(settingsBox?.height).toBe(exportBox?.height);
     const balanceHeader = page.getByRole("columnheader", {
       name: "Current balance",
     });
@@ -347,6 +359,30 @@ test.describe.serial("read-only inventory review", () => {
           }),
         ).toBeVisible();
         await assertInventoryRow(page, locale);
+        for (const viewport of [
+          { height: 900, width: 1440 },
+          { height: 800, width: 1280 },
+          { height: 800, width: 1100 },
+          { height: 768, width: 1024 },
+        ]) {
+          await page.setViewportSize(viewport);
+          await expect(page.locator(".inventory-search input")).toBeInViewport({
+            ratio: 1,
+          });
+          await expect(
+            page.getByRole("link", {
+              name: locale === "ar" ? "بدء جلسة جرد" : "Start count session",
+            }),
+          ).toBeInViewport({ ratio: 1 });
+          await expect
+            .poll(() =>
+              page.evaluate<boolean>(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+              ),
+            )
+            .toBe(true);
+        }
+        await page.setViewportSize({ height: 800, width: 1280 });
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );

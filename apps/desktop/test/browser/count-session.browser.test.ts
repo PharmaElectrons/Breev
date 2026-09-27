@@ -645,6 +645,34 @@ test.describe.serial("durable count sessions", () => {
           "data-count-field",
           "unit:Strip",
         );
+        for (const viewport of [
+          { height: 900, width: 1440 },
+          { height: 800, width: 1280 },
+          { height: 800, width: 1100 },
+          { height: 768, width: 1024 },
+        ]) {
+          await page.setViewportSize(viewport);
+          await expect(page.locator("#count-item")).toBeInViewport({
+            ratio: 1,
+          });
+          await expect(page.locator(".count-status-card")).toBeInViewport({
+            ratio: 1,
+          });
+          await expect(page.locator("#count-complete")).toBeInViewport({
+            ratio: 1,
+          });
+          await expect(page.locator(".count-entry-actions")).toBeInViewport({
+            ratio: 1,
+          });
+          await expect
+            .poll(() =>
+              page.evaluate<boolean>(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+              ),
+            )
+            .toBe(true);
+        }
+        await page.setViewportSize({ height: 768, width: 1280 });
         const loopViolations = (await new AxeBuilder({ page }).analyze())
           .violations;
         expect(loopViolations).toEqual([]);
