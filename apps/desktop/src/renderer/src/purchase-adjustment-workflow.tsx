@@ -21,6 +21,10 @@ import {
 import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
+import {
+  getAdjustmentReasonLabel,
+  getPurchasingDenialMessage,
+} from "./purchasing-messages";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
 
@@ -110,7 +114,10 @@ export function PurchaseAdjustmentWorkflow({
   const [evidence, setEvidence] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    readonly message: string;
+    readonly tracking?: string | undefined;
+  } | null>(null);
   const [leaveWarning, setLeaveWarning] = useState(false);
   const [postedNumber, setPostedNumber] = useState("");
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -143,8 +150,8 @@ export function PurchaseAdjustmentWorkflow({
    * happens with it, so the refusal is on screen and announced before the next
    * keystroke can land.
    */
-  function refuse(message: string): void {
-    setError(message);
+  function refuse(message: string, tracking?: string): void {
+    setError(tracking !== undefined ? { message, tracking } : { message });
     requestFocus(() => {
       errorRef.current?.scrollIntoView({ block: "center" });
       return errorRef.current;
@@ -156,14 +163,17 @@ export function PurchaseAdjustmentWorkflow({
       caught instanceof PurchasingApiDenied &&
       caught.denial.code === "adjustment-batch-conflict"
     ) {
-      refuse(copy.blocked);
+      refuse(copy.blocked, caught.denial.requestId);
       return;
     }
-    refuse(
-      caught instanceof PurchasingApiDenied
-        ? `${caught.denial.code} · ${caught.denial.requestId}`
-        : String(caught),
-    );
+    if (caught instanceof PurchasingApiDenied) {
+      refuse(
+        getPurchasingDenialMessage(caught.denial.code, locale),
+        caught.denial.requestId,
+      );
+      return;
+    }
+    refuse(String(caught));
   }
 
   async function createDraft(): Promise<void> {
@@ -303,7 +313,10 @@ export function PurchaseAdjustmentWorkflow({
       <p>{copy.unchanged}</p>
       {error === null ? null : (
         <p className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
-          {error}
+          <span>{error.message}</span>
+          {error.tracking ? (
+            <small className="form-error-tracking">{error.tracking}</small>
+          ) : null}
         </p>
       )}
       {leaveWarning ? (
@@ -363,7 +376,7 @@ export function PurchaseAdjustmentWorkflow({
               <option value="">—</option>
               {PURCHASE_ADJUSTMENT_REASONS.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {getAdjustmentReasonLabel(value, locale)}
                 </option>
               ))}
             </select>
@@ -396,7 +409,7 @@ export function PurchaseAdjustmentWorkflow({
             >
               {PURCHASE_ADJUSTMENT_REASONS.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {getAdjustmentReasonLabel(value, locale)}
                 </option>
               ))}
             </select>
