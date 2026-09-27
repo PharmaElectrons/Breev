@@ -21,7 +21,10 @@ import {
 } from "./purchasing-api";
 import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
 import { PurchaseReturnWorkflow } from "./purchase-return-workflow";
-import { purchasingMessages } from "./purchasing-messages";
+import {
+  getAdjustmentReasonLabel,
+  purchasingMessages,
+} from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
 
@@ -1484,7 +1487,8 @@ function PostedAdjustmentView({
         {formatAdjustmentNumber(adjustment.number)}
       </h3>
       <p>
-        {adjustment.reason} · {formatTimestamp(adjustment.postedAt, locale)}
+        {getAdjustmentReasonLabel(adjustment.reason, locale)} ·{" "}
+        {formatTimestamp(adjustment.postedAt, locale)}
       </p>
       <dl className="posted-purchase-totals">
         <div>
@@ -1509,16 +1513,18 @@ function PostedAdjustmentView({
           </li>
         ))}
       </ul>
-      <button type="button" className="quiet-button" onClick={onBack}>
-        {copy.backToInvoice}
-      </button>
-      <button
-        type="button"
-        className="quiet-button"
-        onClick={() => window.print()}
-      >
-        {copy.print}
-      </button>
+      <div className="posted-correction-actions">
+        <button type="button" className="quiet-button" onClick={onBack}>
+          {copy.backToInvoice}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => window.print()}
+        >
+          {copy.print}
+        </button>
+      </div>
     </article>
   );
 }
@@ -1578,16 +1584,18 @@ function PostedReturnView({
           ))}
         </ul>
       </div>
-      <button type="button" className="quiet-button" onClick={onBack}>
-        {copy.backToInvoice}
-      </button>
-      <button
-        type="button"
-        className="quiet-button"
-        onClick={() => window.print()}
-      >
-        {copy.printReturn}
-      </button>
+      <div className="posted-correction-actions">
+        <button type="button" className="quiet-button" onClick={onBack}>
+          {copy.backToInvoice}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => window.print()}
+        >
+          {copy.printReturn}
+        </button>
+      </div>
     </article>
   );
 }
