@@ -187,6 +187,7 @@ export function PurchaseAdjustmentWorkflow({
   const originalNumberDisplay =
     detail.supplierInvoiceNumber || formatOriginalInvoiceNumber(detail);
   const nextSuffix = getNextAdjustmentSuffix(detail);
+  const cleanOriginalNumber = originalNumberDisplay.replace(/^A\d+[- ]*/iu, "");
 
   useEffect(() => {
     void requestSuppliers(baseUrl)
@@ -468,504 +469,601 @@ export function PurchaseAdjustmentWorkflow({
         </div>
       ) : null}
 
-      {/* Main In-Place Adjustment View (Screenshots 3, 4, 5) */}
-      <div className="posted-purchase-review">
-        {/* Top Adjustment Banner */}
-        <div className="adjustment-draft-banner">
-          <span className="adjustment-banner-badge-orange">
-            {copy.adjustmentDraftBadge} — {originalNumberDisplay} - {nextSuffix}
-          </span>
-
-          <button
-            type="button"
-            className="adjustment-banner-badge-blue"
-            onClick={leave}
-            title={copy.back}
-          >
-            {copy.originalInvoiceBadge} {originalNumberDisplay}
-          </button>
-
-          {stage === "start" ? (
-            <>
-              <div className="adjustment-banner-reason-wrap">
-                <label
-                  className="visually-hidden"
-                  htmlFor="start-reason-select"
-                >
-                  {copy.reason}
-                </label>
-                <select
-                  id="start-reason-select"
-                  aria-label={copy.reason}
-                  className="adjustment-banner-reason-select"
-                  required
-                  value={reason}
-                  onChange={(event) =>
-                    setReason(event.target.value as PurchaseAdjustmentReason)
-                  }
-                >
-                  {PURCHASE_ADJUSTMENT_REASONS.map((value) => (
-                    <option key={value} value={value}>
-                      {getAdjustmentReasonLabel(value, locale)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="adjustment-banner-actions">
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={busy}
-                  onClick={() => void createDraft()}
-                >
-                  <span>📝</span> {copy.start}
-                </button>
-                <button
-                  type="button"
-                  className="purchase-print-icon-button"
-                  onClick={() => window.print()}
-                  title={copy.printInvoice}
-                  aria-label={copy.printInvoice}
-                >
-                  🖨️
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="adjustment-banner-reason-wrap">
-                <input
-                  type="text"
-                  className="adjustment-banner-reason-input"
-                  aria-label={copy.reason}
-                  placeholder={copy.adjustmentReasonPlaceholder}
-                  value={
-                    evidence ||
-                    (reason ? getAdjustmentReasonLabel(reason, locale) : "")
-                  }
-                  onChange={(event) => setEvidence(event.target.value)}
-                />
-              </div>
-              <div className="adjustment-banner-actions">
-                <button
-                  type="button"
-                  className="purchase-return-button"
-                  onClick={leave}
-                >
-                  <span>↩️</span> {copy.returnInvoice}
-                </button>
-                <button
-                  type="button"
-                  className="purchase-print-icon-button"
-                  onClick={() => window.print()}
-                  title={copy.printInvoice}
-                  aria-label={copy.printInvoice}
-                >
-                  🖨️
-                </button>
-                <button
-                  type="button"
-                  className="purchase-adjust-button"
-                  disabled
-                >
-                  <span>📝</span> {copy.editInvoice}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Subtitle Alert */}
-        <div className="adjustment-subtitle-alert">
-          <span>
-            «{copy.adjustmentSubtitleAlert} {originalNumberDisplay} {nextSuffix}{" "}
-            —{" "}
+      {stage === "posted" ? (
+        <div role="status" className="adjustment-posted-success-card">
+          <div className="adjustment-posted-icon" aria-hidden="true">
+            ✅
+          </div>
+          <h3 id="posted-adjustment-title" className="adjustment-posted-title">
+            {copy.posted}
+          </h3>
+          <p className="adjustment-posted-subtitle">
             {locale === "ar"
-              ? "الفاتورة الأصلية محفوظة كما هي، وسيُرحّل الفرق فقط."
-              : "The original invoice is preserved as-is, and only the delta will be posted."}
-            »
-          </span>
-        </div>
-
-        {/* Invoice Header Metadata Row (Screenshot 3) */}
-        <div className="adjustment-metadata-row">
-          <div className="adjustment-metadata-field">
-            <span className="adjustment-metadata-label">{copy.date}:</span>
-            <bdi className="adjustment-metadata-value">
-              {draft?.invoiceDate ?? detail.invoiceDate}
-            </bdi>
-          </div>
-          <div className="adjustment-metadata-field">
-            <span className="adjustment-metadata-label">{copy.invoice}:</span>
-            <bdi className="adjustment-metadata-value font-mono">
-              {nextSuffix}-{originalNumberDisplay}
-            </bdi>
-          </div>
-          <div className="adjustment-metadata-field">
-            <span className="adjustment-metadata-label">{copy.supplier}:</span>
-            <strong className="adjustment-metadata-value">
-              {draftSupplierName}
-            </strong>
-          </div>
-          <div className="adjustment-metadata-field">
-            <span className="adjustment-metadata-label">
-              {copy.supplierDebt}:
+              ? "تم ترحيل فروقات التعديل بنجاح وتحديث قيود المخزون والحسابات."
+              : "Delta adjustment was posted successfully and ledger entries updated."}
+          </p>
+          <div className="adjustment-posted-badge">
+            <span className="adjustment-posted-badge-label">
+              {locale === "ar" ? "رقم حركة التعديل:" : "Adjustment Reference:"}
             </span>
-            <bdi className="adjustment-metadata-value">— {copy.iqd}</bdi>
+            <bdi className="font-mono font-bold adjustment-posted-ref">
+              {postedNumber}
+            </bdi>
           </div>
-          <div className="adjustment-metadata-search">
-            <input
-              type="search"
-              disabled
-              placeholder={copy.itemSearchHint}
-              aria-label={copy.itemSearchHint}
-            />
-          </div>
-        </div>
-
-        {/* Full 12-Column Table (Screenshots 2 & 3) */}
-        <div
-          className="posted-purchase-table-wrap purchase-table-wrap"
-          role="group"
-          aria-label={copy.title}
-          tabIndex={0}
-        >
-          <table className="posted-purchase-table">
-            <thead>
-              <tr>
-                <th scope="col" style={{ inlineSize: "2.5rem" }}>
-                  #
-                </th>
-                <th scope="col">{copy.item}</th>
-                <th scope="col">{copy.quantity}</th>
-                <th scope="col">{copy.returned}</th>
-                <th scope="col">{copy.unit}</th>
-                <th scope="col">{copy.cost}</th>
-                <th scope="col">{copy.expiry}</th>
-                <th scope="col">{copy.margin}</th>
-                <th scope="col">{copy.retail}</th>
-                <th scope="col">{copy.special}</th>
-                <th scope="col">{copy.total}</th>
-                <th scope="col">
-                  <span className="visually-hidden">{copy.actions}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {draft
-                ? draft.rows.map((row, index) => {
-                    const lineTotalFils =
-                      BigInt(row.enteredQuantity || "0") *
-                      BigInt(row.costFils || "0");
-                    const unitName =
-                      row.unit.kind === "package-unit"
-                        ? row.unit.packageUnitName
-                        : row.inventoryUnitName;
-                    return (
-                      <tr key={row.lineageId}>
-                        <td style={{ color: "var(--muted-foreground)" }}>
-                          {String(index + 1).padStart(2, "0")}
-                        </td>
-                        <th scope="row">
-                          <span className="purchase-item-name-pill">
-                            {row.itemDisplayName}
-                          </span>
-                        </th>
-                        <td>
-                          <input
-                            aria-label={`${copy.quantity} ${row.itemDisplayName}`}
-                            inputMode="numeric"
-                            value={row.enteredQuantity}
-                            onChange={(event) =>
-                              setDraft({
-                                ...draft,
-                                rows: draft.rows.map((candidate) =>
-                                  candidate.lineageId === row.lineageId
-                                    ? {
-                                        ...candidate,
-                                        enteredQuantity: event.target.value,
-                                      }
-                                    : candidate,
-                                ),
-                              })
-                            }
-                          />
-                        </td>
-                        <td>0</td>
-                        <td>
-                          <bdi>{unitName}</bdi>
-                        </td>
-                        <td>
-                          <input
-                            aria-label={`${copy.cost} ${row.itemDisplayName}`}
-                            inputMode="numeric"
-                            value={row.costFils}
-                            onChange={(event) =>
-                              setDraft({
-                                ...draft,
-                                rows: draft.rows.map((candidate) =>
-                                  candidate.lineageId === row.lineageId
-                                    ? {
-                                        ...candidate,
-                                        costFils: event.target.value,
-                                      }
-                                    : candidate,
-                                ),
-                              })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            placeholder="YYYY-MM-DD"
-                            value={row.expiryDate ?? ""}
-                            onChange={(event) =>
-                              setDraft({
-                                ...draft,
-                                rows: draft.rows.map((candidate) =>
-                                  candidate.lineageId === row.lineageId
-                                    ? {
-                                        ...candidate,
-                                        expiryDate:
-                                          event.target.value.trim() === ""
-                                            ? null
-                                            : event.target.value.trim(),
-                                      }
-                                    : candidate,
-                                ),
-                              })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <bdi>{row.marginPercentage ?? "—"}</bdi>
-                        </td>
-                        <td>
-                          <input
-                            aria-label={`${copy.retail} ${row.itemDisplayName}`}
-                            inputMode="numeric"
-                            value={row.retailPriceFils}
-                            onChange={(event) =>
-                              setDraft({
-                                ...draft,
-                                rows: draft.rows.map((candidate) =>
-                                  candidate.lineageId === row.lineageId
-                                    ? {
-                                        ...candidate,
-                                        retailPriceFils: event.target.value,
-                                      }
-                                    : candidate,
-                                ),
-                              })
-                            }
-                          />
-                        </td>
-                        <td>0</td>
-                        <td>
-                          <bdi className="font-mono">
-                            {formatFilsToIqd(lineTotalFils.toString(), locale)}
-                          </bdi>
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="quiet-button"
-                            aria-label={`${copy.remove} ${row.itemDisplayName}`}
-                            onClick={() =>
-                              setDraft({
-                                ...draft,
-                                rows: draft.rows.filter(
-                                  (candidate) =>
-                                    candidate.lineageId !== row.lineageId,
-                                ),
-                              })
-                            }
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                : detail.rows.map((row, index) => {
-                    const lineTotalFils =
-                      BigInt(row.enteredQuantity || "0") *
-                      BigInt(row.primarySupplierCostFils || "0");
-                    const unitName =
-                      row.unit.kind === "package-unit"
-                        ? row.unit.packageUnitName
-                        : row.inventoryUnitName;
-                    return (
-                      <tr key={row.id}>
-                        <td style={{ color: "var(--muted-foreground)" }}>
-                          {String(index + 1).padStart(2, "0")}
-                        </td>
-                        <th scope="row">
-                          <span className="purchase-item-name-pill">
-                            {row.itemDisplayName}
-                          </span>
-                        </th>
-                        <td>
-                          <input
-                            aria-label={`${copy.quantity} ${row.itemDisplayName}`}
-                            inputMode="numeric"
-                            value={row.enteredQuantity}
-                            onFocus={() => {
-                              void createDraft();
-                            }}
-                            onChange={() => {
-                              void createDraft();
-                            }}
-                          />
-                        </td>
-                        <td>0</td>
-                        <td>
-                          <bdi>{unitName}</bdi>
-                        </td>
-                        <td>
-                          <input
-                            aria-label={`${copy.cost} ${row.itemDisplayName}`}
-                            inputMode="numeric"
-                            value={row.primarySupplierCostFils ?? "0"}
-                            onFocus={() => {
-                              void createDraft();
-                            }}
-                            onChange={() => {
-                              void createDraft();
-                            }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            placeholder="YYYY-MM-DD"
-                            value={row.expiryDate ?? ""}
-                            onFocus={() => {
-                              void createDraft();
-                            }}
-                            onChange={() => {
-                              void createDraft();
-                            }}
-                          />
-                        </td>
-                        <td>—</td>
-                        <td>
-                          <input
-                            aria-label={`${copy.retail} ${row.itemDisplayName}`}
-                            inputMode="numeric"
-                            value={row.retailPriceFils}
-                            onFocus={() => {
-                              void createDraft();
-                            }}
-                            onChange={() => {
-                              void createDraft();
-                            }}
-                          />
-                        </td>
-                        <td>0</td>
-                        <td>
-                          <bdi className="font-mono">
-                            {formatFilsToIqd(lineTotalFils.toString(), locale)}
-                          </bdi>
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="quiet-button"
-                            aria-label={`${copy.remove} ${row.itemDisplayName}`}
-                            onClick={() => void createDraft()}
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Totals Section (Screenshot 3) */}
-        <div className="adjustment-totals-bar">
-          <div className="adjustment-totals-group">
-            <div className="adjustment-totals-item">
-              <span className="adjustment-metadata-label">
-                {copy.totalCost}:
-              </span>
-              <strong>
-                <bdi className="font-mono">
-                  {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
-                </bdi>
-              </strong>
-            </div>
-            <div className="adjustment-totals-item">
-              <span className="adjustment-metadata-label">
-                إضافة مصاريف للفاتورة:
-              </span>
-              <bdi className="font-mono">0</bdi>
-            </div>
-            <div className="adjustment-totals-item">
-              <span className="adjustment-metadata-label">خصم %:</span>
-              <bdi className="font-mono">0</bdi>
-            </div>
-            <div className="adjustment-totals-item">
-              <span className="adjustment-metadata-label">خصم مبلغ:</span>
-              <bdi className="font-mono">0</bdi>
-            </div>
-          </div>
-
-          <div className="adjustment-totals-group">
-            <div className="adjustment-totals-item">
-              <span className="adjustment-metadata-label">بعد الخصم:</span>
-              <strong>
-                <bdi className="font-mono">
-                  {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
-                </bdi>
-              </strong>
-            </div>
-            <div className="adjustment-totals-item">
-              <span className="adjustment-metadata-label">
-                الإجمالي الباقي:
-              </span>
-              <strong className="adjustment-totals-grand">
-                <bdi>
-                  {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
-                </bdi>
-              </strong>
-            </div>
-            <div className="adjustment-totals-item">
-              <span className="adjustment-metadata-label">إجمالي الراجع:</span>
-              <bdi className="font-mono">0 {copy.iqd}</bdi>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Actions Bar (Screenshot 3) */}
-        <div className="adjustment-bottom-actions">
-          <div>
+          <div className="adjustment-posted-actions">
             <button
               type="button"
-              className="quiet-button"
+              className="primary-button"
               disabled={busy}
-              onClick={leave}
+              onClick={onBack}
             >
               {copy.back}
             </button>
-          </div>
-
-          <div>
             <button
               type="button"
-              className="primary-button purchase-save-draft-btn"
-              disabled={busy}
-              onClick={() => void saveAndReview()}
+              className="secondary-button"
+              onClick={() => window.print()}
             >
-              <span>💾</span> {copy.saveReview}
+              🖨️ {copy.printInvoice}
             </button>
           </div>
         </div>
-      </div>
+      ) : (
+        /* Main In-Place Adjustment View (Screenshots 3, 4, 5) */
+        <div className="posted-purchase-review">
+          {/* Top Adjustment Banner */}
+          <div className="adjustment-draft-banner">
+            <span className="adjustment-banner-badge-orange">
+              {copy.adjustmentDraftBadge} — {cleanOriginalNumber} - {nextSuffix}
+            </span>
+
+            <button
+              type="button"
+              className="adjustment-banner-badge-blue"
+              onClick={leave}
+              title={copy.back}
+            >
+              {copy.originalInvoiceBadge} {cleanOriginalNumber}
+            </button>
+
+            {stage === "start" ? (
+              <>
+                <div className="adjustment-banner-reason-wrap">
+                  <label
+                    className="visually-hidden"
+                    htmlFor="start-reason-select"
+                  >
+                    {copy.reason}
+                  </label>
+                  <select
+                    id="start-reason-select"
+                    aria-label={copy.reason}
+                    className="adjustment-banner-reason-select"
+                    required
+                    value={reason}
+                    onChange={(event) =>
+                      setReason(event.target.value as PurchaseAdjustmentReason)
+                    }
+                  >
+                    {PURCHASE_ADJUSTMENT_REASONS.map((value) => (
+                      <option key={value} value={value}>
+                        {getAdjustmentReasonLabel(value, locale)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="adjustment-banner-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={busy}
+                    onClick={() => void createDraft()}
+                  >
+                    <span>📝</span> {copy.start}
+                  </button>
+                  <button
+                    type="button"
+                    className="purchase-print-icon-button"
+                    onClick={() => window.print()}
+                    title={copy.printInvoice}
+                    aria-label={copy.printInvoice}
+                  >
+                    🖨️
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="adjustment-banner-reason-wrap">
+                  <input
+                    type="text"
+                    className="adjustment-banner-reason-input"
+                    aria-label={copy.reason}
+                    placeholder={copy.adjustmentReasonPlaceholder}
+                    value={
+                      evidence ||
+                      (reason ? getAdjustmentReasonLabel(reason, locale) : "")
+                    }
+                    onChange={(event) => setEvidence(event.target.value)}
+                  />
+                </div>
+                <div className="adjustment-banner-actions">
+                  <button
+                    type="button"
+                    className="purchase-return-button"
+                    onClick={leave}
+                  >
+                    <span>↩️</span> {copy.returnInvoice}
+                  </button>
+                  <button
+                    type="button"
+                    className="purchase-print-icon-button"
+                    onClick={() => window.print()}
+                    title={copy.printInvoice}
+                    aria-label={copy.printInvoice}
+                  >
+                    🖨️
+                  </button>
+                  <button
+                    type="button"
+                    className="purchase-adjust-button"
+                    disabled
+                  >
+                    <span>📝</span> {copy.editInvoice}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Subtitle Alert */}
+          <div className="adjustment-subtitle-alert">
+            <span>
+              «{copy.adjustmentSubtitleAlert} {nextSuffix} {cleanOriginalNumber}{" "}
+              —{" "}
+              {locale === "ar"
+                ? "الفاتورة الأصلية محفوظة كما هي، وسيُرحّل الفرق فقط."
+                : "The original invoice is preserved as-is, and only the delta will be posted."}
+              »
+            </span>
+          </div>
+
+          {/* Invoice Header Metadata Row (Screenshot 3) */}
+          <div className="adjustment-metadata-row">
+            <div className="adjustment-metadata-field">
+              <span className="adjustment-metadata-label">{copy.date}:</span>
+              <bdi className="adjustment-metadata-value">
+                {draft?.invoiceDate ?? detail.invoiceDate}
+              </bdi>
+            </div>
+            <div className="adjustment-metadata-field">
+              <span className="adjustment-metadata-label">{copy.invoice}:</span>
+              <bdi className="adjustment-metadata-value font-mono">
+                {nextSuffix}-{cleanOriginalNumber}
+              </bdi>
+            </div>
+            <div className="adjustment-metadata-field">
+              <span className="adjustment-metadata-label">
+                {copy.supplier}:
+              </span>
+              <strong className="adjustment-metadata-value">
+                {draftSupplierName}
+              </strong>
+            </div>
+            <div className="adjustment-metadata-field">
+              <span className="adjustment-metadata-label">
+                {copy.supplierDebt}:
+              </span>
+              <bdi className="adjustment-metadata-value">— {copy.iqd}</bdi>
+            </div>
+            <div className="adjustment-metadata-search">
+              <input
+                type="search"
+                disabled
+                placeholder={copy.itemSearchHint}
+                aria-label={copy.itemSearchHint}
+              />
+            </div>
+          </div>
+
+          {/* Full 12-Column Table (Screenshots 2 & 3) */}
+          <div
+            className="posted-purchase-table-wrap purchase-table-wrap"
+            role="group"
+            aria-label={copy.title}
+            tabIndex={0}
+          >
+            <table className="posted-purchase-table">
+              <thead>
+                <tr>
+                  <th scope="col" style={{ inlineSize: "2.5rem" }}>
+                    #
+                  </th>
+                  <th scope="col">{copy.item}</th>
+                  <th scope="col">{copy.quantity}</th>
+                  <th scope="col">{copy.returned}</th>
+                  <th scope="col">{copy.unit}</th>
+                  <th scope="col">{copy.cost}</th>
+                  <th scope="col">{copy.expiry}</th>
+                  <th scope="col">{copy.margin}</th>
+                  <th scope="col">{copy.retail}</th>
+                  <th scope="col">{copy.special}</th>
+                  <th scope="col">{copy.total}</th>
+                  <th scope="col">
+                    <span className="visually-hidden">{copy.actions}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {draft
+                  ? draft.rows.map((row, index) => {
+                      const lineTotalFils =
+                        BigInt(row.enteredQuantity || "0") *
+                        BigInt(row.costFils || "0");
+                      const unitName =
+                        row.unit.kind === "package-unit"
+                          ? row.unit.packageUnitName
+                          : row.inventoryUnitName;
+                      return (
+                        <tr key={row.lineageId}>
+                          <td style={{ color: "var(--muted-foreground)" }}>
+                            {String(index + 1).padStart(2, "0")}
+                          </td>
+                          <th scope="row">
+                            <span className="purchase-item-name-pill">
+                              {row.itemDisplayName}
+                            </span>
+                          </th>
+                          <td>
+                            <input
+                              aria-label={`${copy.quantity} ${row.itemDisplayName}`}
+                              inputMode="numeric"
+                              value={row.enteredQuantity}
+                              onChange={(event) =>
+                                setDraft({
+                                  ...draft,
+                                  rows: draft.rows.map((candidate) =>
+                                    candidate.lineageId === row.lineageId
+                                      ? {
+                                          ...candidate,
+                                          enteredQuantity: event.target.value,
+                                        }
+                                      : candidate,
+                                  ),
+                                })
+                              }
+                            />
+                          </td>
+                          <td>0</td>
+                          <td>
+                            <bdi>{unitName}</bdi>
+                          </td>
+                          <td>
+                            <input
+                              aria-label={`${copy.cost} ${row.itemDisplayName}`}
+                              inputMode="numeric"
+                              value={row.costFils}
+                              onChange={(event) =>
+                                setDraft({
+                                  ...draft,
+                                  rows: draft.rows.map((candidate) =>
+                                    candidate.lineageId === row.lineageId
+                                      ? {
+                                          ...candidate,
+                                          costFils: event.target.value,
+                                        }
+                                      : candidate,
+                                  ),
+                                })
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              placeholder="YYYY-MM-DD"
+                              value={row.expiryDate ?? ""}
+                              onChange={(event) =>
+                                setDraft({
+                                  ...draft,
+                                  rows: draft.rows.map((candidate) =>
+                                    candidate.lineageId === row.lineageId
+                                      ? {
+                                          ...candidate,
+                                          expiryDate:
+                                            event.target.value.trim() === ""
+                                              ? null
+                                              : event.target.value.trim(),
+                                        }
+                                      : candidate,
+                                  ),
+                                })
+                              }
+                            />
+                          </td>
+                          <td>
+                            <bdi>{row.marginPercentage ?? "—"}</bdi>
+                          </td>
+                          <td>
+                            <input
+                              aria-label={`${copy.retail} ${row.itemDisplayName}`}
+                              inputMode="numeric"
+                              value={row.retailPriceFils}
+                              onChange={(event) =>
+                                setDraft({
+                                  ...draft,
+                                  rows: draft.rows.map((candidate) =>
+                                    candidate.lineageId === row.lineageId
+                                      ? {
+                                          ...candidate,
+                                          retailPriceFils: event.target.value,
+                                        }
+                                      : candidate,
+                                  ),
+                                })
+                              }
+                            />
+                          </td>
+                          <td>0</td>
+                          <td>
+                            <bdi className="font-mono">
+                              {formatFilsToIqd(
+                                lineTotalFils.toString(),
+                                locale,
+                              )}
+                            </bdi>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="quiet-button"
+                              aria-label={`${copy.remove} ${row.itemDisplayName}`}
+                              onClick={() =>
+                                setDraft({
+                                  ...draft,
+                                  rows: draft.rows.filter(
+                                    (candidate) =>
+                                      candidate.lineageId !== row.lineageId,
+                                  ),
+                                })
+                              }
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  : detail.rows.map((row, index) => {
+                      const lineTotalFils =
+                        BigInt(row.enteredQuantity || "0") *
+                        BigInt(row.primarySupplierCostFils || "0");
+                      const unitName =
+                        row.unit.kind === "package-unit"
+                          ? row.unit.packageUnitName
+                          : row.inventoryUnitName;
+                      return (
+                        <tr key={row.id}>
+                          <td style={{ color: "var(--muted-foreground)" }}>
+                            {String(index + 1).padStart(2, "0")}
+                          </td>
+                          <th scope="row">
+                            <span className="purchase-item-name-pill">
+                              {row.itemDisplayName}
+                            </span>
+                          </th>
+                          <td>
+                            <input
+                              aria-label={`${copy.quantity} ${row.itemDisplayName}`}
+                              inputMode="numeric"
+                              value={row.enteredQuantity}
+                              onFocus={() => {
+                                void createDraft();
+                              }}
+                              onChange={() => {
+                                void createDraft();
+                              }}
+                            />
+                          </td>
+                          <td>0</td>
+                          <td>
+                            <bdi>{unitName}</bdi>
+                          </td>
+                          <td>
+                            <input
+                              aria-label={`${copy.cost} ${row.itemDisplayName}`}
+                              inputMode="numeric"
+                              value={row.primarySupplierCostFils ?? "0"}
+                              onFocus={() => {
+                                void createDraft();
+                              }}
+                              onChange={() => {
+                                void createDraft();
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              placeholder="YYYY-MM-DD"
+                              value={row.expiryDate ?? ""}
+                              onFocus={() => {
+                                void createDraft();
+                              }}
+                              onChange={() => {
+                                void createDraft();
+                              }}
+                            />
+                          </td>
+                          <td>—</td>
+                          <td>
+                            <input
+                              aria-label={`${copy.retail} ${row.itemDisplayName}`}
+                              inputMode="numeric"
+                              value={row.retailPriceFils}
+                              onFocus={() => {
+                                void createDraft();
+                              }}
+                              onChange={() => {
+                                void createDraft();
+                              }}
+                            />
+                          </td>
+                          <td>0</td>
+                          <td>
+                            <bdi className="font-mono">
+                              {formatFilsToIqd(
+                                lineTotalFils.toString(),
+                                locale,
+                              )}
+                            </bdi>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="quiet-button"
+                              aria-label={`${copy.remove} ${row.itemDisplayName}`}
+                              onClick={() => void createDraft()}
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Totals Section (Screenshot 3) */}
+          <div className="adjustment-totals-bar">
+            <div className="adjustment-totals-group">
+              <div className="adjustment-totals-item">
+                <span className="adjustment-metadata-label">
+                  {copy.totalCost}:
+                </span>
+                <strong>
+                  <bdi className="font-mono">
+                    {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
+                  </bdi>
+                </strong>
+              </div>
+              <div className="adjustment-totals-item">
+                <span className="adjustment-metadata-label">
+                  إضافة مصاريف للفاتورة:
+                </span>
+                <bdi className="font-mono">0</bdi>
+              </div>
+              <div className="adjustment-totals-item">
+                <span className="adjustment-metadata-label">خصم %:</span>
+                <bdi className="font-mono">0</bdi>
+              </div>
+              <div className="adjustment-totals-item">
+                <span className="adjustment-metadata-label">خصم مبلغ:</span>
+                <bdi className="font-mono">0</bdi>
+              </div>
+            </div>
+
+            <div className="adjustment-totals-group">
+              <div className="adjustment-totals-item">
+                <span className="adjustment-metadata-label">بعد الخصم:</span>
+                <strong>
+                  <bdi className="font-mono">
+                    {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
+                  </bdi>
+                </strong>
+              </div>
+              <div className="adjustment-totals-item">
+                <span className="adjustment-metadata-label">
+                  الإجمالي الباقي:
+                </span>
+                <strong className="adjustment-totals-grand">
+                  <bdi>
+                    {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
+                  </bdi>
+                </strong>
+              </div>
+              <div className="adjustment-totals-item">
+                <span className="adjustment-metadata-label">
+                  إجمالي الراجع:
+                </span>
+                <bdi className="font-mono">0 {copy.iqd}</bdi>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Actions Bar (Screenshot 3) */}
+          <div className="adjustment-bottom-actions">
+            <div className="adjustment-bottom-toolbar">
+              <div className="adjustment-bottom-toolbar-group">
+                <button
+                  type="button"
+                  className="adjustment-toolbar-btn"
+                  onClick={leave}
+                >
+                  {locale === "ar" ? "السابقة >" : "Previous >"}
+                </button>
+                <button
+                  type="button"
+                  className="adjustment-toolbar-btn"
+                  onClick={leave}
+                >
+                  {locale === "ar" ? "التالية <" : "Next <"}
+                </button>
+                <button
+                  type="button"
+                  className="adjustment-toolbar-btn"
+                  onClick={leave}
+                >
+                  🔍 {locale === "ar" ? "بحث عن فاتورة" : "Search invoice"}
+                </button>
+                <button
+                  type="button"
+                  className="adjustment-toolbar-btn"
+                  onClick={leave}
+                >
+                  + {locale === "ar" ? "فاتورة جديدة" : "New invoice"}
+                </button>
+              </div>
+              <div className="adjustment-bottom-toolbar-group">
+                <button
+                  type="button"
+                  className="adjustment-toolbar-btn"
+                  onClick={() => window.print()}
+                >
+                  🖨️ {locale === "ar" ? "طباعة فاتورة" : "Print"}
+                </button>
+                <button
+                  type="button"
+                  className="adjustment-toolbar-btn adjustment-toolbar-btn-danger"
+                  onClick={leave}
+                >
+                  🗑️ {locale === "ar" ? "إلغاء التعديل" : "Cancel"}
+                </button>
+              </div>
+            </div>
+
+            <div className="adjustment-save-row">
+              <button
+                type="button"
+                className="quiet-button"
+                disabled={busy}
+                onClick={leave}
+              >
+                {copy.back}
+              </button>
+              <button
+                type="button"
+                className="primary-button purchase-save-draft-btn"
+                disabled={busy}
+                onClick={() => void saveAndReview()}
+              >
+                <span>💾</span> {copy.saveReview}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delta Summary Modal (Screenshot 1) */}
       {stage === "summary" && summary !== null ? (
@@ -1129,30 +1227,6 @@ export function PurchaseAdjustmentWorkflow({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      ) : null}
-
-      {stage === "posted" ? (
-        <div role="status" className="adjustment-summary">
-          <h3 id="posted-adjustment-title">{copy.posted}</h3>
-          <p className="posted-number">
-            <bdi
-              className="font-mono font-bold"
-              style={{ fontSize: "1.25rem" }}
-            >
-              {postedNumber}
-            </bdi>
-          </p>
-          <div className="adjustment-actions">
-            <button
-              type="button"
-              className="quiet-button"
-              disabled={busy}
-              onClick={onBack}
-            >
-              {copy.back}
-            </button>
           </div>
         </div>
       ) : null}

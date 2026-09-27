@@ -7786,11 +7786,130 @@ a:focus-visible,
 
 .adjustment-bottom-actions {
   display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding-block-start: 0.35rem;
+  inline-size: 100%;
+}
+
+.adjustment-bottom-toolbar {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding-block-start: 0.35rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.adjustment-bottom-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.adjustment-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.775rem;
+  font-weight: 500;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.adjustment-toolbar-btn:hover:not(:disabled) {
+  background: var(--muted);
+  border-color: var(--control-border);
+}
+
+.adjustment-toolbar-btn-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.adjustment-toolbar-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.adjustment-save-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding-block: 0.25rem;
+}
+
+.adjustment-posted-success-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 1.25rem;
+  padding: 3.5rem 2rem;
+  margin: 3rem auto;
+  inline-size: min(100%, 36rem);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 10px 32px var(--shadow);
+}
+
+.adjustment-posted-icon {
+  font-size: 3.25rem;
+  line-height: 1;
+}
+
+.adjustment-posted-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.adjustment-posted-subtitle {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.95rem;
+  max-inline-size: 26rem;
+  line-height: 1.5;
+}
+
+.adjustment-posted-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.adjustment-posted-badge-label {
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+}
+
+.adjustment-posted-ref {
+  font-size: 1.35rem;
+  color: var(--primary);
+}
+
+.adjustment-posted-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-block-start: 0.5rem;
 }
 
 @media (max-width: 72rem) {

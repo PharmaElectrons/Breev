@@ -463,22 +463,32 @@ export function PostedPurchaseReview({
 
   const content = (
     <>
-      <header className="posted-review-heading">
-        <div>
-          <p className="purchase-context-label">{copy.historicalSnapshot}</p>
-          <h2 id="posted-purchase-review-title">
-            {copy.postedPurchaseRegister}
-          </h2>
-        </div>
-      </header>
+      {correction === "adjustment" ? (
+        <h2 id="posted-purchase-review-title" className="visually-hidden">
+          {copy.postedPurchaseRegister}
+        </h2>
+      ) : (
+        <>
+          <header className="posted-review-heading">
+            <div>
+              <p className="purchase-context-label">
+                {copy.historicalSnapshot}
+              </p>
+              <h2 id="posted-purchase-review-title">
+                {copy.postedPurchaseRegister}
+              </h2>
+            </div>
+          </header>
 
-      <p
-        id="posted-purchase-review-boundary"
-        className="posted-review-boundary"
-      >
-        <span aria-hidden="true">ℹ</span>
-        <span>{copy.snapshotBoundary}</span>
-      </p>
+          <p
+            id="posted-purchase-review-boundary"
+            className="posted-review-boundary"
+          >
+            <span aria-hidden="true">ℹ</span>
+            <span>{copy.snapshotBoundary}</span>
+          </p>
+        </>
+      )}
       <p role="status" aria-live="polite" className="visually-hidden">
         {announcement}
       </p>
