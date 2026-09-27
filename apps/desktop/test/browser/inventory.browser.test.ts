@@ -86,6 +86,7 @@ test.describe.serial("read-only inventory review", () => {
   let apiOrigin = "";
   let credentials: Credentials;
   let databaseRoles: SeparatedDatabaseRoles;
+  let pharmacyId: string;
   let postgres: StartedPostgreSqlContainer | undefined;
   let product: Product;
   let renderer: RendererServer;
@@ -122,6 +123,10 @@ test.describe.serial("read-only inventory review", () => {
       pharmacyName: "Breev Inventory Browser Pharmacy",
     });
     expect(bootstrap.status).toBe(201);
+    pharmacyId = String(
+      (bootstrap.body as { pharmacy?: { id?: string } }).pharmacy?.id ?? "",
+    );
+    expect(pharmacyId).not.toBe("");
     await login(OWNER_USERNAME, OWNER_PASSWORD);
     const supplier = await createSupplier();
     const created = await apiRequest(
@@ -134,11 +139,7 @@ test.describe.serial("read-only inventory review", () => {
     const purchase = await postPurchase(supplier, product);
     await postPurchaseAdjustment(purchase.posted.id);
     await postPurchaseReturn(purchase.posted.id);
-    await createManagerUser(
-      String(
-        (bootstrap.body as { pharmacy?: { id?: string } }).pharmacy?.id ?? "",
-      ),
-    );
+    await createManagerUser(pharmacyId);
     renderer = await startRendererServer(apiOrigin, credentials);
   });
 
@@ -297,6 +298,72 @@ test.describe.serial("read-only inventory review", () => {
     await expect(reference).toBeFocused();
     await page.getByRole("link", { name: "Back to inventory" }).click();
     await expect(page).toHaveURL(/#\/inventory$/u);
+  });
+
+  test("Catalog movement history is bounded and hides valuation without its permission", async ({
+    page,
+  }) => {
+    await login(MANAGER_USERNAME, MANAGER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    let historyRequests = 0;
+    page.on("request", (request) => {
+      if (request.url().includes(`/inventory/items/${product.id}/movements`)) {
+        historyRequests += 1;
+      }
+    });
+    await page.goto(`${renderer.origin}#/catalog/products/${product.id}`);
+    await expect(page.getByTestId("product-display-name")).toHaveText(
+      product.displayName,
+    );
+    const movementPanel = page.getByText("Item movement details", {
+      exact: true,
+    });
+    await expect(movementPanel).toBeVisible();
+    expect(historyRequests).toBe(0);
+    await movementPanel.click();
+
+    const table = page.locator(".catalog-movement-table-scroll table");
+    await expect(table.locator("tbody tr")).toHaveCount(3);
+    await expect(table.locator("thead th")).toHaveText([
+      "Date",
+      "Time",
+      "Movement kind",
+      "Reference document",
+      "User",
+      "Quantity",
+    ]);
+    await expect(
+      table.getByRole("columnheader", { name: "Value" }),
+    ).toHaveCount(0);
+    await expect.poll(() => historyRequests).toBe(1);
+    await expect(
+      page.getByRole("link", { name: "Open full movement history" }),
+    ).toHaveAttribute("href", `#/inventory/items/${product.id}/movements`);
+
+    await requireAdministrator().query(
+      `delete from role_permission_grants
+       where pharmacy_id = $1 and role_id = (
+         select role_id from identity_users where username = $2
+       ) and permission_name = 'inventory.review'`,
+      [pharmacyId, MANAGER_USERNAME],
+    );
+    await requireAdministrator().query(
+      `update pharmacy_roles set revision = revision + 1
+       where id = (select role_id from identity_users where username = $1)`,
+      [MANAGER_USERNAME],
+    );
+    await requireAdministrator().query(
+      "update pharmacies set identity_revision = identity_revision + 1 where id = $1",
+      [pharmacyId],
+    );
+    await login(MANAGER_USERNAME, MANAGER_PASSWORD);
+    await page.reload();
+    await expect(page.getByTestId("product-display-name")).toHaveText(
+      product.displayName,
+    );
+    await expect(
+      page.getByText("Item movement details", { exact: true }),
+    ).toHaveCount(0);
   });
 
   test("pairs state colour with text and an icon, including forced colours", async ({
@@ -712,6 +779,37 @@ async function createManagerUser(pharmacyId: string): Promise<void> {
     username: MANAGER_USERNAME,
   });
   expect(created.status).toBe(201);
+  const manager = await requireAdministrator().query<{ id: string }>(
+    "select role_id as id from identity_users where username = $1",
+    [MANAGER_USERNAME],
+  );
+  const roleId = manager.rows[0]?.id;
+  expect(roleId).toBeDefined();
+  const owner = await requireAdministrator().query<{ id: string }>(
+    "select id from identity_users where username = $1",
+    [OWNER_USERNAME],
+  );
+  await requireAdministrator().query(
+    `insert into role_permission_grants (
+       pharmacy_id, role_id, permission_name, granted_by
+     ) values ($1, $2, 'catalog.item.manage', $3)
+     on conflict (role_id, permission_name) do nothing`,
+    [pharmacyId, roleId, owner.rows[0]?.id],
+  );
+  await requireAdministrator().query(
+    `delete from role_permission_grants
+     where pharmacy_id = $1 and role_id = $2
+       and permission_name = 'inventory.valuation.view'`,
+    [pharmacyId, roleId],
+  );
+  await requireAdministrator().query(
+    "update pharmacy_roles set revision = revision + 1 where id = $1",
+    [roleId],
+  );
+  await requireAdministrator().query(
+    "update pharmacies set identity_revision = identity_revision + 1 where id = $1",
+    [pharmacyId],
+  );
 }
 
 async function createSupplier(): Promise<Supplier> {

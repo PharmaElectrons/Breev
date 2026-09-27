@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { requestIdentityState } from "./identity-api";
+import { clearProductFormDrafts } from "./product-form-drafts";
 
 const IDENTITY_POLL_INTERVAL_MS = 5_000;
 
@@ -107,6 +108,12 @@ export function IdentityStateProvider({
     () => ({ refresh, setState, state }),
     [refresh, setState, state],
   );
+
+  useEffect(() => {
+    if (state?.state === "unauthenticated") {
+      clearProductFormDrafts();
+    }
+  }, [state]);
 
   return (
     <IdentityStateContext.Provider value={value}>

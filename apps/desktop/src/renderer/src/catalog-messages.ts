@@ -65,6 +65,20 @@ export interface CatalogCopy {
     readonly survivorProductId: string;
     readonly survivorProductPlaceholder: string;
   };
+  readonly flow: {
+    readonly back: string;
+    readonly continue: string;
+    readonly discardAction: string;
+    readonly discardDescription: string;
+    readonly discardTitle: string;
+    readonly keepAction: string;
+    readonly optionalSettings: string;
+    readonly optionalUnitSettings: string;
+    readonly reloadLatest: string;
+    readonly retrySave: string;
+    readonly stepIdentity: string;
+    readonly stepSetup: string;
+  };
   readonly instructions: {
     readonly description: string;
     readonly foodTiming: string;
@@ -74,6 +88,13 @@ export interface CatalogCopy {
     readonly usesPerDay: string;
     readonly usesPerMonth: string;
     readonly usesPerWeek: string;
+  };
+  readonly movementHistory: {
+    readonly openFull: string;
+    readonly recent: string;
+  };
+  readonly permissions: {
+    readonly catalogManageRequired: string;
   };
   readonly inventory: {
     readonly balanceLabel: string;
@@ -280,6 +301,30 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       survivorProductId: "معرّف المنتج البديل (UUID)",
       survivorProductPlaceholder: "019b0000-0000-7000-8000-000000000000",
     },
+    flow: {
+      back: "\u0631\u062c\u0648\u0639",
+      continue: "\u0645\u062a\u0627\u0628\u0639\u0629",
+      discardAction:
+        "\u062a\u062c\u0627\u0647\u0644 \u0627\u0644\u062a\u063a\u064a\u064a\u0631\u0627\u062a",
+      discardDescription:
+        "\u0644\u0645 \u064a\u062a\u0645 \u062d\u0641\u0638 \u062a\u0639\u062f\u064a\u0644\u0627\u062a\u0643. \u0647\u0644 \u062a\u0631\u064a\u062f \u0627\u0644\u062e\u0631\u0648\u062c \u0648\u062a\u062c\u0627\u0647\u0644\u0647\u0627\u061f",
+      discardTitle:
+        "\u062a\u062c\u0627\u0647\u0644 \u0627\u0644\u062a\u063a\u064a\u064a\u0631\u0627\u062a\u061f",
+      keepAction:
+        "\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u062a\u062d\u0631\u064a\u0631",
+      optionalSettings:
+        "\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a \u0627\u0644\u0625\u0636\u0627\u0641\u064a\u0629",
+      optionalUnitSettings:
+        "\u0648\u062d\u062f\u0627\u062a \u0627\u0644\u062a\u0639\u0628\u0626\u0629 \u0627\u0644\u0625\u0636\u0627\u0641\u064a\u0629",
+      reloadLatest:
+        "\u0625\u0639\u0627\u062f\u0629 \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u0646\u0633\u062e\u0629 \u0627\u0644\u0623\u062d\u062f\u062b",
+      retrySave:
+        "\u0625\u0639\u0627\u062f\u0629 \u0645\u062d\u0627\u0648\u0644\u0629 \u0627\u0644\u062d\u0641\u0638",
+      stepIdentity:
+        "\u0627\u0644\u062e\u0637\u0648\u0629 1: \u0627\u0644\u0647\u0648\u064a\u0629",
+      stepSetup:
+        "\u0627\u0644\u062e\u0637\u0648\u0629 2: \u0627\u0644\u062a\u0639\u0628\u0626\u0629 \u0648\u0627\u0644\u062a\u0633\u0639\u064a\u0631",
+    },
     instructions: {
       description: "تعليمات الاستخدام وتوقيت الطعام لسياق البيع والمريض.",
       foodTiming: "التوقيت بالنسبة للطعام",
@@ -293,6 +338,16 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       usesPerDay: "مرات الاستخدام يومياً",
       usesPerMonth: "مرات الاستخدام شهرياً",
       usesPerWeek: "مرات الاستخدام أسبوعياً",
+    },
+    movementHistory: {
+      openFull:
+        "\u0641\u062a\u062d \u0633\u062c\u0644 \u0627\u0644\u062d\u0631\u0643\u0627\u062a \u0627\u0644\u0643\u0627\u0645\u0644",
+      recent:
+        "\u0622\u062e\u0631 \u0627\u0644\u062d\u0631\u0643\u0627\u062a \u0627\u0644\u0645\u0633\u062c\u0644\u0629",
+    },
+    permissions: {
+      catalogManageRequired:
+        "\u062a\u062d\u062a\u0627\u062c \u0625\u0644\u0649 \u0635\u0644\u0627\u062d\u064a\u0629 \u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0641\u0647\u0631\u0633 \u0644\u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0645\u0646\u062a\u062c\u0627\u062a \u0623\u0648 \u062a\u0639\u062f\u064a\u0644\u0647\u0627.",
     },
     inventory: {
       balanceLabel: "رصيد المخزون",
@@ -540,6 +595,21 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       survivorProductId: "Survivor Product ID (UUID)",
       survivorProductPlaceholder: "019b0000-0000-7000-8000-000000000000",
     },
+    flow: {
+      back: "Back",
+      continue: "Continue",
+      discardAction: "Discard changes",
+      discardDescription:
+        "Your changes have not been saved. Leave this form and discard them?",
+      discardTitle: "Discard changes?",
+      keepAction: "Keep editing",
+      optionalSettings: "Optional product settings",
+      optionalUnitSettings: "Additional package units",
+      reloadLatest: "Reload latest version",
+      retrySave: "Retry save",
+      stepIdentity: "Step 1: Identity",
+      stepSetup: "Step 2: Unit and pricing",
+    },
     instructions: {
       description:
         "Usage frequency and food timing instructions for sales and patient context.",
@@ -554,6 +624,14 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       usesPerDay: "Uses per day",
       usesPerMonth: "Uses per month",
       usesPerWeek: "Uses per week",
+    },
+    movementHistory: {
+      openFull: "Open full movement history",
+      recent: "Most recent recorded movements",
+    },
+    permissions: {
+      catalogManageRequired:
+        "Catalog management permission is required to create or edit products.",
     },
     inventory: {
       balanceLabel: "Inventory balance",

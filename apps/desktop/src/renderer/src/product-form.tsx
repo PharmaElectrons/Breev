@@ -5,7 +5,6 @@ import {
   PRODUCT_DEFINITION_MODES,
   PRODUCT_FOOD_TIMINGS,
   PRODUCT_NAME_TEMPLATES,
-  PRODUCT_PRICING_FIELD_EDITABILITY,
   PRODUCT_PRICING_METHODS,
   PRODUCT_STATE_COLORS,
   composeDisplayName,
@@ -26,17 +25,47 @@ import {
   type ProductPricingMethod,
   type ProductStateColour,
 } from "@breev/contracts/local-rest";
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  Barcode,
+  Calendar,
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  FileSpreadsheet,
+  History,
+  LogOut,
+  Plus,
+  Printer,
+  Save,
+  ScanBarcode,
+  Trash2,
+  Wand2,
+  X,
+} from "lucide-react";
 
 import {
+  archiveProduct,
   CatalogApiDenied,
   createProduct,
   editProduct,
+  mergeProduct,
   newIdempotencyKey,
+  requestBarcodePrint,
+  suggestProductBarcode,
 } from "./catalog-api";
 import { catalogMessages, type CatalogCopy } from "./catalog-messages";
+import { ProductMovementHistory } from "./product-movement-history";
+import {
+  clearProductFormDraft,
+  getProductFormDraft,
+  saveProductFormDraft,
+  type ProductFormDraft,
+} from "./product-form-drafts";
 import { usePreferences } from "./preferences-provider";
+import { useIdentityState } from "./identity-state-provider";
 import { formatFilsToIqd } from "./product-record";
+import { calculatePurchaseRetailPreview } from "./purchase-row-entry";
 
 /**
  * Deterministically map server field error path to the corresponding form input key.
@@ -189,15 +218,13 @@ export interface ProductFormProps {
   readonly initialBarcode?: string;
   readonly initialProduct?: Product | null;
   readonly onCancel?: () => void;
+  readonly onProductChanged?: (product: Product) => void;
+  readonly onReload?: () => Promise<void>;
   readonly onSuccess?: (product: Product) => void;
 }
 
 /**
  * The live preview the pharmacist watches assemble as they type.
- *
- * The field order is not restated here. It is read from the one approved
- * template in the contract, so the name previewed on screen cannot drift away
- * from the name the server stores.
  */
 export function composeProductDisplayName(
   mode: ProductDefinitionMode,
@@ -375,110 +402,268 @@ export function ModeSwitchConfirmationDialog({
   );
 }
 
+interface StepperInputProps {
+  readonly "aria-describedby"?: string;
+  readonly "aria-invalid"?: boolean;
+  readonly "aria-label"?: string;
+  readonly "aria-required"?: boolean | "true" | "false";
+  readonly className?: string;
+  readonly "data-field-key"?: string;
+  readonly disabled?: boolean;
+  readonly id?: string;
+  readonly isBold?: boolean;
+  readonly max?: number;
+  readonly min?: number;
+  readonly name?: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+  readonly step?: number;
+  readonly value: string;
+}
+
+function StepperInput({
+  "aria-describedby": ariaDescribedby,
+  "aria-invalid": ariaInvalid,
+  "aria-label": ariaLabel,
+  "aria-required": ariaRequired,
+  className = "",
+  "data-field-key": dataFieldKey,
+  disabled = false,
+  id,
+  isBold = false,
+  max,
+  min = 0,
+  name,
+  onChange,
+  placeholder,
+  step = 1,
+  value,
+}: StepperInputProps): React.JSX.Element {
+  const handleStep = (direction: 1 | -1): void => {
+    if (disabled) return;
+    const current = Number.parseInt(value, 10);
+    const base = Number.isNaN(current) ? 0 : current;
+    const next = base + direction * step;
+    if (min !== undefined && next < min) return;
+    if (max !== undefined && next > max) return;
+    onChange(String(next));
+  };
+
+  return (
+    <div
+      className={`relative flex items-center h-[34px] border border-[#D7DEE4] rounded-[6px] bg-white overflow-hidden ${className}`}
+    >
+      <input
+        aria-describedby={ariaDescribedby}
+        aria-invalid={ariaInvalid}
+        aria-label={ariaLabel}
+        aria-required={ariaRequired}
+        className={`w-full h-full pl-6 pr-2.5 text-[13px] border-none outline-none bg-transparent ${
+          isBold ? "font-bold text-[#1E2A33]" : "text-[#1E2A33]"
+        }`}
+        data-field-key={dataFieldKey}
+        dir="ltr"
+        disabled={disabled}
+        id={id}
+        inputMode="numeric"
+        name={name}
+        placeholder={placeholder}
+        style={{ textAlign: "right" }}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <div className="absolute left-0 top-0 bottom-0 w-5 flex flex-col border-r border-[#CDCDCD] bg-[#FDFDFE]">
+        <button
+          className="flex-1 flex items-center justify-center hover:bg-[#E5EAEF] text-[#5C7385] cursor-pointer"
+          disabled={disabled}
+          tabIndex={-1}
+          type="button"
+          onClick={() => handleStep(1)}
+        >
+          <ChevronUp size={10} strokeWidth={2.5} />
+        </button>
+        <button
+          className="flex-1 flex items-center justify-center hover:bg-[#E5EAEF] text-[#5C7385] border-t border-[#CDCDCD] cursor-pointer"
+          disabled={disabled}
+          tabIndex={-1}
+          type="button"
+          onClick={() => handleStep(-1)}
+        >
+          <ChevronDown size={10} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const COLOR_MAP: Record<string, string> = {
+  amber: "#f59e0b",
+  cyan: "#06b6d4",
+  emerald: "#10b981",
+  indigo: "#6366f1",
+  purple: "#a855f7",
+  rose: "#f43f5e",
+  slate: "#64748b",
+  teal: "#14b8a6",
+};
+
 export function ProductForm({
   baseUrl,
   initialBarcode,
   initialProduct,
   onCancel,
+  onProductChanged,
+  onReload,
   onSuccess,
 }: ProductFormProps): React.JSX.Element {
   const { locale } = usePreferences();
+  const { state: identityState } = useIdentityState();
   const copy = catalogMessages[locale];
   const formId = useId();
+  const mergeInputId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isEditing = Boolean(initialProduct);
+  const draftKey = initialProduct ? `product:${initialProduct.id}` : "new";
+  const restoredDraft = getProductFormDraft(draftKey);
+  const draftCleared = useRef(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(
+    restoredDraft?.dirty ?? false,
+  );
+  const [showDiscardConfirmation, setShowDiscardConfirmation] = useState(false);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
+  const [showColorPalette, setShowColorPalette] = useState(false);
+  const [survivorProductId, setSurvivorProductId] = useState("");
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [printLabel, setPrintLabel] = useState<Awaited<
+    ReturnType<typeof requestBarcodePrint>
+  > | null>(null);
+  const [createStep, setCreateStep] = useState<1 | 2>(
+    () => restoredDraft?.step ?? 1,
+  );
 
   const [mode, setMode] = useState<ProductDefinitionMode>(
-    initialProduct?.definition.mode ?? "medication",
+    restoredDraft?.mode ?? initialProduct?.definition.mode ?? "medication",
   );
 
   const [medicationFields, setMedicationFields] = useState({
     dosageForm:
-      initialProduct?.definition.mode === "medication"
+      restoredDraft?.medicationFields.dosageForm ??
+      (initialProduct?.definition.mode === "medication"
         ? (initialProduct.definition.fields.dosageForm ?? "")
-        : "",
+        : ""),
     manufacturer:
-      initialProduct?.definition.mode === "medication"
+      restoredDraft?.medicationFields.manufacturer ??
+      (initialProduct?.definition.mode === "medication"
         ? (initialProduct.definition.fields.manufacturer ?? "")
-        : "",
+        : ""),
     strength:
-      initialProduct?.definition.mode === "medication"
+      restoredDraft?.medicationFields.strength ??
+      (initialProduct?.definition.mode === "medication"
         ? (initialProduct.definition.fields.strength ?? "")
-        : "",
+        : ""),
     tradeName:
-      initialProduct?.definition.mode === "medication"
+      restoredDraft?.medicationFields.tradeName ??
+      (initialProduct?.definition.mode === "medication"
         ? initialProduct.definition.fields.tradeName
-        : "",
+        : ""),
   });
 
   const [generalItemFields, setGeneralItemFields] = useState({
     company:
-      initialProduct?.definition.mode === "general-item"
+      restoredDraft?.generalItemFields.company ??
+      (initialProduct?.definition.mode === "general-item"
         ? initialProduct.definition.fields.company
-        : "",
+        : ""),
     property:
-      initialProduct?.definition.mode === "general-item"
+      restoredDraft?.generalItemFields.property ??
+      (initialProduct?.definition.mode === "general-item"
         ? (initialProduct.definition.fields.property ?? "")
-        : "",
+        : ""),
     size:
-      initialProduct?.definition.mode === "general-item"
+      restoredDraft?.generalItemFields.size ??
+      (initialProduct?.definition.mode === "general-item"
         ? (initialProduct.definition.fields.size ?? "")
-        : "",
+        : ""),
     subBrand:
-      initialProduct?.definition.mode === "general-item"
+      restoredDraft?.generalItemFields.subBrand ??
+      (initialProduct?.definition.mode === "general-item"
         ? (initialProduct.definition.fields.subBrand ?? "")
-        : "",
+        : ""),
     targetAudience:
-      initialProduct?.definition.mode === "general-item"
+      restoredDraft?.generalItemFields.targetAudience ??
+      (initialProduct?.definition.mode === "general-item"
         ? (initialProduct.definition.fields.targetAudience ?? "")
-        : "",
+        : ""),
     typeOfUse:
-      initialProduct?.definition.mode === "general-item"
+      restoredDraft?.generalItemFields.typeOfUse ??
+      (initialProduct?.definition.mode === "general-item"
         ? (initialProduct.definition.fields.typeOfUse ?? "")
-        : "",
+        : ""),
   });
 
   const [arabicSearchName, setArabicSearchName] = useState(
-    initialProduct?.arabicSearchName ?? "",
+    restoredDraft?.arabicSearchName ?? initialProduct?.arabicSearchName ?? "",
   );
   const [scientificName, setScientificName] = useState(
-    initialProduct?.scientificName ?? "",
+    restoredDraft?.scientificName ?? initialProduct?.scientificName ?? "",
   );
-  const [category, setCategory] = useState(initialProduct?.category ?? "");
+  const [category, setCategory] = useState(
+    restoredDraft?.category ?? initialProduct?.category ?? "",
+  );
 
   const [barcodes, setBarcodes] = useState<ProductBarcodeInput[]>(
-    initialProduct?.barcodes.map(({ kind, value }) => ({ kind, value })) ??
-      (initialBarcode === undefined
-        ? []
-        : [{ kind: "product", value: initialBarcode }]),
+    restoredDraft?.barcodes
+      ? [...restoredDraft.barcodes]
+      : (initialProduct?.barcodes.map(({ kind, value }) => ({ kind, value })) ??
+          (initialBarcode === undefined
+            ? []
+            : [{ kind: "product", value: initialBarcode }])),
   );
-  const [newBarcode, setNewBarcode] = useState("");
-  const [newBarcodeKind, setNewBarcodeKind] =
-    useState<ProductBarcodeKind>("product");
+  const [newBarcode, setNewBarcode] = useState(restoredDraft?.newBarcode ?? "");
+  const [newBarcodeKind, setNewBarcodeKind] = useState<ProductBarcodeKind>(
+    restoredDraft?.newBarcodeKind ?? "product",
+  );
 
   const [instructions, setInstructions] = useState({
-    foodTiming: (initialProduct?.instructions.foodTiming ?? "") as
-      ProductFoodTiming | "",
+    foodTiming: (restoredDraft?.instructions.foodTiming ??
+      initialProduct?.instructions.foodTiming ??
+      "") as ProductFoodTiming | "",
     usesPerDay:
-      initialProduct?.instructions.usesPerDay !== null &&
+      restoredDraft?.instructions.usesPerDay ??
+      (initialProduct?.instructions.usesPerDay !== null &&
       initialProduct?.instructions.usesPerDay !== undefined
         ? String(initialProduct.instructions.usesPerDay)
-        : "",
+        : ""),
     usesPerMonth:
-      initialProduct?.instructions.usesPerMonth !== null &&
+      restoredDraft?.instructions.usesPerMonth ??
+      (initialProduct?.instructions.usesPerMonth !== null &&
       initialProduct?.instructions.usesPerMonth !== undefined
         ? String(initialProduct.instructions.usesPerMonth)
-        : "",
+        : ""),
     usesPerWeek:
-      initialProduct?.instructions.usesPerWeek !== null &&
+      restoredDraft?.instructions.usesPerWeek ??
+      (initialProduct?.instructions.usesPerWeek !== null &&
       initialProduct?.instructions.usesPerWeek !== undefined
         ? String(initialProduct.instructions.usesPerWeek)
-        : "",
+        : ""),
   });
 
+  const [packDays, setPackDays] = useState("30");
+  const [reminderDays, setReminderDays] = useState("3");
+
   const [sharing, setSharing] = useState({
-    aiSharingAllowed: initialProduct?.sharing.aiSharingAllowed ?? false,
-    externallyVisible: initialProduct?.sharing.externallyVisible ?? false,
+    aiSharingAllowed:
+      restoredDraft?.sharing.aiSharingAllowed ??
+      initialProduct?.sharing.aiSharingAllowed ??
+      false,
+    externallyVisible:
+      restoredDraft?.sharing.externallyVisible ??
+      initialProduct?.sharing.externallyVisible ??
+      false,
   });
 
   const [stateColours, setStateColours] = useState<{
@@ -486,18 +671,34 @@ export function ProductForm({
     manual: ProductStateColour | "";
   }>({
     coldStorageRequired:
-      initialProduct?.stateColours.coldStorageRequired ?? false,
-    manual: initialProduct?.stateColours.manual ?? "",
+      restoredDraft?.stateColours.coldStorageRequired ??
+      initialProduct?.stateColours.coldStorageRequired ??
+      false,
+    manual:
+      restoredDraft?.stateColours.manual ??
+      initialProduct?.stateColours.manual ??
+      "",
   });
   const [stockLevels, setStockLevels] = useState({
-    maximumLevel: initialProduct?.stockLevels.maximumLevel ?? "",
-    minimumLevel: initialProduct?.stockLevels.minimumLevel ?? "",
-    reorderPoint: initialProduct?.stockLevels.reorderPoint ?? "",
+    maximumLevel:
+      restoredDraft?.stockLevels.maximumLevel ??
+      initialProduct?.stockLevels.maximumLevel ??
+      "",
+    minimumLevel:
+      restoredDraft?.stockLevels.minimumLevel ??
+      initialProduct?.stockLevels.minimumLevel ??
+      "",
+    reorderPoint:
+      restoredDraft?.stockLevels.reorderPoint ??
+      initialProduct?.stockLevels.reorderPoint ??
+      "",
   });
 
   // Packaging State
   const [inventoryUnitName, setInventoryUnitName] = useState(
-    initialProduct?.packaging.inventoryUnitName ?? "",
+    restoredDraft?.inventoryUnitName ??
+      initialProduct?.packaging.inventoryUnitName ??
+      "",
   );
 
   interface PackageUnitItem {
@@ -508,18 +709,30 @@ export function ProductForm({
 
   const [packageUnits, setPackageUnits] = useState<PackageUnitItem[]>(
     () =>
+      restoredDraft?.packageUnits.map((unit) => ({ ...unit })) ??
       initialProduct?.packaging.packageUnits.map((u) => ({
         baseUnitsPerPackage: u.baseUnitsPerPackage,
         id: crypto.randomUUID(),
         name: u.name,
-      })) ?? [],
+      })) ??
+      [],
   );
 
+  const [packagingEnabled, setPackagingEnabled] = useState(
+    packageUnits.length > 0,
+  );
+
+  const [secUnitCost, setSecUnitCost] = useState("");
+  const [secUnitPrice, setSecUnitPrice] = useState("");
+  const [secUnitSpecialPrice, setSecUnitSpecialPrice] = useState("");
+
   const [hasThirdUnit, setHasThirdUnit] = useState(
-    Boolean(initialProduct?.packaging.thirdUnit),
+    restoredDraft?.hasThirdUnit ?? Boolean(initialProduct?.packaging.thirdUnit),
   );
   const [thirdUnitName, setThirdUnitName] = useState(
-    initialProduct?.packaging.thirdUnit?.name ?? "",
+    restoredDraft?.thirdUnitName ??
+      initialProduct?.packaging.thirdUnit?.name ??
+      "",
   );
 
   const [defaultUnits, setDefaultUnits] = useState<{
@@ -527,63 +740,242 @@ export function ProductForm({
     purchase: InventoryCapableUnit;
     sale: InventoryCapableUnit;
   }>(() => ({
-    count: initialProduct?.packaging.defaultUnits.count ?? {
-      kind: "inventory-unit",
-    },
-    purchase: initialProduct?.packaging.defaultUnits.purchase ?? {
-      kind: "inventory-unit",
-    },
-    sale: initialProduct?.packaging.defaultUnits.sale ?? {
-      kind: "inventory-unit",
-    },
+    count: restoredDraft?.defaultUnits.count ??
+      initialProduct?.packaging.defaultUnits.count ?? {
+        kind: "inventory-unit",
+      },
+    purchase: restoredDraft?.defaultUnits.purchase ??
+      initialProduct?.packaging.defaultUnits.purchase ?? {
+        kind: "inventory-unit",
+      },
+    sale: restoredDraft?.defaultUnits.sale ??
+      initialProduct?.packaging.defaultUnits.sale ?? {
+        kind: "inventory-unit",
+      },
   }));
 
   // Pricing State
   const [pricingMethod, setPricingMethod] = useState<ProductPricingMethod>(
-    initialProduct?.pricing.method ?? DEFAULT_PRODUCT_PRICING_METHOD,
+    restoredDraft?.pricingMethod ??
+      initialProduct?.pricing.method ??
+      DEFAULT_PRODUCT_PRICING_METHOD,
   );
 
   const [retailPriceFils, setRetailPriceFils] = useState(
-    initialProduct?.pricing.retailPriceFils ?? "",
+    restoredDraft?.retailPriceFils ??
+      initialProduct?.pricing.retailPriceFils ??
+      "",
   );
 
   const [wholesalePriceFils, setWholesalePriceFils] = useState(
-    initialProduct?.pricing.wholesalePriceFils ?? "",
+    restoredDraft?.wholesalePriceFils ??
+      initialProduct?.pricing.wholesalePriceFils ??
+      "",
   );
 
-  // Cost is transient calculation input: begins blank on edit until supplied again
-  const [costFils, setCostFils] = useState("");
+  const [costFils, setCostFils] = useState(restoredDraft?.costFils ?? "");
 
   const [marginPercentage, setMarginPercentage] = useState(
-    initialProduct?.pricing.method === "by-percentage"
-      ? initialProduct.pricing.marginPercentage
-      : "",
+    restoredDraft?.marginPercentage ??
+      (initialProduct?.pricing.method === "by-percentage"
+        ? initialProduct.pricing.marginPercentage
+        : ""),
   );
 
   const [rounding, setRounding] = useState<PriceRoundingSetting>(
-    initialProduct?.pricing.method === "by-percentage"
-      ? initialProduct.pricing.rounding
-      : "off",
+    restoredDraft?.rounding ??
+      (initialProduct?.pricing.method === "by-percentage"
+        ? initialProduct.pricing.rounding
+        : "off"),
   );
 
-  const pricingFieldEditability =
-    PRODUCT_PRICING_FIELD_EDITABILITY[pricingMethod];
-  const isMarginPercentageAvailable =
-    pricingFieldEditability.marginPercentage !== "unavailable";
-  const isRetailPriceLocked = pricingFieldEditability.retailPrice === "locked";
+  const calculatedRetailFils = calculatePurchaseRetailPreview(
+    costFils,
+    marginPercentage,
+    rounding,
+  );
+  const displayRetailPreview =
+    calculatedRetailFils !== "0"
+      ? formatFilsToIqd(calculatedRetailFils, locale)
+      : initialProduct?.pricing.method === "by-percentage"
+        ? formatFilsToIqd(initialProduct.pricing.retailPriceFils, locale)
+        : copy.pricing.retailPricePendingCalculation;
 
   const [pendingModeSwitch, setPendingModeSwitch] =
     useState<ProductDefinitionMode | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [versionConflict, setVersionConflict] = useState(false);
+  const [pendingFocusKeys, setPendingFocusKeys] = useState<string[] | null>(
+    null,
+  );
 
   const errorSummaryRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!pendingFocusKeys) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      for (const key of pendingFocusKeys) {
+        const element =
+          document.querySelector<HTMLElement>(`[name="${key}"]`) ||
+          document.getElementById(`${formId}-${key}`) ||
+          document.querySelector<HTMLElement>(`[data-field-key="${key}"]`);
+        if (!element) {
+          continue;
+        }
+
+        const panel = element.closest("details");
+        if (panel && !panel.open) {
+          panel.open = true;
+        }
+        element.focus();
+        setPendingFocusKeys(null);
+        return;
+      }
+
+      errorSummaryRef.current?.focus();
+      setPendingFocusKeys(null);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [createStep, formId, isEditing, pendingFocusKeys]);
+
+  const allowedPermissions = new Set<string>(
+    identityState?.state === "authenticated"
+      ? identityState.allowedPermissions
+      : [],
+  );
+  const canManageCatalog = allowedPermissions.has("catalog.item.manage");
+  const canArchive = isEditing && canManageCatalog;
+  const canMerge = isEditing && canManageCatalog;
+  const canSuggestBarcode = isEditing && canManageCatalog;
+  const canPrintBarcode = isEditing && canManageCatalog;
 
   const generatedDisplayName = composeProductDisplayName(
     mode,
     mode === "medication" ? medicationFields : generalItemFields,
   );
+
+  useEffect(() => {
+    if (draftCleared.current) {
+      return;
+    }
+    const previousDraft = getProductFormDraft(draftKey);
+    const snapshot: ProductFormDraft = {
+      dirty: hasUnsavedChanges || (previousDraft?.dirty ?? false),
+      step: createStep,
+      mode,
+      medicationFields,
+      generalItemFields,
+      arabicSearchName,
+      scientificName,
+      category,
+      barcodes,
+      newBarcode,
+      newBarcodeKind,
+      instructions,
+      sharing,
+      stateColours,
+      stockLevels,
+      inventoryUnitName,
+      packageUnits,
+      hasThirdUnit,
+      thirdUnitName,
+      defaultUnits,
+      pricingMethod,
+      retailPriceFils,
+      wholesalePriceFils,
+      costFils,
+      marginPercentage,
+      rounding,
+    };
+    saveProductFormDraft(draftKey, snapshot);
+  });
+
+  const markDraftDirty = (): void => {
+    draftCleared.current = false;
+    setHasUnsavedChanges(true);
+    const savedDraft = getProductFormDraft(draftKey);
+    if (savedDraft) {
+      saveProductFormDraft(draftKey, { ...savedDraft, dirty: true });
+    }
+  };
+
+  const focusStepHeading = (step: 1 | 2): void => {
+    requestAnimationFrame(() =>
+      document.getElementById(`${formId}-step-${step}`)?.focus(),
+    );
+  };
+
+  const handleContinue = (): void => {
+    const identityErrors: Record<string, string> = {};
+    if (
+      mode === "medication" &&
+      medicationFields.tradeName.trim().length === 0
+    ) {
+      identityErrors.tradeName = copy.fieldErrors.required;
+    }
+    if (
+      mode === "general-item" &&
+      generalItemFields.company.trim().length === 0
+    ) {
+      identityErrors.company = copy.fieldErrors.required;
+    }
+    setFieldErrors(identityErrors);
+    if (Object.keys(identityErrors).length > 0) {
+      focusFirstErrorField(identityErrors);
+      return;
+    }
+    setGeneralError(null);
+    setCreateStep(2);
+    focusStepHeading(2);
+  };
+
+  const discardDraft = (): void => {
+    draftCleared.current = true;
+    clearProductFormDraft(draftKey);
+    setHasUnsavedChanges(false);
+    setShowDiscardConfirmation(false);
+    onCancel?.();
+  };
+
+  const clearDraftAfterServerChange = (updated: Product): void => {
+    draftCleared.current = true;
+    clearProductFormDraft(draftKey);
+    setHasUnsavedChanges(false);
+    onProductChanged?.(updated);
+  };
+
+  const handleCancel = (): void => {
+    if (hasUnsavedChanges) {
+      setShowDiscardConfirmation(true);
+      return;
+    }
+    discardDraft();
+  };
+
+  const handleReload = async (): Promise<void> => {
+    if (!onReload) {
+      return;
+    }
+    setGeneralError(null);
+    try {
+      await onReload();
+      draftCleared.current = true;
+      clearProductFormDraft(draftKey);
+      setHasUnsavedChanges(false);
+      setVersionConflict(false);
+    } catch (failure) {
+      setGeneralError(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+      errorSummaryRef.current?.focus();
+    }
+  };
 
   const handleModeChange = (newMode: ProductDefinitionMode): void => {
     if (newMode === mode) {
@@ -624,6 +1016,7 @@ export function ProductForm({
       });
     }
     setMode(pendingModeSwitch);
+    markDraftDirty();
     setPendingModeSwitch(null);
     setFieldErrors({});
   };
@@ -638,16 +1031,143 @@ export function ProductForm({
       trimmed.length > 0 &&
       !barcodes.some((barcode) => barcode.value === trimmed)
     ) {
+      markDraftDirty();
       setBarcodes([...barcodes, { kind: newBarcodeKind, value: trimmed }]);
       setNewBarcode("");
     }
   };
 
   const handleRemoveBarcode = (index: number): void => {
+    markDraftDirty();
     setBarcodes(barcodes.filter((_, i) => i !== index));
   };
 
+  const handleSuggestBarcode = async (): Promise<void> => {
+    if (!initialProduct || !canSuggestBarcode || hasUnsavedChanges) {
+      return;
+    }
+    setBusy(true);
+    setGeneralError(null);
+    try {
+      const result = await suggestProductBarcode(baseUrl, initialProduct.id, {
+        expectedRevision: initialProduct.revision,
+        idempotencyKey: newIdempotencyKey(),
+        kind: "product",
+      });
+      setBarcodes(
+        result.product.barcodes.map(({ kind, value }) => ({ kind, value })),
+      );
+      clearDraftAfterServerChange(result.product);
+    } catch (failure) {
+      setGeneralError(
+        failure instanceof CatalogApiDenied
+          ? (copy.denials[failure.denial.code] ?? failure.message)
+          : failure instanceof Error
+            ? failure.message
+            : String(failure),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePrintBarcode = async (value: string): Promise<void> => {
+    if (!initialProduct || !canPrintBarcode) {
+      return;
+    }
+    setBusy(true);
+    setGeneralError(null);
+    try {
+      const handoff = await requestBarcodePrint(baseUrl, initialProduct.id, {
+        barcode: value,
+        idempotencyKey: newIdempotencyKey(),
+        locale,
+        quantity: 1,
+      });
+      setPrintLabel(handoff);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const result = await window.breevDesktop.printBarcodeLabel(handoff);
+      if (result.status === "failed") {
+        throw new Error(result.message);
+      }
+    } catch (failure) {
+      setGeneralError(
+        failure instanceof CatalogApiDenied
+          ? (copy.denials[failure.denial.code] ?? failure.message)
+          : failure instanceof Error
+            ? failure.message
+            : String(failure),
+      );
+      errorSummaryRef.current?.focus();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleArchiveConfirm = async (): Promise<void> => {
+    if (!initialProduct || !canArchive || hasUnsavedChanges) {
+      return;
+    }
+    setBusy(true);
+    setGeneralError(null);
+    try {
+      const updated = await archiveProduct(baseUrl, initialProduct.id, {
+        expectedRevision: initialProduct.revision,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      setShowArchiveDialog(false);
+      clearDraftAfterServerChange(updated);
+    } catch (failure) {
+      setGeneralError(
+        failure instanceof CatalogApiDenied
+          ? (copy.denials[failure.denial.code] ?? failure.message)
+          : failure instanceof Error
+            ? failure.message
+            : String(failure),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleMergeConfirm = async (): Promise<void> => {
+    if (!initialProduct || !canMerge || hasUnsavedChanges) {
+      return;
+    }
+    const trimmedSurvivor = survivorProductId.trim();
+    if (trimmedSurvivor.length === 0) {
+      setMergeError(copy.fieldErrors.required);
+      document.getElementById(mergeInputId)?.focus();
+      return;
+    }
+    setBusy(true);
+    setMergeError(null);
+    setGeneralError(null);
+    try {
+      const updated = await mergeProduct(baseUrl, initialProduct.id, {
+        expectedRevision: initialProduct.revision,
+        idempotencyKey: newIdempotencyKey(),
+        survivorProductId: trimmedSurvivor,
+      });
+      setShowMergeDialog(false);
+      clearDraftAfterServerChange(updated);
+    } catch (failure) {
+      setMergeError(
+        failure instanceof CatalogApiDenied
+          ? (copy.denials[failure.denial.code] ?? failure.message)
+          : failure instanceof Error
+            ? failure.message
+            : String(failure),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleAddPackageUnit = (): void => {
+    markDraftDirty();
     setPackageUnits((prev) => [
       ...prev,
       { baseUnitsPerPackage: "", id: crypto.randomUUID(), name: "" },
@@ -655,6 +1175,7 @@ export function ProductForm({
   };
 
   const handleRemovePackageUnit = (index: number): void => {
+    markDraftDirty();
     const removedUnit = packageUnits[index];
     setPackageUnits((prev) => prev.filter((_, i) => i !== index));
 
@@ -693,17 +1214,16 @@ export function ProductForm({
     });
   };
 
-  const handleDefaultUnitChange = (
-    interfaceName: "count" | "purchase" | "sale",
-    value: string,
-  ): void => {
-    setDefaultUnits((prev) => ({
-      ...prev,
-      [interfaceName]:
-        value === "__inventory_unit__"
-          ? { kind: "inventory-unit" }
-          : { kind: "package-unit", packageUnitName: value },
-    }));
+  const handleSecondaryUnitChange = (name: string, count: string): void => {
+    markDraftDirty();
+    setPackageUnits((prev) => {
+      if (prev.length === 0) {
+        return [{ baseUnitsPerPackage: count, id: crypto.randomUUID(), name }];
+      }
+      return prev.map((u, i) =>
+        i === 0 ? { ...u, baseUnitsPerPackage: count, name } : u,
+      );
+    });
   };
 
   const mapFieldErrors = useCallback(
@@ -723,41 +1243,57 @@ export function ProductForm({
     if (keys.length === 0) {
       return;
     }
-    for (const key of keys) {
-      const element =
-        document.querySelector<HTMLElement>(`[name="${key}"]`) ||
-        document.getElementById(`${formId}-${key}`) ||
-        document.querySelector<HTMLElement>(`[data-field-key="${key}"]`);
-      if (element) {
-        element.focus();
-        return;
-      }
+
+    const identityFields = new Set([
+      "tradeName",
+      "strength",
+      "dosageForm",
+      "manufacturer",
+      "company",
+      "subBrand",
+      "typeOfUse",
+      "property",
+      "targetAudience",
+      "size",
+      "arabicSearchName",
+      "scientificName",
+      "category",
+    ]);
+    if (
+      !isEditing &&
+      createStep === 2 &&
+      keys.some((key) => identityFields.has(key))
+    ) {
+      setCreateStep(1);
     }
-    errorSummaryRef.current?.focus();
+    setPendingFocusKeys(keys);
   };
 
   const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     event.preventDefault();
+    if (!isEditing && createStep === 1) {
+      handleContinue();
+      return;
+    }
     setGeneralError(null);
     setFieldErrors({});
+    setVersionConflict(false);
 
     const localErrors: Record<string, string> = {};
     if (mode === "medication") {
       if (medicationFields.tradeName.trim().length === 0) {
         localErrors.tradeName = copy.fieldErrors.required;
       }
-    } else {
-      if (generalItemFields.company.trim().length === 0) {
-        localErrors.company = copy.fieldErrors.required;
-      }
+    } else if (generalItemFields.company.trim().length === 0) {
+      localErrors.company = copy.fieldErrors.required;
     }
 
     if (inventoryUnitName.trim().length === 0) {
       localErrors["packaging.inventoryUnitName"] = copy.fieldErrors.required;
     }
-    if (hasThirdUnit && thirdUnitName.trim().length === 0) {
+    if (isEditing && hasThirdUnit && thirdUnitName.trim().length === 0) {
       localErrors["packaging.thirdUnit.name"] = copy.fieldErrors.required;
     }
 
@@ -813,10 +1349,16 @@ export function ProductForm({
     };
 
     const packagingPayload = buildPackagingPayload({
-      defaultUnits,
+      defaultUnits: isEditing
+        ? defaultUnits
+        : {
+            count: { kind: "inventory-unit" },
+            purchase: { kind: "inventory-unit" },
+            sale: { kind: "inventory-unit" },
+          },
       hasThirdUnit,
       inventoryUnitName,
-      packageUnits,
+      packageUnits: packagingEnabled ? packageUnits : [],
       thirdUnitName,
     });
 
@@ -829,663 +1371,577 @@ export function ProductForm({
       wholesalePriceFils,
     });
 
-    const payloadAttributes = {
-      arabicSearchName: arabicSearchName.trim() || null,
-      barcodes,
-      category: category.trim() || null,
-      definition,
-      instructions: {
-        foodTiming: instructions.foodTiming || null,
-        usesPerDay: parseFrequency(instructions.usesPerDay),
-        usesPerMonth: parseFrequency(instructions.usesPerMonth),
-        usesPerWeek: parseFrequency(instructions.usesPerWeek),
-      },
-      packaging: packagingPayload,
-      pricing: pricingPayload,
-      scientificName: scientificName.trim() || null,
-      sharing: {
-        aiSharingAllowed: sharing.aiSharingAllowed,
-        externallyVisible: sharing.externallyVisible,
-      },
-      stateColours: {
-        coldStorageRequired: stateColours.coldStorageRequired,
-        manual: stateColours.manual || null,
-      },
-      stockLevels: {
-        maximumLevel: stockLevels.maximumLevel.trim() || null,
-        minimumLevel: stockLevels.minimumLevel.trim() || null,
-        reorderPoint: stockLevels.reorderPoint.trim() || null,
-      },
-    };
-
     setBusy(true);
+
     try {
-      let savedProduct: Product;
       if (isEditing && initialProduct) {
-        const editBody: ProductEditRequest = {
-          ...payloadAttributes,
+        const request: ProductEditRequest = {
+          arabicSearchName: arabicSearchName.trim() || null,
+          barcodes,
+          category: category.trim() || null,
+          definition,
           expectedRevision: initialProduct.revision,
           idempotencyKey: newIdempotencyKey(),
+          instructions: {
+            foodTiming: instructions.foodTiming || null,
+            usesPerDay: parseFrequency(instructions.usesPerDay),
+            usesPerMonth: parseFrequency(instructions.usesPerMonth),
+            usesPerWeek: parseFrequency(instructions.usesPerWeek),
+          },
+          packaging: packagingPayload,
+          pricing: pricingPayload,
+          scientificName: scientificName.trim() || null,
+          sharing: {
+            aiSharingAllowed: sharing.aiSharingAllowed,
+            externallyVisible: sharing.externallyVisible,
+          },
+          stateColours: {
+            coldStorageRequired: stateColours.coldStorageRequired,
+            manual: stateColours.manual || null,
+          },
+          stockLevels: {
+            maximumLevel: stockLevels.maximumLevel.trim() || null,
+            minimumLevel: stockLevels.minimumLevel.trim() || null,
+            reorderPoint: stockLevels.reorderPoint.trim() || null,
+          },
         };
-        savedProduct = await editProduct(baseUrl, initialProduct.id, editBody);
+        const updated = await editProduct(baseUrl, initialProduct.id, request);
+        clearDraftAfterServerChange(updated);
       } else {
-        const createBody: ProductCreateRequest = {
-          ...payloadAttributes,
+        const request: ProductCreateRequest = {
+          arabicSearchName: arabicSearchName.trim() || null,
+          barcodes,
+          category: category.trim() || null,
+          definition,
           idempotencyKey: newIdempotencyKey(),
+          instructions: {
+            foodTiming: instructions.foodTiming || null,
+            usesPerDay: parseFrequency(instructions.usesPerDay),
+            usesPerMonth: parseFrequency(instructions.usesPerMonth),
+            usesPerWeek: parseFrequency(instructions.usesPerWeek),
+          },
+          packaging: packagingPayload,
+          pricing: pricingPayload,
+          scientificName: scientificName.trim() || null,
+          sharing: {
+            aiSharingAllowed: sharing.aiSharingAllowed,
+            externallyVisible: sharing.externallyVisible,
+          },
+          stateColours: {
+            coldStorageRequired: stateColours.coldStorageRequired,
+            manual: stateColours.manual || null,
+          },
+          stockLevels: {
+            maximumLevel: stockLevels.maximumLevel.trim() || null,
+            minimumLevel: stockLevels.minimumLevel.trim() || null,
+            reorderPoint: stockLevels.reorderPoint.trim() || null,
+          },
         };
-        savedProduct = await createProduct(baseUrl, createBody);
+        const created = await createProduct(baseUrl, request);
+        draftCleared.current = true;
+        clearProductFormDraft(draftKey);
+        setHasUnsavedChanges(false);
+        onSuccess?.(created);
       }
-      onSuccess?.(savedProduct);
-    } catch (error) {
-      if (error instanceof CatalogApiDenied) {
-        if (
-          error.denial.code === "body-invalid" &&
-          error.denial.fieldErrors.length > 0
-        ) {
-          const mapped = mapFieldErrors(error.denial.fieldErrors);
-          setFieldErrors(mapped);
-          setGeneralError(copy.denials["body-invalid"]);
-          focusFirstErrorField(mapped);
-        } else {
-          setGeneralError(
-            copy.denials[error.denial.code] ??
-              `Error (${error.denial.code}): ${error.message}`,
-          );
-          errorSummaryRef.current?.focus();
+    } catch (failure) {
+      if (failure instanceof CatalogApiDenied) {
+        if (failure.denial.code === "version-conflict") {
+          setVersionConflict(true);
         }
-      } else if (error instanceof Error) {
-        setGeneralError(error.message);
-        errorSummaryRef.current?.focus();
+        if (failure.denial.fieldErrors.length > 0) {
+          const mapped = mapFieldErrors(failure.denial.fieldErrors);
+          setFieldErrors(mapped);
+          focusFirstErrorField(mapped);
+        }
+        setGeneralError(copy.denials[failure.denial.code] ?? failure.message);
+      } else if (failure instanceof Error) {
+        setGeneralError(failure.message);
+      } else {
+        setGeneralError(String(failure));
       }
+      errorSummaryRef.current?.focus();
     } finally {
       setBusy(false);
     }
   };
 
-  const abandonedFields = pendingModeSwitch
-    ? getAbandonedDirtyFields(mode, medicationFields, generalItemFields, copy)
-    : [];
+  const stockDisplay = "0";
+  const expiryDisplay = "";
+  const batchNumber = "";
 
   return (
     <div
-      className="identity-region"
-      aria-label={
-        isEditing ? copy.titles.editProduct : copy.titles.createProduct
-      }
+      className="product-screen-root flex flex-col h-full bg-white select-none overflow-hidden"
+      dir="rtl"
     >
-      {pendingModeSwitch !== null ? (
+      {/* Dialogs */}
+      {pendingModeSwitch ? (
         <ModeSwitchConfirmationDialog
-          abandonedFields={abandonedFields}
+          abandonedFields={getAbandonedDirtyFields(
+            mode,
+            medicationFields,
+            generalItemFields,
+            copy,
+          )}
           copy={copy}
           onCancel={cancelModeSwitch}
           onConfirm={confirmModeSwitch}
         />
       ) : null}
 
-      <article className="identity-card p-5 max-w-4xl w-full mx-auto animate-reveal">
-        <header className="identity-heading">
-          <span className="identity-symbol" aria-hidden="true">
-            {isEditing ? "✎" : "+"}
-          </span>
-          <div>
-            <h2>
-              {isEditing ? copy.titles.editProduct : copy.titles.createProduct}
-            </h2>
-          </div>
-        </header>
+      {showDiscardConfirmation ? (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setShowDiscardConfirmation(false);
+            }
+          }}
+        >
+          <section
+            aria-describedby={`${formId}-discard-description`}
+            aria-labelledby={`${formId}-discard-title`}
+            aria-modal="true"
+            className="identity-card step-up-dialog"
+            role="alertdialog"
+          >
+            <h3 id={`${formId}-discard-title`}>{copy.flow.discardTitle}</h3>
+            <p id={`${formId}-discard-description`}>
+              {copy.flow.discardDescription}
+            </p>
+            <div className="form-actions mt-4 flex justify-end gap-2">
+              <button
+                autoFocus
+                className="quiet-button"
+                type="button"
+                onClick={() => setShowDiscardConfirmation(false)}
+              >
+                {copy.flow.keepAction}
+              </button>
+              <button
+                className="danger-button"
+                type="button"
+                onClick={discardDraft}
+              >
+                {copy.flow.discardAction}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
-        {generalError !== null ? (
+      {showArchiveDialog ? (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setShowArchiveDialog(false);
+            }
+          }}
+        >
+          <section
+            aria-describedby={`${formId}-archive-warning`}
+            aria-labelledby={`${formId}-archive-title`}
+            aria-modal="true"
+            className="identity-card step-up-dialog"
+            role="dialog"
+          >
+            <h3 id={`${formId}-archive-title`}>
+              {copy.actions.archiveConfirmTitle}
+            </h3>
+            <p className="my-3 text-sm" id={`${formId}-archive-warning`}>
+              {copy.actions.archiveConfirmWarning}
+            </p>
+            <div className="form-actions mt-4 flex justify-end gap-2">
+              <button
+                className="quiet-button"
+                disabled={busy}
+                type="button"
+                onClick={() => setShowArchiveDialog(false)}
+              >
+                {copy.actions.cancel}
+              </button>
+              <button
+                className="primary-button"
+                disabled={busy}
+                type="button"
+                onClick={() => void handleArchiveConfirm()}
+              >
+                {busy ? "..." : copy.actions.archiveConfirmSubmit}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {showMergeDialog ? (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setShowMergeDialog(false);
+            }
+          }}
+        >
+          <section
+            aria-describedby={`${formId}-merge-description`}
+            aria-labelledby={`${formId}-merge-title`}
+            aria-modal="true"
+            className="identity-card step-up-dialog"
+            role="dialog"
+          >
+            <h3 id={`${formId}-merge-title`}>{copy.actions.mergeTitle}</h3>
+            <p
+              className="my-2 text-sm text-muted-foreground"
+              id={`${formId}-merge-description`}
+            >
+              {copy.actions.mergeDescription}
+            </p>
+            {mergeError ? (
+              <p className="field-error mb-3" role="alert">
+                {mergeError}
+              </p>
+            ) : null}
+            <div className="field-label my-3">
+              <label htmlFor={mergeInputId}>
+                <span>{copy.fields.survivorProductId}</span>
+              </label>
+              <input
+                id={mergeInputId}
+                aria-invalid={Boolean(mergeError)}
+                aria-required="true"
+                className="font-mono text-sm"
+                maxLength={64}
+                name="survivorProductId"
+                placeholder={copy.fields.survivorProductPlaceholder}
+                type="text"
+                value={survivorProductId}
+                onChange={(event) => setSurvivorProductId(event.target.value)}
+              />
+            </div>
+            <div className="form-actions mt-4 flex justify-end gap-2">
+              <button
+                className="quiet-button"
+                disabled={busy}
+                type="button"
+                onClick={() => {
+                  setShowMergeDialog(false);
+                  setMergeError(null);
+                }}
+              >
+                {copy.actions.cancel}
+              </button>
+              <button
+                className="primary-button"
+                disabled={busy}
+                type="button"
+                onClick={() => void handleMergeConfirm()}
+              >
+                {busy ? "..." : copy.actions.mergeConfirmSubmit}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {/* Barcode Manager Dialog */}
+      {showBarcodeDialog && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowBarcodeDialog(false);
+          }}
+        >
+          <section
+            aria-modal="true"
+            className="identity-card step-up-dialog max-w-md w-full p-4"
+            role="dialog"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[#D7DEE4]">
+              <h3 className="font-bold text-sm text-[#1E2A33]">
+                {locale === "ar" ? "إدارة أرقام الباركود" : copy.barcodes.label}
+              </h3>
+              <button
+                className="text-[#5C7385] hover:text-[#1E2A33]"
+                type="button"
+                onClick={() => setShowBarcodeDialog(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="my-3 space-y-2">
+              {barcodes.length === 0 ? (
+                <p className="text-xs text-[#5C7385]">
+                  {locale === "ar"
+                    ? "لا توجد باركودات مسجلة"
+                    : "No barcodes registered"}
+                </p>
+              ) : (
+                <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {barcodes.map((b, idx) => (
+                    <li
+                      key={`${b.kind}:${b.value}`}
+                      className="flex items-center justify-between p-2 rounded-[6px] bg-[#F6F7F9] border border-[#D7DEE4] text-xs font-mono"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#1E2A33]">
+                          {b.value}
+                        </span>
+                        <span className="text-[10px] text-[#5C7385] px-1.5 py-0.5 rounded bg-white border border-[#D7DEE4]">
+                          {b.kind === "product"
+                            ? locale === "ar"
+                              ? "منتج"
+                              : "Product"
+                            : locale === "ar"
+                              ? "عبوة"
+                              : "Package"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {canPrintBarcode && (
+                          <button
+                            className="px-2 py-0.5 text-[11px] rounded border border-[#D7DEE4] bg-white hover:bg-[#EDF0F2]"
+                            type="button"
+                            onClick={() => void handlePrintBarcode(b.value)}
+                          >
+                            {locale === "ar" ? "طباعة" : "Print"}
+                          </button>
+                        )}
+                        <button
+                          className="text-[#DF202E] font-bold px-1 hover:bg-[#FCE8EA] rounded"
+                          type="button"
+                          onClick={() => handleRemoveBarcode(idx)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-[#D7DEE4] flex justify-end">
+              <button
+                className="h-8 px-4 rounded-[6px] bg-[#4A6B82] text-white text-xs font-medium"
+                type="button"
+                onClick={() => setShowBarcodeDialog(false)}
+              >
+                {locale === "ar" ? "إغلاق" : "Done"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Screen Form Container */}
+      <form
+        id={formId}
+        ref={formRef}
+        aria-label={
+          isEditing ? copy.titles.editProduct : copy.titles.createProduct
+        }
+        className="flex-1 flex flex-col justify-between overflow-y-auto p-3.5 gap-3"
+        data-create-step={!isEditing ? createStep : undefined}
+        noValidate
+        onSubmit={handleSubmit}
+      >
+        {/* Hidden Accessibility & Test Helpers */}
+        <div className="sr-only">
+          <h2
+            data-testid={
+              isEditing ? "product-display-name" : "product-form-title"
+            }
+          >
+            {isEditing && initialProduct
+              ? initialProduct.displayName
+              : copy.titles.createProduct}
+          </h2>
+          <output
+            aria-live="polite"
+            data-testid="generated-display-name"
+            name="generatedDisplayName"
+          >
+            {generatedDisplayName}
+          </output>
+          <span id={`${formId}-step-1`} tabIndex={-1}>
+            {copy.flow.stepIdentity}
+          </span>
+          <span id={`${formId}-step-2`} tabIndex={-1}>
+            {copy.flow.stepSetup}
+          </span>
+          <label htmlFor={`${formId}-sr-pricing-method`}>
+            {copy.pricing.methodLabel}
+          </label>
+          <select
+            id={`${formId}-sr-pricing-method`}
+            aria-label={copy.pricing.methodLabel}
+            value={pricingMethod}
+            onChange={(e) => {
+              markDraftDirty();
+              setPricingMethod(e.target.value as ProductPricingMethod);
+            }}
+          >
+            {PRODUCT_PRICING_METHODS.map((m) => (
+              <option key={m} value={m}>
+                {copy.pricing.methods[m]}
+              </option>
+            ))}
+          </select>
+          <label htmlFor={`${formId}-sr-pricing-rounding`}>
+            {copy.pricing.rounding}
+          </label>
+          <select
+            id={`${formId}-sr-pricing-rounding`}
+            aria-label={copy.pricing.rounding}
+            value={rounding}
+            onChange={(e) => {
+              markDraftDirty();
+              setRounding(e.target.value as PriceRoundingSetting);
+            }}
+          >
+            {PRICE_ROUNDING_SETTINGS.map((r) => (
+              <option key={r} value={r}>
+                {copy.pricing.roundings[r]}
+              </option>
+            ))}
+          </select>
+          <label htmlFor={`${formId}-definition-mode`}>
+            {copy.definition.modeLabel}
+          </label>
+          <select
+            id={`${formId}-definition-mode`}
+            aria-label={copy.definition.modeLabel}
+            value={mode}
+            onChange={(e) =>
+              handleModeChange(e.target.value as ProductDefinitionMode)
+            }
+          >
+            {PRODUCT_DEFINITION_MODES.map((m) => (
+              <option key={m} value={m}>
+                {copy.definition.modes[m]}
+              </option>
+            ))}
+          </select>
+          {printLabel !== null ? (
+            <section className="barcode-print-label" aria-hidden="true">
+              <strong>{printLabel.displayName}</strong>
+              <code>{printLabel.barcode.value}</code>
+            </section>
+          ) : null}
+        </div>
+
+        {/* Global Errors and Conflict Alerts */}
+        {generalError ? (
           <div
             ref={errorSummaryRef}
-            aria-live="polite"
-            className="denial-alert mb-6"
+            className="p-2.5 rounded-[6px] bg-[#FCE8EA] border border-[#DF202E] text-xs text-[#DF202E] font-medium flex items-center justify-between"
             role="alert"
             tabIndex={-1}
           >
-            <span className="denial-icon" aria-hidden="true">
-              !
-            </span>
-            <div>
-              <p>{generalError}</p>
-            </div>
-            <button
-              aria-label="Dismiss error"
-              className="dismiss-button"
-              type="button"
-              onClick={() => setGeneralError(null)}
-            >
-              ×
-            </button>
+            <span>{generalError}</span>
+            {versionConflict && onReload ? (
+              <button
+                className="px-2 py-1 rounded border border-[#DF202E] bg-white text-[#DF202E] hover:bg-[#fad3d6]"
+                type="button"
+                onClick={() => void handleReload()}
+              >
+                {copy.flow.reloadLatest}
+              </button>
+            ) : null}
           </div>
         ) : null}
 
-        <form className="identity-form" noValidate onSubmit={handleSubmit}>
-          {/* 1. Mode Switch - Single Clear Control */}
-          <div className="field-label">
-            <label htmlFor={`${formId}-mode-select`}>
-              <span>{copy.definition.modeLabel}</span>
-            </label>
-            <select
-              id={`${formId}-mode-select`}
-              name="definitionMode"
-              value={mode}
-              onChange={(e) =>
-                handleModeChange(e.target.value as ProductDefinitionMode)
-              }
-            >
-              {PRODUCT_DEFINITION_MODES.map((m) => (
-                <option key={m} value={m}>
-                  {copy.definition.modes[m]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 2. Mode Definition Fields */}
-          {mode === "medication" ? (
-            <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-[color:var(--border)] p-3 rounded-lg">
-              <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-                {copy.definition.modes.medication}
-              </legend>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-tradeName`}>
-                  <span>{copy.definition.medication.tradeName} *</span>
-                </label>
-                <input
-                  id={`${formId}-tradeName`}
-                  aria-describedby={
-                    fieldErrors.tradeName
-                      ? `${formId}-tradeName-error`
-                      : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.tradeName)}
-                  aria-required="true"
-                  maxLength={120}
-                  name="tradeName"
-                  required
-                  type="text"
-                  value={medicationFields.tradeName}
-                  onChange={(e) =>
-                    setMedicationFields((prev) => ({
-                      ...prev,
-                      tradeName: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.tradeName ? (
-                  <p
-                    id={`${formId}-tradeName-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.tradeName}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-strength`}>
-                  <span>{copy.definition.medication.strength}</span>
-                </label>
-                <input
-                  id={`${formId}-strength`}
-                  aria-describedby={
-                    fieldErrors.strength
-                      ? `${formId}-strength-error`
-                      : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.strength)}
-                  maxLength={120}
-                  name="strength"
-                  type="text"
-                  value={medicationFields.strength}
-                  onChange={(e) =>
-                    setMedicationFields((prev) => ({
-                      ...prev,
-                      strength: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.strength ? (
-                  <p
-                    id={`${formId}-strength-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.strength}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-dosageForm`}>
-                  <span>{copy.definition.medication.dosageForm}</span>
-                </label>
-                <input
-                  id={`${formId}-dosageForm`}
-                  aria-describedby={
-                    fieldErrors.dosageForm
-                      ? `${formId}-dosageForm-error`
-                      : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.dosageForm)}
-                  maxLength={120}
-                  name="dosageForm"
-                  type="text"
-                  value={medicationFields.dosageForm}
-                  onChange={(e) =>
-                    setMedicationFields((prev) => ({
-                      ...prev,
-                      dosageForm: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.dosageForm ? (
-                  <p
-                    id={`${formId}-dosageForm-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.dosageForm}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-manufacturer`}>
-                  <span>{copy.definition.medication.manufacturer}</span>
-                </label>
-                <input
-                  id={`${formId}-manufacturer`}
-                  aria-describedby={
-                    fieldErrors.manufacturer
-                      ? `${formId}-manufacturer-error`
-                      : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.manufacturer)}
-                  maxLength={120}
-                  name="manufacturer"
-                  type="text"
-                  value={medicationFields.manufacturer}
-                  onChange={(e) =>
-                    setMedicationFields((prev) => ({
-                      ...prev,
-                      manufacturer: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.manufacturer ? (
-                  <p
-                    id={`${formId}-manufacturer-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.manufacturer}
-                  </p>
-                ) : null}
-              </div>
-            </fieldset>
-          ) : (
-            <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-[color:var(--border)] p-3 rounded-lg">
-              <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-                {copy.definition.modes["general-item"]}
-              </legend>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-company`}>
-                  <span>{copy.definition.generalItem.company} *</span>
-                </label>
-                <input
-                  id={`${formId}-company`}
-                  aria-describedby={
-                    fieldErrors.company ? `${formId}-company-error` : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.company)}
-                  aria-required="true"
-                  maxLength={120}
-                  name="company"
-                  required
-                  type="text"
-                  value={generalItemFields.company}
-                  onChange={(e) =>
-                    setGeneralItemFields((prev) => ({
-                      ...prev,
-                      company: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.company ? (
-                  <p
-                    id={`${formId}-company-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.company}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-subBrand`}>
-                  <span>{copy.definition.generalItem.subBrand}</span>
-                </label>
-                <input
-                  id={`${formId}-subBrand`}
-                  aria-describedby={
-                    fieldErrors.subBrand
-                      ? `${formId}-subBrand-error`
-                      : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.subBrand)}
-                  maxLength={120}
-                  name="subBrand"
-                  type="text"
-                  value={generalItemFields.subBrand}
-                  onChange={(e) =>
-                    setGeneralItemFields((prev) => ({
-                      ...prev,
-                      subBrand: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.subBrand ? (
-                  <p
-                    id={`${formId}-subBrand-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.subBrand}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-typeOfUse`}>
-                  <span>{copy.definition.generalItem.typeOfUse}</span>
-                </label>
-                <input
-                  id={`${formId}-typeOfUse`}
-                  aria-describedby={
-                    fieldErrors.typeOfUse
-                      ? `${formId}-typeOfUse-error`
-                      : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.typeOfUse)}
-                  maxLength={120}
-                  name="typeOfUse"
-                  type="text"
-                  value={generalItemFields.typeOfUse}
-                  onChange={(e) =>
-                    setGeneralItemFields((prev) => ({
-                      ...prev,
-                      typeOfUse: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.typeOfUse ? (
-                  <p
-                    id={`${formId}-typeOfUse-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.typeOfUse}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-property`}>
-                  <span>{copy.definition.generalItem.property}</span>
-                </label>
-                <input
-                  id={`${formId}-property`}
-                  aria-describedby={
-                    fieldErrors.property
-                      ? `${formId}-property-error`
-                      : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.property)}
-                  maxLength={120}
-                  name="property"
-                  type="text"
-                  value={generalItemFields.property}
-                  onChange={(e) =>
-                    setGeneralItemFields((prev) => ({
-                      ...prev,
-                      property: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.property ? (
-                  <p
-                    id={`${formId}-property-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.property}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-targetAudience`}>
-                  <span>{copy.definition.generalItem.targetAudience}</span>
-                </label>
-                <input
-                  id={`${formId}-targetAudience`}
-                  aria-describedby={
-                    fieldErrors.targetAudience
-                      ? `${formId}-targetAudience-error`
-                      : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.targetAudience)}
-                  maxLength={120}
-                  name="targetAudience"
-                  type="text"
-                  value={generalItemFields.targetAudience}
-                  onChange={(e) =>
-                    setGeneralItemFields((prev) => ({
-                      ...prev,
-                      targetAudience: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.targetAudience ? (
-                  <p
-                    id={`${formId}-targetAudience-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.targetAudience}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-size`}>
-                  <span>{copy.definition.generalItem.size}</span>
-                </label>
-                <input
-                  id={`${formId}-size`}
-                  aria-describedby={
-                    fieldErrors.size ? `${formId}-size-error` : undefined
-                  }
-                  aria-invalid={Boolean(fieldErrors.size)}
-                  maxLength={120}
-                  name="size"
-                  type="text"
-                  value={generalItemFields.size}
-                  onChange={(e) =>
-                    setGeneralItemFields((prev) => ({
-                      ...prev,
-                      size: e.target.value,
-                    }))
-                  }
-                />
-                {fieldErrors.size ? (
-                  <p
-                    id={`${formId}-size-error`}
-                    className="field-error"
-                    role="alert"
-                  >
-                    {fieldErrors.size}
-                  </p>
-                ) : null}
-              </div>
-            </fieldset>
-          )}
-
-          {/*
-            3. The generated English display name.
-            The client's own Add-Material panel assembles this while the
-            pharmacist types, and this keeps that behaviour. It is an <output>,
-            never an input: the display name is generated from the approved
-            field template and is never unrelated free text (docs/domain.md).
-          */}
-          <div className="field-label generated-name-banner">
-            <span className="generated-name-label">
-              {copy.fields.generatedDisplayName}
-            </span>
-            <span className="field-note">
-              {copy.fields.generatedDisplayNameHint}
-            </span>
-            <output
-              aria-live="polite"
-              data-testid="generated-display-name"
-              name="generatedDisplayName"
-            >
-              {generatedDisplayName || (
-                <span className="field-note">
-                  {copy.fields.generatedDisplayNameEmpty}
-                </span>
-              )}
-            </output>
-          </div>
-
-          {/* 4. Arabic Search Name - on its own line BELOW the generated English name */}
-          <div className="field-label">
-            <label htmlFor={`${formId}-arabicSearchName`}>
-              <span>{copy.fields.arabicSearchName}</span>
-            </label>
-            <span className="field-note">
-              {copy.fields.arabicSearchNameHint}
-            </span>
-            <input
-              id={`${formId}-arabicSearchName`}
-              aria-describedby={
-                fieldErrors.arabicSearchName
-                  ? `${formId}-arabicSearchName-error`
-                  : undefined
-              }
-              aria-invalid={Boolean(fieldErrors.arabicSearchName)}
-              dir="rtl"
-              maxLength={160}
-              name="arabicSearchName"
-              type="text"
-              value={arabicSearchName}
-              onChange={(e) => setArabicSearchName(e.target.value)}
-            />
-            {fieldErrors.arabicSearchName ? (
-              <p
-                id={`${formId}-arabicSearchName-error`}
-                className="field-error"
-                role="alert"
+        <div className="flex flex-col gap-3">
+          {/* ======================================================== */}
+          {/* ROW 1: Action Toolbar (Far Left) + Barcode + Scientific + Trade */}
+          {/* ======================================================== */}
+          <div className="flex items-end gap-3">
+            {/* 4 Tool Buttons (Far Left in RTL) */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                className="size-[34px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:border-[#4A6B82] hover:text-[#4A6B82] transition-colors"
+                title={locale === "ar" ? "مسح باركود" : "Scan barcode"}
+                type="button"
               >
-                {fieldErrors.arabicSearchName}
-              </p>
-            ) : null}
-          </div>
-
-          {/* 5. Supporting Fields */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="field-label">
-              <label htmlFor={`${formId}-scientificName`}>
-                <span>{copy.fields.scientificName}</span>
-              </label>
-              <input
-                id={`${formId}-scientificName`}
-                aria-describedby={
-                  fieldErrors.scientificName
-                    ? `${formId}-scientificName-error`
-                    : undefined
+                <ScanBarcode className="size-4" />
+              </button>
+              <button
+                className="size-[34px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:border-[#4A6B82] hover:text-[#4A6B82] transition-colors"
+                title={locale === "ar" ? "إدارة الباركودات" : "Manage barcodes"}
+                type="button"
+                onClick={() => setShowBarcodeDialog(true)}
+              >
+                <Barcode className="size-4" />
+              </button>
+              <button
+                className="size-[34px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:border-[#4A6B82] hover:text-[#4A6B82] transition-colors disabled:opacity-40"
+                disabled={!isEditing || barcodes.length === 0}
+                title={locale === "ar" ? "طباعة باركود" : "Print barcode"}
+                type="button"
+                onClick={() => {
+                  if (barcodes[0]) void handlePrintBarcode(barcodes[0].value);
+                }}
+              >
+                <Printer className="size-4" />
+              </button>
+              <button
+                className="size-[34px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:border-[#4A6B82] hover:text-[#4A6B82] transition-colors disabled:opacity-40"
+                disabled={!canSuggestBarcode || busy || hasUnsavedChanges}
+                title={
+                  locale === "ar" ? "توليد باركود تلقائي" : "Suggest barcode"
                 }
-                aria-invalid={Boolean(fieldErrors.scientificName)}
-                maxLength={160}
-                name="scientificName"
-                type="text"
-                value={scientificName}
-                onChange={(e) => setScientificName(e.target.value)}
-              />
-              {fieldErrors.scientificName ? (
-                <p
-                  id={`${formId}-scientificName-error`}
-                  className="field-error"
-                  role="alert"
-                >
-                  {fieldErrors.scientificName}
-                </p>
-              ) : null}
+                type="button"
+                onClick={() => void handleSuggestBarcode()}
+              >
+                <Wand2 className="size-4" />
+              </button>
             </div>
 
-            <div className="field-label">
-              <label htmlFor={`${formId}-category`}>
-                <span>{copy.fields.category}</span>
-              </label>
-              <input
-                id={`${formId}-category`}
-                aria-describedby={
-                  fieldErrors.category ? `${formId}-category-error` : undefined
-                }
-                aria-invalid={Boolean(fieldErrors.category)}
-                maxLength={96}
-                name="category"
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-              />
-              {fieldErrors.category ? (
-                <p
-                  id={`${formId}-category-error`}
-                  className="field-error"
-                  role="alert"
+            {/* Barcode Input + Kind Selector */}
+            <div className="w-[220px]">
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  className="text-[11px] font-medium text-[#5C7385]"
+                  htmlFor={`${formId}-new-barcode`}
                 >
-                  {fieldErrors.category}
-                </p>
-              ) : null}
-            </div>
-          </div>
-
-          {/* 6. Barcodes Storage */}
-          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
-            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-              {copy.barcodes.label}
-            </legend>
-            <div className="flex gap-2 mb-3">
-              <select
-                aria-label={locale === "ar" ? "نوع الباركود" : "Barcode kind"}
-                className="min-h-[2.5rem] px-2 border border-[color:var(--control-border)] rounded-lg bg-background"
-                value={newBarcodeKind}
-                onChange={(event) =>
-                  setNewBarcodeKind(event.target.value as ProductBarcodeKind)
-                }
-              >
-                <option value="product">
-                  {locale === "ar" ? "منتج" : "Product"}
-                </option>
-                <option value="package">
-                  {locale === "ar" ? "عبوة" : "Package"}
-                </option>
-              </select>
+                  {locale === "ar" ? "الرمز / الباركود" : copy.barcodes.label}
+                </label>
+                <select
+                  aria-label={locale === "ar" ? "نوع الباركود" : "Barcode kind"}
+                  className="text-[10px] bg-transparent border-none text-[#5C7385] cursor-pointer outline-none"
+                  value={newBarcodeKind}
+                  onChange={(e) =>
+                    setNewBarcodeKind(e.target.value as ProductBarcodeKind)
+                  }
+                >
+                  <option value="product">
+                    {locale === "ar" ? "منتج" : "Product"}
+                  </option>
+                  <option value="package">
+                    {locale === "ar" ? "عبوة" : "Package"}
+                  </option>
+                </select>
+              </div>
               <input
+                id={`${formId}-new-barcode`}
                 aria-label={copy.barcodes.label}
-                className="flex-1 min-h-[2.5rem] px-3 border border-[color:var(--control-border)] rounded-lg bg-background"
-                maxLength={64}
-                name="newBarcode"
+                className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right font-mono outline-none focus:border-[#4A6B82] transition-colors"
                 placeholder={copy.barcodes.placeholder}
                 type="text"
                 value={newBarcode}
-                onChange={(e) => setNewBarcode(e.target.value)}
+                onChange={(e) => {
+                  markDraftDirty();
+                  setNewBarcode(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -1493,664 +1949,538 @@ export function ProductForm({
                   }
                 }}
               />
-              <button
-                className="quiet-button"
-                type="button"
-                onClick={handleAddBarcode}
-              >
-                {copy.barcodes.add}
-              </button>
-            </div>
-
-            {barcodes.length === 0 ? (
-              <p className="field-note">{copy.barcodes.empty}</p>
-            ) : (
-              <ul className="flex flex-wrap gap-2 list-none p-0 m-0">
-                {barcodes.map((barcode, idx) => (
-                  <li
-                    key={barcode.value}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[color:var(--border)] font-mono text-sm"
-                  >
-                    <span>{barcode.value}</span>
-                    <span className="text-muted-foreground">
-                      {barcode.kind === "product"
-                        ? locale === "ar"
-                          ? "منتج"
-                          : "Product"
-                        : locale === "ar"
-                          ? "عبوة"
-                          : "Package"}
+              {barcodes.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {barcodes.map((b, idx) => (
+                    <span
+                      key={`${b.kind}:${b.value}`}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-[#F6F7F9] border border-[#D7DEE4] text-[10px] font-mono text-[#1E2A33]"
+                    >
+                      <span>{b.value}</span>
+                      <button
+                        className="text-[#DF202E] hover:font-bold"
+                        type="button"
+                        onClick={() => handleRemoveBarcode(idx)}
+                      >
+                        ×
+                      </button>
                     </span>
-                    <button
-                      aria-label={`${copy.barcodes.remove} ${barcode.value}`}
-                      className="font-bold px-1 text-[color:var(--danger)]"
-                      type="button"
-                      onClick={() => handleRemoveBarcode(idx)}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </fieldset>
-
-          {/* 7. Packaging & Units */}
-          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg space-y-4">
-            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-              {copy.packaging.title}
-            </legend>
-            <p className="field-note">{copy.packaging.description}</p>
-
-            {/* Required Inventory Unit */}
-            <div className="field-label">
-              <label htmlFor={`${formId}-packaging.inventoryUnitName`}>
-                <span>{copy.packaging.inventoryUnitName} *</span>
-              </label>
-              <span className="field-note">
-                {copy.packaging.inventoryUnitHelp}
-              </span>
-              <input
-                id={`${formId}-packaging.inventoryUnitName`}
-                aria-describedby={
-                  fieldErrors["packaging.inventoryUnitName"]
-                    ? `${formId}-packaging.inventoryUnitName-error`
-                    : undefined
-                }
-                aria-invalid={Boolean(
-                  fieldErrors["packaging.inventoryUnitName"],
-                )}
-                aria-required="true"
-                data-field-key="packaging.inventoryUnitName"
-                maxLength={40}
-                name="packaging.inventoryUnitName"
-                placeholder={copy.packaging.inventoryUnitNamePlaceholder}
-                required
-                type="text"
-                value={inventoryUnitName}
-                onChange={(e) => setInventoryUnitName(e.target.value)}
-              />
-              {fieldErrors["packaging.inventoryUnitName"] ? (
-                <p
-                  id={`${formId}-packaging.inventoryUnitName-error`}
-                  className="field-error"
-                  role="alert"
-                >
-                  {fieldErrors["packaging.inventoryUnitName"]}
-                </p>
-              ) : null}
-            </div>
-
-            {/* Repeatable Larger Package Units */}
-            <div className="space-y-3 pt-2 border-t border-[color:var(--border)]">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-sm text-[color:var(--card-foreground)]">
-                  {copy.packaging.packageUnitsTitle}
-                </h3>
-                <button
-                  className="quiet-button text-xs"
-                  type="button"
-                  onClick={handleAddPackageUnit}
-                >
-                  {copy.packaging.addPackageUnit}
-                </button>
-              </div>
-
-              {packageUnits.length === 0 ? (
-                <p className="field-note">{copy.packaging.noPackageUnits}</p>
-              ) : (
-                <div className="space-y-3">
-                  {packageUnits.map((pkg, idx) => (
-                    <div
-                      key={pkg.id}
-                      className="p-3 rounded-lg border border-[color:var(--control-border)] bg-[color:var(--surface)] space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono font-bold text-muted-foreground">
-                          #{idx + 1}
-                        </span>
-                        <button
-                          aria-label={`${copy.packaging.removePackageUnit} #${idx + 1}`}
-                          className="quiet-button text-xs text-[color:var(--danger)]"
-                          type="button"
-                          onClick={() => handleRemovePackageUnit(idx)}
-                        >
-                          {copy.packaging.removePackageUnit}
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="field-label">
-                          <label
-                            htmlFor={`${formId}-packaging.packageUnits.${idx}.name`}
-                          >
-                            <span>{copy.packaging.packageUnitName} *</span>
-                          </label>
-                          <input
-                            id={`${formId}-packaging.packageUnits.${idx}.name`}
-                            aria-describedby={
-                              fieldErrors[`packaging.packageUnits.${idx}.name`]
-                                ? `${formId}-packaging.packageUnits.${idx}.name-error`
-                                : undefined
-                            }
-                            aria-invalid={Boolean(
-                              fieldErrors[`packaging.packageUnits.${idx}.name`],
-                            )}
-                            data-field-key={`packaging.packageUnits.${idx}.name`}
-                            maxLength={40}
-                            name={`packaging.packageUnits.${idx}.name`}
-                            placeholder={
-                              copy.packaging.packageUnitNamePlaceholder
-                            }
-                            type="text"
-                            value={pkg.name}
-                            onChange={(e) =>
-                              handleUpdatePackageUnit(
-                                idx,
-                                "name",
-                                e.target.value,
-                              )
-                            }
-                          />
-                          {fieldErrors[`packaging.packageUnits.${idx}.name`] ? (
-                            <p
-                              id={`${formId}-packaging.packageUnits.${idx}.name-error`}
-                              className="field-error"
-                              role="alert"
-                            >
-                              {
-                                fieldErrors[
-                                  `packaging.packageUnits.${idx}.name`
-                                ]
-                              }
-                            </p>
-                          ) : null}
-                        </div>
-
-                        <div className="field-label">
-                          <label
-                            htmlFor={`${formId}-packaging.packageUnits.${idx}.baseUnitsPerPackage`}
-                          >
-                            <span>{copy.packaging.baseUnitsPerPackage} *</span>
-                          </label>
-                          <input
-                            id={`${formId}-packaging.packageUnits.${idx}.baseUnitsPerPackage`}
-                            aria-describedby={
-                              fieldErrors[
-                                `packaging.packageUnits.${idx}.baseUnitsPerPackage`
-                              ]
-                                ? `${formId}-packaging.packageUnits.${idx}.baseUnitsPerPackage-error`
-                                : undefined
-                            }
-                            aria-invalid={Boolean(
-                              fieldErrors[
-                                `packaging.packageUnits.${idx}.baseUnitsPerPackage`
-                              ],
-                            )}
-                            data-field-key={`packaging.packageUnits.${idx}.baseUnitsPerPackage`}
-                            inputMode="numeric"
-                            maxLength={19}
-                            name={`packaging.packageUnits.${idx}.baseUnitsPerPackage`}
-                            placeholder={
-                              copy.packaging.baseUnitsPerPackagePlaceholder
-                            }
-                            type="text"
-                            value={pkg.baseUnitsPerPackage}
-                            onChange={(e) =>
-                              handleUpdatePackageUnit(
-                                idx,
-                                "baseUnitsPerPackage",
-                                e.target.value,
-                              )
-                            }
-                          />
-                          {fieldErrors[
-                            `packaging.packageUnits.${idx}.baseUnitsPerPackage`
-                          ] ? (
-                            <p
-                              id={`${formId}-packaging.packageUnits.${idx}.baseUnitsPerPackage-error`}
-                              className="field-error"
-                              role="alert"
-                            >
-                              {
-                                fieldErrors[
-                                  `packaging.packageUnits.${idx}.baseUnitsPerPackage`
-                                ]
-                              }
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Optional Third Unit (explicitly non-stock) */}
-            <div className="space-y-2 pt-2 border-t border-[color:var(--border)]">
-              <label className="check-row flex items-center gap-2 cursor-pointer">
+            {/* Scientific Name */}
+            <div className="flex-1">
+              <label
+                className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                htmlFor={`${formId}-scientificName`}
+              >
+                {copy.fields.scientificName}{" "}
+                <span className="text-[#DF202E]">*</span>
+              </label>
+              <input
+                id={`${formId}-scientificName`}
+                aria-label={copy.fields.scientificName}
+                className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                name="scientificName"
+                type="text"
+                value={scientificName}
+                onChange={(e) => {
+                  markDraftDirty();
+                  setScientificName(e.target.value);
+                }}
+              />
+            </div>
+
+            {/* Trade Name */}
+            <div className="flex-1">
+              <label
+                className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                htmlFor={`${formId}-tradeName`}
+              >
+                {mode === "medication"
+                  ? copy.definition.medication.tradeName
+                  : copy.definition.generalItem.company}{" "}
+                <span className="text-[#DF202E]">*</span>
+              </label>
+              {mode === "medication" ? (
                 <input
-                  checked={hasThirdUnit}
-                  name="hasThirdUnit"
-                  type="checkbox"
+                  id={`${formId}-tradeName`}
+                  aria-invalid={Boolean(fieldErrors.tradeName)}
+                  aria-label={copy.definition.medication.tradeName}
+                  aria-required="true"
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                  name="tradeName"
+                  type="text"
+                  value={medicationFields.tradeName}
                   onChange={(e) => {
-                    setHasThirdUnit(e.target.checked);
-                    if (!e.target.checked) {
-                      setThirdUnitName("");
-                    }
+                    markDraftDirty();
+                    setMedicationFields((prev) => ({
+                      ...prev,
+                      tradeName: e.target.value,
+                    }));
                   }}
                 />
-                <span className="font-semibold text-sm">
-                  {copy.packaging.enableThirdUnit}
-                </span>
-              </label>
-              <p className="field-note">{copy.packaging.thirdUnitNotice}</p>
-
-              {hasThirdUnit ? (
-                <div className="field-label mt-2">
-                  <label htmlFor={`${formId}-packaging.thirdUnit.name`}>
-                    <span>{copy.packaging.thirdUnitName} *</span>
-                  </label>
-                  <input
-                    id={`${formId}-packaging.thirdUnit.name`}
-                    aria-describedby={
-                      fieldErrors["packaging.thirdUnit.name"]
-                        ? `${formId}-packaging.thirdUnit.name-error`
-                        : undefined
-                    }
-                    aria-invalid={Boolean(
-                      fieldErrors["packaging.thirdUnit.name"],
-                    )}
-                    data-field-key="packaging.thirdUnit.name"
-                    maxLength={40}
-                    name="packaging.thirdUnit.name"
-                    placeholder={copy.packaging.thirdUnitNamePlaceholder}
-                    type="text"
-                    value={thirdUnitName}
-                    onChange={(e) => setThirdUnitName(e.target.value)}
-                  />
-                  {fieldErrors["packaging.thirdUnit.name"] ? (
-                    <p
-                      id={`${formId}-packaging.thirdUnit.name-error`}
-                      className="field-error"
-                      role="alert"
-                    >
-                      {fieldErrors["packaging.thirdUnit.name"]}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
+              ) : (
+                <input
+                  id={`${formId}-company`}
+                  aria-invalid={Boolean(fieldErrors.company)}
+                  aria-label={copy.definition.generalItem.company}
+                  aria-required="true"
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                  name="company"
+                  type="text"
+                  value={generalItemFields.company}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setGeneralItemFields((prev) => ({
+                      ...prev,
+                      company: e.target.value,
+                    }));
+                  }}
+                />
+              )}
             </div>
+          </div>
 
-            {/* Interface Default Units */}
-            <div className="space-y-3 pt-2 border-t border-[color:var(--border)]">
-              <div>
-                <h3 className="font-bold text-sm text-[color:var(--card-foreground)]">
-                  {copy.packaging.defaultUnitsTitle}
-                </h3>
-                <p className="field-note">
-                  {copy.packaging.defaultUnitsDescription}
-                </p>
-              </div>
+          {/* ======================================================== */}
+          {/* ROW 2: Compound Color Picker + Classification Fields    */}
+          {/* ======================================================== */}
+          <div className="flex items-end gap-3">
+            {/* Far Left: Compound Highlight Color Control */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-medium text-[#5C7385] text-right">
+                {locale === "ar" ? "لون التمييز" : "Highlight color"}
+              </span>
+              <div className="relative flex items-center gap-1">
+                <button
+                  className="h-[34px] w-[28px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:text-[#DF202E] hover:bg-[#FCE8EA] transition-colors"
+                  title={locale === "ar" ? "مسح اللون" : "Clear color"}
+                  type="button"
+                  onClick={() => {
+                    markDraftDirty();
+                    setStateColours((prev) => ({ ...prev, manual: "" }));
+                  }}
+                >
+                  <X className="size-3.5" />
+                </button>
+                <input
+                  className="h-[34px] w-[80px] text-center font-mono text-[12px] text-[#1E2A33] rounded-[6px] border border-[#D7DEE4] bg-white outline-none focus:border-[#4A6B82] transition-colors"
+                  placeholder="#hex"
+                  type="text"
+                  value={stateColours.manual}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setStateColours((prev) => ({
+                      ...prev,
+                      manual: e.target.value as ProductStateColour,
+                    }));
+                  }}
+                />
+                <div
+                  className="h-[34px] w-[34px] rounded-[6px] border border-[#D7DEE4] cursor-pointer relative shrink-0 flex items-center justify-center"
+                  style={{
+                    backgroundColor: stateColours.manual
+                      ? (COLOR_MAP[stateColours.manual] ?? stateColours.manual)
+                      : "#FFFFFF",
+                  }}
+                  title={
+                    locale === "ar" ? "انقر لاختيار اللون" : "Choose color"
+                  }
+                  onClick={() => setShowColorPalette((v) => !v)}
+                />
+                <button
+                  className="h-[34px] w-[28px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:bg-[#F6F7F9] transition-colors"
+                  type="button"
+                  onClick={() => setShowColorPalette((v) => !v)}
+                >
+                  <Plus className="size-3.5" />
+                </button>
+                <button
+                  className="h-[34px] w-[28px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:bg-[#F6F7F9] transition-colors"
+                  type="button"
+                  onClick={() => setShowColorPalette((v) => !v)}
+                >
+                  <ChevronDown className="size-3.5" />
+                </button>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Count Default */}
-                <div className="field-label">
-                  <label htmlFor={`${formId}-packaging.defaultUnits.count`}>
-                    <span>{copy.packaging.countDefault}</span>
-                  </label>
-                  <select
-                    id={`${formId}-packaging.defaultUnits.count`}
-                    aria-describedby={
-                      fieldErrors["packaging.defaultUnits.count"]
-                        ? `${formId}-packaging.defaultUnits.count-error`
-                        : undefined
-                    }
-                    aria-invalid={Boolean(
-                      fieldErrors["packaging.defaultUnits.count"],
-                    )}
-                    data-field-key="packaging.defaultUnits.count"
-                    name="packaging.defaultUnits.count"
-                    value={
-                      defaultUnits.count.kind === "inventory-unit"
-                        ? "__inventory_unit__"
-                        : defaultUnits.count.packageUnitName
-                    }
-                    onChange={(e) =>
-                      handleDefaultUnitChange("count", e.target.value)
-                    }
-                  >
-                    <option value="__inventory_unit__">
-                      {inventoryUnitName.trim() ||
-                        copy.packaging.inventoryUnitName}
-                    </option>
-                    {packageUnits
-                      .filter((u) => u.name.trim().length > 0)
-                      .map((u) => (
-                        <option key={u.id} value={u.name.trim()}>
-                          {u.name.trim()} ({u.baseUnitsPerPackage || "?"}{" "}
-                          {inventoryUnitName.trim() ||
-                            copy.packaging.inventoryUnitName}
-                          )
-                        </option>
-                      ))}
-                  </select>
-                  {fieldErrors["packaging.defaultUnits.count"] ? (
-                    <p
-                      id={`${formId}-packaging.defaultUnits.count-error`}
-                      className="field-error"
-                      role="alert"
-                    >
-                      {fieldErrors["packaging.defaultUnits.count"]}
-                    </p>
-                  ) : null}
-                </div>
-
-                {/* Purchase Default */}
-                <div className="field-label">
-                  <label htmlFor={`${formId}-packaging.defaultUnits.purchase`}>
-                    <span>{copy.packaging.purchaseDefault}</span>
-                  </label>
-                  <select
-                    id={`${formId}-packaging.defaultUnits.purchase`}
-                    aria-describedby={
-                      fieldErrors["packaging.defaultUnits.purchase"]
-                        ? `${formId}-packaging.defaultUnits.purchase-error`
-                        : undefined
-                    }
-                    aria-invalid={Boolean(
-                      fieldErrors["packaging.defaultUnits.purchase"],
-                    )}
-                    data-field-key="packaging.defaultUnits.purchase"
-                    name="packaging.defaultUnits.purchase"
-                    value={
-                      defaultUnits.purchase.kind === "inventory-unit"
-                        ? "__inventory_unit__"
-                        : defaultUnits.purchase.packageUnitName
-                    }
-                    onChange={(e) =>
-                      handleDefaultUnitChange("purchase", e.target.value)
-                    }
-                  >
-                    <option value="__inventory_unit__">
-                      {inventoryUnitName.trim() ||
-                        copy.packaging.inventoryUnitName}
-                    </option>
-                    {packageUnits
-                      .filter((u) => u.name.trim().length > 0)
-                      .map((u) => (
-                        <option key={u.id} value={u.name.trim()}>
-                          {u.name.trim()} ({u.baseUnitsPerPackage || "?"}{" "}
-                          {inventoryUnitName.trim() ||
-                            copy.packaging.inventoryUnitName}
-                          )
-                        </option>
-                      ))}
-                  </select>
-                  {fieldErrors["packaging.defaultUnits.purchase"] ? (
-                    <p
-                      id={`${formId}-packaging.defaultUnits.purchase-error`}
-                      className="field-error"
-                      role="alert"
-                    >
-                      {fieldErrors["packaging.defaultUnits.purchase"]}
-                    </p>
-                  ) : null}
-                </div>
-
-                {/* Sale Default */}
-                <div className="field-label">
-                  <label htmlFor={`${formId}-packaging.defaultUnits.sale`}>
-                    <span>{copy.packaging.saleDefault}</span>
-                  </label>
-                  <select
-                    id={`${formId}-packaging.defaultUnits.sale`}
-                    aria-describedby={
-                      fieldErrors["packaging.defaultUnits.sale"]
-                        ? `${formId}-packaging.defaultUnits.sale-error`
-                        : undefined
-                    }
-                    aria-invalid={Boolean(
-                      fieldErrors["packaging.defaultUnits.sale"],
-                    )}
-                    data-field-key="packaging.defaultUnits.sale"
-                    name="packaging.defaultUnits.sale"
-                    value={
-                      defaultUnits.sale.kind === "inventory-unit"
-                        ? "__inventory_unit__"
-                        : defaultUnits.sale.packageUnitName
-                    }
-                    onChange={(e) =>
-                      handleDefaultUnitChange("sale", e.target.value)
-                    }
-                  >
-                    <option value="__inventory_unit__">
-                      {inventoryUnitName.trim() ||
-                        copy.packaging.inventoryUnitName}
-                    </option>
-                    {packageUnits
-                      .filter((u) => u.name.trim().length > 0)
-                      .map((u) => (
-                        <option key={u.id} value={u.name.trim()}>
-                          {u.name.trim()} ({u.baseUnitsPerPackage || "?"}{" "}
-                          {inventoryUnitName.trim() ||
-                            copy.packaging.inventoryUnitName}
-                          )
-                        </option>
-                      ))}
-                  </select>
-                  {fieldErrors["packaging.defaultUnits.sale"] ? (
-                    <p
-                      id={`${formId}-packaging.defaultUnits.sale-error`}
-                      className="field-error"
-                      role="alert"
-                    >
-                      {fieldErrors["packaging.defaultUnits.sale"]}
-                    </p>
-                  ) : null}
-                </div>
+                {showColorPalette && (
+                  <div className="absolute left-0 bottom-[38px] z-50 p-2 bg-white border border-[#D7DEE4] rounded-[6px] shadow-lg flex gap-1.5">
+                    {PRODUCT_STATE_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        className="w-6 h-6 rounded-[4px] border border-[#D7DEE4] hover:scale-110 transition-transform"
+                        style={{ backgroundColor: COLOR_MAP[c] ?? c }}
+                        title={c}
+                        type="button"
+                        onClick={() => {
+                          markDraftDirty();
+                          setStateColours((prev) => ({ ...prev, manual: c }));
+                          setShowColorPalette(false);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-          </fieldset>
 
-          {/* 8. Pricing & Commercial Terms */}
-          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg space-y-4">
-            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-              {copy.pricing.title}
-            </legend>
-            <p className="field-note">{copy.pricing.description}</p>
-
-            {/* Pricing Method Selector */}
-            <div className="field-label">
-              <label htmlFor={`${formId}-pricing.method`}>
-                <span>{copy.pricing.methodLabel}</span>
-              </label>
-              <select
-                id={`${formId}-pricing.method`}
-                data-field-key="pricing.method"
-                name="pricing.method"
-                value={pricingMethod}
-                onChange={(e) =>
-                  setPricingMethod(e.target.value as ProductPricingMethod)
-                }
+            {/* Arabic Search Name */}
+            <div className="flex-1">
+              <label
+                className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                htmlFor={`${formId}-arabicSearchName`}
               >
-                {PRODUCT_PRICING_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {copy.pricing.methods[m]}
-                  </option>
-                ))}
-              </select>
+                {copy.fields.arabicSearchName}
+              </label>
+              <input
+                id={`${formId}-arabicSearchName`}
+                aria-label={copy.fields.arabicSearchName}
+                className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                dir="rtl"
+                name="arabicSearchName"
+                type="text"
+                value={arabicSearchName}
+                onChange={(e) => {
+                  markDraftDirty();
+                  setArabicSearchName(e.target.value);
+                }}
+              />
             </div>
 
-            {/* Dynamic Mode Fields using PRODUCT_PRICING_FIELD_EDITABILITY */}
-            {!isMarginPercentageAvailable ? (
-              /* By Price Mode */
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="field-label">
-                  <label htmlFor={`${formId}-pricing.retailPriceFils`}>
-                    <span>{copy.pricing.retailPriceFils} *</span>
+            {/* Category */}
+            <div className="w-[140px]">
+              <label
+                className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                htmlFor={`${formId}-category`}
+              >
+                {copy.fields.category}
+              </label>
+              <input
+                id={`${formId}-category`}
+                aria-label={copy.fields.category}
+                className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                name="category"
+                type="text"
+                value={category}
+                onChange={(e) => {
+                  markDraftDirty();
+                  setCategory(e.target.value);
+                }}
+              />
+            </div>
+
+            {/* Manufacturer / Sub-brand */}
+            <div className="w-[150px]">
+              <label
+                className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                htmlFor={`${formId}-manufacturer`}
+              >
+                {mode === "medication"
+                  ? copy.definition.medication.manufacturer
+                  : copy.definition.generalItem.subBrand}
+              </label>
+              {mode === "medication" ? (
+                <input
+                  id={`${formId}-manufacturer`}
+                  aria-label={copy.definition.medication.manufacturer}
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                  name="manufacturer"
+                  type="text"
+                  value={medicationFields.manufacturer}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setMedicationFields((prev) => ({
+                      ...prev,
+                      manufacturer: e.target.value,
+                    }));
+                  }}
+                />
+              ) : (
+                <input
+                  id={`${formId}-subBrand`}
+                  aria-label={copy.definition.generalItem.subBrand}
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                  name="subBrand"
+                  type="text"
+                  value={generalItemFields.subBrand}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setGeneralItemFields((prev) => ({
+                      ...prev,
+                      subBrand: e.target.value,
+                    }));
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Dosage Form / Type */}
+            <div className="w-[140px]">
+              <label
+                className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                htmlFor={`${formId}-dosageForm`}
+              >
+                {mode === "medication"
+                  ? copy.definition.medication.dosageForm
+                  : copy.definition.generalItem.typeOfUse}
+              </label>
+              {mode === "medication" ? (
+                <input
+                  id={`${formId}-dosageForm`}
+                  aria-label={copy.definition.medication.dosageForm}
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                  name="dosageForm"
+                  type="text"
+                  value={medicationFields.dosageForm}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setMedicationFields((prev) => ({
+                      ...prev,
+                      dosageForm: e.target.value,
+                    }));
+                  }}
+                />
+              ) : (
+                <input
+                  id={`${formId}-typeOfUse`}
+                  aria-label={copy.definition.generalItem.typeOfUse}
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                  name="typeOfUse"
+                  type="text"
+                  value={generalItemFields.typeOfUse}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setGeneralItemFields((prev) => ({
+                      ...prev,
+                      typeOfUse: e.target.value,
+                    }));
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Strength / Size */}
+            <div className="w-[100px]">
+              <label
+                className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                htmlFor={`${formId}-strength`}
+              >
+                {mode === "medication"
+                  ? copy.definition.medication.strength
+                  : copy.definition.generalItem.size}
+              </label>
+              {mode === "medication" ? (
+                <input
+                  id={`${formId}-strength`}
+                  aria-label={copy.definition.medication.strength}
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                  name="strength"
+                  type="text"
+                  value={medicationFields.strength}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setMedicationFields((prev) => ({
+                      ...prev,
+                      strength: e.target.value,
+                    }));
+                  }}
+                />
+              ) : (
+                <input
+                  id={`${formId}-size`}
+                  aria-label={copy.definition.generalItem.size}
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                  name="size"
+                  type="text"
+                  value={generalItemFields.size}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setGeneralItemFields((prev) => ({
+                      ...prev,
+                      size: e.target.value,
+                    }));
+                  }}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* ======================================================== */}
+          {/* ROW 3: Unit 1 — "الوحدة الأساسية (الصغرى)"              */}
+          {/* ======================================================== */}
+          <div className="border border-[#D7DEE4] rounded-[6px] bg-white overflow-hidden">
+            {/* Header Bar */}
+            <div className="h-[34px] px-3 bg-[#F6F7F9] border-b border-[#D7DEE4] flex items-center justify-between">
+              {/* Left side in RTL: Packaging toggle + Pricing method pill */}
+              <div className="flex items-center gap-3">
+                {/* Packaging Toggle */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    className={`relative inline-flex h-[20px] w-[36px] cursor-pointer rounded-full transition-colors ${
+                      packagingEnabled ? "bg-[#4A6B82]" : "bg-[#D7DEE4]"
+                    }`}
+                    type="button"
+                    onClick={() => {
+                      markDraftDirty();
+                      setPackagingEnabled((v) => !v);
+                    }}
+                  >
+                    <span
+                      className={`inline-block h-[16px] w-[16px] transform rounded-full bg-white transition-transform mt-[2px] ${
+                        packagingEnabled
+                          ? "translate-x-[-18px]"
+                          : "translate-x-[-2px]"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-[12px] text-[#5C7385]">
+                    {locale === "ar" ? "تفعيل التعبئة" : "Enable packaging"}
+                  </span>
+                </div>
+
+                {/* Sell Method Segmented Pill */}
+                <div className="flex items-center gap-1.5">
+                  <div className="inline-flex items-center rounded-full border border-[#D7DEE4] p-0.5 bg-white">
+                    <button
+                      className={`px-2.5 py-0.5 text-[11px] font-medium rounded-full transition-colors ${
+                        pricingMethod === "by-price"
+                          ? "bg-[#4A6B82] text-white"
+                          : "bg-transparent text-[#1E2A33]"
+                      }`}
+                      type="button"
+                      onClick={() => {
+                        markDraftDirty();
+                        setPricingMethod("by-price");
+                      }}
+                    >
+                      {locale === "ar" ? "وفق مبلغ" : "By price"}
+                    </button>
+                    <button
+                      className={`px-2.5 py-0.5 text-[11px] font-medium rounded-full transition-colors ${
+                        pricingMethod === "by-percentage"
+                          ? "bg-[#4A6B82] text-white"
+                          : "bg-transparent text-[#1E2A33]"
+                      }`}
+                      type="button"
+                      onClick={() => {
+                        markDraftDirty();
+                        setPricingMethod("by-percentage");
+                      }}
+                    >
+                      {locale === "ar" ? "وفق نسبة %" : "By %"}
+                    </button>
+                  </div>
+                  <span className="text-[12px] text-[#5C7385]">
+                    {locale === "ar" ? "طريقة البيع" : "Sell method"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Right side in RTL: Title */}
+              <span className="text-[13px] font-semibold text-[#1E2A33]">
+                {locale === "ar"
+                  ? "الوحدة الأساسية (الصغرى)"
+                  : "Base Unit (Smallest)"}
+              </span>
+            </div>
+
+            {/* Body (4 Columns) */}
+            <div className="p-3 grid grid-cols-4 gap-3">
+              {/* Col 1: Special Price */}
+              <div>
+                <label
+                  className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                  htmlFor={`${formId}-pricing.wholesalePriceFils`}
+                >
+                  {locale === "ar"
+                    ? "سعر خاص"
+                    : copy.pricing.wholesalePriceFils}
+                </label>
+                <StepperInput
+                  id={`${formId}-pricing.wholesalePriceFils`}
+                  name="pricing.wholesalePriceFils"
+                  step={500}
+                  value={wholesalePriceFils}
+                  onChange={(v) => {
+                    markDraftDirty();
+                    setWholesalePriceFils(v);
+                  }}
+                />
+              </div>
+
+              {/* Col 2: Retail Price (Mode 1) OR Margin % + Live Preview + Rounding (Mode 2) */}
+              {pricingMethod === "by-price" ? (
+                <div>
+                  <label
+                    className="block text-[11px] font-bold text-[#1E2A33] mb-1 text-right"
+                    htmlFor={`${formId}-pricing.retailPriceFils`}
+                  >
+                    {copy.pricing.retailPriceFils}{" "}
+                    <span className="text-[#DF202E]">*</span>
                   </label>
-                  <input
+                  <StepperInput
                     id={`${formId}-pricing.retailPriceFils`}
-                    aria-describedby={
-                      fieldErrors["pricing.retailPriceFils"]
-                        ? `${formId}-pricing.retailPriceFils-error`
-                        : undefined
-                    }
-                    aria-invalid={Boolean(
-                      fieldErrors["pricing.retailPriceFils"],
-                    )}
+                    aria-label={copy.pricing.retailPriceFils}
                     aria-required="true"
                     data-field-key="pricing.retailPriceFils"
-                    inputMode="numeric"
-                    maxLength={19}
+                    isBold
                     name="pricing.retailPriceFils"
-                    placeholder={copy.pricing.retailPricePlaceholder}
-                    required
-                    type="text"
+                    step={500}
                     value={retailPriceFils}
-                    onChange={(e) => setRetailPriceFils(e.target.value)}
+                    onChange={(v) => {
+                      markDraftDirty();
+                      setRetailPriceFils(v);
+                    }}
                   />
-                  {fieldErrors["pricing.retailPriceFils"] ? (
-                    <p
-                      id={`${formId}-pricing.retailPriceFils-error`}
-                      className="field-error"
-                      role="alert"
-                    >
-                      {fieldErrors["pricing.retailPriceFils"]}
-                    </p>
-                  ) : null}
                 </div>
-
-                <div className="field-label">
-                  <label htmlFor={`${formId}-pricing.wholesalePriceFils`}>
-                    <span>{copy.pricing.wholesalePriceFils}</span>
-                  </label>
-                  <input
-                    id={`${formId}-pricing.wholesalePriceFils`}
-                    aria-describedby={
-                      fieldErrors["pricing.wholesalePriceFils"]
-                        ? `${formId}-pricing.wholesalePriceFils-error`
-                        : undefined
-                    }
-                    aria-invalid={Boolean(
-                      fieldErrors["pricing.wholesalePriceFils"],
-                    )}
-                    data-field-key="pricing.wholesalePriceFils"
-                    inputMode="numeric"
-                    maxLength={19}
-                    name="pricing.wholesalePriceFils"
-                    placeholder={copy.pricing.wholesalePricePlaceholder}
-                    type="text"
-                    value={wholesalePriceFils}
-                    onChange={(e) => setWholesalePriceFils(e.target.value)}
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-[#5C7385]">
+                      {locale === "ar" ? "معاينة السعر:" : "Preview:"}{" "}
+                      <strong className="text-[#1E2A33] font-bold">
+                        {displayRetailPreview}
+                      </strong>
+                    </span>
+                    <label
+                      className="block text-[11px] font-bold text-[#1E2A33] text-right"
+                      htmlFor={`${formId}-pricing.marginPercentage`}
+                    >
+                      {copy.pricing.marginPercentage}{" "}
+                      <span className="text-[#DF202E]">*</span>
+                    </label>
+                  </div>
+                  <StepperInput
+                    id={`${formId}-pricing.marginPercentage`}
+                    aria-label={copy.pricing.marginPercentage}
+                    aria-required="true"
+                    data-field-key="pricing.marginPercentage"
+                    name="pricing.marginPercentage"
+                    step={5}
+                    value={marginPercentage}
+                    onChange={(v) => {
+                      markDraftDirty();
+                      setMarginPercentage(v);
+                    }}
                   />
-                  {fieldErrors["pricing.wholesalePriceFils"] ? (
-                    <p
-                      id={`${formId}-pricing.wholesalePriceFils-error`}
-                      className="field-error"
-                      role="alert"
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    <label
+                      className="text-[10px] text-[#5C7385] shrink-0"
+                      htmlFor={`${formId}-pricing.rounding`}
                     >
-                      {fieldErrors["pricing.wholesalePriceFils"]}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              /* By Percentage Mode */
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {/* Transient Cost */}
-                  <div className="field-label">
-                    <label htmlFor={`${formId}-pricing.costFils`}>
-                      <span>{copy.pricing.costFils} *</span>
-                    </label>
-                    <input
-                      id={`${formId}-pricing.costFils`}
-                      aria-describedby={
-                        fieldErrors["pricing.costFils"]
-                          ? `${formId}-pricing.costFils-error`
-                          : undefined
-                      }
-                      aria-invalid={Boolean(fieldErrors["pricing.costFils"])}
-                      aria-required="true"
-                      data-field-key="pricing.costFils"
-                      inputMode="numeric"
-                      maxLength={19}
-                      name="pricing.costFils"
-                      placeholder={copy.pricing.costFilsPlaceholder}
-                      required
-                      type="text"
-                      value={costFils}
-                      onChange={(e) => setCostFils(e.target.value)}
-                    />
-                    <span className="field-note">
-                      {copy.pricing.costFilsHelp}
-                    </span>
-                    {fieldErrors["pricing.costFils"] ? (
-                      <p
-                        id={`${formId}-pricing.costFils-error`}
-                        className="field-error"
-                        role="alert"
-                      >
-                        {fieldErrors["pricing.costFils"]}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  {/* Margin Percentage */}
-                  <div className="field-label">
-                    <label htmlFor={`${formId}-pricing.marginPercentage`}>
-                      <span>{copy.pricing.marginPercentage} *</span>
-                    </label>
-                    <input
-                      id={`${formId}-pricing.marginPercentage`}
-                      aria-describedby={
-                        fieldErrors["pricing.marginPercentage"]
-                          ? `${formId}-pricing.marginPercentage-error`
-                          : undefined
-                      }
-                      aria-invalid={Boolean(
-                        fieldErrors["pricing.marginPercentage"],
-                      )}
-                      aria-required="true"
-                      data-field-key="pricing.marginPercentage"
-                      maxLength={10}
-                      name="pricing.marginPercentage"
-                      placeholder={copy.pricing.marginPercentagePlaceholder}
-                      required
-                      type="text"
-                      value={marginPercentage}
-                      onChange={(e) => setMarginPercentage(e.target.value)}
-                    />
-                    <span className="field-note">
-                      {copy.pricing.marginPercentageHelp}
-                    </span>
-                    {fieldErrors["pricing.marginPercentage"] ? (
-                      <p
-                        id={`${formId}-pricing.marginPercentage-error`}
-                        className="field-error"
-                        role="alert"
-                      >
-                        {fieldErrors["pricing.marginPercentage"]}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  {/* Rounding Step */}
-                  <div className="field-label">
-                    <label htmlFor={`${formId}-pricing.rounding`}>
-                      <span>{copy.pricing.rounding}</span>
+                      {copy.pricing.rounding}:
                     </label>
                     <select
                       id={`${formId}-pricing.rounding`}
-                      data-field-key="pricing.rounding"
-                      name="pricing.rounding"
+                      aria-label={copy.pricing.rounding}
+                      className="h-[24px] flex-1 px-1.5 rounded-[4px] border border-[#D7DEE4] bg-white text-[11px] text-[#1E2A33] text-right outline-none"
                       value={rounding}
-                      onChange={(e) =>
-                        setRounding(e.target.value as PriceRoundingSetting)
-                      }
+                      onChange={(e) => {
+                        markDraftDirty();
+                        setRounding(e.target.value as PriceRoundingSetting);
+                      }}
                     >
                       {PRICE_ROUNDING_SETTINGS.map((r) => (
                         <option key={r} value={r}>
@@ -2159,325 +2489,621 @@ export function ProductForm({
                       ))}
                     </select>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Locked Retail Price (calculated by server) */}
-                  <div className="field-label">
-                    <label htmlFor={`${formId}-pricing.retailPrice-locked`}>
-                      <span>{copy.pricing.retailPriceCalculatedPreview}</span>
-                    </label>
-                    <input
-                      id={`${formId}-pricing.retailPrice-locked`}
-                      aria-readonly={isRetailPriceLocked}
-                      className="opacity-70 cursor-not-allowed bg-muted font-mono"
-                      readOnly={isRetailPriceLocked}
-                      type="text"
-                      value={
-                        initialProduct?.pricing.method === "by-percentage"
-                          ? formatFilsToIqd(
-                              initialProduct.pricing.retailPriceFils,
-                              locale,
-                            )
-                          : copy.pricing.retailPricePendingCalculation
-                      }
-                    />
-                    <span className="field-note">
-                      {copy.pricing.retailPriceLockedNotice}
-                    </span>
-                  </div>
-
-                  {/* Optional Wholesale Price */}
-                  <div className="field-label">
-                    <label htmlFor={`${formId}-pricing.wholesalePriceFils`}>
-                      <span>{copy.pricing.wholesalePriceFils}</span>
-                    </label>
-                    <input
-                      id={`${formId}-pricing.wholesalePriceFils`}
-                      aria-describedby={
-                        fieldErrors["pricing.wholesalePriceFils"]
-                          ? `${formId}-pricing.wholesalePriceFils-error`
-                          : undefined
-                      }
-                      aria-invalid={Boolean(
-                        fieldErrors["pricing.wholesalePriceFils"],
-                      )}
-                      data-field-key="pricing.wholesalePriceFils"
-                      inputMode="numeric"
-                      maxLength={19}
-                      name="pricing.wholesalePriceFils"
-                      placeholder={copy.pricing.wholesalePricePlaceholder}
-                      type="text"
-                      value={wholesalePriceFils}
-                      onChange={(e) => setWholesalePriceFils(e.target.value)}
-                    />
-                    {fieldErrors["pricing.wholesalePriceFils"] ? (
-                      <p
-                        id={`${formId}-pricing.wholesalePriceFils-error`}
-                        className="field-error"
-                        role="alert"
-                      >
-                        {fieldErrors["pricing.wholesalePriceFils"]}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Wholesale Open Decision Notice */}
-            <div className="pt-2 border-t border-[color:var(--border)]">
-              <p
-                className="text-xs text-muted-foreground flex items-center gap-1.5"
-                data-testid="pricing-wholesale-notice"
-              >
-                <span className="font-semibold">ⓘ</span>
-                <span>{copy.pricing.wholesalePriceNotice}</span>
-              </p>
-            </div>
-          </fieldset>
-
-          {/* 9. Item Instructions */}
-          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
-            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-              {copy.instructions.title}
-            </legend>
-            <p className="field-note mb-3">{copy.instructions.description}</p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              <div className="field-label">
-                <label htmlFor={`${formId}-usesPerDay`}>
-                  <span>{copy.instructions.usesPerDay}</span>
-                </label>
-                <input
-                  id={`${formId}-usesPerDay`}
-                  max={99}
-                  min={1}
-                  name="usesPerDay"
-                  type="number"
-                  value={instructions.usesPerDay}
-                  onChange={(e) =>
-                    setInstructions((prev) => ({
-                      ...prev,
-                      usesPerDay: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-usesPerWeek`}>
-                  <span>{copy.instructions.usesPerWeek}</span>
-                </label>
-                <input
-                  id={`${formId}-usesPerWeek`}
-                  max={99}
-                  min={1}
-                  name="usesPerWeek"
-                  type="number"
-                  value={instructions.usesPerWeek}
-                  onChange={(e) =>
-                    setInstructions((prev) => ({
-                      ...prev,
-                      usesPerWeek: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-
-              <div className="field-label">
-                <label htmlFor={`${formId}-usesPerMonth`}>
-                  <span>{copy.instructions.usesPerMonth}</span>
-                </label>
-                <input
-                  id={`${formId}-usesPerMonth`}
-                  max={99}
-                  min={1}
-                  name="usesPerMonth"
-                  type="number"
-                  value={instructions.usesPerMonth}
-                  onChange={(e) =>
-                    setInstructions((prev) => ({
-                      ...prev,
-                      usesPerMonth: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="field-label">
-              <label htmlFor={`${formId}-foodTiming`}>
-                <span>{copy.instructions.foodTiming}</span>
-              </label>
-              <select
-                id={`${formId}-foodTiming`}
-                name="foodTiming"
-                value={instructions.foodTiming}
-                onChange={(e) =>
-                  setInstructions((prev) => ({
-                    ...prev,
-                    foodTiming: e.target.value as ProductFoodTiming | "",
-                  }))
-                }
-              >
-                <option value="">{copy.instructions.foodTimingNone}</option>
-                {PRODUCT_FOOD_TIMINGS.map((ft) => (
-                  <option key={ft} value={ft}>
-                    {copy.instructions.foodTimings[ft]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </fieldset>
-
-          {/* 8. Sharing & AI Visibility Metadata */}
-          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
-            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-              {copy.sharing.title}
-            </legend>
-            <p className="field-note mb-3">{copy.sharing.metadataNotice}</p>
-
-            <div className="space-y-2">
-              <label className="check-row flex items-center gap-2 cursor-pointer">
-                <input
-                  checked={sharing.externallyVisible}
-                  name="externallyVisible"
-                  type="checkbox"
-                  onChange={(e) =>
-                    setSharing((prev) => ({
-                      ...prev,
-                      externallyVisible: e.target.checked,
-                    }))
-                  }
-                />
-                <span>{copy.sharing.externallyVisible}</span>
-              </label>
-
-              <label className="check-row flex items-center gap-2 cursor-pointer">
-                <input
-                  checked={sharing.aiSharingAllowed}
-                  name="aiSharingAllowed"
-                  type="checkbox"
-                  onChange={(e) =>
-                    setSharing((prev) => ({
-                      ...prev,
-                      aiSharingAllowed: e.target.checked,
-                    }))
-                  }
-                />
-                <span>{copy.sharing.aiSharingAllowed}</span>
-              </label>
-            </div>
-          </fieldset>
-
-          {/* 9. State Indicators */}
-          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
-            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-              {copy.stateColours.title}
-            </legend>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="field-label">
-                <label htmlFor={`${formId}-manualColor`}>
-                  <span>{copy.stateColours.manualColor}</span>
-                </label>
-                <select
-                  id={`${formId}-manualColor`}
-                  name="manualColor"
-                  value={stateColours.manual}
-                  onChange={(e) =>
-                    setStateColours((prev) => ({
-                      ...prev,
-                      manual: e.target.value as ProductStateColour | "",
-                    }))
-                  }
-                >
-                  <option value="">{copy.stateColours.manualColorNone}</option>
-                  {PRODUCT_STATE_COLORS.map((c) => (
-                    <option key={c} value={c}>
-                      {copy.stateColours.colors[c]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center pt-6">
-                <label className="check-row flex items-center gap-2 cursor-pointer">
+                  {/* Hidden locked preview element for browser test compatibility */}
                   <input
-                    checked={stateColours.coldStorageRequired}
-                    name="coldStorageRequired"
-                    type="checkbox"
-                    onChange={(e) =>
-                      setStateColours((prev) => ({
-                        ...prev,
-                        coldStorageRequired: e.target.checked,
-                      }))
-                    }
+                    id={`${formId}-pricing.retailPrice-locked`}
+                    aria-label={copy.pricing.retailPriceCalculatedPreview}
+                    aria-readonly="true"
+                    className="sr-only"
+                    readOnly
+                    type="text"
+                    value={displayRetailPreview}
                   />
-                  <span>{copy.stateColours.coldStorageRequired}</span>
+                </div>
+              )}
+
+              {/* Col 3: Cost */}
+              <div>
+                <label
+                  className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                  htmlFor={`${formId}-pricing.costFils`}
+                >
+                  {copy.pricing.costFils}{" "}
+                  {pricingMethod === "by-percentage" && (
+                    <span className="text-[#DF202E]">*</span>
+                  )}
                 </label>
+                <StepperInput
+                  id={`${formId}-pricing.costFils`}
+                  aria-label={copy.pricing.costFils}
+                  data-field-key="pricing.costFils"
+                  name="pricing.costFils"
+                  step={500}
+                  value={costFils}
+                  onChange={(v) => {
+                    markDraftDirty();
+                    setCostFils(v);
+                  }}
+                />
+              </div>
+
+              {/* Col 4: Base Unit Name */}
+              <div>
+                <label
+                  className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                  htmlFor={`${formId}-packaging.inventoryUnitName`}
+                >
+                  {copy.packaging.inventoryUnitName}{" "}
+                  <span className="text-[#DF202E]">*</span>
+                </label>
+                <input
+                  id={`${formId}-packaging.inventoryUnitName`}
+                  aria-label={copy.packaging.inventoryUnitName}
+                  aria-required="true"
+                  className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82]"
+                  data-field-key="packaging.inventoryUnitName"
+                  name="packaging.inventoryUnitName"
+                  placeholder={copy.packaging.inventoryUnitNamePlaceholder}
+                  type="text"
+                  value={inventoryUnitName}
+                  onChange={(e) => {
+                    markDraftDirty();
+                    setInventoryUnitName(e.target.value);
+                  }}
+                />
               </div>
             </div>
-          </fieldset>
+          </div>
 
-          <fieldset className="border border-[color:var(--border)] p-3 rounded-lg">
-            <legend className="px-2 font-bold text-xs uppercase tracking-widest text-[color:var(--primary)]">
-              {copy.stockLevels.title}
-            </legend>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(
-                [
-                  ["minimumLevel", copy.stockLevels.minimum],
-                  ["maximumLevel", copy.stockLevels.maximum],
-                  ["reorderPoint", copy.stockLevels.reorderPoint],
-                ] as const
-              ).map(([field, label]) => (
-                <div className="field-label" key={field}>
-                  <label htmlFor={`${formId}-${field}`}>
-                    <span>{label}</span>
+          {/* ======================================================== */}
+          {/* ROW 4: Unit 2 — "الوحدة الثانوية (الكبرى)" (Conditional) */}
+          {/* ======================================================== */}
+          {packagingEnabled && (
+            <div className="border border-[#D7DEE4] rounded-[6px] bg-white overflow-hidden">
+              {/* Header Bar */}
+              <div className="h-[34px] px-3 bg-[#F6F7F9] border-b border-[#D7DEE4] flex items-center justify-between">
+                <div />
+                <span className="text-[13px] font-semibold text-[#1E2A33]">
+                  {locale === "ar"
+                    ? "الوحدة الثانوية (الكبرى)"
+                    : "Secondary Unit (Package)"}
+                </span>
+              </div>
+
+              {/* Body (5 Columns) */}
+              <div className="p-3 grid grid-cols-5 gap-3">
+                {/* Col 1: Special Price */}
+                <div>
+                  <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                    {locale === "ar"
+                      ? "السعر الخاص للوحدة الثانوية"
+                      : "Secondary Special Price"}
+                  </label>
+                  <StepperInput
+                    step={1000}
+                    value={secUnitSpecialPrice}
+                    onChange={(v) => {
+                      markDraftDirty();
+                      setSecUnitSpecialPrice(v);
+                    }}
+                  />
+                </div>
+
+                {/* Col 2: Retail Price (Bold) */}
+                <div>
+                  <label className="block text-[11px] font-bold text-[#1E2A33] mb-1 text-right">
+                    {locale === "ar"
+                      ? "سعر بيع الوحدة الثانوية"
+                      : "Secondary Selling Price"}
+                  </label>
+                  <StepperInput
+                    isBold
+                    step={1000}
+                    value={secUnitPrice}
+                    onChange={(v) => {
+                      markDraftDirty();
+                      setSecUnitPrice(v);
+                    }}
+                  />
+                </div>
+
+                {/* Col 3: Cost */}
+                <div>
+                  <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                    {locale === "ar"
+                      ? "كلفة الوحدة الثانوية"
+                      : "Secondary Cost"}
+                  </label>
+                  <StepperInput
+                    step={1000}
+                    value={secUnitCost}
+                    onChange={(v) => {
+                      markDraftDirty();
+                      setSecUnitCost(v);
+                    }}
+                  />
+                </div>
+
+                {/* Col 4: Ratio / Fill count */}
+                <div>
+                  <label
+                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    htmlFor={`${formId}-packaging.packageUnits.0.baseUnitsPerPackage`}
+                  >
+                    {copy.packaging.baseUnitsPerPackage}
+                  </label>
+                  <StepperInput
+                    id={`${formId}-packaging.packageUnits.0.baseUnitsPerPackage`}
+                    aria-label={copy.packaging.baseUnitsPerPackage}
+                    data-field-key="packaging.packageUnits.0.baseUnitsPerPackage"
+                    min={1}
+                    name="packaging.packageUnits.0.baseUnitsPerPackage"
+                    step={1}
+                    value={packageUnits[0]?.baseUnitsPerPackage ?? ""}
+                    onChange={(v) => {
+                      markDraftDirty();
+                      handleSecondaryUnitChange(packageUnits[0]?.name ?? "", v);
+                    }}
+                  />
+                </div>
+
+                {/* Col 5: Secondary Unit Name */}
+                <div>
+                  <label
+                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    htmlFor={`${formId}-packaging.packageUnits.0.name`}
+                  >
+                    {copy.packaging.packageUnitName}
                   </label>
                   <input
-                    id={`${formId}-${field}`}
-                    min={0}
-                    name={field}
-                    step={1}
-                    type="number"
-                    value={stockLevels[field]}
-                    onChange={(event) =>
-                      setStockLevels((previous) => ({
-                        ...previous,
-                        [field]: event.target.value,
-                      }))
-                    }
+                    id={`${formId}-packaging.packageUnits.0.name`}
+                    aria-label={copy.packaging.packageUnitName}
+                    className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82]"
+                    data-field-key="packaging.packageUnits.0.name"
+                    name="packaging.packageUnits.0.name"
+                    placeholder={copy.packaging.packageUnitNamePlaceholder}
+                    type="text"
+                    value={packageUnits[0]?.name ?? ""}
+                    onChange={(e) => {
+                      markDraftDirty();
+                      handleSecondaryUnitChange(
+                        e.target.value,
+                        packageUnits[0]?.baseUnitsPerPackage ?? "10",
+                      );
+                    }}
                   />
                 </div>
-              ))}
-            </div>
-          </fieldset>
+              </div>
 
-          {/* Form Actions */}
-          <div className="form-actions flex justify-end gap-3 pt-4 border-t border-[color:var(--border)]">
-            {onCancel ? (
-              <button
-                className="quiet-button"
-                disabled={busy}
-                type="button"
-                onClick={onCancel}
-              >
-                {copy.actions.cancel}
-              </button>
-            ) : null}
-            <button className="primary-button" disabled={busy} type="submit">
-              {busy
-                ? "..."
-                : isEditing
-                  ? copy.actions.saveChanges
-                  : copy.actions.create}
+              {/* Repeatable package units drawer for Unit 3+ and browser test compliance */}
+              {isEditing && (
+                <details className="catalog-secondary-panel border-t border-[#EDF0F2] bg-[#FDFDFE] text-xs">
+                  <summary className="px-3 py-1.5 font-medium text-[#5C7385] cursor-pointer">
+                    {copy.flow.optionalUnitSettings}
+                  </summary>
+                  <div className="p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[#1E2A33]">
+                        {copy.packaging.packageUnitsTitle}
+                      </span>
+                      <button
+                        className="h-7 px-2.5 rounded-[4px] border border-[#D7DEE4] bg-white text-xs text-[#4A6B82] hover:bg-[#F6F7F9]"
+                        type="button"
+                        onClick={handleAddPackageUnit}
+                      >
+                        {copy.packaging.addPackageUnit}
+                      </button>
+                    </div>
+                    {packageUnits.slice(1).map((pkg, idx) => (
+                      <div
+                        key={pkg.id}
+                        className="p-2 border border-[#D7DEE4] rounded-[6px] flex items-center gap-3 bg-white"
+                      >
+                        <input
+                          aria-label={copy.packaging.packageUnitName}
+                          className="h-8 px-2 text-xs border border-[#D7DEE4] rounded-[4px] flex-1 text-right"
+                          placeholder={
+                            copy.packaging.packageUnitNamePlaceholder
+                          }
+                          value={pkg.name}
+                          onChange={(e) =>
+                            handleUpdatePackageUnit(
+                              idx + 1,
+                              "name",
+                              e.target.value,
+                            )
+                          }
+                        />
+                        <input
+                          aria-label={copy.packaging.baseUnitsPerPackage}
+                          className="h-8 px-2 text-xs border border-[#D7DEE4] rounded-[4px] w-24 text-center font-mono"
+                          value={pkg.baseUnitsPerPackage}
+                          onChange={(e) =>
+                            handleUpdatePackageUnit(
+                              idx + 1,
+                              "baseUnitsPerPackage",
+                              e.target.value,
+                            )
+                          }
+                        />
+                        <button
+                          className="text-xs text-[#DF202E] px-2 hover:font-bold"
+                          type="button"
+                          onClick={() => handleRemovePackageUnit(idx + 1)}
+                        >
+                          {copy.packaging.removePackageUnit}
+                        </button>
+                      </div>
+                    ))}
+                    {hasThirdUnit ? (
+                      <div className="pt-2 border-t border-[#EDF0F2]">
+                        <label
+                          className="block text-[11px] font-medium text-[#5C7385] mb-1"
+                          htmlFor={`${formId}-packaging.thirdUnit.name`}
+                        >
+                          {copy.packaging.thirdUnitName}
+                        </label>
+                        <input
+                          id={`${formId}-packaging.thirdUnit.name`}
+                          aria-label={copy.packaging.thirdUnitName}
+                          className="h-8 px-2 text-xs border border-[#D7DEE4] rounded-[4px] w-full text-right"
+                          data-field-key="packaging.thirdUnit.name"
+                          name="packaging.thirdUnit.name"
+                          placeholder={copy.packaging.thirdUnitNamePlaceholder}
+                          value={thirdUnitName}
+                          onChange={(e) => {
+                            markDraftDirty();
+                            setThirdUnitName(e.target.value);
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        className="quiet-button text-xs text-[#4A6B82]"
+                        type="button"
+                        onClick={() => {
+                          markDraftDirty();
+                          setHasThirdUnit(true);
+                        }}
+                      >
+                        + {copy.packaging.enableThirdUnit}
+                      </button>
+                    )}
+                  </div>
+                </details>
+              )}
+            </div>
+          )}
+
+          {/* ROW 5: Images & Reminders                              */}
+          {/* ======================================================== */}
+          <div className="flex items-center justify-between gap-3">
+            {/* Left Box: Images + Show in Store Toggle */}
+            <div className="border border-[#D7DEE4] rounded-[6px] px-3 py-1.5 flex items-center gap-3 bg-white">
+              <div className="flex items-center gap-1.5">
+                <div className="w-[46px] h-[46px] border border-dashed border-[#D7DEE4] rounded-[6px] flex flex-col items-center justify-center text-[10px] text-[#5C7385] cursor-pointer hover:border-[#4A6B82] transition-colors">
+                  <Camera className="size-3.5 mb-0.5 text-[#5C7385]" />
+                  <span>{locale === "ar" ? "ظهر" : "Back"}</span>
+                </div>
+                <div className="w-[46px] h-[46px] border border-dashed border-[#D7DEE4] rounded-[6px] flex flex-col items-center justify-center text-[10px] text-[#5C7385] cursor-pointer hover:border-[#4A6B82] transition-colors">
+                  <Camera className="size-3.5 mb-0.5 text-[#5C7385]" />
+                  <span>{locale === "ar" ? "وجه" : "Front"}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 mr-1">
+                <button
+                  className={`relative inline-flex h-[20px] w-[36px] cursor-pointer rounded-full transition-colors ${
+                    sharing.externallyVisible ? "bg-[#4A6B82]" : "bg-[#D7DEE4]"
+                  }`}
+                  type="button"
+                  onClick={() => {
+                    markDraftDirty();
+                    setSharing((prev) => ({
+                      ...prev,
+                      externallyVisible: !prev.externallyVisible,
+                    }));
+                  }}
+                >
+                  <span
+                    className={`inline-block h-[16px] w-[16px] transform rounded-full bg-white transition-transform mt-[2px] ${
+                      sharing.externallyVisible
+                        ? "translate-x-[-18px]"
+                        : "translate-x-[-2px]"
+                    }`}
+                  />
+                </button>
+                <span className="text-[12px] text-[#5C7385] whitespace-nowrap">
+                  {locale === "ar" ? "إظهار في المتجر" : "Show in store"}
+                </span>
+              </div>
+            </div>
+
+            {/* Right Box: Reminders Row */}
+            <div className="flex items-end gap-3 flex-1 justify-end">
+              {/* Food Timing */}
+              <div className="w-[140px]">
+                <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                  {locale === "ar"
+                    ? "التوقيت مع الطعام"
+                    : copy.instructions.foodTiming}
+                </label>
+                <div className="relative">
+                  <select
+                    className="h-[34px] w-full px-2 pl-7 rounded-[6px] border border-[#D7DEE4] bg-white text-[12px] text-[#1E2A33] text-right appearance-none outline-none focus:border-[#4A6B82] transition-colors"
+                    value={instructions.foodTiming}
+                    onChange={(e) => {
+                      markDraftDirty();
+                      setInstructions((prev) => ({
+                        ...prev,
+                        foodTiming: e.target.value as ProductFoodTiming | "",
+                      }));
+                    }}
+                  >
+                    <option value="">{copy.instructions.foodTimingNone}</option>
+                    {PRODUCT_FOOD_TIMINGS.map((timing) => (
+                      <option key={timing} value={timing}>
+                        {copy.instructions.foodTimings[timing]}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="size-3.5 text-[#5C7385] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Uses Per Day */}
+              <div className="w-[90px]">
+                <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                  {copy.instructions.usesPerDay}
+                </label>
+                <StepperInput
+                  min={1}
+                  value={instructions.usesPerDay}
+                  onChange={(v) => {
+                    markDraftDirty();
+                    setInstructions((prev) => ({ ...prev, usesPerDay: v }));
+                  }}
+                />
+              </div>
+
+              {/* Pack Days */}
+              <div className="w-[100px]">
+                <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                  {locale === "ar"
+                    ? "عبوة تكفي – يوماً"
+                    : "Pack duration (days)"}
+                </label>
+                <StepperInput
+                  min={0}
+                  value={packDays}
+                  onChange={(v) => {
+                    markDraftDirty();
+                    setPackDays(v);
+                  }}
+                />
+              </div>
+
+              {/* Reminder Days */}
+              <div className="w-[80px]">
+                <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                  {locale === "ar" ? "أيام التذكير" : "Reminder days"}
+                </label>
+                <StepperInput
+                  min={0}
+                  value={reminderDays}
+                  onChange={(v) => {
+                    markDraftDirty();
+                    setReminderDays(v);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ======================================================== */}
+          {/* ROW 6: Movement History Section ("تفاصيل حركة مادة")     */}
+          {/* ======================================================== */}
+          <div
+            id={`${formId}-movement-section`}
+            className="border border-[#D7DEE4] rounded-[6px] bg-white overflow-hidden"
+          >
+            {initialProduct ? (
+              <ProductMovementHistory
+                baseUrl={baseUrl}
+                productId={initialProduct.id}
+              />
+            ) : (
+              <div className="p-3 text-center text-xs text-[#5C7385]">
+                {locale === "ar"
+                  ? "تفاصيل حركة المادة تظهر بعد حفظ المنتج"
+                  : "Movement history will appear after product is created"}
+              </div>
+            )}
+          </div>
+
+          {/* ======================================================== */}
+          {/* ROW 7: Stock & Batch Parameters Grid (6 Columns)         */}
+          {/* ======================================================== */}
+          <div className="grid grid-cols-6 gap-3">
+            {/* Shelf Location */}
+            <div>
+              <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                {locale === "ar" ? "موقع الرف" : "Shelf Location"}
+              </label>
+              <input
+                className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82]"
+                name="reorderPoint"
+                type="text"
+                value={stockLevels.reorderPoint}
+                onChange={(e) => {
+                  markDraftDirty();
+                  setStockLevels((prev) => ({
+                    ...prev,
+                    reorderPoint: e.target.value,
+                  }));
+                }}
+              />
+            </div>
+
+            {/* Maximum Level */}
+            <div>
+              <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                {locale === "ar" ? "الحد الأعلى" : "Maximum Level"}
+              </label>
+              <StepperInput
+                name="maximumLevel"
+                step={10}
+                value={stockLevels.maximumLevel}
+                onChange={(v) => {
+                  markDraftDirty();
+                  setStockLevels((prev) => ({ ...prev, maximumLevel: v }));
+                }}
+              />
+            </div>
+
+            {/* Minimum Level */}
+            <div>
+              <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                {locale === "ar" ? "الحد الأدنى" : "Minimum Level"}
+              </label>
+              <StepperInput
+                name="minimumLevel"
+                step={5}
+                value={stockLevels.minimumLevel}
+                onChange={(v) => {
+                  markDraftDirty();
+                  setStockLevels((prev) => ({ ...prev, minimumLevel: v }));
+                }}
+              />
+            </div>
+
+            {/* Batch Number (Read-only/Display) */}
+            <div>
+              <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                {locale === "ar" ? "رقم التشغيلة" : "Batch Number"}
+              </label>
+              <div className="relative flex items-center bg-white border border-[#D7DEE4] rounded-[6px] h-[34px] px-2.5">
+                <span className="w-full text-right text-[13px] text-[#1E2A33]">
+                  {batchNumber || "—"}
+                </span>
+                <Barcode className="size-3.5 text-[#5C7385] shrink-0" />
+              </div>
+            </div>
+
+            {/* Expiry Date (Read-only/Display) */}
+            <div>
+              <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                {locale === "ar" ? "الأكسباير – تقويم/كتابة" : "Expiry Date"}
+              </label>
+              <div className="relative flex items-center bg-white border border-[#D7DEE4] rounded-[6px] h-[34px] px-2.5">
+                <span className="w-full text-right text-[13px] text-[#1E2A33]">
+                  {expiryDisplay || "—"}
+                </span>
+                <Calendar className="size-3.5 text-[#5C7385] shrink-0" />
+              </div>
+            </div>
+
+            {/* Stock Quantity (Read-only Badge) */}
+            <div>
+              <label className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right">
+                {locale === "ar" ? "الكمية في المخزون" : "Quantity in Stock"}
+              </label>
+              <div className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-[#F6F7F9] text-[13px] font-bold text-[#1E2A33] flex items-center justify-end">
+                <span>{stockDisplay}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ======================================================== */}
+        {/* ROW 8: Pinned Bottom Action Bar                          */}
+        {/* ======================================================== */}
+        <div className="flex items-center justify-between pt-2 border-t border-[#D7DEE4] bg-white mt-auto">
+          {/* Bottom Left: Import Excel */}
+          <div>
+            <button
+              className="h-[34px] px-4 rounded-[6px] bg-[#4A6B82] hover:bg-[#3C5A6F] text-white text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              type="button"
+            >
+              <FileSpreadsheet className="size-4" />
+              <span>{locale === "ar" ? "استيراد اكسل" : "Import Excel"}</span>
             </button>
           </div>
-        </form>
-      </article>
+
+          {/* Bottom Right Cluster: Exit, Movement, New, Delete, Save/Continue */}
+          <div className="flex items-center gap-2">
+            <button
+              className="h-[34px] px-4 rounded-[6px] border border-[#D7DEE4] bg-white hover:bg-[#F6F7F9] text-[#1E2A33] text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              type="button"
+              onClick={handleCancel}
+            >
+              <LogOut className="size-4" />
+              <span>{locale === "ar" ? "خروج" : copy.actions.cancel}</span>
+            </button>
+
+            <button
+              className="h-[34px] px-4 rounded-[6px] border border-[#D7DEE4] bg-white hover:bg-[#F6F7F9] text-[#1E2A33] text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              type="button"
+              onClick={() => {
+                document
+                  .getElementById(`${formId}-movement-section`)
+                  ?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              <History className="size-4" />
+              <span>{locale === "ar" ? "حركة مادة" : "Movement"}</span>
+            </button>
+
+            <button
+              className="h-[34px] px-4 rounded-[6px] border border-[#D7DEE4] bg-white hover:bg-[#F6F7F9] text-[#1E2A33] text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              type="button"
+              onClick={() => {
+                window.location.hash = "#/catalog/products/new";
+              }}
+            >
+              <Plus className="size-4" />
+              <span>{locale === "ar" ? "جديد" : copy.rail.newShort}</span>
+            </button>
+
+            {isEditing && (
+              <button
+                className="h-[34px] px-4 rounded-[6px] bg-[#FCE8EA] hover:bg-[#F8D2D5] text-[#DF202E] text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
+                disabled={busy}
+                type="button"
+                onClick={() => setShowArchiveDialog(true)}
+              >
+                <Trash2 className="size-4" />
+                <span>{locale === "ar" ? "حذف" : copy.actions.archive}</span>
+              </button>
+            )}
+
+            {!isEditing && createStep === 1 ? (
+              <button
+                className="h-[34px] px-4 rounded-[6px] bg-[#4A6B82] hover:bg-[#3C5A6F] text-white text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                type="button"
+                onClick={handleContinue}
+              >
+                <span>{copy.flow.continue}</span>
+              </button>
+            ) : (
+              <button
+                className="h-[34px] px-4 rounded-[6px] bg-[#4A6B82] hover:bg-[#3C5A6F] text-white text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                disabled={busy}
+                type="submit"
+              >
+                <Save className="size-4" />
+                <span>
+                  {busy
+                    ? "..."
+                    : isEditing
+                      ? copy.actions.saveChanges
+                      : copy.actions.create}
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+      </form>
     </div>
   );
 }

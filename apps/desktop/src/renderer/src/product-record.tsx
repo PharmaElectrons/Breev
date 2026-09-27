@@ -15,6 +15,8 @@ import {
   suggestProductBarcode,
 } from "./catalog-api";
 import { catalogMessages } from "./catalog-messages";
+import { ProductMovementHistory } from "./product-movement-history";
+import { useIdentityState } from "./identity-state-provider";
 import { usePreferences } from "./preferences-provider";
 
 function formatBigIntWithCommas(n: bigint): string {
@@ -77,6 +79,7 @@ export function ProductRecord({
   product,
 }: ProductRecordProps): React.JSX.Element {
   const { locale } = usePreferences();
+  const { state: identityState } = useIdentityState();
   const copy = catalogMessages[locale];
   const mergeInputId = useId();
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -96,7 +99,10 @@ export function ProductRecord({
 
   const isArchived = product.status === "archived";
   const isMerged = product.status === "merged";
-  const canModify = !isArchived && !isMerged;
+  const canManageCatalog =
+    identityState?.state === "authenticated" &&
+    identityState.allowedPermissions.includes("catalog.item.manage");
+  const canModify = canManageCatalog && !isArchived && !isMerged;
 
   const barcodeError = (failure: unknown): string =>
     failure instanceof CatalogApiDenied
@@ -228,7 +234,10 @@ export function ProductRecord({
   };
 
   return (
-    <div className="identity-region" aria-label={copy.record.title}>
+    <div
+      className="identity-region catalog-panel"
+      aria-label={copy.record.title}
+    >
       {/* Error Banner */}
       {errorBanner !== null ? (
         <div aria-live="polite" className="denial-alert mb-4" role="alert">
@@ -250,7 +259,7 @@ export function ProductRecord({
         </div>
       ) : null}
 
-      <article className="identity-card p-5 max-w-4xl w-full mx-auto space-y-5 animate-reveal">
+      <article className="identity-card catalog-record-card p-5 w-full mx-auto animate-reveal">
         {/* Record Header */}
         <header className="border-b border-[color:var(--border)] pb-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -280,44 +289,6 @@ export function ProductRecord({
                 >
                   {product.arabicSearchName}
                 </p>
-              ) : null}
-            </div>
-
-            {/* Action buttons (No Delete action!) */}
-            <div className="flex flex-wrap gap-2">
-              {onBack ? (
-                <button className="quiet-button" type="button" onClick={onBack}>
-                  {copy.list.title}
-                </button>
-              ) : null}
-
-              {canModify && onEdit ? (
-                <button
-                  className="quiet-button"
-                  type="button"
-                  onClick={() => onEdit(product)}
-                >
-                  {copy.actions.edit}
-                </button>
-              ) : null}
-
-              {canModify ? (
-                <>
-                  <button
-                    className="quiet-button"
-                    type="button"
-                    onClick={() => setShowArchiveDialog(true)}
-                  >
-                    {copy.actions.archive}
-                  </button>
-                  <button
-                    className="quiet-button"
-                    type="button"
-                    onClick={() => setShowMergeDialog(true)}
-                  >
-                    {copy.actions.merge}
-                  </button>
-                </>
               ) : null}
             </div>
           </div>
@@ -972,6 +943,45 @@ export function ProductRecord({
             </ul>
           </section>
         </div>
+
+        <ProductMovementHistory baseUrl={baseUrl} productId={product.id} />
+
+        <footer className="catalog-card-footer catalog-record-footer">
+          {onBack ? (
+            <button className="quiet-button" type="button" onClick={onBack}>
+              {copy.list.title}
+            </button>
+          ) : null}
+
+          {canModify && onEdit ? (
+            <button
+              className="quiet-button"
+              type="button"
+              onClick={() => onEdit(product)}
+            >
+              {copy.actions.edit}
+            </button>
+          ) : null}
+
+          {canModify ? (
+            <>
+              <button
+                className="quiet-button"
+                type="button"
+                onClick={() => setShowArchiveDialog(true)}
+              >
+                {copy.actions.archive}
+              </button>
+              <button
+                className="quiet-button"
+                type="button"
+                onClick={() => setShowMergeDialog(true)}
+              >
+                {copy.actions.merge}
+              </button>
+            </>
+          ) : null}
+        </footer>
       </article>
 
       {/* Archive Confirmation Dialog */}

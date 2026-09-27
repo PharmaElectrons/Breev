@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ListChecks } from "lucide-react";
 
 import { catalogMessages, type CatalogCopy } from "./catalog-messages";
 import { useCommittedFocus } from "./committed-focus";
@@ -11,6 +12,7 @@ import {
   searchProducts,
 } from "./catalog-api";
 import { usePreferences } from "./preferences-provider";
+import { useIdentityState } from "./identity-state-provider";
 import { ProductForm } from "./product-form";
 import { ProductRecord } from "./product-record";
 import type {
@@ -38,7 +40,11 @@ export function CatalogRouteView({
   readonly hash: string;
 }): React.JSX.Element {
   const { locale } = usePreferences();
+  const { state: identityState } = useIdentityState();
   const copy = catalogMessages[locale];
+  const canManageCatalog =
+    identityState?.state === "authenticated" &&
+    identityState.allowedPermissions.includes("catalog.item.manage");
 
   const [product, setProduct] = useState<Product | null>(null);
   const [productList, setProductList] = useState<Product[]>([]);
@@ -134,6 +140,7 @@ export function CatalogRouteView({
       <ProductRail
         activeProductId={productId}
         baseUrl={baseUrl}
+        canManageCatalog={canManageCatalog}
         copy={copy}
         error={listError}
         loading={listLoading}
@@ -146,6 +153,7 @@ export function CatalogRouteView({
       <div className="catalog-canvas">
         <CatalogCanvas
           baseUrl={baseUrl}
+          canManageCatalog={canManageCatalog}
           copy={copy}
           error={error}
           isEdit={isEdit}
@@ -166,6 +174,7 @@ export function CatalogRouteView({
 
 function CatalogCanvas({
   baseUrl,
+  canManageCatalog,
   copy,
   error,
   isEdit,
@@ -177,6 +186,7 @@ function CatalogCanvas({
   product,
 }: {
   readonly baseUrl: string;
+  readonly canManageCatalog: boolean;
   readonly copy: CatalogCopy;
   readonly error: string | null;
   readonly isEdit: boolean;
@@ -187,7 +197,16 @@ function CatalogCanvas({
   readonly onProductCreated: () => void;
   readonly product: Product | null;
 }): React.JSX.Element {
+  const [formReset, setFormReset] = useState(0);
+
   if (isNew) {
+    if (!canManageCatalog) {
+      return (
+        <div className="catalog-canvas-empty" role="alert">
+          <p>{copy.permissions.catalogManageRequired}</p>
+        </div>
+      );
+    }
     return (
       <ProductForm
         baseUrl={baseUrl}
@@ -225,17 +244,32 @@ function CatalogCanvas({
         </div>
       );
     }
-    if (isEdit) {
+    if (
+      (isEdit || isRecord) &&
+      product.status === "active" &&
+      canManageCatalog
+    ) {
       return (
         <ProductForm
           baseUrl={baseUrl}
+          key={`${product.id}:${isEdit ? "edit" : "record"}:${formReset}`}
           initialProduct={product}
           onCancel={() => {
-            window.location.hash = `#/catalog/products/${product.id}`;
+            if (isEdit) {
+              window.location.hash = `#/catalog/products/${product.id}`;
+            } else {
+              setFormReset((revision) => revision + 1);
+            }
           }}
           onSuccess={(updated) => {
             onProductChanged(updated);
             window.location.hash = `#/catalog/products/${updated.id}`;
+          }}
+          onProductChanged={onProductChanged}
+          onReload={async () => {
+            const latest = await requestProduct(baseUrl, product.id);
+            onProductChanged(latest);
+            setFormReset((revision) => revision + 1);
           }}
         />
       );
@@ -248,10 +282,14 @@ function CatalogCanvas({
         onBack={() => {
           window.location.hash = "#/catalog/products";
         }}
-        onEdit={(next) => {
-          onProductChanged(next);
-          window.location.hash = `#/catalog/products/${next.id}/edit`;
-        }}
+        {...(canManageCatalog
+          ? {
+              onEdit: (next: Product) => {
+                onProductChanged(next);
+                window.location.hash = `#/catalog/products/${next.id}/edit`;
+              },
+            }
+          : {})}
         onMergeSuccess={onProductChanged}
         onProductChanged={onProductChanged}
       />
@@ -261,9 +299,11 @@ function CatalogCanvas({
   return (
     <div className="catalog-canvas-empty animate-reveal">
       <p>{copy.rail.selectPrompt}</p>
-      <a className="primary-button" href="#/catalog/products/new">
-        {copy.list.newProduct}
-      </a>
+      {canManageCatalog ? (
+        <a className="primary-button" href="#/catalog/products/new">
+          {copy.list.newProduct}
+        </a>
+      ) : null}
     </div>
   );
 }
@@ -283,6 +323,7 @@ function CatalogCanvas({
 function ProductRail({
   activeProductId,
   baseUrl,
+  canManageCatalog,
   copy,
   error,
   loading,
@@ -291,6 +332,7 @@ function ProductRail({
 }: {
   readonly activeProductId: string | null;
   readonly baseUrl: string;
+  readonly canManageCatalog: boolean;
   readonly copy: CatalogCopy;
   readonly error: string | null;
   readonly loading: boolean;
@@ -524,15 +566,17 @@ function ProductRail({
             type="button"
             onClick={() => void openMatching()}
           >
-            ≋
+            <ListChecks aria-hidden="true" size={16} strokeWidth={1.8} />
           </button>
-          <a
-            aria-label={copy.list.newProduct}
-            className="primary-button catalog-rail-new"
-            href="#/catalog/products/new"
-          >
-            {copy.rail.newShort}
-          </a>
+          {canManageCatalog ? (
+            <a
+              aria-label={copy.list.newProduct}
+              className="primary-button catalog-rail-new"
+              href="#/catalog/products/new"
+            >
+              {copy.rail.newShort}
+            </a>
+          ) : null}
         </div>
         <input
           ref={inputRef}
@@ -600,6 +644,11 @@ function ProductRail({
                 <span className="catalog-rail-name">
                   {candidate.displayName}
                 </span>
+                {candidate.scientificName ? (
+                  <span className="catalog-rail-scientific" dir="auto">
+                    {candidate.scientificName}
+                  </span>
+                ) : null}
                 {candidate.arabicSearchName === null ? null : (
                   <span className="catalog-rail-arabic" dir="rtl">
                     {candidate.arabicSearchName}
