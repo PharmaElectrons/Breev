@@ -1042,25 +1042,27 @@ export function PostedPurchaseReview({
           </div>
         </section>
       )}
-      <footer className="posted-dialog-footer">
-        <button
-          type="button"
-          className="quiet-button"
-          onClick={() => {
-            if (correction === "adjustment" && adjustmentDraftActive) {
-              setAdjustmentLeaveRequest((value) => value + 1);
-            } else if (correction === "return" && returnDraftActive) {
-              setReturnLeaveRequest((value) => value + 1);
-            } else if (inline) {
-              handleDialogClose();
-            } else {
-              dialogRef.current?.close();
-            }
-          }}
-        >
-          {copy.close}
-        </button>
-      </footer>
+      {inline && (detail !== null || correction !== null) ? null : (
+        <footer className="posted-dialog-footer">
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => {
+              if (correction === "adjustment" && adjustmentDraftActive) {
+                setAdjustmentLeaveRequest((value) => value + 1);
+              } else if (correction === "return" && returnDraftActive) {
+                setReturnLeaveRequest((value) => value + 1);
+              } else if (inline) {
+                handleDialogClose();
+              } else {
+                dialogRef.current?.close();
+              }
+            }}
+          >
+            {copy.close}
+          </button>
+        </footer>
+      )}
     </>
   );
 
