@@ -1,3 +1,5 @@
+import type { PurchaseAdjustmentReason } from "@breev/contracts/local-rest";
+
 export const purchasingMessages = {
   en: {
     item: "Item name",
@@ -367,6 +369,18 @@ export const purchasingMessages = {
     itemCard: "Item card",
     printBarcode: "Print barcode",
     deleteItem: "Delete",
+    reasonQuantityError: "Quantity error",
+    reasonPriceError: "Price error",
+    reasonInvoiceNumberError: "Invoice number error",
+    reasonSupplierError: "Supplier error",
+    reasonOther: "Other",
+    denialAdjustmentEmpty: "No changes were made to the invoice.",
+    denialAdjustmentBatchConflict: "Conflict in batch or expiry data.",
+    denialReturnEmpty: "At least one return quantity must be specified.",
+    denialReturnQuantityExceeded:
+      "Return quantity exceeds available quantity on the invoice.",
+    denialReturnOverEligible:
+      "Return quantity exceeds eligible quantity (return-over-eligible).",
   },
   ar: {
     item: "اسم المادة",
@@ -729,5 +743,59 @@ export const purchasingMessages = {
     itemCard: "بطاقة المادة",
     printBarcode: "طباعة باركود",
     deleteItem: "حذف",
+    reasonQuantityError: "خطأ في الكمية",
+    reasonPriceError: "خطأ في السعر",
+    reasonInvoiceNumberError: "خطأ في رقم الفاتورة",
+    reasonSupplierError: "خطأ في المورد",
+    reasonOther: "أخرى",
+    denialAdjustmentEmpty: "لم يتم إجراء أي تعديل على الفاتورة",
+    denialAdjustmentBatchConflict: "تعارض في بيانات الوجبة أو تاريخ الصلاحية",
+    denialReturnEmpty: "يجب تحديد كمية راجعة واحدة على الأقل",
+    denialReturnQuantityExceeded:
+      "الكمية المرتجعة تتجاوز الكمية المتاحة في الفاتورة",
+    denialReturnOverEligible:
+      "الكمية المرتجعة تتجاوز الكمية المتاحة في الفاتورة",
   },
 } as const;
+
+export function getAdjustmentReasonLabel(
+  reason: PurchaseAdjustmentReason | "",
+  locale: "ar" | "en",
+): string {
+  const copy = purchasingMessages[locale];
+  switch (reason) {
+    case "quantity error":
+      return copy.reasonQuantityError;
+    case "price error":
+      return copy.reasonPriceError;
+    case "invoice-number error":
+      return copy.reasonInvoiceNumberError;
+    case "supplier error":
+      return copy.reasonSupplierError;
+    case "other":
+      return copy.reasonOther;
+    default:
+      return reason;
+  }
+}
+
+export function getPurchasingDenialMessage(
+  code: string,
+  locale: "ar" | "en",
+): string {
+  const copy = purchasingMessages[locale];
+  switch (code) {
+    case "adjustment-empty":
+      return copy.denialAdjustmentEmpty;
+    case "adjustment-batch-conflict":
+      return copy.denialAdjustmentBatchConflict;
+    case "return-empty":
+      return copy.denialReturnEmpty;
+    case "return-quantity-exceeded":
+      return copy.denialReturnQuantityExceeded;
+    case "return-over-eligible":
+      return copy.denialReturnOverEligible;
+    default:
+      return code;
+  }
+}
