@@ -7235,6 +7235,465 @@ a:focus-visible,
   cursor: pointer;
 }
 
+/* ==========================================================================
+   Purchasing: Linked Adjustments Card (Screenshots 3 & 6)
+   ========================================================================== */
+
+.linked-adjustments-card {
+  display: grid;
+  gap: 0.5rem;
+  margin-block-end: 1rem;
+  padding: 0.85rem 1.15rem;
+  background: color-mix(in srgb, var(--warning) 7%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px var(--shadow);
+}
+
+.linked-adjustments-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.linked-adjustments-icon {
+  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.linked-adjustments-table-wrap {
+  min-block-size: 0;
+  overflow-x: auto;
+}
+
+.linked-adjustments-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  text-align: start;
+}
+
+.linked-adjustments-table th {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  border-block-end: 1px solid
+    color-mix(in srgb, var(--warning) 25%, transparent);
+  white-space: nowrap;
+}
+
+.linked-adjustments-table td {
+  padding: 0.55rem 0.65rem;
+  border-block-end: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+
+.linked-adjustments-table tbody tr:last-child td {
+  border-block-end: none;
+}
+
+.purchase-open-adjustment-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.85rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.purchase-open-adjustment-pill:hover {
+  background: var(--primary);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px var(--shadow);
+}
+
+.purchase-print-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.15rem;
+  padding: 0.4rem 0.65rem;
+  font-size: 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--control-border);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.purchase-print-icon-button:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.05));
+  border-color: var(--border);
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   Purchasing: In-Place Adjustment Draft Mode (Screenshots 4 & 5)
+   ========================================================================== */
+
+.adjustment-draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  padding: 0.65rem 1rem;
+  background: var(--card);
+  border-block-end: 1px solid var(--border);
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+
+.adjustment-banner-badge-orange {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--warning);
+  font-size: 0.825rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.adjustment-banner-badge-blue {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--info, #0284c7) 12%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--info, #0284c7) 45%, transparent);
+  color: var(--info, #0284c7);
+  font-size: 0.825rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.adjustment-banner-badge-blue:hover {
+  background: color-mix(in srgb, var(--info, #0284c7) 22%, var(--card));
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px var(--shadow);
+}
+
+.adjustment-banner-reason-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-inline-size: 11rem;
+  max-inline-size: 20rem;
+}
+
+.adjustment-banner-reason-input,
+.adjustment-banner-reason-select {
+  inline-size: 100%;
+  min-block-size: 2.15rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--control-border);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.825rem;
+  font-weight: 500;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.adjustment-banner-reason-input:focus,
+.adjustment-banner-reason-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.adjustment-banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+}
+
+.adjustment-subtitle-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  margin-block: 0.5rem;
+  background: color-mix(in srgb, var(--muted) 45%, var(--card));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.purchase-item-name-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  color: var(--primary);
+  font-size: 0.775rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.purchase-save-draft-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-weight: 700;
+  min-block-size: 2.25rem;
+  padding: 0.4rem 1.25rem;
+  border-radius: var(--radius);
+}
+
+/* ==========================================================================
+   Purchasing: Delta Summary Modal (Screenshot 1)
+   ========================================================================== */
+
+.delta-summary-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  overflow-y: auto;
+}
+
+.delta-summary-dialog {
+  inline-size: min(100%, 54rem);
+  max-block-size: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.3),
+    0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  animation: deltaSummaryEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes deltaSummaryEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.delta-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.25rem;
+  border-block-end: 1px solid var(--border);
+  background: color-mix(in srgb, var(--warning) 6%, var(--card));
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.delta-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.delta-summary-icon {
+  font-size: 1.15rem;
+  color: var(--warning);
+}
+
+.delta-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--warning);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.delta-summary-table-wrap {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
+  padding: 0.75rem 1.25rem;
+}
+
+.delta-summary-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 0.825rem;
+  text-align: start;
+}
+
+.delta-summary-table th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-block-end: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.delta-summary-table td {
+  padding: 0.65rem 0.75rem;
+  border-block-end: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+
+.delta-summary-table tbody tr:last-child td {
+  border-block-end: none;
+}
+
+.delta-positive {
+  color: var(--ready, #10b981);
+  font-weight: 700;
+}
+
+.delta-negative {
+  color: var(--danger, #ef4444);
+  font-weight: 700;
+}
+
+.delta-summary-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  border-block-start: 1px solid var(--border);
+  background: var(--card);
+  flex-wrap: wrap;
+}
+
+.delta-summary-net {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+.delta-summary-grand-total {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.delta-summary-reason-field {
+  flex: 1 1 12rem;
+  min-inline-size: 10rem;
+}
+
+.delta-summary-reason-input {
+  inline-size: 100%;
+  min-block-size: 2.15rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.825rem;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.delta-summary-reason-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.delta-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Purchasing: Posted Register Badges (Screenshot 2)
+   ========================================================================== */
+
+.purchase-badge-type-adjustment {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.65rem;
+  border-radius: 9999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  font-size: 0.725rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.purchase-badge-type-purchase {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.65rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--muted) 70%, var(--card));
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  font-size: 0.725rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 @media (max-width: 72rem) {
   .posted-purchase-filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));

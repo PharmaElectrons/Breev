@@ -836,9 +836,24 @@ export function PostedPurchaseReview({
                           <bdi>{index + 1}</bdi>
                         </th>
                         <td>
-                          <span className="purchase-badge purchase-badge-type-purchase">
-                            {copy.typePurchase}
-                          </span>
+                          {(() => {
+                            const isAdjustment =
+                              /^A\d+-/iu.test(purchase.supplierInvoiceNumber) ||
+                              /-A\d+/iu.test(purchase.supplierInvoiceNumber);
+                            return (
+                              <span
+                                className={`purchase-badge ${
+                                  isAdjustment
+                                    ? "purchase-badge-type-adjustment"
+                                    : "purchase-badge-type-purchase"
+                                }`}
+                              >
+                                {isAdjustment
+                                  ? copy.typeAdjustmentInvoice
+                                  : copy.typePurchase}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td>
                           <bdi className="font-mono">
@@ -846,9 +861,28 @@ export function PostedPurchaseReview({
                           </bdi>
                         </td>
                         <td>
-                          <bdi className="font-mono font-bold text-primary">
-                            {formatNumber(purchase)}
-                          </bdi>
+                          {(() => {
+                            const isAdjustment =
+                              /^A\d+-/iu.test(purchase.supplierInvoiceNumber) ||
+                              /-A\d+/iu.test(purchase.supplierInvoiceNumber);
+                            const origMatch = /^A\d+-(.+)$/iu.exec(
+                              purchase.supplierInvoiceNumber,
+                            );
+                            const originalDisplay = isAdjustment
+                              ? (origMatch?.[1] ?? formatNumber(purchase))
+                              : "—";
+                            return (
+                              <bdi
+                                className={
+                                  isAdjustment
+                                    ? "font-mono font-bold text-primary"
+                                    : "font-mono"
+                                }
+                              >
+                                {originalDisplay}
+                              </bdi>
+                            );
+                          })()}
                         </td>
                         <td>
                           <bdi>
@@ -1137,6 +1171,45 @@ function PostedPurchaseDetailView({
       aria-labelledby="posted-detail-title"
     >
       <div className="posted-detail-toolbar">
+        {detail.canAdjust ? (
+          <button
+            type="button"
+            className="purchase-adjust-button"
+            data-review-focus={`adjustment-${detail.id}`}
+            onClick={(event) => onCorrection("adjustment", event.currentTarget)}
+          >
+            <span>📝</span> {copy.editInvoice}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="purchase-print-icon-button"
+          onClick={() => window.print()}
+          title={copy.printInvoice}
+          aria-label={copy.printInvoice}
+        >
+          🖨️
+        </button>
+        {detail.canReturn ? (
+          <button
+            type="button"
+            className="purchase-return-button"
+            data-review-focus={`return-${detail.id}`}
+            onClick={(event) => onCorrection("return", event.currentTarget)}
+          >
+            <span>↩️</span> {copy.returnInvoice}
+          </button>
+        ) : null}
+        {detail.returns.length > 0 ? (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => window.print()}
+            title={copy.printReturnSlip}
+          >
+            ↩️ {copy.printReturnSlip}
+          </button>
+        ) : null}
         <button type="button" className="quiet-button" onClick={onBack}>
           {copy.backToResults}
         </button>
@@ -1163,25 +1236,90 @@ function PostedPurchaseDetailView({
         >
           {copy.reviewNext}
         </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => window.print()}
-          title={copy.printInvoice}
-        >
-          🖨️ {copy.printInvoice}
-        </button>
-        {detail.returns.length > 0 ? (
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => window.print()}
-            title={copy.printReturnSlip}
-          >
-            ↩️ {copy.printReturnSlip}
-          </button>
-        ) : null}
       </div>
+      {detail.adjustments.length > 0 ? (
+        <section
+          className="linked-adjustments-card"
+          aria-label={copy.linkedAdjustmentsTitle}
+        >
+          <div className="linked-adjustments-header">
+            <span className="linked-adjustments-icon" aria-hidden="true">
+              🕒
+            </span>
+            <span>
+              {copy.linkedAdjustmentsTitle} ({detail.adjustments.length})
+            </span>
+          </div>
+          <div
+            className="linked-adjustments-table-wrap"
+            role="group"
+            aria-label={copy.linkedAdjustmentsTitle}
+            tabIndex={0}
+          >
+            <table className="linked-adjustments-table">
+              <thead>
+                <tr>
+                  <th scope="col">{copy.adjustmentNumber}</th>
+                  <th scope="col">{copy.adjustmentDateTime}</th>
+                  <th scope="col">{copy.adjustmentReason}</th>
+                  <th scope="col">{copy.adjustmentNetDelta}</th>
+                  <th scope="col">{copy.actions}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.adjustments.map((adjustment) => {
+                  const formattedAdjNumber = formatAdjustmentNumber(
+                    adjustment.number,
+                  );
+                  return (
+                    <tr key={adjustment.id}>
+                      <th scope="row">
+                        <bdi className="font-mono">{formattedAdjNumber}</bdi>
+                      </th>
+                      <td>
+                        <bdi>
+                          {formatTimestamp(adjustment.postedAt, locale)}
+                        </bdi>
+                      </td>
+                      <td>
+                        {getAdjustmentReasonLabel(adjustment.reason, locale) ||
+                          "—"}
+                      </td>
+                      <td>
+                        <bdi className="font-mono">
+                          {adjustment.primarySupplierCostDeltaFils !== null
+                            ? formatFilsToIqd(
+                                adjustment.primarySupplierCostDeltaFils,
+                                locale,
+                              )
+                            : `0 ${copy.iqd}`}
+                        </bdi>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="purchase-open-adjustment-pill"
+                          data-review-focus={`posted-adjustment-${adjustment.id}`}
+                          onClick={(event) =>
+                            onAdjustment(adjustment.id, event.currentTarget)
+                          }
+                          aria-label={`${copy.openDocument} ${formattedAdjNumber}`}
+                        >
+                          {copy.openDocument}
+                          <span className="visually-hidden">
+                            {" "}
+                            {formattedAdjNumber}
+                          </span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
       <header>
         <p className="purchase-context-label">{copy.historicalSnapshot}</p>
         <h3 id="posted-detail-title">{formatNumber(detail)}</h3>
@@ -1321,31 +1459,6 @@ function PostedPurchaseDetailView({
           </tbody>
         </table>
       </div>
-      {detail.adjustments.length > 0 ? (
-        <section
-          className="posted-adjustment-links"
-          aria-label={copy.adjustmentStageTitle}
-        >
-          <h4>{copy.adjustmentStageTitle}</h4>
-          <ul>
-            {detail.adjustments.map((adjustment) => (
-              <li key={adjustment.id}>
-                <button
-                  type="button"
-                  className="quiet-button"
-                  data-review-focus={`posted-adjustment-${adjustment.id}`}
-                  onClick={(event) =>
-                    onAdjustment(adjustment.id, event.currentTarget)
-                  }
-                >
-                  {formatAdjustmentNumber(adjustment.number)} ·{" "}
-                  {adjustment.reason} · {adjustment.quantityDelta}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
       {detail.returns.length > 0 ? (
         <section
           className="posted-return-links"
@@ -1371,31 +1484,6 @@ function PostedPurchaseDetailView({
           </ul>
         </section>
       ) : null}
-      <div
-        className="posted-correction-actions"
-        aria-label={copy.correctionActions}
-      >
-        {detail.canAdjust ? (
-          <button
-            type="button"
-            className="purchase-adjust-button"
-            data-review-focus={`adjustment-${detail.id}`}
-            onClick={(event) => onCorrection("adjustment", event.currentTarget)}
-          >
-            {copy.editInvoice}
-          </button>
-        ) : null}
-        {detail.canReturn ? (
-          <button
-            type="button"
-            className="purchase-return-button"
-            data-review-focus={`return-${detail.id}`}
-            onClick={(event) => onCorrection("return", event.currentTarget)}
-          >
-            {copy.returnInvoice}
-          </button>
-        ) : null}
-      </div>
     </article>
   );
 }
