@@ -330,12 +330,17 @@ export function PurchaseAdjustmentWorkflow({
           <div className="adjustment-actions">
             <button
               type="button"
+              className="quiet-button"
               autoFocus
               onClick={() => setLeaveWarning(false)}
             >
               {copy.continue}
             </button>
-            <button type="button" onClick={() => void discardDraft()}>
+            <button
+              type="button"
+              className="danger-button"
+              onClick={() => void discardDraft()}
+            >
               {copy.delete}
             </button>
           </div>
@@ -347,6 +352,7 @@ export function PurchaseAdjustmentWorkflow({
           <div className="adjustment-actions">
             <button
               type="button"
+              className="primary-button"
               onClick={() => void continueDraft()}
               disabled={busy}
             >
@@ -354,6 +360,7 @@ export function PurchaseAdjustmentWorkflow({
             </button>
             <button
               type="button"
+              className="danger-button"
               onClick={() => void discardDraft()}
               disabled={busy}
             >
@@ -390,6 +397,7 @@ export function PurchaseAdjustmentWorkflow({
           </label>
           <button
             type="button"
+            className="primary-button"
             disabled={busy || reason === ""}
             onClick={() => void createDraft()}
           >
@@ -551,6 +559,7 @@ export function PurchaseAdjustmentWorkflow({
           </div>
           <button
             type="button"
+            className="primary-button"
             disabled={busy}
             onClick={() => void saveAndReview()}
           >
@@ -592,7 +601,12 @@ export function PurchaseAdjustmentWorkflow({
               </li>
             ))}
           </ul>
-          <button type="button" disabled={busy} onClick={() => void post()}>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={busy}
+            onClick={() => void post()}
+          >
             {copy.confirm}
           </button>
         </div>

@@ -19,6 +19,7 @@ import {
 import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
+import { getPurchasingDenialMessage } from "./purchasing-messages";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
 
@@ -96,7 +97,10 @@ export function PurchaseReturnWorkflow({
   const [evidence, setEvidence] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    readonly message: string;
+    readonly tracking?: string | undefined;
+  } | null>(null);
   const [leaveWarning, setLeaveWarning] = useState(false);
   const [postedNumber, setPostedNumber] = useState("");
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -115,16 +119,23 @@ export function PurchaseReturnWorkflow({
    * refusal sits at the bottom, so the refusal takes focus in the commit that
    * renders it rather than waiting to be scrolled up to.
    */
-  function handleError(caught: unknown): void {
-    setError(
-      caught instanceof PurchasingApiDenied
-        ? `${caught.denial.code} · ${caught.denial.requestId}`
-        : String(caught),
-    );
+  function refuse(message: string, tracking?: string): void {
+    setError(tracking !== undefined ? { message, tracking } : { message });
     requestFocus(() => {
       errorRef.current?.scrollIntoView({ block: "center" });
       return errorRef.current;
     });
+  }
+
+  function handleError(caught: unknown): void {
+    if (caught instanceof PurchasingApiDenied) {
+      refuse(
+        getPurchasingDenialMessage(caught.denial.code, locale),
+        caught.denial.requestId,
+      );
+      return;
+    }
+    refuse(String(caught));
   }
 
   async function createDraft(): Promise<void> {
@@ -255,7 +266,10 @@ export function PurchaseReturnWorkflow({
       <h3 id="return-title">{copy.title}</h3>
       {error === null ? null : (
         <p className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
-          {error}
+          <span>{error.message}</span>
+          {error.tracking ? (
+            <small className="form-error-tracking">{error.tracking}</small>
+          ) : null}
         </p>
       )}
       {leaveWarning ? (
@@ -269,12 +283,17 @@ export function PurchaseReturnWorkflow({
           <div className="return-actions">
             <button
               type="button"
+              className="quiet-button"
               autoFocus
               onClick={() => setLeaveWarning(false)}
             >
               {copy.continue}
             </button>
-            <button type="button" onClick={() => void discardDraft()}>
+            <button
+              type="button"
+              className="danger-button"
+              onClick={() => void discardDraft()}
+            >
               {copy.delete}
             </button>
           </div>
@@ -286,6 +305,7 @@ export function PurchaseReturnWorkflow({
           <div className="return-actions">
             <button
               type="button"
+              className="primary-button"
               disabled={busy}
               onClick={() => void continueDraft()}
             >
@@ -293,6 +313,7 @@ export function PurchaseReturnWorkflow({
             </button>
             <button
               type="button"
+              className="danger-button"
               disabled={busy}
               onClick={() => void discardDraft()}
             >
@@ -322,6 +343,7 @@ export function PurchaseReturnWorkflow({
           </label>
           <button
             type="button"
+            className="primary-button"
             disabled={busy || reason.trim() === "" || evidence.trim() === ""}
             onClick={() => void createDraft()}
           >
@@ -397,6 +419,7 @@ export function PurchaseReturnWorkflow({
           </div>
           <button
             type="button"
+            className="primary-button"
             disabled={
               busy ||
               reason.trim() === "" ||
@@ -456,6 +479,7 @@ export function PurchaseReturnWorkflow({
           </label>
           <button
             type="button"
+            className="primary-button"
             disabled={busy || password === ""}
             onClick={() => void post()}
           >
