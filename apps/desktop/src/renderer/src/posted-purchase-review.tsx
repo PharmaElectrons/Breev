@@ -4,6 +4,7 @@ import type {
   PostedPurchaseReturn,
   Product,
   PurchasePostedDetail,
+  PurchasePostedListItem,
   PurchasePostedListRequest,
   PurchasePostedListResponse,
   Supplier,
@@ -28,17 +29,66 @@ import {
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
 
-const formatDateInput = (date: Date): string =>
-  [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-
 type CorrectionKind = "adjustment" | "return";
 type CurrentRecord =
   | { readonly kind: "item"; readonly value: Product }
   | { readonly kind: "supplier"; readonly value: Supplier };
+
+function formatProtoMoney(filsStr: string | null | undefined): {
+  readonly text: string;
+  readonly isNegative: boolean;
+} {
+  if (filsStr === null || filsStr === undefined || filsStr === "") {
+    return { text: "—", isNegative: false };
+  }
+  const fils = BigInt(filsStr);
+  const isNegative = fils < 0n;
+  const absFils = isNegative ? -fils : fils;
+  const wholeIqd = absFils / 1000n;
+  const remainderFils = absFils % 1000n;
+  const wholeFormatted = wholeIqd
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  let display = wholeFormatted;
+  if (remainderFils > 0n) {
+    const frac = remainderFils.toString().padStart(3, "0").replace(/0+$/, "");
+    display = `${wholeFormatted}.${frac}`;
+  }
+  return {
+    text: isNegative ? `${display}-` : display,
+    isNegative,
+  };
+}
+
+function renderTypeBadge(
+  purchase: PurchasePostedListItem,
+  copy: (typeof purchasingMessages)[keyof typeof purchasingMessages],
+): React.JSX.Element {
+  if (purchase.rowKind === "return") {
+    return (
+      <span className="proto-badge proto-badge-return">{copy.typeReturn}</span>
+    );
+  }
+  if (purchase.rowKind === "adjustment") {
+    return (
+      <span className="proto-badge proto-badge-adjustment">
+        {copy.typeAdjustment}
+      </span>
+    );
+  }
+  if (purchase.rowKind === "purchase" && purchase.hasAdjustments) {
+    return (
+      <span className="proto-badge proto-badge-modified">
+        {copy.typeModified}
+      </span>
+    );
+  }
+  return (
+    <span className="proto-badge proto-badge-purchase">
+      {copy.typePurchase}
+    </span>
+  );
+}
 
 export function PostedPurchaseReview({
   address,
@@ -86,96 +136,24 @@ export function PostedPurchaseReview({
   const [denial, setDenial] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [query, setQuery] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const dateType: NonNullable<PurchasePostedListRequest["dateType"]> =
-    "posted-at";
-  const [sort, setSort] =
-    useState<NonNullable<PurchasePostedListRequest["sort"]>>("number");
-  const [direction, setDirection] =
-    useState<NonNullable<PurchasePostedListRequest["direction"]>>("descending");
-  const [dateError, setDateError] = useState<string | null>(null);
-  const [fromInvalid, setFromInvalid] = useState(false);
-  const [toInvalid, setToInvalid] = useState(false);
-  const [activePreset, setActivePreset] = useState<
-    "today" | "yesterday" | "last7" | "month" | "all" | "custom"
-  >("all");
-
-  function applyPreset(
-    preset: "today" | "yesterday" | "last7" | "month" | "all",
-  ): void {
-    setActivePreset(preset);
-    setDateError(null);
-    setFromInvalid(false);
-    setToInvalid(false);
-    const now = new Date();
-    if (preset === "today") {
-      const t = formatDateInput(now);
-      setFrom(t);
-      setTo(t);
-    } else if (preset === "yesterday") {
-      const y = new Date(now);
-      y.setDate(y.getDate() - 1);
-      const yStr = formatDateInput(y);
-      setFrom(yStr);
-      setTo(yStr);
-    } else if (preset === "last7") {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 7);
-      setFrom(formatDateInput(d));
-      setTo(formatDateInput(now));
-    } else if (preset === "month") {
-      const m = new Date(now.getFullYear(), now.getMonth(), 1);
-      setFrom(formatDateInput(m));
-      setTo(formatDateInput(now));
-    } else if (preset === "all") {
-      setFrom("");
-      setTo("");
-    }
-  }
 
   useEffect(() => {
     if (!open || detail !== null) return;
-    if (fromInvalid || toInvalid) {
-      setDateError(copy.invalidDate);
-      return;
-    }
-    if (from !== "" && to !== "" && from > to) {
-      setDateError(copy.dateRangeInvalid);
-      return;
-    }
-    setDateError(null);
 
     const timer = setTimeout(
       () => {
         void loadList({
-          dateType,
-          direction,
-          ...(from === "" ? {} : { from }),
+          dateType: "posted-at",
+          direction: "descending",
           ...(query.trim() === "" ? {} : { query: query.trim() }),
-          sort,
-          ...(to === "" ? {} : { to }),
+          sort: "posted-at",
         });
       },
       query.trim() !== "" ? 250 : 0,
     );
 
     return () => clearTimeout(timer);
-  }, [
-    baseUrl,
-    copy.dateRangeInvalid,
-    copy.invalidDate,
-    dateType,
-    detail,
-    direction,
-    from,
-    fromInvalid,
-    open,
-    query,
-    sort,
-    to,
-    toInvalid,
-  ]);
+  }, [baseUrl, detail, open, query]);
 
   useEffect(() => {
     if (inline) {
@@ -458,6 +436,19 @@ export function PostedPurchaseReview({
     void loadDetail(id);
   }
 
+  function handleRowOpen(
+    purchase: PurchasePostedListItem,
+    opener: HTMLElement,
+  ): void {
+    if (purchase.rowKind === "adjustment") {
+      void openPostedAdjustment(purchase.id, opener);
+    } else if (purchase.rowKind === "return") {
+      void openPostedReturn(purchase.id, opener);
+    } else {
+      void loadDetail(purchase.id, opener);
+    }
+  }
+
   const costsVisible =
     (detail?.costVisibility ?? list?.costVisibility) === "visible";
 
@@ -469,7 +460,9 @@ export function PostedPurchaseReview({
         </h2>
       ) : (
         <>
-          <header className="posted-review-heading">
+          <header
+            className={inline ? "visually-hidden" : "posted-review-heading"}
+          >
             <div>
               <p className="purchase-context-label">
                 {copy.historicalSnapshot}
@@ -482,7 +475,7 @@ export function PostedPurchaseReview({
 
           <p
             id="posted-purchase-review-boundary"
-            className="posted-review-boundary"
+            className={inline ? "visually-hidden" : "posted-review-boundary"}
           >
             <span aria-hidden="true">ℹ</span>
             <span>{copy.snapshotBoundary}</span>
@@ -579,197 +572,41 @@ export function PostedPurchaseReview({
           onSupplier={(opener) => void openSupplier(opener)}
         />
       ) : (
-        <section aria-label={copy.postedPurchaseRegister}>
+        <section
+          aria-label={copy.postedPurchaseRegister}
+          className="proto-posted-purchase-section"
+        >
           <form
-            className="purchase-filters posted-purchase-filters"
+            className="proto-posted-toolbar"
             onSubmit={(event) => {
               event.preventDefault();
-              if (from !== "" && to !== "" && from > to) {
-                setDateError(copy.dateRangeInvalid);
-                return;
-              }
-              setDateError(null);
               void loadList({
-                dateType,
-                direction,
-                ...(from === "" ? {} : { from }),
+                dateType: "posted-at",
+                direction: "descending",
                 ...(query.trim() === "" ? {} : { query: query.trim() }),
-                sort,
-                ...(to === "" ? {} : { to }),
+                sort: "posted-at",
               });
             }}
           >
-            <div className="posted-purchase-toolbar-top">
-              <label className="purchase-search-filter posted-purchase-search-wrap">
-                <span className="visually-hidden">{copy.searchPosted}</span>
+            <div className="proto-toolbar-start">
+              <div className="proto-toolbar-search-wrap">
                 <input
                   ref={searchRef}
                   type="search"
+                  className="proto-search-input"
                   aria-label={copy.searchPosted}
                   value={query}
                   placeholder={copy.searchPostedHint}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-              </label>
-
-              <div
-                className="posted-purchase-presets"
-                role="group"
-                aria-label={copy.filterDate}
-              >
-                <button
-                  type="button"
-                  className={`preset-pill ${activePreset === "today" ? "active" : ""}`}
-                  onClick={() => applyPreset("today")}
-                >
-                  {copy.todayPreset}
-                </button>
-                <button
-                  type="button"
-                  className={`preset-pill ${activePreset === "yesterday" ? "active" : ""}`}
-                  onClick={() => applyPreset("yesterday")}
-                >
-                  {copy.yesterdayPreset}
-                </button>
-                <button
-                  type="button"
-                  className={`preset-pill ${activePreset === "last7" ? "active" : ""}`}
-                  onClick={() => applyPreset("last7")}
-                >
-                  {copy.last7DaysPreset}
-                </button>
-                <button
-                  type="button"
-                  className={`preset-pill ${activePreset === "month" ? "active" : ""}`}
-                  onClick={() => applyPreset("month")}
-                >
-                  {copy.thisMonthPreset}
-                </button>
-                <button
-                  type="button"
-                  className={`preset-pill ${activePreset === "all" ? "active" : ""}`}
-                  onClick={() => applyPreset("all")}
-                >
-                  {copy.allDatesPreset}
-                </button>
               </div>
+              <span className="proto-count-badge">
+                {list ? list.purchases.length : 0} {copy.invoiceCountUnit}
+              </span>
             </div>
-
-            <div className="posted-purchase-filter-row">
-              <label>
-                <span>{copy.fromDate}</span>
-                <input
-                  type="date"
-                  value={from}
-                  aria-invalid={fromInvalid || undefined}
-                  onChange={(event) => {
-                    const input = event.currentTarget;
-                    if (input.validity.badInput) {
-                      setFrom("");
-                      setFromInvalid(true);
-                    } else {
-                      setFrom(input.value);
-                      setFromInvalid(false);
-                    }
-                    setActivePreset("custom");
-                  }}
-                />
-              </label>
-              <label>
-                <span>{copy.toDate}</span>
-                <input
-                  type="date"
-                  value={to}
-                  aria-invalid={toInvalid || undefined}
-                  onChange={(event) => {
-                    const input = event.currentTarget;
-                    if (input.validity.badInput) {
-                      setTo("");
-                      setToInvalid(true);
-                    } else {
-                      setTo(input.value);
-                      setToInvalid(false);
-                    }
-                    setActivePreset("custom");
-                  }}
-                />
-              </label>
-              <label>
-                <span>{copy.sortBy}</span>
-                <select
-                  value={sort}
-                  onChange={(event) =>
-                    setSort(event.target.value as typeof sort)
-                  }
-                >
-                  <option value="number">{copy.documentNumber}</option>
-                  <option value="posted-at">{copy.postingDate}</option>
-                  <option value="supplier">{copy.supplier}</option>
-                  {costsVisible ? (
-                    <option value="primary-cost">
-                      {copy.primarySupplierCost}
-                    </option>
-                  ) : null}
-                </select>
-              </label>
-              <label>
-                <span>{copy.sortDirection}</span>
-                <select
-                  value={direction}
-                  onChange={(event) =>
-                    setDirection(event.target.value as typeof direction)
-                  }
-                >
-                  <option value="descending">{copy.descending}</option>
-                  <option value="ascending">{copy.ascending}</option>
-                </select>
-              </label>
-              <button type="submit" className="primary-button">
-                {copy.search}
-              </button>
-              {from !== "" ||
-              to !== "" ||
-              query.trim() !== "" ||
-              sort !== "number" ||
-              direction !== "descending" ? (
-                <button
-                  type="button"
-                  className="quiet-button"
-                  onClick={() => {
-                    setQuery("");
-                    setFrom("");
-                    setTo("");
-                    setActivePreset("all");
-                    setSort("number");
-                    setDirection("descending");
-                    setDateError(null);
-                  }}
-                >
-                  {copy.clearFilters}
-                </button>
-              ) : null}
+            <div className="proto-toolbar-hint">
+              <span>{copy.doubleClickHint}</span>
             </div>
-
-            <div className="posted-purchase-status-strip">
-              <div className="purchase-table-count-badge">
-                <span aria-hidden="true">🧾</span>
-                <span>
-                  {list
-                    ? `${list.purchases.length} ${copy.invoiceCountUnit}`
-                    : "—"}
-                </span>
-              </div>
-              <div className="purchase-table-hint">
-                <span aria-hidden="true">💡</span>
-                <span>{copy.doubleClickHint}</span>
-              </div>
-            </div>
-
-            {dateError !== null ? (
-              <p className="posted-purchase-error-inline" role="alert">
-                {dateError}
-              </p>
-            ) : null}
           </form>
 
           {list?.costVisibility === "hidden-by-permission" ? (
@@ -777,193 +614,186 @@ export function PostedPurchaseReview({
           ) : list?.costVisibility === "hidden-by-setting" ? (
             <p role="status">{copy.costsHiddenBySetting}</p>
           ) : null}
+
           <div
-            className="purchase-table-wrap"
+            className="proto-table-wrap"
             role="group"
             aria-label={copy.scrollPosted}
             tabIndex={0}
           >
-            <table className="posted-purchase-list">
+            <table className="posted-purchase-list proto-posted-table">
               <caption className="visually-hidden">
                 {copy.postedPurchaseRegister}
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">#</th>
-                  <th scope="col">{copy.invoiceType}</th>
-                  <th scope="col">{copy.supplierDocketNumber}</th>
-                  <th scope="col">{copy.refNumber}</th>
-                  <th scope="col">{copy.invoiceDate}</th>
-                  <th scope="col">{copy.paymentTerms}</th>
-                  <th scope="col">{copy.supplier}</th>
-                  <th scope="col">{copy.items}</th>
-                  {costsVisible ? (
-                    <th scope="col">{copy.primarySupplierCost}</th>
-                  ) : null}
-                  {costsVisible ? (
-                    <th scope="col">{copy.costAfterDiscount}</th>
-                  ) : null}
-                  <th scope="col">{copy.settlementStatus}</th>
-                  <th scope="col">{copy.actions}</th>
+                  <th scope="col" className="proto-th-num">
+                    #
+                  </th>
+                  <th scope="col" className="proto-th-type">
+                    {copy.invoiceType}
+                  </th>
+                  <th scope="col" className="proto-th-doc-num">
+                    {copy.supplierPurchaseInvoiceNumber}
+                  </th>
+                  <th scope="col" className="proto-th-ref">
+                    {copy.refNumber}
+                  </th>
+                  <th scope="col" className="proto-th-date">
+                    {copy.invoiceDate}
+                  </th>
+                  <th scope="col" className="proto-th-pay">
+                    {copy.paymentTerms}
+                  </th>
+                  <th scope="col" className="proto-th-supplier">
+                    {copy.supplierStore}
+                  </th>
+                  <th scope="col" className="proto-th-cost">
+                    {copy.primarySupplierCost}
+                  </th>
+                  <th scope="col" className="proto-th-after-discount">
+                    {copy.costAfterDiscount}
+                  </th>
+                  <th scope="col" className="proto-th-status">
+                    {copy.settlementStatus}
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {list?.purchases.length === 0 ? (
                   <tr>
-                    <td
-                      className="purchase-table-empty"
-                      colSpan={costsVisible ? 12 : 10}
-                    >
+                    <td className="purchase-table-empty" colSpan={10}>
                       {copy.noPostedPurchases}
                     </td>
                   </tr>
                 ) : (
                   list?.purchases.map((purchase, index) => {
-                    const isPrimaryCostNegative =
-                      purchase.primarySupplierCostFils !== null &&
-                      BigInt(purchase.primarySupplierCostFils) < 0n;
-                    const isCostAfterDiscountNegative =
-                      purchase.costAfterDiscountFils !== null &&
-                      BigInt(purchase.costAfterDiscountFils) < 0n;
+                    const primaryCost = formatProtoMoney(
+                      purchase.primarySupplierCostFils,
+                    );
+                    const costAfterDiscount = formatProtoMoney(
+                      purchase.costAfterDiscountFils,
+                    );
 
                     return (
                       <tr
                         key={purchase.id}
                         tabIndex={0}
-                        onDoubleClick={() => void loadDetail(purchase.id)}
+                        className="proto-table-row"
+                        onDoubleClick={(event) => {
+                          handleRowOpen(purchase, event.currentTarget);
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             if (
                               (event.target as HTMLElement).tagName !== "BUTTON"
                             ) {
                               event.preventDefault();
-                              void loadDetail(purchase.id);
+                              handleRowOpen(purchase, event.currentTarget);
                             }
                           }
                         }}
                       >
-                        <th scope="row">
+                        <td className="proto-td-num">
                           <bdi>{index + 1}</bdi>
-                        </th>
-                        <td>
-                          {(() => {
-                            const isAdjustment =
-                              /^A\d+-/iu.test(purchase.supplierInvoiceNumber) ||
-                              /-A\d+/iu.test(purchase.supplierInvoiceNumber);
-                            return (
-                              <span
-                                className={`purchase-badge ${
-                                  isAdjustment
-                                    ? "purchase-badge-type-adjustment"
-                                    : "purchase-badge-type-purchase"
-                                }`}
-                              >
-                                {isAdjustment
-                                  ? copy.typeAdjustmentInvoice
-                                  : copy.typePurchase}
-                              </span>
-                            );
-                          })()}
                         </td>
-                        <td>
-                          <bdi className="font-mono">
-                            {purchase.supplierInvoiceNumber}
-                          </bdi>
+                        <td className="proto-td-type">
+                          {renderTypeBadge(purchase, copy)}
                         </td>
-                        <td>
-                          {(() => {
-                            const isAdjustment =
-                              /^A\d+-/iu.test(purchase.supplierInvoiceNumber) ||
-                              /-A\d+/iu.test(purchase.supplierInvoiceNumber);
-                            const origMatch = /^A\d+-(.+)$/iu.exec(
-                              purchase.supplierInvoiceNumber,
-                            );
-                            const originalDisplay = isAdjustment
-                              ? (origMatch?.[1] ?? formatNumber(purchase))
-                              : "—";
-                            return (
-                              <bdi
-                                className={
-                                  isAdjustment
-                                    ? "font-mono font-bold text-primary"
-                                    : "font-mono"
+                        <td className="proto-td-doc-num">
+                          <button
+                            type="button"
+                            className="proto-doc-btn"
+                            aria-label={
+                              purchase.rowKind === "adjustment"
+                                ? `${copy.openDocument} ${formatNumber(purchase)}`
+                                : `${copy.openInvoice} ${formatNumber(purchase)}`
+                            }
+                            data-review-focus={`posted-${purchase.id}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRowOpen(purchase, event.currentTarget);
+                            }}
+                          >
+                            <bdi className="proto-font-mono">
+                              {purchase.supplierInvoiceNumber}
+                            </bdi>
+                          </button>
+                        </td>
+                        <td className="proto-td-ref">
+                          {purchase.refNumber ? (
+                            <button
+                              type="button"
+                              className="proto-ref-link"
+                              title={copy.originalInvoice}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (purchase.originalPurchaseId) {
+                                  void loadDetail(
+                                    purchase.originalPurchaseId,
+                                    event.currentTarget,
+                                  );
+                                } else {
+                                  setQuery(purchase.refNumber!);
                                 }
-                              >
-                                {originalDisplay}
-                              </bdi>
-                            );
-                          })()}
+                              }}
+                            >
+                              {purchase.refNumber}
+                            </button>
+                          ) : (
+                            <span className="proto-dash">—</span>
+                          )}
                         </td>
-                        <td>
+                        <td className="proto-td-date">
                           <bdi>
                             {purchase.invoiceDate ||
                               purchase.postedAt.slice(0, 10)}
                           </bdi>
                         </td>
-                        <td>
-                          <span className="purchase-terms-text">
-                            {copy[purchase.settlementContext]}
+                        <td className="proto-td-pay">
+                          <span>
+                            {purchase.settlementContext === "cash"
+                              ? copy.cashShort
+                              : copy.debtShort}
                           </span>
                         </td>
-                        <td>{purchase.supplierNameSnapshot}</td>
-                        <td>
-                          <bdi>{purchase.itemCount}</bdi>
+                        <td className="proto-td-supplier">
+                          <span className="proto-supplier-name">
+                            {purchase.supplierNameSnapshot}
+                          </span>
                         </td>
-                        {costsVisible ? (
-                          <td>
-                            <bdi
-                              className={
-                                isPrimaryCostNegative
-                                  ? "purchase-negative-money"
-                                  : undefined
-                              }
-                            >
-                              {formatFilsToIqd(
-                                purchase.primarySupplierCostFils,
-                                locale,
-                              )}
-                            </bdi>
-                          </td>
-                        ) : null}
-                        {costsVisible ? (
-                          <td>
-                            <bdi
-                              className={
-                                isCostAfterDiscountNegative
-                                  ? "purchase-negative-money"
-                                  : undefined
-                              }
-                            >
-                              {formatFilsToIqd(
-                                purchase.costAfterDiscountFils,
-                                locale,
-                              )}
-                            </bdi>
-                          </td>
-                        ) : null}
-                        <td>
+                        <td className="proto-td-cost">
+                          <bdi
+                            className={`proto-money ${
+                              primaryCost.isNegative
+                                ? "proto-money-negative"
+                                : ""
+                            }`}
+                          >
+                            {costsVisible ? primaryCost.text : "***"}
+                          </bdi>
+                        </td>
+                        <td className="proto-td-after-discount">
+                          <bdi
+                            className={`proto-money ${
+                              costAfterDiscount.isNegative
+                                ? "proto-money-negative"
+                                : ""
+                            }`}
+                          >
+                            {costsVisible ? costAfterDiscount.text : "***"}
+                          </bdi>
+                        </td>
+                        <td className="proto-td-status">
                           {purchase.settlementContext === "cash" ? (
-                            <span className="purchase-badge purchase-badge-settled">
+                            <span className="proto-badge proto-badge-settled">
                               {copy.settled}
                             </span>
                           ) : (
-                            <span className="purchase-badge purchase-badge-unpaid">
+                            <span className="proto-badge proto-badge-unpaid">
                               {copy.unpaid}
                             </span>
                           )}
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="purchase-open-posted"
-                            data-review-focus={`posted-${purchase.id}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void loadDetail(purchase.id, event.currentTarget);
-                            }}
-                          >
-                            {copy.openInvoice} {formatNumber(purchase)}
-                          </button>
                         </td>
                       </tr>
                     );
@@ -971,24 +801,14 @@ export function PostedPurchaseReview({
                 )}
               </tbody>
               {list && list.purchases.length > 0 ? (
-                <tfoot className="purchase-table-tfoot">
+                <tfoot className="proto-table-tfoot">
                   <tr>
-                    <td colSpan={7} className="purchase-totals-label">
+                    <td colSpan={7} className="proto-tfoot-label">
                       <strong>{copy.totalSummary}</strong>
                     </td>
-                    <td className="purchase-totals-items">
-                      <bdi>
-                        <strong>
-                          {list.purchases.reduce(
-                            (acc, p) => acc + p.itemCount,
-                            0,
-                          )}
-                        </strong>
-                      </bdi>
-                    </td>
-                    {costsVisible ? (
-                      <td className="purchase-totals-cost">
-                        {(() => {
+                    <td className="proto-tfoot-cost">
+                      {costsVisible ? (
+                        (() => {
                           const totalPrimary = list.purchases.reduce(
                             (acc, p) => {
                               if (!p.primarySupplierCostFils) return acc;
@@ -996,55 +816,55 @@ export function PostedPurchaseReview({
                             },
                             0n,
                           );
+                          const formatted = formatProtoMoney(
+                            totalPrimary.toString(),
+                          );
                           return (
                             <bdi
-                              className={
-                                totalPrimary < 0n
-                                  ? "purchase-negative-money"
-                                  : undefined
-                              }
+                              className={`proto-money ${
+                                formatted.isNegative
+                                  ? "proto-money-negative"
+                                  : ""
+                              }`}
                             >
-                              <strong>
-                                {formatFilsToIqd(
-                                  totalPrimary.toString(),
-                                  locale,
-                                )}
-                              </strong>
+                              <strong>{formatted.text}</strong>
                             </bdi>
                           );
-                        })()}
-                      </td>
-                    ) : null}
-                    {costsVisible ? (
-                      <td className="purchase-totals-cost">
-                        {(() => {
-                          const totalAfterDiscount = list.purchases.reduce(
+                        })()
+                      ) : (
+                        <bdi className="proto-money">***</bdi>
+                      )}
+                    </td>
+                    <td className="proto-tfoot-cost">
+                      {costsVisible ? (
+                        (() => {
+                          const totalDiscount = list.purchases.reduce(
                             (acc, p) => {
                               if (!p.costAfterDiscountFils) return acc;
                               return acc + BigInt(p.costAfterDiscountFils);
                             },
                             0n,
                           );
+                          const formatted = formatProtoMoney(
+                            totalDiscount.toString(),
+                          );
                           return (
                             <bdi
-                              className={
-                                totalAfterDiscount < 0n
-                                  ? "purchase-negative-money"
-                                  : undefined
-                              }
+                              className={`proto-money ${
+                                formatted.isNegative
+                                  ? "proto-money-negative"
+                                  : ""
+                              }`}
                             >
-                              <strong>
-                                {formatFilsToIqd(
-                                  totalAfterDiscount.toString(),
-                                  locale,
-                                )}
-                              </strong>
+                              <strong>{formatted.text}</strong>
                             </bdi>
                           );
-                        })()}
-                      </td>
-                    ) : null}
-                    <td colSpan={2}></td>
+                        })()
+                      ) : (
+                        <bdi className="proto-money">***</bdi>
+                      )}
+                    </td>
+                    <td className="proto-tfoot-empty"></td>
                   </tr>
                 </tfoot>
               ) : null}
@@ -1295,7 +1115,7 @@ function PostedPurchaseDetailView({
                       </td>
                       <td>
                         {getAdjustmentReasonLabel(adjustment.reason, locale) ||
-                          "—"}
+                          copy.reasonOther}
                       </td>
                       <td>
                         <bdi className="font-mono">
@@ -1453,9 +1273,9 @@ function PostedPurchaseDetailView({
                   </td>
                 ) : null}
                 <td>
-                  <bdi>{row.expiryDate ?? "—"}</bdi>
+                  <bdi>{row.expiryDate ?? copy.noExpiry}</bdi>
                 </td>
-                <td>{row.lotNumber ?? "—"}</td>
+                <td>{row.lotNumber ?? copy.notSet}</td>
                 <td>
                   <button
                     type="button"
@@ -1528,7 +1348,7 @@ function CurrentRecordView({
             </div>
             <div>
               <dt>{copy.arabicName}</dt>
-              <dd dir="rtl">{record.value.arabicSearchName ?? "—"}</dd>
+              <dd dir="rtl">{record.value.arabicSearchName ?? copy.notSet}</dd>
             </div>
             <div>
               <dt>{copy.version}</dt>
@@ -1547,7 +1367,7 @@ function CurrentRecordView({
             </div>
             <div>
               <dt>{copy.terms}</dt>
-              <dd>{record.value.terms ?? "—"}</dd>
+              <dd>{record.value.terms ?? copy.notSet}</dd>
             </div>
             <div>
               <dt>{copy.version}</dt>

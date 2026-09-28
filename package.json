@@ -39,6 +39,8 @@
     "package:windows:payload": "node apps/local-api/windows/prepare-payload.mjs",
     "start:local": "pnpm env:check && turbo run start --filter=@breev/local-api --filter=@breev/desktop",
     "test": "pnpm test:unit && pnpm test:integration && pnpm test:browser && pnpm test:smoke",
+    "test:desktop:unit": "pnpm --filter @breev/desktop test:unit",
+    "test:api:unit": "pnpm --filter @breev/local-api test:unit",
     "test:boundaries": "node tooling/boundaries/prove.mjs",
     "test:browser": "pnpm build && pnpm --filter @breev/desktop test:browser",
     "test:dev-launcher": "node --test tooling/dev-launcher.test.mjs",
@@ -48,6 +50,8 @@
     "test:smoke": "pnpm build && pnpm --filter @breev/desktop test:smoke",
     "test:unit": "turbo run test:unit && pnpm test:boundaries && pnpm test:dev-launcher && pnpm test:release-tooling",
     "typecheck": "turbo run typecheck",
+    "typecheck:api": "pnpm --filter @breev/local-api typecheck",
+    "typecheck:renderer": "pnpm --filter @breev/desktop exec tsc -p tsconfig.renderer.json --noEmit",
     "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm check:licence-artifact && pnpm test:unit && pnpm test:integration && pnpm test:browser && pnpm test:smoke"
   },
   "devDependencies": {

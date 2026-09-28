@@ -179,16 +179,77 @@ const DRAFT_SELECT = `select draft_row.id, draft_row.pharmacy_id,
 from purchase_drafts draft_row`;
 
 /** Snapshot-only by construction: neither query names a live master table. */
-export const POSTED_PURCHASE_LIST_SELECT = `select posted_row.id,
+export const POSTED_PURCHASE_LIST_SELECT = `with posted_records as (
+  select posted_row.id, posted_row.pharmacy_id,
+    posted_row.supplier_name_snapshot, posted_row.supplier_invoice_number,
+    posted_row.invoice_date, posted_row.settlement_context,
+    posted_row.primary_supplier_cost_fils::text,
+    posted_row.cost_after_discount_fils::text, posted_row.number_value::text,
+    posted_row.number_year, posted_row.posted_at,
+    (select count(*)::integer from posted_purchase_rows snapshot_row
+     where snapshot_row.pharmacy_id = posted_row.pharmacy_id
+       and snapshot_row.posted_purchase_id = posted_row.id) as item_count,
+    null::text as ref_number,
+    null::text as original_purchase_id,
+    (select count(*) > 0 from posted_purchase_adjustments adj_check
+     where adj_check.pharmacy_id = posted_row.pharmacy_id
+       and adj_check.original_purchase_id = posted_row.id) as has_adjustments,
+    'purchase' as row_kind
+  from posted_purchases posted_row
+  union all
+  select adj.id, adj.pharmacy_id,
+    adj.supplier_name_snapshot,
+    'A' || lpad(adj.suffix_value::text, 2, '0') || '-' || adj.supplier_invoice_number as supplier_invoice_number,
+    (select orig.invoice_date from posted_purchases orig
+     where orig.pharmacy_id = adj.pharmacy_id and orig.id = adj.original_purchase_id) as invoice_date,
+    (select orig.settlement_context from posted_purchases orig
+     where orig.pharmacy_id = adj.pharmacy_id and orig.id = adj.original_purchase_id) as settlement_context,
+    adj.primary_supplier_cost_delta_fils::text as primary_supplier_cost_fils,
+    adj.cost_after_discount_delta_fils::text as cost_after_discount_fils,
+    (select orig.number_value::text from posted_purchases orig
+     where orig.pharmacy_id = adj.pharmacy_id and orig.id = adj.original_purchase_id) as number_value,
+    (select orig.number_year from posted_purchases orig
+     where orig.pharmacy_id = adj.pharmacy_id and orig.id = adj.original_purchase_id) as number_year,
+    adj.posted_at,
+    (select count(*)::integer from posted_purchase_adjustment_rows adj_row
+     where adj_row.pharmacy_id = adj.pharmacy_id
+       and adj_row.adjustment_id = adj.id) as item_count,
+    adj.supplier_invoice_number as ref_number,
+    adj.original_purchase_id::text as original_purchase_id,
+    false as has_adjustments,
+    'adjustment' as row_kind
+  from posted_purchase_adjustments adj
+  union all
+  select ret.id, ret.pharmacy_id,
+    ret.supplier_name_snapshot,
+    'R-' || ret.number_value::text as supplier_invoice_number,
+    ret.original_invoice_date as invoice_date,
+    (select orig.settlement_context from posted_purchases orig
+     where orig.pharmacy_id = ret.pharmacy_id and orig.id = ret.original_purchase_id) as settlement_context,
+    (-ret.supplier_reduction_fils)::text as primary_supplier_cost_fils,
+    (-ret.supplier_reduction_fils)::text as cost_after_discount_fils,
+    ret.original_number_value::text as number_value,
+    ret.original_number_year as number_year,
+    ret.posted_at,
+    (select count(*)::integer from posted_purchase_return_rows ret_row
+     where ret_row.pharmacy_id = ret.pharmacy_id
+       and ret_row.purchase_return_id = ret.id) as item_count,
+    (select orig.supplier_invoice_number from posted_purchases orig
+     where orig.pharmacy_id = ret.pharmacy_id and orig.id = ret.original_purchase_id) as ref_number,
+    ret.original_purchase_id::text as original_purchase_id,
+    false as has_adjustments,
+    'return' as row_kind
+  from posted_purchase_returns ret
+)
+select posted_row.id, posted_row.pharmacy_id,
   posted_row.supplier_name_snapshot, posted_row.supplier_invoice_number,
   posted_row.invoice_date::text, posted_row.settlement_context,
-  posted_row.primary_supplier_cost_fils::text,
-  posted_row.cost_after_discount_fils::text, posted_row.number_value::text,
-  posted_row.number_year, posted_row.posted_at,
-  (select count(*)::integer from posted_purchase_rows snapshot_row
-   where snapshot_row.pharmacy_id = posted_row.pharmacy_id
-     and snapshot_row.posted_purchase_id = posted_row.id) as item_count
-from posted_purchases posted_row`;
+  posted_row.primary_supplier_cost_fils,
+  posted_row.cost_after_discount_fils, posted_row.number_value,
+  posted_row.number_year, posted_row.posted_at, posted_row.item_count,
+  posted_row.ref_number, posted_row.original_purchase_id,
+  posted_row.has_adjustments, posted_row.row_kind
+from posted_records posted_row`;
 
 export const POSTED_PURCHASE_DETAIL_SELECT = `with ordered_purchase as (
   select posted_row.*,
@@ -230,13 +291,17 @@ order by snapshot_row.ordinal`;
 
 interface PostedPurchaseListRow {
   cost_after_discount_fils: string;
+  has_adjustments?: boolean;
   id: string;
   invoice_date: string;
   item_count: number;
   number_value: string;
   number_year: number;
+  original_purchase_id?: string | null;
   posted_at: Date;
   primary_supplier_cost_fils: string;
+  ref_number?: string | null;
+  row_kind?: "purchase" | "adjustment" | "return";
   settlement_context: "cash" | "debt";
   supplier_invoice_number: string;
   supplier_name_snapshot: string;
@@ -1456,7 +1521,9 @@ export class PurchasingService {
              or posted_row.supplier_name_snapshot ilike '%' || $2 || '%'
              or posted_row.supplier_invoice_number ilike '%' || $2 || '%'
              or ('P' || posted_row.number_value::text || '/'
-                 || posted_row.number_year::text) ilike '%' || $2 || '%')
+                 || posted_row.number_year::text) ilike '%' || $2 || '%'
+             or posted_row.ref_number ilike '%' || $2 || '%'
+             or posted_row.invoice_date::text ilike '%' || $2 || '%')
            and (
              case when $5::text = 'posted-at' then
                ($3::date is null or (posted_row.posted_at at time zone 'UTC')::date >= $3::date)
@@ -1481,6 +1548,7 @@ export class PurchasingService {
           costAfterDiscountFils: costsVisible
             ? row.cost_after_discount_fils
             : null,
+          hasAdjustments: Boolean(row.has_adjustments),
           id: row.id,
           invoiceDate: row.invoice_date,
           itemCount: row.item_count,
@@ -1489,10 +1557,13 @@ export class PurchasingService {
             value: row.number_value,
             year: row.number_year,
           },
+          originalPurchaseId: row.original_purchase_id ?? null,
           postedAt: row.posted_at.toISOString(),
           primarySupplierCostFils: costsVisible
             ? row.primary_supplier_cost_fils
             : null,
+          refNumber: row.ref_number || null,
+          rowKind: row.row_kind ?? "purchase",
           settlementContext: row.settlement_context,
           supplierInvoiceNumber: row.supplier_invoice_number,
           supplierNameSnapshot: row.supplier_name_snapshot,

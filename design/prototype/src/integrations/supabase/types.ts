@@ -1313,6 +1313,7 @@ export type Database = {
           chronic_diseases: string[]
           chronic_meds: string[]
           created_at: string
+          discount_pct: number
           full_name: string
           gender: string | null
           has_allergy: boolean
@@ -1333,6 +1334,7 @@ export type Database = {
           chronic_diseases?: string[]
           chronic_meds?: string[]
           created_at?: string
+          discount_pct?: number
           full_name: string
           gender?: string | null
           has_allergy?: boolean
@@ -1353,6 +1355,7 @@ export type Database = {
           chronic_diseases?: string[]
           chronic_meds?: string[]
           created_at?: string
+          discount_pct?: number
           full_name?: string
           gender?: string | null
           has_allergy?: boolean

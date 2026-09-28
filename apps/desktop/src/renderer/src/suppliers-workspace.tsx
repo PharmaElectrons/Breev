@@ -1,5 +1,16 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { PurchaseDraft, Supplier } from "@breev/contracts/local-rest";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type {
+  PurchaseDraft,
+  PurchasePostedListItem,
+  Supplier,
+} from "@breev/contracts/local-rest";
 import { usePreferences } from "./preferences-provider";
 import {
   archiveSupplier,
@@ -9,6 +20,7 @@ import {
   PurchasingApiDenied,
   purchasingCommandAttempt,
   type PurchasingCommandAttempt,
+  requestPostedPurchases,
 } from "./purchasing-api";
 import { purchasingMessages } from "./purchasing-messages";
 
@@ -84,12 +96,15 @@ const today = (): string => {
 export function SuppliersWorkspace({
   baseUrl,
   suppliers,
-  drafts,
+  initialPostedPurchases,
+  initialSelectedId,
   onChanged,
 }: {
   readonly baseUrl: string;
   readonly suppliers: readonly Supplier[];
-  readonly drafts: readonly PurchaseDraft[];
+  readonly drafts?: readonly PurchaseDraft[];
+  readonly initialPostedPurchases?: readonly PurchasePostedListItem[];
+  readonly initialSelectedId?: string;
   readonly onChanged: () => Promise<void>;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -105,7 +120,9 @@ export function SuppliersWorkspace({
   const alertWindowId = useId();
   const mergeId = useId();
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => initialSelectedId ?? suppliers[0]?.id ?? null,
+  );
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -162,21 +179,49 @@ export function SuppliersWorkspace({
     supplierCommandAttempt.current = null;
   }, [selected]);
 
-  const supplierDrafts = useMemo(
-    () => drafts.filter((d) => d.supplierId === selectedId),
-    [drafts, selectedId],
-  );
+  const [postedPurchases, setPostedPurchases] = useState<
+    readonly PurchasePostedListItem[]
+  >(() => initialPostedPurchases ?? []);
 
-  const balanceFor = (id: string): number => {
-    return drafts
-      .filter((d) => d.supplierId === id)
-      .reduce((sum, d) => {
-        const basis = Number(d.allowanceSnapshot.basisFils) / 1000;
-        return sum + (d.settlementContext === "debt" ? basis : 0);
+  const loadPosted = useCallback(async (): Promise<void> => {
+    if (!baseUrl) {
+      setPostedPurchases([]);
+      return;
+    }
+    try {
+      const res = await requestPostedPurchases(baseUrl);
+      setPostedPurchases(res.purchases);
+    } catch {
+      setPostedPurchases([]);
+    }
+  }, [baseUrl]);
+
+  useEffect(() => {
+    void loadPosted();
+  }, [loadPosted]);
+
+  const supplierPurchases = useMemo(() => {
+    if (!selected) return [];
+    const selName = selected.name.trim().toLowerCase();
+    return postedPurchases.filter(
+      (p) => p.supplierNameSnapshot.trim().toLowerCase() === selName,
+    );
+  }, [postedPurchases, selected]);
+
+  const balanceFor = (supplierName: string): number => {
+    const sName = supplierName.trim().toLowerCase();
+    return postedPurchases
+      .filter((p) => p.supplierNameSnapshot.trim().toLowerCase() === sName)
+      .reduce((sum, p) => {
+        if (p.settlementContext !== "debt") return sum;
+        const total =
+          Number(p.costAfterDiscountFils ?? p.primarySupplierCostFils ?? 0) /
+          1000;
+        return sum + total;
       }, 0);
   };
 
-  const liveBalance = selected ? balanceFor(selected.id) : 0;
+  const liveBalance = selected ? balanceFor(selected.name) : 0;
   const overLimit = selected && creditLimit > 0 && liveBalance > creditLimit;
 
   const filteredSuppliers = useMemo(() => {
@@ -265,6 +310,7 @@ export function SuppliersWorkspace({
       setSelectedId(saved.id);
       setMessage({ text: copy.supplierSaved, isError: false });
       await onChanged();
+      await loadPosted();
     } catch (err) {
       setMessage({ text: getSupplierErrorMessage(err, copy), isError: true });
     } finally {
@@ -293,6 +339,7 @@ export function SuppliersWorkspace({
       setSelectedId(null);
       setMessage({ text: copy.supplierSaved, isError: false });
       await onChanged();
+      await loadPosted();
     } catch (err) {
       setMessage({ text: getSupplierErrorMessage(err, copy), isError: true });
     } finally {
@@ -322,6 +369,7 @@ export function SuppliersWorkspace({
       setSelectedId(null);
       setMessage({ text: copy.supplierSaved, isError: false });
       await onChanged();
+      await loadPosted();
     } catch (err) {
       setMessage({ text: getSupplierErrorMessage(err, copy), isError: true });
     } finally {
@@ -740,7 +788,7 @@ export function SuppliersWorkspace({
                 {copy.invoiceLedger}
               </h3>
               <span className="text-[10px] text-muted-foreground font-mono">
-                {supplierDrafts.length} {copy.invoicesCount}
+                {supplierPurchases.length} {copy.invoicesCount}
               </span>
             </div>
             <div className="overflow-auto max-h-[36vh] border border-border rounded-lg">
@@ -757,24 +805,31 @@ export function SuppliersWorkspace({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
-                  {supplierDrafts.map((d, index) => {
+                  {supplierPurchases.map((p, index) => {
                     const totalIQD =
-                      Number(d.allowanceSnapshot.basisFils) / 1000;
+                      Number(
+                        p.costAfterDiscountFils ??
+                          p.primarySupplierCostFils ??
+                          0,
+                      ) / 1000;
                     const paidIQD =
-                      d.settlementContext === "cash" ? totalIQD : 0;
+                      p.settlementContext === "cash" ? totalIQD : 0;
                     const outstanding = totalIQD - paidIQD;
                     return (
-                      <tr key={d.id} className="hover:bg-muted/50">
+                      <tr key={p.id} className="hover:bg-muted/50">
                         <td className="px-3 py-2 font-mono">
-                          {d.supplierInvoiceNumber || index + 1}
+                          {p.supplierInvoiceNumber ||
+                            (p.number
+                              ? `${p.number.series}${p.number.value}/${p.number.year}`
+                              : index + 1)}
                         </td>
-                        <td className="px-3 py-2 font-mono">{d.invoiceDate}</td>
+                        <td className="px-3 py-2 font-mono">{p.invoiceDate}</td>
                         <td className="px-3 py-2">
-                          {d.settlementContext === "cash"
+                          {p.settlementContext === "cash"
                             ? copy.cash
                             : copy.debt}
                         </td>
-                        <td className="px-3 py-2">{copy[d.status]}</td>
+                        <td className="px-3 py-2">{copy.posted}</td>
                         <td className="px-3 py-2 font-mono text-end">
                           {formatIQD(totalIQD)}
                         </td>
@@ -791,7 +846,7 @@ export function SuppliersWorkspace({
                       </tr>
                     );
                   })}
-                  {supplierDrafts.length === 0 && (
+                  {supplierPurchases.length === 0 && (
                     <tr>
                       <td
                         colSpan={7}
@@ -842,9 +897,15 @@ export function SuppliersWorkspace({
                     </p>
                     <p className="font-mono font-bold text-lg text-foreground tabular-nums">
                       {formatIQD(
-                        supplierDrafts.reduce(
-                          (sum, d) =>
-                            sum + Number(d.allowanceSnapshot.basisFils) / 1000,
+                        supplierPurchases.reduce(
+                          (sum, p) =>
+                            sum +
+                            Number(
+                              p.costAfterDiscountFils ??
+                                p.primarySupplierCostFils ??
+                                0,
+                            ) /
+                              1000,
                           0,
                         ),
                       )}
@@ -856,11 +917,15 @@ export function SuppliersWorkspace({
                     </p>
                     <p className="font-mono font-bold text-lg text-ready tabular-nums">
                       {formatIQD(
-                        supplierDrafts.reduce(
-                          (sum, d) =>
+                        supplierPurchases.reduce(
+                          (sum, p) =>
                             sum +
-                            (d.settlementContext === "cash"
-                              ? Number(d.allowanceSnapshot.basisFils) / 1000
+                            (p.settlementContext === "cash"
+                              ? Number(
+                                  p.costAfterDiscountFils ??
+                                    p.primarySupplierCostFils ??
+                                    0,
+                                ) / 1000
                               : 0),
                           0,
                         ),
@@ -894,19 +959,26 @@ export function SuppliersWorkspace({
                     <tbody className="divide-y divide-border/50">
                       {(() => {
                         let running = 0;
-                        return supplierDrafts.map((d, i) => {
+                        return supplierPurchases.map((p, i) => {
                           const total =
-                            Number(d.allowanceSnapshot.basisFils) / 1000;
+                            Number(
+                              p.costAfterDiscountFils ??
+                                p.primarySupplierCostFils ??
+                                0,
+                            ) / 1000;
                           const paid =
-                            d.settlementContext === "cash" ? total : 0;
+                            p.settlementContext === "cash" ? total : 0;
                           running += total - paid;
                           return (
-                            <tr key={d.id} className="hover:bg-muted/30">
+                            <tr key={p.id} className="hover:bg-muted/30">
                               <td className="px-3 py-2 font-mono">
-                                {d.invoiceDate}
+                                {p.invoiceDate}
                               </td>
                               <td className="px-3 py-2 font-mono">
-                                {d.supplierInvoiceNumber || i + 1}
+                                {p.supplierInvoiceNumber ||
+                                  (p.number
+                                    ? `${p.number.series}${p.number.value}/${p.number.year}`
+                                    : i + 1)}
                               </td>
                               <td className="px-3 py-2 font-mono text-end text-danger">
                                 {formatIQD(total)}

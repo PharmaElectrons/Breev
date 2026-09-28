@@ -40,14 +40,18 @@ For first-time PostgreSQL and environment setup, follow [`docs/running-locally.m
 
 ## Check the code
 
-```bash
-pnpm test:unit
-pnpm test:integration
-pnpm test:browser
-pnpm test:smoke
-```
+During active development, run only the targeted seam matching your change:
 
-Run `pnpm verify` for linting, formatting, type checks, builds, and every test suite. The integration, browser, and smoke suites require Docker.
+- **Desktop UI / Renderer:** `pnpm typecheck:renderer` or `pnpm test:desktop:unit`
+- **Local API Domain Logic:** `pnpm test:api:unit`
+- **Targeted Browser Flow:** `pnpm --filter @breev/desktop exec playwright test test/browser/<screen>.browser.test.ts`
+- **Database & Migrations:** `pnpm test:integration` (requires PostgreSQL)
+
+Before pushing or opening a Pull Request, run the full repository pre-flight gate:
+
+```bash
+pnpm verify
+```
 
 ## Repository map
 

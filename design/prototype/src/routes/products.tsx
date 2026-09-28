@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Printer, Barcode as BarcodeIcon, ScanBarcode, Save, Trash2, Plus, LogOut, FileSpreadsheet, History, PackageSearch, Wand2 } from "lucide-react";
+import { Loader2, Printer, Barcode as BarcodeIcon, ScanBarcode, Save, Trash2, Plus, LogOut, FileSpreadsheet, History, PackageSearch, Wand2, Rows3 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,10 +12,11 @@ import {
   type Medicine,
 } from "@/lib/db";
 import { BarcodePrintPanel } from "@/components/barcode-print";
-import { roundUpTo250, priceFromMarginOnSale } from "@/lib/pharmacy";
+import { roundToNearest500, priceFromMarginOnSale } from "@/lib/pharmacy";
 import { setMedicineColor } from "@/lib/highlight-colors";
 import { AddMaterialPanel, type AddMaterialSeed } from "@/components/add-material-modal";
 import { getBarcodeAliases, setBarcodeAliases } from "@/lib/barcode-aliases";
+import { BatchItemsPanel } from "@/components/batch-items-panel";
 
 
 export const Route = createFileRoute("/products")({
@@ -118,6 +119,7 @@ function ProductsPage() {
 
   const [categories, setCategories] = useState<string[]>([]);
   const [addPanelOpen, setAddPanelOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   // Pricing mode: enter selling prices as a fixed IQD amount, or as a margin % of the sale price.
   const [priceMode, setPriceMode] = useState<"amount" | "pct">("amount");
   const [retailPct, setRetailPct] = useState(0);
@@ -153,52 +155,54 @@ function ProductsPage() {
   };
 
   /**
-   * Auto-split large-unit price to small-unit price with round-up to nearest 250 IQD.
-   * Also mirrors cost split with same rounding-up rule.
+   * Auto-calculate the secondary (bulk/package) unit price and cost from the base (smallest) unit.
+   * When the base unit price/cost or the packing ratio changes, the large unit is multiplied up.
    */
-  const setLargeWithSplit = <K extends "large_unit_price" | "large_unit_cost" | "units_per_large">(key: K, val: number) => {
+  const setSmallUnit = <K extends "small_unit_price" | "small_unit_cost" | "units_per_large">(key: K, val: number) => {
     setForm((f) => {
       const next: Partial<Medicine> = { ...f, [key]: val } as Partial<Medicine>;
       const packing = Math.max(1, Number(next.units_per_large ?? 1) || 1);
       if (packing > 1) {
-        const price = Number(next.large_unit_price ?? 0) || 0;
-        const cost = Number(next.large_unit_cost ?? 0) || 0;
-        next.small_unit_price = roundUpTo250(price / packing);
-        next.small_unit_cost = roundUpTo250(cost / packing);
+        const price = Number(next.small_unit_price ?? 0) || 0;
+        const cost = Number(next.small_unit_cost ?? 0) || 0;
+        next.large_unit_price = roundToNearest500(price * packing);
+        next.large_unit_cost = cost * packing;
       }
       return next;
     });
-    // Fractional wholesale price for small unit: wholesale_large / packing, rounded UP to nearest 250 IQD.
+    // Propagate special wholesale price up to the package unit when packing changes.
     if (key === "units_per_large") {
-      setExtrasState((x) => ({
-        ...x,
-        wholesale_small: val > 1 ? roundUpTo250((x.wholesale_large || 0) / val) : x.wholesale_small,
-      }));
+      setExtrasState((x) => {
+        const packing = Math.max(1, val || 1);
+        return {
+          ...x,
+          wholesale_large: packing > 1 ? roundToNearest500((x.wholesale_small || 0) * packing) : x.wholesale_large,
+        };
+      });
     }
     if (key === "units_per_large" && val > 1 && !secondUnit) setSecondUnit(true);
   };
 
-  /** Update the primary-unit wholesale price and auto-split into the secondary-unit wholesale (↑250). */
-  const setWholesaleLarge = (val: number) => {
+  /** Update the base-unit special price and auto-calculate the package-unit special price. */
+  const setWholesaleSmall = (val: number) => {
     setExtrasState((x) => {
       const packing = Math.max(1, Number(form.units_per_large ?? 1) || 1);
       return {
         ...x,
-        wholesale_large: val,
-        wholesale_small: packing > 1 ? roundUpTo250(val / packing) : val,
+        wholesale_small: val,
+        wholesale_large: packing > 1 ? roundToNearest500(val * packing) : val,
       };
     });
   };
 
-
-  /** Percentage pricing: derive the selling price from cost using margin-on-sale. */
+  /** Percentage pricing: derive the base-unit selling price from base-unit cost using margin-on-sale. */
   const applyRetailPct = (pct: number) => {
     setRetailPct(pct);
-    setLargeWithSplit("large_unit_price", priceFromMarginOnSale(Number(form.large_unit_cost ?? 0) || 0, pct));
+    setSmallUnit("small_unit_price", priceFromMarginOnSale(Number(form.small_unit_cost ?? 0) || 0, pct));
   };
   const applySpecialPct = (pct: number) => {
     setSpecialPct(pct);
-    setWholesaleLarge(priceFromMarginOnSale(Number(form.large_unit_cost ?? 0) || 0, pct));
+    setWholesaleSmall(priceFromMarginOnSale(Number(form.small_unit_cost ?? 0) || 0, pct));
   };
 
   const scrollToLedger = () => {
@@ -386,6 +390,13 @@ function ProductsPage() {
 
   return (
     <AppShell title="بيانات المواد">
+      {batchOpen && (
+        <BatchItemsPanel
+          categories={categories}
+          onClose={() => setBatchOpen(false)}
+          onSaved={() => { void refresh(); }}
+        />
+      )}
       <div className="flex-1 flex overflow-hidden text-xs">
         {/* List */}
         <aside className="w-60 border-l border-border flex flex-col bg-slate-950/40 shrink-0">
@@ -394,12 +405,21 @@ function ProductsPage() {
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                 المواد ({items.length})
               </span>
-              <button
-                onClick={openBlank}
-                className="px-2 py-1 rounded-md bg-emerald text-primary-foreground text-[10px] font-bold"
-              >
-                + جديد
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setBatchOpen(true)}
+                  title="تعريف مواد / دواء متعدد"
+                  className="px-2 py-1 rounded-md bg-slate-800 border border-emerald/40 text-emerald text-[10px] font-bold hover:bg-emerald/10 flex items-center gap-1 whitespace-nowrap"
+                >
+                  <Rows3 className="size-3" /> تعريف متعدد
+                </button>
+                <button
+                  onClick={openBlank}
+                  className="px-2 py-1 rounded-md bg-emerald text-primary-foreground text-[10px] font-bold"
+                >
+                  + جديد
+                </button>
+              </div>
             </div>
             <input
               value={q}
@@ -590,10 +610,10 @@ function ProductsPage() {
 
 
 
-              {/* Basic Unit block */}
+              {/* Basic Unit block — smallest unit (strip/tablet) */}
               <section className="rounded-lg border border-emerald/25 bg-emerald/5 p-2.5 space-y-2">
                 <header className="flex items-center justify-between">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald">الوحدة الأساسية (الكبرى)</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald">الوحدة الأساسية (الصغرى)</p>
                   <div className="flex items-center gap-1 mr-auto ml-2">
                     <span className="text-[10px] font-bold text-muted-foreground">طريقة البيع</span>
                     <div className="flex rounded-md border border-emerald/30 overflow-hidden">
@@ -610,69 +630,69 @@ function ProductsPage() {
                     </div>
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <span className="text-[10px] font-bold text-muted-foreground">تفعيل الوحدة التفصيلية (الصغرى)</span>
+                    <span className="text-[10px] font-bold text-muted-foreground">تفعيل التعبئة</span>
                     <span className={`relative inline-block w-9 h-5 rounded-full transition ${secondUnit ? "bg-emerald" : "bg-slate-700"}`}
                       onClick={() => setSecondUnit((v) => !v)}>
                       <span className={`absolute top-0.5 size-4 rounded-full bg-white transition ${secondUnit ? "right-0.5" : "right-[calc(100%-1.125rem)]"}`} />
                     </span>
                   </label>
                 </header>
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <Field label="الاسم" tiny>
-                    <input value={form.large_unit_name ?? ""} onChange={(e) => setF("large_unit_name", e.target.value)} placeholder="باكيت" className={cxInSm} />
+                    <input value={form.small_unit_name ?? ""} onChange={(e) => setF("small_unit_name", e.target.value)} placeholder="شريط / حبة" className={cxInSm} />
                   </Field>
                   <Field label="الكلفة" tiny>
-                    <input type="number" value={String(form.large_unit_cost ?? 0)} onChange={(e) => setLargeWithSplit("large_unit_cost", Number(e.target.value) || 0)} className={cxInSmMono} />
+                    <input type="number" value={String(form.small_unit_cost ?? 0)} onChange={(e) => setSmallUnit("small_unit_cost", Number(e.target.value) || 0)} className={cxInSmMono} />
                   </Field>
                   <Field label={priceMode === "pct" ? "سعر البيع — نسبة %" : "سعر البيع"} tiny>
                     {priceMode === "pct" ? (
                       <div className="flex items-center gap-1">
                         <input type="number" min={0} max={95} value={String(retailPct)} onChange={(e) => applyRetailPct(Number(e.target.value) || 0)} className={cxInSmMono + " text-emerald"} />
-                        <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">{(form.large_unit_price ?? 0).toLocaleString()}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">{(form.small_unit_price ?? 0).toLocaleString()}</span>
                       </div>
                     ) : (
-                      <input type="number" value={String(form.large_unit_price ?? 0)} onChange={(e) => setLargeWithSplit("large_unit_price", Number(e.target.value) || 0)} className={cxInSmMono} />
+                      <input type="number" value={String(form.small_unit_price ?? 0)} onChange={(e) => setSmallUnit("small_unit_price", Number(e.target.value) || 0)} className={cxInSmMono} />
                     )}
                   </Field>
                   <Field label={priceMode === "pct" ? "سعر خاص — نسبة %" : "سعر خاص"} tiny>
                     {priceMode === "pct" ? (
                       <div className="flex items-center gap-1">
                         <input type="number" min={0} max={95} value={String(specialPct)} onChange={(e) => applySpecialPct(Number(e.target.value) || 0)} className={cxInSmMono + " text-emerald"} />
-                        <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">{extras.wholesale_large.toLocaleString()}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">{extras.wholesale_small.toLocaleString()}</span>
                       </div>
                     ) : (
-                      <input type="number" value={String(extras.wholesale_large)} onChange={(e) => setWholesaleLarge(Number(e.target.value) || 0)} className={cxInSmMono} />
+                      <input type="number" value={String(extras.wholesale_small)} onChange={(e) => setWholesaleSmall(Number(e.target.value) || 0)} className={cxInSmMono} />
                     )}
-                  </Field>
-                  <Field label="التعبئة" tiny>
-                    <input
-                      type="number"
-                      min={1}
-                      value={String(form.units_per_large ?? 1)}
-                      onChange={(e) => setLargeWithSplit("units_per_large", Math.max(1, Number(e.target.value) || 1))}
-                      className={cxInSmMono + " ring-1 ring-emerald/30"}
-                      title="عدد الوحدات الصغيرة داخل الوحدة الأساسية"
-                    />
                   </Field>
                 </div>
               </section>
 
-              {/* Secondary Unit — conditional (auto-unlocked when packing > 1) */}
+              {/* Secondary Unit — bulk/package unit (box/pack) */}
               {secondUnit && (
                 <section className="rounded-lg border border-emerald/20 bg-slate-900/40 p-2.5 space-y-2 animate-reveal">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald">الوحدة التفصيلية (الصغرى)</p>
-                  <div className="grid grid-cols-4 gap-2">
-                    <Field label="اسم الوحدة 2" tiny>
-                      <input value={form.small_unit_name ?? ""} onChange={(e) => setF("small_unit_name", e.target.value)} placeholder="شريط / كارتون" className={cxInSm} />
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald">الوحدة الثانوية (الكبرى)</p>
+                  <div className="grid grid-cols-5 gap-2">
+                    <Field label="اسم الوحدة الثانوية" tiny>
+                      <input value={form.large_unit_name ?? ""} onChange={(e) => setF("large_unit_name", e.target.value)} placeholder="باكيت / كارتون" className={cxInSm} />
                     </Field>
-                    <Field label="كلفة الوحدة 2" tiny>
-                      <input type="number" value={String(form.small_unit_cost ?? 0)} onChange={(e) => setF("small_unit_cost", Number(e.target.value) || 0)} className={cxInSmMono} />
+                    <Field label="التعبئة" tiny>
+                      <input
+                        type="number"
+                        min={1}
+                        value={String(form.units_per_large ?? 1)}
+                        onChange={(e) => setSmallUnit("units_per_large", Math.max(1, Number(e.target.value) || 1))}
+                        className={cxInSmMono + " ring-1 ring-emerald/30"}
+                        title="عدد الوحدات الأساسية داخل الوحدة الثانوية"
+                      />
                     </Field>
-                    <Field label="مفرد (تلقائي ↑250)" tiny>
-                      <input type="number" value={String(form.small_unit_price ?? 0)} onChange={(e) => setF("small_unit_price", Number(e.target.value) || 0)} className={cxInSmMono + " text-emerald"} />
+                    <Field label="كلفة الوحدة الثانوية" tiny>
+                      <input type="number" value={String(form.large_unit_cost ?? 0)} onChange={(e) => setF("large_unit_cost", Number(e.target.value) || 0)} className={cxInSmMono} />
                     </Field>
-                    <Field label="سعر خاص" tiny>
-                      <input type="number" value={String(extras.wholesale_small)} onChange={(e) => setExtrasState((x) => ({ ...x, wholesale_small: Number(e.target.value) || 0 }))} className={cxInSmMono} />
+                    <Field label="سعر بيع الوحدة الثانوية" tiny>
+                      <input type="number" value={String(form.large_unit_price ?? 0)} onChange={(e) => setF("large_unit_price", Number(e.target.value) || 0)} className={cxInSmMono + " text-emerald"} />
+                    </Field>
+                    <Field label="السعر الخاص للوحدة الثانوية" tiny>
+                      <input type="number" value={String(extras.wholesale_large)} onChange={(e) => setExtrasState((x) => ({ ...x, wholesale_large: Number(e.target.value) || 0 }))} className={cxInSmMono} />
                     </Field>
                   </div>
                 </section>

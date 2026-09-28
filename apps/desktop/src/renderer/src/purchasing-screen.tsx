@@ -1071,6 +1071,7 @@ export function PurchasingRouteView({
         </form>
 
         <PurchaseItemPanel
+          baseUrl={baseUrl}
           hidden={!canManageDrafts || view !== "invoice"}
           selection={itemSelection}
         />

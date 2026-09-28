@@ -156,33 +156,28 @@ function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     const ensureSession = async () => {
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (data?.session) {
-          if (mounted) setReady(true);
-          return;
-        }
-        const signIn = await supabase.auth.signInWithPassword({
-          email: DUMMY_EMAIL,
-          password: DUMMY_PASSWORD,
-        });
-        if (!signIn.error) {
-          if (mounted) setReady(true);
-          return;
-        }
-        await supabase.auth.signUp({
-          email: DUMMY_EMAIL,
-          password: DUMMY_PASSWORD,
-        });
-        await supabase.auth.signInWithPassword({
-          email: DUMMY_EMAIL,
-          password: DUMMY_PASSWORD,
-        });
-      } catch (err) {
-        console.warn("Supabase auth skipped in demo mode:", err);
-      } finally {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
         if (mounted) setReady(true);
+        return;
       }
+      const signIn = await supabase.auth.signInWithPassword({
+        email: DUMMY_EMAIL,
+        password: DUMMY_PASSWORD,
+      });
+      if (!signIn.error) {
+        if (mounted) setReady(true);
+        return;
+      }
+      await supabase.auth.signUp({
+        email: DUMMY_EMAIL,
+        password: DUMMY_PASSWORD,
+      });
+      await supabase.auth.signInWithPassword({
+        email: DUMMY_EMAIL,
+        password: DUMMY_PASSWORD,
+      });
+      if (mounted) setReady(true);
     };
     ensureSession();
     return () => {

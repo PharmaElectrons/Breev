@@ -845,6 +845,11 @@ function hardenWebContents(window: BrowserWindow): void {
   window.webContents.on("will-attach-webview", (event) =>
     event.preventDefault(),
   );
+  if (!app.isPackaged) {
+    window.webContents.on("console-message", (_event, _level, message) => {
+      console.log(`[renderer console] ${message}`);
+    });
+  }
 }
 
 /**
@@ -886,6 +891,9 @@ async function registerAppProtocol(): Promise<void> {
       const headers = new Headers(response.headers);
       headers.set("Content-Security-Policy", APP_CONTENT_SECURITY_POLICY);
       headers.set("X-Content-Type-Options", "nosniff");
+      headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+      headers.set("Pragma", "no-cache");
+      headers.set("Expires", "0");
       return new Response(response.body, {
         headers,
         status: response.status,
@@ -942,6 +950,14 @@ void app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler(
     (_webContents, _permission, callback) => callback(false),
   );
+  if (!app.isPackaged) {
+    try {
+      await session.defaultSession.clearCache();
+      await session.defaultSession.clearCodeCaches({});
+    } catch {
+      // Ignore cache clear failure
+    }
+  }
 
   let startup: Awaited<ReturnType<typeof startRoleRuntime>>;
   try {

@@ -13,6 +13,7 @@ import {
   discardPurchaseAdjustmentDraft,
   newPurchasingIdempotencyKey,
   postPurchaseAdjustment,
+  requestPostedPurchases,
   requestPurchaseAdjustmentDraft,
   requestPurchaseAdjustmentSummary,
   requestSuppliers,
@@ -35,10 +36,12 @@ const text = {
     adjustmentDraftBadge: "Purchase invoice adjustment draft",
     adjustmentReasonPlaceholder: "Adjustment reason",
     adjustmentSubtitleAlert: "Draft adjustment",
+    afterDiscount: "After discount",
     back: "Back to original invoice",
     blocked:
       "This Delta is not valid against current stock. Resolve it through a stock count, a Purchase Return, or another correction, then retry.",
     cancel: "Cancel",
+    cancelAdjustment: "Cancel",
     confirm: "Confirm and post Delta",
     continue: "Continue draft",
     cost: "Primary supplier cost (fils)",
@@ -51,8 +54,11 @@ const text = {
     difference: "Difference and impact",
     discardQuestion:
       "This adjustment is unfinished. Continue it or delete the draft before leaving.",
+    discountAmount: "Disc amount",
+    discountPercentage: "Disc %",
     editInvoice: "Edit Invoice",
     evidence: "Reason evidence",
+    expenses: "Invoice expenses",
     expiry: "Expiry",
     invoice: "Supplier invoice number",
     iqd: "IQD",
@@ -60,8 +66,12 @@ const text = {
     itemSearchHint: "Search to add item…",
     margin: "Margin %",
     netDeltaPosted: "Net posted delta:",
+    newInvoice: "New invoice",
+    next: "Next <",
     originalInvoiceBadge: "Original: Purchase invoice #",
     posted: "Adjustment posted",
+    previous: "Previous >",
+    print: "Print",
     printInvoice: "Print invoice",
     qtyAfter: "Qty after",
     qtyBefore: "Qty before",
@@ -69,11 +79,14 @@ const text = {
     quantity: "Quantity",
     reason: "Reason",
     reasonAuditPlaceholder: "Adjustment reason (recorded in audit log)",
+    remainingTotal: "Remaining total",
     remove: "Remove line",
     retail: "Retail price (fils)",
     returned: "Returned",
     returnInvoice: "Purchase return",
+    returnTotal: "Total returned",
     saveReview: "Save and review Delta",
+    searchInvoice: "Search invoice",
     special: "Special price",
     start: "Create adjustment copy",
     supplier: "Supplier",
@@ -93,10 +106,12 @@ const text = {
     adjustmentDraftBadge: "مسودة تعديل فاتورة شراء",
     adjustmentReasonPlaceholder: "سبب التعديل",
     adjustmentSubtitleAlert: "مسودة تعديل",
+    afterDiscount: "بعد الخصم",
     back: "العودة إلى الفاتورة الأصلية",
     blocked:
       "هذا الفرق غير صالح مقابل المخزون الحالي. عالجه بجرد المخزون أو مردود شراء أو تصحيح آخر، ثم أعد المحاولة.",
     cancel: "إلغاء",
+    cancelAdjustment: "إلغاء التعديل",
     confirm: "تأكيد وحفظ التعديل",
     continue: "متابعة المسودة",
     cost: "الكلفة",
@@ -109,8 +124,11 @@ const text = {
     difference: "ملخص الفروقات",
     discardQuestion:
       "هذا التعديل غير مكتمل. تابع المسودة أو احذفها قبل المغادرة.",
+    discountAmount: "خصم مبلغ",
+    discountPercentage: "خصم %",
     editInvoice: "تعديل الفاتورة",
     evidence: "دليل السبب",
+    expenses: "إضافة مصاريف للفاتورة",
     expiry: "الإكسباير",
     invoice: "رقم الفاتورة",
     iqd: "د.ع",
@@ -118,8 +136,12 @@ const text = {
     itemSearchHint: "ابحث لإضافة مادة…",
     margin: "الربح %",
     netDeltaPosted: "صافي الفرق المرحّل:",
+    newInvoice: "فاتورة جديدة",
+    next: "التالية <",
     originalInvoiceBadge: "الأصل: فاتورة شراء رقم",
     posted: "تم حفظ التعديل",
+    previous: "السابقة >",
+    print: "طباعة فاتورة",
     printInvoice: "طباعة الفاتورة",
     qtyAfter: "الكمية بعد",
     qtyBefore: "الكمية قبل",
@@ -127,11 +149,14 @@ const text = {
     quantity: "كمية",
     reason: "السبب",
     reasonAuditPlaceholder: "سبب التعديل (يُسجّل في سجل المراجعة)",
+    remainingTotal: "الإجمالي الباقي",
     remove: "حذف السطر",
     retail: "سعر البيع",
     returned: "الراجع",
     returnInvoice: "إرجاع الفاتورة",
+    returnTotal: "إجمالي الراجع",
     saveReview: "حفظ ومراجعة الفرق",
+    searchInvoice: "بحث عن فاتورة",
     special: "سعر خاص",
     start: "إنشاء نسخة التعديل",
     supplier: "المورد",
@@ -174,6 +199,7 @@ export function PurchaseAdjustmentWorkflow({
     useState<PurchaseAdjustmentReason>("quantity error");
   const [evidence, setEvidence] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierDebtFils, setSupplierDebtFils] = useState<string>("0");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{
     readonly message: string;
@@ -194,6 +220,33 @@ export function PurchaseAdjustmentWorkflow({
       .then((result) => setSuppliers(result.suppliers))
       .catch(handleError);
   }, [baseUrl]);
+
+  useEffect(() => {
+    const sName = detail.supplierNameSnapshot.trim().toLowerCase();
+    void requestPostedPurchases(baseUrl, { query: detail.supplierNameSnapshot })
+      .then((result) => {
+        const debt = result.purchases
+          .filter(
+            (p) =>
+              p.supplierNameSnapshot.trim().toLowerCase() === sName &&
+              p.settlementContext === "debt",
+          )
+          .reduce((acc, p) => {
+            try {
+              const cost = BigInt(
+                p.costAfterDiscountFils ?? p.primarySupplierCostFils ?? "0",
+              );
+              return acc + cost;
+            } catch {
+              return acc;
+            }
+          }, 0n);
+        setSupplierDebtFils(debt.toString());
+      })
+      .catch(() => {
+        setSupplierDebtFils("0");
+      });
+  }, [baseUrl, detail.supplierNameSnapshot]);
 
   useEffect(() => {
     onDraftActive(detail.activeAdjustmentDrafts.length > 0);
@@ -654,7 +707,9 @@ export function PurchaseAdjustmentWorkflow({
               <span className="adjustment-metadata-label">
                 {copy.supplierDebt}:
               </span>
-              <bdi className="adjustment-metadata-value">— {copy.iqd}</bdi>
+              <bdi className="adjustment-metadata-value">
+                {formatFilsToIqd(supplierDebtFils, locale)}
+              </bdi>
             </div>
             <div className="adjustment-metadata-search">
               <input
@@ -782,7 +837,11 @@ export function PurchaseAdjustmentWorkflow({
                             />
                           </td>
                           <td>
-                            <bdi>{row.marginPercentage ?? "—"}</bdi>
+                            <bdi>
+                              {row.marginPercentage
+                                ? `${row.marginPercentage}%`
+                                : "0%"}
+                            </bdi>
                           </td>
                           <td>
                             <input
@@ -895,7 +954,7 @@ export function PurchaseAdjustmentWorkflow({
                               }}
                             />
                           </td>
-                          <td>—</td>
+                          <td>0%</td>
                           <td>
                             <input
                               aria-label={`${copy.retail} ${row.itemDisplayName}`}
@@ -950,23 +1009,29 @@ export function PurchaseAdjustmentWorkflow({
               </div>
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
-                  إضافة مصاريف للفاتورة:
+                  {copy.expenses}:
                 </span>
                 <bdi className="font-mono">0</bdi>
               </div>
               <div className="adjustment-totals-item">
-                <span className="adjustment-metadata-label">خصم %:</span>
+                <span className="adjustment-metadata-label">
+                  {copy.discountPercentage}:
+                </span>
                 <bdi className="font-mono">0</bdi>
               </div>
               <div className="adjustment-totals-item">
-                <span className="adjustment-metadata-label">خصم مبلغ:</span>
+                <span className="adjustment-metadata-label">
+                  {copy.discountAmount}:
+                </span>
                 <bdi className="font-mono">0</bdi>
               </div>
             </div>
 
             <div className="adjustment-totals-group">
               <div className="adjustment-totals-item">
-                <span className="adjustment-metadata-label">بعد الخصم:</span>
+                <span className="adjustment-metadata-label">
+                  {copy.afterDiscount}:
+                </span>
                 <strong>
                   <bdi className="font-mono">
                     {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
@@ -975,7 +1040,7 @@ export function PurchaseAdjustmentWorkflow({
               </div>
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
-                  الإجمالي الباقي:
+                  {copy.remainingTotal}:
                 </span>
                 <strong className="adjustment-totals-grand">
                   <bdi>
@@ -985,9 +1050,9 @@ export function PurchaseAdjustmentWorkflow({
               </div>
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
-                  إجمالي الراجع:
+                  {copy.returnTotal}:
                 </span>
-                <bdi className="font-mono">0 {copy.iqd}</bdi>
+                <bdi className="font-mono">{formatFilsToIqd("0", locale)}</bdi>
               </div>
             </div>
           </div>
@@ -1001,28 +1066,28 @@ export function PurchaseAdjustmentWorkflow({
                   className="adjustment-toolbar-btn"
                   onClick={leave}
                 >
-                  {locale === "ar" ? "السابقة >" : "Previous >"}
+                  {copy.previous}
                 </button>
                 <button
                   type="button"
                   className="adjustment-toolbar-btn"
                   onClick={leave}
                 >
-                  {locale === "ar" ? "التالية <" : "Next <"}
+                  {copy.next}
                 </button>
                 <button
                   type="button"
                   className="adjustment-toolbar-btn"
                   onClick={leave}
                 >
-                  🔍 {locale === "ar" ? "بحث عن فاتورة" : "Search invoice"}
+                  🔍 {copy.searchInvoice}
                 </button>
                 <button
                   type="button"
                   className="adjustment-toolbar-btn"
                   onClick={leave}
                 >
-                  + {locale === "ar" ? "فاتورة جديدة" : "New invoice"}
+                  + {copy.newInvoice}
                 </button>
               </div>
               <div className="adjustment-bottom-toolbar-group">
@@ -1031,14 +1096,14 @@ export function PurchaseAdjustmentWorkflow({
                   className="adjustment-toolbar-btn"
                   onClick={() => window.print()}
                 >
-                  🖨️ {locale === "ar" ? "طباعة فاتورة" : "Print"}
+                  🖨️ {copy.print}
                 </button>
                 <button
                   type="button"
                   className="adjustment-toolbar-btn adjustment-toolbar-btn-danger"
                   onClick={leave}
                 >
-                  🗑️ {locale === "ar" ? "إلغاء التعديل" : "Cancel"}
+                  🗑️ {copy.cancelAdjustment}
                 </button>
               </div>
             </div>
