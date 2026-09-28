@@ -160,6 +160,8 @@ function riskToken(indicator: InventoryRiskIndicator): ProductStateColour {
       return "blue";
     case "expired":
     case "out-of-stock":
+    case "quarantined":
+    case "recalled":
       return "red";
     case "expiring-soon":
       return "yellow";

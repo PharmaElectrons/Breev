@@ -16,6 +16,7 @@ import {
   type BasketQuantityPart,
 } from "./basket-messages";
 import { describeInventoryUnits } from "./basket-quantity";
+import { panelUnitLabel } from "./panel-unit-label";
 import { normalizedCount } from "./count-entry";
 import {
   confirmReorderItem,
@@ -227,12 +228,20 @@ function BasketScreen({
         ? copy.refreshedAnnouncement(
             item.product.displayName,
             formatNumber(BigInt(item.quantity), locale),
-            item.product.inventoryUnitName,
+            panelUnitLabel(
+              item.product.inventoryUnitName,
+              BigInt(item.quantity),
+              locale,
+            ),
           )
         : copy.refreshedAnnouncement(
             current.product.displayName,
             formatNumber(BigInt(current.quantity), locale),
-            current.product.inventoryUnitName,
+            panelUnitLabel(
+              current.product.inventoryUnitName,
+              BigInt(current.quantity),
+              locale,
+            ),
           ),
     );
     focusQuantity(item.id);
@@ -301,7 +310,11 @@ function BasketScreen({
         copy.savedAnnouncement(
           result.item.product.displayName,
           formatNumber(BigInt(result.item.quantity), locale),
-          result.item.product.inventoryUnitName,
+          panelUnitLabel(
+            result.item.product.inventoryUnitName,
+            BigInt(result.item.quantity),
+            locale,
+          ),
           projectionSummary(result.item, locale),
         ),
       );
@@ -654,14 +667,7 @@ function BasketRow({
   const displayQuantity = /^\d+$/u.test(quantityValue.trim())
     ? BigInt(quantityValue.trim())
     : BigInt(item.quantity);
-  const captionParts = describeInventoryUnits(
-    item.product.inventoryUnitName,
-    item.product.packageUnits,
-    displayQuantity,
-  ).map<BasketQuantityPart>((part) => ({
-    count: formatNumber(part.count, locale),
-    unitName: part.unitName,
-  }));
+  const captionParts = quantityParts(item, displayQuantity, locale);
   const captionId = `basket-quantity-caption-${item.id}`;
   const validationId = `basket-quantity-error-${item.id}`;
   const describedBy =
@@ -683,7 +689,11 @@ function BasketRow({
       </th>
       <td>
         <bdi>{formatNumber(BigInt(item.inventory.balance), locale)}</bdi>{" "}
-        {item.product.inventoryUnitName}
+        {panelUnitLabel(
+          item.product.inventoryUnitName,
+          BigInt(item.inventory.balance),
+          locale,
+        )}
       </td>
       <td>
         <bdi>{formatLevels(item, locale)}</bdi>
@@ -836,17 +846,14 @@ function OrderedTable({
               </th>
               <td>
                 <bdi>{formatNumber(BigInt(item.quantity), locale)}</bdi>{" "}
-                {item.product.inventoryUnitName}
+                {panelUnitLabel(
+                  item.product.inventoryUnitName,
+                  BigInt(item.quantity),
+                  locale,
+                )}
                 <small className="basket-quantity-caption">
                   {copy.quantityCaption(
-                    describeInventoryUnits(
-                      item.product.inventoryUnitName,
-                      item.product.packageUnits,
-                      BigInt(item.quantity),
-                    ).map<BasketQuantityPart>((part) => ({
-                      count: formatNumber(part.count, locale),
-                      unitName: part.unitName,
-                    })),
+                    quantityParts(item, BigInt(item.quantity), locale),
                   )}
                 </small>
               </td>
@@ -1052,6 +1059,21 @@ function BasketFailure({
       </div>
     </section>
   );
+}
+
+function quantityParts(
+  item: ReorderItem,
+  quantity: bigint,
+  locale: "ar" | "en",
+): BasketQuantityPart[] {
+  return describeInventoryUnits(
+    item.product.inventoryUnitName,
+    item.product.packageUnits,
+    quantity,
+  ).map((part) => ({
+    count: formatNumber(part.count, locale),
+    unitName: panelUnitLabel(part.unitName, part.count, locale),
+  }));
 }
 
 function WarningIcon(): React.JSX.Element {

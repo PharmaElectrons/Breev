@@ -235,7 +235,18 @@ describe("inventory review contracts", () => {
   });
 
   it("keeps every risk indicator in the wire catalogue", () => {
-    expect(INVENTORY_RISK_INDICATORS).toHaveLength(8);
+    expect(INVENTORY_RISK_INDICATORS).toEqual([
+      "recalled",
+      "quarantined",
+      "out-of-stock",
+      "below-minimum",
+      "at-or-below-reorder-point",
+      "above-maximum",
+      "expiring-soon",
+      "expired",
+      "missing-barcode",
+      "cold-storage",
+    ]);
   });
 
   it("keeps the eligibility enum exhaustive and expiry values date-only", () => {

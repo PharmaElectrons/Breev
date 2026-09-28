@@ -51,6 +51,20 @@ describe("count entry preview", () => {
     expect(preview.invalidField).toBe("Pack");
   });
 
+  it("accepts Arabic-Indic digits and sends ASCII counts", () => {
+    const preview = buildCountEntryPreview(packaging, {
+      Box: "",
+      Pack: "٢",
+      Strip: "۱",
+    });
+    expect(preview.invalidField).toBeNull();
+    expect(preview.entries).toEqual([
+      { count: "2", unit: { kind: "package-unit", packageUnitName: "Pack" } },
+      { count: "1", unit: { kind: "inventory-unit" } },
+    ]);
+    expect(preview.countedQuantity).toBe(9n);
+  });
+
   it("accepts an explicitly entered zero while rejecting an entirely empty entry", () => {
     expect(
       buildCountEntryPreview(packaging, { Box: "", Pack: "0", Strip: "" }),

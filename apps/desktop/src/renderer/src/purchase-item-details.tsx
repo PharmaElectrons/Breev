@@ -3,9 +3,19 @@ import type {
   Product,
   PurchaseEntryPreferences,
 } from "@breev/contracts/local-rest";
+import {
+  buildInventoryPanelView,
+  type InventoryPanelSource,
+} from "./inventory-item-panel";
+import { MoneyAmount } from "./money-amount";
+import { panelUnitLabel, unitCount } from "./panel-unit-label";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
-import { formatFilsToIqd } from "./product-record";
+import {
+  formatCurrencyFromFils,
+  formatNumber,
+  type Locale,
+} from "./preferences";
 
 /**
  * The item the purchase row currently names, together with the details the
@@ -18,6 +28,8 @@ export interface PurchaseItemSelection {
   readonly rowQuantity?: string | null;
   readonly unit?: string | null;
   readonly baseUnits?: string | null;
+  /** Inventory review supplies on-hand facts. Purchasing leaves this unset. */
+  readonly inventory?: InventoryPanelSource;
 }
 
 /**
@@ -106,13 +118,15 @@ export function PurchaseItemPanel({
   // Dynamic Stock Limits
   const minStock = product?.stockLevels.minimumLevel ?? null;
   const maxStock = product?.stockLevels.maximumLevel ?? null;
-  const hasStockLimits = minStock !== null || maxStock !== null;
 
   // Wholesale price
   const wholesalePriceFils = product?.pricing.wholesalePriceFils;
-  const wholesalePriceFormatted = wholesalePriceFils
-    ? formatFilsToIqd(wholesalePriceFils, locale)
-    : null;
+  const wholesalePriceFormatted =
+    wholesalePriceFils !== undefined &&
+    wholesalePriceFils !== null &&
+    /^(?:0|[1-9]\d*)$/u.test(wholesalePriceFils)
+      ? formatCurrencyFromFils(BigInt(wholesalePriceFils), locale)
+      : null;
 
   // Expiry date calculations (purely dynamic from active row/selection)
   const expiryIsoDate = selection?.expiryDate || null;
@@ -124,6 +138,66 @@ export function PurchaseItemPanel({
     }
   }
 
+  const inventoryView =
+    product === undefined || selection?.inventory === undefined
+      ? null
+      : buildInventoryPanelView(
+          product.packaging,
+          selection.inventory,
+          period,
+          (value) => formatNumber(value, locale),
+          new Date(),
+        );
+  const shownLargeCount = inventoryView?.largeCount ?? largeCount;
+  const shownLargeLabel = inventoryView?.largeLabel ?? largeLabel;
+  const shownIntermediateCount =
+    inventoryView === null
+      ? intermediateCount
+      : inventoryView.intermediateCount;
+  const shownIntermediateLabel =
+    inventoryView?.intermediateLabel ?? intermediateLabel;
+  const shownRemainder = inventoryView?.remainder ?? remainderUnits;
+  const shownTotal = inventoryView?.total ?? totalUnits.toLocaleString();
+  const shownSmallLabel = inventoryView?.inventoryUnitName ?? smallLabel;
+  const shownMin = inventoryView ? inventoryView.minimumLevel : minStock;
+  const shownMax = inventoryView ? inventoryView.maximumLevel : maxStock;
+  const shownLevelUnit = panelUnitLabel(
+    inventoryView?.levelUnitName ?? largeLabel,
+    1n,
+    locale,
+  );
+  const shownLargeUnit = panelUnitLabel(
+    shownLargeLabel,
+    unitCount(shownLargeCount),
+    locale,
+  );
+  const shownIntermediateUnit = panelUnitLabel(
+    shownIntermediateLabel,
+    shownIntermediateCount === null ? 1n : unitCount(shownIntermediateCount),
+    locale,
+  );
+  const shownRemainderUnit = panelUnitLabel(
+    shownSmallLabel,
+    unitCount(shownRemainder),
+    locale,
+  );
+  const shownTotalUnit = panelUnitLabel(
+    shownSmallLabel,
+    inventoryView === null
+      ? BigInt(Math.trunc(Number.isFinite(totalUnits) ? totalUnits : 0))
+      : unitCount(inventoryView.total),
+    locale,
+  );
+  const shownConsumptionUnit = panelUnitLabel(
+    shownSmallLabel,
+    inventoryView === null ? 0n : unitCount(inventoryView.consumption),
+    locale,
+  );
+  const shownHasLimits = shownMin !== null || shownMax !== null;
+  const shownExpiryDate = inventoryView
+    ? inventoryView.expiryDate
+    : expiryIsoDate;
+  const shownExpiryDays = inventoryView ? inventoryView.expiryDays : expiryDays;
   const barcodeValue = product?.barcodes[0]?.value ?? null;
 
   return (
@@ -208,25 +282,30 @@ export function PurchaseItemPanel({
               </p>
               <div className="purchase-fraction-grid">
                 <div className="purchase-fraction-cell">
-                  <p className="purchase-fraction-num">{largeCount}</p>
-                  <p className="purchase-fraction-label">{largeLabel}</p>
+                  <p className="purchase-fraction-num">{shownLargeCount}</p>
+                  <p className="purchase-fraction-label">{shownLargeUnit}</p>
                 </div>
                 <div
-                  className={`purchase-fraction-cell ${intermediateCount === null ? "is-blank" : ""}`}
+                  className={`purchase-fraction-cell ${shownIntermediateCount === null ? "is-blank" : ""}`}
                 >
                   <p className="purchase-fraction-num">
-                    {intermediateCount !== null ? intermediateCount : "—"}
+                    {shownIntermediateCount !== null
+                      ? shownIntermediateCount
+                      : "—"}
                   </p>
-                  <p className="purchase-fraction-label">{intermediateLabel}</p>
+                  <p className="purchase-fraction-label">
+                    {shownIntermediateUnit}
+                  </p>
                 </div>
                 <div className="purchase-fraction-cell">
-                  <p className="purchase-fraction-num">{remainderUnits}</p>
-                  <p className="purchase-fraction-label">{smallLabel}</p>
+                  <p className="purchase-fraction-num">{shownRemainder}</p>
+                  <p className="purchase-fraction-label">
+                    {shownRemainderUnit}
+                  </p>
                 </div>
               </div>
               <p className="purchase-balance-total-text">
-                {copy.totalDetailed} : <bdi>{totalUnits.toLocaleString()}</bdi>{" "}
-                {smallLabel}
+                {copy.totalDetailed} : <bdi>{shownTotal}</bdi> {shownTotalUnit}
               </p>
             </div>
 
@@ -236,22 +315,28 @@ export function PurchaseItemPanel({
               <div className="purchase-fact-row">
                 <span className="purchase-fact-label">{copy.packaging}</span>
                 <span className="purchase-fact-value font-medium">
-                  1 {largeLabel} = {unitsPerLarge} {smallLabel}
+                  {packagingEquation(
+                    inventoryView,
+                    locale,
+                    largeLabel,
+                    smallLabel,
+                    unitsPerLarge,
+                  )}
                 </span>
               </div>
 
               {/* Row 2: حدود المخزن */}
               <div className="purchase-fact-row">
                 <span className="purchase-fact-label">{copy.stockLimits}</span>
-                {hasStockLimits ? (
+                {shownHasLimits ? (
                   <div className="purchase-stock-limits">
                     <span className="stock-min" title={copy.minStock}>
-                      ↓ {minStock ?? "—"}
+                      ↓ {shownMin ?? "—"}
                     </span>
                     <span className="stock-max" title={copy.maxStock}>
-                      ↑ {maxStock ?? "—"}
+                      ↑ {shownMax ?? "—"}
                     </span>
-                    <span className="stock-unit">{largeLabel}</span>
+                    <span className="stock-unit">{shownLevelUnit}</span>
                   </div>
                 ) : (
                   <span className="purchase-fact-value text-muted-foreground font-mono">
@@ -267,7 +352,10 @@ export function PurchaseItemPanel({
                 </span>
                 {wholesalePriceFormatted !== null ? (
                   <span className="purchase-fact-value font-bold font-mono text-primary">
-                    <bdi>{wholesalePriceFormatted}</bdi> {copy.iqd}
+                    <MoneyAmount
+                      locale={locale}
+                      value={wholesalePriceFormatted}
+                    />
                   </span>
                 ) : (
                   <span className="purchase-fact-value text-muted-foreground font-mono">
@@ -282,9 +370,16 @@ export function PurchaseItemPanel({
                   {copy.consumptionRate}
                 </span>
                 <div className="purchase-rate-control">
-                  <span className="font-mono text-xs text-muted-foreground">
-                    —
-                  </span>
+                  {inventoryView === null ? (
+                    <span className="font-mono text-xs text-muted-foreground">
+                      —
+                    </span>
+                  ) : (
+                    <span className="font-mono text-xs">
+                      <bdi>{inventoryView.consumption}</bdi>{" "}
+                      {shownConsumptionUnit}
+                    </span>
+                  )}
                   <select
                     value={period}
                     onChange={(e) =>
@@ -302,31 +397,38 @@ export function PurchaseItemPanel({
               {/* Row 5: أيام الكفاية */}
               <div className="purchase-fact-row">
                 <span className="purchase-fact-label">{copy.daysOfSupply}</span>
-                <span className="purchase-fact-value font-mono text-muted-foreground">
-                  —
-                </span>
+                {inventoryView === null ||
+                inventoryView.coverageDays === null ? (
+                  <span className="purchase-fact-value font-mono text-muted-foreground">
+                    —
+                  </span>
+                ) : (
+                  <span className="purchase-fact-value font-mono">
+                    <bdi>{inventoryView.coverageDays}</bdi> {copy.dayUnit}
+                  </span>
+                )}
               </div>
 
               {/* Row 6: تاريخ الاكسباير */}
               <div className="purchase-fact-row">
                 <span className="purchase-fact-label">{copy.expiry}</span>
-                {expiryIsoDate !== null && expiryDays !== null ? (
+                {shownExpiryDate !== null && shownExpiryDays !== null ? (
                   <div className="purchase-expiry-details">
                     <span className="font-mono text-[11px] text-foreground/80">
-                      {expiryIsoDate}
+                      {shownExpiryDate}
                     </span>
                     <span
                       className={`purchase-expiry-badge ${
-                        expiryDays < 0
+                        shownExpiryDays < 0
                           ? "is-expired"
-                          : expiryDays < 90
+                          : shownExpiryDays < 90
                             ? "is-soon"
                             : "is-ok"
                       }`}
                     >
-                      {expiryDays < 0
-                        ? `${copy.expiredAgo} ${-expiryDays} ${copy.dayUnit}`
-                        : `${expiryDays} ${copy.daysRemaining}`}
+                      {shownExpiryDays < 0
+                        ? `${copy.expiredAgo} ${-shownExpiryDays} ${copy.dayUnit}`
+                        : `${shownExpiryDays} ${copy.daysRemaining}`}
                     </span>
                   </div>
                 ) : (
@@ -376,6 +478,33 @@ export function PurchaseItemPanel({
       </aside>
     </>
   );
+}
+
+function packagingEquation(
+  inventoryView: ReturnType<typeof buildInventoryPanelView> | null,
+  locale: Locale,
+  largeLabel: string,
+  smallLabel: string,
+  unitsPerLarge: number,
+): string {
+  if (inventoryView !== null) {
+    if (inventoryView.largeRatio === null) {
+      return panelUnitLabel(inventoryView.inventoryUnitName, 1n, locale);
+    }
+    const one = formatNumber(1n, locale);
+    const ratio = formatNumber(inventoryView.largeRatio, locale);
+    const large = panelUnitLabel(inventoryView.largeLabel, 1n, locale);
+    const small = panelUnitLabel(
+      inventoryView.inventoryUnitName,
+      inventoryView.largeRatio,
+      locale,
+    );
+    return `${one} ${large} = ${ratio} ${small}`;
+  }
+  const ratio = BigInt(
+    Math.max(0, Math.trunc(Number.isFinite(unitsPerLarge) ? unitsPerLarge : 0)),
+  );
+  return `1 ${panelUnitLabel(largeLabel, 1n, locale)} = ${unitsPerLarge} ${panelUnitLabel(smallLabel, ratio, locale)}`;
 }
 
 function packagingText(product: Product): string {

@@ -255,6 +255,14 @@ test.describe.serial("durable count sessions", () => {
         normalizeBidiMarks(await row.locator("td").nth(4).innerText()),
       )
       .toContain("+1");
+
+    await page.getByRole("button", { name: "Menu" }).click();
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    await expect(row).toContainText("٢ علبتان + ١ شريط");
+    await expect(row.locator("td").nth(1)).toContainText("٩ أشرطة");
+    await expect(row).not.toContainText("Strip");
+    await expect(row).not.toContainText("Pack");
   });
 
   test("keeps focus and entered values for count validation failures", async ({

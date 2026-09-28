@@ -12,10 +12,12 @@
  * the next part can begin only after the previous part finished. Matching is
  * neither prefix-anchored nor word-anchored.
  */
+import { normalizeIndicDigits } from "@breev/contracts/local-rest";
+
 const SIMPLE_PUNCTUATION = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~،؛؟]/gu;
 
 export function normalizeProductSearchText(value: string): string {
-  return value
+  return normalizeIndicDigits(value)
     .toLowerCase()
     .replace(SIMPLE_PUNCTUATION, "")
     .replace(/\s+/gu, " ")
