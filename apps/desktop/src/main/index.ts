@@ -48,6 +48,7 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  Menu,
   net,
   protocol,
   safeStorage,
@@ -1065,6 +1066,7 @@ async function startRoleRuntime(): Promise<{
 }
 
 void app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null);
   await registerAppProtocol();
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler(

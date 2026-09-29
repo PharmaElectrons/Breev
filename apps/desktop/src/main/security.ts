@@ -37,6 +37,7 @@ export function createHardenedWindowOptions(
   isProduction: boolean,
 ): BrowserWindowConstructorOptions {
   return {
+    autoHideMenuBar: true,
     height: 720,
     minHeight: 560,
     minWidth: 720,
