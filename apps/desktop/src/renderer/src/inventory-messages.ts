@@ -17,6 +17,7 @@ export const COUNT_DENIAL_CODES = [
   "count-balance-changed",
   "count-variance-zero",
   "count-variance-already-applied",
+  "count-pending-variances",
   "count-blocked-stock",
   "count-no-batch",
   "count-no-cost-basis",
@@ -33,10 +34,12 @@ export interface InventoryCopy {
   readonly backToInventory: string;
   readonly columns: Record<InventoryColumnField, string>;
   readonly empty: string;
+  readonly panelEmpty: string;
   readonly export: string;
   readonly exportCsv: string;
   readonly exportCancelled: string;
   readonly exportFailed: string;
+  readonly exportTooLarge: string;
   readonly exportSaved: string;
   readonly exportStepUp: string;
   readonly loading: string;
@@ -63,12 +66,16 @@ export interface InventoryCopy {
   };
   readonly riskIndicators: Record<InventoryRiskIndicator, string>;
   readonly retry: string;
+  readonly preferencesUnavailable: string;
   readonly reviewUnavailable: string;
   readonly searchLabel: string;
+  readonly searchDegraded: string;
   readonly readOnly: string;
   readonly permissionDenied: string;
   readonly settings: string;
   readonly settingsNote: string;
+  readonly statusColumn: string;
+  readonly actionsColumn: string;
   readonly sortAnnouncement: (
     column: string,
     direction: "ascending" | "descending",
@@ -89,6 +96,7 @@ export interface InventoryCopy {
     readonly activeSessions: string;
     readonly activeSessionWarning: string;
     readonly completedSessions: string;
+    readonly loadMore: string;
     readonly noActiveSessions: string;
     readonly noCompletedSessions: string;
     readonly startedAt: string;
@@ -146,7 +154,7 @@ export interface InventoryCopy {
     readonly applicationSaved: string;
     readonly applicationAppliedBy: string;
     readonly complete: string;
-    readonly completionConfirmation: (count: string) => string;
+    readonly completionBlocked: (count: string) => string;
     readonly completed: string;
     readonly cancel: string;
     readonly close: string;
@@ -256,6 +264,8 @@ const arabicRisks: Record<InventoryRiskIndicator, string> = {
   "expiring-soon": "قريب الانتهاء",
   "missing-barcode": "باركود مفقود",
   "out-of-stock": "نفاد المخزون",
+  quarantined: "موضوع في الحجر",
+  recalled: "مسحوب",
 };
 
 const englishRisks: Record<InventoryRiskIndicator, string> = {
@@ -267,6 +277,8 @@ const englishRisks: Record<InventoryRiskIndicator, string> = {
   "expiring-soon": "Expiring soon",
   "missing-barcode": "Missing barcode",
   "out-of-stock": "Out of stock",
+  quarantined: "Quarantined",
+  recalled: "Recalled",
 };
 
 const arabicColours: Record<ProductStateColour, string> = {
@@ -311,6 +323,8 @@ const arabicCountDenials: Record<CountDenialCode, string> = {
   "count-balance-changed": "تغير رصيد المادة؛ أعد التحقق من الرصيد الحالي.",
   "count-variance-zero": "لا يوجد فرق يحتاج إلى تطبيق.",
   "count-variance-already-applied": "تم تطبيق فرق هذا السطر من قبل.",
+  "count-pending-variances":
+    "لا يمكن إكمال الجلسة قبل تطبيق كل الفروقات غير الصفرية.",
   "count-blocked-stock": "لا يمكن تطبيق الفرق على مخزون محجوب.",
   "count-no-batch": "لا توجد دفعة صالحة لإسناد الفرق إليها.",
   "count-no-cost-basis": "لا توجد كلفة دفترية لتقييم هذا الفرق.",
@@ -327,6 +341,8 @@ const englishCountDenials: Record<CountDenialCode, string> = {
   "count-variance-zero": "There is no variance to apply.",
   "count-variance-already-applied":
     "This line's variance has already been applied.",
+  "count-pending-variances":
+    "Complete the session only after every non-zero variance is applied.",
   "count-blocked-stock": "The variance cannot be applied to blocked stock.",
   "count-no-batch": "There is no eligible batch to receive this variance.",
   "count-no-cost-basis": "There is no carrying-cost basis for this variance.",
@@ -344,6 +360,7 @@ const arabicCount: InventoryCopy["count"] = {
   activeSessionWarning:
     "توجد جلسة جرد نشطة. استأنفها أو أكملها قبل بدء جلسة جديدة.",
   completedSessions: "الجلسات المكتملة",
+  loadMore: "تحميل المزيد",
   noActiveSessions: "لا توجد جلسات جرد نشطة.",
   noCompletedSessions: "لا توجد جلسات مكتملة.",
   startedAt: "بدأت في",
@@ -394,8 +411,8 @@ const arabicCount: InventoryCopy["count"] = {
   applicationSaved: "تم تطبيق فرق الجرد وتحديث سجل الحركات.",
   applicationAppliedBy: "طُبّق بواسطة",
   complete: "إكمال الجلسة",
-  completionConfirmation: (count) =>
-    `ستبقى ${count} فروقات معلقة غير قابلة للتطبيق بعد إكمال الجلسة. هل تريد المتابعة؟`,
+  completionBlocked: (count) =>
+    `لا يمكن إكمال الجلسة قبل تطبيق ${count} فروقات معلّقة.`,
   completed: "اكتملت الجلسة.",
   cancel: "إلغاء",
   close: "إغلاق",
@@ -413,6 +430,7 @@ const englishCount: InventoryCopy["count"] = {
   activeSessionWarning:
     "A count session is already active. Resume or complete it before starting another.",
   completedSessions: "Completed sessions",
+  loadMore: "Load more",
   noActiveSessions: "There are no active count sessions.",
   noCompletedSessions: "There are no completed sessions.",
   startedAt: "Started",
@@ -465,8 +483,8 @@ const englishCount: InventoryCopy["count"] = {
   applicationSaved: "Count variance applied and movement history updated.",
   applicationAppliedBy: "Applied by",
   complete: "Complete session",
-  completionConfirmation: (count) =>
-    `${count} pending variances will remain unapplied after completion. Continue?`,
+  completionBlocked: (count) =>
+    `Apply ${count} pending variances before completing this session.`,
   completed: "Session completed.",
   cancel: "Cancel",
   close: "Close",
@@ -716,10 +734,12 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     count: arabicCount,
     columns: arabicColumns,
     empty: "لا توجد مواد مخزنية بعد.",
+    panelEmpty: "لا توجد مادة محددة. اختر صفاً من الجدول لعرض تفاصيلها.",
     export: "تصدير بيانات المخزون الحساسة",
     exportCsv: "تصدير المخزون بصيغة CSV",
     exportCancelled: "أُلغي تصدير بيانات المخزون.",
     exportFailed: "تعذر حفظ تصدير بيانات المخزون.",
+    exportTooLarge: "ملف التصدير أكبر من الحد الآمن ولم يُحفظ.",
     exportSaved: "تم حفظ تصدير بيانات المخزون.",
     exportStepUp: "يتطلب التصدير إعادة التحقق من كلمة المرور.",
     loading: "جارٍ تحميل المخزون...",
@@ -750,12 +770,18 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     readOnly: "هذه الشاشة للقراءة فقط؛ الأرصدة مشتقة من حركات المخزون.",
     permissionDenied: "لا تملك صلاحية مراجعة المخزون. مرجع الطلب:",
     retry: "إعادة المحاولة",
+    preferencesUnavailable:
+      "تعذر تحميل تفضيلات الأعمدة. يُعرض الجدول بالإعداد الافتراضي.",
     reviewUnavailable:
       "تعذر الوصول إلى المخزون. تحقق من الاتصال وحاول مرة أخرى.",
     searchLabel: "ابحث عن مادة بالاسم أو الباركود",
+    searchDegraded:
+      "تعذر بحث الكتالوج والباركود. تظهر النتائج المطابقة للاسم فقط.",
     riskIndicators: arabicRisks,
     settings: "إعدادات الأعمدة",
     settingsNote: "تُحفظ اختيارات الأعمدة لهذا المستخدم فقط.",
+    statusColumn: "الحالة",
+    actionsColumn: "الإجراءات",
     sortAnnouncement: (column, direction) =>
       "تم ترتيب " +
       column +
@@ -775,10 +801,13 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     count: englishCount,
     columns: englishColumns,
     empty: "There are no inventory items yet.",
+    panelEmpty: "No item selected. Choose a row to see its details.",
     export: "Export sensitive inventory data",
     exportCsv: "Export inventory CSV",
     exportCancelled: "Inventory export cancelled.",
     exportFailed: "The inventory export could not be saved.",
+    exportTooLarge:
+      "The export is larger than the safe limit and was not saved.",
     exportSaved: "Inventory export saved.",
     exportStepUp: "Export requires password reauthentication.",
     loading: "Loading inventory...",
@@ -811,12 +840,18 @@ export const inventoryMessages: Record<Locale, InventoryCopy> = {
     permissionDenied:
       "You do not have inventory review permission. Request reference:",
     retry: "Retry",
+    preferencesUnavailable:
+      "Column preferences could not be loaded. The table is using the default columns.",
     reviewUnavailable:
       "Inventory is unavailable. Check the connection and try again.",
     searchLabel: "Search by item name or barcode",
+    searchDegraded:
+      "Catalog and barcode search failed. Only name matches are shown.",
     riskIndicators: englishRisks,
     settings: "Column settings",
     settingsNote: "Column choices are saved for this user only.",
+    statusColumn: "Status",
+    actionsColumn: "Actions",
     sortAnnouncement: (column, direction) =>
       column + " sorted " + direction + ".",
     stateColours: englishColours,

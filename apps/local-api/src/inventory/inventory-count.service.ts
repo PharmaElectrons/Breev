@@ -208,21 +208,51 @@ export class InventoryCountService {
   public async listSessions(
     request: Request,
     query: CountSessionListQuery,
-  ): Promise<{ readonly sessions: readonly CountSessionSummary[] }> {
+  ): Promise<{
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly sessions: readonly CountSessionSummary[];
+  }> {
     const context = await this.requireReadPermission(request);
     const client = await this.localDatabase.requirePool().connect();
     try {
-      const reads = await listCountSessions(
+      const page = await listCountSessions(
         client,
         context.pharmacyId,
         query.status,
+        query.status === "completed"
+          ? {
+              ...(query.cursor === undefined
+                ? {}
+                : { cursor: cursorParts(query.cursor) }),
+              limit: Number(query.limit ?? "25"),
+            }
+          : undefined,
       );
-      return {
-        sessions: await Promise.all(
-          reads.map(
-            async (read) => await this.sessionSummary(client, context, read),
-          ),
+      const userIds = [
+        ...new Set(
+          page.sessions.flatMap((read) => [
+            read.session.startedBy,
+            ...(read.session.completedBy === null
+              ? []
+              : [read.session.completedBy]),
+          ]),
         ),
+      ];
+      const names = await this.identity.resolveUserDisplayNames(
+        client,
+        context.pharmacyId,
+        userIds,
+      );
+      const sessions = page.sessions.map((read) => listSummary(read, names));
+      const last = page.sessions.at(-1)?.session;
+      return {
+        hasMore: page.hasMore,
+        nextCursor:
+          page.hasMore && last !== undefined
+            ? `${last.updatedAt}|${last.id}`
+            : null,
+        sessions,
       };
     } finally {
       client.release();
@@ -696,6 +726,17 @@ export class InventoryCountService {
           sessionId,
         );
         requireActiveSession(session, input.expectedVersion, sessionId);
+        const pendingRead = await readCountSession(
+          client,
+          context.pharmacyId,
+          sessionId,
+        );
+        if (
+          pendingRead !== undefined &&
+          hasPendingVariance(pendingRead.lines, pendingRead.currentBalances)
+        ) {
+          reject(409, "count-pending-variances", [], sessionId);
+        }
         await completeCountSession(client, {
           completedBy: context.actorId,
           pharmacyId: context.pharmacyId,
@@ -1153,6 +1194,68 @@ async function readCountLineForCommand(
 ): Promise<CountLineRecord | undefined> {
   const result = await readCountSession(client, pharmacyId, sessionId);
   return result?.lines.find((line) => line.id === lineId);
+}
+
+function pendingVarianceTotal(
+  lines: CountSessionRead["lines"],
+  currentBalances: CountSessionRead["currentBalances"],
+): number {
+  return lines.filter((line) => {
+    if (line.application !== null) return false;
+    const balance = currentBalances.get(line.productId) ?? 0n;
+    return countVariance(BigInt(line.countedQuantity), balance) !== 0n;
+  }).length;
+}
+
+function hasPendingVariance(
+  lines: CountSessionRead["lines"],
+  currentBalances: CountSessionRead["currentBalances"],
+): boolean {
+  return pendingVarianceTotal(lines, currentBalances) > 0;
+}
+
+function cursorParts(cursor: string): {
+  readonly id: string;
+  readonly updatedAt: string;
+} {
+  const separator = cursor.lastIndexOf("|");
+  return {
+    id: cursor.slice(separator + 1),
+    updatedAt: cursor.slice(0, separator),
+  };
+}
+
+function listSummary(
+  read: CountSessionRead,
+  names: ReadonlyMap<string, string>,
+): CountSessionSummary {
+  return countSessionSummarySchema.parse({
+    completedAt:
+      read.session.completedAt === null
+        ? null
+        : isoDateTime(read.session.completedAt),
+    completedBy:
+      read.session.completedBy === null
+        ? null
+        : person(read.session.completedBy, names),
+    id: read.session.id,
+    lineCount: String(read.lines.length),
+    number:
+      read.session.numberValue === null || read.session.numberYear === null
+        ? null
+        : {
+            series: "C",
+            value: read.session.numberValue,
+            year: read.session.numberYear,
+          },
+    pendingVarianceCount: String(
+      pendingVarianceTotal(read.lines, read.currentBalances),
+    ),
+    startedAt: isoDateTime(read.session.startedAt),
+    startedBy: person(read.session.startedBy, names),
+    status: read.session.status,
+    version: read.session.version,
+  });
 }
 
 function requireActiveSession(

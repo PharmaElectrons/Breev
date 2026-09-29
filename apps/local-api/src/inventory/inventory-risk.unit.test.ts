@@ -37,9 +37,13 @@ describe("inventory risk calculations", () => {
         minimumLevel: 5n,
         businessDate: "2026-09-10",
         nearExpiryDays: 90,
+        quarantinedCount: 1n,
+        recalledCount: 1n,
         reorderPoint: 4n,
       }),
     ).toEqual([
+      "recalled",
+      "quarantined",
       "below-minimum",
       "at-or-below-reorder-point",
       "above-maximum",
@@ -48,6 +52,28 @@ describe("inventory risk calculations", () => {
       "missing-barcode",
       "cold-storage",
     ]);
+  });
+
+  it("keeps recalled and quarantined stock visible as danger indicators", () => {
+    expect(
+      automaticStateColour(["recalled", "quarantined", "above-maximum"]),
+    ).toBe("red");
+    expect(
+      riskIndicators({
+        balance: 8n,
+        businessDate: "2026-09-10",
+        coldStorageRequired: false,
+        earliestExpiry: null,
+        expiredCount: 0n,
+        hasBarcode: true,
+        maximumLevel: null,
+        minimumLevel: null,
+        nearExpiryDays: 90,
+        quarantinedCount: 0n,
+        recalledCount: 0n,
+        reorderPoint: null,
+      }),
+    ).toEqual([]);
   });
 
   it("uses the fixed precedence and lets manual colour win", () => {

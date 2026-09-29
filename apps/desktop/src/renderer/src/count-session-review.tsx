@@ -2,9 +2,10 @@ import type { CountLine, CountSession } from "@breev/contracts/local-rest";
 import { useEffect, useRef, useState } from "react";
 
 import { useCommittedFocus } from "./committed-focus";
-import { countEntryLabelParts } from "./count-entry";
+import { CountEntryLabel, CountMeasure } from "./count-entry-label";
 import { InventoryApiDenied, readCountSession } from "./inventory-api";
 import { inventoryMessages } from "./inventory-messages";
+import { panelUnitLabel } from "./panel-unit-label";
 import { formatDateTime, formatNumber } from "./preferences";
 import { usePreferences } from "./preferences-provider";
 
@@ -193,16 +194,33 @@ function CountReviewLine({
         </td>
         <td>
           <bdi>{formatNumber(BigInt(line.countedQuantity), locale)}</bdi>{" "}
-          {line.inventoryUnitName}
+          {panelUnitLabel(
+            line.inventoryUnitName,
+            BigInt(line.countedQuantity),
+            locale,
+          )}
         </td>
         <td>
-          <bdi>{formatNumber(BigInt(line.balanceAtObservation), locale)}</bdi>
+          <CountMeasure
+            count={BigInt(line.balanceAtObservation)}
+            locale={locale}
+            unit={line.inventoryUnitName}
+          />
         </td>
         <td>
-          <bdi>{formatNumber(BigInt(after), locale)}</bdi>
+          <CountMeasure
+            count={BigInt(after)}
+            locale={locale}
+            unit={line.inventoryUnitName}
+          />
         </td>
         <td>
-          <bdi>{formatSignedNumber(BigInt(variance), locale)}</bdi>
+          <CountMeasure
+            count={BigInt(variance)}
+            locale={locale}
+            signed
+            unit={line.inventoryUnitName}
+          />
         </td>
         <td>
           <span aria-hidden="true">{statusIcon(line.status)}</span>{" "}
@@ -238,28 +256,6 @@ function CountReviewLine({
   );
 }
 
-function CountEntryLabel({
-  label,
-  locale,
-}: {
-  readonly label: string;
-  readonly locale: "ar" | "en";
-}): React.JSX.Element {
-  return (
-    <>
-      {countEntryLabelParts(label).map((part, index) =>
-        typeof part === "bigint" ? (
-          <bdi key={`${part.toString()}-${index}`}>
-            {formatNumber(part, locale)}
-          </bdi>
-        ) : (
-          <span key={`${part}-${index}`}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
-
 function statusIcon(status: CountLine["status"]): string {
   switch (status) {
     case "matched":
@@ -271,12 +267,6 @@ function statusIcon(status: CountLine["status"]): string {
     case "applied":
       return "✓";
   }
-}
-
-function formatSignedNumber(value: bigint, locale: "ar" | "en"): string {
-  return value > 0n
-    ? `+${formatNumber(value, locale)}`
-    : formatNumber(value, locale);
 }
 
 function countSessionIdFromHash(hash: string): string | null {

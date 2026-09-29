@@ -1,7 +1,8 @@
-import type {
-  CountEntry,
-  InventoryCapableUnit,
-  ProductPackaging,
+import {
+  normalizeIndicDigits,
+  type CountEntry,
+  type InventoryCapableUnit,
+  type ProductPackaging,
 } from "@breev/contracts/local-rest";
 
 export interface CountEntryUnit {
@@ -102,8 +103,8 @@ export function buildCountEntryPreview(
   fields: Readonly<Record<string, string>>,
 ): CountEntryPreview {
   const invalidField = countEntryUnits(packaging).find(({ key }) => {
-    const value = fields[key] ?? "";
-    return value.trim() !== "" && !/^\d+$/u.test(value.trim());
+    const value = normalizeIndicDigits(fields[key] ?? "").trim();
+    return value !== "" && !/^\d+$/u.test(value);
   })?.key;
   const entries = countEntriesFromFields(packaging, fields);
   const caption = countEntryCaption(packaging, fields);
@@ -118,14 +119,14 @@ export function buildCountEntryPreview(
 }
 
 function parseCount(value: string): bigint {
-  const normalized = value.trim();
+  const normalized = normalizeIndicDigits(value).trim();
   return normalized === "" || !/^\d+$/u.test(normalized)
     ? 0n
     : BigInt(normalized);
 }
 
 export function normalizedCount(value: string): string {
-  const normalized = value.trim();
+  const normalized = normalizeIndicDigits(value).trim();
   if (normalized === "" || !/^\d+$/u.test(normalized)) return "0";
   return normalized.replace(/^0+(?=\d)/u, "");
 }

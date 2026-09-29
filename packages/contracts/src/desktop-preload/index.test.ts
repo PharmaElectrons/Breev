@@ -335,7 +335,12 @@ describe("desktop preload contract", () => {
       format: "json",
       locale: "en",
     });
-    for (const status of ["saved", "cancelled", "failed"] as const) {
+    for (const status of [
+      "saved",
+      "cancelled",
+      "failed",
+      "export-too-large",
+    ] as const) {
       expect(
         desktopSaveInventoryExportResponseSchema.parse({ status }),
       ).toEqual({ status });
