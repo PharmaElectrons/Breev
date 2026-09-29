@@ -303,6 +303,7 @@ describe("Electron window security", () => {
       true,
     );
 
+    expect(options.autoHideMenuBar).toBe(true);
     expect(options.webPreferences).toMatchObject({
       allowRunningInsecureContent: false,
       contextIsolation: true,
