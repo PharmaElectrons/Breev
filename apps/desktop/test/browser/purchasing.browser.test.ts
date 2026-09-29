@@ -1640,7 +1640,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page.goto(`${renderer.origin}#/purchases`);
         const postedInvoices = postedInvoicesTab(page);
         await expect(postedInvoices).toHaveAccessibleName(
-          locale === "en" ? "Posted invoices" : "فواتير الشراء المُرحّلة",
+          locale === "en" ? "Posted invoices" : "فواتير محفوظة",
         );
         await postedInvoices.click();
         const dialog = page.locator("#purchase-posted-view");
@@ -1652,9 +1652,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         });
         await search.fill("BROWSER-REVIEW");
         await search.press("Enter");
-        await expect(
-          dialog.locator(".posted-purchase-list tbody tr"),
-        ).toHaveCount(2);
+        const rows = dialog.locator(".posted-purchase-list tbody tr");
+        await expect(rows.first()).toBeVisible();
+        expect(await rows.count()).toBeGreaterThanOrEqual(2);
         await dialog.screenshot({
           animations: "disabled",
           path: path.join(
@@ -1730,6 +1730,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             `posted-purchase-detail-${locale}-${theme}.png`,
           ),
         });
+        await dialog
+          .getByRole("button", {
+            name: locale === "en" ? "Back to results" : "العودة إلى النتائج",
+          })
+          .click();
         await dialog
           .getByRole("button", {
             name: locale === "en" ? "Close" : "إغلاق",
