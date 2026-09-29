@@ -11,13 +11,13 @@ import {
 import { MoneyAmount } from "./money-amount";
 import { panelUnitLabel, unitCount } from "./panel-unit-label";
 import { purchasingMessages } from "./purchasing-messages";
-import { formatFilsToIqd } from "./product-record";
 import { listBatches } from "./inventory-api";
 import {
   formatCurrencyFromFils,
   formatNumber,
   type Locale,
 } from "./preferences";
+import { usePreferences } from "./preferences-provider";
 
 /**
  * The item the purchase row currently names, together with the details the
