@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut, Menu, Settings, Wallet } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Settings } from "lucide-react";
 
 import {
   Collapsible,
@@ -214,26 +214,6 @@ export function NavbarCollapseMenu({
 
           {authenticated ? (
             <>
-              <a
-                href="#/accounts"
-                className={cn(
-                  "collapse-menu-item",
-                  activeModuleId === "accounts" && "active",
-                )}
-                aria-current={
-                  activeModuleId === "accounts" ? "page" : undefined
-                }
-                onClick={() => setOpen(false)}
-              >
-                <Wallet className="size-4 shrink-0" aria-hidden="true" />
-                <span className="flex-1">
-                  {navigationCopy.modules.accounts.label}
-                </span>
-                <span className="visually-hidden">
-                  {` — ${navigationCopy.unavailableBadge}`}
-                </span>
-              </a>
-
               <a
                 href="#/settings"
                 className={cn(

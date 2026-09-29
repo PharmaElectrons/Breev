@@ -969,6 +969,107 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
   });
 
+  test("quarantines later accounting, report, OCR, and legal-print surfaces", async ({
+    page,
+  }) => {
+    for (const locale of ["en", "ar"] as const) {
+      await page.goto("about:blank");
+      await installDesktopFake(page, renderer.origin, locale, "light");
+      await page.goto(`${renderer.origin}#/purchases`);
+
+      const labels =
+        locale === "en"
+          ? {
+              account: "Accounts",
+              accountStatement: "Account statement",
+              adjustment: "Edit Invoice",
+              importImage: "Import from image",
+              invoiceLedger: "Invoice transaction ledger",
+              liveBalance: "Live balance",
+              printInvoice: "Print invoice",
+              printReturn: "Print return slip",
+              profile: "Supplier profile",
+              reports: "Reports",
+              purchaseReturn: "Purchase return",
+              suppliers: "Suppliers",
+            }
+          : {
+              account: "الحسابات",
+              accountStatement: "كشف حساب",
+              adjustment: "تعديل الفاتورة",
+              importImage: "استيراد من صورة",
+              invoiceLedger: "تفاصيل حركة الفواتير",
+              liveBalance: "ديون المذخر (تلقائية)",
+              printInvoice: "طباعة الفاتورة",
+              printReturn: "طباعة فاتورة المرتجع",
+              profile: "بيانات المذخر",
+              reports: "التقارير",
+              purchaseReturn: "فاتورة مردود",
+              suppliers: "الموردون",
+            };
+
+      await expect(
+        page.getByRole("link", { name: labels.reports, exact: true }),
+      ).toHaveCount(0);
+      await page.getByTestId("collapse-menu-trigger").click();
+      await expect(
+        page.getByRole("link", { name: labels.account, exact: true }),
+      ).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("button", { name: labels.importImage, exact: true }),
+      ).toHaveCount(0);
+
+      await page
+        .getByRole("button", { name: labels.suppliers, exact: true })
+        .click();
+      const supplierWorkspace = page.locator(".supplier-manager");
+      await expect(supplierWorkspace.getByText(labels.profile)).toBeVisible();
+      await expect(
+        supplierWorkspace.getByText(labels.accountStatement, { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        supplierWorkspace.getByText(labels.invoiceLedger, { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        supplierWorkspace.getByText(labels.liveBalance, { exact: true }),
+      ).toHaveCount(0);
+
+      await postedInvoicesTab(page).click();
+      const postedView = page.locator("#purchase-posted-view");
+      await postedView
+        .getByRole("button", {
+          name: locale === "en" ? /Open invoice P/u : /فتح الفاتورة P/u,
+        })
+        .first()
+        .click();
+      await expect(
+        postedView.getByRole("button", {
+          name: labels.printInvoice,
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      await expect(
+        postedView.getByRole("button", {
+          name: labels.printReturn,
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      await expect(
+        postedView.getByRole("button", {
+          name: labels.adjustment,
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
+        postedView.getByRole("button", {
+          name: labels.purchaseReturn,
+          exact: true,
+        }),
+      ).toBeVisible();
+    }
+  });
+
   test("contains wide and narrow layouts without document overflow", async ({
     page,
   }) => {
@@ -1505,6 +1606,17 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.getByRole("button", { name: "Purchase invoice" }),
     ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Suppliers", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Reports", exact: true }),
+    ).toHaveCount(0);
+    await page.getByTestId("collapse-menu-trigger").click();
+    await expect(
+      page.getByRole("link", { name: "Accounts", exact: true }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await expect(page.locator("#purchase-invoice-view")).toBeHidden();
   });
 

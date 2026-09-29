@@ -84,9 +84,10 @@ describe("PurchaseAdjustmentWorkflow", () => {
     expect(markup).toContain("Al-Nahrain Medical");
     expect(markup).toContain("إنشاء نسخة التعديل");
     expect(markup).toContain("Panadol Extra");
-    // Verify no visible placeholder dash in supplier debt
+    // M2 has no Supplier Statement/debt projection, so the Adjustment must not
+    // fabricate a balance from Purchase invoices.
     expect(markup).not.toContain("— د.ع");
-    expect(markup).toContain("ديون المورد");
+    expect(markup).not.toContain("ديون المورد");
   });
 
   it("renders totals section with localized keys and zero placeholder dashes in Arabic", () => {

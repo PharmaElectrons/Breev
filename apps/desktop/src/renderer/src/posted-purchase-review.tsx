@@ -654,15 +654,12 @@ export function PostedPurchaseReview({
                   <th scope="col" className="proto-th-after-discount">
                     {copy.costAfterDiscount}
                   </th>
-                  <th scope="col" className="proto-th-status">
-                    {copy.settlementStatus}
-                  </th>
                 </tr>
               </thead>
               <tbody>
                 {list?.purchases.length === 0 ? (
                   <tr>
-                    <td className="purchase-table-empty" colSpan={10}>
+                    <td className="purchase-table-empty" colSpan={9}>
                       {copy.noPostedPurchases}
                     </td>
                   </tr>
@@ -783,17 +780,6 @@ export function PostedPurchaseReview({
                           >
                             {costsVisible ? costAfterDiscount.text : "***"}
                           </bdi>
-                        </td>
-                        <td className="proto-td-status">
-                          {purchase.settlementContext === "cash" ? (
-                            <span className="proto-badge proto-badge-settled">
-                              {copy.settled}
-                            </span>
-                          ) : (
-                            <span className="proto-badge proto-badge-unpaid">
-                              {copy.unpaid}
-                            </span>
-                          )}
                         </td>
                       </tr>
                     );
@@ -1013,15 +999,6 @@ function PostedPurchaseDetailView({
             <span>📝</span> {copy.editInvoice}
           </button>
         ) : null}
-        <button
-          type="button"
-          className="purchase-print-icon-button"
-          onClick={() => window.print()}
-          title={copy.printInvoice}
-          aria-label={copy.printInvoice}
-        >
-          🖨️
-        </button>
         {detail.canReturn ? (
           <button
             type="button"
@@ -1030,16 +1007,6 @@ function PostedPurchaseDetailView({
             onClick={(event) => onCorrection("return", event.currentTarget)}
           >
             <span>↩️</span> {copy.returnInvoice}
-          </button>
-        ) : null}
-        {detail.returns.length > 0 ? (
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => window.print()}
-            title={copy.printReturnSlip}
-          >
-            ↩️ {copy.printReturnSlip}
           </button>
         ) : null}
         <button type="button" className="quiet-button" onClick={onBack}>
@@ -1437,13 +1404,6 @@ function PostedAdjustmentView({
         <button type="button" className="quiet-button" onClick={onBack}>
           {copy.backToInvoice}
         </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => window.print()}
-        >
-          {copy.print}
-        </button>
       </div>
     </article>
   );
@@ -1507,13 +1467,6 @@ function PostedReturnView({
       <div className="posted-correction-actions">
         <button type="button" className="quiet-button" onClick={onBack}>
           {copy.backToInvoice}
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => window.print()}
-        >
-          {copy.printReturn}
         </button>
       </div>
     </article>

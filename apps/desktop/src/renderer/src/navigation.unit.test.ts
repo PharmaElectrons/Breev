@@ -33,12 +33,14 @@ describe("navigationModules", () => {
   it("never offers an excluded or deferred prototype module", () => {
     const ids = MODULE_DEFINITIONS.map((definition) => definition.id).join(" ");
     for (const forbidden of [
+      "accounts",
       "clinic",
       "delivery",
       "ecommerce",
       "marketing",
       "external",
       "integration",
+      "reports",
     ]) {
       expect(ids).not.toContain(forbidden);
     }
@@ -73,7 +75,7 @@ describe("navigationModules", () => {
     ).toContain("purchases");
   });
 
-  it("marks implemented workspaces available and unbuilt required surfaces unavailable", () => {
+  it("marks implemented workspaces available", () => {
     const modules = navigationModules(FREE_CORE_ACCESS);
     const availability = new Map(
       modules.map((module) => [module.id, module.availability]),
@@ -84,7 +86,8 @@ describe("navigationModules", () => {
     expect(availability.get("sales")).toBe("available");
     expect(availability.get("purchases")).toBe("available");
     expect(availability.get("basket")).toBe("available");
-    expect(availability.get("reports")).toBe("unavailable");
+    expect(availability.has("reports")).toBe(false);
+    expect(availability.has("accounts")).toBe(false);
   });
 
   it("keeps the client prototype's module order", () => {
@@ -96,8 +99,6 @@ describe("navigationModules", () => {
       "products",
       "patients",
       "basket",
-      "reports",
-      "accounts",
       "settings",
     ]);
   });
@@ -131,9 +132,14 @@ describe("moduleIdForHash", () => {
     ).toBe("inventory");
   });
 
-  it("resolves an unbuilt surface so a deep link explains itself", () => {
+  it("resolves an authorized unbuilt surface so a deep link explains itself", () => {
     expect(moduleIdForHash("#/sales")).toBe("sales");
-    expect(moduleIdForHash("#/reports")).toBe("reports");
+    expect(moduleIdForHash("#/patients")).toBe("patients");
+  });
+
+  it("sends quarantined accounting and report hashes to the default workspace", () => {
+    expect(moduleIdForHash("#/reports")).toBe("dashboard");
+    expect(moduleIdForHash("#/accounts")).toBe("dashboard");
   });
 
   it("resolves Ordered Items to the basket module", () => {

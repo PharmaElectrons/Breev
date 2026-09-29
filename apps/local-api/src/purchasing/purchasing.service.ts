@@ -1606,10 +1606,11 @@ export class PurchasingService {
         [context.pharmacyId, purchaseId],
       );
       const costsVisible = costVisibility === "visible";
+      const canManageCosts = context.permissions.includes(COST_PERMISSION);
       const canAdjust =
-        costsVisible && context.permissions.includes(ADJUSTMENT_PERMISSION);
+        canManageCosts && context.permissions.includes(ADJUSTMENT_PERMISSION);
       const canReturn =
-        costsVisible && context.permissions.includes(RETURN_PERMISSION);
+        canManageCosts && context.permissions.includes(RETURN_PERMISSION);
       const adjustmentResult = await client.query<{
         id: string;
         posted_at: Date;

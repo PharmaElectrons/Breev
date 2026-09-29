@@ -13,7 +13,6 @@ import {
   discardPurchaseAdjustmentDraft,
   newPurchasingIdempotencyKey,
   postPurchaseAdjustment,
-  requestPostedPurchases,
   requestPurchaseAdjustmentDraft,
   requestPurchaseAdjustmentSummary,
   requestSuppliers,
@@ -71,8 +70,6 @@ const text = {
     originalInvoiceBadge: "Original: Purchase invoice #",
     posted: "Adjustment posted",
     previous: "Previous >",
-    print: "Print",
-    printInvoice: "Print invoice",
     qtyAfter: "Qty after",
     qtyBefore: "Qty before",
     qtyDelta: "Qty delta",
@@ -90,7 +87,6 @@ const text = {
     special: "Special price",
     start: "Create adjustment copy",
     supplier: "Supplier",
-    supplierDebt: "Supplier debt",
     title: "Purchase Invoice Adjustment",
     total: "Total",
     totalCost: "Total cost",
@@ -141,8 +137,6 @@ const text = {
     originalInvoiceBadge: "الأصل: فاتورة شراء رقم",
     posted: "تم حفظ التعديل",
     previous: "السابقة >",
-    print: "طباعة فاتورة",
-    printInvoice: "طباعة الفاتورة",
     qtyAfter: "الكمية بعد",
     qtyBefore: "الكمية قبل",
     qtyDelta: "فرق الكمية",
@@ -160,7 +154,6 @@ const text = {
     special: "سعر خاص",
     start: "إنشاء نسخة التعديل",
     supplier: "المورد",
-    supplierDebt: "ديون المورد",
     title: "تعديل فاتورة شراء",
     total: "الإجمالي",
     totalCost: "مجموع الكلفة",
@@ -199,7 +192,6 @@ export function PurchaseAdjustmentWorkflow({
     useState<PurchaseAdjustmentReason>("quantity error");
   const [evidence, setEvidence] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [supplierDebtFils, setSupplierDebtFils] = useState<string>("0");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{
     readonly message: string;
@@ -220,33 +212,6 @@ export function PurchaseAdjustmentWorkflow({
       .then((result) => setSuppliers(result.suppliers))
       .catch(handleError);
   }, [baseUrl]);
-
-  useEffect(() => {
-    const sName = detail.supplierNameSnapshot.trim().toLowerCase();
-    void requestPostedPurchases(baseUrl, { query: detail.supplierNameSnapshot })
-      .then((result) => {
-        const debt = result.purchases
-          .filter(
-            (p) =>
-              p.supplierNameSnapshot.trim().toLowerCase() === sName &&
-              p.settlementContext === "debt",
-          )
-          .reduce((acc, p) => {
-            try {
-              const cost = BigInt(
-                p.costAfterDiscountFils ?? p.primarySupplierCostFils ?? "0",
-              );
-              return acc + cost;
-            } catch {
-              return acc;
-            }
-          }, 0n);
-        setSupplierDebtFils(debt.toString());
-      })
-      .catch(() => {
-        setSupplierDebtFils("0");
-      });
-  }, [baseUrl, detail.supplierNameSnapshot]);
 
   useEffect(() => {
     onDraftActive(detail.activeAdjustmentDrafts.length > 0);
@@ -552,13 +517,6 @@ export function PurchaseAdjustmentWorkflow({
             >
               {copy.back}
             </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => window.print()}
-            >
-              🖨️ {copy.printInvoice}
-            </button>
           </div>
         </div>
       ) : (
@@ -614,15 +572,6 @@ export function PurchaseAdjustmentWorkflow({
                   >
                     <span>📝</span> {copy.start}
                   </button>
-                  <button
-                    type="button"
-                    className="purchase-print-icon-button"
-                    onClick={() => window.print()}
-                    title={copy.printInvoice}
-                    aria-label={copy.printInvoice}
-                  >
-                    🖨️
-                  </button>
                 </div>
               </>
             ) : (
@@ -647,15 +596,6 @@ export function PurchaseAdjustmentWorkflow({
                     onClick={leave}
                   >
                     <span>↩️</span> {copy.returnInvoice}
-                  </button>
-                  <button
-                    type="button"
-                    className="purchase-print-icon-button"
-                    onClick={() => window.print()}
-                    title={copy.printInvoice}
-                    aria-label={copy.printInvoice}
-                  >
-                    🖨️
                   </button>
                   <button
                     type="button"
@@ -702,14 +642,6 @@ export function PurchaseAdjustmentWorkflow({
               <strong className="adjustment-metadata-value">
                 {draftSupplierName}
               </strong>
-            </div>
-            <div className="adjustment-metadata-field">
-              <span className="adjustment-metadata-label">
-                {copy.supplierDebt}:
-              </span>
-              <bdi className="adjustment-metadata-value">
-                {formatFilsToIqd(supplierDebtFils, locale)}
-              </bdi>
             </div>
             <div className="adjustment-metadata-search">
               <input
@@ -1091,13 +1023,6 @@ export function PurchaseAdjustmentWorkflow({
                 </button>
               </div>
               <div className="adjustment-bottom-toolbar-group">
-                <button
-                  type="button"
-                  className="adjustment-toolbar-btn"
-                  onClick={() => window.print()}
-                >
-                  🖨️ {copy.print}
-                </button>
                 <button
                   type="button"
                   className="adjustment-toolbar-btn adjustment-toolbar-btn-danger"
