@@ -202,9 +202,9 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await login(OWNER_USERNAME, OWNER_PASSWORD);
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/inventory`);
-    await expect(
-      page.getByRole("heading", { name: "Inventory review" }),
-    ).toBeVisible();
+    await expect(page.locator("#inventory-title")).toHaveText(
+      "Inventory review",
+    );
 
     const gridRows = page.locator("table tbody tr");
     await expect(gridRows).toHaveCount(5);
@@ -227,6 +227,7 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await expect(page.locator(".inventory-basket-feedback")).toContainText(
       productA.displayName,
     );
+    await expect.poll(() => feedbackClearsTheItemPanel(page)).toBe("clear");
     await expect(page.locator(".inventory-basket-count")).toHaveText("1");
     await expect(productRow).toHaveAttribute("data-selected", "false");
     await expect(addButton).toBeFocused();
@@ -352,9 +353,38 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     await quantityA.fill("1.5");
     await expect(quantityA).toBeFocused();
     await pressKeyOnFocused(page, quantityA, "Enter");
-    await expect(page.getByRole("alert")).toContainText(
+    const validationAlert = page.getByRole("alert");
+    await expect(validationAlert).toContainText(
       "Use a whole, non-negative number.",
     );
+    const alertColor = await validationAlert.evaluate(
+      (element) =>
+        (
+          element as {
+            ownerDocument?: {
+              defaultView?: {
+                getComputedStyle: (el: unknown) => { color: string };
+              };
+            };
+          }
+        ).ownerDocument?.defaultView?.getComputedStyle(element).color,
+    );
+    const captionColor = await rowA
+      .locator(".basket-quantity-caption")
+      .evaluate(
+        (element) =>
+          (
+            element as {
+              ownerDocument?: {
+                defaultView?: {
+                  getComputedStyle: (el: unknown) => { color: string };
+                };
+              };
+            }
+          ).ownerDocument?.defaultView?.getComputedStyle(element).color,
+      );
+    expect(alertColor).not.toBe(captionColor);
+    expect(alertColor).toBe("rgb(163, 34, 34)");
     await expect(quantityA).toHaveValue("1.5");
     await expect(quantityA).toBeFocused();
   });
@@ -782,6 +812,28 @@ test.describe.serial("reorder basket and Ordered Items", () => {
           page.locator("main.shell-page[data-basket-workspace]"),
         ).toBeVisible();
         await expect(page.locator("table.basket-table")).toBeVisible();
+        for (const viewport of [
+          { height: 900, width: 1440 },
+          { height: 800, width: 1280 },
+          { height: 800, width: 1100 },
+          { height: 768, width: 1024 },
+        ]) {
+          await page.setViewportSize(viewport);
+          await expect(page.locator(".basket-back-link")).toBeInViewport({
+            ratio: 1,
+          });
+          await expect(page.locator(".purchase-view-tabs")).toBeInViewport({
+            ratio: 1,
+          });
+          await expect
+            .poll(() =>
+              page.evaluate<boolean>(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+              ),
+            )
+            .toBe(true);
+        }
+        await page.setViewportSize({ height: 768, width: 1280 });
         expect(
           (
             await page.locator("table.basket-table thead th").allTextContents()
@@ -1026,6 +1078,34 @@ async function startRendererServer(
   });
   const port = await listen(server);
   return { origin: `http://127.0.0.1:${String(port)}`, server };
+}
+
+async function feedbackClearsTheItemPanel(page: Page): Promise<string> {
+  return page.evaluate<string>(`(() => {
+    const feedback = document.querySelector(".inventory-basket-feedback");
+    const panel = document.querySelector(".purchase-item-sidebar");
+    if (!(feedback instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+      return "missing";
+    }
+    const message = feedback.getBoundingClientRect();
+    const itemPanel = panel.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const insideViewport =
+      message.left >= 0 &&
+      message.top >= 0 &&
+      message.right <= viewportWidth &&
+      message.bottom <= viewportHeight &&
+      message.width > 0 &&
+      message.height > 0;
+    const separated =
+      message.right <= itemPanel.left ||
+      itemPanel.right <= message.left ||
+      message.bottom <= itemPanel.top ||
+      itemPanel.bottom <= message.top;
+    if (!insideViewport) return "clipped";
+    return separated ? "clear" : "overlap";
+  })()`);
 }
 
 function isApiRoute(url: string | undefined): boolean {

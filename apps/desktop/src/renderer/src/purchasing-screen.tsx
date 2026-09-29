@@ -12,6 +12,7 @@ import {
   type PurchaseItemSelection,
 } from "./purchase-item-details";
 import { PurchaseRowEntry } from "./purchase-row-entry";
+import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import { formatFilsToIqd } from "./product-record";
 import { useIdentityState } from "./identity-state-provider";
 import {
@@ -1640,7 +1641,12 @@ function PostedPurchaseResult({
                 <th scope="row">{row.ordinal}</th>
                 <td>{row.itemDisplayName}</td>
                 <td>
-                  <bdi>{row.inventoryUnitQuantity}</bdi> {row.inventoryUnitName}
+                  <bdi>{row.inventoryUnitQuantity}</bdi>{" "}
+                  {panelUnitLabel(
+                    row.inventoryUnitName,
+                    unitQuantity(row.inventoryUnitQuantity),
+                    locale,
+                  )}
                 </td>
                 <td>
                   <bdi>

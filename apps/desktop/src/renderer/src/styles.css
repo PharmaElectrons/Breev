@@ -2327,7 +2327,9 @@ a:focus-visible,
 .shell-page[data-basket-workspace] {
   grid-template-rows: 4rem auto minmax(0, 1fr);
 }
-
+.shell-page[data-inventory-workspace] {
+  grid-template-rows: 3.75rem minmax(0, 1fr);
+}
 .shell-page[data-inventory-workspace] .shell-header,
 .shell-page[data-sales-workspace] .shell-header,
 .shell-page[data-basket-workspace] .shell-header {
@@ -2463,7 +2465,18 @@ a:focus-visible,
   padding: 1.25rem clamp(1rem, 3vw, 2rem) 2rem;
   background: var(--card);
 }
-
+.inventory-review {
+  gap: 0.65rem;
+  block-size: 100%;
+  overflow: hidden;
+  padding: 0.7rem 0.85rem 0;
+  background: var(--card);
+}
+.inventory-review:has(
+  .purchase-item-sidebar:not([hidden]):not([data-collapsed="true"])
+) {
+  padding-inline-end: 17.5rem;
+}
 .basket-workspace {
   display: flex;
   min-block-size: 0;
@@ -2475,10 +2488,13 @@ a:focus-visible,
   background: var(--card);
   color: var(--card-foreground);
 }
-
 .basket-workspace p,
 .basket-workspace small {
   color: var(--muted-foreground);
+}
+.basket-workspace > .denial-alert,
+.basket-workspace > p[role="status"]:not(.visually-hidden) {
+  margin-inline: clamp(1rem, 3vw, 2rem);
 }
 
 .basket-back-link {
@@ -2517,6 +2533,7 @@ a:focus-visible,
 
 .basket-table-scroll {
   min-block-size: 0;
+  min-inline-size: 0;
   flex: 1 1 auto;
   overflow: auto;
   padding-inline: clamp(1rem, 3vw, 2rem);
@@ -2524,11 +2541,14 @@ a:focus-visible,
 
 .basket-table {
   inline-size: 100%;
-  min-inline-size: 58rem;
+  min-inline-size: 68rem;
   border-collapse: collapse;
   background: var(--card);
 }
-
+.basket-table th:nth-child(5),
+.basket-table td:nth-child(5) {
+  min-inline-size: 12rem;
+}
 .basket-table th,
 .basket-table td {
   border-block-end: 1px solid var(--border);
@@ -2578,12 +2598,14 @@ a:focus-visible,
 .basket-item-name,
 .inventory-item-cell {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.5rem;
-  /* The item column shares a 64rem table with nine others; without a floor
-     the name and the basket action wrap into tall rows at 1080px. */
-  min-inline-size: 13rem;
+  min-inline-size: 0;
+}
+.inventory-item-cell .table-link {
+  min-inline-size: 0;
+  overflow-wrap: break-word;
 }
 
 .inventory-item-cell .quiet-button {
@@ -2598,7 +2620,6 @@ a:focus-visible,
   block-size: 1rem;
   flex: none;
 }
-
 .inventory-item-cell .inventory-cart-add {
   min-inline-size: 2.5rem;
   min-block-size: 2.5rem;
@@ -2614,6 +2635,44 @@ a:focus-visible,
 .inventory-item-cell .inventory-cart-add svg {
   inline-size: 1.25rem;
   block-size: 1.25rem;
+}
+
+.inventory-actions-cell {
+  text-align: center;
+}
+.inventory-actions-cell .inventory-cart-add {
+  min-inline-size: 2rem;
+  min-block-size: 2rem;
+  padding: 0.3rem;
+  border-color: transparent;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--primary);
+}
+.inventory-actions-cell .inventory-cart-add:hover,
+.inventory-actions-cell .inventory-cart-add:focus-visible {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+}
+.inventory-actions-cell .inventory-cart-add svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  stroke: currentColor;
+  stroke-width: 1.75;
+}
+.inventory-status-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12rem;
+  min-inline-size: 0;
+}
+.inventory-status-badges > span[data-indicator] {
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+  font-weight: 650;
+  line-height: 1.25;
 }
 
 .basket-product-state {
@@ -2676,7 +2735,7 @@ a:focus-visible,
 
 .basket-row-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.4rem;
 }
 
@@ -2715,48 +2774,54 @@ a:focus-visible,
 
 .inventory-metrics {
   display: grid;
+  flex: none;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
 .inventory-metric {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.2rem;
   min-inline-size: 0;
   border: 1px solid var(--border);
-  border-radius: 0.7rem;
-  padding: 0.8rem;
-  background: var(--background);
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.9rem 0.75rem;
+  background: var(--card);
+  box-shadow: 0 1px 2px var(--shadow);
   color: var(--foreground);
 }
 
 .inventory-metric span {
   color: var(--muted-foreground);
-  font-size: 0.8rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .inventory-metric strong {
-  font-size: 1.25rem;
+  font-family: var(--font-family-mono);
+  font-size: 1.55rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
-
+.money-amount {
+  white-space: nowrap;
+}
+.money-amount[dir="ltr"] {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
 .inventory-metric[data-tone="emerald"] {
   border-color: color-mix(in srgb, var(--primary) 30%, transparent);
   background: color-mix(in srgb, var(--primary) 5%, transparent);
-  color: var(--primary);
 }
-
-.inventory-metric[data-tone="emerald"] span {
-  color: var(--muted-foreground);
-}
-
+.inventory-metric[data-tone="emerald"],
 .inventory-metric[data-tone="accent"] {
-  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
-  background: color-mix(in srgb, var(--warning) 5%, transparent);
-  color: var(--warning);
+  color: var(--foreground);
 }
-
+.inventory-metric[data-tone="emerald"] span,
 .inventory-metric[data-tone="accent"] span {
   color: var(--muted-foreground);
 }
@@ -2812,10 +2877,10 @@ a:focus-visible,
 
 .inventory-basket-feedback {
   position: fixed;
-  z-index: 20;
+  z-index: 60;
   inset-block-end: 1.5rem;
-  inset-inline-end: 1.5rem;
-  max-inline-size: min(25rem, calc(100vw - 3rem));
+  inset-inline-start: 1.5rem;
+  max-inline-size: min(25rem, calc(100vw - 22rem));
   box-shadow: 0 0.5rem 1.5rem var(--shadow);
 }
 
@@ -2837,10 +2902,10 @@ a:focus-visible,
 
 .inventory-settings > summary {
   display: inline-flex;
-  min-block-size: 2.5rem;
+  min-block-size: 2.75rem;
   align-items: center;
   border: 1px solid var(--control-border);
-  border-radius: 0.7rem;
+  border-radius: 0.6rem;
   padding-inline: 0.8rem;
   background: var(--background);
   cursor: pointer;
@@ -2882,52 +2947,229 @@ a:focus-visible,
 
 .inventory-table-scroll {
   min-block-size: 0;
+  min-inline-size: 0;
+  flex: 1 1 auto;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 0.7rem;
+  border-radius: 0.65rem;
+  background: var(--card);
+}
+.inventory-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+.inventory-toolbar-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+.inventory-chip,
+.inventory-review .inventory-settings > summary {
+  display: inline-flex;
+  box-sizing: border-box;
+  block-size: 2rem;
+  min-block-size: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0 0.7rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.inventory-chip-primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.inventory-chip:hover,
+.inventory-chip:focus-visible,
+.inventory-review .inventory-settings > summary:hover,
+.inventory-review .inventory-settings > summary:focus-visible {
+  border-color: var(--primary);
+}
+.inventory-chip-primary:hover,
+.inventory-chip-primary:focus-visible {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 88%, black);
 }
 
 .inventory-search {
-  display: grid;
-  max-inline-size: 25rem;
-  gap: 0.3rem;
+  position: relative;
+  display: block;
+  min-inline-size: 0;
+  flex: 1 1 12rem;
   color: var(--foreground);
   font-weight: 700;
 }
 
 .inventory-search input {
-  min-block-size: 2.75rem;
-  border: 1px solid var(--control-border);
-  border-radius: 0.6rem;
-  padding-inline: 0.8rem;
-  background: var(--background);
+  inline-size: 100%;
+  box-sizing: border-box;
+  block-size: 2.15rem;
+  min-block-size: 2.15rem;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  padding-inline: 2.1rem 0.75rem;
+  background: var(--card);
   color: var(--foreground);
   font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.inventory-search svg {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 0.65rem;
+  inline-size: 0.95rem;
+  block-size: 0.95rem;
+  transform: translateY(-50%);
+  fill: none;
+  stroke: var(--muted-foreground);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.inventory-search input:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-wash);
+}
+.inventory-safety-summary {
+  flex: none;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+.inventory-safety-summary a {
+  color: var(--primary);
+  font-weight: 700;
+}
+.inventory-bottom-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-block-start: 1px solid var(--border);
+  margin-inline: -0.85rem;
+  padding: 0.45rem 0.85rem 0.5rem;
+  background: var(--card);
+}
+.inventory-tool {
+  display: inline-flex;
+  box-sizing: border-box;
+  block-size: 2.05rem;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  padding: 0 0.85rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.inventory-tool svg {
+  inline-size: 0.95rem;
+  block-size: 0.95rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.inventory-tool-strong {
+  border-color: transparent;
+  background: var(--foreground);
+  color: var(--card);
+}
+.inventory-review .inventory-settings > summary {
+  font-weight: 700;
 }
 
 .inventory-table-scroll table {
   inline-size: 100%;
-  min-inline-size: 64rem;
   border-collapse: collapse;
   background: var(--card);
 }
-
+.inventory-review-table {
+  min-inline-size: 66.1rem;
+  table-layout: fixed;
+}
+.inventory-review-table th[data-column-field="item"],
+.inventory-review-table td[data-column-field="item"] {
+  inline-size: 10rem;
+}
+.inventory-review-table th[data-column-field="balance"],
+.inventory-review-table td[data-column-field="balance"] {
+  inline-size: 4.2rem;
+}
+.inventory-review-table th[data-column-field="value"],
+.inventory-review-table td[data-column-field="value"],
+.inventory-review-table th[data-column-field="averageCost"],
+.inventory-review-table td[data-column-field="averageCost"] {
+  inline-size: 9rem;
+}
+.inventory-review-table th[data-column-field="batches"],
+.inventory-review-table td[data-column-field="batches"] {
+  inline-size: 3.5rem;
+}
+.inventory-review-table th[data-column-field="expiry"],
+.inventory-review-table td[data-column-field="expiry"] {
+  inline-size: 5.5rem;
+}
+.inventory-review-table th[data-column-field="levels"],
+.inventory-review-table td[data-column-field="levels"] {
+  inline-size: 4.8rem;
+}
+.inventory-review-table th[data-column-field="reorderPoint"],
+.inventory-review-table td[data-column-field="reorderPoint"] {
+  inline-size: 4.6rem;
+}
+.inventory-review-table th[data-column-field="consumptionRate"],
+.inventory-review-table td[data-column-field="consumptionRate"] {
+  inline-size: 4.6rem;
+}
+.inventory-review-table th[data-column-field="risk"],
+.inventory-review-table td[data-column-field="risk"] {
+  inline-size: 8rem;
+}
+.inventory-review-table th[data-column-field="actions"],
+.inventory-review-table td[data-column-field="actions"] {
+  inline-size: 2.8rem;
+}
 .inventory-table-scroll th,
 .inventory-table-scroll td {
-  border-block-end: 1px solid var(--border);
-  padding: 0.75rem 0.8rem;
+  border-block-end: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding: 0.28rem 0.5rem;
   text-align: start;
-  vertical-align: top;
+  vertical-align: middle;
+  font-size: 0.75rem;
 }
 
 .inventory-table-scroll th {
   position: sticky;
   z-index: 1;
   inset-block-start: 0;
-  background: var(--muted);
+  background: var(--card);
   color: var(--muted-foreground);
-  font-size: 0.75rem;
-  white-space: nowrap;
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: normal;
 }
 
 .inventory-table-scroll th button {
@@ -2966,26 +3208,39 @@ a:focus-visible,
 }
 
 .inventory-table-scroll tbody tr:hover {
-  background: var(--primary-wash);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--foreground) 5%, transparent),
+    color-mix(in srgb, var(--foreground) 5%, transparent)
+  );
 }
-
-.inventory-table-scroll tbody tr[data-status="critical"] {
-  background: var(--danger-soft);
+.inventory-table-scroll tbody tr[data-status="critical"],
+.inventory-tint-legend [data-status="critical"] .inventory-tint-swatch {
+  background-color: var(--danger-soft);
 }
 
 .inventory-table-scroll tbody tr[data-status="expiring"],
-.inventory-table-scroll tbody tr[data-status="reorder"] {
-  background: var(--warning-soft);
+.inventory-tint-legend [data-status="expiring"] .inventory-tint-swatch {
+  background-color: color-mix(in srgb, #e6c200 18%, var(--card));
 }
-
-.inventory-table-scroll tbody tr[data-status="stable"] {
-  background: var(--ready-soft);
+.inventory-table-scroll tbody tr[data-status="reorder"],
+.inventory-tint-legend [data-status="reorder"] .inventory-tint-swatch {
+  background-color: var(--warning-soft);
+}
+.inventory-table-scroll tbody tr[data-status="over-maximum"],
+.inventory-tint-legend [data-status="over-maximum"] .inventory-tint-swatch {
+  background-color: color-mix(in srgb, var(--state-purple) 10%, var(--card));
+}
+.inventory-table-scroll tbody tr[data-status="stable"],
+.inventory-tint-legend [data-status="stable"] .inventory-tint-swatch {
+  background-color: var(--ready-soft);
 }
 
 .inventory-table-scroll tbody tr[data-selected="true"] {
-  outline: 3px solid var(--primary);
-  outline-offset: -3px;
-  background: var(--primary-wash);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+:dir(rtl) .inventory-table-scroll tbody tr[data-selected="true"],
+[dir="rtl"] .inventory-table-scroll tbody tr[data-selected="true"] {
+  box-shadow: inset -3px 0 0 var(--primary);
 }
 
 @media (max-width: 60rem) {
@@ -2995,10 +3250,6 @@ a:focus-visible,
 
   .inventory-actions {
     justify-content: flex-start;
-  }
-
-  .inventory-table-scroll table {
-    min-inline-size: 56rem;
   }
 }
 
@@ -3057,7 +3308,7 @@ a:focus-visible,
 
 .count-session-list ul {
   display: grid;
-  gap: 0;
+  gap: 0.55rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3069,8 +3320,10 @@ a:focus-visible,
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  border-block-start: 1px solid var(--border);
-  padding-block: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--card);
 }
 
 .count-session-list li > div {
@@ -3083,14 +3336,34 @@ a:focus-visible,
   color: var(--muted-foreground);
   font-size: 0.78rem;
 }
-
+.count-workspace {
+  background: color-mix(in srgb, var(--muted) 55%, var(--card));
+}
 .count-entry-form {
   display: grid;
+  inline-size: min(40rem, 100%);
+  max-inline-size: 100%;
+  margin-inline: auto;
   gap: 0.85rem;
-  border: 1px solid var(--control-border);
-  border-radius: 0.8rem;
-  padding: 1rem;
-  background: var(--primary-wash);
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-block-start: 0.28rem solid var(--primary);
+  border-radius: 0.85rem;
+  padding: 1rem 1.15rem 0;
+  background: var(--card);
+  box-shadow: 0 0.75rem 2rem
+    color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.count-entry-form > .count-resolved-item {
+  display: grid;
+  gap: 0.85rem;
+}
+.count-entry-prompt {
+  margin: 0;
+  border: 1px dashed var(--border);
+  border-radius: 0.7rem;
+  padding: 1.15rem 0.9rem;
+  color: var(--muted-foreground);
+  text-align: center;
 }
 
 .count-item-field,
@@ -3157,31 +3430,55 @@ a:focus-visible,
 
 .count-item-field input {
   min-block-size: 3.25rem;
-  font-size: 1.1rem;
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--control-border));
+  font-family: var(--font-family-mono);
+  font-size: 1.05rem;
 }
 
 .count-resolved-item {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(20rem, 1.35fr);
-  align-items: end;
-  gap: 1rem;
+  gap: 0.85rem;
 }
 
 .count-resolved-item h3,
 .count-resolved-item p {
   margin: 0;
 }
-
-.count-resolved-item > div:first-child {
+.count-resolved-item > div:first-child,
+.count-status-card {
   display: grid;
   align-content: start;
-  gap: 0.4rem;
+  gap: 0.35rem;
+  min-block-size: 5.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.9rem 1rem;
+  background: color-mix(in srgb, var(--muted) 65%, var(--card));
 }
-
-.count-resolved-item > div:first-child p {
+.count-resolved-item > div:first-child p,
+.count-status-card p {
   color: var(--muted-foreground);
 }
-
+.count-balance-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-block-start: 1px solid var(--border);
+  margin-block-start: 0.35rem;
+  padding-block-start: 0.55rem;
+}
+.count-balance-row > span {
+  color: var(--muted-foreground);
+  font-weight: 700;
+}
+.count-balance-value {
+  color: var(--primary);
+  font-family: var(--font-family-mono);
+  font-size: 1.35rem;
+  font-weight: 800;
+  text-align: end;
+}
 .count-resolved-item a,
 .count-lines-table a {
   color: var(--primary);
@@ -3198,28 +3495,46 @@ a:focus-visible,
 
 .count-unit-field input {
   min-block-size: 3.25rem;
+  color: var(--primary);
   font-family: var(--font-family-mono);
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 1.35rem;
+  font-weight: 800;
   text-align: start;
 }
 
 .count-live-caption {
   min-block-size: 1.5rem;
   margin: 0;
-  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--info) 35%, var(--border));
+  border-radius: 0.55rem;
+  padding: 0.65rem 0.8rem;
+  background: color-mix(in srgb, var(--info) 8%, var(--card));
+  color: var(--info);
   font-family: var(--font-family-mono);
   font-size: 0.9rem;
   font-weight: 700;
 }
-
+.count-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin-inline: -1.15rem;
+  border-block-start: 1px solid var(--border);
+  padding: 0.65rem 1.15rem;
+  background: color-mix(in srgb, var(--muted) 40%, var(--card));
+}
 .count-save-button {
-  justify-self: start;
+  box-sizing: border-box;
+  min-block-size: 2rem;
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.75rem;
 }
 
 .count-lines-container {
   display: flex;
   min-block-size: 0;
+  min-inline-size: 0;
   flex: 1 1 auto;
   flex-direction: column;
   gap: 0.6rem;
@@ -3234,6 +3549,7 @@ a:focus-visible,
 .count-lines-table-wrap,
 .count-review-table-wrap {
   min-block-size: 0;
+  min-inline-size: 0;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 0.7rem;
@@ -3255,9 +3571,6 @@ a:focus-visible,
 }
 
 .count-lines-table thead th {
-  position: sticky;
-  z-index: 1;
-  inset-block-start: 0;
   background: var(--muted);
   color: var(--muted-foreground);
   font-size: 0.75rem;
@@ -3284,13 +3597,25 @@ a:focus-visible,
   inline-size: min(100%, 34rem);
   max-block-size: calc(100dvh - 2rem);
   overflow: auto;
-  padding: 1.35rem;
+  padding: 0 0 1.15rem;
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
   text-align: start;
 }
 
 .count-variance-dialog h2,
 .count-completion-dialog h2 {
-  margin-block-start: 0;
+  margin: 0 0 1rem;
+  border-block-end: 1px solid
+    color-mix(in srgb, var(--primary) 30%, var(--border));
+  padding: 0.8rem 1.2rem;
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  color: var(--primary);
+}
+.count-variance-dialog > p,
+.count-variance-dialog > form,
+.count-completion-dialog > p,
+.count-completion-dialog > .form-actions {
+  margin-inline: 1.2rem;
 }
 
 .count-variance-sentence {
@@ -3333,10 +3658,16 @@ a:focus-visible,
   .count-resolved-item {
     grid-template-columns: 1fr;
   }
-
   .count-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .count-balance-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .count-balance-value {
+    text-align: start;
   }
 }
 
@@ -3352,9 +3683,59 @@ a:focus-visible,
 }
 
 .inventory-indicators {
-  display: grid;
-  gap: 0.3rem;
-  min-inline-size: 12rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+.inventory-review .state-indicator {
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.05rem 0.35rem;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-size: 0.65rem;
+  line-height: 1.25;
+}
+.inventory-indicators-compact {
+  align-items: center;
+  gap: 0.2rem;
+}
+.inventory-indicators-compact .state-indicator {
+  font-size: 0.62rem;
+}
+.inventory-indicators-compact .state-indicator-icon {
+  inline-size: 0.72rem;
+  block-size: 0.72rem;
+}
+.inventory-indicators-compact small {
+  font-size: 0.62rem;
+  line-height: 1.25;
+}
+.inventory-tint-legend {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.inventory-tint-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-inline-size: 0;
+}
+.inventory-tint-swatch {
+  inline-size: 0.85rem;
+  block-size: 0.85rem;
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 0.2rem;
 }
 
 .inventory-indicators small {
@@ -3365,14 +3746,17 @@ a:focus-visible,
 .state-indicator {
   display: inline-flex;
   max-inline-size: 100%;
-  align-items: center;
+  min-inline-size: 0;
+  align-items: flex-start;
   gap: 0.3rem;
   color: var(--foreground);
   font-size: 0.74rem;
   font-weight: 700;
   line-height: 1.35;
 }
-
+.state-indicator > span:not(.visually-hidden) {
+  min-inline-size: 0;
+}
 .state-indicator-icon {
   inline-size: 1rem;
   block-size: 1rem;
@@ -3427,64 +3811,241 @@ a:focus-visible,
   text-underline-offset: 0.15em;
 }
 
+.inventory-detail-page {
+  justify-content: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem 1rem 1.1rem;
+}
+
+.inventory-detail-header {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem 1rem;
+}
+
+.inventory-detail-heading {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: 0.12rem;
+  min-inline-size: min(100%, 28rem);
+}
+
+.inventory-detail-heading h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.inventory-detail-heading > .inventory-chip {
+  justify-self: start;
+}
+
+.inventory-back-link {
+  justify-self: start;
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.inventory-back-link:hover,
+.inventory-back-link:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.inventory-detail-item {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.inventory-detail-note {
+  margin: 0.1rem 0 0;
+  max-inline-size: 42rem;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.inventory-detail-header .primary-button {
+  align-self: center;
+  min-block-size: 2.15rem;
+}
+
+.inventory-detail-page > .batch-safety-panel,
+.inventory-detail-page .inventory-history-card {
+  flex: 0 0 auto;
+}
+
+.inventory-panel-card,
+.inventory-history-card,
+.batch-safety-preview,
+.batch-safety-review-table-scroll,
+.batch-safety-review-empty {
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: var(--card);
+}
+
+.inventory-panel-card {
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.inventory-panel-card > p,
+.inventory-history-empty p,
+.batch-safety-review-empty {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.inventory-panel-card > p,
+.inventory-history-empty,
+.batch-safety-review-empty {
+  padding: 0.75rem 0.85rem;
+}
+
+.inventory-history-card.inventory-table-scroll {
+  border-radius: 0.7rem;
+}
+
+.inventory-history-card.inventory-table-scroll th {
+  background: var(--surface);
+}
+
+.inventory-history-table th:nth-child(3),
+.inventory-history-table td:nth-child(3),
+.inventory-history-table th:nth-child(4),
+.inventory-history-table td:nth-child(4),
+.inventory-history-table th:nth-child(6),
+.inventory-history-table td:nth-child(6),
+.inventory-history-table th:nth-child(7),
+.inventory-history-table td:nth-child(7) {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.inventory-history-table th:nth-child(6),
+.inventory-history-table td:nth-child(6),
+.inventory-history-table th:nth-child(7),
+.inventory-history-table td:nth-child(7) {
+  text-align: end;
+}
+
+.inventory-history-card .table-link {
+  margin: -0.1rem -0.2rem;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.2rem;
+  font-weight: 800;
+  text-underline-offset: 0.18em;
+}
+
+.inventory-history-card .table-link:hover,
+.inventory-history-card .table-link:focus-visible {
+  background: var(--primary-wash);
+}
+
 .batch-safety-panel {
   display: grid;
   min-block-size: 0;
   min-inline-size: 0;
-  gap: 0.85rem;
-  border-block: 1px solid var(--border);
-  padding-block: 1rem;
+  align-content: start;
+  gap: 0.65rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
-.batch-safety-heading,
-.batch-safety-review-heading {
+.batch-safety-heading {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.8rem;
+  gap: 0.45rem 0.8rem;
+  padding: 0.6rem 0.8rem 0.5rem;
 }
 
 .batch-safety-heading h3,
 .batch-safety-heading p,
 .batch-safety-preview h3,
-.batch-safety-preview p,
-.batch-safety-review-heading h2,
-.batch-safety-review-heading p {
+.batch-safety-preview p {
   margin: 0;
 }
 
-.batch-safety-heading p,
-.batch-safety-preview > div > p,
-.batch-safety-run-summary {
+.batch-safety-heading h3 {
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.batch-safety-heading p {
   color: var(--muted-foreground);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-safety-heading a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 1.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.15rem 0.65rem;
+  background: var(--card);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.batch-safety-heading a:hover,
+.batch-safety-heading a:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-wash);
+  text-decoration: none;
 }
 
 .batch-safety-table-scroll,
 .batch-safety-review-table-scroll {
   min-block-size: 0;
+  flex: 0 0 auto;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 0.7rem;
+}
+
+.inventory-panel-card .batch-safety-table-scroll {
+  border: 0;
+  border-block-start: 1px solid var(--border);
+  border-radius: 0;
 }
 
 .batch-safety-table,
 .batch-safety-review-table {
   inline-size: 100%;
-  min-inline-size: 72rem;
+  min-inline-size: 52rem;
   border-collapse: collapse;
   background: var(--card);
+}
+
+.batch-safety-review-table {
+  min-inline-size: 46rem;
 }
 
 .batch-safety-table th,
 .batch-safety-table td,
 .batch-safety-review-table th,
 .batch-safety-review-table td {
-  border-block-end: 1px solid var(--border);
-  padding: 0.7rem 0.75rem;
+  border-block-end: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding: 0.4rem 0.65rem;
   text-align: start;
-  vertical-align: top;
+  vertical-align: middle;
+  font-size: 0.78rem;
 }
 
 .batch-safety-table th,
@@ -3492,47 +4053,136 @@ a:focus-visible,
   position: sticky;
   z-index: 1;
   inset-block-start: 0;
-  background: var(--muted);
+  background: var(--surface);
   color: var(--muted-foreground);
-  font-size: 0.74rem;
+  font-size: 0.68rem;
+  font-weight: 800;
   white-space: nowrap;
+}
+
+.batch-safety-table tbody tr:last-child td,
+.batch-safety-review-table tbody tr:last-child td {
+  border-block-end: 0;
 }
 
 .batch-safety-table tbody tr:hover,
 .batch-safety-review-table tbody tr:hover {
-  background: var(--primary-wash);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.batch-safety-table td:nth-child(1),
+.batch-safety-review-table td:nth-child(1),
+.batch-safety-review-table td:nth-child(2) {
+  font-weight: 700;
+}
+
+.batch-safety-table td:nth-child(2),
+.batch-safety-table td:nth-child(3),
+.batch-safety-table td:nth-child(5),
+.batch-safety-table td:nth-child(6),
+.batch-safety-review-table td:nth-child(3),
+.batch-safety-review-table td:nth-child(5),
+.batch-safety-review-table td:nth-child(6),
+.batch-safety-review-table td:nth-child(7) {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.batch-safety-table th:nth-child(5),
+.batch-safety-table td:nth-child(5),
+.batch-safety-review-table th:nth-child(6),
+.batch-safety-review-table td:nth-child(6),
+.batch-safety-review-table th:nth-child(7),
+.batch-safety-review-table td:nth-child(7) {
+  text-align: end;
+}
+
+.batch-safety-panel .state-indicator,
+.batch-safety-review .state-indicator,
+.batch-safety-preview .state-indicator {
+  align-items: center;
+  border-radius: 999px;
+  padding-block: 0.08rem;
+  padding-inline: 0.28rem 0.45rem;
+  background: color-mix(in srgb, currentColor 12%, var(--card));
+  font-size: 0.72rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.batch-safety-panel .state-indicator-icon,
+.batch-safety-review .state-indicator-icon,
+.batch-safety-preview .state-indicator-icon {
+  inline-size: 0.85rem;
+  block-size: 0.85rem;
+}
+
+.batch-safety-panel .state-indicator[data-eligibility="recalled"],
+.batch-safety-review .state-indicator[data-eligibility="recalled"],
+.batch-safety-preview .state-indicator[data-eligibility="recalled"] {
+  background: color-mix(in srgb, var(--state-purple) 16%, var(--card));
+}
+
+.batch-safety-panel .state-indicator[data-eligibility="quarantined"],
+.batch-safety-review .state-indicator[data-eligibility="quarantined"],
+.batch-safety-preview .state-indicator[data-eligibility="quarantined"] {
+  background: var(--warning-soft);
+}
+
+.batch-safety-panel .state-indicator[data-eligibility="expired"],
+.batch-safety-review .state-indicator[data-eligibility="expired"],
+.batch-safety-preview .state-indicator[data-eligibility="expired"] {
+  background: var(--danger-soft);
 }
 
 .batch-safety-actions {
-  min-inline-size: 17rem;
+  min-inline-size: 14rem;
 }
 
-.batch-safety-actions > div:first-child {
+.batch-safety-action-bar,
+.batch-safety-action-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  align-items: center;
+  gap: 0.3rem 0.4rem;
 }
 
-.batch-safety-actions .quiet-button,
-.batch-safety-review-heading .primary-button {
-  min-block-size: 2.5rem;
+.batch-safety-actions .quiet-button {
+  min-block-size: 1.85rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
 }
 
-.batch-safety-corrected,
+.batch-safety-corrected {
+  display: inline;
+  margin-inline-start: 0.25rem;
+  color: var(--warning);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .batch-safety-warning {
   display: block;
+  margin-block-start: 0.15rem;
   color: var(--warning);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
 .batch-safety-history {
-  margin-block-start: 0.55rem;
-  font-size: 0.76rem;
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.batch-safety-history[open] {
+  flex: 1 0 100%;
 }
 
 .batch-safety-history summary {
-  min-block-size: 2.25rem;
+  display: inline-flex;
+  min-block-size: 1.85rem;
+  align-items: center;
+  color: var(--primary);
   cursor: pointer;
   font-weight: 700;
 }
@@ -3540,6 +4190,7 @@ a:focus-visible,
 .batch-safety-history-content {
   display: grid;
   gap: 0.35rem;
+  margin-block-start: 0.35rem;
   border-inline-start: 2px solid var(--control-border);
   padding-inline-start: 0.65rem;
 }
@@ -3550,80 +4201,190 @@ a:focus-visible,
 
 .batch-safety-preview {
   display: grid;
+  align-content: start;
   min-block-size: 0;
-  gap: 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 0.7rem;
-  padding: 1rem;
-  background: var(--surface);
+  gap: 0.45rem;
+  padding: 0.65rem 0.8rem;
 }
 
-.batch-safety-preview-form,
-.batch-safety-review-controls {
+.batch-safety-preview-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem 1rem;
+}
+
+.batch-safety-preview-copy {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: 0.1rem;
+  min-inline-size: min(100%, 16rem);
+}
+
+.batch-safety-preview-copy h3 {
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+
+.batch-safety-preview-copy p,
+.batch-safety-preview-empty {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.batch-safety-preview-form {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 0.7rem;
+  gap: 0.4rem;
 }
 
 .batch-safety-preview-form .field-label {
-  min-inline-size: 11rem;
+  gap: 0.2rem;
+  min-inline-size: 7.5rem;
+  font-size: 0.72rem;
+}
+
+.batch-safety-preview-form .field-label input {
+  inline-size: 8.5rem;
+  min-block-size: 2rem;
+  border-radius: 0.5rem;
+}
+
+.batch-safety-preview-form .primary-button {
+  min-inline-size: 0;
+  min-block-size: 2rem;
 }
 
 .batch-safety-announcement {
-  min-block-size: 1.5rem;
+  margin: 0;
+  border-radius: 0.55rem;
+  padding: 0.4rem 0.7rem;
+  background: var(--primary-wash);
   color: var(--foreground);
+  font-size: 0.78rem;
   font-weight: 700;
 }
 
 .batch-safety-preview-result {
   min-block-size: 0;
-  max-block-size: 15rem;
   overflow: auto;
-  border-block-start: 1px solid var(--border);
-  padding-block-start: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface);
 }
 
 .batch-safety-preview-result h4,
 .batch-safety-preview-result h5 {
-  margin-block: 0.2rem 0.5rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
 }
 
 .batch-safety-preview-result ul {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.35rem;
   margin: 0;
-  padding-inline-start: 1.2rem;
+  padding-inline-start: 1.1rem;
+}
+
+.batch-safety-preview-result li {
+  font-size: 0.78rem;
 }
 
 .batch-safety-review {
   min-block-size: 0;
 }
 
+.batch-safety-review-toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem 0.75rem;
+}
+
 .batch-safety-review-controls {
-  min-block-size: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  padding: 0.25rem 0.35rem;
+  background: var(--surface);
 }
 
 .batch-safety-review-controls .quiet-button {
-  min-inline-size: 2.75rem;
-  min-block-size: 2.75rem;
+  min-inline-size: 2rem;
+  min-block-size: 2rem;
+  padding: 0 0.45rem;
+  font-size: 0.95rem;
 }
 
 .batch-safety-review-controls .field-label {
-  min-inline-size: 12rem;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  min-inline-size: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted-foreground);
 }
 
-.batch-safety-gate,
-.batch-safety-missed-banner {
+.batch-safety-review-controls .field-label input {
+  inline-size: auto;
+  min-inline-size: 10.5rem;
+  min-block-size: 2rem;
+  border-radius: 0.45rem;
+  padding-inline: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.batch-safety-run-summary {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  padding: 0.4rem 0.7rem;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-safety-review > .batch-safety-gate,
+.batch-safety-review > .batch-safety-missed-banner {
+  margin: 0;
+  border-radius: 0.55rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.batch-safety-review > .batch-safety-gate {
+  border: 1px solid var(--border);
   border-inline-start: 3px solid var(--warning);
-  padding-inline: 0.75rem;
+  background: var(--surface);
+  color: var(--muted-foreground);
 }
 
-.batch-safety-missed-banner {
-  margin-block: 0;
+.batch-safety-review > .batch-safety-missed-banner {
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-inline-start: 3px solid var(--warning);
   background: var(--warning-soft);
   color: var(--foreground);
   font-weight: 700;
+}
+
+.batch-safety-preview .batch-safety-announcement {
+  padding: 0.15rem 0.15rem 0;
+  background: transparent;
+  font-size: 0.75rem;
 }
 
 .batch-safety-dialog {
@@ -3654,7 +4415,13 @@ a:focus-visible,
   .state-indicator {
     color: CanvasText;
   }
-
+  .batch-safety-panel .state-indicator,
+  .batch-safety-review .state-indicator,
+  .batch-safety-preview .state-indicator {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
   .state-indicator-icon {
     forced-color-adjust: none;
     color: CanvasText;
@@ -4373,6 +5140,40 @@ a:focus-visible,
 :dir(rtl) .purchase-item-sidebar[data-collapsed="true"],
 [dir="rtl"] .purchase-item-sidebar[data-collapsed="true"] {
   transform: translateX(-100%);
+}
+
+/* Inventory reuses the purchases panel as a side column on desktop widths.
+   The shared max-width:80rem rule turns that panel into a band for purchases;
+   these selectors are more specific and keep the inventory column. */
+.inventory-review .purchase-item-sidebar {
+  position: fixed;
+  inset-block-start: 3.75rem;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  inline-size: 17.5rem;
+  block-size: auto;
+  max-block-size: none;
+  border-block-end: 0;
+  border-inline-start: 1px solid var(--border);
+  z-index: 40;
+}
+@media (max-width: 56rem) {
+  .inventory-review:has(
+    .purchase-item-sidebar:not([hidden]):not([data-collapsed="true"])
+  ) {
+    padding-inline-end: 0.85rem;
+  }
+  .inventory-review .purchase-item-sidebar {
+    position: sticky;
+    inset-block-start: 0;
+    inset-block-end: auto;
+    inset-inline-end: auto;
+    inline-size: 100%;
+    block-size: 14rem;
+    max-block-size: 14rem;
+    border-inline-start: 0;
+    border-block-end: 1px solid var(--border);
+  }
 }
 
 .purchase-item-sidebar-header {
@@ -8555,9 +9356,24 @@ a:focus-visible,
   }
 }
 
+.purchase-snapshot-print {
+  display: none;
+}
+
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: A4 portrait;
+    margin: 12mm 12mm 14mm;
+  }
+
+  html:has(.purchase-snapshot-print),
+  body:has(.purchase-snapshot-print) {
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
   }
 
   .posted-purchase-review,
@@ -8565,21 +9381,209 @@ a:focus-visible,
     visibility: visible;
   }
 
-  .posted-purchase-review {
-    position: absolute;
-    inset-inline-start: 0;
-    inset-block-start: 0;
-    width: 100%;
-    background: #fff !important;
-    color: #000 !important;
-  }
-
   .posted-detail-toolbar,
   .posted-correction-actions,
   .purchase-filters,
   .purchase-header-tabs,
-  .posted-detail-actions {
+  .posted-detail-actions,
+  body:has(.purchase-snapshot-print) > :not(.purchase-snapshot-print) {
     display: none !important;
+  }
+
+  body:has(.purchase-snapshot-print) .purchase-snapshot-print,
+  body:has(.purchase-snapshot-print) .purchase-snapshot-print * {
+    visibility: visible !important;
+  }
+
+  .purchase-snapshot-print {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #111 !important;
+    background: #fff !important;
+    font-family: "IBM Plex Sans Arabic", "Segoe UI", sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.35;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .purchase-snapshot-print-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 8mm;
+    margin: 0 0 5mm;
+    padding-bottom: 3.5mm;
+    border-bottom: 0.45mm solid #111;
+  }
+
+  .purchase-snapshot-print-kicker {
+    margin: 0;
+    color: #222;
+    font-size: 9pt;
+    font-weight: 650;
+  }
+
+  .purchase-snapshot-print h1 {
+    margin: 1mm 0 0;
+    color: #111;
+    font-size: 16pt;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .purchase-snapshot-print-number {
+    margin: 0;
+    color: #111;
+    font-size: 16pt;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .purchase-snapshot-print-note {
+    margin: 0 0 4mm;
+    color: #222;
+    font-size: 8.5pt;
+  }
+
+  .purchase-snapshot-print-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3mm 5mm;
+    margin: 0 0 6mm;
+  }
+
+  .purchase-snapshot-print-meta div,
+  .purchase-snapshot-print-links li,
+  .purchase-snapshot-print-summary {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .purchase-snapshot-print dt {
+    margin: 0;
+    color: #222;
+    font-size: 8pt;
+    font-weight: 650;
+  }
+
+  .purchase-snapshot-print dd {
+    margin: 0.6mm 0 0;
+    color: #111;
+    font-size: 10.5pt;
+    font-weight: 650;
+  }
+
+  .purchase-snapshot-print-table-title {
+    margin: 0 0 2mm;
+    color: #111;
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  .purchase-snapshot-print table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8pt;
+  }
+
+  .purchase-snapshot-print thead {
+    display: table-header-group;
+  }
+
+  .purchase-snapshot-print tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .purchase-snapshot-print th,
+  .purchase-snapshot-print td {
+    padding: 1.5mm 1.4mm;
+    border-bottom: 0.25pt solid #b5b5b5;
+    color: #111;
+    background: #fff;
+    text-align: start;
+    vertical-align: top;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-weight: 500;
+  }
+
+  .purchase-snapshot-print th {
+    border-bottom: 0.4mm solid #111;
+    font-size: 7.5pt;
+    font-weight: 700;
+  }
+
+  .purchase-snapshot-print-summary {
+    width: min(100%, 92mm);
+    margin-top: 6mm;
+    margin-inline-start: auto;
+  }
+
+  .purchase-snapshot-print-summary h2 {
+    margin: 0 0 2mm;
+    color: #111;
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  .purchase-snapshot-print-summary dl {
+    margin: 0;
+    border-top: 0.4mm solid #111;
+  }
+
+  .purchase-snapshot-print-summary dl div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4mm;
+    padding: 1.6mm 0;
+    border-bottom: 0.25pt solid #c8c8c8;
+  }
+
+  .purchase-snapshot-print-summary dt,
+  .purchase-snapshot-print-summary dd {
+    margin: 0;
+    font-size: 10pt;
+  }
+
+  .purchase-snapshot-print-total {
+    border-bottom: 0.4mm solid #111 !important;
+  }
+
+  .purchase-snapshot-print-total dt,
+  .purchase-snapshot-print-total dd {
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  .purchase-snapshot-print-links {
+    margin-top: 6mm;
+    break-inside: avoid;
+  }
+
+  .purchase-snapshot-print-links h2 {
+    margin: 0 0 1.5mm;
+    color: #111;
+    font-size: 10.5pt;
+  }
+
+  .purchase-snapshot-print-links ul {
+    margin: 0;
+    padding-inline-start: 4.5mm;
+  }
+
+  .purchase-snapshot-print-links li {
+    margin: 0.6mm 0;
+    color: #111;
   }
 }
 
@@ -10519,24 +11523,58 @@ a:focus-visible,
   }
 }
 
-.shell-page[data-sales-workspace] .module-nav ul {
+.shell-page[data-sales-workspace] .module-nav ul,
+.shell-page[data-inventory-workspace] .module-nav ul,
+.shell-page[data-basket-workspace] .module-nav ul {
   scrollbar-color: var(--primary) var(--muted);
   scrollbar-width: auto;
 }
-
-.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar {
+.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar,
+.shell-page[data-inventory-workspace] .module-nav ul::-webkit-scrollbar,
+.shell-page[data-basket-workspace] .module-nav ul::-webkit-scrollbar {
   block-size: 0.5rem;
 }
-
-.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar-track {
+.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar-track,
+.shell-page[data-inventory-workspace] .module-nav ul::-webkit-scrollbar-track,
+.shell-page[data-basket-workspace] .module-nav ul::-webkit-scrollbar-track {
   border-radius: 999px;
   background: var(--muted);
 }
-
-.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar-thumb {
+.shell-page[data-sales-workspace] .module-nav ul::-webkit-scrollbar-thumb,
+.shell-page[data-inventory-workspace] .module-nav ul::-webkit-scrollbar-thumb,
+.shell-page[data-basket-workspace] .module-nav ul::-webkit-scrollbar-thumb {
   border: 1px solid var(--muted);
   border-radius: 999px;
   background: var(--primary);
+}
+
+@media (max-width: 85.375rem) {
+  .shell-page[data-inventory-workspace]
+    .module-nav:has(> ul > li:nth-child(n + 7)),
+  .shell-page[data-basket-workspace]
+    .module-nav:has(> ul > li:nth-child(n + 7)) {
+    position: relative;
+    padding-inline-end: 1.5rem;
+  }
+
+  .shell-page[data-inventory-workspace]
+    .module-nav:has(> ul > li:nth-child(n + 7))
+    .module-nav-overflow-cue,
+  .shell-page[data-basket-workspace]
+    .module-nav:has(> ul > li:nth-child(n + 7))
+    .module-nav-overflow-cue {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    display: grid;
+    inline-size: 1.25rem;
+    place-items: center;
+    background: var(--card);
+    color: var(--primary);
+    font-size: 1.2rem;
+    font-weight: 800;
+    pointer-events: none;
+  }
 }
 
 @media (max-width: 75rem) {

@@ -217,8 +217,14 @@ describe("desktop preload API", () => {
   });
 
   it("saves inventory export through a validated pathless request with optional format", async () => {
-    const invoke = vi.fn().mockResolvedValue({
-      status: "saved",
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === "breev:desktop:begin-inventory-export") {
+        return { status: "opened" };
+      }
+      if (channel === "breev:desktop:append-inventory-export") {
+        return { status: "appended" };
+      }
+      return { status: "saved" };
     });
     const api = createBreevDesktopApi(invoke);
     const bundle = {
@@ -236,19 +242,31 @@ describe("desktop preload API", () => {
     await expect(
       api.saveInventoryExport({ bundle, locale: "en" }),
     ).resolves.toEqual({ status: "saved" });
-    expect(invoke).toHaveBeenCalledWith("breev:desktop:save-inventory-export", {
-      bundle,
-      locale: "en",
-    });
+    expect(invoke).toHaveBeenCalledWith(
+      "breev:desktop:begin-inventory-export",
+      {
+        locale: "en",
+      },
+    );
+    expect(invoke).toHaveBeenCalledWith(
+      "breev:desktop:append-inventory-export",
+      expect.objectContaining({ chunk: expect.any(String) }),
+    );
+    expect(invoke).toHaveBeenCalledWith(
+      "breev:desktop:finish-inventory-export",
+      {},
+    );
 
     await expect(
       api.saveInventoryExport({ bundle, format: "csv", locale: "ar" }),
     ).resolves.toEqual({ status: "saved" });
-    expect(invoke).toHaveBeenCalledWith("breev:desktop:save-inventory-export", {
-      bundle,
-      format: "csv",
-      locale: "ar",
-    });
+    expect(invoke).toHaveBeenCalledWith(
+      "breev:desktop:begin-inventory-export",
+      {
+        format: "csv",
+        locale: "ar",
+      },
+    );
 
     await expect(
       api.saveInventoryExport({

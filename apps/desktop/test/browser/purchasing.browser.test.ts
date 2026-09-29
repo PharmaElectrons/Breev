@@ -20,7 +20,7 @@ import {
 } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
@@ -50,6 +50,15 @@ interface Credentials {
 interface RendererServer {
   readonly origin: string;
   readonly server: Server;
+}
+
+interface PrintLayoutMetrics {
+  readonly buttons: number;
+  readonly clientWidth: number;
+  readonly rootDisplay: string;
+  readonly scrollWidth: number;
+  readonly sheetTop: number;
+  readonly tableWider: boolean;
 }
 
 test.describe.serial("Supplier and Purchase Draft screens", () => {
@@ -2148,6 +2157,127 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       dialog.getByRole("button", { name: "Save and review Delta" }),
     ).toBeVisible();
   });
+
+  test("prints the purchase snapshot as an A4 document in Arabic and English", async ({
+    page,
+  }) => {
+    const printDir = path.resolve(
+      import.meta.dirname,
+      "../../../../test-results/purchase-snapshot-print",
+    );
+    await mkdir(printDir, { recursive: true });
+    for (const locale of ["ar", "en"] as const) {
+      await page.goto("about:blank");
+      await installDesktopFake(page, renderer.origin, locale, "light");
+      await page.setViewportSize({ width: 794, height: 1123 });
+      await page.goto(`${renderer.origin}#/purchases`);
+      await postedInvoicesTab(page).click();
+      const dialog = page.locator("#purchase-posted-view");
+      const search = dialog.getByRole("searchbox", {
+        name:
+          locale === "ar"
+            ? "البحث في فواتير الشراء"
+            : "Search posted purchases",
+      });
+      await search.fill("BROWSER-REVIEW-A");
+      await search.press("Enter");
+      await dialog
+        .getByRole("button", {
+          name: locale === "ar" ? /فتح الفاتورة P/u : /Open invoice P/u,
+        })
+        .first()
+        .click();
+      const review = dialog.locator(".posted-purchase-review");
+      await expect(review).toBeVisible();
+      const number = (
+        await dialog.locator("#posted-detail-title").innerText()
+      ).trim();
+      const supplierCost = await moneyBeside(
+        review,
+        locale === "ar" ? "كلفة المورد الأساسية" : "Primary supplier cost",
+      );
+      const allowance = await moneyBeside(
+        review,
+        locale === "ar" ? "مبلغ السماح" : "Allowance amount",
+      );
+      const afterAllowance = await moneyBeside(
+        review,
+        locale === "ar" ? "الكلفة بعد السماح" : "Cost after discount",
+      );
+      const sheet = page.locator("body > .purchase-snapshot-print");
+      await expect(sheet).toBeHidden();
+      await page.emulateMedia({ media: "print" });
+      await expect(sheet).toBeVisible();
+      await expect(sheet).toHaveAttribute(
+        "dir",
+        locale === "ar" ? "rtl" : "ltr",
+      );
+      await expect(page.locator("#root")).toBeHidden();
+      await expect(sheet.locator("button, a, input")).toHaveCount(0);
+      await expect(sheet).toContainText(number);
+      await expect(sheet).toContainText("Al-Nahrain Medical");
+      await expect(sheet).toContainText("BROWSER-REVIEW-A");
+      await expect(sheet).toContainText("2026-09-08");
+      await expect(sheet).toContainText(supplierCost);
+      await expect(sheet).toContainText(allowance);
+      await expect(sheet).toContainText(afterAllowance);
+      await expect(sheet).toContainText(
+        locale === "ar" ? "لقطة نسبة السماح" : "Allowance snapshot",
+      );
+      await expect(sheet).toContainText(
+        locale === "ar" ? "إجماليات الفاتورة" : "Invoice totals",
+      );
+      await expect(sheet).toContainText(purchaseProduct.displayName);
+      await expect(sheet).toContainText(locale === "ar" ? "أشرطة" : "Strip");
+      const metrics = await page.evaluate<PrintLayoutMetrics>(
+        `(() => {
+          const element = document.querySelector(".purchase-snapshot-print");
+          const table = element === null ? null : element.querySelector("table");
+          const root = document.getElementById("root");
+          return {
+            buttons:
+              element === null
+                ? -1
+                : element.querySelectorAll("button, a, input").length,
+            clientWidth: document.documentElement.clientWidth,
+            rootDisplay:
+              root === null ? "missing" : getComputedStyle(root).display,
+            scrollWidth: document.documentElement.scrollWidth,
+            sheetTop:
+              element === null ? 999 : element.getBoundingClientRect().top,
+            tableWider:
+              table !== null && table.scrollWidth > table.clientWidth + 1,
+          };
+        })()`,
+      );
+      expect(metrics.rootDisplay).toBe("none");
+      expect(metrics.sheetTop).toBeLessThan(8);
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+      expect(metrics.tableWider).toBe(false);
+      expect(metrics.buttons).toBe(0);
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: true,
+        path: path.join(printDir, `snapshot-${locale}.png`),
+      });
+      const pdf = await page.pdf({
+        format: "A4",
+        preferCSSPageSize: true,
+        printBackground: true,
+      });
+      await writeFile(path.join(printDir, `snapshot-${locale}.pdf`), pdf);
+      const mediaBox =
+        /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/u.exec(
+          pdf.toString("latin1"),
+        );
+      expect(mediaBox).not.toBeNull();
+      expect(Number(mediaBox?.[1])).toBeGreaterThan(590);
+      expect(Number(mediaBox?.[1])).toBeLessThan(600);
+      expect(Number(mediaBox?.[2])).toBeGreaterThan(835);
+      expect(Number(mediaBox?.[2])).toBeLessThan(850);
+      await page.emulateMedia({ media: "screen" });
+    }
+  });
 });
 
 /**
@@ -2245,6 +2375,16 @@ function postedInvoicesTab(page: Page): Locator {
   return page.locator(
     'button.purchase-view-tab[aria-controls="purchase-posted-view"]',
   );
+}
+
+async function moneyBeside(review: Locator, label: string): Promise<string> {
+  return (
+    await review
+      .locator("dt", { hasText: label })
+      .first()
+      .locator("xpath=following-sibling::dd[1]")
+      .innerText()
+  ).trim();
 }
 
 async function createPurchaseWithOneRow(

@@ -220,7 +220,14 @@ export async function listCountSessions(
   client: PoolClient,
   pharmacyId: string,
   status?: "active" | "completed",
-): Promise<readonly CountSessionRead[]> {
+  page?: {
+    readonly cursor?: { readonly id: string; readonly updatedAt: string };
+    readonly limit?: number;
+  },
+): Promise<{
+  readonly hasMore: boolean;
+  readonly sessions: readonly CountSessionRead[];
+}> {
   const result = await client.query<CountSessionRow>(
     `select id, status, version::text, number_value::text, number_year,
             started_at::text, started_by, device_id,
@@ -228,12 +235,26 @@ export async function listCountSessions(
      from inventory_count_sessions
      where pharmacy_id = $1
        and ($2::text is null or status::text = $2::text)
+       and (
+         $3::timestamptz is null
+         or (updated_at, id) < ($3::timestamptz, $4::uuid)
+       )
      order by case when status = 'active' then 0 else 1 end,
-              updated_at desc, id`,
-    [pharmacyId, status ?? null],
+              updated_at desc, id
+     limit $5`,
+    [
+      pharmacyId,
+      status ?? null,
+      page?.cursor?.updatedAt ?? null,
+      page?.cursor?.id ?? null,
+      page?.limit === undefined ? null : page.limit + 1,
+    ],
   );
-  const sessions = result.rows.map(mapSession);
-  if (sessions.length === 0) return [];
+  const hasMore = page?.limit !== undefined && result.rows.length > page.limit;
+  const sessions = result.rows
+    .slice(0, page?.limit ?? result.rows.length)
+    .map(mapSession);
+  if (sessions.length === 0) return { hasMore: false, sessions: [] };
   const sessionIds = sessions.map((session) => session.id);
   const lines = await readLines(client, pharmacyId, sessionIds);
   const currentBalances = await readCurrentBalances(
@@ -247,11 +268,14 @@ export async function listCountSessions(
     sessionLines.push(line.record);
     linesBySession.set(line.sessionId, sessionLines);
   }
-  return sessions.map((session) => ({
-    currentBalances,
-    lines: linesBySession.get(session.id) ?? [],
-    session,
-  }));
+  return {
+    hasMore,
+    sessions: sessions.map((session) => ({
+      currentBalances,
+      lines: linesBySession.get(session.id) ?? [],
+      session,
+    })),
+  };
 }
 
 interface InternalCountLineWithSession {

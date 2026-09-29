@@ -167,6 +167,7 @@ describe("formatPurchaseDefaultUnit", () => {
       },
     } as unknown as Product;
     expect(formatPurchaseDefaultUnit(product)).toBe("Box (10 Strip)");
+    expect(formatPurchaseDefaultUnit(product, "ar")).toBe("Box (10 أشرطة)");
   });
 
   it("falls back to package unit name when package unit not found in packaging definitions", () => {

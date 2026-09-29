@@ -487,6 +487,85 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     expect(concurrent.map(({ status }) => status).sort()).toEqual([201, 409]);
   }, 60_000);
 
+  it("refuses completion while a non-zero variance is unapplied", async () => {
+    const pending = await createStockedProduct("Pending completion", [1]);
+    const pendingSession = await startSession();
+    const pendingLine = await recordLine(pendingSession, pending.product.id, [
+      inventoryEntry("3"),
+    ]);
+    const blocked = await request(
+      "POST",
+      countSessionCompletionPath(pendingSession.id),
+      {
+        expectedVersion: pendingLine.session.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(blocked.status, diagnostics(blocked)).toBe(409);
+    expect(blocked.body).toMatchObject({ code: "count-pending-variances" });
+    const stillActive = await request(
+      "GET",
+      countSessionPath(pendingSession.id),
+    );
+    expect(stillActive.status, diagnostics(stillActive)).toBe(200);
+    expect((stillActive.body as CountSession).status).toBe("active");
+    const applied = await applyLine(
+      pendingLine.session,
+      pendingLine.line,
+      "4",
+      "Apply before completion",
+      "Completion evidence",
+    );
+    const completed = await request(
+      "POST",
+      countSessionCompletionPath(pendingSession.id),
+      {
+        expectedVersion: applied.session.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(completed.status, diagnostics(completed)).toBe(200);
+    expect(completed.body).toMatchObject({ status: "completed" });
+
+    const matched = await createStockedProduct("Matched completion", [1]);
+    const matchedSession = await startSession();
+    const matchedLine = await recordLine(matchedSession, matched.product.id, [
+      inventoryEntry("4"),
+    ]);
+    const matchedCompletion = await request(
+      "POST",
+      countSessionCompletionPath(matchedSession.id),
+      {
+        expectedVersion: matchedLine.session.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(matchedCompletion.status, diagnostics(matchedCompletion)).toBe(200);
+    expect(matchedCompletion.body).toMatchObject({ status: "completed" });
+
+    const firstPage = await request(
+      "GET",
+      "/inventory/count-sessions?status=completed&limit=1",
+    );
+    expect(firstPage.status, diagnostics(firstPage)).toBe(200);
+    const firstBody = firstPage.body as {
+      hasMore: boolean;
+      nextCursor: string | null;
+      sessions: CountSession[];
+    };
+    expect(firstBody.sessions).toHaveLength(1);
+    expect(firstBody.hasMore).toBe(true);
+    expect(firstBody.nextCursor).toEqual(expect.any(String));
+    const secondPage = await request(
+      "GET",
+      `/inventory/count-sessions?status=completed&limit=1&cursor=${encodeURIComponent(firstBody.nextCursor ?? "")}`,
+    );
+    expect(secondPage.status, diagnostics(secondPage)).toBe(200);
+    const secondBody = secondPage.body as { sessions: CountSession[] };
+    expect(secondBody.sessions).toHaveLength(1);
+    expect(secondBody.sessions[0]?.id).not.toBe(firstBody.sessions[0]?.id);
+  }, 60_000);
+
   it("5. protects completed sessions, lines, applications, movements, and journals from mutation", async () => {
     const fixture = await createStockedProduct("Append only", [1]);
     const session = await startSession();

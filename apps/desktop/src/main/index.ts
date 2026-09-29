@@ -1,8 +1,13 @@
 import {
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_COPY_IDENTIFIER_CHANNEL,
+  DESKTOP_ABORT_INVENTORY_EXPORT_CHANNEL,
+  DESKTOP_APPEND_INVENTORY_EXPORT_CHANNEL,
+  DESKTOP_BEGIN_INVENTORY_EXPORT_CHANNEL,
   DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
+  DESKTOP_FINISH_INVENTORY_EXPORT_CHANNEL,
   DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
+  MAXIMUM_INVENTORY_EXPORT_BYTES,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
@@ -15,7 +20,12 @@ import {
   desktopCopyIdentifierResponseSchema,
   desktopExportDiagnosticsRequestSchema,
   desktopExportDiagnosticsResponseSchema,
-  desktopSaveInventoryExportRequestSchema,
+  desktopAbortInventoryExportRequestSchema,
+  desktopAppendInventoryExportRequestSchema,
+  desktopAppendInventoryExportResponseSchema,
+  desktopBeginInventoryExportRequestSchema,
+  desktopBeginInventoryExportResponseSchema,
+  desktopFinishInventoryExportRequestSchema,
   desktopSaveInventoryExportResponseSchema,
   desktopManualEndpointRequestSchema,
   desktopOpenSupportRequestSchema,
@@ -61,8 +71,14 @@ import {
   diagnosticFileName,
   writeDiagnosticBundle,
 } from "./diagnostic-bundle.js";
-import { writeExportedJson } from "./exported-file.js";
-import { serializeInventoryCsv } from "./inventory-export-csv.js";
+import {
+  abortExportStaging,
+  appendExportStaging,
+  commitExportStaging,
+  ExportTooLargeError,
+  openExportStaging,
+  type ExportStaging,
+} from "./exported-file.js";
 import {
   createSupportDestination,
   readSupportConfiguration,
@@ -272,6 +288,11 @@ function createWindow(role: DesktopDeviceRole, localApiOrigin: string): void {
       ipcMain.removeHandler(DESKTOP_REPORT_RENDERER_INCIDENT_CHANNEL);
       ipcMain.removeHandler(DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL);
       ipcMain.removeHandler(DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_BEGIN_INVENTORY_EXPORT_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_APPEND_INVENTORY_EXPORT_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_FINISH_INVENTORY_EXPORT_CHANNEL);
+      ipcMain.removeHandler(DESKTOP_ABORT_INVENTORY_EXPORT_CHANNEL);
+      void discardInventoryExport(window.webContents.id);
       ipcMain.removeHandler(DESKTOP_OPEN_SUPPORT_CHANNEL);
       ipcMain.removeHandler(DESKTOP_SUBMIT_DIAGNOSTICS_CHANNEL);
       for (const channel of TERMINAL_CHANNELS) {
@@ -551,29 +572,60 @@ function registerDiagnosticExportHandler(
   );
 }
 
-const MAXIMUM_INVENTORY_EXPORT_BYTES = 16 * 1024 * 1024;
+interface InventoryExportSession {
+  readonly filePath: string;
+  readonly staging: ExportStaging;
+  writtenBytes: number;
+}
+
+const inventoryExportSessions = new Map<number, InventoryExportSession>();
 
 function registerInventoryExportHandler(
   window: BrowserWindow,
   trustedOrigin: string,
   trustedUrl: string,
 ): void {
-  ipcMain.removeHandler(DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL);
-  const guard = createIpcGuard({
-    maximumCalls: 2,
-    maximumPayloadBytes: MAXIMUM_INVENTORY_EXPORT_BYTES,
+  const senderId = window.webContents.id;
+  const sharedGuard = {
+    maximumCalls: 8,
     name: "inventory export",
     now: Date.now,
-    parse: (payload) => desktopSaveInventoryExportRequestSchema.parse(payload),
     trustedOrigin,
     trustedProcessId: () => window.webContents.mainFrame.processId,
-    trustedSenderId: window.webContents.id,
+    trustedSenderId: senderId,
     trustedUrl,
+  };
+  ipcMain.removeHandler(DESKTOP_BEGIN_INVENTORY_EXPORT_CHANNEL);
+  ipcMain.removeHandler(DESKTOP_APPEND_INVENTORY_EXPORT_CHANNEL);
+  ipcMain.removeHandler(DESKTOP_FINISH_INVENTORY_EXPORT_CHANNEL);
+  ipcMain.removeHandler(DESKTOP_ABORT_INVENTORY_EXPORT_CHANNEL);
+  const beginGuard = createIpcGuard({
+    ...sharedGuard,
+    maximumPayloadBytes: 4_096,
+    parse: (payload) => desktopBeginInventoryExportRequestSchema.parse(payload),
+  });
+  const appendGuard = createIpcGuard({
+    ...sharedGuard,
+    maximumPayloadBytes: 2 * 1024 * 1024,
+    parse: (payload) =>
+      desktopAppendInventoryExportRequestSchema.parse(payload),
+  });
+  const finishGuard = createIpcGuard({
+    ...sharedGuard,
+    maximumPayloadBytes: 64,
+    parse: (payload) =>
+      desktopFinishInventoryExportRequestSchema.parse(payload),
+  });
+  const abortGuard = createIpcGuard({
+    ...sharedGuard,
+    maximumPayloadBytes: 64,
+    parse: (payload) => desktopAbortInventoryExportRequestSchema.parse(payload),
   });
   ipcMain.handle(
-    DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
+    DESKTOP_BEGIN_INVENTORY_EXPORT_CHANNEL,
     async (event, payload: unknown) => {
-      const request = guard(toIpcInvocation(event), payload);
+      const request = beginGuard(toIpcInvocation(event), payload);
+      await discardInventoryExport(senderId);
       const format = request.format ?? "json";
       const selection = await dialog.showSaveDialog(window, {
         defaultPath: path.join(
@@ -600,30 +652,98 @@ function registerInventoryExportHandler(
             : "Export inventory data",
       });
       if (selection.canceled || selection.filePath === "") {
-        return desktopSaveInventoryExportResponseSchema.parse({
+        return desktopBeginInventoryExportResponseSchema.parse({
           status: "cancelled",
         });
       }
       try {
-        const serialized =
-          format === "csv"
-            ? serializeInventoryCsv(request.bundle)
-            : JSON.stringify(request.bundle, null, 2) + "\n";
-        await writeExportedJson(
-          selection.filePath,
-          serialized,
+        inventoryExportSessions.set(senderId, {
+          filePath: selection.filePath,
+          staging: await openExportStaging(selection.filePath),
+          writtenBytes: 0,
+        });
+        return desktopBeginInventoryExportResponseSchema.parse({
+          status: "opened",
+        });
+      } catch {
+        return desktopBeginInventoryExportResponseSchema.parse({
+          status: "failed",
+        });
+      }
+    },
+  );
+  ipcMain.handle(
+    DESKTOP_APPEND_INVENTORY_EXPORT_CHANNEL,
+    async (event, payload: unknown) => {
+      const request = appendGuard(toIpcInvocation(event), payload);
+      const session = inventoryExportSessions.get(senderId);
+      if (session === undefined) {
+        return desktopAppendInventoryExportResponseSchema.parse({
+          status: "failed",
+        });
+      }
+      try {
+        session.writtenBytes = await appendExportStaging(
+          session.staging,
+          request.chunk,
+          session.writtenBytes,
           MAXIMUM_INVENTORY_EXPORT_BYTES,
         );
+        return desktopAppendInventoryExportResponseSchema.parse({
+          status: "appended",
+        });
+      } catch (caught) {
+        await discardInventoryExport(senderId);
+        return desktopAppendInventoryExportResponseSchema.parse({
+          status:
+            caught instanceof ExportTooLargeError
+              ? "export-too-large"
+              : "failed",
+        });
+      }
+    },
+  );
+  ipcMain.handle(
+    DESKTOP_FINISH_INVENTORY_EXPORT_CHANNEL,
+    async (event, payload: unknown) => {
+      finishGuard(toIpcInvocation(event), payload);
+      const session = inventoryExportSessions.get(senderId);
+      if (session === undefined) {
+        return desktopSaveInventoryExportResponseSchema.parse({
+          status: "failed",
+        });
+      }
+      inventoryExportSessions.delete(senderId);
+      try {
+        await commitExportStaging(session.staging, session.filePath);
         return desktopSaveInventoryExportResponseSchema.parse({
           status: "saved",
         });
       } catch {
+        await abortExportStaging(session.staging);
         return desktopSaveInventoryExportResponseSchema.parse({
           status: "failed",
         });
       }
     },
   );
+  ipcMain.handle(
+    DESKTOP_ABORT_INVENTORY_EXPORT_CHANNEL,
+    async (event, payload: unknown) => {
+      abortGuard(toIpcInvocation(event), payload);
+      await discardInventoryExport(senderId);
+      return desktopSaveInventoryExportResponseSchema.parse({
+        status: "failed",
+      });
+    },
+  );
+}
+
+async function discardInventoryExport(senderId: number): Promise<void> {
+  const session = inventoryExportSessions.get(senderId);
+  if (session === undefined) return;
+  inventoryExportSessions.delete(senderId);
+  await abortExportStaging(session.staging);
 }
 
 function inventoryExportFileName(

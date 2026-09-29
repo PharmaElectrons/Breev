@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
   PostedPurchaseAdjustment,
   PostedPurchaseReturn,
@@ -22,6 +23,7 @@ import {
 } from "./purchasing-api";
 import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
 import { PurchaseReturnWorkflow } from "./purchase-return-workflow";
+import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import {
   getAdjustmentReasonLabel,
   purchasingMessages,
@@ -858,6 +860,13 @@ export function PostedPurchaseReview({
           </div>
         </section>
       )}
+      {detail !== null &&
+      postedAdjustment === null &&
+      postedReturn === null &&
+      correction === null &&
+      currentRecord === null ? (
+        <PurchaseSnapshotPrint detail={detail} />
+      ) : null}
       {inline && (detail !== null || correction !== null) ? null : (
         <footer className="posted-dialog-footer">
           <button
@@ -1221,7 +1230,13 @@ function PostedPurchaseDetailView({
                 <td>
                   <bdi>{row.inventoryUnitQuantity}</bdi>
                 </td>
-                <td>{row.inventoryUnitName}</td>
+                <td>
+                  {panelUnitLabel(
+                    row.inventoryUnitName,
+                    unitQuantity(row.inventoryUnitQuantity),
+                    locale,
+                  )}
+                </td>
                 <td>
                   <bdi>{formatFilsToIqd(row.retailPriceFils, locale)}</bdi>
                 </td>
@@ -1470,6 +1485,203 @@ function PostedReturnView({
         </button>
       </div>
     </article>
+  );
+}
+
+function PurchaseSnapshotPrint({
+  detail,
+}: {
+  readonly detail: PurchasePostedDetail;
+}): React.JSX.Element | null {
+  const { locale } = usePreferences();
+  const copy = purchasingMessages[locale];
+  const costsVisible = detail.costVisibility === "visible";
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <article
+      aria-hidden="true"
+      className="purchase-snapshot-print"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+      lang={locale}
+    >
+      <header className="purchase-snapshot-print-header">
+        <div>
+          <p className="purchase-snapshot-print-kicker">
+            {copy.historicalSnapshot}
+          </p>
+          <h1>{copy.postedPurchase}</h1>
+        </div>
+        <p className="purchase-snapshot-print-number">
+          <bdi dir="ltr">{formatNumber(detail)}</bdi>
+        </p>
+      </header>
+      <p className="purchase-snapshot-print-note">{copy.snapshotBoundary}</p>
+      <dl className="purchase-snapshot-print-meta">
+        <div>
+          <dt>{copy.supplier}</dt>
+          <dd>{detail.supplierNameSnapshot}</dd>
+        </div>
+        <div>
+          <dt>{copy.supplierInvoice}</dt>
+          <dd>
+            <bdi>{detail.supplierInvoiceNumber}</bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.invoiceDate}</dt>
+          <dd>
+            <bdi dir="ltr">{detail.invoiceDate}</bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.postedAt}</dt>
+          <dd>
+            <bdi>{formatTimestamp(detail.postedAt, locale)}</bdi>
+          </dd>
+        </div>
+        {costsVisible ? (
+          <div>
+            <dt>{copy.snapshot}</dt>
+            <dd>
+              <bdi>{detail.allowancePercentageSnapshot}%</bdi>
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+      {costsVisible ? null : (
+        <p>
+          {detail.costVisibility === "hidden-by-permission"
+            ? copy.costsHiddenByPermission
+            : copy.costsHiddenBySetting}
+        </p>
+      )}
+      <h2 className="purchase-snapshot-print-table-title">{copy.postedRows}</h2>
+      <table>
+        <colgroup>
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "22%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "11%" }} />
+          {costsVisible ? <col style={{ width: "13%" }} /> : null}
+          {costsVisible ? <col style={{ width: "13%" }} /> : null}
+          <col style={{ width: "11%" }} />
+          <col style={{ width: costsVisible ? "9%" : "35%" }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">{copy.item}</th>
+            <th scope="col">{copy.quantity}</th>
+            <th scope="col">{copy.unit}</th>
+            <th scope="col">{copy.retail}</th>
+            {costsVisible ? (
+              <th scope="col">{copy.primarySupplierCost}</th>
+            ) : null}
+            {costsVisible ? (
+              <th scope="col">{copy.costAfterDiscount}</th>
+            ) : null}
+            <th scope="col">{copy.expiry}</th>
+            <th scope="col">{copy.lot}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {detail.rows.map((row) => (
+            <tr key={row.id}>
+              <th scope="row">{row.ordinal}</th>
+              <td>{row.itemDisplayName}</td>
+              <td>
+                <bdi>{row.inventoryUnitQuantity}</bdi>
+              </td>
+              <td>
+                {panelUnitLabel(
+                  row.inventoryUnitName,
+                  unitQuantity(row.inventoryUnitQuantity),
+                  locale,
+                )}
+              </td>
+              <td>
+                <bdi>{formatFilsToIqd(row.retailPriceFils, locale)}</bdi>
+              </td>
+              {costsVisible ? (
+                <td>
+                  <bdi>
+                    {formatFilsToIqd(row.linePrimarySupplierCostFils, locale)}
+                  </bdi>
+                </td>
+              ) : null}
+              {costsVisible ? (
+                <td>
+                  <bdi>
+                    {formatFilsToIqd(row.costAfterDiscountFils, locale)}
+                  </bdi>
+                </td>
+              ) : null}
+              <td>
+                <bdi dir="ltr">{row.expiryDate ?? "—"}</bdi>
+              </td>
+              <td>{row.lotNumber ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {costsVisible ? (
+        <section className="purchase-snapshot-print-summary">
+          <h2>{copy.invoiceTotals}</h2>
+          <dl>
+            <div>
+              <dt>{copy.primarySupplierCost}</dt>
+              <dd>
+                <bdi>
+                  {formatFilsToIqd(detail.primarySupplierCostFils, locale)}
+                </bdi>
+              </dd>
+            </div>
+            <div>
+              <dt>{copy.allowanceAmount}</dt>
+              <dd>
+                <bdi>{formatFilsToIqd(detail.allowanceFils, locale)}</bdi>
+              </dd>
+            </div>
+            <div className="purchase-snapshot-print-total">
+              <dt>{copy.costAfterDiscount}</dt>
+              <dd>
+                <bdi>
+                  {formatFilsToIqd(detail.costAfterDiscountFils, locale)}
+                </bdi>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+      {detail.adjustments.length === 0 ? null : (
+        <section className="purchase-snapshot-print-links">
+          <h2>{copy.adjustmentStageTitle}</h2>
+          <ul>
+            {detail.adjustments.map((adjustment) => (
+              <li key={adjustment.id}>
+                {formatAdjustmentNumber(adjustment.number)} ·{" "}
+                {adjustment.reason} · {adjustment.quantityDelta}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {detail.returns.length === 0 ? null : (
+        <section className="purchase-snapshot-print-links">
+          <h2>{copy.returnStageTitle}</h2>
+          <ul>
+            {detail.returns.map((purchaseReturn) => (
+              <li key={purchaseReturn.id}>
+                {formatReturnNumber(purchaseReturn.number)} ·{" "}
+                {purchaseReturn.reason}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </article>,
+    document.body,
   );
 }
 

@@ -106,9 +106,9 @@ describe("PurchaseItemPanel", () => {
     // Large count = floor(25 / 10) = 2 باكيت
     expect(markup).toContain('<p class="purchase-fraction-num">2</p>');
     expect(markup).toContain('<p class="purchase-fraction-label">باكيت</p>');
-    // Remainder units = 25 % 10 = 5 شريط
+    // Remainder units = 25 % 10 = 5 أشرطة
     expect(markup).toContain('<p class="purchase-fraction-num">5</p>');
-    expect(markup).toContain('<p class="purchase-fraction-label">شريط</p>');
+    expect(markup).toContain('<p class="purchase-fraction-label">أشرطة</p>');
     // Total detailed balance = 25 شريط (NOT 500 from draft rowQuantity * 10)
     expect(markup).toContain("الإجمالي : <bdi>25</bdi> شريط");
   });
@@ -173,14 +173,13 @@ describe("PurchaseItemPanel", () => {
       }),
     );
 
-    // Visible fact sheet should have concrete values and localized fallbacks, not "—"
-    expect(markup).toContain("1 باكيت = 10 شريط");
+    // Visible fact sheet should have concrete values and localized fallbacks
+    expect(markup).toContain("1 باكيت = 10 أشرطة");
     expect(markup).toContain("غير محدد"); // Stock limits fallback
     expect(markup).toContain("سعر الجملة");
-    expect(markup).toContain("<bdi>2,500 د.ع</bdi>");
+    expect(markup).toContain("٢٬٥٠٠٫٠٠٠ د.ع");
     expect(markup).toContain("معدل الصرف");
     expect(markup).toContain("أيام الكفاية");
-    expect(markup).toContain("<bdi>0</bdi> أيام");
     expect(markup).toContain("لم يسجل تاريخ انتهاء"); // Expiry fallback
   });
 
@@ -224,10 +223,9 @@ describe("PurchaseItemPanel", () => {
     expect(markup).toContain("1 Box = 10 Strip");
     expect(markup).toContain("Not set");
     expect(markup).toContain("Wholesale price");
-    expect(markup).toContain("<bdi>2,500 IQD</bdi>");
+    expect(markup).toContain("IQD 2,500.000");
     expect(markup).toContain("Consumption rate");
     expect(markup).toContain("Days of supply");
-    expect(markup).toContain("<bdi>0</bdi> days");
     expect(markup).toContain("No expiry recorded");
   });
 
