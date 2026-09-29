@@ -122,7 +122,7 @@ const TEXT = {
     movementAdjustment: "تعديل شراء",
     newInvoice: "فاتورة جديدة",
     movementReceipt: "استلام شراء",
-    postedInvoices: "فواتير الشراء المحفوظة",
+    postedInvoices: "فواتير الشراء المُرحّلة",
     quantityInvalid: "أدخل كمية صحيحة موجبة.",
     returnPosted: "تم حفظ مردود الشراء",
     rowCommitted: "تم حفظ البند بشكل دائم.",

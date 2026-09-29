@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ShoppingBasket, ChevronLeft, ChevronRight, Barcode as BarcodeIcon, IdCard } from "lucide-react";
+import { ShoppingBasket, ChevronLeft, ChevronRight, Barcode as BarcodeIcon, IdCard, PillBottle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { formatIQD } from "@/lib/pharmacy";
 import { useI18n } from "@/lib/i18n";
@@ -13,6 +13,7 @@ import {
   listPatients,
   listSalesInvoices,
   saveSaleInvoice,
+  updatePatient,
   type Medicine,
   type PatientRow,
   type SaleInvoice,
@@ -221,9 +222,14 @@ function SalesPage() {
   // Derived totals
   const lineTotal = (r: Row) => Math.max(0, r.qty * r.price);
   const subtotal = useMemo(() => rows.reduce((s, r) => s + lineTotal(r), 0), [rows]);
-  const total = Math.max(0, subtotal + invoiceAddOn - invoiceDiscount);
+  // Permanent pre-approved patient discount (EMR profile) applied automatically.
+  const patientDiscountPct = Math.max(0, Math.min(100, Number(patient?.discount_pct ?? 0) || 0));
+  const patientDiscountAmount = Math.round((subtotal * patientDiscountPct) / 100);
+  const totalDiscount = invoiceDiscount + patientDiscountAmount;
+  const total = Math.max(0, subtotal + invoiceAddOn - totalDiscount);
   const costTotal = useMemo(() => rows.reduce((s, r) => s + r.qty * (r.cost || 0), 0), [rows]);
-  const netProfit = subtotal + invoiceAddOn - invoiceDiscount - costTotal;
+  const netProfit = subtotal + invoiceAddOn - totalDiscount - costTotal;
+
 
 
   const updateRow = (id: number, patch: Partial<Row>) =>
@@ -231,6 +237,27 @@ function SalesPage() {
   const removeRow = (id: number) => {
     setRows((rs) => rs.filter((r) => r.lineId !== id));
     setSelectedLineId((s) => (s === id ? null : s));
+  };
+
+  /** Copy every item currently in the sales grid into the patient's chronic meds list. */
+  const pullToChronic = async () => {
+    if (!patient) {
+      toast.error(lang === "ar" ? "اختر مريضاً أولاً" : "Select a patient first");
+      return;
+    }
+    const names = rows.map((r) => r.name.trim()).filter(Boolean);
+    if (!names.length) {
+      toast.error(lang === "ar" ? "لا توجد مواد في الفاتورة" : "No items in the invoice");
+      return;
+    }
+    const merged = Array.from(new Set([...(patient.chronic_meds ?? []), ...names]));
+    try {
+      const updated = await updatePatient(patient.id, { chronic_meds: merged });
+      setPatients((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
+      toast.success("تم سحب المواد إلى قائمة الأدوية المزمنة للمريض بنجاح");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
   };
 
   // Numpad handlers
@@ -348,7 +375,7 @@ function SalesPage() {
         patient_id: patient?.id ?? null,
         status,
         payment_type: paymentType,
-        discount: invoiceDiscount,
+        discount: totalDiscount,
         addon: invoiceAddOn,
         paid_amount: paymentType === "partial" ? paidAmount : undefined,
         items: rows.map((r) => ({ medicine_id: r.medicineId, qty: r.qty, unit_price: r.price })),
@@ -454,7 +481,7 @@ function SalesPage() {
             <button
               type="button"
               onClick={() => {
-                const msg = buildInvoiceMessage({ patient, rows, subtotal, discount: invoiceDiscount, total, lang });
+                const msg = buildInvoiceMessage({ patient, rows, subtotal, discount: totalDiscount, total, lang });
                 const phone = (patient?.phone ?? "").replace(/[^\d]/g, "");
                 const url = phone
                   ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
@@ -471,7 +498,7 @@ function SalesPage() {
             <button
               type="button"
               onClick={() => {
-                const msg = buildInvoiceMessage({ patient, rows, subtotal, discount: invoiceDiscount, total, lang });
+                const msg = buildInvoiceMessage({ patient, rows, subtotal, discount: totalDiscount, total, lang });
                 const url = `https://t.me/share/url?url=${encodeURIComponent("Breef Pharmacy")}&text=${encodeURIComponent(msg)}`;
                 window.open(url, "_blank", "noopener,noreferrer");
               }}
@@ -485,7 +512,7 @@ function SalesPage() {
             <button
               type="button"
               onClick={() => {
-                const msg = buildInvoiceSms({ patient, subtotal, discount: invoiceDiscount, total, lang });
+                const msg = buildInvoiceSms({ patient, subtotal, discount: totalDiscount, total, lang });
                 const phone = (patient?.phone ?? "").replace(/[^\d+]/g, "");
                 window.location.href = `sms:${phone}?&body=${encodeURIComponent(msg)}`;
               }}
@@ -705,7 +732,15 @@ function SalesPage() {
                 </div>
 
                 {/* Action row — directly beneath numpad */}
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-4 gap-1">
+                  <button
+                    onClick={pullToChronic}
+                    title={lang === "ar" ? "وصفة مزمنة — سحب المواد إلى أدوية المريض المزمنة" : "Chronic prescription"}
+                    className="py-1.5 rounded-md text-[10px] font-bold bg-slate-800 border border-accent/50 text-accent hover:bg-accent/10 active:scale-95 transition flex items-center justify-center gap-1"
+                  >
+                    <PillBottle className="size-3.5" />
+                    {lang === "ar" ? "مزمنة" : "Chronic"}
+                  </button>
                   <button
                     onClick={applyPrice}
                     className="py-1.5 rounded-md text-[10px] font-bold bg-slate-800 border border-emerald/40 text-emerald hover:bg-emerald/10 active:scale-95 transition"
@@ -745,12 +780,37 @@ function SalesPage() {
                   onChange={setInvoiceDiscount}
                   tone="warn"
                 />
+                {patientDiscountPct > 0 && (
+                  <div
+                    dir="rtl"
+                    className="flex items-center justify-between rounded-md border border-emerald/30 bg-emerald/10 px-2 py-1"
+                  >
+                    <span className="text-[10px] font-bold text-emerald">
+                      {lang === "ar" ? "خصم المريض" : "Patient discount"}
+                      <span className="ms-1 font-mono">({patientDiscountPct}%)</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-emerald">
+                      −{patientDiscountAmount.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+                {patientDiscountPct > 0 && (
+                  <div dir="rtl" className="flex items-center justify-between px-2">
+                    <span className="text-[10px] font-bold text-muted-foreground">
+                      {lang === "ar" ? "إجمالي الخصم" : "Total discount"}
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-warn">
+                      {totalDiscount.toLocaleString()}
+                    </span>
+                  </div>
+                )}
                 <SummaryRow
                   label={lang === "ar" ? "المسدد" : "Paid"}
                   value={paidAmount}
                   onChange={setPaidAmount}
                   tone="ok"
                 />
+
               </div>
 
 

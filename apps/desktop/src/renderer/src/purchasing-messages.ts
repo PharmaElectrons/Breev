@@ -1,3 +1,5 @@
+import type { PurchaseAdjustmentReason } from "@breev/contracts/local-rest";
+
 export const purchasingMessages = {
   en: {
     item: "Item name",
@@ -101,9 +103,17 @@ export const purchasingMessages = {
     results: "results",
     invoiceType: "Invoice type",
     typePurchase: "Purchase",
-    typeAdjustment: "Adjustment",
+    typeModified: "Modified",
+    typeAdjustment: "Adjustment voucher",
+    typeAdjustmentInvoice: "Adjustment voucher",
     typeReturn: "Return",
     supplierDocketNumber: "Supplier invoice #",
+    supplierPurchaseInvoiceNumber: "Purchase invoice #",
+    supplierStore: "Supplier name",
+    expensesColumn: "Expenses",
+    accountColumn: "Account",
+    cashShort: "Cash",
+    debtShort: "Debt",
     refNumber: "Ref number",
     paymentTerms: "Payment terms",
     settlementStatus: "Invoice status",
@@ -303,6 +313,7 @@ export const purchasingMessages = {
     thisMonthPreset: "This month",
     allDatesPreset: "All",
     dateRangeInvalid: "From date must be earlier than or equal to To date.",
+    invalidDate: "Invalid calendar date.",
     printInvoice: "Print invoice",
     printReturnSlip: "Print return slip",
     reviewPrevious: "‹ Previous",
@@ -362,10 +373,46 @@ export const purchasingMessages = {
     daysUnit: "days",
     daysRemaining: "d left",
     expiredAgo: "Expired",
+    notSet: "Not set",
+    noExpiry: "No expiry recorded",
     noBarcode: "No barcode",
     itemCard: "Item card",
     printBarcode: "Print barcode",
     deleteItem: "Delete",
+    reasonQuantityError: "Quantity error",
+    reasonPriceError: "Price error",
+    reasonInvoiceNumberError: "Invoice number error",
+    reasonSupplierError: "Supplier error",
+    reasonOther: "Other",
+    denialAdjustmentEmpty: "No changes were made to the invoice.",
+    denialAdjustmentBatchConflict: "Conflict in batch or expiry data.",
+    denialReturnEmpty: "At least one return quantity must be specified.",
+    denialReturnQuantityExceeded:
+      "Return quantity exceeds available quantity on the invoice.",
+    denialReturnOverEligible:
+      "Return quantity exceeds eligible quantity (return-over-eligible).",
+    linkedAdjustmentsTitle: "Linked adjustments register",
+    adjustmentNumber: "Adjustment #",
+    adjustmentDateTime: "Date & Time",
+    adjustmentReason: "Adjustment reason",
+    adjustmentNetDelta: "Net delta",
+    openDocument: "Open document",
+    adjustmentDraftBadge: "Purchase invoice adjustment draft",
+    originalInvoiceBadge: "Original: Purchase invoice #",
+    adjustmentSubtitleAlert: "Draft adjustment",
+    deltaSummaryTitle: "Difference and impact",
+    deltaSummarySubtitle: "Purchase invoice adjustment",
+    qtyBefore: "Qty before",
+    qtyAfter: "Qty after",
+    qtyDelta: "Qty delta",
+    costBefore: "Cost before",
+    costAfter: "Cost after",
+    valueDelta: "Value delta",
+    netDeltaPosted: "Net posted delta:",
+    reasonAuditPlaceholder: "Adjustment reason (recorded in audit log)",
+    adjustmentReasonPlaceholder: "Adjustment reason",
+    saveAdjustmentDraft: "Save and review Delta",
+    confirmAndPostAdjustment: "Confirm and post Delta",
   },
   ar: {
     item: "اسم المادة",
@@ -466,9 +513,17 @@ export const purchasingMessages = {
     results: "نتيجة",
     invoiceType: "نوع الفاتورة",
     typePurchase: "شراء",
-    typeAdjustment: "تعديل",
+    typeModified: "معدلة",
+    typeAdjustment: "تعديل فاتورة شراء",
+    typeAdjustmentInvoice: "تعديل فاتورة شراء",
     typeReturn: "مردود",
-    supplierDocketNumber: "رقم فاتورة السرك",
+    supplierDocketNumber: "رقم فاتورة المورد",
+    supplierPurchaseInvoiceNumber: "رقم فاتورة الشراء",
+    supplierStore: "اسم المذخر",
+    expensesColumn: "المصاريف",
+    accountColumn: "الحساب",
+    cashShort: "نقد",
+    debtShort: "آجل",
     refNumber: "رقم مرجعي",
     paymentTerms: "نوع الدفع",
     settlementStatus: "حالة الفاتورة",
@@ -615,9 +670,9 @@ export const purchasingMessages = {
     documentYear: "السنة",
     postedAt: "وقت الإدخال",
     supplierInvoice: "فاتورة المورد",
-    primarySupplierCost: "كلفة المورد الأساسية",
+    primarySupplierCost: "الكلفة",
     allowanceAmount: "مبلغ السماح",
-    costAfterDiscount: "الكلفة بعد السماح",
+    costAfterDiscount: "الكلفة بعد الخصم",
     postedRows: "البنود المحفوظة",
     batchId: "معرّف التشغيلة",
     movementId: "معرّف الحركة",
@@ -641,9 +696,9 @@ export const purchasingMessages = {
     createProductTitle: "إنشاء صنف سريع",
     missingExpiryWarning: "يوجد بند واحد أو أكثر بلا تاريخ انتهاء.",
     missingLotWarning: "يوجد بند واحد أو أكثر بلا رقم تشغيلة.",
-    postedInvoices: "فواتير الشراء المحفوظة",
+    postedInvoices: "فواتير محفوظة",
     postedReviewOnly:
-      "يمكن لدورك مراجعة فواتير الشراء المحفوظة. أُخفي إدخال مسودات الشراء لأن هذا الدور لا يملك صلاحية إدارتها.",
+      "يمكن لدورك مراجعة فواتير الشراء المُرحّلة. أُخفي إدخال مسودات الشراء لأن هذا الدور لا يملك صلاحية إدارتها.",
     postedPurchaseRegister: "سجل فواتير الشراء",
     historicalSnapshot: "لقطة تاريخية",
     snapshotBoundary:
@@ -664,6 +719,7 @@ export const purchasingMessages = {
     thisMonthPreset: "هذا الشهر",
     allDatesPreset: "الكل",
     dateRangeInvalid: "يجب أن يكون تاريخ البداية قبل تاريخ النهاية أو يساويه.",
+    invalidDate: "تاريخ غير صالح في التقويم.",
     printInvoice: "طباعة الفاتورة",
     printReturnSlip: "طباعة فاتورة المرتجع",
     reviewPrevious: "‹ السابقة",
@@ -671,7 +727,7 @@ export const purchasingMessages = {
     search: "بحث",
     retry: "إعادة المحاولة",
     items: "المواد",
-    scrollPosted: "جدول قابل للتمرير لفواتير الشراء المحفوظة",
+    scrollPosted: "جدول قابل للتمرير لفواتير الشراء المُرحّلة",
     noPostedPurchases: "لا توجد فواتير شراء تطابق عوامل التصفية.",
     openInvoice: "فتح الفاتورة",
     backToResults: "العودة إلى النتائج",
@@ -723,9 +779,87 @@ export const purchasingMessages = {
     daysUnit: "أيام",
     daysRemaining: "يوم متبقي",
     expiredAgo: "منتهي منذ",
+    notSet: "غير محدد",
+    noExpiry: "لم يسجل تاريخ انتهاء",
     noBarcode: "بدون باركود",
     itemCard: "بطاقة المادة",
     printBarcode: "طباعة باركود",
     deleteItem: "حذف",
+    reasonQuantityError: "خطأ في الكمية",
+    reasonPriceError: "خطأ في السعر",
+    reasonInvoiceNumberError: "خطأ في رقم الفاتورة",
+    reasonSupplierError: "خطأ في المورد",
+    reasonOther: "أخرى",
+    denialAdjustmentEmpty: "لم يتم إجراء أي تعديل على الفاتورة",
+    denialAdjustmentBatchConflict: "تعارض في بيانات الوجبة أو تاريخ الصلاحية",
+    denialReturnEmpty: "يجب تحديد كمية راجعة واحدة على الأقل",
+    denialReturnQuantityExceeded:
+      "الكمية المرتجعة تتجاوز الكمية المتاحة في الفاتورة",
+    denialReturnOverEligible:
+      "الكمية المرتجعة تتجاوز الكمية المتاحة في الفاتورة",
+    linkedAdjustmentsTitle: "سجل التعديلات المرتبطة",
+    adjustmentNumber: "رقم التعديل",
+    adjustmentDateTime: "التاريخ والوقت",
+    adjustmentReason: "سبب التعديل",
+    adjustmentNetDelta: "صافي الفرق",
+    openDocument: "فتح المسند",
+    adjustmentDraftBadge: "مسودة تعديل فاتورة شراء",
+    originalInvoiceBadge: "الأصل: فاتورة شراء رقم",
+    adjustmentSubtitleAlert: "مسودة تعديل",
+    deltaSummaryTitle: "ملخص الفروقات",
+    deltaSummarySubtitle: "تعديل فاتورة شراء",
+    qtyBefore: "الكمية قبل",
+    qtyAfter: "الكمية بعد",
+    qtyDelta: "فرق الكمية",
+    costBefore: "الكلفة قبل",
+    costAfter: "الكلفة بعد",
+    valueDelta: "فرق القيمة",
+    netDeltaPosted: "صافي الفرق المرحّل:",
+    reasonAuditPlaceholder: "سبب التعديل (يُسجّل في سجل المراجعة)",
+    adjustmentReasonPlaceholder: "سبب التعديل",
+    saveAdjustmentDraft: "حفظ ومراجعة الفرق",
+    confirmAndPostAdjustment: "تأكيد وحفظ التعديل",
   },
 } as const;
+
+export function getAdjustmentReasonLabel(
+  reason: PurchaseAdjustmentReason | "",
+  locale: "ar" | "en",
+): string {
+  const copy = purchasingMessages[locale];
+  switch (reason) {
+    case "quantity error":
+      return copy.reasonQuantityError;
+    case "price error":
+      return copy.reasonPriceError;
+    case "invoice-number error":
+      return copy.reasonInvoiceNumberError;
+    case "supplier error":
+      return copy.reasonSupplierError;
+    case "other":
+      return copy.reasonOther;
+    default:
+      return reason;
+  }
+}
+
+export function getPurchasingDenialMessage(
+  code: string,
+  locale: "ar" | "en",
+): string {
+  const copy = purchasingMessages[locale];
+  switch (code) {
+    case "adjustment-empty":
+      return copy.denialAdjustmentEmpty;
+    case "adjustment-batch-conflict":
+      return copy.denialAdjustmentBatchConflict;
+    case "return-empty":
+      return copy.denialReturnEmpty;
+    case "return-quantity-exceeded":
+      return copy.denialReturnQuantityExceeded;
+    case "return-over-eligible":
+      return copy.denialReturnOverEligible;
+    default:
+      return code;
+  }
+}

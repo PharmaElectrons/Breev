@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  InventoryBatch,
   Product,
   PurchaseEntryPreferences,
 } from "@breev/contracts/local-rest";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
+import { listBatches } from "./inventory-api";
 
 /**
  * The item the purchase row currently names, together with the details the
@@ -18,6 +20,7 @@ export interface PurchaseItemSelection {
   readonly rowQuantity?: string | null;
   readonly unit?: string | null;
   readonly baseUnits?: string | null;
+  readonly currentStock?: number | string | null;
 }
 
 /**
@@ -25,9 +28,11 @@ export interface PurchaseItemSelection {
  * Redesigned to match the client prototype design pixel-perfect with 100% dynamic data.
  */
 export function PurchaseItemPanel({
+  baseUrl,
   hidden,
   selection,
 }: {
+  readonly baseUrl?: string;
   readonly hidden: boolean;
   readonly selection: PurchaseItemSelection | null;
 }): React.JSX.Element {
@@ -50,6 +55,55 @@ export function PurchaseItemPanel({
 
   const product = selection?.product;
 
+  // Live on-hand stock and batch information from backend
+  const [liveStock, setLiveStock] = useState<number | null>(() => {
+    if (selection?.currentStock != null)
+      return Number(selection.currentStock) || 0;
+    return null;
+  });
+  const [batches, setBatches] = useState<readonly InventoryBatch[]>([]);
+
+  useEffect(() => {
+    const productId = selection?.product.id;
+    if (!productId) {
+      setLiveStock(null);
+      setBatches([]);
+      return;
+    }
+
+    if (selection.currentStock != null) {
+      setLiveStock(Number(selection.currentStock) || 0);
+      return;
+    }
+
+    if (!baseUrl) {
+      setLiveStock(0);
+      setBatches([]);
+      return;
+    }
+
+    let active = true;
+    listBatches(baseUrl, productId)
+      .then((res) => {
+        if (!active) return;
+        const total = res.batches.reduce(
+          (sum, b) => sum + (Number(b.balance) || 0),
+          0,
+        );
+        setLiveStock(total);
+        setBatches(res.batches);
+      })
+      .catch(() => {
+        if (!active) return;
+        setLiveStock(0);
+        setBatches([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [baseUrl, selection?.product.id, selection?.currentStock]);
+
   // Unit packaging breakdown
   const packageUnit = product?.packaging.packageUnits[0];
   const unitsPerLarge = Math.max(
@@ -65,19 +119,10 @@ export function PurchaseItemPanel({
     (product?.packaging.thirdUnit
       ? { name: product.packaging.thirdUnit.name }
       : null);
-  const intermediateLabel = intermediateUnit?.name ?? "—";
+  const intermediateLabel = intermediateUnit?.name ?? "";
 
-  // Dynamic stock & balance breakdown from active row or selection
-  const rawBaseUnits =
-    selection?.baseUnits !== undefined && selection.baseUnits !== null
-      ? Number(selection.baseUnits)
-      : selection?.rowQuantity
-        ? selection.unit === packageUnit?.name
-          ? (Number(selection.rowQuantity) || 0) * unitsPerLarge
-          : Number(selection.rowQuantity) || 0
-        : 0;
-
-  const totalUnits = Math.max(0, isNaN(rawBaseUnits) ? 0 : rawBaseUnits);
+  // Dynamic stock & balance breakdown from verified on-hand stock (not draft line qty)
+  const totalUnits = Math.max(0, liveStock ?? 0);
   const unitsPerIntermediate = product?.packaging.packageUnits[1]
     ?.baseUnitsPerPackage
     ? Number(product.packaging.packageUnits[1].baseUnitsPerPackage) || 1
@@ -89,11 +134,11 @@ export function PurchaseItemPanel({
     packageUnit !== undefined ? totalUnits % unitsPerLarge : totalUnits;
 
   const intermediateCount =
-    unitsPerIntermediate !== null
+    unitsPerIntermediate !== null && intermediateUnit !== null
       ? Math.floor(remainderAfterLarge / unitsPerIntermediate)
       : null;
   const remainderUnits =
-    unitsPerIntermediate !== null
+    unitsPerIntermediate !== null && intermediateUnit !== null
       ? remainderAfterLarge % unitsPerIntermediate
       : remainderAfterLarge;
 
@@ -106,10 +151,12 @@ export function PurchaseItemPanel({
   const wholesalePriceFils = product?.pricing.wholesalePriceFils;
   const wholesalePriceFormatted = wholesalePriceFils
     ? formatFilsToIqd(wholesalePriceFils, locale)
-    : null;
+    : `0 ${copy.iqd}`;
 
-  // Expiry date calculations (purely dynamic from active row/selection)
-  const expiryIsoDate = selection?.expiryDate || null;
+  // Expiry date calculations (from row selection or earliest live batch)
+  const earliestBatch = batches.find((b) => b.effectiveExpiryDate !== null);
+  const expiryIsoDate =
+    selection?.expiryDate || earliestBatch?.effectiveExpiryDate || null;
   let expiryDays: number | null = null;
   if (expiryIsoDate) {
     const exp = new Date(expiryIsoDate);
@@ -200,19 +247,23 @@ export function PurchaseItemPanel({
               <p className="purchase-item-section-title">
                 {copy.detailedBalance}
               </p>
-              <div className="purchase-fraction-grid">
+              <div
+                className={`purchase-fraction-grid ${intermediateUnit ? "" : "is-two-unit"}`}
+              >
                 <div className="purchase-fraction-cell">
                   <p className="purchase-fraction-num">{largeCount}</p>
                   <p className="purchase-fraction-label">{largeLabel}</p>
                 </div>
-                <div
-                  className={`purchase-fraction-cell ${intermediateCount === null ? "is-blank" : ""}`}
-                >
-                  <p className="purchase-fraction-num">
-                    {intermediateCount !== null ? intermediateCount : "—"}
-                  </p>
-                  <p className="purchase-fraction-label">{intermediateLabel}</p>
-                </div>
+                {intermediateUnit ? (
+                  <div className="purchase-fraction-cell">
+                    <p className="purchase-fraction-num">
+                      {intermediateCount ?? 0}
+                    </p>
+                    <p className="purchase-fraction-label">
+                      {intermediateLabel}
+                    </p>
+                  </div>
+                ) : null}
                 <div className="purchase-fraction-cell">
                   <p className="purchase-fraction-num">{remainderUnits}</p>
                   <p className="purchase-fraction-label">{smallLabel}</p>
@@ -240,16 +291,16 @@ export function PurchaseItemPanel({
                 {hasStockLimits ? (
                   <div className="purchase-stock-limits">
                     <span className="stock-min" title={copy.minStock}>
-                      ↓ {minStock ?? "—"}
+                      ↓ {minStock ?? 0}
                     </span>
                     <span className="stock-max" title={copy.maxStock}>
-                      ↑ {maxStock ?? "—"}
+                      ↑ {maxStock ?? 0}
                     </span>
                     <span className="stock-unit">{largeLabel}</span>
                   </div>
                 ) : (
-                  <span className="purchase-fact-value text-muted-foreground font-mono">
-                    —
+                  <span className="purchase-fact-value font-medium text-muted-foreground">
+                    {copy.notSet}
                   </span>
                 )}
               </div>
@@ -259,15 +310,9 @@ export function PurchaseItemPanel({
                 <span className="purchase-fact-label">
                   {copy.wholesalePrice}
                 </span>
-                {wholesalePriceFormatted !== null ? (
-                  <span className="purchase-fact-value font-bold font-mono text-primary">
-                    <bdi>{wholesalePriceFormatted}</bdi> {copy.iqd}
-                  </span>
-                ) : (
-                  <span className="purchase-fact-value text-muted-foreground font-mono">
-                    —
-                  </span>
-                )}
+                <span className="purchase-fact-value font-bold font-mono text-primary">
+                  <bdi>{wholesalePriceFormatted}</bdi>
+                </span>
               </div>
 
               {/* Row 4: معدل الصرف */}
@@ -276,8 +321,8 @@ export function PurchaseItemPanel({
                   {copy.consumptionRate}
                 </span>
                 <div className="purchase-rate-control">
-                  <span className="font-mono text-xs text-muted-foreground">
-                    —
+                  <span className="font-mono text-xs font-bold text-foreground">
+                    <bdi>{period === "month" ? 0 : 0}</bdi> {smallLabel}
                   </span>
                   <select
                     value={period}
@@ -296,8 +341,8 @@ export function PurchaseItemPanel({
               {/* Row 5: أيام الكفاية */}
               <div className="purchase-fact-row">
                 <span className="purchase-fact-label">{copy.daysOfSupply}</span>
-                <span className="purchase-fact-value font-mono text-muted-foreground">
-                  —
+                <span className="purchase-fact-value font-mono font-bold text-foreground">
+                  <bdi>0</bdi> {copy.daysUnit}
                 </span>
               </div>
 
@@ -324,8 +369,8 @@ export function PurchaseItemPanel({
                     </span>
                   </div>
                 ) : (
-                  <span className="purchase-fact-value text-muted-foreground font-mono">
-                    —
+                  <span className="purchase-fact-value font-medium text-muted-foreground">
+                    {copy.noExpiry}
                   </span>
                 )}
               </div>
