@@ -2145,6 +2145,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await dialog
       .getByRole("button", { name: "Create adjustment copy" })
       .click();
+    await expect(
+      dialog.getByRole("button", { name: "Create adjustment copy" }),
+    ).toBeHidden();
     await dialog
       .getByRole("textbox", {
         name: new RegExp(`Quantity ${purchaseProduct.displayName}`, "u"),
@@ -2205,7 +2208,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       ).trim();
       const supplierCost = await moneyBeside(
         review,
-        locale === "ar" ? "كلفة المورد الأساسية" : "Primary supplier cost",
+        locale === "ar" ? "الكلفة" : "Primary supplier cost",
       );
       const allowance = await moneyBeside(
         review,
@@ -2213,7 +2216,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       );
       const afterAllowance = await moneyBeside(
         review,
-        locale === "ar" ? "الكلفة بعد السماح" : "Cost after discount",
+        locale === "ar" ? "الكلفة بعد الخصم" : "Cost after discount",
       );
       const sheet = page.locator("body > .purchase-snapshot-print");
       await expect(sheet).toBeHidden();
