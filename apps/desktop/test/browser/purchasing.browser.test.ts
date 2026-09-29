@@ -1663,8 +1663,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           ),
         });
         await dialog
+          .locator(".posted-purchase-list tbody tr", {
+            hasText: "BROWSER-REVIEW-A",
+          })
           .getByRole("button", {
-            name: locale === "en" ? /Open invoice P/u : /فتح الفاتورة P/u,
+            name: locale === "en" ? /Open invoice/u : /فتح الفاتورة/u,
           })
           .first()
           .click();
