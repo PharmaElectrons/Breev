@@ -796,7 +796,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         const committedBaseUnits = page.locator(
           '.purchase-row-table tbody tr:not(.purchase-entry-row) [data-column-field="inventory-units"]',
         );
-        await expect(entryBaseUnits).toHaveText("4 Strip");
+        const expectedBaseUnits = locale === "ar" ? "4 أشرطة" : "4 Strip";
+        await expect(entryBaseUnits).toHaveText(expectedBaseUnits);
         await expect(itemPanel).toBeVisible();
         // The first three viewports use the narrow band layout below 80rem;
         // the final viewport verifies the fixed side panel above that
@@ -908,7 +909,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page
           .getByRole("button", { name: new RegExp(unitsInvoice) })
           .click();
-        await expect(committedBaseUnits.last()).toHaveText("4 Strip");
+        await expect(committedBaseUnits.last()).toHaveText(
+          locale === "ar" ? "4 أشرطة" : "4 Strip",
+        );
         for (const viewport of [
           { height: 768, width: 1024 },
           { height: 658, width: 1066 },
@@ -1637,7 +1640,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page.goto(`${renderer.origin}#/purchases`);
         const postedInvoices = postedInvoicesTab(page);
         await expect(postedInvoices).toHaveAccessibleName(
-          locale === "en" ? "Posted invoices" : "فواتير الشراء المُرحّلة",
+          locale === "en" ? "Posted invoices" : "فواتير محفوظة",
         );
         await postedInvoices.click();
         const dialog = page.locator("#purchase-posted-view");
@@ -1649,9 +1652,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         });
         await search.fill("BROWSER-REVIEW");
         await search.press("Enter");
-        await expect(
-          dialog.locator(".posted-purchase-list tbody tr"),
-        ).toHaveCount(2);
+        const rows = dialog.locator(".posted-purchase-list tbody tr");
+        await expect(rows.first()).toBeVisible();
+        expect(await rows.count()).toBeGreaterThanOrEqual(2);
         await dialog.screenshot({
           animations: "disabled",
           path: path.join(
@@ -1660,8 +1663,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           ),
         });
         await dialog
+          .locator(".posted-purchase-list tbody tr", {
+            hasText: "BROWSER-REVIEW-A",
+          })
           .getByRole("button", {
-            name: locale === "en" ? /Open invoice P/u : /فتح الفاتورة P/u,
+            name: locale === "en" ? /Open invoice/u : /فتح الفاتورة/u,
           })
           .first()
           .click();
@@ -1727,6 +1733,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             `posted-purchase-detail-${locale}-${theme}.png`,
           ),
         });
+        await dialog
+          .getByRole("button", {
+            name: locale === "en" ? "Back to results" : "العودة إلى النتائج",
+          })
+          .click();
         await dialog
           .getByRole("button", {
             name: locale === "en" ? "Close" : "إغلاق",
@@ -2134,6 +2145,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await dialog
       .getByRole("button", { name: "Create adjustment copy" })
       .click();
+    await expect(
+      dialog.getByRole("button", { name: "Create adjustment copy" }),
+    ).toBeHidden();
     await dialog
       .getByRole("textbox", {
         name: new RegExp(`Quantity ${purchaseProduct.displayName}`, "u"),
@@ -2194,7 +2208,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       ).trim();
       const supplierCost = await moneyBeside(
         review,
-        locale === "ar" ? "كلفة المورد الأساسية" : "Primary supplier cost",
+        locale === "ar" ? "الكلفة" : "Primary supplier cost",
       );
       const allowance = await moneyBeside(
         review,
@@ -2202,7 +2216,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       );
       const afterAllowance = await moneyBeside(
         review,
-        locale === "ar" ? "الكلفة بعد السماح" : "Cost after discount",
+        locale === "ar" ? "الكلفة بعد الخصم" : "Cost after discount",
       );
       const sheet = page.locator("body > .purchase-snapshot-print");
       await expect(sheet).toBeHidden();

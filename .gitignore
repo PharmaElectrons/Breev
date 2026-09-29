@@ -40,3 +40,5 @@ repair-lan-ip.bat
 !.agents/rules/**
 today/
 evidence/
+breev-phase1-plan/
+*.pdf
