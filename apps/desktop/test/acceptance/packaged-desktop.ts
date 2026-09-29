@@ -17,7 +17,11 @@ import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser } from "playwright";
 
-import { createSeparatedDatabaseRoles } from "../database-roles.js";
+import {
+  createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
+  type SeparatedDatabaseRoles,
+} from "../database-roles.js";
 import {
   spawnLocalApiProcess,
   stopProcess,
@@ -187,8 +191,15 @@ export async function startAcceptanceEnvironment<TFixture>(
   };
 
   try {
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    const databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    let databaseRoles: SeparatedDatabaseRoles;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     const apiPort = await reservePort();
     const apiOrigin = `http://127.0.0.1:${String(apiPort)}`;
     apiProcess = spawnLocalApiProcess(

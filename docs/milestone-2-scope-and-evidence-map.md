@@ -1,6 +1,6 @@
 # Milestone 2 scope and evidence map
 
-**Phase:** M2 Phase 0, task T01
+**Phase:** M2 Phase 0, tasks T01–T03
 **Phase issue:** [#191](https://github.com/PharmaElectrons/Breev/issues/191), part of [#190](https://github.com/PharmaElectrons/Breev/issues/190)
 **Baseline commit inspected:** `74f081192d2d2a9b5855e380ae3b9281dcbf8e1f`
 **Baseline date:** 2026-09-29
@@ -107,10 +107,31 @@ The following apparent conflicts are resolved without inventing scope:
 5. Issue #50 says an invoice-specific offer is in its governing requirement, while the implemented model stores only the Supplier allowance snapshot. The later M2 completion plan treats the separate offer as a required defect, not optional future scope.
 6. No duplicate Phase 0 issue existed before #191. #191 is the bounded child of #190; #63 and #75 remain unchanged open M3 issues.
 
+## Phase 0 T03 before-state evidence
+
+The current packaged before-state is indexed by the
+[Phase 0 baseline bundle](../evidence/issue-191/phase-0-baseline/README.md).
+It uses only synthetic data and a disposable loopback PostgreSQL cluster. This
+baseline records defects; it does not promote a defect to proven status or
+approve the current UI as prototype-faithful.
+
+| Requirement families | Baseline artifact |
+|---|---|
+| M2-C01–C07: Product/search/barcode, packaging, pricing, Supplier, keyboard flow, and durable Purchase Draft | [Fixture manifest](../evidence/issue-191/phase-0-baseline/fixture-manifest.md); [Product search](../evidence/issue-191/phase-0-baseline/screenshots/scenario-search-en-light-1366x768.png); [Purchase entry](../evidence/issue-191/phase-0-baseline/screenshots/clause-2-supplier-invoice-en-light-1366x768.png); [performance samples](../evidence/issue-191/phase-0-baseline/performance.json) |
+| M2-P01–P07: posting, posted review, Adjustment, Return, and item panel | [Adjustment summary](../evidence/issue-191/phase-0-baseline/screenshots/clause-3-adjustment-difference-ar-dark-1280x800.png); [Purchase Return](../evidence/issue-191/phase-0-baseline/screenshots/clause-3-purchase-return-en-light-1366x768.png); [linked corrections](../evidence/issue-191/phase-0-baseline/screenshots/clause-3-linked-return-ar-light-1280x800.png); [item panel](../evidence/issue-191/phase-0-baseline/screenshots/purchase-item-panel-en-dark-1280x800.png) |
+| M2-I01–I06: Inventory, FEFO/expiry, Count, reorder basket, Ordered Items, and Sales-side addition | [Inventory review](../evidence/issue-191/phase-0-baseline/screenshots/clause-4-inventory-en-dark-1280x800.png); [FEFO batches](../evidence/issue-191/phase-0-baseline/screenshots/clause-4-batches-fefo-ar-light-1366x768.png); [integer units/Count](../evidence/issue-191/phase-0-baseline/screenshots/scenario-units-en-light-1366x768.png); [reorder from Sales](../evidence/issue-191/phase-0-baseline/screenshots/reorder-from-sales-ar-dark-1280x800.png) |
+| M2-Q01–Q04: bilingual/theme/viewport, automated seams, failure classification, and package freshness | [Automated results](../evidence/issue-191/phase-0-baseline/automated-results.md); all 128 PNGs under `evidence/issue-191/phase-0-baseline/screenshots/` cover 16 surfaces × 2 locales × 2 themes × 2 required viewports. |
+
+The baseline reproduced the existing M2-P04/M2-Q01 defect where the current
+Adjustment surface omits its unchanged-line explanation, and an M2-Q01
+accessibility defect on the Sales reorder surface. The current Adjustment and
+Return screenshots are expressly before-state inputs for the prototype-fidelity
+phase, not visual acceptance.
+
 ## Validation record
 
 - Issues inspected: #45–#59, #63, #75, #190, and #191. Their milestone, state, labels, and named dependencies were checked through GitHub.
-- All source, test, migration, documentation, and evidence paths cited above exist at baseline commit `74f0811`.
+- All source, test, migration, and documentation paths used by the scope audit exist at baseline commit `74f0811`; the fresh before-state evidence was captured from source commit `7164fbf`.
 - Existing evidence under `evidence/issue-59/` is retained as historical evidence and is not represented as current-candidate proof.
-- No production code, migration, contract, prototype, Quick Product, or Purchase keyboard file is changed by this task.
-- T02 must inventory and quarantine premature later-milestone surfaces. T03 must create the fresh deterministic technical and visual baseline and update this map with current artifact links.
+- Phase 0 changes no migration, contract, prototype, Quick Product, or Purchase keyboard file. T02 production edits are limited to quarantining visible M3/M4 promises, preserving permission-derived Adjustment/Return actions, and preventing the reduced module set from shifting the Sales navbar.
+- T02 quarantined premature later-milestone surfaces. T03 created the fresh deterministic technical/visual before-state and linked it above; final-candidate proof remains due after remediation.

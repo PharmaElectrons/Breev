@@ -10539,15 +10539,15 @@ a:focus-visible,
   background: var(--primary);
 }
 
-@media (max-width: 85.375rem) {
+@media (max-width: 75rem) {
   .shell-page[data-sales-workspace]
-    .module-nav:has(> ul > li:nth-child(n + 7)) {
+    .module-nav:has(> ul > li:nth-child(n + 8)) {
     position: relative;
     padding-inline-end: 1.5rem;
   }
 
   .shell-page[data-sales-workspace]
-    .module-nav:has(> ul > li:nth-child(n + 7))
+    .module-nav:has(> ul > li:nth-child(n + 8))
     .module-nav-overflow-cue {
     position: absolute;
     inset-block: 0;

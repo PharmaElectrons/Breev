@@ -1,0 +1,104 @@
+{
+  "capturedAt": "2026-09-29T07:19:39.607Z",
+  "measurement": "Packaged-desktop end-to-end elapsed time on the phase-0 workstation; includes UI input and render acknowledgement.",
+  "note": "Provisional before-state evidence only. Four samples are insufficient to claim a production p95 target.",
+  "samples": [
+    {
+      "durationMs": 326.5,
+      "locale": "en",
+      "operation": "product-search",
+      "theme": "light"
+    },
+    {
+      "durationMs": 1698.1,
+      "locale": "en",
+      "operation": "durable-draft-save",
+      "theme": "light"
+    },
+    {
+      "durationMs": 142.1,
+      "locale": "en",
+      "operation": "barcode-to-line",
+      "theme": "light"
+    },
+    {
+      "durationMs": 317.3,
+      "locale": "en",
+      "operation": "product-search",
+      "theme": "dark"
+    },
+    {
+      "durationMs": 1506.3,
+      "locale": "en",
+      "operation": "durable-draft-save",
+      "theme": "dark"
+    },
+    {
+      "durationMs": 200.4,
+      "locale": "en",
+      "operation": "barcode-to-line",
+      "theme": "dark"
+    },
+    {
+      "durationMs": 334.2,
+      "locale": "ar",
+      "operation": "product-search",
+      "theme": "light"
+    },
+    {
+      "durationMs": 1545.9,
+      "locale": "ar",
+      "operation": "durable-draft-save",
+      "theme": "light"
+    },
+    {
+      "durationMs": 172.6,
+      "locale": "ar",
+      "operation": "barcode-to-line",
+      "theme": "light"
+    },
+    {
+      "durationMs": 317.6,
+      "locale": "ar",
+      "operation": "product-search",
+      "theme": "dark"
+    },
+    {
+      "durationMs": 1697,
+      "locale": "ar",
+      "operation": "durable-draft-save",
+      "theme": "dark"
+    },
+    {
+      "durationMs": 150,
+      "locale": "ar",
+      "operation": "barcode-to-line",
+      "theme": "dark"
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceCommit": "7164fbff6ab56ee99d46463b7d148e874a5b12cc",
+  "summary": {
+    "product-search": {
+      "count": 4,
+      "maxMs": 334.2,
+      "minMs": 317.3,
+      "p50Ms": 317.6,
+      "p95Ms": 334.2
+    },
+    "barcode-to-line": {
+      "count": 4,
+      "maxMs": 200.4,
+      "minMs": 142.1,
+      "p50Ms": 150,
+      "p95Ms": 200.4
+    },
+    "durable-draft-save": {
+      "count": 4,
+      "maxMs": 1698.1,
+      "minMs": 1506.3,
+      "p50Ms": 1545.9,
+      "p95Ms": 1698.1
+    }
+  }
+}

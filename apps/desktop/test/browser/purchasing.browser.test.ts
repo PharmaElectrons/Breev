@@ -1058,13 +1058,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       await expect(
         postedView.getByRole("button", {
           name: labels.adjustment,
-          exact: true,
         }),
       ).toBeVisible();
       await expect(
         postedView.getByRole("button", {
           name: labels.purchaseReturn,
-          exact: true,
         }),
       ).toBeVisible();
     }

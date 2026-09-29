@@ -1225,21 +1225,17 @@ test.describe.serial("Product catalog screens", () => {
       "available",
     );
 
-    // A required Phase One surface that is not built says so rather than
-    // pretending to work.
-    await expect(
-      modules.getByRole("link", { name: /^Reports/ }),
-    ).toHaveAttribute("data-availability", "unavailable");
-
-    // The Clinic tab is outside project scope, and delivery, e-commerce,
-    // marketing, and external integration are deferred: none of them exists.
+    // Later accounting and reporting surfaces are quarantined until their
+    // milestones, alongside excluded and deferred prototype modules.
     for (const excluded of [
+      /accounts/i,
       /clinic/i,
       /عيادة/,
       /delivery/i,
       /commerce/i,
       /marketing/i,
       /external/i,
+      /reports/i,
     ]) {
       await expect(page.getByText(excluded)).toHaveCount(0);
     }
@@ -1261,8 +1257,9 @@ test.describe.serial("Product catalog screens", () => {
         });
         const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, { locale, theme });
-        // Sales is built as of #58; Reports is still an unbuilt required surface.
-        await page.goto(`${renderer.origin}#/reports`);
+        // Sales is built as of #58; Patients remains an unbuilt required
+        // surface while later reporting stays out of the current shell.
+        await page.goto(`${renderer.origin}#/patients`);
 
         const heading = page.getByTestId("unavailable-surface");
         await expect(heading).toBeVisible();
