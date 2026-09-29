@@ -2122,6 +2122,13 @@ a:focus-visible,
   unicode-bidi: normal;
 }
 
+.seat-usage-breakdown {
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 /* Stale polled data: the panel says so and its actions stay disabled. */
 .devices-stale {
   margin: 0;

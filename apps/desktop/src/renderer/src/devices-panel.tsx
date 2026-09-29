@@ -290,14 +290,25 @@ export function DevicesPanel({
                 {copy.seatUsageUnlicensed}
               </strong>
             ) : (
-              <strong dir="ltr">
-                {seats === null
-                  ? "—"
-                  : `${formatNumber(seats.used, locale)} / ${formatNumber(
-                      seats.permitted,
-                      locale,
-                    )}`}
-              </strong>
+              <>
+                <strong dir="ltr">
+                  {seats === null
+                    ? "—"
+                    : `${formatNumber(seats.used, locale)} / ${formatNumber(
+                        seats.permitted,
+                        locale,
+                      )}`}
+                </strong>
+                {seats !== null ? (
+                  <span className="seat-usage-breakdown">
+                    {copy.seatUsageBreakdown(
+                      formatNumber(1, locale),
+                      formatNumber(Math.max(0, seats.used - 1), locale),
+                      Math.max(0, seats.used - 1),
+                    )}
+                  </span>
+                ) : null}
+              </>
             )}
           </p>
         </div>
