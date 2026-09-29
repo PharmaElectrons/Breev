@@ -796,7 +796,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         const committedBaseUnits = page.locator(
           '.purchase-row-table tbody tr:not(.purchase-entry-row) [data-column-field="inventory-units"]',
         );
-        await expect(entryBaseUnits).toHaveText("4 Strip");
+        const expectedBaseUnits = locale === "ar" ? "4 أشرطة" : "4 Strip";
+        await expect(entryBaseUnits).toHaveText(expectedBaseUnits);
         await expect(itemPanel).toBeVisible();
         // The first three viewports use the narrow band layout below 80rem;
         // the final viewport verifies the fixed side panel above that
@@ -908,7 +909,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page
           .getByRole("button", { name: new RegExp(unitsInvoice) })
           .click();
-        await expect(committedBaseUnits.last()).toHaveText("4 Strip");
+        await expect(committedBaseUnits.last()).toHaveText(
+          locale === "ar" ? "4 أشرطة" : "4 Strip",
+        );
         for (const viewport of [
           { height: 768, width: 1024 },
           { height: 658, width: 1066 },
