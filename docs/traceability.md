@@ -37,6 +37,7 @@ Every business-requirement area of the governing scope maps to one owning docume
 | §13–§15, §18, §20–§21 delivery, acceptance, change control, responsibilities, handover, maintenance | Four funded milestones with acceptance criteria, review process, defect definition, schedule protection, client responsibilities, ownership and handover, maintenance tiers | `delivery.md` |
 | §16–§17 deferred and excluded | Phase Two list, AI roadmap as non-binding direction, price exclusions | `product.md` (scope boundaries) |
 | §19 open decisions | Client approvals before final implementation | `open-decisions.md` (client-decision table) |
+| Milestone 2 current scope/evidence baseline | Funded M2 requirements mapped to issues #45–#59, current code/tests, manual/package evidence, named external gates, exact deferrals, and protected no-touch paths | [`milestone-2-scope-and-evidence-map.md`](milestone-2-scope-and-evidence-map.md) |
 
 The root `README.md` and `running-locally.md` describe the code that is currently runnable and the checks that exercise it. They do not own product requirements. The coverage map above remains the authority for required behavior that has not been implemented yet.
 
