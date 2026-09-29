@@ -270,11 +270,10 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
   });
 
   it("commits exact rows once, resolves concurrent versions, resumes after restart, and keeps active rows editable", async () => {
-    const productResponse = await request(
-      "POST",
-      "/catalog/products",
-      medicationRequest("Keyboard Purchase"),
-    );
+    const productResponse = await request("POST", "/catalog/products", {
+      ...medicationRequest("Keyboard Purchase"),
+      supplierIds: [supplier.id],
+    });
     expect(productResponse.status, diagnostics(productResponse)).toBe(201);
     product = productResponse.body as unknown as Product;
     const idempotencyKey = uuidV7();
@@ -381,6 +380,21 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       supplierBody("Unified Supplier", "4", "2026-01-01"),
     );
     const survivor = survivorResponse.body as unknown as Supplier;
+    const duplicateLinkProductResponse = await request(
+      "POST",
+      "/catalog/products",
+      {
+        ...medicationRequest("Supplier Merge Dedup"),
+        barcodes: [],
+        supplierIds: [supplier.id, survivor.id],
+      },
+    );
+    expect(
+      duplicateLinkProductResponse.status,
+      diagnostics(duplicateLinkProductResponse),
+    ).toBe(201);
+    const duplicateLinkProduct =
+      duplicateLinkProductResponse.body as unknown as Product;
     const merged = await request("POST", `/suppliers/${supplier.id}/merges`, {
       expectedRevision: supplier.revision,
       idempotencyKey: uuidV7(),
@@ -390,6 +404,33 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       status: 201,
       body: { status: "merged", mergedIntoSupplierId: survivor.id },
     });
+    const transferredProduct = await request(
+      "GET",
+      `/catalog/products/${product.id}`,
+    );
+    const deduplicatedProduct = await request(
+      "GET",
+      `/catalog/products/${duplicateLinkProduct.id}`,
+    );
+    expect(transferredProduct.body).toMatchObject({
+      revision: "2",
+      supplierIds: [survivor.id],
+    });
+    expect(deduplicatedProduct.body).toMatchObject({
+      revision: "2",
+      supplierIds: [survivor.id],
+    });
+    const mergeAudit = await administrator.query<{
+      after_state: { transferredProductIds?: string } | null;
+    }>(
+      `select after_state from posting_audit_records
+       where action = 'supplier.merge' and target_id = $1
+       order by occurred_at desc, id desc limit 1`,
+      [supplier.id],
+    );
+    expect(mergeAudit.rows[0]?.after_state?.transferredProductIds).toBe(
+      [product.id, duplicateLinkProduct.id].sort().join(","),
+    );
     const preserved = await request("GET", `/purchases/drafts/${draft.id}`);
     expect(preserved.body).toMatchObject({
       supplierId: supplier.id,
@@ -790,8 +831,9 @@ function medicationRequest(tradeName: string): ProductCreateRequest {
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
-    stateColours: { coldStorageRequired: false, manual: "blue" },
+    stateColours: { coldStorageRequired: false, manual: "#0000ff" },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }

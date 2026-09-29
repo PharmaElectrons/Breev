@@ -5,7 +5,6 @@ import {
   PRODUCT_BARCODE_SOURCES,
   PRODUCT_FOOD_TIMINGS,
   PRODUCT_PRICING_METHODS,
-  PRODUCT_STATE_COLORS,
   PRODUCT_STATUSES,
 } from "@breev/contracts/local-rest";
 import { sql } from "drizzle-orm";
@@ -37,10 +36,6 @@ export const catalogProductStatus = pgEnum(
 export const catalogProductFoodTiming = pgEnum(
   "catalog_product_food_timing",
   PRODUCT_FOOD_TIMINGS,
-);
-export const catalogProductStateColour = pgEnum(
-  "catalog_product_state_colour",
-  PRODUCT_STATE_COLORS,
 );
 export const catalogUnitKind = pgEnum("catalog_unit_kind", [
   "inventory",
@@ -92,7 +87,7 @@ export const catalogProducts = pgTable(
     foodTiming: catalogProductFoodTiming("food_timing"),
     externallyVisible: boolean("externally_visible").notNull(),
     aiSharingAllowed: boolean("ai_sharing_allowed").notNull(),
-    manualStateColour: catalogProductStateColour("manual_state_colour"),
+    manualStateColour: text("manual_state_colour"),
     coldStorageRequired: boolean("cold_storage_required").notNull(),
     minimumLevel: bigint("minimum_level", { mode: "bigint" }),
     maximumLevel: bigint("maximum_level", { mode: "bigint" }),
@@ -125,6 +120,10 @@ export const catalogProducts = pgTable(
       table.pharmacyId,
     ),
     check("catalog_products_revision_positive", sql`${table.revision} > 0`),
+    check(
+      "catalog_products_manual_state_colour_hex",
+      sql`${table.manualStateColour} is null or ${table.manualStateColour} ~ '^#[0-9a-fA-F]{6}$'`,
+    ),
     check(
       "catalog_products_pricing_state",
       sql`${table.retailPriceFils} >= 0
@@ -349,4 +348,22 @@ export const catalogProductSnapshotPackageUnits = pgTable(
       sql`${table.baseUnitsPerPackage} > 0`,
     ),
   ],
+);
+
+/**
+ * Product-to-supplier links are Catalog-owned references. Purchase documents
+ * continue to snapshot the supplier and invoice cost they actually used.
+ */
+export const catalogProductSuppliers = pgTable(
+  "catalog_product_suppliers",
+  {
+    pharmacyId: uuid("pharmacy_id").notNull(),
+    productId: uuid("product_id").notNull(),
+    supplierId: uuid("supplier_id").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    recordedBy: uuid("recorded_by").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.productId, table.supplierId] })],
 );

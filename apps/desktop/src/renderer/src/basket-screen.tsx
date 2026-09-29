@@ -891,7 +891,7 @@ function basketRowRisk(item: ReorderItem): string {
   if (
     indicators.includes("expired") ||
     indicators.includes("out-of-stock") ||
-    item.inventory.stateColour.effective === "red"
+    item.inventory.stateColour.automatic === "red"
   )
     return "critical";
   if (indicators.includes("expiring-soon")) return "expiring";

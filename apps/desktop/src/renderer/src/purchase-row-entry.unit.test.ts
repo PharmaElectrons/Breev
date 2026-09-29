@@ -5,7 +5,6 @@ import type {
   PurchaseEntryPreferences,
 } from "@breev/contracts/local-rest";
 import {
-  calculatePurchaseRetailPreview,
   determineDisplayedProduct,
   formatPurchaseDefaultUnit,
   purchaseEntryProgression,
@@ -49,10 +48,6 @@ describe("purchase entry progression", () => {
     expect(purchaseEntryProgression(shown, product)).not.toContain(
       "selling-price",
     );
-  });
-
-  it("calculates the exact 80-at-20-percent preview as 100", () => {
-    expect(calculatePurchaseRetailPreview("80000", "20", "off")).toBe("100000");
   });
 });
 

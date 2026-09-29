@@ -120,13 +120,14 @@ function sampleMedicationRequest(barcode: string): ProductCreateRequest {
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol + Caffeine",
+    supplierIds: [],
     sharing: {
       aiSharingAllowed: true,
       externallyVisible: true,
     },
     stateColours: {
       coldStorageRequired: false,
-      manual: "blue",
+      manual: "#0000ff",
     },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
@@ -270,6 +271,7 @@ test.describe.serial("Product catalog screens", () => {
   let matrixProduct: Product;
   let mergeProduct: Product;
   let mergeSurvivor: Product;
+  let uiSupplierId = "";
   let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
   const evidenceDir = evidencePath("issue-47/after");
@@ -322,6 +324,28 @@ test.describe.serial("Product catalog screens", () => {
     if (ownerState.state !== "authenticated") {
       throw new Error("Catalog browser owner was not authenticated");
     }
+
+    const uiSupplierResponse = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/suppliers",
+      {
+        allowanceEffectiveFrom: "2026-01-01",
+        defaultAllowancePercentage: "2",
+        idempotencyKey: randomUUID(),
+        name: "Breev UI Supplier Link",
+        terms: "Net 30",
+      },
+    );
+    expect(
+      uiSupplierResponse.status,
+      JSON.stringify(uiSupplierResponse.body),
+    ).toBe(201);
+    uiSupplierId = String(
+      (uiSupplierResponse.body as { id?: string } | undefined)?.id ?? "",
+    );
+    expect(uiSupplierId).not.toBe("");
 
     const challenge = await requestLocalApi(
       apiOrigin,
@@ -448,7 +472,7 @@ test.describe.serial("Product catalog screens", () => {
     await postgres?.stop().catch(() => undefined);
   });
 
-  test("Keyboard-only entry of a full medication, start to submit — no mouse", async ({
+  test("Keyboard-operable medication entry preserves the generated identity", async ({
     page,
   }) => {
     await installDesktopFake(page, renderer.origin, {
@@ -462,7 +486,7 @@ test.describe.serial("Product catalog screens", () => {
     ).toBeVisible();
 
     // 1. Trade Name
-    const tradeNameInput = page.getByLabel("Trade name *");
+    const tradeNameInput = page.getByLabel("Trade name");
     await tradeNameInput.focus();
     await expect(tradeNameInput).toBeFocused();
     await page.keyboard.type("Panadol Extra");
@@ -472,8 +496,18 @@ test.describe.serial("Product catalog screens", () => {
       "Panadol Extra",
     );
 
-    // 2. Strength
+    // Verify tab order across the controls that follow Trade Name in the rendered form.
     await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: "Clear color" }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.locator('input[type="color"]')).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Arabic search name")).toBeFocused();
+
+    // 2. Strength
+    await page.getByLabel("Strength").focus();
     await expect(page.getByLabel("Strength")).toBeFocused();
     await page.keyboard.type("500mg");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
@@ -481,7 +515,7 @@ test.describe.serial("Product catalog screens", () => {
     );
 
     // 3. Dosage Form
-    await page.keyboard.press("Tab");
+    await page.getByLabel("Dosage form").focus();
     await expect(page.getByLabel("Dosage form")).toBeFocused();
     await page.keyboard.type("Tablet");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
@@ -489,7 +523,7 @@ test.describe.serial("Product catalog screens", () => {
     );
 
     // 4. Manufacturer
-    await page.keyboard.press("Tab");
+    await page.getByLabel("Manufacturer").focus();
     await expect(page.getByLabel("Manufacturer")).toBeFocused();
     await page.keyboard.type("GSK");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
@@ -497,8 +531,8 @@ test.describe.serial("Product catalog screens", () => {
     );
 
     // 5. Arabic Search Name (below English display name)
-    await page.keyboard.press("Tab");
     const arabicInput = page.getByLabel("Arabic search name");
+    await arabicInput.focus();
     await expect(arabicInput).toBeFocused();
     await page.keyboard.type("بنادول اكسترا");
 
@@ -508,29 +542,35 @@ test.describe.serial("Product catalog screens", () => {
     );
 
     // 6. Scientific Name & Category
-    await page.keyboard.press("Tab");
-    await expect(page.getByLabel("Scientific / Generic name")).toBeFocused();
+    const scientificNameInput = page.getByLabel("Scientific / Generic name");
+    await scientificNameInput.focus();
+    await expect(scientificNameInput).toBeFocused();
     await page.keyboard.type("Paracetamol");
 
-    await page.keyboard.press("Tab");
-    await expect(page.getByLabel("Category")).toBeFocused();
+    const categoryInput = page.getByRole("combobox", { name: "Category" });
+    await categoryInput.focus();
+    await expect(categoryInput).toBeFocused();
     await page.keyboard.type("Analgesic");
 
     // 7. Barcode entry
-    await page.keyboard.press("Tab");
-    await expect(page.getByLabel("Barcode kind")).toBeFocused();
-    await page.keyboard.press("Tab");
+    const barcodeKind = page.getByLabel("Barcode kind");
+    await barcodeKind.focus();
+    await expect(barcodeKind).toBeFocused();
     const barcodeInput = page.getByPlaceholder("Enter barcode");
+    await barcodeInput.focus();
     await expect(barcodeInput).toBeFocused();
     await page.keyboard.type("5000167000001");
     await page.keyboard.press("Enter");
     await expect(page.getByText("5000167000001")).toBeVisible();
 
     // 8. Required quantity and price model
-    const inventoryUnitInput = page.getByLabel("Inventory Unit (base unit) *");
+    const continueButton = page.getByRole("button", { name: "Continue" });
+    await continueButton.focus();
+    await page.keyboard.press("Enter");
+    const inventoryUnitInput = page.getByLabel("Inventory Unit (base unit)");
     await inventoryUnitInput.focus();
     await page.keyboard.type("Tablet");
-    const retailPriceInput = page.getByLabel("Retail price (fils) *");
+    const retailPriceInput = page.getByLabel("Retail price (fils)");
     await retailPriceInput.focus();
     await page.keyboard.type("100000");
 
@@ -550,25 +590,106 @@ test.describe.serial("Product catalog screens", () => {
     await createButton.focus();
     await page.keyboard.press("Enter");
 
-    // Record view reached
+    // The successful create routes to the product's editable record for managers.
     await expect(page.getByTestId("product-display-name")).toHaveText(
       "Panadol Extra 500mg Tablet GSK",
     );
-    await expect(page.getByTestId("product-arabic-search-name")).toHaveText(
-      "بنادول اكسترا",
-    );
-    await expect(page.getByTestId("inventory-balance-readonly")).toBeVisible();
-    await expect(page.getByTestId("product-inventory-unit")).toHaveText(
-      "Tablet",
-    );
-    await expect(page.getByTestId("product-retail-price")).toHaveText(
-      "100 IQD",
-    );
+    await expect(arabicInput).toHaveValue("بنادول اكسترا");
+    await expect(inventoryUnitInput).toHaveValue("Tablet");
+    await expect(retailPriceInput).toHaveValue("100000");
 
-    // Save evidence screenshot of product form & record
+    // Save evidence screenshot of the editable product record.
     await page.screenshot({
       path: path.join(evidenceDir, "keyboard-medication-record.png"),
     });
+  });
+
+  test("Create steps retain values and persist informational supplier links", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products/new`);
+
+    const tradeName = page.getByLabel("Trade name");
+    await tradeName.fill("Supplier Link Workflow Item");
+    await expect(page.getByLabel("Inventory Unit (base unit)")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByLabel("Inventory Unit (base unit)")).toBeVisible();
+    await expect(page.getByLabel("Trade name")).toHaveCount(0);
+
+    const supplierSelect = page.locator(".catalog-supplier-add select");
+    await expect(
+      supplierSelect.getByRole("option", { name: "Breev UI Supplier Link" }),
+    ).toHaveCount(1);
+    await supplierSelect.selectOption(uiSupplierId);
+    await page.getByRole("button", { name: "Add supplier" }).click();
+    await expect(page.getByText("Breev UI Supplier Link")).toBeVisible();
+
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(tradeName).toHaveValue("Supplier Link Workflow Item");
+    await expect(page.getByLabel("Inventory Unit (base unit)")).toHaveCount(0);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByText("Breev UI Supplier Link")).toBeVisible();
+
+    await page.getByLabel("Inventory Unit (base unit)").fill("Tablet");
+    await page.getByLabel("Retail price (fils)").fill("100000");
+    await page.getByRole("button", { name: "Create product" }).click();
+
+    await expect(page.getByTestId("product-display-name")).toHaveText(
+      "Supplier Link Workflow Item",
+    );
+    await expect(page.getByText("Breev UI Supplier Link")).toBeVisible();
+    const productId = new URL(page.url()).hash.split("/").at(-1);
+    expect(productId).toBeDefined();
+    const readback = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/catalog/products/${productId}`,
+    );
+    expect(readback.status).toBe(200);
+    expect((readback.body as Product).supplierIds).toEqual([uiSupplierId]);
+  });
+
+  test("A supplier-option failure preserves existing links without a remove action", async ({
+    page,
+  }) => {
+    const linkedProduct = await createCatalogProduct(apiOrigin, credentials, {
+      ...sampleMedicationRequest("5000167000197"),
+      barcodes: [],
+      supplierIds: [uiSupplierId],
+    });
+    await page.route("**/catalog/supplier-options", (route) => route.abort());
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products/${linkedProduct.id}`);
+    await expect(
+      page.getByText("Supplier options could not be loaded."),
+    ).toBeVisible();
+    await expect(page.getByLabel("Scientific / Generic name")).toBeVisible();
+    await expect(page.getByText(uiSupplierId)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: new RegExp(`Remove ${uiSupplierId}`) }),
+    ).toHaveCount(0);
+
+    await page
+      .getByLabel("Scientific / Generic name")
+      .fill("Changed generic name");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    const readback = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/catalog/products/${linkedProduct.id}`,
+    );
+    expect(readback.status).toBe(200);
+    expect((readback.body as Product).supplierIds).toEqual([uiSupplierId]);
   });
 
   test("Instant English, Arabic, and scanner search announces counts in both directions and themes", async ({
@@ -716,12 +837,10 @@ test.describe.serial("Product catalog screens", () => {
     await page.goto(
       `${renderer.origin}#/catalog/products/${matchingProduct.id}`,
     );
-    await page
-      .getByRole("button", { name: "Suggest internal barcode" })
-      .press("Enter");
+    await page.getByRole("button", { name: "Suggest barcode" }).press("Enter");
     const internalCode = page.getByText(/^BRV-[0-9]{12}/u);
     await expect(internalCode).toBeVisible();
-    await page.getByRole("button", { name: "Print" }).press("Enter");
+    await page.getByRole("button", { name: "Print barcode" }).press("Enter");
     await expect
       .poll(async () =>
         page.evaluate(() =>
@@ -824,8 +943,9 @@ test.describe.serial("Product catalog screens", () => {
       "Nivea Men Body Lotion Hydrating Adults 250ml",
     );
 
-    await page.getByLabel("Inventory Unit (base unit) *").fill("Piece");
-    await page.getByLabel("Retail price (fils) *").fill("250000");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByLabel("Inventory Unit (base unit)").fill("Piece");
+    await page.getByLabel("Retail price (fils)").fill("250000");
 
     // Submit
     const createButton = page.getByRole("button", { name: "Create product" });
@@ -847,7 +967,7 @@ test.describe.serial("Product catalog screens", () => {
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
-    const tradeNameInput = page.getByLabel("Trade name *");
+    const tradeNameInput = page.getByLabel("Trade name");
     const invalidTradeName = "I".repeat(121);
     await tradeNameInput.evaluate((element) =>
       element.removeAttribute("maxlength"),
@@ -857,8 +977,9 @@ test.describe.serial("Product catalog screens", () => {
     await strengthInput.fill("500mg");
     const arabicInput = page.getByLabel("Arabic search name");
     await arabicInput.fill("دواء تجريبي");
-    await page.getByLabel("Inventory Unit (base unit) *").fill("Tablet");
-    await page.getByLabel("Retail price (fils) *").fill("100000");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByLabel("Inventory Unit (base unit)").fill("Tablet");
+    await page.getByLabel("Retail price (fils)").fill("100000");
 
     const submitBtn = page.getByRole("button", { name: "Create product" });
     await submitBtn.click();
@@ -891,8 +1012,9 @@ test.describe.serial("Product catalog screens", () => {
     });
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
-    await page.getByLabel("Trade name *").fill("Exact Margin Product");
-    const inventoryUnit = page.getByLabel("Inventory Unit (base unit) *");
+    await page.getByLabel("Trade name").fill("Exact Margin Product");
+    await page.getByRole("button", { name: "Continue" }).click();
+    const inventoryUnit = page.getByLabel("Inventory Unit (base unit)");
     await inventoryUnit.focus();
     await page.keyboard.type("Strip");
 
@@ -946,13 +1068,14 @@ test.describe.serial("Product catalog screens", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}#/catalog/products/new`);
-    await page.getByLabel("Trade name *").fill("Invalid Ratio Product");
-    await page.getByLabel("Inventory Unit (base unit) *").fill("Strip");
+    await page.getByLabel("Trade name").fill("Invalid Ratio Product");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByLabel("Inventory Unit (base unit)").fill("Strip");
     await page.getByRole("button", { name: "+ Add package unit" }).click();
     await page.getByLabel("Package Name *").fill("Pack");
     const ratio = page.getByLabel("Ratio (Inventory Units per package) *");
     await ratio.fill("0");
-    await page.getByLabel("Retail price (fils) *").fill("100000");
+    await page.getByLabel("Retail price (fils)").fill("100000");
 
     await page.getByRole("button", { name: "Create product" }).click();
     await expect(
@@ -973,7 +1096,7 @@ test.describe.serial("Product catalog screens", () => {
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
-    await page.getByLabel("Trade name *").fill("Augmentin");
+    await page.getByLabel("Trade name").fill("Augmentin");
     await page.getByLabel("Strength").fill("1g");
 
     const modeSelect = page.getByLabel("Product definition mode");
@@ -999,7 +1122,7 @@ test.describe.serial("Product catalog screens", () => {
     // Cancel preserves fields and current mode
     await dialog.getByRole("button", { name: "Keep current mode" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByLabel("Trade name *")).toHaveValue("Augmentin");
+    await expect(page.getByLabel("Trade name")).toHaveValue("Augmentin");
     await expect(page.getByLabel("Product definition mode")).toHaveValue(
       "medication",
     );
@@ -1026,7 +1149,7 @@ test.describe.serial("Product catalog screens", () => {
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
-    await page.getByLabel("Trade name *").fill("Amoxicillin");
+    await page.getByLabel("Trade name").fill("Amoxicillin");
     await page.getByLabel("Strength").fill("500mg");
     await page.getByLabel("Arabic search name").fill("أموكسيسيلين");
 
@@ -1070,7 +1193,7 @@ test.describe.serial("Product catalog screens", () => {
     await expect(page.getByLabel("Arabic search name")).toBeFocused();
   });
 
-  test("The inventory balance renders read-only and is announced as read-only to assistive technology", async ({
+  test("Batch facts load from Inventory as read-only product data", async ({
     page,
   }) => {
     await installDesktopFake(page, renderer.origin, {
@@ -1082,14 +1205,17 @@ test.describe.serial("Product catalog screens", () => {
       `${renderer.origin}#/catalog/products/${inventoryProduct.id}`,
     );
 
-    const balanceRegion = page.getByRole("region", {
-      name: "Read-only inventory balance. Stock cannot be directly modified through Catalog.",
-    });
-    await expect(balanceRegion).toBeVisible();
-
-    const balanceDisplay = page.getByTestId("inventory-balance-readonly");
-    await expect(balanceDisplay).toHaveAttribute("aria-readonly", "true");
-    await expect(balanceDisplay).toContainText("0 Inventory Units");
+    const batchFacts = page.getByText("Batch facts", { exact: true });
+    await expect(batchFacts).toBeVisible();
+    await batchFacts.click();
+    await expect(
+      page.getByText("There are no batches with balance for this item."),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "Batch balances are read-only here and are managed in Inventory.",
+      ),
+    ).toBeVisible();
 
     // Assert no writable input for balance exists
     await expect(page.locator("input[name*='balance']")).toHaveCount(0);

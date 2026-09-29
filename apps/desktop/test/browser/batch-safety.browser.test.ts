@@ -606,6 +606,7 @@ test.describe.serial("batch safety renderer", () => {
         wholesalePriceFils: "90000",
       },
       scientificName: "Batch Safety",
+      supplierIds: [],
       sharing: { aiSharingAllowed: false, externallyVisible: true },
       stateColours: { coldStorageRequired: false, manual: null },
       stockLevels: { maximumLevel: "30", minimumLevel: "5", reorderPoint: "4" },

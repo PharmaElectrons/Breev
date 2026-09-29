@@ -1369,6 +1369,14 @@ export const PRODUCT_STATE_COLORS = [
   "yellow",
 ] as const;
 export const productStateColorSchema = z.enum(PRODUCT_STATE_COLORS);
+export const productManualStateColourSchema = z.templateLiteral([
+  z.literal("#"),
+  z.string().regex(/^[\da-fA-F]{6}$/u),
+]);
+export const productDisplayColourSchema = z.union([
+  productStateColorSchema,
+  productManualStateColourSchema,
+]);
 
 const PRODUCT_NAME_PART_MAX_LENGTH = 120;
 const PRODUCT_NAME_PART_COUNT_MAX = 6;
@@ -1457,7 +1465,7 @@ export const productSharingControlsSchema = z.strictObject({
  * stored, and the surfaces that display any of them arrive later.
  */
 export const productStateColoursSchema = z.strictObject({
-  manual: productStateColorSchema.nullable(),
+  manual: productManualStateColourSchema.nullable(),
   coldStorageRequired: z.boolean(),
 });
 
@@ -1808,6 +1816,10 @@ const productAttributeFields = {
   packaging: productPackagingSchema,
   pricing: productPricingInputSchema,
   scientificName: optionalProductTextSchema(160),
+  supplierIds: z
+    .array(z.uuidv7())
+    .max(256)
+    .refine((ids) => new Set(ids).size === ids.length),
   sharing: productSharingControlsSchema,
   stateColours: productStateColoursSchema,
   stockLevels: z
@@ -1945,6 +1957,20 @@ const catalogCommandDenialResponses = {
   400: catalogDenialSchema,
   404: catalogDenialSchema,
   409: catalogDenialSchema,
+} as const;
+
+export const catalogSupplierOptionSchema = z.strictObject({
+  id: z.uuidv7(),
+  name: z.string().min(1).max(160),
+  status: z.enum(["active", "archived", "merged"]),
+});
+export const catalogSupplierOptionsContract = {
+  method: "GET",
+  path: "/catalog/supplier-options",
+  responses: {
+    200: z.strictObject({ suppliers: z.array(catalogSupplierOptionSchema) }),
+    ...catalogReadDenialResponses,
+  },
 } as const;
 
 export const productListContract = {
@@ -2155,6 +2181,7 @@ export function productSearchPath(input: {
  * not there: no delete, no cleanup, and no repair path around the back.
  */
 export const CATALOG_CONTRACTS = [
+  catalogSupplierOptionsContract,
   catalogMatchingApprovalContract,
   catalogMatchingBatchOpenContract,
   productBarcodeAddContract,
@@ -2202,8 +2229,8 @@ const inventoryStockLevelsSchema = z.strictObject({
 });
 const inventoryStateColourSchema = z.strictObject({
   automatic: productStateColorSchema,
-  effective: productStateColorSchema,
-  manual: productStateColorSchema.nullable(),
+  effective: productDisplayColourSchema,
+  manual: productManualStateColourSchema.nullable(),
 });
 export const inventoryItemSchema = z.strictObject({
   averageUnitCostFils: priceFilsSchema.nullable(),
@@ -5315,6 +5342,10 @@ export type ProductNameTemplateVersion = z.infer<
 export type ProductStatus = z.infer<typeof productStatusSchema>;
 export type ProductFoodTiming = z.infer<typeof productFoodTimingSchema>;
 export type ProductStateColour = z.infer<typeof productStateColorSchema>;
+export type ProductManualStateColour = z.infer<
+  typeof productManualStateColourSchema
+>;
+export type ProductDisplayColour = z.infer<typeof productDisplayColourSchema>;
 export type MedicationNameFields = z.infer<typeof medicationNameFieldsSchema>;
 export type GeneralItemNameFields = z.infer<typeof generalItemNameFieldsSchema>;
 export type ProductDefinition = z.infer<typeof productDefinitionSchema>;
@@ -5408,6 +5439,7 @@ export type ProductBarcodeSource = z.infer<typeof productBarcodeSourceSchema>;
 export type ProductBarcodeInput = z.infer<typeof productBarcodeInputSchema>;
 export type ProductBarcode = z.infer<typeof productBarcodeSchema>;
 export type Product = z.infer<typeof productSchema>;
+export type CatalogSupplierOption = z.infer<typeof catalogSupplierOptionSchema>;
 export type ProductCreateRequest = z.infer<typeof productCreateRequestSchema>;
 export type ProductEditRequest = z.infer<typeof productEditRequestSchema>;
 export type ProductArchiveRequest = z.infer<typeof productArchiveRequestSchema>;

@@ -163,6 +163,10 @@ export function ProductMovementHistory({
                         : quantity > 0n
                           ? "positive"
                           : "neutral";
+                    const referenceHref =
+                      movement.reference.documentType === "count-session"
+                        ? `#/inventory/items/${productId}/movements/count-sessions/${movement.reference.documentId}`
+                        : `#/inventory/items/${productId}/movements/${movement.reference.documentId}`;
                     return (
                       <tr key={movement.id}>
                         <td>
@@ -174,7 +178,18 @@ export function ProductMovementHistory({
                           </bdi>
                         </td>
                         <td>{kindLabel(movement.kind)}</td>
-                        <td data-sign={sign}>{movement.reference.label}</td>
+                        <td data-sign={sign}>
+                          {movement.reference.openable ? (
+                            <a
+                              className="catalog-movement-reference"
+                              href={referenceHref}
+                            >
+                              {movement.reference.label}
+                            </a>
+                          ) : (
+                            <span>{movement.reference.label}</span>
+                          )}
+                        </td>
                         <td>{movement.user.displayName}</td>
                         <td data-sign={sign}>
                           <bdi dir="ltr">

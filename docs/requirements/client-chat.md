@@ -379,3 +379,13 @@ The stakeholder clarified Sale Draft access for issue #62:
 - Any pharmacy user with `sales.drafts.manage` may list, read, and resume any Sale Draft in that pharmacy from a device that passes the existing authentication and device-trust checks.
 - The draft creator and device remain audit metadata; they do not restrict visibility or resumption.
 - This decision does not define automatic selection when Sales opens. Keep draft selection explicit until that behavior is approved separately.
+
+## 28 September 2026
+
+### Product supplier links
+
+The Products implementation clarification keeps supplier links informational. A product may link to multiple suppliers, with no preferred supplier, supplier-specific price, availability, or purchase-entry suggestion. Product managers with `catalog.item.manage` may select active suppliers and see only each supplier's ID, name, and status; supplier-profile management remains under `suppliers.manage`. Existing archived supplier links stay visible and may be removed, but archived or merged suppliers cannot be newly linked. Product merges union and deduplicate links on the survivor while keeping the merged Product readable. Supplier merges transfer and deduplicate links on active Products, while inactive Product records retain their historical links. Each purchase still selects its supplier and records its invoice costs independently. This clarification does not close the inventory lot/expiry policy in G-02.
+
+### Product categories and highlight color
+
+The Product category field is an editable input with autocomplete suggestions, and its adjacent plus button adds a newly entered category to the form's suggestions. A new value becomes available to later Product forms when the current Product is saved. The manual highlight color uses a picker for any six-digit hex color instead of a fixed palette; the color remains optional and may be cleared.

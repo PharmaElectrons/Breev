@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ListChecks } from "lucide-react";
 
 import { catalogMessages, type CatalogCopy } from "./catalog-messages";
@@ -53,6 +53,18 @@ export function CatalogRouteView({
   const [error, setError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [listRevision, setListRevision] = useState(0);
+  const categoryOptions = useMemo(() => {
+    const categories = new Map<string, string>();
+    for (const product of productList) {
+      const category = product.category?.trim();
+      if (!category) continue;
+      const key = category.toLocaleLowerCase(locale);
+      if (!categories.has(key)) categories.set(key, category);
+    }
+    return [...categories.values()].sort((left, right) =>
+      left.localeCompare(right, locale),
+    );
+  }, [locale, productList]);
 
   const isNew = hash === "#/catalog/new" || hash === "#/catalog/products/new";
   const isEdit =
@@ -154,6 +166,7 @@ export function CatalogRouteView({
         <CatalogCanvas
           baseUrl={baseUrl}
           canManageCatalog={canManageCatalog}
+          categoryOptions={categoryOptions}
           copy={copy}
           error={error}
           isEdit={isEdit}
@@ -175,6 +188,7 @@ export function CatalogRouteView({
 function CatalogCanvas({
   baseUrl,
   canManageCatalog,
+  categoryOptions,
   copy,
   error,
   isEdit,
@@ -187,6 +201,7 @@ function CatalogCanvas({
 }: {
   readonly baseUrl: string;
   readonly canManageCatalog: boolean;
+  readonly categoryOptions: readonly string[];
   readonly copy: CatalogCopy;
   readonly error: string | null;
   readonly isEdit: boolean;
@@ -210,6 +225,7 @@ function CatalogCanvas({
     return (
       <ProductForm
         baseUrl={baseUrl}
+        categoryOptions={categoryOptions}
         onCancel={() => {
           window.location.hash = "#/catalog/products";
         }}
@@ -252,6 +268,7 @@ function CatalogCanvas({
       return (
         <ProductForm
           baseUrl={baseUrl}
+          categoryOptions={categoryOptions}
           key={`${product.id}:${isEdit ? "edit" : "record"}:${formReset}`}
           initialProduct={product}
           onCancel={() => {

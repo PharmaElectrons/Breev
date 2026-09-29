@@ -522,6 +522,56 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
     });
   });
 
+  it("allows Catalog managers to read minimal supplier options without supplier-profile permission", async () => {
+    await loginAs(PHARMACIST_USERNAME, PHARMACIST_PASSWORD);
+    const denied = await request("GET", "/catalog/supplier-options");
+    expect(denied).toMatchObject({
+      status: 403,
+      body: {
+        code: "permission-denied",
+        requiredPermission: "catalog.item.manage",
+      },
+    });
+
+    await loginAs(OWNER_USERNAME, OWNER_PASSWORD);
+    const createdSupplier = await request("POST", "/suppliers", {
+      allowanceEffectiveFrom: "2026-01-01",
+      defaultAllowancePercentage: "0",
+      idempotencyKey: createUuidV7(),
+      name: "Product Link Supplier",
+      terms: "Private purchasing terms",
+    });
+    expect(createdSupplier.status, failureContext([createdSupplier])).toBe(201);
+    await grantCatalogPermission();
+    const role = await administrator.query<{ id: string }>(
+      "select role_id as id from identity_users where id = $1",
+      [pharmacistId],
+    );
+    const purchasingPermission = await administrator.query<{ count: string }>(
+      `select count(*)::text as count from role_permission_grants
+       where pharmacy_id = $1 and role_id = $2
+         and permission_name = 'suppliers.manage'`,
+      [pharmacyId, role.rows[0]?.id],
+    );
+    expect(purchasingPermission.rows[0]?.count).toBe("0");
+
+    await loginAs(PHARMACIST_USERNAME, PHARMACIST_PASSWORD);
+    const options = await request("GET", "/catalog/supplier-options");
+    expect(options.status, failureContext([options])).toBe(200);
+    expect(options.body?.suppliers).toEqual([
+      {
+        id: createdSupplier.body?.id,
+        name: "Product Link Supplier",
+        status: "active",
+      },
+    ]);
+    expect(options.body?.suppliers).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ terms: "Private purchasing terms" }),
+      ]),
+    );
+  });
+
   async function grantCatalogPermission(
     permissionName: PermissionName = "catalog.item.manage",
   ): Promise<void> {
@@ -981,6 +1031,7 @@ function medicationRequest(tradeName: string): ProductCreateRequest {
       wholesalePriceFils: null,
     },
     scientificName: null,
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: false },
     stateColours: { coldStorageRequired: false, manual: null },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },

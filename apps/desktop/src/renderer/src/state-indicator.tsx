@@ -1,6 +1,7 @@
 import type {
   BatchEligibilityStatus,
   InventoryRiskIndicator,
+  ProductManualStateColour,
   ProductStateColour,
 } from "@breev/contracts/local-rest";
 
@@ -8,6 +9,7 @@ type StateIndicatorProps =
   | {
       readonly assistiveLabel?: string;
       readonly colour: ProductStateColour;
+      readonly customColour?: ProductManualStateColour | undefined;
       readonly kind: "state";
       readonly label: string;
     }
@@ -41,17 +43,18 @@ export function StateColourIndicators({
   readonly riskIndicators: readonly InventoryRiskIndicator[];
   readonly stateColour: {
     readonly automatic: ProductStateColour;
-    readonly effective: ProductStateColour;
-    readonly manual: ProductStateColour | null;
+    readonly manual: ProductManualStateColour | null;
   };
 }): React.JSX.Element {
+  const automaticLabel = copy.stateColours[stateColour.automatic];
   return (
     <div className="inventory-indicators">
       <StateIndicator
-        assistiveLabel={copy.stateColours[stateColour.effective]}
-        colour={stateColour.effective}
+        assistiveLabel={automaticLabel}
+        colour={stateColour.automatic}
+        customColour={stateColour.manual ?? undefined}
         kind="state"
-        label={copy.stateColours[stateColour.effective]}
+        label={automaticLabel}
       />
       <small>
         {copy.automatic}: {copy.stateColours[stateColour.automatic]}
@@ -60,7 +63,7 @@ export function StateColourIndicators({
         {copy.manual}:{" "}
         {stateColour.manual === null
           ? copy.manualNone
-          : copy.stateColours[stateColour.manual]}
+          : stateColour.manual.toUpperCase()}
       </small>
       {riskIndicators.map((indicator) => (
         <StateIndicator
@@ -75,6 +78,7 @@ export function StateColourIndicators({
 }
 
 export function StateIndicator(props: StateIndicatorProps): React.JSX.Element {
+  const customColour = props.kind === "state" ? props.customColour : undefined;
   const token =
     props.kind === "state"
       ? props.colour
@@ -84,10 +88,19 @@ export function StateIndicator(props: StateIndicatorProps): React.JSX.Element {
   const assistiveLabel = props.assistiveLabel ?? props.label;
   return (
     <span
-      className={`state-indicator state-indicator-${token}`}
+      className={`state-indicator ${customColour ? "state-indicator-custom" : `state-indicator-${token}`}`}
       data-eligibility={props.kind === "eligibility" ? props.status : undefined}
       data-indicator={props.kind === "risk" ? props.indicator : undefined}
       data-state-colour={props.kind === "state" ? props.colour : undefined}
+      style={
+        customColour
+          ? {
+              backgroundColor: customColour,
+              borderColor: "currentColor",
+              color: contrastingTextColour(customColour),
+            }
+          : undefined
+      }
     >
       <svg
         aria-hidden="true"
@@ -108,6 +121,20 @@ export function StateIndicator(props: StateIndicatorProps): React.JSX.Element {
       <span className="visually-hidden">{assistiveLabel}</span>
     </span>
   );
+}
+
+function contrastingTextColour(hex: ProductManualStateColour): string {
+  const channels = [1, 3, 5].map(
+    (offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255,
+  );
+  const linearChannels = channels.map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  const luminance =
+    0.2126 * linearChannels[0]! +
+    0.7152 * linearChannels[1]! +
+    0.0722 * linearChannels[2]!;
+  return luminance > 0.179 ? "#000000" : "#ffffff";
 }
 
 function eligibilityToken(status: BatchEligibilityStatus): ProductStateColour {

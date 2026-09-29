@@ -677,7 +677,10 @@ function InventoryScreen({
             {copy.columns.balance}:{" "}
             {formatNumber(BigInt(selectedItem.balance), locale)}
           </span>
-          <span>{copy.stateColours[selectedItem.stateColour.effective]}</span>
+          <span>
+            {selectedItem.stateColour.manual ??
+              copy.stateColours[selectedItem.stateColour.automatic]}
+          </span>
           <a href={`#/inventory/items/${selectedItem.productId}/movements`}>
             {copy.movement.title}
           </a>
@@ -928,7 +931,7 @@ function inventoryRowStatus(item: InventoryItem): string {
   if (
     item.riskIndicators.includes("expired") ||
     item.riskIndicators.includes("out-of-stock") ||
-    item.stateColour.effective === "red"
+    item.stateColour.automatic === "red"
   )
     return "critical";
   if (item.riskIndicators.includes("expiring-soon")) return "expiring";

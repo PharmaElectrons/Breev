@@ -4,6 +4,7 @@ import type {
   ProductBarcodeKind,
   ProductDefinitionMode,
   ProductFoodTiming,
+  ProductManualStateColour,
   ProductPricingMethod,
   ProductStateColour,
   PriceRoundingSetting,
@@ -30,6 +31,7 @@ export interface ProductFormDraft {
   readonly arabicSearchName: string;
   readonly scientificName: string;
   readonly category: string;
+  readonly supplierIds: readonly string[];
   readonly barcodes: readonly ProductBarcodeInput[];
   readonly newBarcode: string;
   readonly newBarcodeKind: ProductBarcodeKind;
@@ -45,7 +47,7 @@ export interface ProductFormDraft {
   };
   readonly stateColours: {
     readonly coldStorageRequired: boolean;
-    readonly manual: ProductStateColour | "";
+    readonly manual: ProductManualStateColour | ProductStateColour | "";
   };
   readonly stockLevels: {
     readonly maximumLevel: string;

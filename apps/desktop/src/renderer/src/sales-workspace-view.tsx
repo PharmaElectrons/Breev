@@ -363,6 +363,87 @@ export function SalesWorkspaceView({
         className="sales-draft-tray"
       >
         <div className="sales-draft-tray-header">
+          {/* Patient Search Section (Disabled per spec) */}
+          <div className="sales-patient-search-card">
+            <div className="sales-patient-input-row">
+              <button
+                type="button"
+                className="sales-patient-add-btn"
+                disabled
+                title={locale === "ar" ? "إضافة مريض جديد" : "Add new patient"}
+                aria-label={
+                  locale === "ar" ? "إضافة مريض جديد" : "Add new patient"
+                }
+              >
+                <PlusIcon />
+              </button>
+              <div className="sales-patient-input-wrap">
+                <input
+                  type="search"
+                  disabled
+                  className="sales-patient-search-input"
+                  placeholder={copy.patientSearchPlaceholder}
+                  aria-label={
+                    locale === "ar" ? "بحث عن مريض" : "Search patient"
+                  }
+                />
+                <span className="sales-patient-search-icon">
+                  <svg
+                    aria-hidden="true"
+                    fill="none"
+                    height="15"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    width="15"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M21 21l-4.35-4.35" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <p className="sales-patient-status" role="status">
+              {copy.patientUnlinkedStatus}
+            </p>
+            <div className="sales-diagnosis-row">
+              <span className="sales-diagnosis-label">
+                {locale === "ar" ? "تشخيص:" : "Diagnosis:"}
+              </span>
+              <div className="sales-diagnosis-input-wrap">
+                <input
+                  type="text"
+                  disabled
+                  className="sales-diagnosis-input"
+                  placeholder={
+                    locale === "ar" ? "تشخيص سريع..." : "Quick diagnosis..."
+                  }
+                  aria-label={
+                    locale === "ar" ? "تشخيص سريع" : "Quick diagnosis"
+                  }
+                />
+                <span className="sales-diagnosis-icon">
+                  <svg
+                    aria-hidden="true"
+                    fill="none"
+                    height="13"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    width="13"
+                  >
+                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div className="sales-draft-tray-heading-group">
             <h2 id="sales-draft-tray-title">{copy.draftsHeading}</h2>
             {ordered.length > 0 ? (
