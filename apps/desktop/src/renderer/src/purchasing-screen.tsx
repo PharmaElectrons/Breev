@@ -608,9 +608,6 @@ export function PurchasingRouteView({
   }
 
   const activeIndex = drafts.findIndex((draft) => draft.id === activeDraft?.id);
-  // const canUseOcr =
-  //   identity?.state === "authenticated" &&
-  //   identity.entitlement.capabilities.includes("purchase-invoice-ocr");
   const columns = [
     copy.item,
     copy.quantity,
@@ -659,17 +656,6 @@ export function PurchasingRouteView({
         >
           <span aria-hidden="true">🔍</span> {copy.postedInvoices}
         </button>
-        {/* Purchase Return workflow is accessed via Posted Invoices (Milestone 2) */}
-        {/* {canManageDrafts ? (
-          <button
-            type="button"
-            className="purchase-view-tab"
-            disabled
-            title={copy.unavailable}
-          >
-            <span aria-hidden="true">↩</span> {copy.returnInvoice}
-          </button>
-        ) : null} */}
         {canManageSuppliers ? (
           <button
             type="button"
@@ -681,36 +667,6 @@ export function PurchasingRouteView({
             <span aria-hidden="true">🏬</span> {copy.suppliers}
           </button>
         ) : null}
-        {/* Document adjustments and returns are accessed via Posted Invoices; print is Milestone 3/4 */}
-        {/* {canManageDrafts && view === "invoice" ? (
-          <div className="purchase-document-actions">
-            <button
-              type="button"
-              className="purchase-return-button"
-              disabled
-              title={copy.unavailable}
-            >
-              {copy.returnInvoice}
-            </button>
-            <button
-              type="button"
-              className="quiet-button"
-              disabled
-              title={copy.unavailable}
-              aria-label={copy.print}
-            >
-              <span aria-hidden="true">🖨</span>
-            </button>
-            <button
-              type="button"
-              className="purchase-adjust-button"
-              disabled
-              title={copy.unavailable}
-            >
-              {copy.adjustInvoice}
-            </button>
-          </div>
-        ) : null} */}
       </div>
       {!canManageDrafts ? <p role="status">{copy.postedReviewOnly}</p> : null}
       <div
@@ -1030,13 +986,6 @@ export function PurchasingRouteView({
                   </button>
                 </div>
               ) : null}
-              {/* Supplier live debt belongs to Milestone 3 accounting */}
-              {/* <div className="purchase-header-value">
-                <span>{copy.supplierDebt}</span>
-                <output aria-label={copy.supplierDebt} title={copy.unavailable}>
-                  — {copy.iqd}
-                </output>
-              </div> */}
               {/* Item search is handled in-table via PurchaseRowEntry (Milestone 2) */}
               {/* <label className="purchase-item-search">
                 {copy.itemSearch}
@@ -1263,7 +1212,6 @@ export function PurchasingRouteView({
           <SuppliersWorkspace
             baseUrl={baseUrl}
             suppliers={suppliers}
-            drafts={drafts}
             onChanged={reload}
           />
         </div>
@@ -1401,7 +1349,6 @@ export function PurchasingRouteView({
                     <th scope="col">{copy.invoiceDate}</th>
                     <th scope="col">{copy.paymentTerms}</th>
                     <th scope="col">{copy.discountPercentage}</th>
-                    <th scope="col">{copy.settlementStatus}</th>
                     <th scope="col">{copy.version}</th>
                     <th scope="col">{copy.updatedAt}</th>
                     <th scope="col">{copy.actions}</th>
@@ -1410,7 +1357,7 @@ export function PurchasingRouteView({
                 <tbody>
                   {filteredDrafts.length === 0 ? (
                     <tr>
-                      <td className="purchase-table-empty" colSpan={11}>
+                      <td className="purchase-table-empty" colSpan={10}>
                         {drafts.length === 0
                           ? copy.noDrafts
                           : copy.noMatchingDrafts}
@@ -1458,17 +1405,6 @@ export function PurchasingRouteView({
                         </td>
                         <td>
                           <bdi>{draft.allowanceSnapshot.percentage}%</bdi>
-                        </td>
-                        <td>
-                          {draft.settlementContext === "cash" ? (
-                            <span className="purchase-badge purchase-badge-settled">
-                              {copy.draftBadge} · {copy.cash}
-                            </span>
-                          ) : (
-                            <span className="purchase-badge purchase-badge-unpaid">
-                              {copy.draftBadge} · {copy.debt}
-                            </span>
-                          )}
                         </td>
                         <td>
                           <bdi>{draft.version}</bdi>

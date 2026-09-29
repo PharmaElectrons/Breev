@@ -203,7 +203,11 @@ describe.sequential(
         const product = await createStockedProduct();
         await loginAs(actor);
         const session = await startSession();
-        const recorded = await recordLine(session, product.id);
+        const recorded = await recordLine(
+          session,
+          product.id,
+          actor.canApprove ? "3" : "4",
+        );
         if (actor.canApprove) {
           const applied = await request(
             "POST",
@@ -527,12 +531,13 @@ describe.sequential(
     async function recordLine(
       session: CountSession,
       productId: string,
+      count = "3",
     ): Promise<{ readonly line: CountLine; readonly session: CountSession }> {
       const response = await request(
         "POST",
         countSessionLinesPath(session.id),
         {
-          entries: [inventoryEntry("3")],
+          entries: [inventoryEntry(count)],
           expectedVersion: session.version,
           idempotencyKey: uuidV7(),
           productId,

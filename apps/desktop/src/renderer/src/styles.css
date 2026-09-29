@@ -11549,7 +11549,6 @@ a:focus-visible,
 }
 
 @media (max-width: 85.375rem) {
-  .shell-page[data-sales-workspace] .module-nav:has(> ul > li:nth-child(n + 7)),
   .shell-page[data-inventory-workspace]
     .module-nav:has(> ul > li:nth-child(n + 7)),
   .shell-page[data-basket-workspace]
@@ -11558,14 +11557,35 @@ a:focus-visible,
     padding-inline-end: 1.5rem;
   }
 
-  .shell-page[data-sales-workspace]
-    .module-nav:has(> ul > li:nth-child(n + 7))
-    .module-nav-overflow-cue,
   .shell-page[data-inventory-workspace]
     .module-nav:has(> ul > li:nth-child(n + 7))
     .module-nav-overflow-cue,
   .shell-page[data-basket-workspace]
     .module-nav:has(> ul > li:nth-child(n + 7))
+    .module-nav-overflow-cue {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    display: grid;
+    inline-size: 1.25rem;
+    place-items: center;
+    background: var(--card);
+    color: var(--primary);
+    font-size: 1.2rem;
+    font-weight: 800;
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 75rem) {
+  .shell-page[data-sales-workspace]
+    .module-nav:has(> ul > li:nth-child(n + 8)) {
+    position: relative;
+    padding-inline-end: 1.5rem;
+  }
+
+  .shell-page[data-sales-workspace]
+    .module-nav:has(> ul > li:nth-child(n + 8))
     .module-nav-overflow-cue {
     position: absolute;
     inset-block: 0;

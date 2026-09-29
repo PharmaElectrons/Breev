@@ -48,12 +48,12 @@ describe("NavbarCollapseMenu", () => {
     expect(markup).toContain("القائمة");
   });
 
-  it("includes Accounts and Settings links, diagnostics, support, language and theme when open", () => {
+  it("keeps later Accounts hidden while showing Settings and support actions", () => {
     const markup = renderToStaticMarkup(
       createElement(NavbarCollapseMenu, DEFAULT_PROPS),
     );
-    expect(markup).toContain('href="#/accounts"');
-    expect(markup).toContain("Accounts");
+    expect(markup).not.toContain('href="#/accounts"');
+    expect(markup).not.toContain(">Accounts<");
     expect(markup).toContain('href="#/settings"');
     expect(markup).toContain("Settings");
     expect(markup).toContain("Export diagnostic package");
@@ -91,7 +91,7 @@ describe("NavbarCollapseMenu", () => {
     const markup = renderToStaticMarkup(
       createElement(NavbarCollapseMenu, {
         ...DEFAULT_PROPS,
-        activeModuleId: "accounts",
+        activeModuleId: "settings",
       }),
     );
     expect(markup).toContain('aria-current="page"');

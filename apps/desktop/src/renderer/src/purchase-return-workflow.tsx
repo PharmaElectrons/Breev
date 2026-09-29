@@ -527,16 +527,6 @@ export function PurchaseReturnWorkflow({
               {postedNumber}
             </bdi>
           </div>
-          <div className="adjustment-posted-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => window.print()}
-            >
-              🖨️{" "}
-              {locale === "ar" ? "طباعة فاتورة المرتجع" : "Print return slip"}
-            </button>
-          </div>
         </div>
       ) : null}
       <button
