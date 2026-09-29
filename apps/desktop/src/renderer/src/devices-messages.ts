@@ -47,6 +47,11 @@ export interface DevicesCopy {
   readonly seatReleased: string;
   readonly seatReleasePending: string;
   readonly seatUsage: string;
+  readonly seatUsageBreakdown: (
+    mainFormatted: string,
+    terminalsFormatted: string,
+    terminalCount: number,
+  ) => string;
   readonly seatUsageUnlicensed: string;
   readonly sectionsLabel: string;
   readonly sessionCancelled: Record<PairingCancellationReason, string>;
@@ -111,7 +116,7 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
         "لم يعد طلب تحرير المقعد صالحاً. ابدأ طلباً جديداً.",
     },
     description:
-      "اربط نقاط البيع الإضافية بهذه الحاسبة الرئيسية وأدر مقاعدها وإبطالها.",
+      "اربط نقاط البيع الإضافية بهذه الحاسبة الرئيسية وأدر مقاعدها وإبطالها. يشمل إجمالي المقاعد المرخصة هذه الحاسبة الرئيسية.",
     deviceListTitle: "الأجهزة المقترنة",
     devicesEmpty: "لا توجد نقاط بيع مقترنة بعد.",
     expiresIn: "تنتهي خلال",
@@ -138,6 +143,8 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
     seatReleased: "تم تحرير المقعد",
     seatReleasePending: "بانتظار اعتماد مستخدم آخر",
     seatUsage: "المقاعد المستخدمة",
+    seatUsageBreakdown: (main, terminals, count) =>
+      `${main} رئيسية + ${terminals} ${count >= 3 && count <= 10 ? "نقاط بيع" : "نقطة بيع"}`,
     seatUsageUnlicensed: "لا يوجد ترخيص مثبّت",
     sectionsLabel: "أقسام الأجهزة",
     sessionCancelled: {
@@ -214,7 +221,7 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
         "That seat release request is no longer valid. Start a new request.",
     },
     description:
-      "Pair additional POS terminals with this Main Pharmacy Computer and manage their seats and revocation.",
+      "Pair additional POS terminals with this Main Pharmacy Computer and manage their seats and revocation. Total licensed seats include this Main computer.",
     deviceListTitle: "Paired devices",
     devicesEmpty: "No additional POS terminal is paired yet.",
     expiresIn: "Expires in",
@@ -241,6 +248,8 @@ export const devicesMessages: Record<Locale, DevicesCopy> = {
     seatReleased: "Seat released",
     seatReleasePending: "Waiting for another user's approval",
     seatUsage: "Seats in use",
+    seatUsageBreakdown: (main, terminals, count) =>
+      `${main} Main + ${terminals} ${count === 1 ? "terminal" : "terminals"}`,
     seatUsageUnlicensed: "No licence installed",
     sectionsLabel: "Device sections",
     sessionCancelled: {

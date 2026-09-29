@@ -45,4 +45,49 @@ describe("devices translations", () => {
       );
     }
   });
+
+  it("clarifies seat usage breakdown in English", () => {
+    expect(devicesMessages.en.seatUsageBreakdown("1", "0", 0)).toBe(
+      "1 Main + 0 terminals",
+    );
+    expect(devicesMessages.en.seatUsageBreakdown("1", "1", 1)).toBe(
+      "1 Main + 1 terminal",
+    );
+    expect(devicesMessages.en.seatUsageBreakdown("1", "2", 2)).toBe(
+      "1 Main + 2 terminals",
+    );
+    expect(devicesMessages.en.seatUsageBreakdown("1", "5", 5)).toBe(
+      "1 Main + 5 terminals",
+    );
+  });
+
+  it("clarifies seat usage breakdown in Arabic with proper pluralization", () => {
+    expect(devicesMessages.ar.seatUsageBreakdown("١", "٠", 0)).toBe(
+      "١ رئيسية + ٠ نقطة بيع",
+    );
+    expect(devicesMessages.ar.seatUsageBreakdown("١", "١", 1)).toBe(
+      "١ رئيسية + ١ نقطة بيع",
+    );
+    expect(devicesMessages.ar.seatUsageBreakdown("١", "٢", 2)).toBe(
+      "١ رئيسية + ٢ نقطة بيع",
+    );
+    expect(devicesMessages.ar.seatUsageBreakdown("١", "٣", 3)).toBe(
+      "١ رئيسية + ٣ نقاط بيع",
+    );
+    expect(devicesMessages.ar.seatUsageBreakdown("١", "١٠", 10)).toBe(
+      "١ رئيسية + ١٠ نقاط بيع",
+    );
+    expect(devicesMessages.ar.seatUsageBreakdown("١", "١١", 11)).toBe(
+      "١ رئيسية + ١١ نقطة بيع",
+    );
+  });
+
+  it("clarifies that total seats include the Main computer in both locales", () => {
+    expect(devicesMessages.en.description).toContain(
+      "Total licensed seats include this Main computer.",
+    );
+    expect(devicesMessages.ar.description).toContain(
+      "يشمل إجمالي المقاعد المرخصة هذه الحاسبة الرئيسية.",
+    );
+  });
 });
