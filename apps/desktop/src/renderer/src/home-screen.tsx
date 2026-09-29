@@ -768,7 +768,7 @@ export function HomeScreen({
                   key={link.id}
                   href={link.href}
                   className="home-launcher-card home-quick-btn"
-                  data-module={link.id}
+                  data-action={`launch-${link.id}`}
                   title={`${link.label} — ${link.desc}`}
                 >
                   <div className="home-quick-btn-icon-wrap">

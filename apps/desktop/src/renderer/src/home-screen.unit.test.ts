@@ -261,13 +261,13 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="settings"');
+      expect(markup).toContain('data-action="launch-settings"');
       expect(markup).toContain('href="#/settings"');
-      expect(markup).not.toContain('data-module="sales"');
-      expect(markup).not.toContain('data-module="purchases"');
-      expect(markup).not.toContain('data-module="inventory"');
-      expect(markup).not.toContain('data-module="products"');
-      expect(markup).not.toContain('data-module="basket"');
+      expect(markup).not.toContain('data-action="launch-sales"');
+      expect(markup).not.toContain('data-action="launch-purchases"');
+      expect(markup).not.toContain('data-action="launch-inventory"');
+      expect(markup).not.toContain('data-action="launch-products"');
+      expect(markup).not.toContain('data-action="launch-basket"');
     });
 
     it("shows sales card only when sales.drafts.manage is allowed", () => {
@@ -279,12 +279,12 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="sales"');
+      expect(markup).toContain('data-action="launch-sales"');
       expect(markup).toContain('href="#/sales"');
-      expect(markup).not.toContain('data-module="purchases"');
-      expect(markup).not.toContain('data-module="inventory"');
-      expect(markup).not.toContain('data-module="products"');
-      expect(markup).not.toContain('data-module="basket"');
+      expect(markup).not.toContain('data-action="launch-purchases"');
+      expect(markup).not.toContain('data-action="launch-inventory"');
+      expect(markup).not.toContain('data-action="launch-products"');
+      expect(markup).not.toContain('data-action="launch-basket"');
     });
 
     it("shows purchases card when purchases.drafts.manage is allowed", () => {
@@ -296,9 +296,9 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="purchases"');
+      expect(markup).toContain('data-action="launch-purchases"');
       expect(markup).toContain('href="#/purchases"');
-      expect(markup).not.toContain('data-module="sales"');
+      expect(markup).not.toContain('data-action="launch-sales"');
     });
 
     it("shows purchases card when purchases.posted.view is allowed", () => {
@@ -310,7 +310,7 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="purchases"');
+      expect(markup).toContain('data-action="launch-purchases"');
       expect(markup).toContain('href="#/purchases"');
     });
 
@@ -323,9 +323,9 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="inventory"');
+      expect(markup).toContain('data-action="launch-inventory"');
       expect(markup).toContain('href="#/inventory"');
-      expect(markup).not.toContain('data-module="sales"');
+      expect(markup).not.toContain('data-action="launch-sales"');
     });
 
     it("shows inventory card when inventory.counts.record is allowed", () => {
@@ -337,7 +337,7 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="inventory"');
+      expect(markup).toContain('data-action="launch-inventory"');
       expect(markup).toContain('href="#/inventory"');
     });
 
@@ -350,9 +350,9 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="products"');
+      expect(markup).toContain('data-action="launch-products"');
       expect(markup).toContain('href="#/catalog/products"');
-      expect(markup).not.toContain('data-module="sales"');
+      expect(markup).not.toContain('data-action="launch-sales"');
     });
 
     it("shows basket card when inventory.reorder.manage is allowed", () => {
@@ -364,9 +364,9 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="basket"');
+      expect(markup).toContain('data-action="launch-basket"');
       expect(markup).toContain('href="#/basket"');
-      expect(markup).not.toContain('data-module="sales"');
+      expect(markup).not.toContain('data-action="launch-sales"');
     });
 
     it("shows basket card when inventory.reorder.confirm is allowed", () => {
@@ -378,7 +378,7 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="basket"');
+      expect(markup).toContain('data-action="launch-basket"');
       expect(markup).toContain('href="#/basket"');
     });
 
@@ -397,12 +397,12 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="sales"');
-      expect(markup).toContain('data-module="purchases"');
-      expect(markup).toContain('data-module="inventory"');
-      expect(markup).toContain('data-module="products"');
-      expect(markup).toContain('data-module="basket"');
-      expect(markup).toContain('data-module="settings"');
+      expect(markup).toContain('data-action="launch-sales"');
+      expect(markup).toContain('data-action="launch-purchases"');
+      expect(markup).toContain('data-action="launch-inventory"');
+      expect(markup).toContain('data-action="launch-products"');
+      expect(markup).toContain('data-action="launch-basket"');
+      expect(markup).toContain('data-action="launch-settings"');
     });
   });
 
