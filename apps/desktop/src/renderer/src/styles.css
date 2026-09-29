@@ -3251,7 +3251,6 @@ a:focus-visible,
   .inventory-actions {
     justify-content: flex-start;
   }
-
 }
 
 /* Count sessions keep the scanner path compact and the reconciliation table independent. */
