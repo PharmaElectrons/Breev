@@ -17,7 +17,7 @@ import {
 } from "./basket-messages";
 import { describeInventoryUnits } from "./basket-quantity";
 import { panelUnitLabel } from "./panel-unit-label";
-import { normalizedCount } from "./count-entry";
+import { countFieldQuantity } from "./count-entry";
 import {
   confirmReorderItem,
   InventoryApiDenied,
@@ -254,13 +254,13 @@ function BasketScreen({
     if (busyItemId !== null || pendingQuantityCommits.current.has(item.id)) {
       return;
     }
-    const value = rawValue.trim();
-    if (!/^\d+$/u.test(value)) {
+    const quantity = countFieldQuantity(rawValue);
+    if (quantity === null) {
       setValidation({ itemId: item.id, message: copy.quantityInvalid });
       focusQuantity(item.id);
       return;
     }
-    const normalized = normalizedCount(value);
+    const normalized = quantity.toString();
     if (normalized === item.quantity) {
       setQuantityValues((previous) => ({
         ...previous,
@@ -664,9 +664,8 @@ function BasketRow({
   readonly validation: QuantityValidation | null;
 }): React.JSX.Element {
   const inactive = item.product.status !== "active";
-  const displayQuantity = /^\d+$/u.test(quantityValue.trim())
-    ? BigInt(quantityValue.trim())
-    : BigInt(item.quantity);
+  const displayQuantity =
+    countFieldQuantity(quantityValue) ?? BigInt(item.quantity);
   const captionParts = quantityParts(item, displayQuantity, locale);
   const captionId = `basket-quantity-caption-${item.id}`;
   const validationId = `basket-quantity-error-${item.id}`;

@@ -706,7 +706,7 @@ export class InventoryCountService {
   ): Promise<CountSessionSummary> {
     const context = await this.identity.requirePermission(
       request,
-      RECORD_PERMISSION,
+      APPROVE_PERMISSION,
     );
     return await this.executeCommand({
       commandName: COMMANDS.complete,
@@ -733,7 +733,7 @@ export class InventoryCountService {
         );
         if (
           pendingRead !== undefined &&
-          hasPendingVariance(pendingRead.lines, pendingRead.currentBalances)
+          hasPendingVariance(pendingRead.lines)
         ) {
           reject(409, "count-pending-variances", [], sessionId);
         }
@@ -807,7 +807,8 @@ export class InventoryCountService {
         await this.identity.revalidateInventoryCount(
           client,
           input.context,
-          input.commandName === COMMANDS.apply
+          input.commandName === COMMANDS.apply ||
+            input.commandName === COMMANDS.complete
             ? APPROVE_PERMISSION
             : RECORD_PERMISSION,
         );
@@ -1009,9 +1010,7 @@ export class InventoryCountService {
               year: read.session.numberYear,
             },
       pendingVarianceCount: String(
-        lines.filter(
-          (line) => line.status !== "applied" && line.currentVariance !== "0",
-        ).length,
+        lines.filter((line) => hasUnappliedObservedVariance(line)).length,
       ),
       startedAt: isoDateTime(read.session.startedAt),
       startedBy: person(read.session.startedBy, names),
@@ -1196,22 +1195,19 @@ async function readCountLineForCommand(
   return result?.lines.find((line) => line.id === lineId);
 }
 
-function pendingVarianceTotal(
-  lines: CountSessionRead["lines"],
-  currentBalances: CountSessionRead["currentBalances"],
-): number {
-  return lines.filter((line) => {
-    if (line.application !== null) return false;
-    const balance = currentBalances.get(line.productId) ?? 0n;
-    return countVariance(BigInt(line.countedQuantity), balance) !== 0n;
-  }).length;
+function hasUnappliedObservedVariance(line: {
+  readonly application: unknown;
+  readonly varianceAtObservation: string;
+}): boolean {
+  return line.application === null && line.varianceAtObservation !== "0";
 }
 
-function hasPendingVariance(
-  lines: CountSessionRead["lines"],
-  currentBalances: CountSessionRead["currentBalances"],
-): boolean {
-  return pendingVarianceTotal(lines, currentBalances) > 0;
+function pendingVarianceTotal(lines: CountSessionRead["lines"]): number {
+  return lines.filter((line) => hasUnappliedObservedVariance(line)).length;
+}
+
+function hasPendingVariance(lines: CountSessionRead["lines"]): boolean {
+  return pendingVarianceTotal(lines) > 0;
 }
 
 function cursorParts(cursor: string): {
@@ -1248,9 +1244,7 @@ function listSummary(
             value: read.session.numberValue,
             year: read.session.numberYear,
           },
-    pendingVarianceCount: String(
-      pendingVarianceTotal(read.lines, read.currentBalances),
-    ),
+    pendingVarianceCount: String(pendingVarianceTotal(read.lines)),
     startedAt: isoDateTime(read.session.startedAt),
     startedBy: person(read.session.startedBy, names),
     status: read.session.status,

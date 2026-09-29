@@ -542,7 +542,79 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     );
     expect(matchedCompletion.status, diagnostics(matchedCompletion)).toBe(200);
     expect(matchedCompletion.body).toMatchObject({ status: "completed" });
+  }, 60_000);
 
+  it("blocks completion on an unapplied observed variance even after the live balance catches up", async () => {
+    const caughtUp = await createStockedProduct(
+      "Observed variance remains",
+      [1],
+    );
+    const caughtUpSession = await startSession();
+    const caughtUpLine = await recordLine(
+      caughtUpSession,
+      caughtUp.product.id,
+      [inventoryEntry("8")],
+    );
+    expect(caughtUpLine.line.varianceAtObservation).not.toBe("0");
+    expect(caughtUpLine.line.application).toBeNull();
+    await purchaseProduct(caughtUp.product, "1");
+    const caughtUpRead = await request(
+      "GET",
+      countSessionPath(caughtUpSession.id),
+    );
+    expect(caughtUpRead.status, diagnostics(caughtUpRead)).toBe(200);
+    const caughtUpBody = caughtUpRead.body as CountSession;
+    expect(caughtUpBody.lines[0]).toMatchObject({
+      application: null,
+      currentVariance: "0",
+      varianceAtObservation: caughtUpLine.line.varianceAtObservation,
+    });
+    expect(caughtUpBody.pendingVarianceCount).toBe("1");
+    const stillBlocked = await request(
+      "POST",
+      countSessionCompletionPath(caughtUpSession.id),
+      {
+        expectedVersion: caughtUpBody.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(stillBlocked.status, diagnostics(stillBlocked)).toBe(409);
+    expect(stillBlocked.body).toMatchObject({
+      code: "count-pending-variances",
+    });
+    expect(
+      (await request("GET", countSessionPath(caughtUpSession.id))).body,
+    ).toMatchObject({ status: "active" });
+
+    const zeroObserved = await createStockedProduct(
+      "Zero observed variance",
+      [1],
+    );
+    const zeroSession = await startSession();
+    const zeroLine = await recordLine(zeroSession, zeroObserved.product.id, [
+      inventoryEntry("4"),
+    ]);
+    expect(zeroLine.line.varianceAtObservation).toBe("0");
+    await purchaseProduct(zeroObserved.product, "1");
+    const zeroRead = await request("GET", countSessionPath(zeroSession.id));
+    expect(zeroRead.status, diagnostics(zeroRead)).toBe(200);
+    const zeroBody = zeroRead.body as CountSession;
+    expect(zeroBody.lines[0]?.varianceAtObservation).toBe("0");
+    expect(zeroBody.lines[0]?.currentVariance).not.toBe("0");
+    expect(zeroBody.pendingVarianceCount).toBe("0");
+    const completed = await request(
+      "POST",
+      countSessionCompletionPath(zeroSession.id),
+      {
+        expectedVersion: zeroBody.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(completed.status, diagnostics(completed)).toBe(200);
+    expect(completed.body).toMatchObject({ status: "completed" });
+  }, 60_000);
+
+  it("pages completed count sessions", async () => {
     const firstPage = await request(
       "GET",
       "/inventory/count-sessions?status=completed&limit=1",

@@ -225,6 +225,10 @@ test.describe.serial("durable count sessions", () => {
     await expect(strip).toBeFocused();
     await pressKeyOnFocused(page, strip, "Shift+Tab");
     await expect(pack).toBeFocused();
+    await pack.fill("٢");
+    await expect(page.locator(".count-live-caption")).toContainText("2 Pack");
+    await pack.fill("۵");
+    await expect(page.locator(".count-live-caption")).toContainText("5 Pack");
     await pack.fill("2");
     await expect(pack).toBeFocused();
     await pressKeyOnFocused(page, pack, "Tab");

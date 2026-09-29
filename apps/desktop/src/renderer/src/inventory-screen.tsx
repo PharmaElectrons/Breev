@@ -452,10 +452,9 @@ function InventoryScreen({
 
   const sortedItems = useMemo(
     () =>
-      [...(items ?? [])].sort((left, right) => {
-        const compared = compareItems(left, right, sort.field);
-        return sort.direction === "ascending" ? compared : -compared;
-      }),
+      [...(items ?? [])].sort((left, right) =>
+        compareItems(left, right, sort.field, sort.direction),
+      ),
     [items, sort],
   );
   const visibleItems = useMemo(() => {
@@ -1257,6 +1256,7 @@ function compareItems(
   left: InventoryItem,
   right: InventoryItem,
   field: InventoryColumnField,
+  direction: SortDirection,
 ): number {
   const value = (item: InventoryItem): bigint | string | null => {
     switch (field) {
@@ -1288,19 +1288,33 @@ function compareItems(
         return inventoryRiskSortRank(item);
     }
   };
-  return compareSortable(value(left), value(right));
+  return compareSortable(value(left), value(right), direction);
 }
 
-function compareSortable(
+export function compareSortable(
   left: bigint | string | null,
   right: bigint | string | null,
+  direction: SortDirection,
 ): number {
-  if (left === right) return 0;
-  if (left === null) return -1;
-  if (right === null) return 1;
-  if (typeof left === "bigint" && typeof right === "bigint")
-    return left < right ? -1 : 1;
-  return String(left).localeCompare(String(right));
+  const leftMissing = isMissingSortValue(left);
+  const rightMissing = isMissingSortValue(right);
+  if (leftMissing || rightMissing) {
+    if (leftMissing && rightMissing) return 0;
+    return leftMissing ? 1 : -1;
+  }
+  const compared =
+    typeof left === "bigint" && typeof right === "bigint"
+      ? left < right
+        ? -1
+        : left > right
+          ? 1
+          : 0
+      : String(left).localeCompare(String(right));
+  return direction === "ascending" ? compared : -compared;
+}
+
+function isMissingSortValue(value: bigint | string | null): boolean {
+  return value === null || (typeof value === "string" && value.trim() === "");
 }
 
 function isValuationField(field: InventoryColumnField): boolean {

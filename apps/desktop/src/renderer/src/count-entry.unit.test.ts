@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildCountEntryPreview,
   countEntryCaption,
+  countEntryLabelParts,
   countEntryUnits,
   countEntriesFromFields,
+  countFieldQuantity,
 } from "./count-entry";
 
 const packaging: ProductPackaging = {
@@ -63,6 +65,26 @@ describe("count entry preview", () => {
       { count: "1", unit: { kind: "inventory-unit" } },
     ]);
     expect(preview.countedQuantity).toBe(9n);
+  });
+
+  it("parses Arabic-Indic and Persian digits without throwing", () => {
+    expect(countFieldQuantity("٢")).toBe(2n);
+    expect(countFieldQuantity("۵")).toBe(5n);
+    expect(countFieldQuantity("  ۱ ")).toBe(1n);
+    expect(() => countEntryLabelParts("٢ Pack + ۵ Strip")).not.toThrow();
+    expect(countEntryLabelParts("٢ Pack + ۵ Strip")).toEqual([
+      2n,
+      " Pack + ",
+      5n,
+      " Strip",
+    ]);
+    const preview = buildCountEntryPreview(packaging, {
+      Box: "",
+      Pack: "۵",
+      Strip: "٢",
+    });
+    expect(preview.invalidField).toBeNull();
+    expect(preview.countedQuantity).toBe(22n);
   });
 
   it("accepts an explicitly entered zero while rejecting an entirely empty entry", () => {
