@@ -13,9 +13,14 @@ This skill synthesizes empirical forensics from 164 repository CI runs and 66 au
 
 ## 1. Prerequisites & Mandatory Local Pre-Flight Verification Chain
 
+> [!CAUTION]
+> **Exit Gate Only — Do NOT Run During Intermediate Edits:**
+> The full verification sequence below takes 15–20 minutes. It is strictly an **Exit Gate** executed **once** before pushing to remote or opening a Pull Request.
+> During active implementation, run **only** targeted checks (e.g. `pnpm --filter @breev/desktop exec tsc -p tsconfig.renderer.json --noEmit` or `vitest run <file>.unit.test.ts`). Running the full chain on intermediate edits wastes hours and is prohibited.
+
 Before pushing ANY commit to remote or opening a Pull Request, an agent MUST execute the following mandatory verification sequence locally. Skipping any step in this sequence is a violation of repository engineering agreements.
 
-### The Non-Negotiable Local Command Chain
+### The Non-Negotiable Local Command Chain (Exit Gate)
 
 ```powershell
 # 1. Code Style & Lint (Fails ~15% of all CI runs if skipped)

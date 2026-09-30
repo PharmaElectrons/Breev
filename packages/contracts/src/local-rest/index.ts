@@ -3699,15 +3699,19 @@ export const purchasePostedCostVisibilitySchema = z.enum([
   "hidden-by-setting",
 ]);
 
-const nullableReviewCostSchema = priceFilsSchema.nullable();
+const nullableReviewCostSchema = signedBigintSchema.nullable();
 export const purchasePostedListItemSchema = z.strictObject({
   costAfterDiscountFils: nullableReviewCostSchema,
+  hasAdjustments: z.boolean().optional(),
   id: z.uuidv7(),
   invoiceDate: z.iso.date(),
-  itemCount: z.number().int().positive(),
+  itemCount: z.number().int().nonnegative(),
   number: postedDocumentNumberSchema,
+  originalPurchaseId: z.string().nullable().optional(),
   postedAt: z.iso.datetime(),
   primarySupplierCostFils: nullableReviewCostSchema,
+  refNumber: z.string().nullable().optional(),
+  rowKind: z.enum(["purchase", "adjustment", "return"]).optional(),
   settlementContext: purchaseSettlementContextSchema,
   supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
   supplierNameSnapshot: supplierNameSchema,

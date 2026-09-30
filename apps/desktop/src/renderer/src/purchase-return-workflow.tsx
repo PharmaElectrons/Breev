@@ -19,12 +19,14 @@ import {
 import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
+import { getPurchasingDenialMessage } from "./purchasing-messages";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
 
 const text = {
   en: {
     back: "Back to original invoice",
+    cancel: "Cancel",
     carrying: "Inventory carrying amount",
     confirm: "Approve and post return",
     continue: "Continue draft",
@@ -48,6 +50,7 @@ const text = {
   },
   ar: {
     back: "العودة إلى الفاتورة الأصلية",
+    cancel: "إلغاء",
     carrying: "القيمة الدفترية الخارجة من المخزون",
     confirm: "الموافقة وحفظ مردود الشراء",
     continue: "متابعة المسودة",
@@ -96,7 +99,10 @@ export function PurchaseReturnWorkflow({
   const [evidence, setEvidence] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    readonly message: string;
+    readonly tracking?: string | undefined;
+  } | null>(null);
   const [leaveWarning, setLeaveWarning] = useState(false);
   const [postedNumber, setPostedNumber] = useState("");
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -115,16 +121,23 @@ export function PurchaseReturnWorkflow({
    * refusal sits at the bottom, so the refusal takes focus in the commit that
    * renders it rather than waiting to be scrolled up to.
    */
-  function handleError(caught: unknown): void {
-    setError(
-      caught instanceof PurchasingApiDenied
-        ? `${caught.denial.code} · ${caught.denial.requestId}`
-        : String(caught),
-    );
+  function refuse(message: string, tracking?: string): void {
+    setError(tracking !== undefined ? { message, tracking } : { message });
     requestFocus(() => {
       errorRef.current?.scrollIntoView({ block: "center" });
       return errorRef.current;
     });
+  }
+
+  function handleError(caught: unknown): void {
+    if (caught instanceof PurchasingApiDenied) {
+      refuse(
+        getPurchasingDenialMessage(caught.denial.code, locale),
+        caught.denial.requestId,
+      );
+      return;
+    }
+    refuse(String(caught));
   }
 
   async function createDraft(): Promise<void> {
@@ -255,7 +268,10 @@ export function PurchaseReturnWorkflow({
       <h3 id="return-title">{copy.title}</h3>
       {error === null ? null : (
         <p className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
-          {error}
+          <span>{error.message}</span>
+          {error.tracking ? (
+            <small className="form-error-tracking">{error.tracking}</small>
+          ) : null}
         </p>
       )}
       {leaveWarning ? (
@@ -269,12 +285,17 @@ export function PurchaseReturnWorkflow({
           <div className="return-actions">
             <button
               type="button"
+              className="quiet-button"
               autoFocus
               onClick={() => setLeaveWarning(false)}
             >
               {copy.continue}
             </button>
-            <button type="button" onClick={() => void discardDraft()}>
+            <button
+              type="button"
+              className="danger-button"
+              onClick={() => void discardDraft()}
+            >
               {copy.delete}
             </button>
           </div>
@@ -286,6 +307,7 @@ export function PurchaseReturnWorkflow({
           <div className="return-actions">
             <button
               type="button"
+              className="primary-button"
               disabled={busy}
               onClick={() => void continueDraft()}
             >
@@ -293,6 +315,7 @@ export function PurchaseReturnWorkflow({
             </button>
             <button
               type="button"
+              className="danger-button"
               disabled={busy}
               onClick={() => void discardDraft()}
             >
@@ -322,6 +345,7 @@ export function PurchaseReturnWorkflow({
           </label>
           <button
             type="button"
+            className="primary-button"
             disabled={busy || reason.trim() === "" || evidence.trim() === ""}
             onClick={() => void createDraft()}
           >
@@ -397,6 +421,7 @@ export function PurchaseReturnWorkflow({
           </div>
           <button
             type="button"
+            className="primary-button"
             disabled={
               busy ||
               reason.trim() === "" ||
@@ -415,23 +440,30 @@ export function PurchaseReturnWorkflow({
             <div>
               <dt>{copy.carrying}</dt>
               <dd>
-                <bdi>{summary.inventoryCarryingAmountFils}</bdi>
+                <bdi>
+                  {formatFilsToIqd(summary.inventoryCarryingAmountFils, locale)}
+                </bdi>
               </dd>
             </div>
             <div>
               <dt>{copy.supplier}</dt>
               <dd>
-                <bdi>{summary.supplierReductionFils}</bdi>
+                <bdi>
+                  {formatFilsToIqd(summary.supplierReductionFils, locale)}
+                </bdi>
               </dd>
             </div>
             <div>
               <dt>{copy.difference}</dt>
               <dd>
                 <bdi>
-                  {(
-                    BigInt(summary.supplierReductionFils) -
-                    BigInt(summary.inventoryCarryingAmountFils)
-                  ).toString()}
+                  {formatFilsToIqd(
+                    (
+                      BigInt(summary.supplierReductionFils) -
+                      BigInt(summary.inventoryCarryingAmountFils)
+                    ).toString(),
+                    locale,
+                  )}
                 </bdi>
               </dd>
             </div>
@@ -454,28 +486,47 @@ export function PurchaseReturnWorkflow({
               onChange={(event) => setPassword(event.target.value)}
             />
           </label>
-          <button
-            type="button"
-            disabled={busy || password === ""}
-            onClick={() => void post()}
-          >
-            {copy.confirm}
-          </button>
+          <div className="return-actions">
+            <button
+              type="button"
+              className="quiet-button"
+              disabled={busy}
+              onClick={() => setStage("edit")}
+            >
+              {copy.cancel}
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busy || password === ""}
+              onClick={() => void post()}
+            >
+              {copy.confirm}
+            </button>
+          </div>
         </div>
       ) : null}
       {stage === "posted" ? (
-        <div role="status">
-          <h4>{copy.posted}</h4>
-          <p>
-            <bdi>{postedNumber}</bdi>
+        <div role="status" className="adjustment-posted-success-card">
+          <div className="adjustment-posted-icon" aria-hidden="true">
+            ✅
+          </div>
+          <h4 id="posted-return-title" className="adjustment-posted-title">
+            {copy.posted}
+          </h4>
+          <p className="adjustment-posted-subtitle">
+            {locale === "ar"
+              ? "تم ترحيل مردود الشراء بنجاح وتحديث قيود المخزون والحسابات."
+              : "Purchase return was posted successfully and ledger entries updated."}
           </p>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => window.print()}
-          >
-            🖨️ {locale === "ar" ? "طباعة فاتورة المرتجع" : "Print return slip"}
-          </button>
+          <div className="adjustment-posted-badge">
+            <span className="adjustment-posted-badge-label">
+              {locale === "ar" ? "رقم حركة المردود:" : "Return Reference:"}
+            </span>
+            <bdi className="font-mono font-bold adjustment-posted-ref">
+              {postedNumber}
+            </bdi>
+          </div>
         </div>
       ) : null}
       <button

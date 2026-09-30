@@ -24,9 +24,7 @@ const QA_DISPLAY_NAME = "Inventory QA Owner";
 const SUPPLIER_NAME = "Al-Rafidain QA Supplies";
 const INVOICE_DATE = "2026-09-20";
 
-const require = createRequire(
-  path.join(root, "apps/local-api/package.json"),
-);
+const require = createRequire(path.join(root, "apps/local-api/package.json"));
 const { Client } = require("pg");
 
 const env = loadEnv();
@@ -210,7 +208,8 @@ async function ensureQaUser() {
 async function ensureSupplier() {
   const listed = await api("GET", "/suppliers");
   const found = listed.suppliers.find(
-    (supplier) => supplier.name === SUPPLIER_NAME && supplier.status === "active",
+    (supplier) =>
+      supplier.name === SUPPLIER_NAME && supplier.status === "active",
   );
   if (found !== undefined) return found.id;
   const created = await api("POST", "/suppliers", {
@@ -315,22 +314,18 @@ async function postReceipt(supplierId, receipt) {
     })
   ).draft;
   for (const row of receipt.rows) {
-    const committed = await api(
-      "POST",
-      `/purchases/drafts/${draft.id}/rows`,
-      {
-        costFils: row.unit.kind === "package-unit" ? "320000" : "80000",
-        enteredQuantity: row.quantity,
-        expectedVersion: draft.version,
-        expiryDate: row.expiry,
-        idempotencyKey: uuidV7(),
-        itemId: row.productId,
-        lotNumber: row.lot,
-        notes: null,
-        pricing: { method: "by-price", retailPriceFils: "400000" },
-        unit: row.unit,
-      },
-    );
+    const committed = await api("POST", `/purchases/drafts/${draft.id}/rows`, {
+      costFils: row.unit.kind === "package-unit" ? "320000" : "80000",
+      enteredQuantity: row.quantity,
+      expectedVersion: draft.version,
+      expiryDate: row.expiry,
+      idempotencyKey: uuidV7(),
+      itemId: row.productId,
+      lotNumber: row.lot,
+      notes: null,
+      pricing: { method: "by-price", retailPriceFils: "400000" },
+      unit: row.unit,
+    });
     draft = committed.draft;
   }
   await api("POST", `/purchases/drafts/${draft.id}/postings`, {
@@ -373,10 +368,7 @@ async function ensureCounts(products) {
 }
 
 async function ensureAppliedCount(productId) {
-  const history = await api(
-    "GET",
-    `/inventory/items/${productId}/movements`,
-  );
+  const history = await api("GET", `/inventory/items/${productId}/movements`);
   const applied = history.movements.some(
     (movement) => movement.kind === "count-variance",
   );
@@ -600,7 +592,9 @@ async function verify(products) {
     `/inventory/items/${products.countApplied.id}/movements`,
   );
   if (
-    !movements.movements.some((movement) => movement.kind === "purchase-receipt") ||
+    !movements.movements.some(
+      (movement) => movement.kind === "purchase-receipt",
+    ) ||
     !movements.movements.some((movement) => movement.kind === "count-variance")
   ) {
     problems.push("Applied count item is missing receipt or count movement");
@@ -639,31 +633,60 @@ function productSpecs() {
       minimumLevel: "10",
       reorderPoint: "30",
     }),
-    spec("aboveMax", "Vitamin D", "فيتامين د", "6281001000004", "Cholecalciferol", {
-      maximumLevel: "40",
-      minimumLevel: "5",
-      reorderPoint: "10",
-    }),
-    spec("expiring", "Cough Syrup", "شراب السعال", "6281001000005", "Dextromethorphan", {
-      maximumLevel: "100",
-      minimumLevel: "10",
-      reorderPoint: "20",
-    }, { dosageForm: "syrup", strength: "100 ml" }),
-    spec("expired", "Aspirin", "أسبرين", "6281001000006", "Acetylsalicylic acid", {
-      maximumLevel: "80",
-      minimumLevel: "10",
-      reorderPoint: "20",
-    }),
+    spec(
+      "aboveMax",
+      "Vitamin D",
+      "فيتامين د",
+      "6281001000004",
+      "Cholecalciferol",
+      {
+        maximumLevel: "40",
+        minimumLevel: "5",
+        reorderPoint: "10",
+      },
+    ),
+    spec(
+      "expiring",
+      "Cough Syrup",
+      "شراب السعال",
+      "6281001000005",
+      "Dextromethorphan",
+      {
+        maximumLevel: "100",
+        minimumLevel: "10",
+        reorderPoint: "20",
+      },
+      { dosageForm: "syrup", strength: "100 ml" },
+    ),
+    spec(
+      "expired",
+      "Aspirin",
+      "أسبرين",
+      "6281001000006",
+      "Acetylsalicylic acid",
+      {
+        maximumLevel: "80",
+        minimumLevel: "10",
+        reorderPoint: "20",
+      },
+    ),
     spec("recalled", "Losartan", "لوسارتان", "6281001000007", "Losartan", {
       maximumLevel: "80",
       minimumLevel: "8",
       reorderPoint: "16",
     }),
-    spec("quarantine", "Omeprazole", "أوميبرازول", "6281001000008", "Omeprazole", {
-      maximumLevel: "80",
-      minimumLevel: "8",
-      reorderPoint: "16",
-    }),
+    spec(
+      "quarantine",
+      "Omeprazole",
+      "أوميبرازول",
+      "6281001000008",
+      "Omeprazole",
+      {
+        maximumLevel: "80",
+        minimumLevel: "8",
+        reorderPoint: "16",
+      },
+    ),
     spec("fefo", "Paracetamol", "باراسيتامول", "6281001000009", "Paracetamol", {
       maximumLevel: "120",
       minimumLevel: "15",
@@ -774,11 +797,15 @@ function receipts(products) {
     },
     {
       invoice: "QA-COUNT-APPLIED",
-      rows: [row(products.countApplied, "24", "2028-06-30", "QA-COUNT-APPLIED")],
+      rows: [
+        row(products.countApplied, "24", "2028-06-30", "QA-COUNT-APPLIED"),
+      ],
     },
     {
       invoice: "QA-COUNT-PENDING",
-      rows: [row(products.countPending, "15", "2028-07-31", "QA-COUNT-PENDING")],
+      rows: [
+        row(products.countPending, "15", "2028-07-31", "QA-COUNT-PENDING"),
+      ],
     },
   ];
 }

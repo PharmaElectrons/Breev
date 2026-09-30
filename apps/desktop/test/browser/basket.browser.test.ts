@@ -358,11 +358,31 @@ test.describe.serial("reorder basket and Ordered Items", () => {
       "Use a whole, non-negative number.",
     );
     const alertColor = await validationAlert.evaluate(
-      (element) => getComputedStyle(element).color,
+      (element) =>
+        (
+          element as {
+            ownerDocument?: {
+              defaultView?: {
+                getComputedStyle: (el: unknown) => { color: string };
+              };
+            };
+          }
+        ).ownerDocument?.defaultView?.getComputedStyle(element).color,
     );
     const captionColor = await rowA
       .locator(".basket-quantity-caption")
-      .evaluate((element) => getComputedStyle(element).color);
+      .evaluate(
+        (element) =>
+          (
+            element as {
+              ownerDocument?: {
+                defaultView?: {
+                  getComputedStyle: (el: unknown) => { color: string };
+                };
+              };
+            }
+          ).ownerDocument?.defaultView?.getComputedStyle(element).color,
+      );
     expect(alertColor).not.toBe(captionColor);
     expect(alertColor).toBe("rgb(163, 34, 34)");
     await expect(quantityA).toHaveValue("1.5");
@@ -1061,7 +1081,7 @@ async function startRendererServer(
 }
 
 async function feedbackClearsTheItemPanel(page: Page): Promise<string> {
-  return page.evaluate(() => {
+  return page.evaluate<string>(`(() => {
     const feedback = document.querySelector(".inventory-basket-feedback");
     const panel = document.querySelector(".purchase-item-sidebar");
     if (!(feedback instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
@@ -1085,7 +1105,7 @@ async function feedbackClearsTheItemPanel(page: Page): Promise<string> {
       itemPanel.bottom <= message.top;
     if (!insideViewport) return "clipped";
     return separated ? "clear" : "overlap";
-  });
+  })()`);
 }
 
 function isApiRoute(url: string | undefined): boolean {

@@ -812,7 +812,9 @@ function catalogProduct(input: {
     barcodes: [{ kind: "product", value: input.barcode }],
     definition: {
       fields: {
-        ...request.definition.fields,
+        dosageForm: "tablet",
+        manufacturer: "Breev Labs",
+        strength: "500 mg",
         tradeName: input.tradeName,
       },
       mode: "medication",

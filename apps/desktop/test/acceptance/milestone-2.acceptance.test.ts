@@ -9,7 +9,7 @@ import {
   type ReorderItem,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { acceptanceEvidencePath } from "./evidence-path.js";
@@ -53,6 +53,7 @@ import {
   PANEL_ITEM_PACKAGING,
   PANEL_ITEM_SCIENTIFIC_NAME,
   PANEL_ITEM_WHOLESALE_PRICE_FILS,
+  SUPPLIER_NAME,
   seedFixture,
   type SeededFixture,
 } from "./seed.js";
@@ -126,6 +127,7 @@ const TEXT = {
     quantityInvalid: "أدخل كمية صحيحة موجبة.",
     returnPosted: "تم حفظ مردود الشراء",
     rowCommitted: "تم حفظ البند بشكل دائم.",
+    supplier: "اسم المورد",
     unchangedLines: "الأسطر التي لم تتغير لا تنشئ حركة مخزون أو أثر قيمة.",
   },
   en: {
@@ -141,6 +143,7 @@ const TEXT = {
     quantityInvalid: "Enter a positive whole quantity.",
     returnPosted: "Purchase Return posted",
     rowCommitted: "Row committed and saved durably.",
+    supplier: "Supplier",
     unchangedLines: "Unchanged lines create no stock or value effects.",
   },
 } as const;
@@ -182,6 +185,18 @@ const COMBINATIONS: readonly { locale: Locale; theme: Theme }[] = [
   { locale: "ar", theme: "light" },
   { locale: "ar", theme: "dark" },
 ];
+
+type BaselineOperation =
+  "barcode-to-line" | "durable-draft-save" | "product-search";
+
+interface BaselineTimingSample {
+  readonly durationMs: number;
+  readonly locale: Locale;
+  readonly operation: BaselineOperation;
+  readonly theme: Theme;
+}
+
+const baselineTimingSamples: BaselineTimingSample[] = [];
 
 for (const combination of COMBINATIONS) {
   declareAcceptancePass(combination.locale, combination.theme);
@@ -238,13 +253,12 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
       };
 
       // The shell starts in its English default; the pass switches from there
-      // through the header controls.
-      // The renderer's own health request aborts at three seconds and retries
-      // once a second, so a cold packaged start on a loaded host can show
-      // "Main unavailable" for a poll or two before it settles. This is the
-      // one wait sized for process start-up rather than for a rendered change;
-      // every assertion in the pass itself keeps the suite's 10 s default.
-      await expect(page.getByTestId("shell-state")).toHaveText("Ready", {
+      // through the header controls. A cold packaged start can show the public
+      // connection card briefly, but after automatic authentication that card
+      // is replaced and the same state moves into an unmounted collapse menu.
+      // The authenticated module navigation is therefore the stable readiness
+      // seam; the harness already waited for the local API health endpoint.
+      await expect(moduleTab(page, "products")).toBeVisible({
         timeout: 120_000,
       });
       await applyPresentation(page, locale, theme);
@@ -253,6 +267,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
     test.afterAll(async () => {
       await environment?.stop();
       await writeTranscript();
+      await writePerformanceBaseline(context?.sourceCommit ?? "unknown");
     });
 
     test("clause 1 — defines an item and finds it by smart search", async () => {
@@ -365,7 +380,13 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
           await take.step(
             'Type "panadol gs" into the catalogue search',
             `Returns "${PANADOL_DISPLAY_NAME}"`,
-            async () => await searchCatalogue(page, "panadol gs"),
+            async () =>
+              await measureBaselineTiming(
+                "product-search",
+                locale,
+                theme,
+                async () => await searchCatalogue(page, "panadol gs"),
+              ),
           );
 
           await take.step(
@@ -422,8 +443,8 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
 
           take.note(
             'Assess the scenario\'s word "instantly"',
-            "Functional match recorded; response time not claimed",
-            "Every query matched functionally. Response timing is a provisional performance target (docs/quality.md §Performance targets, p95 ≤200 ms for product search) confirmed or revised at G-16 in milestone 4; this run does not measure it and does not claim it.",
+            "Functional match and a provisional end-to-end baseline are recorded",
+            "Every query matched functionally. The phase-0 evidence bundle records one packaged-desktop product-search sample per locale/theme combination. It is a workstation baseline, not a claim that the provisional p95 target in docs/quality.md has been met; that target is confirmed or revised at G-16 in milestone 4.",
           );
 
           await captureEvidence(take, page, "scenario-search", locale, theme);
@@ -448,11 +469,12 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               await activate(page, moduleTab(page, "purchases"));
               await expect(page).toHaveURL(/#\/purchases$/u);
               const datePath = trackDateEntry(
-                await saveInvoiceHeader(
-                  page,
-                  fixture.supplierId,
-                  "M2-INV-CLAUSE2",
+                await measureBaselineTiming(
+                  "durable-draft-save",
                   locale,
+                  theme,
+                  async () =>
+                    await saveInvoiceHeader(page, "M2-INV-CLAUSE2", locale),
                 ),
               );
               await expect(
@@ -579,12 +601,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
             async () => {
               await activate(page, moduleTab(page, "purchases"));
               const datePath = trackDateEntry(
-                await saveInvoiceHeader(
-                  page,
-                  fixture.supplierId,
-                  "M2-INV-MARGIN",
-                  locale,
-                ),
+                await saveInvoiceHeader(page, "M2-INV-MARGIN", locale),
               );
               await expect(
                 page.getByText(TEXT[locale].draftSaved),
@@ -600,6 +617,10 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               expected: "100000",
               label: "rounding off — the scenario's own figures (80 IQD, 20%)",
               tie: false,
+              transition: {
+                cost: "160000",
+                expected: "200000",
+              },
             },
             {
               barcode: "5000167000116",
@@ -608,6 +629,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               label:
                 "rounding to the nearest 250 IQD enabled, away from the step midpoint",
               tie: false,
+              transition: null,
             },
             {
               barcode: "5000167000106",
@@ -615,6 +637,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               expected: "500000",
               label: "rounding to the nearest 250 IQD enabled",
               tie: true,
+              transition: null,
             },
             {
               barcode: "5000167000107",
@@ -622,6 +645,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               expected: "500000",
               label: "rounding to the nearest 500 IQD enabled",
               tie: true,
+              transition: null,
             },
             {
               barcode: "5000167000108",
@@ -629,21 +653,27 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               expected: "1000000",
               label: "rounding to the nearest 1,000 IQD enabled",
               tie: true,
+              transition: null,
             },
           ] as const;
 
           for (const [index, testCase] of cases.entries()) {
             await take.step(
               `Enter a row with ${testCase.label}: cost ${testCase.cost} fils`,
-              testCase.tie
-                ? `The locked selling price reads ${testCase.expected} fils. This exact price sits on the step midpoint, so the row also exercises the tie rule (round half away from zero), which is an engineering working default pending G-01 approval, not an approved client value.`
-                : `The locked selling price reads ${testCase.expected} fils, independently of any tie rule.`,
+              testCase.transition !== null
+                ? `The locked selling price changes to ${testCase.transition.expected} fils at cost ${testCase.transition.cost}, then returns to ${testCase.expected} fils at cost ${testCase.cost}.`
+                : testCase.tie
+                  ? `The locked selling price reads ${testCase.expected} fils. This exact price sits on the step midpoint, so the row also exercises the tie rule (round half away from zero), which is an engineering working default pending G-01 approval, not an approved client value.`
+                  : `The locked selling price reads ${testCase.expected} fils, independently of any tie rule.`,
               async () => {
                 const row = entryRow(page);
                 const datePath = trackDateEntry(
                   await commitRow(page, {
                     barcode: testCase.barcode,
                     cost: testCase.cost,
+                    ...(testCase.transition === null
+                      ? {}
+                      : { costTransition: testCase.transition }),
                     expiry: "2029-05-31",
                     observeBeforeExpiry: async () => {
                       await expect(row.selling).toHaveJSProperty(
@@ -689,15 +719,12 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
           title: CRITERION.clause3,
         },
         async (take) => {
+          let unchangedLinesStatementVisible = false;
           await take.step(
             `Open the posted invoice ${ADJUSTMENT_INVOICE_NUMBER} in the posted register`,
             "The historical snapshot of the invoice is shown",
             async () => {
-              await openPostedInvoice(
-                page,
-                fixture.adjustmentPurchaseId,
-                locale,
-              );
+              await openPostedInvoice(page, fixture.adjustmentPurchaseId);
               return stripBidiMarks(
                 await page.locator("#posted-detail-title").innerText(),
               );
@@ -711,31 +738,17 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               await startAdjustment(page);
               const quantity = adjustmentQuantity(page, fixture.adjusted);
               await replaceValue(page, quantity, "8");
-              await activate(
-                page,
-                page.locator(".adjustment-form > button").last(),
-              );
-              const summary = page.locator(".adjustment-summary");
+              await activate(page, page.locator(".purchase-save-draft-btn"));
+              const summary = page.locator(".delta-summary-dialog");
               await expect(summary).toContainText("4 → 8 (4)");
-              await expect(summary.locator("ul > li")).toHaveCount(1);
-              await expectOnScreen(summary.locator("ul > li").first());
+              await expect(summary.locator("tbody > tr")).toHaveCount(1);
+              await expectOnScreen(summary.locator("tbody > tr").first());
               placements.push(
-                await measureElement(page, ".adjustment-summary ul > li"),
+                await measureElement(page, ".delta-summary-table tbody > tr"),
               );
               return stripBidiMarks(
-                await summary.locator("ul > li").innerText(),
+                await summary.locator("tbody > tr").innerText(),
               );
-            },
-          );
-
-          await take.step(
-            "Read the workflow's statement about unchanged lines",
-            `The workspace states "${TEXT[locale].unchangedLines}"`,
-            async () => {
-              await expect(
-                page.locator("section.purchase-adjustment"),
-              ).toContainText(TEXT[locale].unchangedLines);
-              return TEXT[locale].unchangedLines;
             },
           );
 
@@ -754,12 +767,18 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
             locale,
             theme,
           );
+          unchangedLinesStatementVisible = stripBidiMarks(
+            await page.locator("section.purchase-adjustment").innerText(),
+          ).includes(TEXT[locale].unchangedLines);
 
           await take.step(
             "Confirm and post the Delta",
             `The workflow reports "${TEXT[locale].adjustmentPosted}" with an -A01 number`,
             async () => {
-              await activate(page, page.locator(".adjustment-summary button"));
+              await activate(
+                page,
+                page.locator(".delta-summary-actions .primary-button"),
+              );
               const posted = page.locator("section.purchase-adjustment");
               await expect(posted).toContainText(TEXT[locale].adjustmentPosted);
               await expect(posted).toContainText("-A01/");
@@ -775,7 +794,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
             async () => {
               await activate(
                 page,
-                page.locator(".purchase-adjustment > button.quiet-button"),
+                page.locator(".adjustment-posted-actions .primary-button"),
               );
               await expect(page.locator("#posted-detail-title")).toBeVisible();
               return await postPurchaseReturn(
@@ -783,7 +802,17 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
                 fixture.adjustmentPurchaseId,
                 fixture.adjusted,
                 "1",
-                locale,
+                {
+                  beforePost: async () =>
+                    await captureEvidence(
+                      take,
+                      page,
+                      "clause-3-purchase-return",
+                      locale,
+                      theme,
+                      { fullPage: false },
+                    ),
+                },
               );
             },
           );
@@ -812,6 +841,15 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
             "clause-3-linked-return",
             locale,
             theme,
+          );
+
+          await take.step(
+            "Read the workflow's statement about unchanged lines",
+            `The workspace states "${TEXT[locale].unchangedLines}"`,
+            async () => {
+              expect(unchangedLinesStatementVisible).toBe(true);
+              return TEXT[locale].unchangedLines;
+            },
           );
           take.note(
             "Measure where each subject of this record sat in the packaged window",
@@ -1225,7 +1263,6 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
                 fixture.blockedPurchaseId,
                 fixture.blocked,
                 "3",
-                locale,
                 { open: true },
               );
               // The Delta below is invalid only because the batch no longer
@@ -1360,23 +1397,25 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               await closeDialogIfOpen(page);
               await activate(page, moduleTab(page, "purchases"));
               const datePath = trackDateEntry(
-                await saveInvoiceHeader(
-                  page,
-                  fixture.supplierId,
-                  "M2-INV-PANEL",
-                  locale,
-                ),
+                await saveInvoiceHeader(page, "M2-INV-PANEL", locale),
               );
               await expect(
                 page.getByText(TEXT[locale].draftSaved),
               ).toBeVisible();
               const row = entryRow(page);
-              await typeInto(page, row.item, PANEL_ITEM_BARCODE);
-              await pressOn(page, row.item, "Enter");
-              await expect(row.quantity).toBeFocused();
               const panel = page.locator("aside.purchase-item-panel");
-              await expect(panel.locator("strong")).toHaveText(
-                fixture.panelItem.displayName,
+              await measureBaselineTiming(
+                "barcode-to-line",
+                locale,
+                theme,
+                async () => {
+                  await typeInto(page, row.item, PANEL_ITEM_BARCODE);
+                  await pressOn(page, row.item, "Enter");
+                  await expect(row.quantity).toBeFocused();
+                  await expect(panel.locator("strong")).toHaveText(
+                    fixture.panelItem.displayName,
+                  );
+                },
               );
               return `${stripBidiMarks(await panel.locator("strong").innerText())} · invoice date entered by ${datePath}`;
             },
@@ -1512,7 +1551,6 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               trackDateEntry(
                 await saveInvoiceHeader(
                   page,
-                  fixture.supplierId,
                   "M2-INV-PANEL-VISIBILITY",
                   locale,
                 ),
@@ -1556,12 +1594,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
             async () => {
               await activate(page, moduleTab(page, "purchases"));
               trackDateEntry(
-                await saveInvoiceHeader(
-                  page,
-                  fixture.supplierId,
-                  "M2-INV-UNITS",
-                  locale,
-                ),
+                await saveInvoiceHeader(page, "M2-INV-UNITS", locale),
               );
               await expect(
                 page.getByText(TEXT[locale].draftSaved),
@@ -1833,7 +1866,9 @@ function recordId(flow: string, locale: Locale, theme: Theme): string {
 }
 
 function moduleTab(page: Page, moduleId: string): Locator {
-  return page.locator(`a[data-module="${moduleId}"]`);
+  return page
+    .getByTestId("shell-header")
+    .locator(`a[data-module="${moduleId}"]`);
 }
 
 /**
@@ -1851,10 +1886,17 @@ async function applyPresentation(
   // The shell always starts English and light, so both controls carry their
   // English names here. The theme goes first: once the language has switched,
   // the theme control is labelled in Arabic.
-  const controls = page.locator(".preference-controls");
+  const controls = page
+    .getByTestId("shell-header")
+    .locator(".preference-controls");
   await expect(controls).toBeVisible();
+  const openMenu = async (): Promise<void> => {
+    await activate(page, controls.getByTestId("collapse-menu-trigger"));
+    await expect(controls.getByTestId("collapse-menu-dropdown")).toBeVisible();
+  };
 
   if (theme === "dark") {
+    await openMenu();
     await activate(
       page,
       controls.getByRole("button", { name: "Use dark theme", exact: true }),
@@ -1862,6 +1904,7 @@ async function applyPresentation(
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   }
   if (locale === "ar") {
+    await openMenu();
     await activate(
       page,
       controls.getByRole("button", { name: "Switch to Arabic", exact: true }),
@@ -1972,7 +2015,6 @@ async function setDetailsPanelFields(
 
 async function saveInvoiceHeader(
   page: Page,
-  supplierId: string,
   invoiceNumber: string,
   locale: Locale,
 ): Promise<"typed" | "value-api"> {
@@ -1999,7 +2041,10 @@ async function saveInvoiceHeader(
     form.locator('input[maxlength="120"]'),
     invoiceNumber,
   );
-  await selectByKeyboard(page, form.locator("select"), supplierId);
+  const supplier = form.getByRole("combobox", { name: TEXT[locale].supplier });
+  await replaceValue(page, supplier, SUPPLIER_NAME);
+  await pressOn(page, supplier, "Enter");
+  await expect(supplier).toHaveValue(SUPPLIER_NAME);
   await activate(
     page,
     page.locator('button[type="submit"][form="purchase-header-form"]'),
@@ -2045,6 +2090,10 @@ async function commitRow(
   options: {
     readonly barcode: string;
     readonly cost: string;
+    readonly costTransition?: {
+      readonly cost: string;
+      readonly expected: string;
+    };
     readonly expiry: string;
     readonly observeBeforeExpiry?: () => Promise<void>;
     readonly quantity: string;
@@ -2058,6 +2107,12 @@ async function commitRow(
   await replaceValue(page, row.quantity, options.quantity);
   await pressOn(page, row.quantity, "Enter");
   await expect(row.cost).toBeFocused();
+  if (options.costTransition !== undefined) {
+    await expect(row.selling).toHaveJSProperty("readOnly", true);
+    await replaceValue(page, row.cost, options.costTransition.cost);
+    await expect(row.selling).toHaveJSProperty("readOnly", true);
+    await expect(row.selling).toHaveValue(options.costTransition.expected);
+  }
   await replaceValue(page, row.cost, options.cost);
   if (options.observeBeforeExpiry !== undefined) {
     await options.observeBeforeExpiry();
@@ -2076,20 +2131,20 @@ async function commitRow(
 }
 
 /**
- * Opens one posted invoice in the posted register. The register opener is the
- * only control in this harness addressed by its visible text, because it
- * carries no id, class, or `data-` hook of its own; its copy is taken from the
- * active locale rather than guessed.
+ * Opens one posted invoice in the posted register. The tab is addressed by its
+ * stable panel relationship because the screen also contains a secondary
+ * button with the same accessible name.
  */
 async function openPostedInvoice(
   page: Page,
   purchaseId: string,
-  locale: Locale,
 ): Promise<void> {
   await activate(page, moduleTab(page, "purchases"));
   await activate(
     page,
-    page.getByRole("button", { name: TEXT[locale].postedInvoices }),
+    page.locator(
+      'button.purchase-view-tab[aria-controls="purchase-posted-view"]',
+    ),
   );
   await activate(
     page,
@@ -2109,20 +2164,24 @@ async function startAdjustment(page: Page): Promise<void> {
   await expect(page.locator("section.purchase-adjustment")).toBeVisible();
   await selectByKeyboard(
     page,
-    page.locator(".adjustment-form select").first(),
+    page.locator("#start-reason-select"),
     "quantity error",
   );
-  await activate(page, page.locator(".adjustment-form > button").last());
-  await expect(page.locator(".adjustment-form table")).toBeVisible();
+  await activate(
+    page,
+    page.locator(
+      "section.purchase-adjustment .adjustment-banner-actions .primary-button",
+    ),
+  );
+  await expect(page.locator(".adjustment-banner-reason-input")).toBeVisible();
 }
 
 function adjustmentQuantity(page: Page, product: Product): Locator {
   return page
     .locator("section.purchase-adjustment table tbody tr")
     .filter({ hasText: product.displayName })
-    .locator("td")
-    .first()
-    .locator("input");
+    .locator("input")
+    .first();
 }
 
 async function postPurchaseReturn(
@@ -2130,12 +2189,14 @@ async function postPurchaseReturn(
   purchaseId: string,
   product: Product,
   quantity: string,
-  locale: Locale,
-  options: { readonly open?: boolean } = {},
+  options: {
+    readonly beforePost?: () => Promise<void>;
+    readonly open?: boolean;
+  } = {},
 ): Promise<string> {
   if (options.open === true) {
     await closeDialogIfOpen(page);
-    await openPostedInvoice(page, purchaseId, locale);
+    await openPostedInvoice(page, purchaseId);
   }
   await activate(
     page,
@@ -2165,6 +2226,7 @@ async function postPurchaseReturn(
   await activate(page, workflow.locator(".return-form > button").last());
   const summary = workflow.locator(".return-summary");
   await expect(summary).toBeVisible();
+  await options.beforePost?.();
   await replaceValue(
     page,
     summary.locator('input[type="password"]'),
@@ -2342,6 +2404,88 @@ async function basketProductIds(api: LocalApi): Promise<readonly string[]> {
   );
 }
 
+async function measureBaselineTiming<T>(
+  operation: BaselineOperation,
+  locale: Locale,
+  theme: Theme,
+  action: () => Promise<T>,
+): Promise<T> {
+  const startedAt = performance.now();
+  const result = await action();
+  baselineTimingSamples.push({
+    durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
+    locale,
+    operation,
+    theme,
+  });
+  return result;
+}
+
+async function writePerformanceBaseline(sourceCommit: string): Promise<void> {
+  if (
+    process.env.BREEV_M2_PHASE0_BASELINE_EVIDENCE !== "1" ||
+    baselineTimingSamples.length === 0
+  ) {
+    return;
+  }
+
+  const baselineDirectory = path.resolve(
+    import.meta.dirname,
+    "../../../../evidence/issue-191/phase-0-baseline",
+  );
+  await mkdir(baselineDirectory, { recursive: true });
+
+  const summary = Object.fromEntries(
+    (["product-search", "barcode-to-line", "durable-draft-save"] as const).map(
+      (operation) => {
+        const durations = baselineTimingSamples
+          .filter((sample) => sample.operation === operation)
+          .map((sample) => sample.durationMs)
+          .sort((left, right) => left - right);
+        const percentile = (percent: number): number | null => {
+          if (durations.length === 0) {
+            return null;
+          }
+          const index = Math.max(
+            0,
+            Math.ceil((percent / 100) * durations.length) - 1,
+          );
+          return durations[index] ?? null;
+        };
+        return [
+          operation,
+          {
+            count: durations.length,
+            maxMs: durations.at(-1) ?? null,
+            minMs: durations[0] ?? null,
+            p50Ms: percentile(50),
+            p95Ms: percentile(95),
+          },
+        ];
+      },
+    ),
+  );
+
+  await writeFile(
+    path.join(baselineDirectory, "performance.json"),
+    `${JSON.stringify(
+      {
+        capturedAt: new Date().toISOString(),
+        measurement:
+          "Packaged-desktop end-to-end elapsed time on the phase-0 workstation; includes UI input and render acknowledgement.",
+        note: "Provisional before-state evidence only. Four samples are insufficient to claim a production p95 target.",
+        samples: baselineTimingSamples,
+        schemaVersion: 1,
+        sourceCommit,
+        summary,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
 /**
  * Captures one screenshot into the bundle.
  *
@@ -2368,6 +2512,32 @@ async function captureEvidence(
     path: filePath,
   });
   take.addScreenshot(fileName);
+
+  if (process.env.BREEV_M2_PHASE0_BASELINE_EVIDENCE === "1") {
+    const originalViewport = page.viewportSize();
+    const baselineDirectory = path.resolve(
+      import.meta.dirname,
+      "../../../../evidence/issue-191/phase-0-baseline/screenshots",
+    );
+    await mkdir(baselineDirectory, { recursive: true });
+    for (const viewport of [
+      { height: 768, width: 1366 },
+      { height: 800, width: 1280 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: false,
+        path: path.join(
+          baselineDirectory,
+          `${flow}-${locale}-${theme}-${String(viewport.width)}x${String(viewport.height)}.png`,
+        ),
+      });
+    }
+    if (originalViewport !== null) {
+      await page.setViewportSize(originalViewport);
+    }
+  }
 }
 
 async function scanAccessibility(

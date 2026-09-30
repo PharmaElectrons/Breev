@@ -5,6 +5,7 @@ import type { Medicine } from "@/lib/db";
 import { useI18n, type Lang } from "@/lib/i18n";
 import { useBranding, useBrandTitle } from "@/lib/branding";
 import { supabase } from "@/integrations/supabase/client";
+import { NotificationBell } from "@/components/notification-bell";
 
 
 
@@ -455,6 +456,7 @@ export function AppShell({ children, title, medicine, sidebarFooter }: { childre
           </div>
 
           <div className="flex items-center gap-3">
+            <NotificationBell />
             <LanguageToggle />
             <SignOutButton />
             <LiveClock />

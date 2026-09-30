@@ -42,6 +42,29 @@ Issues live in `.scratch/<feature-slug>/` and use `spec.md`, an optional `map.md
 
 Use `Type: epic|research|prototype|grilling|task` and one of these statuses: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, `claimed`, or `resolved`. `ready-for-agent` still requires explicit initiation. Resolve by adding `## Answer`, setting `Status: resolved`, and updating the map. Append discussion under `## Comments`.
 
+## Frontend implementation and prototype fidelity
+
+Follow [`.agents/rules/frontend-prototype-fidelity.md`](.agents/rules/frontend-prototype-fidelity.md) and [`.agents/skills/prototype-ui-transplant/SKILL.md`](.agents/skills/prototype-ui-transplant/SKILL.md) for all desktop renderer UI, screen, and workflow implementations.
+- **Prototype as Visual Truth:** The checked-in prototype under `design/prototype/src/` is the authoritative source for layout, spacing, typography, button placement, card hierarchy, and nested dialogs. Do not invent custom layouts or move controls when a prototype equivalent exists. Transplant the visual JSX and CSS classes from the prototype, replacing only the backend data wiring (`supabase`/TanStack) with Breev's desktop state, APIs (`*-api.ts`), and message catalogues (`*-messages.ts`).
+- **Exhaustive Nested Surface Coverage:** A screen task is incomplete until all nested pages, sub-tabs, workflow modals, drawers, and secondary dialogs belonging to that feature are fully implemented to match the prototype. Stubbed alerts, empty handlers, or omitted dialogs are prohibited.
+- **Strict Scope Isolation (Zero Collateral Regressions):** Modifying or corrupting any visual pixel, layout, or component outside the assigned module boundary is prohibited. Never modify global rules in `styles.css` (e.g. `.btn`, `.card`, `.input`, typography resets) or shared shell components in a way that shifts other modules (Sales, Inventory, Catalog, Settings). Feature-specific styling must be scoped under a module container class to prevent style bleed.
+
+## Development inner loop vs. pre-flight verification
+
+To prevent wasting hours running end-to-end suites on intermediate edits, agents MUST distinguish between the **Inner Development Loop** and the **Pre-Flight Exit Gate**:
+
+- **During Implementation (Inner Loop):**
+  - **Never** run `pnpm test`, `pnpm verify`, full `pnpm test:browser`, `pnpm test:integration`, or `pnpm test:smoke` after an intermediate code edit.
+  - Run **only** targeted checks for the exact file or workspace modified:
+    - **Desktop Renderer UI/Components:** `pnpm --filter @breev/desktop exec tsc -p tsconfig.renderer.json --noEmit` and/or `pnpm --filter @breev/desktop exec vitest run src/renderer/src/<feature>.unit.test.ts`
+    - **Local API Domain Logic:** `pnpm --filter @breev/local-api exec vitest run src/<module>/<file>.unit.test.ts`
+    - **PostgreSQL / Migrations:** Only the affected `*.integration.test.ts` file
+    - **Contracts:** `pnpm --filter @breev/contracts test:unit`
+    - **Targeted UI Flow:** Only the specific Playwright scenario (`pnpm --filter @breev/desktop exec playwright test test/browser/<screen>.browser.test.ts -g "<title>"`)
+  - Format only modified files during development (`pnpm prettier --write <path>`). Do not run full-repo `pnpm format:write` repeatedly during intermediate iteration.
+- **Before Commit / Push / PR (Outer Gate):**
+  - The full verification chain in `ci-failure-prevention` is mandatory **only once** as the final gate when the task or slice is complete.
+
 ## Pre-flight verification and CI failure prevention
 
 Follow [`.agents/skills/ci-failure-prevention/SKILL.md`](.agents/skills/ci-failure-prevention/SKILL.md) before pushing to remote or opening a Pull Request. CI executes `pnpm format:check` first; pushing unformatted code is prohibited.

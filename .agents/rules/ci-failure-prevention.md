@@ -2,9 +2,10 @@
 
 These rules are non-negotiable across all Breev workspaces. Every agent and developer must satisfy these invariants before committing or pushing changes to remote.
 
-## 1. Mandatory Pre-Flight Verification Chain
+## 1. Pre-Flight Verification Chain vs. Inner Development Loop
 
-Before pushing any commit or opening a Pull Request:
+### Exit Gate (Before Pushing or Opening a PR Only)
+The complete verification chain is mandatory **once** before committing or pushing changes to remote:
 1. Run `pnpm format:write` followed by `pnpm format:check`. Unformatted files are rejected immediately by CI.
 2. Run `pnpm lint` and resolve all lint errors.
 3. Run `pnpm typecheck` across all packages in the monorepo.
@@ -13,6 +14,15 @@ Before pushing any commit or opening a Pull Request:
    - Modified database schemas, migrations, or API endpoints: `pnpm test:integration`
    - Modified renderer UI, styles, or keyboard interactions: `pnpm test:browser`
    - Modified packaging, preload bridges, or Main process boot: `pnpm package:desktop && pnpm --filter @breev/desktop exec playwright test --config playwright.config.ts`
+
+### Fast Inner Loop (During Active Implementation)
+Agents and developers must **never** run full test suites (`pnpm test`, `pnpm verify`, full `test:browser`, `test:integration`, or `test:smoke`) on intermediate edits. Use targeted single-file commands:
+- **Renderer UI/Components:** `pnpm --filter @breev/desktop exec tsc -p tsconfig.renderer.json --noEmit` and/or `pnpm --filter @breev/desktop exec vitest run src/renderer/src/<feature>.unit.test.ts`
+- **Domain Logic / API:** `pnpm --filter @breev/local-api exec vitest run src/<module>/<file>.unit.test.ts`
+- **Database / Migrations:** Target the single integration test file only
+- **Targeted Browser Scenario:** `pnpm --filter @breev/desktop exec playwright test test/browser/<screen>.browser.test.ts -g "<title>"`
+- **Formatting:** Format only the modified file (`pnpm prettier --write <path>`)
+
 
 ## 2. Database Migration & Domain Revision Counters
 

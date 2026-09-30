@@ -7,7 +7,16 @@ import { listMedicines, listPatients, type Medicine, type PatientRow } from "@/l
 import { getClinical } from "@/lib/clinical";
 import { addToCart } from "@/lib/procurement-cart";
 import { toast } from "sonner";
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCart, History } from "lucide-react";
+import { ItemLedgerDrawer } from "@/components/item-ledger-drawer";
+import {
+  PeakHoursReport,
+  ProfitByFamilyReport,
+  AboveMaxStockReport,
+  UnpricedItemsReport,
+  AtCostItemsReport,
+  PatientDetailedReport,
+} from "@/components/extra-reports";
 import {
   CLINICAL,
   MarginsReport,
@@ -61,6 +70,7 @@ const CATEGORIES: Category[] = [
       { key: "sales_reps", label: "مبيعات تواجد", icon: "🕒" },
       { key: "sales_chart", label: "مخطط يومي/شهري للمبيعات", icon: "📈" },
       { key: "sales_unpaid", label: "ديون المرضى (بيع بالآجل)", icon: "💳" },
+      { key: "sales_peak", label: "ساعة الذروة", icon: "⏱️" },
     ],
   },
   {
@@ -86,7 +96,10 @@ const CATEGORIES: Category[] = [
       { key: "items_dead", label: "المواد الراكدة", icon: "💤" },
       { key: "items_negative", label: "الكميات السالبة", icon: "➖" },
       { key: "items_expire", label: "منتجات اكسباير", icon: "⏰" },
-      { key: "items_reorder", label: "حد الطلب", icon: "🔔" },
+      { key: "items_reorder", label: "تحت الأدنى", icon: "🔔" },
+      { key: "items_above_max", label: "فوق الأعلى", icon: "🔺" },
+      { key: "items_no_price", label: "مواد بدون سعر بيع", icon: "🏷️" },
+      { key: "items_at_cost", label: "مواد تباع بالكلفة أو أقل", icon: "🧨" },
       { key: "items_movement", label: "حركة مادة لفترة معينة", icon: "🔀" },
       { key: "items_hazard", label: "مواد خطرة", icon: "⚠️" },
     ],
@@ -116,6 +129,7 @@ const CATEGORIES: Category[] = [
       { key: "prof_customers", label: "أرباح عملاء", icon: "👤" },
       { key: "prof_groups", label: "أرباح مجموعات", icon: "🗂️" },
       { key: "prof_items", label: "أرباح مواد", icon: "💊" },
+      { key: "prof_family", label: "المواد الأكثر ربحاً ضمن عائلة", icon: "🏆" },
       { key: "prof_balance", label: "تقرير الموازنة", icon: "⚖️" },
     ],
   },
@@ -126,6 +140,7 @@ const CATEGORIES: Category[] = [
     color: "pink",
     buttons: [
       { key: "patients_comprehensive", label: "تقرير مرضى شامل", icon: "🧬" },
+      { key: "patients_detailed", label: "تقرير المريض التفصيلي", icon: "🔎" },
       { key: "patients_interests", label: "مرضى حسب الاهتمامات", icon: "🎯" },
       { key: "patients_chronic_meds", label: "مرضى حسب العلاج المزمن", icon: "💊" },
       { key: "patients_chronic_diseases", label: "مرضى حسب الأمراض المزمنة", icon: "🩺" },
@@ -302,6 +317,8 @@ function ReportContent({ reportKey, from, to }: { reportKey: string; from: strin
   switch (reportKey) {
     case "sales_today":
       return <TodaysSalesReport />;
+    case "sales_peak":
+      return <PeakHoursReport from={from} to={to} />;
     case "sales_summary":
     case "sales_detail":
     case "sales_customers":
@@ -321,6 +338,9 @@ function ReportContent({ reportKey, from, to }: { reportKey: string; from: strin
     case "items_negative":
     case "items_expire":
     case "items_reorder":
+    case "items_above_max":
+    case "items_no_price":
+    case "items_at_cost":
     case "items_movement":
     case "items_hazard":
       return <ItemsReport variant={reportKey} from={from} to={to} />;
@@ -337,9 +357,12 @@ function ReportContent({ reportKey, from, to }: { reportKey: string; from: strin
     case "prof_groups":
     case "prof_items":
     case "prof_balance":
+    case "prof_family":
       return <ProfitsReport variant={reportKey} from={from} to={to} />;
     case "patients_chronic":
       return <ChronicPatientsReport />;
+    case "patients_detailed":
+      return <PatientDetailedReport from={from} to={to} />;
     case "patients_comprehensive":
     case "patients_crm":
       return <ComprehensivePatientsReport />;
@@ -1286,6 +1309,9 @@ function ItemsReport({ variant, from, to }: { variant: string; from: string; to:
   if (variant === "items_negative") return <NegativeStockReport items={items} />;
   if (variant === "items_expire") return <ExpiringItemsReport items={items} />;
   if (variant === "items_reorder") return <ReorderReport items={items} />;
+  if (variant === "items_above_max") return <AboveMaxStockReport items={items} />;
+  if (variant === "items_no_price") return <UnpricedItemsReport items={items} />;
+  if (variant === "items_at_cost") return <AtCostItemsReport items={items} />;
   return null;
 }
 
@@ -1554,13 +1580,14 @@ function ReorderReport({ items }: { items: Medicine[] }) {
   return (
     <div className="border border-border rounded-xl overflow-hidden">
       <div className="px-4 py-2 bg-slate-950/60 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-        حد الطلب — المواد تحت الحد الأدنى
+        تحت الأدنى — المواد تحت الحد الأدنى
       </div>
       <table className="w-full text-sm text-right">
         <thead className="bg-slate-900/60 text-[10px] uppercase tracking-widest text-muted-foreground sticky top-0">
           <tr>
             <th className="px-3 py-2">اسم المادة</th>
             <th className="px-3 py-2">رصيدها في المخزن</th>
+            <th className="px-3 py-2">حدها الأدنى</th>
             <th className="px-3 py-2">حدها الأعلى</th>
             <th className="px-3 py-2">إجراء</th>
           </tr>
@@ -1570,6 +1597,7 @@ function ReorderReport({ items }: { items: Medicine[] }) {
             <tr key={m.id} className="hover:bg-slate-800/40">
               <td className="px-3 py-1.5 font-medium">{m.trade_name}</td>
               <td className="px-3 py-1.5 font-mono text-rose-400 font-bold">{m.quantity_in_stock}</td>
+              <td className="px-3 py-1.5 font-mono text-amber-400">{m.minimum_stock}</td>
               <td className="px-3 py-1.5 font-mono text-emerald">{m.maximum_stock}</td>
               <td className="px-3 py-1.5">
                 <button
@@ -1582,7 +1610,7 @@ function ReorderReport({ items }: { items: Medicine[] }) {
             </tr>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={4} className="px-4 py-8 text-center text-emerald text-xs">جميع المواد فوق الحد الأدنى ✔</td></tr>
+            <tr><td colSpan={5} className="px-4 py-8 text-center text-emerald text-xs">جميع المواد فوق الحد الأدنى ✔</td></tr>
           )}
         </tbody>
       </table>
@@ -1610,9 +1638,13 @@ function HazardousReport({ items, consumption, rangeDays }: {
   }, [items, consumption, rangeDays]);
 
   const totalLoss = rows.reduce((s, r) => s + r.projectedLoss, 0);
+  const [ledger, setLedger] = useState<{ id: string; name: string } | null>(null);
 
   return (
     <div className="space-y-3">
+      {ledger && (
+        <ItemLedgerDrawer medicineId={ledger.id} medicineName={ledger.name} onClose={() => setLedger(null)} />
+      )}
       <div className="grid grid-cols-3 gap-3">
         <Card label="عدد المواد الخطرة" value={rows.length.toLocaleString()} warn={rows.length > 0} />
         <Card label="الخسارة المتوقعة" value={formatIQD(totalLoss)} warn={totalLoss > 0} />
@@ -1636,6 +1668,7 @@ function HazardousReport({ items, consumption, rangeDays }: {
                 <th className="px-3 py-2">قطع ستنتهي</th>
                 <th className="px-3 py-2">الخسارة المتوقعة</th>
                 <th className="px-3 py-2">درجة الخطورة</th>
+                <th className="px-3 py-2">حركة المادة</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
@@ -1651,10 +1684,20 @@ function HazardousReport({ items, consumption, rangeDays }: {
                   <td className="px-3 py-1.5 font-mono font-bold text-rose-400">{risk.projected}</td>
                   <td className="px-3 py-1.5 font-mono text-rose-300">{formatIQD(projectedLoss)}</td>
                   <td className="px-3 py-1.5"><RiskBadge level={risk.level as any} /></td>
+                  <td className="px-3 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setLedger({ id: m.id, name: m.trade_name })}
+                      title="تفاصيل حركة مادة"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md border bg-primary/10 border-primary/40 text-primary text-[10px] font-bold hover:bg-primary/20 transition"
+                    >
+                      <History className="w-3 h-3" /> تفاصيل حركة مادة
+                    </button>
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-emerald text-xs">لا توجد مواد خطرة — المخزون آمن ✔</td></tr>
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-emerald text-xs">لا توجد مواد خطرة — المخزون آمن ✔</td></tr>
               )}
             </tbody>
           </table>
@@ -2918,6 +2961,8 @@ function ProfitsReport({ variant, from, to }: { variant: string; from: string; t
       {variant === "prof_groups" && (
         <ProfitByGroup items={salesItems} medById={medById} costByMed={costByMed} />
       )}
+
+      {variant === "prof_family" && <ProfitByFamilyReport from={from} to={to} />}
 
       {variant === "prof_balance" && (
         <TrialBalanceReport from={from} to={to} revenue={revenue} cost={cost} />

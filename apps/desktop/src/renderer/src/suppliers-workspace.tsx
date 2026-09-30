@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { PurchaseDraft, Supplier } from "@breev/contracts/local-rest";
+import type { Supplier } from "@breev/contracts/local-rest";
 import { usePreferences } from "./preferences-provider";
 import {
   archiveSupplier,
@@ -84,12 +84,12 @@ const today = (): string => {
 export function SuppliersWorkspace({
   baseUrl,
   suppliers,
-  drafts,
+  initialSelectedId,
   onChanged,
 }: {
   readonly baseUrl: string;
   readonly suppliers: readonly Supplier[];
-  readonly drafts: readonly PurchaseDraft[];
+  readonly initialSelectedId?: string;
   readonly onChanged: () => Promise<void>;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -100,12 +100,12 @@ export function SuppliersWorkspace({
   const addressId = useId();
   const paymentTermsId = useId();
   const discountId = useId();
-  const creditLimitId = useId();
   const duePeriodId = useId();
-  const alertWindowId = useId();
   const mergeId = useId();
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => initialSelectedId ?? suppliers[0]?.id ?? null,
+  );
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -117,7 +117,6 @@ export function SuppliersWorkspace({
   const [alertWindowDays, setAlertWindowDays] = useState(7);
   const [survivorId, setSurvivorId] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [statementOpen, setStatementOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{
     text: string;
@@ -161,23 +160,6 @@ export function SuppliersWorkspace({
     }
     supplierCommandAttempt.current = null;
   }, [selected]);
-
-  const supplierDrafts = useMemo(
-    () => drafts.filter((d) => d.supplierId === selectedId),
-    [drafts, selectedId],
-  );
-
-  const balanceFor = (id: string): number => {
-    return drafts
-      .filter((d) => d.supplierId === id)
-      .reduce((sum, d) => {
-        const basis = Number(d.allowanceSnapshot.basisFils) / 1000;
-        return sum + (d.settlementContext === "debt" ? basis : 0);
-      }, 0);
-  };
-
-  const liveBalance = selected ? balanceFor(selected.id) : 0;
-  const overLimit = selected && creditLimit > 0 && liveBalance > creditLimit;
 
   const filteredSuppliers = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -329,10 +311,6 @@ export function SuppliersWorkspace({
     }
   };
 
-  const formatIQD = (amount: number): string => {
-    return `${Math.round(amount).toLocaleString("en-US")} ${copy.iqd}`;
-  };
-
   const activeSuppliers = suppliers.filter((s) => s.status === "active");
 
   return (
@@ -369,7 +347,6 @@ export function SuppliersWorkspace({
         </div>
         <div className="flex-1 overflow-auto">
           {filteredSuppliers.map((s) => {
-            const bal = balanceFor(s.id);
             const isSel = s.id === selectedId;
             const details = parseTerms(s.terms);
             return (
@@ -400,16 +377,9 @@ export function SuppliersWorkspace({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center justify-between text-[11px] mt-0.5">
+                <div className="text-[11px] mt-0.5">
                   <span className="text-muted-foreground font-mono">
                     {details.phone || "—"}
-                  </span>
-                  <span
-                    className={`font-mono font-bold ${
-                      bal > 0 ? "text-danger" : "text-ready"
-                    }`}
-                  >
-                    {formatIQD(bal)}
                   </span>
                 </div>
               </button>
@@ -453,16 +423,6 @@ export function SuppliersWorkspace({
               <span aria-hidden="true">🗑</span>
               <span>{copy.delete}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setStatementOpen(true)}
-              disabled={!selected}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-lg text-xs font-bold border transition bg-accent/15 border-accent/40 text-accent hover:bg-accent/25 disabled:opacity-40"
-              title={copy.statement}
-            >
-              <span aria-hidden="true">📄</span>
-              <span>{copy.statement}</span>
-            </button>
           </div>
           <button
             type="button"
@@ -474,16 +434,6 @@ export function SuppliersWorkspace({
           </button>
         </div>
 
-        {/* Status / Alert Banner */}
-        {overLimit && (
-          <div className="px-4 py-2 border-b border-border bg-danger/15 text-danger font-bold text-xs flex items-center gap-2">
-            <span aria-hidden="true">⚠️</span>
-            <span>
-              {copy.limitExceeded} {formatIQD(liveBalance)} /{" "}
-              {formatIQD(creditLimit)}
-            </span>
-          </div>
-        )}
         {message && (
           <div
             role={message.isError ? "alert" : "status"}
@@ -497,10 +447,9 @@ export function SuppliersWorkspace({
           </div>
         )}
 
-        {/* 3-Card Layout */}
+        {/* M2 Supplier profile. Accounting cards remain hidden until M3. */}
         <div className="flex-1 overflow-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Card 1: Supplier Profile (2 cols) */}
-          <div className="lg:col-span-2 bg-card border border-border rounded-xl p-4 space-y-3 shadow-xs">
+          <div className="lg:col-span-3 bg-card border border-border rounded-xl p-4 space-y-3 shadow-xs">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-[11px] font-bold uppercase tracking-widest text-primary mb-2">
                 {copy.supplierProfile}
@@ -611,21 +560,6 @@ export function SuppliersWorkspace({
                       </button>
                     </div>
                   </div>
-                  <label htmlFor={creditLimitId} className="block">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
-                      {copy.creditLimit}
-                    </span>
-                    <input
-                      id={creditLimitId}
-                      type="number"
-                      min={0}
-                      value={creditLimit}
-                      onChange={(e) =>
-                        setCreditLimit(Number(e.target.value) || 0)
-                      }
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/40"
-                    />
-                  </label>
                   <label htmlFor={duePeriodId} className="block">
                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
                       {copy.duePeriod}
@@ -637,21 +571,6 @@ export function SuppliersWorkspace({
                       value={duePeriodDays}
                       onChange={(e) =>
                         setDuePeriodDays(Number(e.target.value) || 30)
-                      }
-                      className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/40"
-                    />
-                  </label>
-                  <label htmlFor={alertWindowId} className="block">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
-                      {copy.alertWindow}
-                    </span>
-                    <input
-                      id={alertWindowId}
-                      type="number"
-                      min={0}
-                      value={alertWindowDays}
-                      onChange={(e) =>
-                        setAlertWindowDays(Number(e.target.value) || 0)
                       }
                       className="w-full bg-muted border border-control-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/40"
                     />
@@ -692,251 +611,7 @@ export function SuppliersWorkspace({
               </div>
             )}
           </div>
-
-          {/* Card 2: Live Balance (1 col) */}
-          <div className="bg-card border border-border rounded-xl p-4 flex flex-col justify-between shadow-xs">
-            <div>
-              <h3 className="text-[11px] font-bold uppercase tracking-widest text-primary mb-2">
-                {copy.supplierBalance}
-              </h3>
-              <p
-                className={`text-4xl font-mono font-bold tabular-nums mt-4 ${
-                  liveBalance > 0 ? "text-danger" : "text-ready"
-                }`}
-              >
-                {formatIQD(liveBalance)}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                {copy.balanceSubtitle}
-              </p>
-            </div>
-            {selected && creditLimit > 0 && (
-              <div className="mt-4 pt-4 border-t border-border">
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-                  <span>{copy.creditLimit}</span>
-                  <span className="font-mono">{formatIQD(creditLimit)}</span>
-                </div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full transition-all ${
-                      overLimit ? "bg-danger" : "bg-ready"
-                    }`}
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        (liveBalance / Math.max(1, creditLimit)) * 100,
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Card 3: Transaction Ledger (3 cols) */}
-          <div className="lg:col-span-3 bg-card border border-border rounded-xl p-4 shadow-xs">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[11px] font-bold uppercase tracking-widest text-primary">
-                {copy.invoiceLedger}
-              </h3>
-              <span className="text-[10px] text-muted-foreground font-mono">
-                {supplierDrafts.length} {copy.invoicesCount}
-              </span>
-            </div>
-            <div className="overflow-auto max-h-[36vh] border border-border rounded-lg">
-              <table className="w-full text-xs">
-                <thead className="text-[10px] uppercase font-bold text-muted-foreground bg-muted sticky top-0 tracking-widest">
-                  <tr>
-                    <th className="px-3 py-2 text-start">#</th>
-                    <th className="px-3 py-2 text-start">{copy.date}</th>
-                    <th className="px-3 py-2 text-start">{copy.payment}</th>
-                    <th className="px-3 py-2 text-start">{copy.status}</th>
-                    <th className="px-3 py-2 text-end">{copy.total}</th>
-                    <th className="px-3 py-2 text-end">{copy.paid}</th>
-                    <th className="px-3 py-2 text-end">{copy.outstanding}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {supplierDrafts.map((d, index) => {
-                    const totalIQD =
-                      Number(d.allowanceSnapshot.basisFils) / 1000;
-                    const paidIQD =
-                      d.settlementContext === "cash" ? totalIQD : 0;
-                    const outstanding = totalIQD - paidIQD;
-                    return (
-                      <tr key={d.id} className="hover:bg-muted/50">
-                        <td className="px-3 py-2 font-mono">
-                          {d.supplierInvoiceNumber || index + 1}
-                        </td>
-                        <td className="px-3 py-2 font-mono">{d.invoiceDate}</td>
-                        <td className="px-3 py-2">
-                          {d.settlementContext === "cash"
-                            ? copy.cash
-                            : copy.debt}
-                        </td>
-                        <td className="px-3 py-2">{copy[d.status]}</td>
-                        <td className="px-3 py-2 font-mono text-end">
-                          {formatIQD(totalIQD)}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-end text-ready">
-                          {formatIQD(paidIQD)}
-                        </td>
-                        <td
-                          className={`px-3 py-2 font-mono text-end font-bold ${
-                            outstanding > 0 ? "text-danger" : "text-ready"
-                          }`}
-                        >
-                          {formatIQD(outstanding)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {supplierDrafts.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="p-6 text-center text-muted-foreground"
-                      >
-                        {copy.noTransactions}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
-
-        {/* Statement Dialog */}
-        {statementOpen && selected && (
-          <div
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs grid place-items-center p-4"
-            onClick={() => setStatementOpen(false)}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="statement-dialog-title"
-              className="bg-card border border-control-border rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-              dir={isAr ? "rtl" : "ltr"}
-            >
-              <header className="p-4 border-b border-border flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] text-primary font-bold uppercase tracking-widest">
-                    {copy.statement}
-                  </p>
-                  <h2
-                    id="statement-dialog-title"
-                    className="text-lg font-bold text-foreground"
-                  >
-                    {selected.name}
-                  </h2>
-                </div>
-              </header>
-              <div className="flex-1 overflow-auto p-4 space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-muted border border-border rounded-xl p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">
-                      {copy.totalPurchases}
-                    </p>
-                    <p className="font-mono font-bold text-lg text-foreground tabular-nums">
-                      {formatIQD(
-                        supplierDrafts.reduce(
-                          (sum, d) =>
-                            sum + Number(d.allowanceSnapshot.basisFils) / 1000,
-                          0,
-                        ),
-                      )}
-                    </p>
-                  </div>
-                  <div className="bg-muted border border-border rounded-xl p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">
-                      {copy.paid}
-                    </p>
-                    <p className="font-mono font-bold text-lg text-ready tabular-nums">
-                      {formatIQD(
-                        supplierDrafts.reduce(
-                          (sum, d) =>
-                            sum +
-                            (d.settlementContext === "cash"
-                              ? Number(d.allowanceSnapshot.basisFils) / 1000
-                              : 0),
-                          0,
-                        ),
-                      )}
-                    </p>
-                  </div>
-                  <div className="bg-muted border border-border rounded-xl p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">
-                      {copy.outstandingBalance}
-                    </p>
-                    <p
-                      className={`font-mono font-bold text-lg tabular-nums ${
-                        liveBalance > 0 ? "text-danger" : "text-ready"
-                      }`}
-                    >
-                      {formatIQD(liveBalance)}
-                    </p>
-                  </div>
-                </div>
-                <div className="border border-border rounded-lg overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead className="text-[10px] uppercase font-bold text-muted-foreground bg-muted tracking-widest">
-                      <tr>
-                        <th className="px-3 py-2 text-start">{copy.date}</th>
-                        <th className="px-3 py-2 text-start">#</th>
-                        <th className="px-3 py-2 text-end">{copy.debit}</th>
-                        <th className="px-3 py-2 text-end">{copy.credit}</th>
-                        <th className="px-3 py-2 text-end">{copy.balance}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/50">
-                      {(() => {
-                        let running = 0;
-                        return supplierDrafts.map((d, i) => {
-                          const total =
-                            Number(d.allowanceSnapshot.basisFils) / 1000;
-                          const paid =
-                            d.settlementContext === "cash" ? total : 0;
-                          running += total - paid;
-                          return (
-                            <tr key={d.id} className="hover:bg-muted/30">
-                              <td className="px-3 py-2 font-mono">
-                                {d.invoiceDate}
-                              </td>
-                              <td className="px-3 py-2 font-mono">
-                                {d.supplierInvoiceNumber || i + 1}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-end text-danger">
-                                {formatIQD(total)}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-end text-ready">
-                                {formatIQD(paid)}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-end font-bold">
-                                {formatIQD(running)}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <footer className="p-3 border-t border-border flex items-center justify-end bg-card">
-                <button
-                  type="button"
-                  onClick={() => setStatementOpen(false)}
-                  className="px-4 py-1.5 h-8 bg-muted border border-control-border rounded-lg text-xs font-bold hover:bg-muted/80"
-                >
-                  {copy.closeStatement}
-                </button>
-              </footer>
-            </div>
-          </div>
-        )}
       </div>
     </section>
   );

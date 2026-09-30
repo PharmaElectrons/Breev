@@ -1418,10 +1418,9 @@ export function InventoryMovements({
           >
             {copy.backToInventory}
           </a>
-          <h2 id="inventory-movement-title">{copy.movement.title}</h2>
-          <p className="inventory-detail-item">
-            <bdi>{response.productDisplayName}</bdi>
-          </p>
+          <h2 id="inventory-movement-title">
+            {copy.movement.title} — <bdi>{response.productDisplayName}</bdi>
+          </h2>
         </div>
       </header>
       <BatchSafetyPanel

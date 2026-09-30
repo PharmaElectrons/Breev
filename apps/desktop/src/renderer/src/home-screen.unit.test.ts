@@ -261,13 +261,13 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="settings"');
+      expect(markup).toContain('data-action="launch-settings"');
       expect(markup).toContain('href="#/settings"');
-      expect(markup).not.toContain('data-module="sales"');
-      expect(markup).not.toContain('data-module="purchases"');
-      expect(markup).not.toContain('data-module="inventory"');
-      expect(markup).not.toContain('data-module="products"');
-      expect(markup).not.toContain('data-module="basket"');
+      expect(markup).not.toContain('data-action="launch-sales"');
+      expect(markup).not.toContain('data-action="launch-purchases"');
+      expect(markup).not.toContain('data-action="launch-inventory"');
+      expect(markup).not.toContain('data-action="launch-products"');
+      expect(markup).not.toContain('data-action="launch-basket"');
     });
 
     it("shows sales card only when sales.drafts.manage is allowed", () => {
@@ -279,12 +279,12 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="sales"');
+      expect(markup).toContain('data-action="launch-sales"');
       expect(markup).toContain('href="#/sales"');
-      expect(markup).not.toContain('data-module="purchases"');
-      expect(markup).not.toContain('data-module="inventory"');
-      expect(markup).not.toContain('data-module="products"');
-      expect(markup).not.toContain('data-module="basket"');
+      expect(markup).not.toContain('data-action="launch-purchases"');
+      expect(markup).not.toContain('data-action="launch-inventory"');
+      expect(markup).not.toContain('data-action="launch-products"');
+      expect(markup).not.toContain('data-action="launch-basket"');
     });
 
     it("shows purchases card when purchases.drafts.manage is allowed", () => {
@@ -296,9 +296,9 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="purchases"');
+      expect(markup).toContain('data-action="launch-purchases"');
       expect(markup).toContain('href="#/purchases"');
-      expect(markup).not.toContain('data-module="sales"');
+      expect(markup).not.toContain('data-action="launch-sales"');
     });
 
     it("shows purchases card when purchases.posted.view is allowed", () => {
@@ -310,7 +310,7 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="purchases"');
+      expect(markup).toContain('data-action="launch-purchases"');
       expect(markup).toContain('href="#/purchases"');
     });
 
@@ -323,9 +323,9 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="inventory"');
+      expect(markup).toContain('data-action="launch-inventory"');
       expect(markup).toContain('href="#/inventory"');
-      expect(markup).not.toContain('data-module="sales"');
+      expect(markup).not.toContain('data-action="launch-sales"');
     });
 
     it("shows inventory card when inventory.counts.record is allowed", () => {
@@ -337,7 +337,7 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="inventory"');
+      expect(markup).toContain('data-action="launch-inventory"');
       expect(markup).toContain('href="#/inventory"');
     });
 
@@ -350,9 +350,9 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="products"');
+      expect(markup).toContain('data-action="launch-products"');
       expect(markup).toContain('href="#/catalog/products"');
-      expect(markup).not.toContain('data-module="sales"');
+      expect(markup).not.toContain('data-action="launch-sales"');
     });
 
     it("shows basket card when inventory.reorder.manage is allowed", () => {
@@ -364,9 +364,9 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="basket"');
+      expect(markup).toContain('data-action="launch-basket"');
       expect(markup).toContain('href="#/basket"');
-      expect(markup).not.toContain('data-module="sales"');
+      expect(markup).not.toContain('data-action="launch-sales"');
     });
 
     it("shows basket card when inventory.reorder.confirm is allowed", () => {
@@ -378,7 +378,7 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="basket"');
+      expect(markup).toContain('data-action="launch-basket"');
       expect(markup).toContain('href="#/basket"');
     });
 
@@ -397,12 +397,12 @@ describe("HomeScreen", () => {
       );
 
       const markup = renderHomeScreen();
-      expect(markup).toContain('data-module="sales"');
-      expect(markup).toContain('data-module="purchases"');
-      expect(markup).toContain('data-module="inventory"');
-      expect(markup).toContain('data-module="products"');
-      expect(markup).toContain('data-module="basket"');
-      expect(markup).toContain('data-module="settings"');
+      expect(markup).toContain('data-action="launch-sales"');
+      expect(markup).toContain('data-action="launch-purchases"');
+      expect(markup).toContain('data-action="launch-inventory"');
+      expect(markup).toContain('data-action="launch-products"');
+      expect(markup).toContain('data-action="launch-basket"');
+      expect(markup).toContain('data-action="launch-settings"');
     });
   });
 
@@ -547,6 +547,161 @@ describe("HomeScreen", () => {
       expect(markup).toContain("إدارة الترخيص");
       expect(markup).toContain("حالة الاتصال");
       expect(markup).toContain("الترخيص والأمان");
+    });
+  });
+
+  describe("Prototype KPI Stacked Cards", () => {
+    it("renders all 5 KPI stacked cards with correct prototype labels and tones in English", () => {
+      mockPreferences("en");
+      mockIdentity(buildMockAuthenticatedState());
+
+      const markup = renderHomeScreen();
+      expect(markup).toContain('data-tone="emerald"');
+      expect(markup).toContain('data-tone="rose"');
+      expect(markup).toContain('data-tone="amber"');
+      expect(markup).toContain('data-tone="cyan"');
+      expect(markup).toContain("Total Sales");
+      expect(markup).toContain("Daily Sales");
+      expect(markup).toContain("Total Expenses");
+      expect(markup).toContain("Today Expenses");
+      expect(markup).toContain("Total Profit");
+      expect(markup).toContain("Today Profit");
+      expect(markup).toContain("Warehouse Cost");
+      expect(markup).toContain("Warehouse Retail Value");
+      expect(markup).toContain("Total Debts");
+      expect(markup).toContain("Near Expiry Ratio");
+      expect(markup).toContain("0 IQD");
+      expect(markup).toContain("0.0%");
+    });
+
+    it("renders all 5 KPI stacked cards with correct prototype labels and tones in Arabic", () => {
+      mockPreferences("ar");
+      mockIdentity(buildMockAuthenticatedState());
+
+      const markup = renderHomeScreen();
+      expect(markup).toContain("اجمالي البيع");
+      expect(markup).toContain("البيع اليومي");
+      expect(markup).toContain("اجمالي الصرفيات");
+      expect(markup).toContain("الصرفيات اليوم");
+      expect(markup).toContain("اجمالي الربح");
+      expect(markup).toContain("ربح اليوم");
+      expect(markup).toContain("اجمالي كلفة المخزن");
+      expect(markup).toContain("قيمة المخزن - سعر البيع");
+      expect(markup).toContain("اجمالي الديون");
+      expect(markup).toContain("نسبة قريب الانتهاء");
+      expect(markup).toContain("0 د.ع");
+      expect(markup).toContain("0.0%");
+    });
+  });
+
+  describe("Unified Notification Center Strip", () => {
+    it("renders notification center tabs and counts in English", () => {
+      mockPreferences("en");
+      mockIdentity(buildMockAuthenticatedState());
+
+      const markup = renderHomeScreen();
+      expect(markup).toContain("Unified Notification Center");
+      expect(markup).toContain("Item Alerts");
+      expect(markup).toContain("Patient Alerts");
+      expect(markup).toContain("Invoices &amp; Payments");
+      expect(markup).toContain("No active alerts");
+    });
+
+    it("renders notification center tabs and counts in Arabic", () => {
+      mockPreferences("ar");
+      mockIdentity(buildMockAuthenticatedState());
+
+      const markup = renderHomeScreen();
+      expect(markup).toContain("مركز التنبيهات الموحد");
+      expect(markup).toContain("تنبيهات المواد");
+      expect(markup).toContain("تنبيهات المرضى");
+      expect(markup).toContain("فواتير ومستحقات");
+      expect(markup).toContain("لا توجد تنبيهات نشطة");
+    });
+  });
+
+  describe("Consolidated Performance Analysis Table", () => {
+    it("renders table header, title, and all 8 sortable column headers in English", () => {
+      mockPreferences("en");
+      mockIdentity(buildMockAuthenticatedState());
+
+      const markup = renderHomeScreen();
+      expect(markup).toContain(
+        "Performance Analysis — Top Selling &amp; Most Profitable",
+      );
+      expect(markup).toContain('placeholder="Search items by name or code..."');
+      expect(markup).toContain('aria-label="Table Filters"');
+      expect(markup).toContain("Top Selling");
+      expect(markup).toContain("Most Profitable");
+      expect(markup).toContain("Low Stock");
+      expect(markup).toContain("Near Expiry");
+      expect(markup).toContain("Suggested Surplus");
+      expect(markup).toContain("0 items");
+      expect(markup).toContain("Item");
+      expect(markup).toContain("Sold Qty");
+      expect(markup).toContain("Profit");
+      expect(markup).toContain("Profit %");
+      expect(markup).toContain("Expiry");
+      expect(markup).toContain("Current Stock");
+      expect(markup).toContain("Monthly Rate");
+      expect(markup).toContain("Suggested Surplus");
+      expect(markup).toContain("No data available.");
+    });
+
+    it("renders table header, title, and all 8 sortable column headers in Arabic", () => {
+      mockPreferences("ar");
+      mockIdentity(buildMockAuthenticatedState());
+
+      const markup = renderHomeScreen();
+      expect(markup).toContain("تحليل الأداء — الأكثر مبيعاً والأكثر ربحاً");
+      expect(markup).toContain('placeholder="بحث عن مادة بالاسم أو الرمز..."');
+      expect(markup).toContain('aria-label="Table Filters"');
+      expect(markup).toContain("الأكثر مبيعاً");
+      expect(markup).toContain("الأعلى ربحاً");
+      expect(markup).toContain("نواقص المخزون");
+      expect(markup).toContain("قريب الانتهاء");
+      expect(markup).toContain("مقترح الفائض");
+      expect(markup).toContain("0 مادة");
+      expect(markup).toContain("المادة");
+      expect(markup).toContain("كمية المباع");
+      expect(markup).toContain("الربح");
+      expect(markup).toContain("نسبة الربح %");
+      expect(markup).toContain("الاكسباير");
+      expect(markup).toContain("الكمية الحالية");
+      expect(markup).toContain("الصرف الشهري");
+      expect(markup).toContain("مقترح الفائض");
+      expect(markup).toContain("لا توجد بيانات متاحة حالياً.");
+    });
+  });
+
+  describe("System Identifiers Support Card with 1-Click Copy", () => {
+    it("renders pharmacy ID, device ID, and copy buttons", () => {
+      mockPreferences("en");
+      mockIdentity(
+        buildMockAuthenticatedState({
+          pharmacy: {
+            id: "018f92a3-b4c5-7def-8901-23456789abcd",
+            name: "Al-Shifa",
+          },
+        }),
+      );
+
+      const startup = buildMockStartup({
+        startupConfig: {
+          deviceId: "018f92a3-0000-7def-8901-000000000001",
+          diagnosticReporting: "disabled",
+          installationId: "018f92a3-1111-7def-8901-111111111111",
+          localApiOrigin: "http://127.0.0.1:4000",
+          role: "main",
+        },
+      });
+
+      const markup = renderHomeScreen(startup);
+      expect(markup).toContain("System &amp; Version Information");
+      expect(markup).toContain("ID: 018f92a3...");
+      expect(markup).toContain("DEV: 018f92a3...");
+      expect(markup).toContain('aria-label="Copy Pharmacy ID"');
+      expect(markup).toContain('aria-label="Copy Device ID"');
     });
   });
 });

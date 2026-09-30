@@ -609,6 +609,8 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     expect(hiddenDetail).toMatchObject({
       allowanceFils: null,
       allowancePercentageSnapshot: null,
+      canAdjust: true,
+      canReturn: true,
       costAfterDiscountFils: null,
       costVisibility: "hidden-by-setting",
       primarySupplierCostFils: null,
@@ -2046,6 +2048,15 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     };
     await revoke("purchases.returns.manage");
     try {
+      const detail = await request(
+        "GET",
+        `/purchases/posted/${original.posted.id}`,
+      );
+      expect(detail.status, diagnostics(detail)).toBe(200);
+      expect(detail.body).toMatchObject({
+        canAdjust: true,
+        canReturn: false,
+      });
       const denied = await request(
         "POST",
         purchaseReturnDraftsPath(original.posted.id),
@@ -2062,6 +2073,16 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
 
     await revoke("purchases.costs.view");
     try {
+      const detail = await request(
+        "GET",
+        `/purchases/posted/${original.posted.id}`,
+      );
+      expect(detail.status, diagnostics(detail)).toBe(200);
+      expect(detail.body).toMatchObject({
+        canAdjust: false,
+        canReturn: false,
+        costVisibility: "hidden-by-permission",
+      });
       const denied = await request(
         "POST",
         purchaseReturnDraftsPath(original.posted.id),

@@ -57,6 +57,8 @@ const empty: Partial<PatientRow> = {
   uses_alcohol: false,
   has_allergy: false,
   allergies: [],
+  discount_pct: 0,
+
 };
 
 
@@ -612,8 +614,36 @@ function PatientEditor({
               onChange={(v) => setForm((f) => ({ ...f, allergies: v }))}
             />
           )}
+
+          {/* Permanent pre-approved patient discount */}
+          <label className="block pt-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              نسبة خصم المريض %
+            </span>
+            <div className="mt-1 relative">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={form.discount_pct ?? 0}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    discount_pct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                  }))
+                }
+                className="w-full bg-slate-800 border border-border rounded-lg pr-3 pl-8 py-1.5 text-xs font-mono outline-none focus:ring-2 focus:ring-emerald/40"
+              />
+              <span className="absolute top-1/2 -translate-y-1/2 left-3 text-[11px] font-bold text-emerald">%</span>
+            </div>
+            <span className="mt-1 block text-[9px] text-muted-foreground">
+              خصم دائم معتمد مسبقاً يُطبّق تلقائياً على فواتير هذا المريض.
+            </span>
+          </label>
         </div>
       </div>
+
 
       {!creating && activeId && <ClinicalSections patientId={activeId} />}
 
