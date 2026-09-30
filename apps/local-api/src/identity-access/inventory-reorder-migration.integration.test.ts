@@ -346,16 +346,17 @@ describe.sequential("migration 0024: inventory reorder basket", () => {
  * `runMigrations` replays every migration after the baseline, not only the one
  * under test. Migration 0025 grants `sales.drafts.manage` to owner, manager,
  * pharmacist, and sales employee; migrations 0027–0029 each grant another
- * permission to owner and manager. Keep those independent later grants
+ * permission to owner and manager; migration 0030 grants the two report
+ * permissions to owner in one statement. Keep those independent later grants
  * explicit in the expected revision deltas.
  */
 const LATER_ROLE_REVISION_INCREMENTS: Readonly<Record<string, bigint>> = {
-  owner: 4n,
+  owner: 5n,
   manager: 4n,
   pharmacist: 1n,
   sales_employee: 1n,
 };
-const LATER_PHARMACY_REVISIONS = 4n;
+const LATER_PHARMACY_REVISIONS = 5n;
 
 function expectRevisionDelta(
   before: DatabaseSnapshot,

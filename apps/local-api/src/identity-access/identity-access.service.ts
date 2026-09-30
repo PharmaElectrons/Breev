@@ -2905,6 +2905,26 @@ export class IdentityAccessService {
     });
   }
 
+  /** The report snapshot rechecks identity without taking write locks or advancing licence time. */
+  public async revalidateInventoryReport(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+    permissions: readonly PermissionName[],
+  ): Promise<IdentityExecutionContext> {
+    const fresh = await this.currentContext(client, expected, true);
+    for (const permission of permissions) {
+      if (!hasPermission(fresh.permissions, permission)) {
+        throw await this.contextDenial(
+          fresh,
+          403,
+          "permission-denied",
+          permission,
+        );
+      }
+    }
+    return fresh;
+  }
+
   public async revalidateInventoryReview(
     client: PoolClient,
     expected: IdentityExecutionContext,
@@ -3416,12 +3436,13 @@ export class IdentityAccessService {
   private async currentContext(
     client: PoolClient,
     expected: IdentityExecutionContext,
+    readOnly = false,
   ): Promise<IdentityExecutionContext> {
     if (expected.terminalDeviceId !== undefined) {
       const live = await client.query(
         `select 1 from terminal_devices
          where id = $1 and revoked_at is null
-         for share`,
+         ${readOnly ? "" : "for share"}`,
         [expected.terminalDeviceId],
       );
       if (live.rowCount !== 1) {
@@ -3442,16 +3463,18 @@ export class IdentityAccessService {
     ) {
       throw await this.contextDenial(expected, 401, "session-revoked");
     }
-    const entitlement = await this.licensing.current(
-      {
-        actorId: row.user_id,
-        identitySessionId: row.session_id,
-        mainDeviceId: expected.licensingDeviceId,
-        now: new Date(),
-        pharmacyId: row.pharmacy_id,
-      },
-      client,
-    );
+    const entitlement = readOnly
+      ? expected.entitlement
+      : await this.licensing.current(
+          {
+            actorId: row.user_id,
+            identitySessionId: row.session_id,
+            mainDeviceId: expected.licensingDeviceId,
+            now: new Date(),
+            pharmacyId: row.pharmacy_id,
+          },
+          client,
+        );
     await this.requireTerminalEntitlement({
       actorId: row.user_id,
       client,

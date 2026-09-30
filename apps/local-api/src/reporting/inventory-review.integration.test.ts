@@ -7,6 +7,12 @@ import {
   inventoryMovementHistoryContract,
   inventoryMovementHistoryPath,
   inventorySensitiveExportContract,
+  INVENTORY_REPORT_KINDS,
+  inventoryReportPath,
+  inventoryReportSchema,
+  inventoryReportExportSchema,
+  inventoryReportProtectedExportContract,
+  type InventoryReport,
   productArchivePath,
   purchaseAdjustmentDraftPath,
   purchaseAdjustmentDraftsPath,
@@ -473,6 +479,289 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     );
   });
 
+  it("reports all seven categories from one historical cutoff without changing stock", async () => {
+    const before = await stockFacts();
+    const clock = await administrator.query<{ now: Date }>("select now()");
+    const query = {
+      from: "2020-01-01T00:00:00.000Z",
+      to: clock.rows[0]!.now.toISOString(),
+    };
+    const path = (
+      kind: (typeof INVENTORY_REPORT_KINDS)[number],
+      extra: Record<string, unknown> = {},
+    ) =>
+      `${inventoryReportPath(kind)}?query=${encodeURIComponent(JSON.stringify({ ...query, ...extra }))}`;
+    const reports = new Map<string, InventoryReport>();
+    for (const kind of INVENTORY_REPORT_KINDS) {
+      const response = await request("GET", path(kind));
+      expect(response.status, `${kind}: ${diagnostics(response)}`).toBe(200);
+      const report = inventoryReportSchema.parse(response.body);
+      expect(report.kind).toBe(kind);
+      expect(report.query).toMatchObject(query);
+      expect(report.dateBasis).toBe("immutable-posting-time");
+      reports.set(kind, report);
+    }
+    const quantity = reports
+      .get("quantity")!
+      .rows.find((row) => row.productId === product.id)!;
+    const value = reports
+      .get("value")!
+      .rows.find((row) => row.productId === product.id)!;
+    const average = reports
+      .get("average-cost")!
+      .rows.find((row) => row.productId === product.id)!;
+    const independentMovements = await administrator.query<{
+      quantity: string;
+      carrying_amount_fils: string;
+      reason: string;
+      source_document_id: string;
+    }>(
+      "select quantity::text, carrying_amount_fils::text, reason, source_document_id::text from inventory_movements where pharmacy_id = $1 and product_id = $2",
+      [pharmacyId, product.id],
+    );
+    const independentEffects = await administrator.query<{
+      carrying_amount_delta_fils: string;
+    }>(
+      "select carrying_amount_delta_fils::text from inventory_value_effects where pharmacy_id = $1 and product_id = $2",
+      [pharmacyId, product.id],
+    );
+    const balance = independentMovements.rows.reduce(
+      (sum, row) => sum + BigInt(row.quantity),
+      0n,
+    );
+    const amount =
+      independentMovements.rows.reduce(
+        (sum, row) =>
+          sum +
+          (row.reason === "purchase-adjustment"
+            ? 0n
+            : BigInt(row.carrying_amount_fils)),
+        0n,
+      ) +
+      independentEffects.rows.reduce(
+        (sum, row) => sum + BigInt(row.carrying_amount_delta_fils),
+        0n,
+      );
+    expect(quantity.cells).toMatchObject({
+      openingQuantity: "0",
+      closingQuantity: balance.toString(),
+      periodQuantity: balance.toString(),
+    });
+    expect(value.cells.closingValueFils).toBe(amount.toString());
+    const independentState = await administrator.query<{
+      total_quantity: string;
+      total_value_scaled: string;
+    }>(
+      "select total_quantity::text, total_value_scaled::text from inventory_valuation_state where pharmacy_id = $1 and product_id = $2",
+      [pharmacyId, product.id],
+    );
+    expect(independentState.rows[0]?.total_quantity).toBe(balance.toString());
+    expect(
+      valuationValueFils({
+        totalQuantity: BigInt(independentState.rows[0]!.total_quantity),
+        totalValueScaled: BigInt(independentState.rows[0]!.total_value_scaled),
+      }),
+    ).toBe(amount);
+    const independentJournal = await administrator.query<{ value: string }>(
+      "select coalesce(sum(debit_fils - credit_fils), 0)::text as value from accounting_journal_lines where pharmacy_id = $1 and account_code = 'inventory'",
+      [pharmacyId],
+    );
+    // The pending G-01 return template puts its explicit WAC/source-cost offset
+    // on Inventory. Reconcile that separately from the frozen carrying amount.
+    const independentReturnOffset = await administrator.query<{
+      value: string;
+    }>(
+      "select coalesce(sum(inventory_carrying_amount_fils - supplier_reduction_fils), 0)::text as value from posted_purchase_returns where pharmacy_id = $1",
+      [pharmacyId],
+    );
+    expect(
+      BigInt(independentJournal.rows[0]!.value) -
+        BigInt(independentReturnOffset.rows[0]!.value),
+    ).toBe(amount);
+    expect(average.cells.closingAverageCostScaled).toBe(
+      reportAverage({
+        totalQuantity: balance,
+        totalValueScaled: amount * 10_000_000_000n,
+      })?.toString(),
+    );
+    expect(
+      quantity.activities.find((a) => a.reason === "purchase-adjustment")
+        ?.source?.documentId,
+    ).toBe(
+      independentMovements.rows.find(
+        (row) => row.reason === "purchase-adjustment",
+      )?.source_document_id,
+    );
+    const count = reports.get("stocktake-movements")!;
+    expect(count.rows).toHaveLength(0);
+    expect(
+      reports
+        .get("consumption")
+        ?.rows.find((row) => row.productId === product.id)?.cells
+        .consumedQuantity,
+    ).toBe("0");
+    expect(
+      reports
+        .get("alerts")
+        ?.rows.some(
+          (row) => row.cells.availability === "historical-policy-unavailable",
+        ),
+    ).toBe(true);
+    const userFiltered = await request(
+      "GET",
+      path("quantity", { actorId: quantity.activities[0]!.actorId }),
+    );
+    expect(userFiltered.status, diagnostics(userFiltered)).toBe(200);
+    const filteredRow = inventoryReportSchema
+      .parse(userFiltered.body)
+      .rows.find((row) => row.productId === product.id)!;
+    expect(filteredRow.cells.closingQuantity).toBe(balance.toString());
+    expect(filteredRow.activities.length).toBeLessThanOrEqual(
+      quantity.activities.length,
+    );
+    const ordinary = await request(
+      "GET",
+      `${inventoryReportPath("quantity")}/export?query=${encodeURIComponent(JSON.stringify(query))}`,
+    );
+    expect(ordinary.status, diagnostics(ordinary)).toBe(200);
+    const exported = inventoryReportExportSchema.parse(ordinary.body);
+    expect(exported.rows).toHaveLength(exported.totalRows);
+    expect(
+      exported.rows
+        .find((row) => row.productId === product.id)
+        ?.activities.every((activity) => activity.valueFils === null),
+    ).toBe(true);
+    expect(await stockFacts()).toEqual(before);
+    for (const kind of INVENTORY_REPORT_KINDS) {
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
+        expect(
+          (await request(method, inventoryReportPath(kind), {})).status,
+        ).toBe(404);
+      }
+    }
+    expect(await stockFacts()).toEqual(before);
+  });
+
+  it("reconciles historical cutoffs and keeps inactive-period balances under activity filters", async () => {
+    const cutoffs = await administrator.query<{ cutoff: Date }>(
+      "select date_trunc('milliseconds', occurred_at) as cutoff from inventory_movements where pharmacy_id = $1 and product_id = $2 order by occurred_at, id",
+      [pharmacyId, product.id],
+    );
+    const from = cutoffs.rows[1]!.cutoff.toISOString();
+    const to = cutoffs.rows[2]!.cutoff.toISOString();
+    const independent = await administrator.query<{
+      opening: string;
+      activity: string;
+      closing: string;
+    }>(
+      "select coalesce(sum(quantity) filter (where occurred_at < $3), 0)::text as opening, coalesce(sum(quantity) filter (where occurred_at >= $3 and occurred_at < $4), 0)::text as activity, coalesce(sum(quantity) filter (where occurred_at < $4), 0)::text as closing from inventory_movements where pharmacy_id = $1 and product_id = $2",
+      [pharmacyId, product.id, from, to],
+    );
+    const read = async (extra: Record<string, unknown>) => {
+      const response = await request(
+        "GET",
+        `${inventoryReportPath("quantity")}?query=${encodeURIComponent(JSON.stringify({ from, to, ...extra }))}`,
+      );
+      expect(response.status, diagnostics(response)).toBe(200);
+      return inventoryReportSchema
+        .parse(response.body)
+        .rows.find((row) => row.productId === product.id)!;
+    };
+    const complete = await read({});
+    expect(complete.cells).toMatchObject({
+      openingQuantity: independent.rows[0]!.opening,
+      periodQuantity: independent.rows[0]!.activity,
+      closingQuantity: independent.rows[0]!.closing,
+    });
+    expect(
+      BigInt(complete.cells.openingQuantity!) +
+        BigInt(complete.cells.periodQuantity!),
+    ).toBe(BigInt(complete.cells.closingQuantity!));
+    for (const extra of [
+      { actorId: uuidV7() },
+      { businessFrom: "1900-01-01", businessTo: "1900-01-01" },
+    ]) {
+      const filtered = await read(extra);
+      expect(filtered.cells.openingQuantity).toBe(
+        complete.cells.openingQuantity,
+      );
+      expect(filtered.cells.closingQuantity).toBe(
+        complete.cells.closingQuantity,
+      );
+      expect(filtered.cells.activityQuantity).toBe("0");
+      expect(filtered.activities).toEqual([]);
+    }
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const denied = await request(
+      "GET",
+      `${inventoryReportPath("quantity")}?query=${encodeURIComponent(JSON.stringify({ from, to: future }))}`,
+    );
+    expect(denied.status).toBe(400);
+    expect(denied.body).toMatchObject({ code: "future-cutoff" });
+  });
+
+  it("protects a filtered valuation bundle with owner step-up and query-bound idempotency", async () => {
+    const clock = await administrator.query<{ now: Date }>("select now()");
+    const query = {
+      from: "2020-01-01T00:00:00.000Z",
+      to: clock.rows[0]!.now.toISOString(),
+    };
+    const challenge = await request("POST", "/identity/step-up-challenges", {
+      action: "inventory.sensitive.export",
+      idempotencyKey: uuidV7(),
+    });
+    expect(challenge.status, diagnostics(challenge)).toBe(201);
+    const challengeId = String((challenge.body as { id?: string }).id ?? "");
+    const approved = await request(
+      "POST",
+      `/identity/step-up-challenges/${challengeId}/approve`,
+      { idempotencyKey: uuidV7(), password: OWNER_PASSWORD },
+    );
+    expect(approved.status, diagnostics(approved)).toBe(200);
+    const command = {
+      challengeId,
+      idempotencyKey: uuidV7(),
+      kind: "value",
+      query,
+    };
+    const first = await request(
+      "POST",
+      inventoryReportProtectedExportContract.path,
+      command,
+    );
+    expect(first.status, diagnostics(first)).toBe(201);
+    const bundle = inventoryReportExportSchema.parse(first.body);
+    expect(
+      bundle.rows.find((row) => row.productId === product.id)?.cells
+        .closingValueFils,
+    ).toBe("28800");
+    const replay = await request(
+      "POST",
+      inventoryReportProtectedExportContract.path,
+      command,
+    );
+    expect(replay.status, diagnostics(replay)).toBe(201);
+    expect(replay.body).toEqual(first.body);
+    const conflict = await request(
+      "POST",
+      inventoryReportProtectedExportContract.path,
+      {
+        ...command,
+        query: {
+          ...query,
+          filters: [{ column: "item", operator: "contains", value: "nothing" }],
+        },
+      },
+    );
+    expect(conflict.status).toBe(409);
+    const reusedChallenge = await request(
+      "POST",
+      inventoryReportProtectedExportContract.path,
+      { ...command, idempotencyKey: uuidV7() },
+    );
+    expect(reusedChallenge.status).toBe(409);
+  });
+
   it("keeps all stock and posted facts unchanged across every review route", async () => {
     const before = await stockFacts();
     const list = await request("GET", inventoryItemListContract.path);
@@ -887,7 +1176,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
   }
 
   async function request(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     route: string,
     body?: unknown,
   ): Promise<ApiResponse> {

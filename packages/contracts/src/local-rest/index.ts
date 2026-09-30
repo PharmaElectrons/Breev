@@ -1,7 +1,14 @@
 import { z } from "zod";
+import {
+  inventoryReportSchema,
+  inventoryReportExportSchema,
+  inventoryReportDenialSchema,
+  inventoryReportProtectedExportRequestSchema,
+} from "./inventory-reports.js";
+export * from "./inventory-reports.js";
 
-export const LOCAL_API_VERSION = "18" as const;
-export const LOCAL_SCHEMA_VERSION = "18" as const;
+export const LOCAL_API_VERSION = "19" as const;
+export const LOCAL_SCHEMA_VERSION = "19" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -126,6 +133,8 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "purchases.drafts.manage",
   "purchases.posted.view",
   "purchases.returns.manage",
+  "reports.inventory.export",
+  "reports.inventory.view",
   "sales.drafts.manage",
   "sales.misc.manage",
   "sales.quick_access.manage",
@@ -2297,6 +2306,51 @@ export const inventoryItemListContract = {
   },
 } as const;
 
+export const inventoryReportContract = {
+  method: "GET",
+  path: "/reports/inventory/:kind",
+  responses: {
+    200: inventoryReportSchema,
+    ...inventoryReadDenialResponses,
+    403: z.union([
+      identityOrEntitlementDenialSchema,
+      inventoryReportDenialSchema,
+    ]),
+    400: inventoryReportDenialSchema,
+    413: inventoryReportDenialSchema,
+  },
+} as const;
+export const inventoryReportExportContract = {
+  method: "GET",
+  path: "/reports/inventory/:kind/export",
+  responses: {
+    200: inventoryReportExportSchema,
+    ...inventoryReadDenialResponses,
+    403: z.union([
+      identityOrEntitlementDenialSchema,
+      inventoryReportDenialSchema,
+    ]),
+    400: inventoryReportDenialSchema,
+    413: inventoryReportDenialSchema,
+  },
+} as const;
+export const inventoryReportProtectedExportContract = {
+  method: "POST",
+  path: "/inventory/report-exports",
+  request: { body: inventoryReportProtectedExportRequestSchema },
+  responses: {
+    201: inventoryReportExportSchema,
+    401: identityDenialSchema,
+    403: z.union([
+      identityOrEntitlementDenialSchema,
+      inventoryReportDenialSchema,
+    ]),
+    400: inventoryReportDenialSchema,
+    409: z.union([identityDenialSchema, inventoryReportDenialSchema]),
+    413: inventoryReportDenialSchema,
+  },
+} as const;
+
 export const INVENTORY_MOVEMENT_KINDS = [
   "purchase-adjustment",
   "purchase-receipt",
@@ -3159,6 +3213,9 @@ export const reorderItemReturnsPath = (itemId: string): string =>
   `${reorderItemPath(itemId)}/returns`;
 
 export const INVENTORY_CONTRACTS = [
+  inventoryReportContract,
+  inventoryReportExportContract,
+  inventoryReportProtectedExportContract,
   inventoryAllocationPreviewContract,
   inventoryBatchExpiryCorrectionContract,
   inventoryBatchListContract,

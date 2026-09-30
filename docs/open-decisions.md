@@ -16,7 +16,7 @@ These are the client's own open approvals (scope §19 plus items the requirement
 | Dosage calculation and clinical content | The medical source and rules for any dosage or interaction feature. | Feature ships disabled. |
 | Cloud viewing pages | Pages, columns, and reports for Phase One external read-only viewing — needed before milestone 4 begins. | Baseline proposal: summary dashboard plus selected inventory, sales, accounts, and report screens. |
 | WhatsApp and Meta | Provider, templates, included message types, and message boundaries. | Sending disabled; Breev-administered account model in `domain.md`. |
-| Visual reports | Final report images and columns within the approved report categories. | Categories in `domain.md`; any new report outside them is a change request. |
+| Visual reports | Final report images, columns, and grouping within the approved report categories. Issue #64 uses bounded item, batch-status/expiry, alert-type, actor, and Count Session grouping proposals pending client review. | Categories in `domain.md`; any new report outside them is a change request. Working defaults are not approval. |
 | OCR | Provider, usage budget, and the accepted test-invoice set. | OCR inactive; manual entry complete. |
 | Old-data extraction | Separate quotation after reviewing the legacy database/export, volume, and quality. | No migration work. |
 | Final interface file | The final unified visual PDF, including the quick-stocktake design, as a visual reference that adds no scope. | The client-supplied prototype checked in at `design/prototype/` is the current production visual source. The final PDF may refine appearance; it adds no scope and cannot override written requirements. |

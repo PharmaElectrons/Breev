@@ -10,6 +10,7 @@ import {
   purchaseAdjustmentPostingsPath,
   purchaseAdjustmentSummaryPath,
   inventoryBatchStatusChangePath,
+  inventoryReportExportSchema,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
   purchaseReturnDraftPath,
@@ -420,6 +421,183 @@ test.describe.serial("read-only inventory review", () => {
         await context.close();
       }
     }
+  });
+
+  test("shows all seven read-only reports in both languages and themes", async ({
+    browser,
+  }) => {
+    test.setTimeout(240_000);
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await mkdir(evidencePath("issue-64", "after"), { recursive: true });
+    for (const locale of ["ar", "en"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = await browser.newContext({
+          viewport: { height: 800, width: 1280 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+        await expect(page.locator("#inventory-reports-title")).toHaveText(
+          locale === "ar" ? "تقارير المخزون" : "Inventory reports",
+        );
+        await expect(page.locator(".report-categories button")).toHaveCount(7);
+        await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+        await expect(
+          page.locator(".report-table th[aria-sort='ascending']"),
+        ).toHaveCount(1);
+        await expect(page.locator("html")).toHaveAttribute(
+          "dir",
+          locale === "ar" ? "rtl" : "ltr",
+        );
+        await expect(page.locator(".report-actions")).toBeInViewport({
+          ratio: 1,
+        });
+        await page.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: evidencePath(
+            "issue-64",
+            "after",
+            `quantity-${locale}-${theme}.png`,
+          ),
+        });
+        const sourceButton = page
+          .locator(".report-table tbody tr")
+          .first()
+          .locator("td")
+          .last()
+          .getByRole("button");
+        await sourceButton.click();
+        await expect(page.locator(".report-source-dialog")).toBeVisible();
+        await expect(
+          page
+            .locator(
+              ".report-source-dialog .posted-purchase-snapshot, .report-source-dialog .posted-adjustment-view, .report-source-dialog .posted-return-view",
+            )
+            .first(),
+        ).toBeVisible();
+        await page.locator(".report-source-dialog header button").click();
+        await expect(sourceButton).toBeFocused();
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        for (const kind of [
+          "value",
+          "average-cost",
+          "batches-expiry",
+          "consumption",
+          "alerts",
+          "stocktake-movements",
+        ] as const) {
+          await page.goto(`${renderer.origin}#/reports/inventory/${kind}`);
+          await expect(
+            page.locator(".report-categories button[aria-current='page']"),
+          ).toBeVisible();
+          await expect(page.locator(".report-actions")).toBeVisible();
+          expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+            [],
+          );
+          await page.screenshot({
+            animations: "disabled",
+            fullPage: true,
+            path: evidencePath(
+              "issue-64",
+              "after",
+              `${kind}-${locale}-${theme}.png`,
+            ),
+          });
+        }
+        await context.close();
+      }
+    }
+  });
+
+  test("filters, groups, sorts, and exports the complete report without costs", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+    await page.getByLabel(/^Group by/u).selectOption("item");
+    await page
+      .getByRole("button", { name: "Add column filter", exact: true })
+      .click();
+    await page
+      .getByLabel("Filter value", { exact: true })
+      .fill("Browser Inventory");
+    await page
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(page.locator(".report-groups li")).toHaveCount(1);
+    await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+    const sort = page
+      .getByRole("columnheader", { name: "Closing quantity" })
+      .getByRole("button");
+    await sort.focus();
+    await pressKeyOnFocused(page, sort, "Enter");
+    await expect(
+      page.getByRole("columnheader", { name: "Closing quantity" }),
+    ).toHaveAttribute("aria-sort", "ascending");
+    await page
+      .getByRole("button", { name: "Export CSV · without costs", exact: true })
+      .click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Report saved." }),
+    ).toBeVisible();
+    const wire = await page.evaluate(
+      () => (globalThis as { __inventoryExport?: unknown }).__inventoryExport,
+    );
+    expect(wire).toBeDefined();
+    const { format, ...bundle } = wire as Record<string, unknown>;
+    expect(format).toBe("csv");
+    const exported = inventoryReportExportSchema.parse(bundle);
+    expect(exported.sensitivity).toBe("redacted");
+    expect(exported.rows).toHaveLength(exported.totalRows);
+    expect(exported.query).toMatchObject({
+      groupBy: "item",
+      sort: "closingQuantity",
+      filters: [
+        { column: "item", operator: "contains", value: "Browser Inventory" },
+      ],
+    });
+    expect(
+      exported.rows.every((row) =>
+        row.activities.every((activity) => activity.valueFils === null),
+      ),
+    ).toBe(true);
+    await page
+      .getByRole("button", {
+        name: "Protected export · with costs",
+        exact: true,
+      })
+      .click();
+    const stepUp = page
+      .getByRole("dialog")
+      .filter({ has: page.getByLabel("Password", { exact: true }) });
+    await stepUp.getByLabel("Password", { exact: true }).fill(OWNER_PASSWORD);
+    await stepUp.getByRole("button", { name: "Confirm password" }).click();
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(
+            () =>
+              (globalThis as { __inventoryExport?: { sensitivity?: string } })
+                .__inventoryExport?.sensitivity,
+          ),
+      )
+      .toBe("valuation");
+    await page
+      .getByLabel("Filter value", { exact: true })
+      .fill("No matching pharmacy item");
+    await page
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "No matching rows for this period and filters." }),
+    ).toBeVisible();
   });
 
   test("shows a recoverable API-down state and owner-only export", async ({
@@ -1009,7 +1187,8 @@ function isApiRoute(url: string | undefined): boolean {
     url?.startsWith("/catalog/") === true ||
     url?.startsWith("/suppliers") === true ||
     url?.startsWith("/purchases/") === true ||
-    url?.startsWith("/inventory/") === true
+    url?.startsWith("/inventory/") === true ||
+    url?.startsWith("/reports/") === true
   );
 }
 
@@ -1041,6 +1220,32 @@ async function installDesktopFake(
           if (actual.join(",") !== sortedExpected.join(","))
             throw new Error(`${label} has unexpected keys`);
         };
+
+        if (typeof bundle === "object" && bundle !== null && "kind" in bundle) {
+          exactKeys(
+            bundle,
+            [
+              "kind",
+              "pharmacyId",
+              "capturedAt",
+              "exportedAt",
+              "timeZone",
+              "query",
+              "dateBasis",
+              "balanceBasis",
+              "sensitivity",
+              "columns",
+              "actors",
+              "rows",
+              "totalRows",
+              "hasMore",
+              "groups",
+              "explanations",
+            ],
+            "inventory report export",
+          );
+          return;
+        }
 
         exactKeys(
           bundle,

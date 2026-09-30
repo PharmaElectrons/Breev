@@ -19,6 +19,7 @@ import { logoutIdentity } from "./identity-api";
 import { BasketRouteView } from "./basket-screen";
 import { SalesRouteView } from "./sales-screen";
 import { InventoryRouteView } from "./inventory-screen";
+import { InventoryReportsScreen } from "./inventory-reports-screen";
 import { messages } from "./messages";
 import { ModuleNavigation } from "./module-navigation";
 import { NavbarCollapseMenu } from "./navbar-collapse-menu";
@@ -437,6 +438,11 @@ export function AppShell({
               checkNow={async () => {
                 await checkNow();
               }}
+              hash={currentHash}
+            />
+          ) : activeModuleId === "reports" ? (
+            <InventoryReportsScreen
+              baseUrl={localApiOrigin}
               hash={currentHash}
             />
           ) : activeModuleId === "sales" ? (

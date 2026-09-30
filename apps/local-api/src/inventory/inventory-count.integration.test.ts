@@ -10,6 +10,8 @@ import {
   inventoryBatchStatusChangePath,
   inventoryItemListContract,
   inventoryMovementHistoryPath,
+  inventoryReportPath,
+  inventoryReportSchema,
   productPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
@@ -189,6 +191,26 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     );
     expect(multiApplied.line.application?.variance).toBe("-6");
     expect(multiApplied.line.application?.movementIds).toHaveLength(2);
+    const reportResponse = await request(
+      "GET",
+      inventoryReportPath("stocktake-movements"),
+    );
+    expect(reportResponse.status, diagnostics(reportResponse)).toBe(200);
+    const report = inventoryReportSchema.parse(reportResponse.body);
+    const appliedRow = report.rows.find(
+      (row) => row.productId === multiBatch.product.id,
+    );
+    expect(appliedRow?.cells.activityQuantity).toBe("-6");
+    expect(appliedRow?.cells.observedQuantity).toBe("8");
+    expect(appliedRow?.movementIds).toHaveLength(2);
+    expect(appliedRow?.source).toMatchObject({
+      documentId: multiApplied.session.id,
+      documentType: "count-session",
+      openable: true,
+    });
+    expect(
+      report.rows.filter((row) => row.productId === multiBatch.product.id),
+    ).toHaveLength(1);
     const fefoMovements = await administrator.query<{
       batch_id: string;
       quantity: string;

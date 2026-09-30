@@ -136,17 +136,17 @@ describe.sequential("migration 0023: inventory count sessions", () => {
     ]);
     // Migration 0025 grants sales.drafts.manage to owner, manager,
     // pharmacist, and sales employee. Migrations 0027–0029 each grant another
-    // permission to owner and manager between this baseline and migration head.
+    // permission to owner and manager; 0030 grants report permissions to owner.
     expect(after.revisions).toEqual({
       inventory_employee: String(
         BigInt(before.revisions.inventory_employee ?? "0") + 2n,
       ),
       manager: String(BigInt(before.revisions.manager ?? "0") + 6n),
-      owner: String(BigInt(before.revisions.owner ?? "0") + 6n),
+      owner: String(BigInt(before.revisions.owner ?? "0") + 7n),
       pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 3n),
     });
     expect(after.pharmacyRevision).toBe(
-      String(BigInt(before.pharmacyRevision) + 6n),
+      String(BigInt(before.pharmacyRevision) + 7n),
     );
 
     await runMigrations(application, databaseRoles.migrationUrl);

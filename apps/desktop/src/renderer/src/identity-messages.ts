@@ -131,6 +131,15 @@ const permissionLabels: Record<
         "إضافة المستخدمين وإعادة تعيين كلمات مرورهم وإيقاف الحسابات وتعيين الأدوار.",
       name: "إدارة المستخدمين",
     },
+    "reports.inventory.view": {
+      name: "عرض تقارير المخزون",
+      description: "عرض التقارير التاريخية دون تعديل السجلات.",
+    },
+    "reports.inventory.export": {
+      name: "تصدير تقارير المخزون",
+      description:
+        "تصدير النتائج المصفاة دون بيانات التكلفة؛ التصدير الحساس محمي للمالك.",
+    },
     "inventory.review": {
       description: "مراجعة الرصيد والحركات والمخاطر دون تعديل المخزون.",
       name: "مراجعة المخزون",
@@ -243,6 +252,16 @@ const permissionLabels: Record<
       description:
         "Add users, reset their passwords, lock accounts, and assign roles.",
       name: "Manage users",
+    },
+    "reports.inventory.view": {
+      name: "View inventory reports",
+      description:
+        "Read historical inventory reports without changing records.",
+    },
+    "reports.inventory.export": {
+      name: "Export inventory reports",
+      description:
+        "Export filtered results without cost data; sensitive exports require the protected owner path.",
     },
     "inventory.review": {
       description:
@@ -449,6 +468,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       sales: "المبيعات",
       purchasing: "المشتريات والموردون",
       inventory: "المخزون",
+      reports: "التقارير",
     },
     permissionLabels: permissionLabels.ar,
     permissions: "الصلاحيات الممنوحة",
@@ -573,6 +593,7 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       sales: "Sales",
       purchasing: "Purchasing and suppliers",
       inventory: "Inventory",
+      reports: "Reports",
     },
     permissionLabels: permissionLabels.en,
     permissions: "Granted permissions",

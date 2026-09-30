@@ -41,7 +41,7 @@ export function serializeInventoryCsv(
     .join("\r\n")}\r\n`;
 }
 
-function csvCell(value: string): string {
+export function csvCell(value: string): string {
   // Spreadsheet applications can execute formula-like cells, even after a
   // quoted CSV import. Prefix such values with a literal apostrophe.
   const safe = /^[\s\u0000-\u001f]*[=+\-@]/u.test(value) ? `'${value}` : value;

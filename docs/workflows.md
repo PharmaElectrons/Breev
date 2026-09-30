@@ -83,6 +83,12 @@ The operational Inventory grid is read-only. Selecting a row gives a visible sta
 
 Adding an item to the Order Basket gives visible success or failure feedback and updates the basket count. The basket has a direct return link to Inventory. The owner-only sensitive inventory export requires password reauthentication for either format and opens a native save-location dialog; success, cancellation, or failure is reported. JSON remains the complete protected export with batch and supplier detail. The additional CSV is an item-summary table with exact fils fields, protected by the same permission, password challenge, and export audit. CSV does not replace JSON.
 
+### Inventory reports
+
+An authorized user opens Reports and selects quantity, value, average cost, batches/expiry, consumption, alerts, or applied stocktake movements. From is inclusive and To is exclusive in the pharmacy timezone; the API uses immutable UTC posting timestamps. A separate business-date range selects attributed activity only where the source recorded that date. Actor and business-date filters never change the pharmacy-wide opening and closing positions. The workspace offers allowed columns, search filters, sort, grouping, paging, period activity, and source-document review. Source review checks its own permissions. The report has no stock-posting action.
+
+`reports.inventory.view` permits ordinary read access, `reports.inventory.export` permits a complete filtered CSV without cost values, and `inventory.valuation.view` separately gates value and average-cost reports and sensitive fields. The owner may request a complete filtered sensitive export after the existing password Step-Up. A native Save dialog reports save, cancellation, or failure. Historical threshold alerts state that the policy is unavailable when applicable rule versions cannot be established; recorded batch status and expiry remain visible. Consumption windows end at To and use eligible posted demand only. Current M2 sources have no such demand, so the report shows zero with an explanation. Columns and grouping remain working defaults under `open-decisions.md` Visual reports.
+
 ### Expiry, recall, quarantine
 
 The daily idempotent job updates current eligibility and catches up on missed business dates. Checkout also revalidates synchronously, so a missed job cannot allow the sale of newly expired stock. The monthly review lists every expired batch and every unresolved recalled or quarantined batch.
