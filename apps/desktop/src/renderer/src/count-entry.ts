@@ -1,7 +1,8 @@
-import type {
-  CountEntry,
-  InventoryCapableUnit,
-  ProductPackaging,
+import {
+  normalizeIndicDigits,
+  type CountEntry,
+  type InventoryCapableUnit,
+  type ProductPackaging,
 } from "@breev/contracts/local-rest";
 
 export interface CountEntryUnit {
@@ -91,10 +92,10 @@ export function countEntryCaption(
 export function countEntryLabelParts(
   label: string,
 ): readonly (string | bigint)[] {
-  return label
-    .split(/(\d+)/u)
+  return normalizeIndicDigits(label)
+    .split(/([0-9]+)/u)
     .filter((part) => part !== "")
-    .map((part) => (/^\d+$/u.test(part) ? BigInt(part) : part));
+    .map((part) => countFieldQuantity(part) ?? part);
 }
 
 export function buildCountEntryPreview(
@@ -102,8 +103,8 @@ export function buildCountEntryPreview(
   fields: Readonly<Record<string, string>>,
 ): CountEntryPreview {
   const invalidField = countEntryUnits(packaging).find(({ key }) => {
-    const value = fields[key] ?? "";
-    return value.trim() !== "" && !/^\d+$/u.test(value.trim());
+    const value = (fields[key] ?? "").trim();
+    return value !== "" && countFieldQuantity(value) === null;
   })?.key;
   const entries = countEntriesFromFields(packaging, fields);
   const caption = countEntryCaption(packaging, fields);
@@ -117,15 +118,17 @@ export function buildCountEntryPreview(
   };
 }
 
+/** Whole quantity typed by a user, or null when the text is blank or not an integer.
+ * Arabic-Indic and Persian digits are normalized before BigInt. */
+export function countFieldQuantity(value: string): bigint | null {
+  const normalized = normalizeIndicDigits(value).trim();
+  return /^[0-9]+$/u.test(normalized) ? BigInt(normalized) : null;
+}
+
 function parseCount(value: string): bigint {
-  const normalized = value.trim();
-  return normalized === "" || !/^\d+$/u.test(normalized)
-    ? 0n
-    : BigInt(normalized);
+  return countFieldQuantity(value) ?? 0n;
 }
 
 export function normalizedCount(value: string): string {
-  const normalized = value.trim();
-  if (normalized === "" || !/^\d+$/u.test(normalized)) return "0";
-  return normalized.replace(/^0+(?=\d)/u, "");
+  return countFieldQuantity(value)?.toString() ?? "0";
 }

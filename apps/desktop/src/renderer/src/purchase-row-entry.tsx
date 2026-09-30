@@ -16,6 +16,7 @@ import {
   type PurchasingDenial,
 } from "@breev/contracts/local-rest";
 import { requestProduct, searchProducts } from "./catalog-api";
+import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import { formatFilsToIqd } from "./product-record";
 import { ProductForm } from "./product-form";
 import { calculateRetailPricePreview } from "./product-pricing";
@@ -1305,7 +1306,12 @@ export function PurchaseRowEntry({
                               BigInt(row.baseUnitsPerEnteredUnit)
                             ).toString()}
                           </bdi>{" "}
-                          {row.inventoryUnitName}
+                          {panelUnitLabel(
+                            row.inventoryUnitName,
+                            BigInt(editQuantity) *
+                              BigInt(row.baseUnitsPerEnteredUnit),
+                            locale,
+                          )}
                         </>
                       ) : (
                         "—"
@@ -1313,7 +1319,11 @@ export function PurchaseRowEntry({
                     ) : (
                       <>
                         <bdi>{row.inventoryUnitQuantity}</bdi>{" "}
-                        {row.inventoryUnitName}
+                        {panelUnitLabel(
+                          row.inventoryUnitName,
+                          unitQuantity(row.inventoryUnitQuantity),
+                          locale,
+                        )}
                       </>
                     )}
                   </td>
@@ -1536,7 +1546,7 @@ export function PurchaseRowEntry({
               <td data-column-field="inventory-units">
                 {product === null
                   ? "—"
-                  : previewInventoryUnits(product, unitKey, quantity)}
+                  : previewInventoryUnits(product, unitKey, quantity, locale)}
               </td>
               <td data-column-field="actions">
                 <div className="purchase-row-actions-cell">
@@ -1638,7 +1648,7 @@ export function PurchaseRowEntry({
                             }
                             onChange={(event) => setUnitKey(event.target.value)}
                           >
-                            {unitOptions(product, copy)}
+                            {unitOptions(product, copy, locale)}
                           </select>
                           {product === null ? (
                             <span className="purchase-optional-field-hint">
@@ -1890,7 +1900,7 @@ export function PurchaseRowEntry({
                           </div>
                           <div className="purchase-item-suggestion-details">
                             <span className="purchase-item-unit">
-                              {formatPurchaseDefaultUnit(item.product)}
+                              {formatPurchaseDefaultUnit(item.product, locale)}
                             </span>
                             {item.product.pricing.retailPriceFils ? (
                               <span className="purchase-item-price">
@@ -2445,6 +2455,7 @@ function keyToUnit(
 function unitOptions(
   product: Product | null,
   copy: { unitSelectProductFirst: string; baseUnitBadge: string },
+  locale: "ar" | "en",
 ): React.JSX.Element[] {
   if (product === null)
     return [
@@ -2454,12 +2465,11 @@ function unitOptions(
     ];
   return [
     <option key="inventory" value="inventory-unit">
-      {product.packaging.inventoryUnitName} ({copy.baseUnitBadge})
+      {`${panelUnitLabel(product.packaging.inventoryUnitName, 1n, locale)} (${copy.baseUnitBadge})`}
     </option>,
     ...product.packaging.packageUnits.map((unit) => (
       <option key={unit.name} value={`package:${unit.name}`}>
-        {unit.name} ({unit.baseUnitsPerPackage}{" "}
-        {product.packaging.inventoryUnitName})
+        {`${panelUnitLabel(unit.name, 1n, locale)} (${unit.baseUnitsPerPackage} ${panelUnitLabel(product.packaging.inventoryUnitName, unitQuantity(unit.baseUnitsPerPackage), locale)})`}
       </option>
     )),
   ];
@@ -2468,6 +2478,7 @@ function previewInventoryUnits(
   product: Product,
   unitKey: string,
   quantity: string,
+  locale: "ar" | "en",
 ): string {
   if (!isPositiveInteger(quantity)) return "—";
   const ratio =
@@ -2478,7 +2489,8 @@ function previewInventoryUnits(
             (unit) => unit.name === unitKey.slice("package:".length),
           )?.baseUnitsPerPackage ?? "0",
         );
-  return `${(BigInt(quantity) * ratio).toString()} ${product.packaging.inventoryUnitName}`;
+  const total = BigInt(quantity) * ratio;
+  return `${total.toString()} ${panelUnitLabel(product.packaging.inventoryUnitName, total, locale)}`;
 }
 function looksLikeBarcode(value: string): boolean {
   return /^(?:[0-9]{4,}|BRV-[0-9]{4,})$/u.test(value);
@@ -2489,18 +2501,21 @@ function isPositiveInteger(value: string): boolean {
 function isUnsignedInteger(value: string): boolean {
   return /^(?:0|[1-9][0-9]*)$/u.test(value);
 }
-export function formatPurchaseDefaultUnit(product: Product): string {
+export function formatPurchaseDefaultUnit(
+  product: Product,
+  locale: "ar" | "en" = "en",
+): string {
   const purchaseUnit = product.packaging.defaultUnits.purchase;
   if (purchaseUnit.kind === "inventory-unit") {
-    return product.packaging.inventoryUnitName;
+    return panelUnitLabel(product.packaging.inventoryUnitName, 1n, locale);
   }
   const pkg = product.packaging.packageUnits.find(
     (u) => u.name === purchaseUnit.packageUnitName,
   );
   if (pkg) {
-    return `${pkg.name} (${pkg.baseUnitsPerPackage} ${product.packaging.inventoryUnitName})`;
+    return `${panelUnitLabel(pkg.name, 1n, locale)} (${pkg.baseUnitsPerPackage} ${panelUnitLabel(product.packaging.inventoryUnitName, unitQuantity(pkg.baseUnitsPerPackage), locale)})`;
   }
-  return purchaseUnit.packageUnitName;
+  return panelUnitLabel(purchaseUnit.packageUnitName, 1n, locale);
 }
 
 export function determineDisplayedProduct({

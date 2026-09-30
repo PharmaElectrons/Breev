@@ -14,6 +14,22 @@ export const BREEV_CSRF_VALUE = "1" as const;
 export const LOCAL_DEVICE_ID_HEADER = "X-Breev-Device-Id" as const;
 export const LOCAL_DEVICE_SESSION_HEADER = "X-Breev-Device-Session" as const;
 
+/** Maps Arabic-Indic and Eastern Arabic-Indic digits to ASCII. Wire values stay ASCII. */
+export function normalizeIndicDigits(value: string): string {
+  let normalized = "";
+  for (const character of value) {
+    const code = character.codePointAt(0);
+    if (code !== undefined && code >= 0x0660 && code <= 0x0669) {
+      normalized += String(code - 0x0660);
+    } else if (code !== undefined && code >= 0x06f0 && code <= 0x06f9) {
+      normalized += String(code - 0x06f0);
+    } else {
+      normalized += character;
+    }
+  }
+  return normalized;
+}
+
 export const PHARMACY_ROLE_KEYS = [
   "owner",
   "manager",
@@ -2210,6 +2226,8 @@ export const INVENTORY_COLUMN_FIELDS = [
 ] as const;
 export const inventoryColumnFieldSchema = z.enum(INVENTORY_COLUMN_FIELDS);
 export const INVENTORY_RISK_INDICATORS = [
+  "recalled",
+  "quarantined",
   "out-of-stock",
   "below-minimum",
   "at-or-below-reorder-point",
@@ -2261,6 +2279,7 @@ export const INVENTORY_DENIAL_CODES = [
   "count-balance-changed",
   "count-variance-zero",
   "count-variance-already-applied",
+  "count-pending-variances",
   "count-blocked-stock",
   "count-no-batch",
   "count-no-cost-basis",
@@ -2907,6 +2926,16 @@ export const countSessionStartRequestSchema = z.strictObject({
   idempotencyKey: z.uuid(),
 });
 export const countSessionListQuerySchema = z.strictObject({
+  cursor: z
+    .string()
+    .regex(
+      /^.+\|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu,
+    )
+    .optional(),
+  limit: z
+    .string()
+    .regex(/^(?:[1-9]|[1-9]\d|100)$/u)
+    .optional(),
   status: z.enum(["active", "completed"]).optional(),
 });
 export const countLineRecordRequestSchema = z.strictObject({
@@ -2947,7 +2976,11 @@ export const countSessionListContract = {
   path: "/inventory/count-sessions",
   request: { query: countSessionListQuerySchema },
   responses: {
-    200: z.strictObject({ sessions: z.array(countSessionSummarySchema) }),
+    200: z.strictObject({
+      hasMore: z.boolean(),
+      nextCursor: z.string().nullable(),
+      sessions: z.array(countSessionSummarySchema),
+    }),
     ...inventoryReadDenialResponses,
   },
 } as const;

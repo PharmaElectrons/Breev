@@ -162,6 +162,7 @@ test.describe.serial("Main pairing screen", () => {
     ).toBeVisible();
     await expect(page.getByText("Seats in use")).toBeVisible();
     await expect(seatUsage(page)).toHaveText("1 / 4");
+    await expect(seatUsageBreakdown(page)).toHaveText("1 Main + 0 terminals");
 
     // Starting a session is a reauthenticated act, reached by keyboard alone.
     const startPairing = page.getByRole("button", { name: "Start pairing" });
@@ -229,6 +230,7 @@ test.describe.serial("Main pairing screen", () => {
     await expect(device).toBeVisible();
     await expect(device.getByText("Active")).toBeVisible();
     await expect(seatUsage(page)).toHaveText("2 / 4");
+    await expect(seatUsageBreakdown(page)).toHaveText("1 Main + 1 terminal");
     await captureSpread(page, "device-list");
   });
 
@@ -434,6 +436,7 @@ test.describe.serial("Main pairing screen", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(device.getByText("Seat released")).toBeVisible();
     await expect(seatUsage(page)).toHaveText("1 / 4");
+    await expect(seatUsageBreakdown(page)).toHaveText("1 Main + 0 terminals");
     await captureSpread(page, "seat-released");
   });
 
@@ -507,6 +510,7 @@ test.describe.serial("Main pairing screen", () => {
       pharmacyId,
     });
     await expect(seatUsage(page)).toHaveText("1 / 1");
+    await expect(seatUsageBreakdown(page)).toHaveText("1 Main + 0 terminals");
 
     const invitationUri = await startPairingSession(page);
     const refused = await joinAsTerminal({
@@ -528,6 +532,7 @@ test.describe.serial("Main pairing screen", () => {
     await page.getByRole("button", { name: "Paired devices" }).click();
     await expect(deviceRow(page, SECOND_TERMINAL_NAME)).toHaveCount(0);
     await expect(seatUsage(page)).toHaveText("1 / 1");
+    await expect(seatUsageBreakdown(page)).toHaveText("1 Main + 0 terminals");
   });
 });
 
@@ -582,6 +587,10 @@ function deviceRow(page: Page, displayName: string): Locator {
 
 function seatUsage(page: Page): Locator {
   return page.locator(".seat-usage strong");
+}
+
+function seatUsageBreakdown(page: Page): Locator {
+  return page.locator(".seat-usage-breakdown");
 }
 
 async function signIn(

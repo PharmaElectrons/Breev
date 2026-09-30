@@ -44,6 +44,7 @@ import {
   waitForHealth as waitForLocalApiHealth,
 } from "../local-api-process.js";
 import { evidencePath } from "./evidence-path.js";
+import { pressKeyOnFocused } from "./focus.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_USERNAME = "catalog.browser.owner";
@@ -153,7 +154,8 @@ async function startRendererServer(
 
       if (
         request.url?.startsWith("/identity/") ||
-        request.url?.startsWith("/catalog/")
+        request.url?.startsWith("/catalog/") ||
+        request.url?.startsWith("/inventory/")
       ) {
         const body = await readRequestBody(request);
         const upstream = await fetch(`${apiOrigin}${request.url}`, {
@@ -470,6 +472,60 @@ test.describe.serial("Product catalog screens", () => {
     await stopProcess(api);
     await administrator?.end().catch(() => undefined);
     await postgres?.stop().catch(() => undefined);
+  });
+
+  test("Product card scrolls by mouse wheel while its actions stay in the viewport", async ({
+    browser,
+  }) => {
+    for (const locale of ["ar", "en"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const page = await browser.newPage({
+          viewport: { width: 1280, height: 800 },
+        });
+        try {
+          await installDesktopFake(page, renderer.origin, { locale, theme });
+          await page.goto(
+            `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
+          );
+          await expect(page.locator("html")).toHaveAttribute("lang", locale);
+          await expect(page.locator("html")).toHaveAttribute(
+            "data-theme",
+            theme,
+          );
+          const form = page.locator(".catalog-product-form");
+          const actions = form.locator(".catalog-product-form-actions");
+          await expect(form).toBeVisible();
+          await expect(actions).toBeInViewport({ ratio: 1 });
+          await expect
+            .poll(() =>
+              form.evaluate(
+                (element) => element.scrollHeight > element.clientHeight,
+              ),
+            )
+            .toBe(true);
+          await form.hover({ position: { x: 30, y: 120 } });
+          await page.mouse.wheel(0, -10000);
+          await expect
+            .poll(() => form.evaluate((element) => element.scrollTop))
+            .toBe(0);
+          await expect(actions).toBeInViewport({ ratio: 1 });
+          await page.mouse.wheel(0, 400);
+          await expect
+            .poll(() => form.evaluate((element) => element.scrollTop))
+            .toBeGreaterThan(0);
+          await expect(actions).toBeInViewport({ ratio: 1 });
+          await page.screenshot({
+            animations: "disabled",
+            path: path.join(
+              adoptionEvidenceDir,
+              `products-merge-scroll-${locale}-${theme}-1280x800.png`,
+            ),
+          });
+        } finally {
+          await page.close();
+        }
+      }
+    }
   });
 
   test("Keyboard-operable medication entry preserves the generated identity", async ({
@@ -899,16 +955,30 @@ test.describe.serial("Product catalog screens", () => {
     await modeSelect.focus();
     await modeSelect.selectOption("general-item");
 
-    // Fill general item fields in order:
-    // Company → Sub-brand → Type/Use → Property → Target → Size
-    const companyInput = page.getByLabel("Company / Manufacturer *");
+    // Follow the definition card's keyboard order, including its shared controls.
+    const companyInput = page.getByLabel("Company / Manufacturer");
     await companyInput.focus();
     await page.keyboard.type("Nivea");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
       "Nivea",
     );
 
-    await page.keyboard.press("Tab");
+    await pressKeyOnFocused(page, companyInput, "Tab");
+    const clearColor = page.getByRole("button", { name: "Clear color" });
+    await expect(clearColor).toBeFocused();
+    await pressKeyOnFocused(page, clearColor, "Tab");
+    const manualColor = page.getByLabel("Manual state color");
+    await expect(manualColor).toBeFocused();
+    await pressKeyOnFocused(page, manualColor, "Tab");
+    const arabicName = page.getByLabel("Arabic search name");
+    await expect(arabicName).toBeFocused();
+    await pressKeyOnFocused(page, arabicName, "Tab");
+    const category = page.getByRole("combobox", {
+      name: "Category",
+      exact: true,
+    });
+    await expect(category).toBeFocused();
+    await pressKeyOnFocused(page, category, "Tab");
     await expect(page.getByLabel("Sub-brand / Series")).toBeFocused();
     await page.keyboard.type("Men");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
@@ -985,7 +1055,7 @@ test.describe.serial("Product catalog screens", () => {
     await submitBtn.click();
 
     // Verifies error alert is shown
-    await expect(page.locator(".denial-alert")).toBeVisible();
+    await expect(page.getByRole("alert")).toBeVisible();
     await expect(
       page.getByText("Value exceeds maximum allowed length."),
     ).toBeVisible();
@@ -1018,24 +1088,24 @@ test.describe.serial("Product catalog screens", () => {
     await inventoryUnit.focus();
     await page.keyboard.type("Strip");
 
-    const addPackage = page.getByRole("button", { name: "+ Add package unit" });
+    const addPackage = page.getByRole("button", { name: "Enable packaging" });
     await addPackage.focus();
     await page.keyboard.press("Enter");
-    const packageName = page.getByLabel("Package Name *");
+    const packageName = page.getByLabel("Package Name");
     await packageName.focus();
     await page.keyboard.type("Pack");
-    const ratio = page.getByLabel("Ratio (Inventory Units per package) *");
+    const ratio = page.getByLabel("Ratio (Inventory Units per package)");
     await ratio.focus();
+    await pressKeyOnFocused(page, ratio, "ControlOrMeta+A");
     await page.keyboard.type("4");
-    await page.getByLabel("Purchase invoice default").selectOption("Pack");
-
-    const pricingMethod = page.getByLabel("Pricing method");
-    await pricingMethod.selectOption("by-percentage");
-    const cost = page.getByLabel("Approved cost (fils) *");
+    await page.getByRole("button", { name: "By %", exact: true }).click();
+    const cost = page.getByLabel("Approved cost (fils)");
     await cost.focus();
+    await pressKeyOnFocused(page, cost, "ControlOrMeta+A");
     await page.keyboard.type("80000");
-    const margin = page.getByLabel("Profit margin percentage (%) *");
+    const margin = page.getByLabel("Profit margin percentage (%)");
     await margin.focus();
+    await pressKeyOnFocused(page, margin, "ControlOrMeta+A");
     await page.keyboard.type("20");
     const rounding = page.getByLabel("Price rounding step");
     await rounding.selectOption("nearest-250-iqd");
@@ -1043,19 +1113,38 @@ test.describe.serial("Product catalog screens", () => {
     await rounding.selectOption("off");
 
     await page.getByRole("button", { name: "Create product" }).click();
-    await expect(page.getByTestId("product-package-units")).toContainText(
-      "Pack",
+    await expect(page.getByTestId("product-display-name")).toHaveText(
+      "Exact Margin Product",
     );
-    await expect(page.getByTestId("product-package-units")).toContainText("4");
-    await expect(page.getByTestId("product-pricing-method")).toContainText(
-      "Sell by percentage",
+    const productId = new URL(page.url()).hash.split("/").at(-1);
+    const readback = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/catalog/products/${productId}`,
     );
-    await expect(page.getByTestId("product-retail-price")).toHaveText(
-      "100 IQD",
-    );
-    await expect(page.getByTestId("product-margin-percentage")).toHaveText(
-      "20%",
-    );
+    expect(readback.status).toBe(200);
+    const saved = productSchema.parse(readback.body);
+    expect(saved.packaging.packageUnits).toEqual([
+      { name: "Pack", baseUnitsPerPackage: "4" },
+    ]);
+    expect(saved.pricing).toMatchObject({
+      method: "by-percentage",
+      marginPercentage: "20",
+      retailPriceFils: "100000",
+      rounding: "off",
+    });
+    await page.reload();
+    await expect(page.getByLabel("Package Name")).toHaveValue("Pack");
+    await expect(
+      page.getByLabel("Ratio (Inventory Units per package)"),
+    ).toHaveValue("4");
+    await expect(
+      page.getByRole("button", { name: "By %", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByLabel("Stored / calculated retail price"),
+    ).toHaveText("100 IQD");
     await page.screenshot({
       fullPage: true,
       path: path.join(evidenceDir, "units-percentage-pricing-en-light.png"),
@@ -1071,9 +1160,9 @@ test.describe.serial("Product catalog screens", () => {
     await page.getByLabel("Trade name").fill("Invalid Ratio Product");
     await page.getByRole("button", { name: "Continue" }).click();
     await page.getByLabel("Inventory Unit (base unit)").fill("Strip");
-    await page.getByRole("button", { name: "+ Add package unit" }).click();
-    await page.getByLabel("Package Name *").fill("Pack");
-    const ratio = page.getByLabel("Ratio (Inventory Units per package) *");
+    await page.getByRole("button", { name: "Enable packaging" }).click();
+    await page.getByLabel("Package Name").fill("Pack");
+    const ratio = page.getByLabel("Ratio (Inventory Units per package)");
     await ratio.fill("0");
     await page.getByLabel("Retail price (fils)").fill("100000");
 
@@ -1136,7 +1225,7 @@ test.describe.serial("Product catalog screens", () => {
     await expect(page.getByLabel("Product definition mode")).toHaveValue(
       "general-item",
     );
-    await expect(page.getByLabel("Company / Manufacturer *")).toHaveValue("");
+    await expect(page.getByLabel("Company / Manufacturer")).toHaveValue("");
   });
 
   test("The Arabic search name appears below the English name and never inside it", async ({
@@ -1183,14 +1272,14 @@ test.describe.serial("Product catalog screens", () => {
     const outputElement = page.getByTestId("generated-display-name");
     await expect(outputElement).toHaveJSProperty("tagName", "OUTPUT");
 
-    // Navigate with Tab from Manufacturer to Arabic Search Name
+    // Tab follows the definition row without an editable generated-name field.
     const manufacturerInput = page.getByLabel("Manufacturer");
     await manufacturerInput.focus();
     await expect(manufacturerInput).toBeFocused();
 
-    await page.keyboard.press("Tab");
-    // Directly reaches Arabic search name without focusing an editable display name
-    await expect(page.getByLabel("Arabic search name")).toBeFocused();
+    await pressKeyOnFocused(page, manufacturerInput, "Tab");
+    await expect(page.getByLabel("Dosage form")).toBeFocused();
+    await expect(outputElement).not.toBeFocused();
   });
 
   test("Batch facts load from Inventory as read-only product data", async ({
@@ -1262,66 +1351,74 @@ test.describe.serial("Product catalog screens", () => {
       for (const theme of themes) {
         const context = await browser.newContext();
         const page = await context.newPage();
-        await installDesktopFake(page, renderer.origin, { locale, theme });
+        try {
+          await installDesktopFake(page, renderer.origin, { locale, theme });
 
-        // 1. Product Form
-        await page.goto(`${renderer.origin}#/catalog/products/new`);
-        await expect(page.locator("html")).toHaveAttribute("lang", locale);
-        await expect(page.locator("html")).toHaveAttribute(
-          "dir",
-          locale === "ar" ? "rtl" : "ltr",
-        );
-        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+          // 1. Product Form
+          await page.goto(`${renderer.origin}#/catalog/products/new`);
+          await expect(page.locator("html")).toHaveAttribute("lang", locale);
+          await expect(page.locator("html")).toHaveAttribute(
+            "dir",
+            locale === "ar" ? "rtl" : "ltr",
+          );
+          await expect(page.locator("html")).toHaveAttribute(
+            "data-theme",
+            theme,
+          );
 
-        const formAxe = await new AxeBuilder({ page }).analyze();
-        expect(formAxe.violations).toEqual([]);
+          const formAxe = await new AxeBuilder({ page }).analyze();
+          expect(formAxe.violations).toEqual([]);
 
-        // Focus outline check
-        const firstInput = page.locator("input").first();
-        await firstInput.focus();
-        const outlineWidth = await firstInput.evaluate((el) => {
-          const view = el.ownerDocument.defaultView;
-          return view === null
-            ? 0
-            : Number.parseFloat(view.getComputedStyle(el).outlineWidth);
-        });
-        expect(outlineWidth).toBeGreaterThanOrEqual(3);
+          // Focus outline check
+          const firstInput = page.locator("input").first();
+          await firstInput.focus();
+          const outlineWidth = await firstInput.evaluate((el) => {
+            const view = el.ownerDocument.defaultView;
+            return view === null
+              ? 0
+              : Number.parseFloat(view.getComputedStyle(el).outlineWidth);
+          });
+          expect(outlineWidth).toBeGreaterThanOrEqual(3);
 
-        const formScreenshotName = `catalog-product-form-${locale}-${theme}.png`;
-        await page.screenshot({
-          fullPage: true,
-          path: path.join(evidenceDir, formScreenshotName),
-        });
-        await page.screenshot({
-          fullPage: true,
-          path: path.join(testResultsDir, formScreenshotName),
-        });
+          const formScreenshotName = `catalog-product-form-${locale}-${theme}.png`;
+          await page.screenshot({
+            fullPage: true,
+            path: path.join(evidenceDir, formScreenshotName),
+          });
+          await page.screenshot({
+            fullPage: true,
+            path: path.join(testResultsDir, formScreenshotName),
+          });
 
-        // 2. Product Record View
-        await page.goto(
-          `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
-        );
-        await expect(page.locator("html")).toHaveAttribute("lang", locale);
-        await expect(page.locator("html")).toHaveAttribute(
-          "dir",
-          locale === "ar" ? "rtl" : "ltr",
-        );
-        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+          // 2. Product Record View
+          await page.goto(
+            `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
+          );
+          await expect(page.locator("html")).toHaveAttribute("lang", locale);
+          await expect(page.locator("html")).toHaveAttribute(
+            "dir",
+            locale === "ar" ? "rtl" : "ltr",
+          );
+          await expect(page.locator("html")).toHaveAttribute(
+            "data-theme",
+            theme,
+          );
 
-        const recordAxe = await new AxeBuilder({ page }).analyze();
-        expect(recordAxe.violations).toEqual([]);
+          const recordAxe = await new AxeBuilder({ page }).analyze();
+          expect(recordAxe.violations).toEqual([]);
 
-        const recordScreenshotName = `catalog-product-record-${locale}-${theme}.png`;
-        await page.screenshot({
-          fullPage: true,
-          path: path.join(evidenceDir, recordScreenshotName),
-        });
-        await page.screenshot({
-          fullPage: true,
-          path: path.join(testResultsDir, recordScreenshotName),
-        });
-
-        await context.close();
+          const recordScreenshotName = `catalog-product-record-${locale}-${theme}.png`;
+          await page.screenshot({
+            fullPage: true,
+            path: path.join(evidenceDir, recordScreenshotName),
+          });
+          await page.screenshot({
+            fullPage: true,
+            path: path.join(testResultsDir, recordScreenshotName),
+          });
+        } finally {
+          await context.close();
+        }
       }
     }
   });
@@ -1351,21 +1448,17 @@ test.describe.serial("Product catalog screens", () => {
       "available",
     );
 
-    // A required Phase One surface that is not built says so rather than
-    // pretending to work.
-    await expect(
-      modules.getByRole("link", { name: /^Reports/ }),
-    ).toHaveAttribute("data-availability", "unavailable");
-
-    // The Clinic tab is outside project scope, and delivery, e-commerce,
-    // marketing, and external integration are deferred: none of them exists.
+    // Later accounting and reporting surfaces are quarantined until their
+    // milestones, alongside excluded and deferred prototype modules.
     for (const excluded of [
+      /accounts/i,
       /clinic/i,
       /عيادة/,
       /delivery/i,
       /commerce/i,
       /marketing/i,
       /external/i,
+      /reports/i,
     ]) {
       await expect(page.getByText(excluded)).toHaveCount(0);
     }
@@ -1387,8 +1480,9 @@ test.describe.serial("Product catalog screens", () => {
         });
         const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, { locale, theme });
-        // Sales is built as of #58; Reports is still an unbuilt required surface.
-        await page.goto(`${renderer.origin}#/reports`);
+        // Sales is built as of #58; Patients remains an unbuilt required
+        // surface while later reporting stays out of the current shell.
+        await page.goto(`${renderer.origin}#/patients`);
 
         const heading = page.getByTestId("unavailable-surface");
         await expect(heading).toBeVisible();

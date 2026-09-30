@@ -34,6 +34,7 @@ import {
   type ProductNameTemplateVersion,
   type ProductPackaging,
   type ProductPricing,
+  normalizeIndicDigits,
   type ProductSearchRequest,
   type ProductSearchResponse,
   type SaleProductContext,
@@ -727,6 +728,7 @@ export class CatalogService {
       request,
       CATALOG_SEARCH_PERMISSION,
     );
+    const query = normalizeIndicDigits(input.query);
     const exact = await this.localDatabase.requirePool().query<{
       barcode: string;
       kind: ProductBarcode["kind"];
@@ -737,7 +739,7 @@ export class CatalogService {
        from catalog_product_barcodes
        where pharmacy_id = $1 and barcode = $2 and removed_at is null
        limit 1`,
-      [context.pharmacyId, input.query],
+      [context.pharmacyId, query],
     );
     const barcode = exact.rows[0];
     if (barcode !== undefined) {

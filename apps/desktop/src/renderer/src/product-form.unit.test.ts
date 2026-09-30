@@ -430,8 +430,8 @@ describe("Product form and name generation", () => {
     });
 
     it("formats Arabic locale with د.ع currency symbol", () => {
-      expect(formatFilsToIqd("80000", "ar")).toBe("80 د.ع");
-      expect(formatFilsToIqd("80250", "ar")).toBe("80.25 د.ع");
+      expect(formatFilsToIqd("80000", "ar")).toBe("٨٠ د.ع");
+      expect(formatFilsToIqd("80250", "ar")).toBe("٨٠٫٢٥ د.ع");
     });
 
     it("groups large numbers with commas", () => {

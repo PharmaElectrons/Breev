@@ -21,6 +21,8 @@ export interface CatalogCopy {
     readonly cancel: string;
     readonly create: string;
     readonly edit: string;
+    readonly decreaseValue: string;
+    readonly increaseValue: string;
     readonly merge: string;
     readonly mergeConfirmSubmit: string;
     readonly mergeDescription: string;
@@ -244,6 +246,8 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       cancel: "إلغاء",
       create: "إنشاء منتج",
       edit: "تعديل المنتج",
+      decreaseValue: "تقليل القيمة",
+      increaseValue: "زيادة القيمة",
       merge: "دمج المنتج",
       mergeConfirmSubmit: "تأكيد الدمج",
       mergeDescription:
@@ -563,6 +567,8 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       cancel: "Cancel",
       create: "Create product",
       edit: "Edit product",
+      decreaseValue: "Decrease value",
+      increaseValue: "Increase value",
       merge: "Merge product",
       mergeConfirmSubmit: "Confirm merge",
       mergeDescription:

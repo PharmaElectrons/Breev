@@ -35,10 +35,13 @@ export interface StateColourIndicatorsCopy {
 }
 
 export function StateColourIndicators({
+  compact = false,
   copy,
   riskIndicators,
   stateColour,
 }: {
+  /** Inventory rows keep the same facts, without the automatic/manual sentences. */
+  readonly compact?: boolean;
   readonly copy: StateColourIndicatorsCopy;
   readonly riskIndicators: readonly InventoryRiskIndicator[];
   readonly stateColour: {
@@ -47,8 +50,20 @@ export function StateColourIndicators({
   };
 }): React.JSX.Element {
   const automaticLabel = copy.stateColours[stateColour.automatic];
+  const manualLabel =
+    stateColour.manual === null
+      ? copy.manualNone
+      : stateColour.manual.toUpperCase();
+  const colourDetail = `${copy.automatic}: ${copy.stateColours[stateColour.automatic]}. ${copy.manual}: ${manualLabel}`;
+  const showColourDetail = !compact || stateColour.manual !== null;
   return (
-    <div className="inventory-indicators">
+    <div
+      className={
+        compact
+          ? "inventory-indicators inventory-indicators-compact"
+          : "inventory-indicators"
+      }
+    >
       <StateIndicator
         assistiveLabel={automaticLabel}
         colour={stateColour.automatic}
@@ -56,15 +71,19 @@ export function StateColourIndicators({
         kind="state"
         label={automaticLabel}
       />
-      <small>
-        {copy.automatic}: {copy.stateColours[stateColour.automatic]}
-      </small>
-      <small>
-        {copy.manual}:{" "}
-        {stateColour.manual === null
-          ? copy.manualNone
-          : stateColour.manual.toUpperCase()}
-      </small>
+      {compact && !showColourDetail ? (
+        <span className="visually-hidden">{colourDetail}</span>
+      ) : null}
+      {showColourDetail ? (
+        <>
+          <small>
+            {copy.automatic}: {copy.stateColours[stateColour.automatic]}
+          </small>
+          <small>
+            {copy.manual}: {manualLabel}
+          </small>
+        </>
+      ) : null}
       {riskIndicators.map((indicator) => (
         <StateIndicator
           indicator={indicator}
@@ -165,6 +184,8 @@ function riskToken(indicator: InventoryRiskIndicator): ProductStateColour {
       return "blue";
     case "expired":
     case "out-of-stock":
+    case "quarantined":
+    case "recalled":
       return "red";
     case "expiring-soon":
       return "yellow";

@@ -304,13 +304,6 @@ export function BatchSafetyPanel({
       className="batch-safety-panel"
       aria-labelledby="batch-safety-title"
     >
-      <header className="batch-safety-heading">
-        <div>
-          <h3 id="batch-safety-title">{copy.safety.safetyStatus}</h3>
-          <p>{businessDate === null ? "" : <bdi>{businessDate}</bdi>}</p>
-        </div>
-        <a href="#/inventory/safety-review">{copy.safety.review}</a>
-      </header>
       {error === null ? null : (
         <p className="denial-alert" role="alert">
           {error}
@@ -321,82 +314,97 @@ export function BatchSafetyPanel({
           {copy.permissionDenied} {denial.requestId}
         </p>
       )}
-      {batches.length === 0 ? (
-        <p role="status">{copy.safety.noBatches}</p>
-      ) : (
-        <div className="batch-safety-table-scroll">
-          <table className="batch-safety-table">
-            <caption className="visually-hidden">
-              {copy.safety.tableCaption}
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">{copy.safety.lot}</th>
-                <th scope="col">{copy.safety.originalExpiry}</th>
-                <th aria-sort="ascending" scope="col">
-                  {copy.safety.reviewColumns.effectiveExpiry}
-                </th>
-                <th scope="col">{copy.safety.status}</th>
-                <th scope="col">{copy.columns.balance}</th>
-                <th scope="col">{copy.safety.blockedSince}</th>
-                <th scope="col">{copy.safety.events}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((batch) => (
-                <BatchRow
-                  batch={batch}
-                  canManage={canManage}
-                  copy={copy}
-                  key={batch.batchId}
-                  locale={locale}
-                  onAction={openAction}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="inventory-panel-card">
+        <header className="batch-safety-heading">
+          <div>
+            <h3 id="batch-safety-title">{copy.safety.safetyStatus}</h3>
+            <p>{businessDate === null ? "" : <bdi>{businessDate}</bdi>}</p>
+          </div>
+          <a href="#/inventory/safety-review">{copy.safety.review}</a>
+        </header>
+        {batches.length === 0 ? (
+          <p role="status">{copy.safety.noBatches}</p>
+        ) : (
+          <div className="batch-safety-table-scroll">
+            <table className="batch-safety-table">
+              <caption className="visually-hidden">
+                {copy.safety.tableCaption}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">{copy.safety.lot}</th>
+                  <th scope="col">{copy.safety.originalExpiry}</th>
+                  <th aria-sort="ascending" scope="col">
+                    {copy.safety.reviewColumns.effectiveExpiry}
+                  </th>
+                  <th scope="col">{copy.safety.status}</th>
+                  <th scope="col">{copy.columns.balance}</th>
+                  <th scope="col">{copy.safety.blockedSince}</th>
+                  <th scope="col">{copy.safety.events}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map((batch) => (
+                  <BatchRow
+                    batch={batch}
+                    canManage={canManage}
+                    copy={copy}
+                    key={batch.batchId}
+                    locale={locale}
+                    onAction={openAction}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       <section className="batch-safety-preview" aria-labelledby="fefo-title">
-        <div>
-          <h3 id="fefo-title">{copy.safety.fefo}</h3>
-          <p>{copy.safety.fefoDescription}</p>
+        <div className="batch-safety-preview-main">
+          <div className="batch-safety-preview-copy">
+            <h3 id="fefo-title">{copy.safety.fefo}</h3>
+            <p>{copy.safety.fefoDescription}</p>
+          </div>
+          <form className="batch-safety-preview-form" onSubmit={runPreview}>
+            <label className="field-label" htmlFor="batch-preview-quantity">
+              <span>{copy.safety.quantity}</span>
+              <input
+                id="batch-preview-quantity"
+                inputMode="numeric"
+                min="1"
+                required
+                type="number"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+            </label>
+            <button
+              className="primary-button"
+              disabled={previewBusy}
+              type="submit"
+            >
+              {copy.safety.previewPick}
+            </button>
+          </form>
         </div>
-        <form className="batch-safety-preview-form" onSubmit={runPreview}>
-          <label className="field-label" htmlFor="batch-preview-quantity">
-            <span>{copy.safety.quantity}</span>
-            <input
-              id="batch-preview-quantity"
-              inputMode="numeric"
-              min="1"
-              required
-              type="number"
-              value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
-            />
-          </label>
-          <button
-            className="primary-button"
-            disabled={previewBusy}
-            type="submit"
-          >
-            {copy.safety.previewPick}
-          </button>
-        </form>
         {previewError === null ? null : (
           <p className="form-error" role="alert">
             {previewError}
           </p>
         )}
         <div
-          className="batch-safety-announcement"
+          className={
+            announcement === ""
+              ? "visually-hidden"
+              : "batch-safety-announcement"
+          }
           role="status"
           aria-live="polite"
         >
           {announcement}
         </div>
         {preview === null ? (
-          <p>{copy.safety.noPreview}</p>
+          <p className="batch-safety-preview-empty">{copy.safety.noPreview}</p>
         ) : (
           <PreviewResult
             batches={batchById}
@@ -486,56 +494,50 @@ function BatchRow({
       <td>
         <bdi>{batch.blockedSinceBusinessDate ?? "—"}</bdi>
       </td>
-      {canManage ? (
-        <td className="batch-safety-actions">
-          <div>
-            {batch.status !== "recalled" ? (
+      <td className="batch-safety-actions">
+        <div className="batch-safety-action-bar">
+          {canManage ? (
+            <div className="batch-safety-action-group">
+              {batch.status !== "recalled" ? (
+                <button
+                  className="quiet-button"
+                  id={origin("recall")}
+                  type="button"
+                  onClick={() => onAction("recall", batch, origin("recall"))}
+                >
+                  {copy.safety.recall}
+                </button>
+              ) : null}
+              {batch.status !== "recalled" && batch.status !== "quarantined" ? (
+                <button
+                  className="quiet-button"
+                  id={origin("quarantine")}
+                  type="button"
+                  onClick={() =>
+                    onAction("quarantine", batch, origin("quarantine"))
+                  }
+                >
+                  {copy.safety.quarantine}
+                </button>
+              ) : null}
               <button
                 className="quiet-button"
-                id={origin("recall")}
-                type="button"
-                onClick={() => onAction("recall", batch, origin("recall"))}
-              >
-                {copy.safety.recall}
-              </button>
-            ) : null}
-            {batch.status !== "recalled" && batch.status !== "quarantined" ? (
-              <button
-                className="quiet-button"
-                id={origin("quarantine")}
+                id={origin("correction")}
                 type="button"
                 onClick={() =>
-                  onAction("quarantine", batch, origin("quarantine"))
+                  onAction("correction", batch, origin("correction"))
                 }
               >
-                {copy.safety.quarantine}
+                {copy.safety.correction}
               </button>
-            ) : null}
-            <button
-              className="quiet-button"
-              id={origin("correction")}
-              type="button"
-              onClick={() =>
-                onAction("correction", batch, origin("correction"))
-              }
-            >
-              {copy.safety.correction}
-            </button>
-          </div>
+            </div>
+          ) : null}
           <details className="batch-safety-history">
             <summary>{copy.safety.history}</summary>
             <History batch={batch} copy={copy} />
           </details>
-        </td>
-      ) : null}
-      {!canManage ? (
-        <td>
-          <details className="batch-safety-history">
-            <summary>{copy.safety.history}</summary>
-            <History batch={batch} copy={copy} />
-          </details>
-        </td>
-      ) : null}
+        </div>
+      </td>
     </tr>
   );
 }

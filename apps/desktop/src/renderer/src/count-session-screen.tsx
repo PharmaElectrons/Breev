@@ -20,11 +20,13 @@ import {
   startCountSession,
   completeCountSession,
 } from "./inventory-api";
+import { CountEntryLabel, CountMeasure } from "./count-entry-label";
 import {
   buildCountEntryPreview,
-  countEntryLabelParts,
   countEntryUnits,
+  countFieldQuantity,
 } from "./count-entry";
+import { panelUnitLabel } from "./panel-unit-label";
 import { inventoryMessages } from "./inventory-messages";
 import { usePreferences } from "./preferences-provider";
 import { formatDateTime, formatNumber } from "./preferences";
@@ -88,6 +90,8 @@ function CountSessionStart({
   const [completed, setCompleted] = useState<CountSessionSummary[] | null>(
     null,
   );
+  const [completedCursor, setCompletedCursor] = useState<string | null>(null);
+  const [completedHasMore, setCompletedHasMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sequence = useRef(0);
@@ -98,11 +102,13 @@ function CountSessionStart({
     try {
       const [activeResult, completedResult] = await Promise.all([
         listCountSessions(baseUrl, { status: "active" }),
-        listCountSessions(baseUrl, { status: "completed" }),
+        listCountSessions(baseUrl, { limit: "25", status: "completed" }),
       ]);
       if (sequence.current !== current) return;
       setActive(activeResult.sessions);
       setCompleted(completedResult.sessions);
+      setCompletedHasMore(completedResult.hasMore);
+      setCompletedCursor(completedResult.nextCursor);
     } catch (caught) {
       if (sequence.current !== current) return;
       setError(countError(caught, copy));
@@ -121,6 +127,31 @@ function CountSessionStart({
         : '[data-count-start-control="start"], [data-count-start-control="resume"]';
     requestCommittedFocus(() => document.querySelector<HTMLElement>(selector));
   }, [active, completed, requestCommittedFocus]);
+
+  async function loadMoreCompleted(): Promise<void> {
+    if (completedCursor === null || busy) return;
+    const current = ++sequence.current;
+    setBusy(true);
+    try {
+      const page = await listCountSessions(baseUrl, {
+        cursor: completedCursor,
+        limit: "25",
+        status: "completed",
+      });
+      if (sequence.current !== current) return;
+      setCompleted((currentSessions) => [
+        ...(currentSessions ?? []),
+        ...page.sessions,
+      ]);
+      setCompletedHasMore(page.hasMore);
+      setCompletedCursor(page.nextCursor);
+    } catch (caught) {
+      if (sequence.current !== current) return;
+      setError(countError(caught, copy));
+    } finally {
+      if (sequence.current === current) setBusy(false);
+    }
+  }
 
   async function start(): Promise<void> {
     if (!canRecord || busy || (active?.length ?? 0) > 0) return;
@@ -170,7 +201,9 @@ function CountSessionStart({
         </p>
       ) : null}
       <p>
-        <a href="#/inventory">{inventoryMessages[locale].backToInventory}</a>
+        <a className="inventory-chip inventory-chip-primary" href="#/inventory">
+          {inventoryMessages[locale].backToInventory}
+        </a>
       </p>
       {error === null ? null : (
         <div aria-live="assertive" className="denial-alert" role="alert">
@@ -208,10 +241,12 @@ function CountSessionStart({
             canRecord={false}
             copy={copy}
             headingId="count-completed-sessions"
+            hasMore={completedHasMore}
             locale={locale}
             sessions={completed}
             title={copy.completedSessions}
             empty={copy.noCompletedSessions}
+            onLoadMore={() => void loadMoreCompleted()}
             onResume={(id) => {
               window.location.hash = `#/inventory/count/${id}`;
             }}
@@ -227,8 +262,10 @@ function SessionSummaryList({
   canRecord,
   copy,
   empty,
+  hasMore = false,
   headingId,
   locale,
+  onLoadMore,
   onResume,
   sessions,
   title,
@@ -237,8 +274,10 @@ function SessionSummaryList({
   readonly canRecord: boolean;
   readonly copy: typeof inventoryMessages.en.count;
   readonly empty: string;
+  readonly hasMore?: boolean;
   readonly headingId: string;
   readonly locale: "ar" | "en";
+  readonly onLoadMore?: () => void;
   readonly onResume: (id: string) => void;
   readonly sessions: CountSessionSummary[];
   readonly title: string;
@@ -286,6 +325,11 @@ function SessionSummaryList({
           ))}
         </ul>
       )}
+      {hasMore && onLoadMore !== undefined ? (
+        <button className="quiet-button" type="button" onClick={onLoadMore}>
+          {copy.loadMore}
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -323,9 +367,7 @@ function CountSessionLoop({
   const [busy, setBusy] = useState(false);
   const [applyLine, setApplyLine] = useState<CountLine | null>(null);
   const [blockedProductId, setBlockedProductId] = useState<string | null>(null);
-  const [completionPrompt, setCompletionPrompt] = useState(false);
   const applyOpenerRef = useRef<HTMLElement | null>(null);
-  const completionOpenerRef = useRef<HTMLElement | null>(null);
   const attemptRef = useRef<ReturnType<typeof inventoryCommandAttempt> | null>(
     null,
   );
@@ -529,7 +571,11 @@ function CountSessionLoop({
         copy.savedAnnouncement(
           result.line.itemDisplayName,
           result.line.countedQuantity,
-          result.line.inventoryUnitName,
+          panelUnitLabel(
+            result.line.inventoryUnitName,
+            BigInt(result.line.countedQuantity),
+            locale,
+          ),
           formatSignedNumber(BigInt(result.line.varianceAtObservation), locale),
         ),
       );
@@ -671,18 +717,15 @@ function CountSessionLoop({
     }
   }
 
-  function requestComplete(opener: HTMLElement): void {
-    if (session === null || session.status !== "active" || !canRecord) return;
-    completionOpenerRef.current = opener;
-    if (BigInt(session.pendingVarianceCount) > 0n) {
-      setCompletionPrompt(true);
-    } else {
-      void complete(opener);
-    }
-  }
-
   async function complete(opener: HTMLElement): Promise<void> {
-    if (session === null) return;
+    if (
+      session === null ||
+      session.status !== "active" ||
+      !canApprove ||
+      BigInt(session.pendingVarianceCount) > 0n
+    ) {
+      return;
+    }
     const request = {
       expectedVersion: session.version,
     };
@@ -693,7 +736,6 @@ function CountSessionLoop({
     attemptRef.current = attempt;
     const current = ++sequence.current;
     setBusy(true);
-    setCompletionPrompt(false);
     try {
       await completeCountSession(baseUrl, sessionId, {
         ...request,
@@ -717,11 +759,6 @@ function CountSessionLoop({
   function closeApply(): void {
     setApplyLine(null);
     requestCommittedFocus(() => applyOpenerRef.current);
-  }
-
-  function closeCompletionPrompt(): void {
-    setCompletionPrompt(false);
-    requestCommittedFocus(() => completionOpenerRef.current);
   }
 
   if (session === null) {
@@ -761,13 +798,18 @@ function CountSessionLoop({
           <a className="quiet-button" href="#/inventory/count">
             {copy.startTitle}
           </a>
-          {session.status === "active" && canRecord ? (
+          {session.status === "active" && canApprove ? (
             <button
+              aria-describedby={
+                BigInt(session.pendingVarianceCount) > 0n
+                  ? "count-complete-blocked"
+                  : undefined
+              }
               className="primary-button"
-              disabled={busy}
+              disabled={busy || BigInt(session.pendingVarianceCount) > 0n}
               id="count-complete"
               type="button"
-              onClick={(event) => requestComplete(event.currentTarget)}
+              onClick={(event) => void complete(event.currentTarget)}
             >
               {copy.complete}
             </button>
@@ -783,6 +825,13 @@ function CountSessionLoop({
           ) : null}
         </div>
       </header>
+      {session.status === "active" &&
+      canApprove &&
+      BigInt(session.pendingVarianceCount) > 0n ? (
+        <p id="count-complete-blocked" role="status">
+          {copy.completionBlocked(session.pendingVarianceCount)}
+        </p>
+      ) : null}
       {error === null ? null : (
         <div aria-live="assertive" className="denial-alert" role="alert">
           <p>{error}</p>
@@ -880,22 +929,26 @@ function CountSessionLoop({
               </div>
             ) : null}
           </div>
-          {selectedProduct === null ? null : (
+          {selectedProduct === null ? (
+            <p className="count-entry-prompt">{copy.itemPlaceholder}</p>
+          ) : (
             <div className="count-resolved-item">
-              <div>
+              <div className="count-status-card">
                 <h3>{selectedProduct.displayName}</h3>
-                <p>
-                  {copy.currentBalance}:{" "}
-                  {selectedBalance === null ? (
-                    "—"
-                  ) : (
-                    <BalanceDecomposition
-                      locale={locale}
-                      packaging={selectedProduct.packaging}
-                      quantity={selectedBalance}
-                    />
-                  )}
-                </p>
+                <div className="count-balance-row">
+                  <span>{copy.currentBalance}</span>
+                  <strong className="count-balance-value">
+                    {selectedBalance === null ? (
+                      "—"
+                    ) : (
+                      <BalanceDecomposition
+                        locale={locale}
+                        packaging={selectedProduct.packaging}
+                        quantity={selectedBalance}
+                      />
+                    )}
+                  </strong>
+                </div>
                 {BigInt(blockedQuantity) > 0n ? (
                   <p>
                     {copy.blockedStock(
@@ -910,9 +963,13 @@ function CountSessionLoop({
               <div className="count-unit-fields">
                 {countEntryUnits(selectedProduct.packaging).map((unit) => (
                   <label className="count-unit-field" key={unit.key}>
-                    <span>{copy.unitCaption(unit.label)}</span>
+                    <span>
+                      {copy.unitCaption(panelUnitLabel(unit.label, 1n, locale))}
+                    </span>
                     <input
-                      aria-label={copy.unitCaption(unit.label)}
+                      aria-label={copy.unitCaption(
+                        panelUnitLabel(unit.label, 1n, locale),
+                      )}
                       data-count-field={`unit:${unit.key}`}
                       disabled={busy}
                       inputMode="numeric"
@@ -935,13 +992,15 @@ function CountSessionLoop({
                   packaging={selectedProduct.packaging}
                 />
               )}
-              <button
-                className="primary-button count-save-button"
-                disabled={busy}
-                type="submit"
-              >
-                {copy.save}
-              </button>
+              <div className="count-entry-actions">
+                <button
+                  className="primary-button count-save-button"
+                  disabled={busy}
+                  type="submit"
+                >
+                  {copy.save}
+                </button>
+              </div>
             </div>
           )}
         </form>
@@ -972,17 +1031,6 @@ function CountSessionLoop({
           }
         />
       )}
-      {completionPrompt ? (
-        <CompletionDialog
-          busy={busy}
-          copy={copy}
-          count={session.pendingVarianceCount}
-          onCancel={closeCompletionPrompt}
-          onConfirm={() =>
-            void complete(completionOpenerRef.current ?? document.body)
-          }
-        />
-      ) : null}
     </section>
   );
 }
@@ -997,30 +1045,32 @@ function CountCaption({
   readonly packaging: Product["packaging"];
 }): React.JSX.Element {
   const preview = buildCountEntryPreview(packaging, fields);
-  const visible = countEntryUnits(packaging).filter(({ key }) => {
-    const value = fields[key]?.trim() ?? "";
-    return /^\d+$/u.test(value) && BigInt(value) > 0n;
+  const visible = countEntryUnits(packaging).flatMap((unit) => {
+    const quantity = countFieldQuantity(fields[unit.key] ?? "");
+    return quantity !== null && quantity > 0n ? [{ quantity, unit }] : [];
   });
   return (
     <p className="count-live-caption" aria-live="polite">
       {visible.length === 0 ? (
         <>
-          <bdi>0</bdi> {packaging.inventoryUnitName}
+          <bdi>0</bdi> {panelUnitLabel(packaging.inventoryUnitName, 0n, locale)}
         </>
       ) : (
-        visible.map((unit, index) => (
+        visible.map(({ quantity, unit }, index) => (
           <span key={unit.key}>
             {index > 0 ? " + " : ""}
-            <bdi>
-              {formatNumber(BigInt(fields[unit.key] ?? "0"), locale)}
-            </bdi>{" "}
-            {unit.label}
+            <bdi>{formatNumber(quantity, locale)}</bdi>{" "}
+            {panelUnitLabel(unit.label, quantity, locale)}
           </span>
         ))
       )}
       {" = "}
       <bdi>{formatNumber(preview.countedQuantity, locale)}</bdi>{" "}
-      {packaging.inventoryUnitName}
+      {panelUnitLabel(
+        packaging.inventoryUnitName,
+        preview.countedQuantity,
+        locale,
+      )}
     </p>
   );
 }
@@ -1049,7 +1099,8 @@ function BalanceDecomposition({
       {parts.map((part, index) => (
         <span key={part.label}>
           {index > 0 ? " + " : ""}
-          <bdi>{formatNumber(part.count, locale)}</bdi> {part.label}
+          <bdi>{formatNumber(part.count, locale)}</bdi>{" "}
+          {panelUnitLabel(part.label, part.count, locale)}
         </span>
       ))}
     </span>
@@ -1087,6 +1138,8 @@ function CountLinesTable({
         </thead>
         <tbody>
           {lines.map((line) => {
+            const before =
+              line.application?.balanceBefore ?? line.balanceAtObservation;
             const after =
               line.application?.balanceAfter ?? line.countedQuantity;
             const variance = line.application?.variance ?? line.currentVariance;
@@ -1116,24 +1169,33 @@ function CountLinesTable({
                   <bdi>
                     {formatNumber(BigInt(line.countedQuantity), locale)}
                   </bdi>{" "}
-                  {line.inventoryUnitName}
+                  {panelUnitLabel(
+                    line.inventoryUnitName,
+                    BigInt(line.countedQuantity),
+                    locale,
+                  )}
                 </td>
                 <td>
-                  <bdi>
-                    {formatNumber(
-                      BigInt(
-                        line.application?.balanceBefore ??
-                          line.balanceAtObservation,
-                      ),
-                      locale,
-                    )}
-                  </bdi>
+                  <CountMeasure
+                    count={BigInt(before)}
+                    locale={locale}
+                    unit={line.inventoryUnitName}
+                  />
                 </td>
                 <td>
-                  <bdi>{formatNumber(BigInt(after), locale)}</bdi>
+                  <CountMeasure
+                    count={BigInt(after)}
+                    locale={locale}
+                    unit={line.inventoryUnitName}
+                  />
                 </td>
                 <td>
-                  <bdi>{formatSignedNumber(BigInt(variance), locale)}</bdi>
+                  <CountMeasure
+                    count={BigInt(variance)}
+                    locale={locale}
+                    signed
+                    unit={line.inventoryUnitName}
+                  />
                 </td>
                 <td>
                   <span aria-hidden="true">{lineStatusIcon(line.status)}</span>{" "}
@@ -1157,28 +1219,6 @@ function CountLinesTable({
         </tbody>
       </table>
     </div>
-  );
-}
-
-function CountEntryLabel({
-  label,
-  locale,
-}: {
-  readonly label: string;
-  readonly locale: "ar" | "en";
-}): React.JSX.Element {
-  return (
-    <>
-      {countEntryLabelParts(label).map((part, index) =>
-        typeof part === "bigint" ? (
-          <bdi key={`${part.toString()}-${index}`}>
-            {formatNumber(part, locale)}
-          </bdi>
-        ) : (
-          <span key={`${part}-${index}`}>{part}</span>
-        ),
-      )}
-    </>
   );
 }
 
@@ -1224,11 +1264,25 @@ function ApplyVarianceDialog({
             )}
           </span>
           {copy.columns.before}{" "}
-          <bdi>{formatNumber(BigInt(line.currentBalance), locale)}</bdi>,{" "}
-          {copy.columns.counted}{" "}
-          <bdi>{formatNumber(BigInt(line.countedQuantity), locale)}</bdi>,{" "}
-          {copy.columns.variance}{" "}
-          <bdi>{formatSignedNumber(BigInt(line.currentVariance), locale)}</bdi>.
+          <CountMeasure
+            count={BigInt(line.currentBalance)}
+            locale={locale}
+            unit={line.inventoryUnitName}
+          />
+          , {copy.columns.counted}{" "}
+          <CountMeasure
+            count={BigInt(line.countedQuantity)}
+            locale={locale}
+            unit={line.inventoryUnitName}
+          />
+          , {copy.columns.variance}{" "}
+          <CountMeasure
+            count={BigInt(line.currentVariance)}
+            locale={locale}
+            signed
+            unit={line.inventoryUnitName}
+          />
+          .
         </p>
         <form
           className="batch-safety-dialog-form"
@@ -1283,61 +1337,6 @@ function ApplyVarianceDialog({
             </button>
           </div>
         </form>
-      </section>
-    </div>
-  );
-}
-
-function CompletionDialog({
-  busy,
-  copy,
-  count,
-  onCancel,
-  onConfirm,
-}: {
-  readonly busy: boolean;
-  readonly copy: typeof inventoryMessages.en.count;
-  readonly count: string;
-  readonly onCancel: () => void;
-  readonly onConfirm: () => void;
-}): React.JSX.Element {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const requestCommittedFocus = useCommittedFocus();
-  useEffect(() => {
-    requestCommittedFocus(() => confirmRef.current);
-  }, [requestCommittedFocus]);
-  return (
-    <div
-      ref={dialogRef}
-      aria-labelledby="count-completion-dialog-title"
-      aria-modal="true"
-      className="dialog-backdrop"
-      role="dialog"
-      onKeyDown={(event) => trapDialogKey(event, dialogRef, onCancel)}
-    >
-      <section className="identity-card count-completion-dialog">
-        <h2 id="count-completion-dialog-title">{copy.complete}</h2>
-        <p>{copy.completionConfirmation(count)}</p>
-        <div className="form-actions">
-          <button
-            ref={confirmRef}
-            className="primary-button"
-            disabled={busy}
-            type="button"
-            onClick={onConfirm}
-          >
-            {copy.complete}
-          </button>
-          <button
-            className="quiet-button"
-            disabled={busy}
-            type="button"
-            onClick={onCancel}
-          >
-            {copy.cancel}
-          </button>
-        </div>
       </section>
     </div>
   );

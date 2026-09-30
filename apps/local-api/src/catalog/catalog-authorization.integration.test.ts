@@ -523,6 +523,27 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
   });
 
   it("allows Catalog managers to read minimal supplier options without supplier-profile permission", async () => {
+    const role = await administrator.query<{ id: string }>(
+      "select role_id as id from identity_users where id = $1",
+      [pharmacistId],
+    );
+    const roleId = role.rows[0]?.id;
+    expect(roleId).toBeDefined();
+    // Earlier cases grant Catalog permission; establish this case's deny state.
+    await administrator.query(
+      `delete from role_permission_grants
+       where pharmacy_id = $1 and role_id = $2
+         and permission_name = 'catalog.item.manage'`,
+      [pharmacyId, roleId],
+    );
+    await administrator.query(
+      "update pharmacy_roles set revision = revision + 1 where id = $1",
+      [roleId],
+    );
+    await administrator.query(
+      "update pharmacies set identity_revision = identity_revision + 1 where id = $1",
+      [pharmacyId],
+    );
     await loginAs(PHARMACIST_USERNAME, PHARMACIST_PASSWORD);
     const denied = await request("GET", "/catalog/supplier-options");
     expect(denied).toMatchObject({
@@ -543,10 +564,6 @@ describe.sequential("Catalog server-boundary allow/deny matrix", () => {
     });
     expect(createdSupplier.status, failureContext([createdSupplier])).toBe(201);
     await grantCatalogPermission();
-    const role = await administrator.query<{ id: string }>(
-      "select role_id as id from identity_users where id = $1",
-      [pharmacistId],
-    );
     const purchasingPermission = await administrator.query<{ count: string }>(
       `select count(*)::text as count from role_permission_grants
        where pharmacy_id = $1 and role_id = $2

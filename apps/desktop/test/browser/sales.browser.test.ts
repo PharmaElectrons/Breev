@@ -1015,9 +1015,26 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     const before = (await apiRequest("GET", saleDraftPath(draftId)))
       .body as SaleDraft;
     const line = before.lines[0]!;
-    await page
-      .getByRole("button", { name: /Change line price: Panadol Extra/ })
-      .click();
+    const priceButton = page.getByRole("button", {
+      name: /Change line price: Panadol Extra/,
+    });
+    for (const viewport of [
+      { width: 1024, height: 768 },
+      { width: 1280, height: 800 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await priceButton.scrollIntoViewIfNeeded();
+      await expect(priceButton).toBeInViewport({ ratio: 1 });
+      await priceButton.click({ trial: true });
+    }
+    await page.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sale-price-merge-1280x800-en-light.png",
+      ),
+    });
+    await priceButton.click();
     const dialog = page.getByRole("dialog", { name: "Change line price" });
     await dialog.getByLabel("Unit price (IQD)").fill("77.5");
     await dialog.getByLabel("Reason").fill("Approved local promotion");
@@ -1128,9 +1145,10 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     ).toHaveLength(0);
 
     await create.click();
-    await dialog.getByLabel("Trade name *").fill("Quick Sale Item");
-    await dialog.getByLabel("Inventory Unit (base unit) *").fill("Piece");
-    await dialog.getByLabel("Retail price (fils) *").fill("120000");
+    await dialog.getByLabel("Trade name").fill("Quick Sale Item");
+    await dialog.getByRole("button", { name: "Continue" }).click();
+    await dialog.getByLabel("Inventory Unit (base unit)").fill("Piece");
+    await dialog.getByLabel("Retail price (fils)").fill("120000");
     await dialog.getByLabel("Uses per day").fill("1");
     await dialog.getByLabel("Food timing").selectOption("after-food");
     await dialog.getByRole("button", { name: "Create product" }).click();

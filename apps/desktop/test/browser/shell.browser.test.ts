@@ -453,6 +453,7 @@ test.describe.serial("bilingual desktop shell", () => {
     });
     const authenticatedShell = page.getByRole("navigation", {
       name: "Modules",
+      exact: true,
     });
     await expect(
       setupHeading.or(signInHeading).or(authenticatedShell),

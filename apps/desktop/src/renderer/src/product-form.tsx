@@ -5,7 +5,6 @@ import {
   PRODUCT_DEFINITION_MODES,
   PRODUCT_FOOD_TIMINGS,
   PRODUCT_NAME_TEMPLATES,
-  PRODUCT_PRICING_METHODS,
   composeDisplayName,
   type CatalogFieldError,
   type GeneralItemNameFields,
@@ -29,6 +28,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -446,6 +446,8 @@ function StepperInput({
   step = 1,
   value,
 }: StepperInputProps): React.JSX.Element {
+  const { locale } = usePreferences();
+  const copy = catalogMessages[locale];
   const handleStep = (direction: 1 | -1): void => {
     if (disabled) return;
     const current = Number.parseInt(value, 10);
@@ -482,6 +484,8 @@ function StepperInput({
       />
       <div className="absolute left-0 top-0 bottom-0 w-5 flex flex-col border-r border-[#CDCDCD] bg-[#FDFDFE]">
         <button
+          aria-controls={id}
+          aria-label={copy.actions.increaseValue}
           className="flex-1 flex items-center justify-center hover:bg-[#E5EAEF] text-[#5C7385] cursor-pointer"
           disabled={disabled}
           tabIndex={-1}
@@ -491,6 +495,8 @@ function StepperInput({
           <ChevronUp size={10} strokeWidth={2.5} />
         </button>
         <button
+          aria-controls={id}
+          aria-label={copy.actions.decreaseValue}
           className="flex-1 flex items-center justify-center hover:bg-[#E5EAEF] text-[#5C7385] border-t border-[#CDCDCD] cursor-pointer"
           disabled={disabled}
           tabIndex={-1}
@@ -860,35 +866,30 @@ export function ProductForm({
 
   const errorSummaryRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!pendingFocusKeys) {
       return;
     }
-
-    const frame = requestAnimationFrame(() => {
-      for (const key of pendingFocusKeys) {
-        const element =
-          document.querySelector<HTMLElement>(`[name="${key}"]`) ||
-          document.getElementById(`${formId}-${key}`) ||
-          document.querySelector<HTMLElement>(`[data-field-key="${key}"]`);
-        if (!element) {
-          continue;
-        }
-
-        const panel = element.closest("details");
-        if (panel && !panel.open) {
-          panel.open = true;
-        }
-        element.focus();
-        setPendingFocusKeys(null);
-        return;
+    for (const key of pendingFocusKeys) {
+      const element =
+        document.querySelector<HTMLElement>(`[name="${key}"]`) ||
+        document.getElementById(`${formId}-${key}`) ||
+        document.querySelector<HTMLElement>(`[data-field-key="${key}"]`);
+      if (!element) {
+        continue;
       }
 
-      errorSummaryRef.current?.focus();
+      const panel = element.closest("details");
+      if (panel && !panel.open) {
+        panel.open = true;
+      }
+      element.focus();
       setPendingFocusKeys(null);
-    });
+      return;
+    }
 
-    return () => cancelAnimationFrame(frame);
+    errorSummaryRef.current?.focus();
+    setPendingFocusKeys(null);
   }, [createStep, formId, isEditing, pendingFocusKeys]);
 
   const allowedPermissions = new Set<string>(
@@ -1802,7 +1803,7 @@ export function ProductForm({
         noValidate
         onSubmit={handleSubmit}
       >
-        {/* Hidden Accessibility & Test Helpers */}
+        {/* Form identity and accessible step announcements */}
         <div className="sr-only">
           <h2
             data-testid={
@@ -1826,46 +1827,6 @@ export function ProductForm({
           <span id={`${formId}-step-2`} tabIndex={-1}>
             {copy.flow.stepSetup}
           </span>
-          {(isEditing || createStep === 2) && (
-            <>
-              <label htmlFor={`${formId}-sr-pricing-method`}>
-                {copy.pricing.methodLabel}
-              </label>
-              <select
-                id={`${formId}-sr-pricing-method`}
-                aria-label={copy.pricing.methodLabel}
-                value={pricingMethod}
-                onChange={(e) => {
-                  markDraftDirty();
-                  setPricingMethod(e.target.value as ProductPricingMethod);
-                }}
-              >
-                {PRODUCT_PRICING_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {copy.pricing.methods[m]}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor={`${formId}-sr-pricing-rounding`}>
-                {copy.pricing.rounding}
-              </label>
-              <select
-                id={`${formId}-sr-pricing-rounding`}
-                aria-label={copy.pricing.rounding}
-                value={rounding}
-                onChange={(e) => {
-                  markDraftDirty();
-                  setRounding(e.target.value as PriceRoundingSetting);
-                }}
-              >
-                {PRICE_ROUNDING_SETTINGS.map((r) => (
-                  <option key={r} value={r}>
-                    {copy.pricing.roundings[r]}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
           <label htmlFor={`${formId}-definition-mode`}>
             {copy.definition.modeLabel}
           </label>
@@ -1895,11 +1856,20 @@ export function ProductForm({
         {generalError ? (
           <div
             ref={errorSummaryRef}
-            className="p-2.5 rounded-[6px] bg-[#FCE8EA] border border-[#DF202E] text-xs text-[#DF202E] font-medium flex items-center justify-between"
+            className="p-2.5 rounded-[6px] bg-[#FCE8EA] border border-[#DF202E] text-xs text-[#BE1825] font-medium flex items-center justify-between"
             role="alert"
             tabIndex={-1}
           >
-            <span>{generalError}</span>
+            <div>
+              <span>{generalError}</span>
+              {Object.keys(fieldErrors).length > 0 ? (
+                <ul id={`${formId}-field-errors`}>
+                  {[...new Set(Object.values(fieldErrors))].map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
             {versionConflict && onReload ? (
               <button
                 className="px-2 py-1 rounded border border-[#DF202E] bg-white text-[#DF202E] hover:bg-[#fad3d6]"
@@ -2094,6 +2064,11 @@ export function ProductForm({
                     <input
                       id={`${formId}-tradeName`}
                       aria-invalid={Boolean(fieldErrors.tradeName)}
+                      aria-describedby={
+                        fieldErrors.tradeName
+                          ? `${formId}-field-errors`
+                          : undefined
+                      }
                       aria-label={copy.definition.medication.tradeName}
                       aria-required="true"
                       className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
@@ -2112,6 +2087,11 @@ export function ProductForm({
                     <input
                       id={`${formId}-company`}
                       aria-invalid={Boolean(fieldErrors.company)}
+                      aria-describedby={
+                        fieldErrors.company
+                          ? `${formId}-field-errors`
+                          : undefined
+                      }
                       aria-label={copy.definition.generalItem.company}
                       aria-required="true"
                       className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
@@ -2133,7 +2113,13 @@ export function ProductForm({
               {/* ======================================================== */}
               {/* ROW 2: Compound Color Picker + Classification Fields    */}
               {/* ======================================================== */}
-              <div className="flex items-end gap-3">
+              <div
+                className={
+                  mode === "general-item"
+                    ? "flex flex-wrap items-end gap-3"
+                    : "flex items-end gap-3"
+                }
+              >
                 {/* Far Left: Compound Highlight Color Control */}
                 <div className="flex flex-col gap-1">
                   <label
@@ -2347,6 +2333,57 @@ export function ProductForm({
                   )}
                 </div>
 
+                {mode === "general-item" ? (
+                  <>
+                    <div className="w-[140px]">
+                      <label
+                        className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                        htmlFor={`${formId}-property`}
+                      >
+                        {copy.definition.generalItem.property}
+                      </label>
+                      <input
+                        id={`${formId}-property`}
+                        aria-label={copy.definition.generalItem.property}
+                        className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                        name="property"
+                        type="text"
+                        value={generalItemFields.property}
+                        onChange={(event) => {
+                          markDraftDirty();
+                          setGeneralItemFields((previous) => ({
+                            ...previous,
+                            property: event.target.value,
+                          }));
+                        }}
+                      />
+                    </div>
+                    <div className="w-[140px]">
+                      <label
+                        className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                        htmlFor={`${formId}-targetAudience`}
+                      >
+                        {copy.definition.generalItem.targetAudience}
+                      </label>
+                      <input
+                        id={`${formId}-targetAudience`}
+                        aria-label={copy.definition.generalItem.targetAudience}
+                        className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                        name="targetAudience"
+                        type="text"
+                        value={generalItemFields.targetAudience}
+                        onChange={(event) => {
+                          markDraftDirty();
+                          setGeneralItemFields((previous) => ({
+                            ...previous,
+                            targetAudience: event.target.value,
+                          }));
+                        }}
+                      />
+                    </div>
+                  </>
+                ) : null}
+
                 {/* Strength / Size */}
                 <div className="w-[100px]">
                   <label
@@ -2407,6 +2444,8 @@ export function ProductForm({
                     {/* Packaging Toggle */}
                     <div className="flex items-center gap-1.5">
                       <button
+                        aria-labelledby={`${formId}-packaging-toggle-label`}
+                        aria-pressed={packagingEnabled}
                         className={`relative inline-flex h-[20px] w-[36px] cursor-pointer rounded-full transition-colors ${
                           packagingEnabled ? "bg-[#4A6B82]" : "bg-[#D7DEE4]"
                         }`}
@@ -2424,7 +2463,10 @@ export function ProductForm({
                           }`}
                         />
                       </button>
-                      <span className="text-[12px] text-[#5C7385]">
+                      <span
+                        id={`${formId}-packaging-toggle-label`}
+                        className="text-[12px] text-[#5C7385]"
+                      >
                         {locale === "ar" ? "تفعيل التعبئة" : "Enable packaging"}
                       </span>
                     </div>
@@ -2433,6 +2475,7 @@ export function ProductForm({
                     <div className="flex items-center gap-1.5">
                       <div className="inline-flex items-center rounded-full border border-[#D7DEE4] p-0.5 bg-white">
                         <button
+                          aria-pressed={pricingMethod === "by-price"}
                           className={`px-2.5 py-0.5 text-[11px] font-medium rounded-full transition-colors ${
                             pricingMethod === "by-price"
                               ? "bg-[#4A6B82] text-white"
@@ -2447,6 +2490,7 @@ export function ProductForm({
                           {locale === "ar" ? "وفق مبلغ" : "By price"}
                         </button>
                         <button
+                          aria-pressed={pricingMethod === "by-percentage"}
                           className={`px-2.5 py-0.5 text-[11px] font-medium rounded-full transition-colors ${
                             pricingMethod === "by-percentage"
                               ? "bg-[#4A6B82] text-white"
@@ -2529,9 +2573,15 @@ export function ProductForm({
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-[#5C7385]">
                           {locale === "ar" ? "معاينة السعر:" : "Preview:"}{" "}
-                          <strong className="text-[#1E2A33] font-bold">
-                            {displayRetailPreview}
-                          </strong>
+                          <output
+                            aria-label={
+                              copy.pricing.retailPriceCalculatedPreview
+                            }
+                          >
+                            <strong className="text-[#1E2A33] font-bold">
+                              {displayRetailPreview}
+                            </strong>
+                          </output>
                         </span>
                         <label
                           className="block text-[11px] font-bold text-[#1E2A33] text-right"
@@ -2578,16 +2628,6 @@ export function ProductForm({
                           ))}
                         </select>
                       </div>
-                      {/* Hidden locked preview element for browser test compatibility */}
-                      <input
-                        id={`${formId}-pricing.retailPrice-locked`}
-                        aria-label={copy.pricing.retailPriceCalculatedPreview}
-                        aria-readonly="true"
-                        className="sr-only"
-                        readOnly
-                        type="text"
-                        value={displayRetailPreview}
-                      />
                     </div>
                   )}
 
@@ -2673,6 +2713,16 @@ export function ProductForm({
                         id={`${formId}-packaging.packageUnits.0.baseUnitsPerPackage`}
                         aria-label={copy.packaging.baseUnitsPerPackage}
                         data-field-key="packaging.packageUnits.0.baseUnitsPerPackage"
+                        aria-invalid={Boolean(
+                          fieldErrors[
+                            "packaging.packageUnits.0.baseUnitsPerPackage"
+                          ],
+                        )}
+                        {...(fieldErrors[
+                          "packaging.packageUnits.0.baseUnitsPerPackage"
+                        ]
+                          ? { "aria-describedby": `${formId}-field-errors` }
+                          : {})}
                         min={1}
                         name="packaging.packageUnits.0.baseUnitsPerPackage"
                         step={1}
@@ -3076,6 +3126,20 @@ export function ProductForm({
               >
                 <Trash2 aria-hidden="true" size={16} />
                 {copy.actions.archive}
+              </button>
+            ) : null}
+
+            {canMerge ? (
+              <button
+                className="quiet-button"
+                disabled={busy || hasUnsavedChanges}
+                type="button"
+                onClick={() => {
+                  setMergeError(null);
+                  setShowMergeDialog(true);
+                }}
+              >
+                {copy.actions.merge}
               </button>
             ) : null}
 

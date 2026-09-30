@@ -20,6 +20,8 @@ export interface InventoryRiskInput {
   readonly earliestExpiry: string | null;
   readonly expiredCount: bigint;
   readonly hasBarcode: boolean;
+  readonly quarantinedCount: bigint;
+  readonly recalledCount: bigint;
   readonly maximumLevel: bigint | null;
   readonly minimumLevel: bigint | null;
   readonly businessDate: string;
@@ -52,6 +54,8 @@ export function riskIndicators(
   input: InventoryRiskInput,
 ): InventoryRiskIndicator[] {
   const indicators: InventoryRiskIndicator[] = [];
+  if (input.recalledCount > 0n) indicators.push("recalled");
+  if (input.quarantinedCount > 0n) indicators.push("quarantined");
   if (input.balance === 0n) indicators.push("out-of-stock");
   if (input.minimumLevel !== null && input.balance < input.minimumLevel) {
     indicators.push("below-minimum");
@@ -81,7 +85,12 @@ export function riskIndicators(
 export function automaticStateColour(
   indicators: readonly InventoryRiskIndicator[],
 ): ProductStateColour {
-  if (indicators.includes("expired") || indicators.includes("out-of-stock")) {
+  if (
+    indicators.includes("recalled") ||
+    indicators.includes("quarantined") ||
+    indicators.includes("expired") ||
+    indicators.includes("out-of-stock")
+  ) {
     return "red";
   }
   if (

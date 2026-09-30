@@ -278,12 +278,15 @@ export async function listCountSessions(
   baseUrl: string,
   query: CountSessionListQuery = {},
 ): Promise<{
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
   readonly sessions: CountSessionSummary[];
 }> {
-  const search =
-    query.status === undefined
-      ? ""
-      : `?status=${encodeURIComponent(query.status)}`;
+  const params = new URLSearchParams();
+  if (query.status !== undefined) params.set("status", query.status);
+  if (query.limit !== undefined) params.set("limit", query.limit);
+  if (query.cursor !== undefined) params.set("cursor", query.cursor);
+  const search = params.size === 0 ? "" : `?${params.toString()}`;
   return await requestJson(
     baseUrl,
     `${countSessionListContract.path}${search}`,

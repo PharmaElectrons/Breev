@@ -52,16 +52,22 @@ export function formatTime(value: Date, locale: Locale): string {
 export function formatCurrencyFromFils(value: bigint, locale: Locale): string {
   const sign = value < 0n ? "-" : "";
   const absoluteValue = value < 0n ? -value : value;
-  const decimalValue = `${sign}${absoluteValue / 1_000n}.${String(
-    absoluteValue % 1_000n,
-  ).padStart(3, "0")}`;
-  const formatter = new Intl.NumberFormat(localeTags[locale], {
-    currency: "IQD",
-    currencyDisplay: "code",
-    maximumFractionDigits: 3,
-    minimumFractionDigits: 3,
-    style: "currency",
-  });
+  const whole = absoluteValue / 1_000n;
+  const fraction = String(absoluteValue % 1_000n).padStart(3, "0");
+  const amount = `${sign}${groupIntegerDigits(whole.toString())}.${fraction}`;
+  if (locale === "ar") {
+    return `${localizeCurrencyAmount(amount)} د.ع`;
+  }
+  return `IQD ${amount}`;
+}
 
-  return formatter.format(decimalValue as unknown as number);
+function groupIntegerDigits(value: string): string {
+  return value.replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
+}
+
+function localizeCurrencyAmount(amount: string): string {
+  return amount
+    .replace(/[0-9]/gu, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)] ?? digit)
+    .replaceAll(",", "٬")
+    .replaceAll(".", "٫");
 }

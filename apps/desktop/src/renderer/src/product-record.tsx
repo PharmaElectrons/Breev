@@ -42,13 +42,20 @@ export function formatFilsToIqd(
   const fraction = fils % 1000n;
   const wholeFormatted = formatBigIntWithCommas(whole);
   const unit = locale === "ar" ? "د.ع" : "IQD";
+  const amount =
+    fraction === 0n
+      ? wholeFormatted
+      : `${wholeFormatted}.${fraction.toString().padStart(3, "0").replace(/0+$/, "")}`;
 
-  if (fraction === 0n) {
-    return `${wholeFormatted} ${unit}`;
-  }
+  return `${localizeAmount(amount, locale)} ${unit}`;
+}
 
-  const fracStr = fraction.toString().padStart(3, "0").replace(/0+$/, "");
-  return `${wholeFormatted}.${fracStr} ${unit}`;
+function localizeAmount(amount: string, locale: "ar" | "en"): string {
+  if (locale === "en") return amount;
+  return amount
+    .replace(/[0-9]/g, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)] ?? digit)
+    .replaceAll(",", "٬")
+    .replaceAll(".", "٫");
 }
 
 export function formatDefaultUnit(
