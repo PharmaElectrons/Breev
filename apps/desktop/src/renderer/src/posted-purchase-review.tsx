@@ -1392,6 +1392,7 @@ function PostedAdjustmentView({
         {getAdjustmentReasonLabel(adjustment.reason, locale)} ·{" "}
         {formatTimestamp(adjustment.postedAt, locale)}
       </p>
+      {adjustment.evidence === null ? null : <p>{adjustment.evidence}</p>}
       <dl className="posted-purchase-totals">
         <div>
           <dt>{copy.quantity}</dt>

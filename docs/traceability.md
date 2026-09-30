@@ -91,6 +91,21 @@ The stakeholder's 6 September 2026 clarification identifies `design/prototype/sr
 
 The final unified visual PDF (including the quick-stocktake design) remains a pending client delivery in [`open-decisions.md`](open-decisions.md). When received it may refine appearance, but it adds no scope and cannot override written requirements.
 
+## M2 Adjustment confirmation remediation evidence
+
+The stakeholder initiated Phase 1 on 30 September 2026 through the Purchasing
+integrity prompt. Its first bounded task binds saved Adjustment facts to preview
+and Post. The [T01 candidate record](../evidence/issue-198/t01/README.md) traces
+scope §6.3 and M2-P04's version/hash, exact evidence, atomic retry, and audit proof.
+The [M2 evidence map](milestone-2-scope-and-evidence-map.md) retains the full
+Adjustment family's defect status and pending manual/later-task gates; this
+record does not approve G-01/G-02 or expand the funded milestone. T01 received
+explicit manual PASS on 30 September 2026. The stakeholder's same-day
+[follow-up](../evidence/issue-198/followups.md) requires diagnostic request/audit
+references to be hidden by default in ordinary errors, with clear localized
+recovery and retained internal audit/support evidence. Purchasing remediation
+and later owning module tasks must carry that presentation requirement forward.
+
 ## Windows payload optimization evidence
 
 The stakeholder initiated issue #126 implementation on 4 September 2026 after reviewing its size/performance investigation. The work preserves the existing G-05/G-06/G-07 authority, security and lifecycle requirements; it does not authorize a new installer architecture or relaxed durability. The [issue-126 implementation record](../evidence/issue-126/README.md) traces task evidence and the original issue's infeasible size/file-count assumptions. Measured budgets and any unresolved verification gaps must be presented explicitly in the review PR; the investigation does not close release gates or silently replace requirement acceptance criteria.

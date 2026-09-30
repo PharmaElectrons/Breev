@@ -128,6 +128,22 @@ accessibility defect on the Sales reorder surface. The current Adjustment and
 Return screenshots are expressly before-state inputs for the prototype-fidelity
 phase, not visual acceptance.
 
+## Phase 1 T01 confirmation evidence
+
+The [T01 candidate record](../evidence/issue-198/t01/README.md) records fresh
+canonical-hash, runtime-contract, real-PostgreSQL, and bilingual/theme browser
+proof for M2-P04's saved evidence/version/hash confirmation, stale-state refusal,
+atomic retry, and immutable audit. T01 received explicit stakeholder manual PASS
+on 30 September 2026. M2-P04 remains
+**defect**: reason/field alignment, controls/totals, and the rest of Phase 1 are
+not accepted by this bounded change. M2-Q01/Q02/Q03 evidence is limited to this
+confirmation slice; package, performance, and phase-level acceptance still need
+their later gates. G-01/G-02 and milestone exclusions are unchanged.
+
+The stakeholder's [diagnostic-reference follow-up](../evidence/issue-198/followups.md)
+requires ordinary errors to hide raw support UUIDs by default while retaining
+server audit evidence. T03 and the later owning module tasks must verify it.
+
 ## Validation record
 
 - Issues inspected: #45–#59, #63, #75, #190, and #191. Their milestone, state, labels, and named dependencies were checked through GitHub.

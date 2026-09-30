@@ -29,6 +29,7 @@ import {
   purchasePostRequestSchema,
   purchasePostResultSchema,
   purchasingDenialSchema,
+  identityDenialSchema,
   supplierCreateRequestSchema,
 } from "./index.js";
 
@@ -790,6 +791,46 @@ describe("supplier and purchase draft contracts", () => {
     ).toBe(false);
   });
 
+  it.each([
+    "version-conflict",
+    "adjustment-summary-stale",
+    "idempotency-conflict",
+    "adjustment-batch-conflict",
+    "adjustment-draft-posted",
+  ])("validates the %s confirmation denial", (code) => {
+    const denial = {
+      code,
+      fieldErrors: [],
+      requestId: POSTING_ID,
+      status: "denied",
+    };
+    expect(purchasingDenialSchema.parse(denial)).toEqual(denial);
+    expect(
+      purchaseAdjustmentPostRequestSchema.safeParse({
+        expectedVersion: "2",
+        confirmationHash: "stale",
+        idempotencyKey: COMMAND_ID,
+      }).success,
+    ).toBe(false);
+    expect(
+      purchaseAdjustmentPostRequestSchema.safeParse({
+        expectedVersion: "0",
+        confirmationHash: "a".repeat(64),
+        idempotencyKey: COMMAND_ID,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates permission denial through the identity boundary", () => {
+    const denial = {
+      code: "permission-denied",
+      requiredPermission: "purchases.adjustments.manage",
+      requestId: POSTING_ID,
+      status: "denied",
+    };
+    expect(identityDenialSchema.parse(denial)).toEqual(denial);
+  });
+
   it("validates durable adjustment drafts, signed summaries, and confirmation", () => {
     const snapshot = {
       baseUnitsPerEnteredUnit: "1",
@@ -838,9 +879,11 @@ describe("supplier and purchase draft contracts", () => {
         costAfterDiscountDeltaFils: "3900",
         draftId: DRAFT_ID,
         draftVersion: "2",
+        evidence: "Supplier invoice checked",
         headerChanges: [],
         primarySupplierCostDeltaFils: "4000",
         quantityDelta: "4",
+        reason: "quantity error",
         rowDeltas: [
           {
             after: snapshot,

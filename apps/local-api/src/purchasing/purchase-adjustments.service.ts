@@ -35,6 +35,7 @@ import {
 import {
   applyPurchaseAdjustmentToValuation,
   receiveBatch,
+  readPurchaseAdjustmentConfirmationBatches,
   recordPurchaseAdjustmentMovement,
   recordPurchaseAdjustmentValueEffect,
   resolveReceiptClassRuleSet,
@@ -73,6 +74,7 @@ import {
   extractPurchaseAdjustmentDelta,
   type PurchaseAdjustmentRowSnapshot as DomainRow,
 } from "./purchase-adjustment-delta.js";
+import { purchaseAdjustmentConfirmationHash } from "./purchase-adjustment-confirmation.js";
 import { preparePurchaseRow } from "./purchase-row.js";
 import { PurchasingDenied } from "./purchasing.service.js";
 
@@ -456,6 +458,14 @@ export class PurchaseAdjustmentsService {
       );
       const header = await lockDraftHeader(client, context.pharmacyId, draftId);
       requireEditableDraft(header, draftId, header?.version ?? "0");
+      // Serialize the corrected original while collecting its header/rows;
+      // another draft's Post must not produce a mixed confirmation snapshot.
+      await readOriginalHeader(
+        client,
+        context.pharmacyId,
+        header!.original_purchase_id,
+        true,
+      );
       const calculated = await calculateSummary(
         client,
         context.pharmacyId,
@@ -464,9 +474,16 @@ export class PurchaseAdjustmentsService {
       assertMeaningfulChange(calculated);
       await validateSummaryBatches(client, context.pharmacyId, calculated);
       await validateSummaryValuation(client, context.pharmacyId, calculated);
+      // Validation holds the batch locks. Recalculate under those locks so a
+      // movement racing the initial read cannot create a mixed-state preview.
+      const confirmed = await calculateSummary(
+        client,
+        context.pharmacyId,
+        header!,
+      );
       await client.query("commit");
       transactionOpen = false;
-      return calculated.summary;
+      return confirmed.summary;
     } catch (error) {
       if (transactionOpen)
         await client.query("rollback").catch(() => undefined);
@@ -523,7 +540,6 @@ export class PurchaseAdjustmentsService {
           context.pharmacyId,
           header!,
         );
-        assertMeaningfulChange(calculated);
         if (calculated.summary.confirmationHash !== input.confirmationHash) {
           reject(
             409,
@@ -538,6 +554,7 @@ export class PurchaseAdjustmentsService {
             draftId,
           );
         }
+        assertMeaningfulChange(calculated);
 
         assertLockStageProgression("draft", "number-sequence");
         const allocation = await allocateDocumentNumber(
@@ -561,6 +578,25 @@ export class PurchaseAdjustmentsService {
 
         assertLockStageProgression("number-sequence", "batch-stock");
         await validateSummaryBatches(client, context.pharmacyId, calculated);
+        const lockedSummary = await calculateSummary(
+          client,
+          context.pharmacyId,
+          header!,
+        );
+        if (lockedSummary.summary.confirmationHash !== input.confirmationHash) {
+          reject(
+            409,
+            "adjustment-summary-stale",
+            [
+              {
+                code: "invalid",
+                path: ["confirmationHash"],
+                rule: "purchase.adjustment.summary-stale",
+              },
+            ],
+            draftId,
+          );
+        }
 
         const supplierEffects = calculated.summary.supplierEffects.map(
           (effect) => ({
@@ -743,6 +779,10 @@ export class PurchaseAdjustmentsService {
         });
         return {
           afterState: {
+            reason: header!.reason,
+            evidence: header!.evidence,
+            draftVersion: header!.version,
+            confirmationHash: calculated.summary.confirmationHash,
             numberSuffix: allocation.value.toString(),
             primarySupplierCostDeltaFils:
               calculated.summary.primarySupplierCostDeltaFils,
@@ -1095,6 +1135,7 @@ async function readCurrentCorrectedState(
     supplierInvoiceNumber: string;
     supplierNameSnapshot: string;
   };
+  correctionVersion: string;
   rows: PurchaseAdjustmentSnapshotRow[];
 }> {
   const originalRows = await readOriginalRows(client, pharmacyId, purchaseId);
@@ -1122,11 +1163,12 @@ async function readCurrentCorrectedState(
       );
   }
   const latest = await client.query<{
+    correction_version: string;
     supplier_id: string;
     supplier_invoice_number: string;
     supplier_name_snapshot: string;
   }>(
-    `select supplier_id, supplier_name_snapshot, supplier_invoice_number
+    `select suffix_value::text as correction_version, supplier_id, supplier_name_snapshot, supplier_invoice_number
      from posted_purchase_adjustments
      where pharmacy_id = $1 and original_purchase_id = $2
      order by suffix_value desc limit 1`,
@@ -1134,6 +1176,7 @@ async function readCurrentCorrectedState(
   );
   const header = latest.rows[0];
   return {
+    correctionVersion: header?.correction_version ?? "0",
     header:
       header === undefined
         ? {
@@ -1609,10 +1652,12 @@ async function calculateSummary(
       outcome.delta.costAfterDiscountDeltaFils.toString(),
     draftId: draftHeader.id,
     draftVersion: draftHeader.version,
+    evidence: draftHeader.evidence,
     headerChanges,
     primarySupplierCostDeltaFils:
       outcome.delta.primarySupplierCostDeltaFils.toString(),
     quantityDelta: outcome.delta.quantityDelta.toString(),
+    reason: draftHeader.reason,
     rowDeltas,
     stockEffects: rowDeltas
       .filter(
@@ -1629,10 +1674,44 @@ async function calculateSummary(
       })),
     supplierEffects,
   };
-  const confirmationHash = canonicalRequestHash(
-    "purchase.adjustment.summary",
-    base as JsonObject,
-  ).toString("hex");
+  const inventory = await readPurchaseAdjustmentConfirmationBatches(
+    client,
+    pharmacyId,
+    base.stockEffects.flatMap((effect) =>
+      effect.batchId === null ? [] : [effect.batchId],
+    ),
+  );
+  const confirmationHash = purchaseAdjustmentConfirmationHash({
+    pharmacyId,
+    draft: {
+      id: draftHeader.id,
+      version: draftHeader.version,
+      originalPurchaseId: draftHeader.original_purchase_id,
+      invoiceDate: draftHeader.invoice_date,
+      settlementContext: draftHeader.settlement_context,
+      allowancePercentageSnapshot: normalizeDecimal(
+        draftHeader.allowance_percentage_snapshot,
+      ),
+      reason: draftHeader.reason,
+      evidence: draftHeader.evidence,
+      supplierId: draftHeader.supplier_id,
+      supplierNameSnapshot: draftHeader.supplier_name_snapshot,
+      supplierInvoiceNumber: draftHeader.supplier_invoice_number,
+    },
+    savedRows: draftSnapshots,
+    original: {
+      id: draftHeader.original_purchase_id,
+      ...original,
+      rows: originalRows as unknown as JsonObject[],
+    },
+    current: {
+      correctionVersion: current.correctionVersion,
+      header: current.header,
+      rows: current.rows as unknown as JsonObject[],
+    },
+    inventory,
+    preview: base,
+  });
   return {
     currentHeader: {
       supplierId: current.header.supplierId,

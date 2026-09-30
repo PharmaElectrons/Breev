@@ -3974,9 +3974,11 @@ export const purchaseAdjustmentSummarySchema = z.strictObject({
   costAfterDiscountDeltaFils: signedBigintSchema,
   draftId: z.uuidv7(),
   draftVersion: decimalRevisionSchema,
+  evidence: purchaseAdjustmentEvidenceSchema,
   headerChanges: z.array(purchaseAdjustmentFieldChangeSchema),
   primarySupplierCostDeltaFils: signedBigintSchema,
   quantityDelta: signedBigintSchema,
+  reason: purchaseAdjustmentReasonSchema,
   rowDeltas: z.array(purchaseAdjustmentRowDeltaSchema),
   stockEffects: z.array(
     z.strictObject({

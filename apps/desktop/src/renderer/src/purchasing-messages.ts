@@ -801,6 +801,9 @@ export function getPurchasingDenialMessage(
   switch (code) {
     case "adjustment-empty":
       return copy.denialAdjustmentEmpty;
+    case "version-conflict":
+    case "adjustment-summary-stale":
+      return copy.versionConflictPost;
     case "adjustment-batch-conflict":
       return copy.denialAdjustmentBatchConflict;
     case "return-empty":

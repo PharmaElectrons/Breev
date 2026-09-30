@@ -3,6 +3,7 @@ import {
   PURCHASE_ADJUSTMENT_REASONS,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentReason,
+  type PurchaseAdjustmentPostRequest,
   type PurchaseAdjustmentSummary,
   type PurchasePostedDetail,
   type Supplier,
@@ -19,6 +20,7 @@ import {
   updatePurchaseAdjustmentDraft,
 } from "./purchasing-api";
 import { useCommittedFocus } from "./committed-focus";
+import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
 import {
@@ -83,6 +85,13 @@ const text = {
     returnInvoice: "Purchase return",
     returnTotal: "Total returned",
     saveReview: "Save and review Delta",
+    previewChanged:
+      "The adjustment changed. Save and review it again before confirming.",
+    reloadDraft: "Reload saved adjustment",
+    retryPost:
+      "The posting result is uncertain. Retry Confirm to recover the same request safely.",
+    authorityDenied:
+      "Posting is not allowed for this user or device. The saved adjustment is preserved.",
     searchInvoice: "Search invoice",
     special: "Special price",
     start: "Create adjustment copy",
@@ -150,6 +159,12 @@ const text = {
     returnInvoice: "إرجاع الفاتورة",
     returnTotal: "إجمالي الراجع",
     saveReview: "حفظ ومراجعة الفرق",
+    previewChanged: "تغير التعديل. احفظه وراجع الفروقات مجدداً قبل التأكيد.",
+    reloadDraft: "إعادة تحميل مسودة التعديل المحفوظة",
+    retryPost:
+      "نتيجة الحفظ غير مؤكدة. أعد التأكيد لاستعادة نتيجة الطلب نفسه بأمان.",
+    authorityDenied:
+      "الحفظ غير مسموح لهذا المستخدم أو الجهاز. تم الاحتفاظ بمسودة التعديل المحفوظة.",
     searchInvoice: "بحث عن فاتورة",
     special: "سعر خاص",
     start: "إنشاء نسخة التعديل",
@@ -199,6 +214,10 @@ export function PurchaseAdjustmentWorkflow({
   } | null>(null);
   const [leaveWarning, setLeaveWarning] = useState(false);
   const [postedNumber, setPostedNumber] = useState("");
+  const [previewCurrent, setPreviewCurrent] = useState(false);
+  const [reloadRequired, setReloadRequired] = useState(false);
+  const [postUncertain, setPostUncertain] = useState(false);
+  const postAttempt = useRef<PurchaseAdjustmentPostRequest | null>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
   const requestFocus = useCommittedFocus();
 
@@ -234,6 +253,21 @@ export function PurchaseAdjustmentWorkflow({
 
   function handleError(caught: unknown): void {
     if (
+      caught instanceof IdentityApiDenied ||
+      caught instanceof LicensingApiDenied
+    ) {
+      refuse(copy.authorityDenied, caught.denial.requestId);
+      return;
+    }
+    if (
+      caught instanceof PurchasingApiDenied &&
+      (caught.denial.code === "version-conflict" ||
+        caught.denial.code === "adjustment-summary-stale")
+    ) {
+      setPreviewCurrent(false);
+      setReloadRequired(true);
+    }
+    if (
       caught instanceof PurchasingApiDenied &&
       caught.denial.code === "adjustment-batch-conflict"
     ) {
@@ -250,9 +284,45 @@ export function PurchaseAdjustmentWorkflow({
     refuse(String(caught));
   }
 
+  function invalidatePreview(): void {
+    setPreviewCurrent(false);
+    postAttempt.current = null;
+  }
+
+  function editDraft(next: PurchaseAdjustmentDraft): void {
+    invalidatePreview();
+    setDraft(next);
+  }
+
+  function editEvidence(value: string): void {
+    invalidatePreview();
+    setEvidence(value);
+  }
+
+  async function reloadSavedDraft(): Promise<void> {
+    if (draft === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const loaded = await requestPurchaseAdjustmentDraft(baseUrl, draft.id);
+      setDraft(loaded);
+      setReason(loaded.reason);
+      setEvidence(loaded.evidence ?? "");
+      setSummary(null);
+      invalidatePreview();
+      setReloadRequired(false);
+      setStage("edit");
+    } catch (caught) {
+      handleError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createDraft(
     overrideReason?: PurchaseAdjustmentReason,
   ): Promise<PurchaseAdjustmentDraft | null> {
+    if (busy) return null;
     const chosenReason = overrideReason ?? reason ?? "quantity error";
     setBusy(true);
     setError(null);
@@ -263,6 +333,8 @@ export function PurchaseAdjustmentWorkflow({
         reason: chosenReason,
       });
       setDraft(created);
+      setReason(created.reason);
+      setEvidence(created.evidence ?? "");
       onDraftActive(true);
       setStage("edit");
       return created;
@@ -316,6 +388,7 @@ export function PurchaseAdjustmentWorkflow({
   }
 
   async function saveAndReview(): Promise<void> {
+    if (busy || postUncertain || reloadRequired) return;
     let currentDraft = draft;
     if (currentDraft === null) {
       // In stage === "start", clicking save directly creates draft first
@@ -324,6 +397,7 @@ export function PurchaseAdjustmentWorkflow({
     }
     setBusy(true);
     setError(null);
+    invalidatePreview();
     try {
       const updated = await updatePurchaseAdjustmentDraft(
         baseUrl,
@@ -356,7 +430,17 @@ export function PurchaseAdjustmentWorkflow({
         },
       );
       setDraft(updated);
-      setSummary(await requestPurchaseAdjustmentSummary(baseUrl, updated.id));
+      setReason(updated.reason);
+      setEvidence(updated.evidence ?? "");
+      const reviewed = await requestPurchaseAdjustmentSummary(
+        baseUrl,
+        updated.id,
+      );
+      setSummary(reviewed);
+      setPreviewCurrent(
+        reviewed.draftId === updated.id &&
+          reviewed.draftVersion === updated.version,
+      );
       setStage("summary");
     } catch (caught) {
       handleError(caught);
@@ -366,21 +450,46 @@ export function PurchaseAdjustmentWorkflow({
   }
 
   async function post(): Promise<void> {
-    if (draft === null || summary === null) return;
+    if (
+      busy ||
+      draft === null ||
+      summary === null ||
+      !previewCurrent ||
+      summary.draftId !== draft.id ||
+      summary.draftVersion !== draft.version
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
-      const result = await postPurchaseAdjustment(baseUrl, draft.id, {
+      const attempt = postAttempt.current ?? {
         confirmationHash: summary.confirmationHash,
-        expectedVersion: draft.version,
+        expectedVersion: summary.draftVersion,
         idempotencyKey: newPurchasingIdempotencyKey(),
-      });
+      };
+      postAttempt.current = attempt;
+      const result = await postPurchaseAdjustment(baseUrl, draft.id, attempt);
+      postAttempt.current = null;
+      setPostUncertain(false);
       setPostedNumber(formatAdjustmentNumber(result.posted.number));
       setStage("posted");
       onDraftActive(false);
-      await onPosted(detail.id);
+      // Refresh failure cannot make an acknowledged Post uncertain.
+      await onPosted(detail.id).catch(handleError);
     } catch (caught) {
-      handleError(caught);
+      if (
+        caught instanceof PurchasingApiDenied ||
+        caught instanceof IdentityApiDenied ||
+        caught instanceof LicensingApiDenied
+      ) {
+        postAttempt.current = null;
+        setPostUncertain(false);
+        setPreviewCurrent(false);
+        handleError(caught);
+      } else {
+        setPostUncertain(true);
+        refuse(copy.retryPost);
+      }
     } finally {
       setBusy(false);
     }
@@ -426,7 +535,7 @@ export function PurchaseAdjustmentWorkflow({
         {copy.title}
       </h3>
 
-      {error === null ? null : (
+      {error === null || stage === "summary" ? null : (
         <p className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
           <span>{error.message}</span>
           {error.tracking ? (
@@ -434,6 +543,16 @@ export function PurchaseAdjustmentWorkflow({
           ) : null}
         </p>
       )}
+      {reloadRequired && stage !== "summary" ? (
+        <button
+          type="button"
+          className="quiet-button"
+          disabled={busy}
+          onClick={() => void reloadSavedDraft()}
+        >
+          {copy.reloadDraft}
+        </button>
+      ) : null}
 
       {leaveWarning ? (
         <div
@@ -551,10 +670,12 @@ export function PurchaseAdjustmentWorkflow({
                     aria-label={copy.reason}
                     className="adjustment-banner-reason-select"
                     required
+                    disabled={busy || postUncertain}
                     value={reason}
-                    onChange={(event) =>
-                      setReason(event.target.value as PurchaseAdjustmentReason)
-                    }
+                    onChange={(event) => {
+                      invalidatePreview();
+                      setReason(event.target.value as PurchaseAdjustmentReason);
+                    }}
                   >
                     {PURCHASE_ADJUSTMENT_REASONS.map((value) => (
                       <option key={value} value={value}>
@@ -582,11 +703,12 @@ export function PurchaseAdjustmentWorkflow({
                     className="adjustment-banner-reason-input"
                     aria-label={copy.reason}
                     placeholder={copy.adjustmentReasonPlaceholder}
+                    disabled={busy || postUncertain}
                     value={
                       evidence ||
                       (reason ? getAdjustmentReasonLabel(reason, locale) : "")
                     }
-                    onChange={(event) => setEvidence(event.target.value)}
+                    onChange={(event) => editEvidence(event.target.value)}
                   />
                 </div>
                 <div className="adjustment-banner-actions">
@@ -704,10 +826,11 @@ export function PurchaseAdjustmentWorkflow({
                           <td>
                             <input
                               aria-label={`${copy.quantity} ${row.itemDisplayName}`}
+                              disabled={busy || postUncertain}
                               inputMode="numeric"
                               value={row.enteredQuantity}
                               onChange={(event) =>
-                                setDraft({
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.map((candidate) =>
                                     candidate.lineageId === row.lineageId
@@ -728,10 +851,11 @@ export function PurchaseAdjustmentWorkflow({
                           <td>
                             <input
                               aria-label={`${copy.cost} ${row.itemDisplayName}`}
+                              disabled={busy || postUncertain}
                               inputMode="numeric"
                               value={row.costFils}
                               onChange={(event) =>
-                                setDraft({
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.map((candidate) =>
                                     candidate.lineageId === row.lineageId
@@ -749,9 +873,10 @@ export function PurchaseAdjustmentWorkflow({
                             <input
                               type="text"
                               placeholder="YYYY-MM-DD"
+                              disabled={busy || postUncertain}
                               value={row.expiryDate ?? ""}
                               onChange={(event) =>
-                                setDraft({
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.map((candidate) =>
                                     candidate.lineageId === row.lineageId
@@ -778,10 +903,11 @@ export function PurchaseAdjustmentWorkflow({
                           <td>
                             <input
                               aria-label={`${copy.retail} ${row.itemDisplayName}`}
+                              disabled={busy || postUncertain}
                               inputMode="numeric"
                               value={row.retailPriceFils}
                               onChange={(event) =>
-                                setDraft({
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.map((candidate) =>
                                     candidate.lineageId === row.lineageId
@@ -809,8 +935,9 @@ export function PurchaseAdjustmentWorkflow({
                               type="button"
                               className="quiet-button"
                               aria-label={`${copy.remove} ${row.itemDisplayName}`}
+                              disabled={busy || postUncertain}
                               onClick={() =>
-                                setDraft({
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.filter(
                                     (candidate) =>
@@ -848,7 +975,9 @@ export function PurchaseAdjustmentWorkflow({
                               aria-label={`${copy.quantity} ${row.itemDisplayName}`}
                               inputMode="numeric"
                               value={row.enteredQuantity}
+                              disabled={busy}
                               onFocus={() => {
+                                if (busy) return;
                                 void createDraft();
                               }}
                               onChange={() => {
@@ -865,6 +994,7 @@ export function PurchaseAdjustmentWorkflow({
                               aria-label={`${copy.cost} ${row.itemDisplayName}`}
                               inputMode="numeric"
                               value={row.primarySupplierCostFils ?? "0"}
+                              disabled={busy}
                               onFocus={() => {
                                 void createDraft();
                               }}
@@ -878,6 +1008,7 @@ export function PurchaseAdjustmentWorkflow({
                               type="text"
                               placeholder="YYYY-MM-DD"
                               value={row.expiryDate ?? ""}
+                              disabled={busy}
                               onFocus={() => {
                                 void createDraft();
                               }}
@@ -892,6 +1023,7 @@ export function PurchaseAdjustmentWorkflow({
                               aria-label={`${copy.retail} ${row.itemDisplayName}`}
                               inputMode="numeric"
                               value={row.retailPriceFils}
+                              disabled={busy}
                               onFocus={() => {
                                 void createDraft();
                               }}
@@ -1045,7 +1177,7 @@ export function PurchaseAdjustmentWorkflow({
               <button
                 type="button"
                 className="primary-button purchase-save-draft-btn"
-                disabled={busy}
+                disabled={busy || postUncertain || reloadRequired}
                 onClick={() => void saveAndReview()}
               >
                 <span>💾</span> {copy.saveReview}
@@ -1175,6 +1307,21 @@ export function PurchaseAdjustmentWorkflow({
 
             {/* Footer */}
             <div className="delta-summary-footer">
+              {error === null ? null : (
+                <p
+                  className="form-error"
+                  role="alert"
+                  ref={errorRef}
+                  tabIndex={-1}
+                >
+                  <span>{error.message}</span>
+                  {error.tracking ? (
+                    <small className="form-error-tracking">
+                      {error.tracking}
+                    </small>
+                  ) : null}
+                </p>
+              )}
               <div className="delta-summary-net">
                 <span>{copy.netDeltaPosted}</span>
                 <span className="delta-summary-grand-total">
@@ -1194,23 +1341,50 @@ export function PurchaseAdjustmentWorkflow({
                   placeholder={copy.reasonAuditPlaceholder}
                   aria-label={copy.reasonAuditPlaceholder}
                   value={evidence}
-                  onChange={(event) => setEvidence(event.target.value)}
+                  disabled={busy || postUncertain}
+                  onChange={(event) => editEvidence(event.target.value)}
                 />
               </div>
+
+              <p className="visually-hidden">
+                {getAdjustmentReasonLabel(summary.reason, locale)}
+              </p>
+              {!previewCurrent ? (
+                <p role="status">{copy.previewChanged}</p>
+              ) : null}
 
               <div className="delta-summary-actions">
                 <button
                   type="button"
                   className="quiet-button"
-                  disabled={busy}
+                  disabled={busy || postUncertain}
                   onClick={() => setStage("edit")}
                 >
                   {copy.cancel}
                 </button>
+                {reloadRequired ? (
+                  <button
+                    type="button"
+                    className="quiet-button"
+                    disabled={busy}
+                    onClick={() => void reloadSavedDraft()}
+                  >
+                    {copy.reloadDraft}
+                  </button>
+                ) : !previewCurrent ? (
+                  <button
+                    type="button"
+                    className="quiet-button"
+                    disabled={busy || postUncertain}
+                    onClick={() => void saveAndReview()}
+                  >
+                    {copy.saveReview}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="primary-button"
-                  disabled={busy}
+                  disabled={busy || !previewCurrent}
                   onClick={() => void post()}
                 >
                   {copy.confirm}
