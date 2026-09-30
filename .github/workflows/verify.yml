@@ -198,5 +198,7 @@ jobs:
             artifacts/windows/ci/report-*.log
             test-results/desktop
             test-results/desktop-browser
+            test-results/evidence/issue-64
+            artifacts/issue-64/scale.json
             artifacts/windows/candidates/packaging-results.json
             artifacts/windows/candidates/**/fuses.json

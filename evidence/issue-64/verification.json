@@ -342,11 +342,43 @@
     "memoryPeak": 342917120,
     "memoryAfter": 342917120
   },
-  "windowsAutomated": "pending hosted execution",
+  "windowsAutomated": {
+    "status": "passed",
+    "sourceCommit": "03d4dd1d3d439f2a6805cdf8f6fa5c2edc5886f4",
+    "runUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36789073200",
+    "host": "Windows Server 2025 Datacenter build 26100",
+    "reportIntegrationPassed": 31,
+    "inventoryBrowserPassed": 16,
+    "packagedSmokePassed": 3,
+    "certificationEvidence": false,
+    "captureUploadCorrection": "First artifact omitted report PNGs and scale JSON; follow-up upload correction pending.",
+    "cng": {
+      "passed": 11,
+      "skipped": 1,
+      "skipReason": "Linux-specific serial encoding"
+    }
+  },
   "physicalWindowsNarrator": "unverified",
   "readinessBlockers": [
     "Original count reason/evidence failure cause remains unestablished.",
     "Intermittent packaged Main unavailable versus Repair required cause remains unresolved.",
     "Physical Windows report/native export/Narrator evidence unavailable."
-  ]
+  ],
+  "implementationCommit": "03d4dd1d3d439f2a6805cdf8f6fa5c2edc5886f4",
+  "hostedLinux": {
+    "status": "passed",
+    "sourceCommit": "03d4dd1d3d439f2a6805cdf8f6fa5c2edc5886f4",
+    "runUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36789073200",
+    "prRunUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36789009169",
+    "integrationSuitesPassed": 39,
+    "integrationPassed": 327,
+    "integrationSkipped": 2,
+    "browserPassed": 137,
+    "packagedSmokePassed": 3
+  },
+  "canceledPreviousHeadDispatch": {
+    "runId": 36788921027,
+    "sourceCommit": "6e41528cfa61849d4b747480e76b004da9c1ec38",
+    "reason": "Dispatch raced push and selected previous head; canceled before using it as remediation evidence."
+  }
 }

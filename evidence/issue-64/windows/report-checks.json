@@ -1,0 +1,40 @@
+{
+  "sourceCommit": "03d4dd1d3d439f2a6805cdf8f6fa5c2edc5886f4",
+  "platform": "win32/x64",
+  "node": "v24.19.0",
+  "certificationEvidence": false,
+  "physicalNarratorEvidence": false,
+  "runUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36789073200",
+  "checks": [
+    {
+      "command": "pnpm --filter @breev/local-api exec vitest run src/reporting/inventory-review.integration.test.ts src/reporting/inventory-authorization.integration.test.ts src/reporting/inventory-terminal-authorization.integration.test.ts src/inventory/inventory-count.integration.test.ts",
+      "startedAt": "2026-09-30T23:14:39.917Z",
+      "status": "passed",
+      "seconds": 130.5560138
+    },
+    {
+      "command": "pnpm --filter @breev/desktop exec playwright install chromium",
+      "startedAt": "2026-09-30T23:16:50.476Z",
+      "status": "passed",
+      "seconds": 13.559227699999989
+    },
+    {
+      "command": "pnpm --filter @breev/desktop exec playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts --trace retain-on-failure",
+      "startedAt": "2026-09-30T23:17:04.035Z",
+      "status": "passed",
+      "seconds": 103.9797823
+    },
+    {
+      "command": "pnpm package:desktop",
+      "startedAt": "2026-09-30T23:18:48.016Z",
+      "status": "passed",
+      "seconds": 10.543803399999975
+    },
+    {
+      "command": "pnpm --filter @breev/desktop exec playwright test --config playwright.config.ts --trace retain-on-failure",
+      "startedAt": "2026-09-30T23:18:58.560Z",
+      "status": "passed",
+      "seconds": 27.650548300000025
+    }
+  ]
+}
