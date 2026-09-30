@@ -69,7 +69,7 @@ import {
   type PurchasePostResult,
   type PurchasePostedDetail,
   type PurchasePostedListResponse,
-  type PostedPurchaseAdjustment,
+  type PostedPurchaseAdjustmentDetail,
   type PostedPurchaseReturn,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentPostResult,
@@ -643,7 +643,7 @@ export class PurchasingController {
   public async readPostedAdjustment(
     @Param("adjustmentId") adjustmentId: string,
     @Req() request: Request,
-  ): Promise<PostedPurchaseAdjustment> {
+  ): Promise<PostedPurchaseAdjustmentDetail> {
     return await translatePurchasingDenial(async () => {
       const id =
         postedPurchaseAdjustmentSchema.shape.id.safeParse(adjustmentId);

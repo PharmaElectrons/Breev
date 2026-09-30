@@ -991,7 +991,9 @@ async function readOriginalHeader(
      where posted.pharmacy_id = $1 and posted.id = $2${lock ? " for update" : ""}`,
     [pharmacyId, purchaseId],
   );
-  return result.rows[0];
+  const header = result.rows[0];
+  if (header === undefined) return undefined;
+  return await withCorrectedSupplier(client, pharmacyId, header);
 }
 
 async function readDraftHeader(
@@ -1015,7 +1017,43 @@ async function readDraftHeader(
      }`,
     [pharmacyId, draftId],
   );
-  return result.rows[0];
+  const header = result.rows[0];
+  if (header === undefined) return undefined;
+  if (lock) {
+    // Serialize all linked correction/Return commands before number allocation
+    // and stock locks. Read the effective Supplier after acquiring this lock.
+    const original = await readOriginalHeader(
+      client,
+      pharmacyId,
+      header.original_purchase_id,
+      true,
+    );
+    if (original === undefined)
+      throw new Error("Purchase Return original missing");
+    return {
+      ...header,
+      supplier_id: original.supplier_id,
+      supplier_name_snapshot: original.supplier_name_snapshot,
+    };
+  }
+  return await withCorrectedSupplier(client, pharmacyId, header);
+}
+
+async function withCorrectedSupplier(
+  client: PoolClient,
+  pharmacyId: string,
+  header: ReturnDraftHeaderRow,
+): Promise<ReturnDraftHeaderRow> {
+  const result = await client.query<{
+    supplier_id: string;
+    supplier_name_snapshot: string;
+  }>(
+    `select supplier_id, supplier_name_snapshot from posted_purchase_adjustments
+     where pharmacy_id = $1 and original_purchase_id = $2
+     order by suffix_value desc limit 1`,
+    [pharmacyId, header.original_purchase_id],
+  );
+  return { ...header, ...result.rows[0] };
 }
 
 async function readDraftRows(
@@ -1248,6 +1286,8 @@ async function calculateReturn(
   const base = {
     draftId: header.id,
     draftVersion: header.version,
+    supplierId: header.supplier_id,
+    supplierNameSnapshot: header.supplier_name_snapshot,
     inventoryCarryingAmountFils: rows
       .reduce((sum, row) => sum + BigInt(row.carryingAmountFils), 0n)
       .toString(),
@@ -1267,10 +1307,12 @@ async function calculateReturn(
       .reduce((sum, row) => sum + BigInt(row.supplierReductionFils), 0n)
       .toString(),
   };
-  const confirmationHash = canonicalRequestHash(
-    "purchase.return.summary",
-    base as JsonObject,
-  ).toString("hex");
+  const confirmationHash = canonicalRequestHash("purchase.return.summary", {
+    ...base,
+    originalPurchaseId: header.original_purchase_id,
+    reason: header.reason,
+    evidence: header.evidence,
+  } as JsonObject).toString("hex");
   return {
     header,
     plan,

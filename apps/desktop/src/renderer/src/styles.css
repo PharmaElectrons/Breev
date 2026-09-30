@@ -9100,6 +9100,35 @@ a:focus-visible,
   color: var(--foreground);
 }
 
+.purchase-adjustment .adjustment-header-input {
+  min-block-size: 2rem;
+  max-inline-size: 18rem;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--foreground);
+  font: inherit;
+}
+
+.purchase-adjustment .adjustment-banner-reason-wrap {
+  flex-direction: column;
+  gap: 0.35rem;
+  min-inline-size: 13rem;
+}
+
+.purchase-adjustment .adjustment-metadata-search p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.purchase-adjustment .adjustment-supplier-effects {
+  margin: 0;
+  padding-inline-start: 1rem;
+  font-size: 0.825rem;
+}
+
 .adjustment-metadata-search {
   flex: 1 1 14rem;
   min-inline-size: 10rem;

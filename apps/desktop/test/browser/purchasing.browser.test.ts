@@ -111,7 +111,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await mkdir(adjustmentEvidenceDir, { recursive: true });
     await mkdir(returnEvidenceDir, { recursive: true });
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
-    if (process.env.BREEV_M2_T01_MANUAL === "1") {
+    if (
+      process.env.BREEV_M2_T01_MANUAL === "1" ||
+      process.env.BREEV_M2_T02_MANUAL === "1"
+    ) {
       const manualUrl =
         administratorUrl === undefined ? null : new URL(administratorUrl);
       if (manualUrl?.hostname !== "127.0.0.1" || manualUrl.port !== "5549") {
@@ -1350,11 +1353,18 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await expect(review.getByRole("button", { name: create })).toHaveCount(
           0,
         );
+        const headerEvidence = `Header evidence before quantity ${locale} ${theme}`;
+        const headerEvidenceInput = review.getByRole("textbox", {
+          name: locale === "en" ? "Reason evidence" : "دليل السبب",
+          exact: true,
+        });
+        await headerEvidenceInput.pressSequentially(headerEvidence);
         await review
           .getByRole("textbox", {
             name: `${locale === "en" ? "Quantity" : "كمية"} ${purchaseProduct.displayName}`,
           })
           .fill("8");
+        await expect(headerEvidenceInput).toHaveValue(headerEvidence);
         const summaries: PurchaseAdjustmentSummary[] = [];
         page.on("response", (response) => {
           if (response.url().endsWith("/summary") && response.ok()) {
@@ -1373,6 +1383,29 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await expect(confirmButton).toBeEnabled();
         await expect.poll(() => summaries.length).toBe(1);
         const first = summaries[0]!;
+        expect(first.evidence).toBe(headerEvidence);
+        // Manual A restarts after the first Save, before any summary edit.
+        // Assert that exact boundary independently of the later re-save flow.
+        await stopProcess(api);
+        api = startApi(apiPort, databaseRoles, credentials);
+        await waitForHealth(apiOrigin);
+        await page.reload();
+        await review
+          .getByRole("button", {
+            name: locale === "en" ? "Continue draft" : "متابعة المسودة",
+          })
+          .click();
+        await expect(headerEvidenceInput).toHaveValue(headerEvidence);
+        await expect(
+          review.getByRole("combobox", {
+            name: locale === "en" ? "Reason" : "السبب",
+            exact: true,
+          }),
+        ).toHaveValue("quantity error");
+        await review.getByRole("button", { name: save }).click();
+        await expect(confirmButton).toBeEnabled();
+        await expect.poll(() => summaries.length).toBe(2);
+        expect(summaries[1]!.evidence).toBe(headerEvidence);
         const finalEvidence = `Final invoice evidence ${locale} ${theme}`;
         await summaryDialog.getByRole("textbox").fill(finalEvidence);
         await expect(confirmButton).toBeDisabled();
@@ -1383,17 +1416,20 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           "GET",
           purchaseAdjustmentDraftPath(first.draftId),
         );
-        expect(
-          (savedBefore.body as PurchaseAdjustmentDraft).evidence,
-        ).toBeNull();
+        expect((savedBefore.body as PurchaseAdjustmentDraft).evidence).toBe(
+          headerEvidence,
+        );
         await summaryDialog.getByRole("button", { name: save }).click();
         await expect(confirmButton).toBeEnabled();
-        await expect.poll(() => summaries.length).toBe(2);
-        expect(summaries[1]!.confirmationHash).not.toBe(first.confirmationHash);
-        expect(summaries[1]!.evidence).toBe(finalEvidence);
+        await expect.poll(() => summaries.length).toBe(3);
+        expect(summaries[2]!.confirmationHash).not.toBe(first.confirmationHash);
+        expect(summaries[2]!.evidence).toBe(finalEvidence);
 
-        // Renderer restart resumes the server draft; it cannot reuse an
-        // in-memory summary as authority.
+        // Restart both API and renderer, as in manual case A, rather than
+        // relying on the renderer's in-memory evidence or summary.
+        await stopProcess(api);
+        api = startApi(apiPort, databaseRoles, credentials);
+        await waitForHealth(apiOrigin);
         await page.reload();
         await review
           .getByRole("button", {
@@ -1405,8 +1441,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         ).toHaveValue(finalEvidence);
         await review.getByRole("button", { name: save }).click();
         await expect(confirmButton).toBeEnabled();
-        await expect.poll(() => summaries.length).toBe(3);
-        const displayed = summaries[2]!;
+        await expect.poll(() => summaries.length).toBe(4);
+        const displayed = summaries[3]!;
         const loaded = (
           await apiRequest(
             apiOrigin,
@@ -1469,8 +1505,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         ).toHaveValue(concurrentEvidence);
         await review.getByRole("button", { name: save }).click();
         await expect(confirmButton).toBeEnabled();
-        await expect.poll(() => summaries.length).toBe(4);
-        const accepted = summaries[3]!;
+        await expect.poll(() => summaries.length).toBe(5);
+        const accepted = summaries[4]!;
         expect(accepted.evidence).toBe(concurrentEvidence);
         expect(
           (
@@ -1481,7 +1517,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         ).toEqual([]);
         const evidenceDir = path.resolve(
           import.meta.dirname,
-          "../../../../evidence/issue-198/t01/screenshots",
+          "../../../../evidence/issue-198/t02/confirmation-screenshots",
         );
         await mkdir(evidenceDir, { recursive: true });
         for (const viewport of [
@@ -1585,6 +1621,389 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     }
   }
 
+  for (const locale of ["en", "ar"] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`corrects Adjustment supplier and invoice headers with immutable navigation ${locale} ${theme}`, async ({
+        page,
+      }) => {
+        const invoice = `BROWSER-HEADERS-${locale}-${theme}`;
+        const targetResponse = await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          "/suppliers",
+          {
+            allowanceEffectiveFrom: "2026-01-01",
+            defaultAllowancePercentage: "25",
+            idempotencyKey: uuidV7(),
+            name: `Header Supplier ${locale} ${theme}`,
+            terms: "Net 30",
+          },
+        );
+        expect(targetResponse.status).toBe(201);
+        const target = supplierSchema.parse(targetResponse.body);
+        const original = await postPurchaseForReview(
+          apiOrigin,
+          credentials,
+          supplierId,
+          purchaseProduct.id,
+          invoice,
+        );
+        const duplicateNumber = `${invoice}-DUPLICATE`;
+        await postPurchaseForReview(
+          apiOrigin,
+          credentials,
+          target.id,
+          purchaseProduct.id,
+          duplicateNumber,
+        );
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.goto(`${renderer.origin}#/purchases`);
+        await postedInvoicesTab(page).click();
+        const review = page.locator("#purchase-posted-view");
+        const search = review.getByRole("searchbox");
+        await search.fill(invoice);
+        await search.press("Enter");
+        await review
+          .locator(".posted-purchase-list tbody tr")
+          .filter({ hasText: invoice })
+          .filter({ hasNotText: duplicateNumber })
+          .getByRole("button")
+          .first()
+          .click();
+        const edit = locale === "en" ? "Edit Invoice" : "تعديل الفاتورة";
+        const create =
+          locale === "en" ? "Create adjustment copy" : "إنشاء نسخة التعديل";
+        const save =
+          locale === "en" ? "Save and review Delta" : "حفظ ومراجعة الفرق";
+        const confirm =
+          locale === "en" ? "Confirm and post Delta" : "تأكيد وحفظ التعديل";
+        const supplierLabel = locale === "en" ? "Supplier" : "المورد";
+        const invoiceLabel =
+          locale === "en" ? "Supplier invoice number" : "رقم الفاتورة";
+        const reasonLabel = locale === "en" ? "Reason" : "السبب";
+        const evidenceLabel =
+          locale === "en" ? "Reason evidence" : "دليل السبب";
+        const evidenceDir = path.resolve(
+          import.meta.dirname,
+          "../../../../evidence/issue-198/t02/screenshots",
+        );
+        await mkdir(evidenceDir, { recursive: true });
+        for (const [index, reason] of [
+          "supplier error",
+          "invoice-number error",
+        ].entries()) {
+          await review.getByRole("button", { name: edit }).click();
+          await review
+            .getByRole("combobox", { name: reasonLabel, exact: true })
+            .selectOption(reason);
+          await review.getByRole("button", { name: create }).click();
+          await expect(
+            review.getByRole("button", { name: create }),
+          ).toHaveCount(0);
+          const expiry = review.getByRole("textbox", {
+            name: `${locale === "en" ? "Expiry" : "الإكسباير"} ${purchaseProduct.displayName}`,
+          });
+          await expect(expiry).toHaveAttribute("readonly", "");
+          await expect(
+            review.getByRole("combobox", { name: reasonLabel, exact: true }),
+          ).toHaveValue(reason);
+          await review
+            .getByRole("textbox", { name: evidenceLabel, exact: true })
+            .fill(`Header evidence ${index} ${locale} ${theme}`);
+          if (index === 0)
+            await review
+              .getByRole("combobox", { name: supplierLabel, exact: true })
+              .selectOption(target.id);
+          else
+            await review
+              .getByRole("textbox", { name: invoiceLabel, exact: true })
+              .fill(duplicateNumber);
+          await review.locator(".purchase-adjustment").screenshot({
+            path: path.join(
+              evidenceDir,
+              `editor-${index}-${locale}-${theme}.png`,
+            ),
+            animations: "disabled",
+          });
+          await review.getByRole("button", { name: save }).click();
+          const dialog = review.locator(".delta-summary-dialog");
+          await expect(
+            dialog.locator(".adjustment-header-comparison"),
+          ).toContainText(index === 0 ? target.name : duplicateNumber);
+          if (index === 0) {
+            await expect(dialog).toContainText("Al-Nahrain Medical");
+            await expect(dialog).toContainText(
+              locale === "en" ? "−320 IQD" : "−٣٢٠ د.ع",
+            );
+          } else
+            await expect(dialog.getByRole("status")).toContainText(
+              locale === "en" ? "awaits milestone approval" : "اعتماد",
+            );
+          const summaries = await apiRequest(
+            apiOrigin,
+            credentials,
+            "GET",
+            `/purchases/posted/${original.posted.id}`,
+          );
+          const activeDrafts = (
+            summaries.body as { activeAdjustmentDrafts: { id: string }[] }
+          ).activeAdjustmentDrafts;
+          const authoritative = await apiRequest(
+            apiOrigin,
+            credentials,
+            "GET",
+            purchaseAdjustmentSummaryPath(activeDrafts[0]!.id),
+          );
+          const summary = authoritative.body as PurchaseAdjustmentSummary;
+          expect(summary).toMatchObject({
+            quantityDelta: "0",
+            primarySupplierCostDeltaFils: "0",
+            rowDeltas: [],
+            stockEffects: [],
+          });
+          expect(summary.reason).toBe(reason);
+          expect(summary.headerComparison.after.supplierId).toBe(target.id);
+          const confirmButton = dialog.getByRole("button", { name: confirm });
+          await expect(confirmButton).toBeInViewport();
+          expect(
+            (
+              await new AxeBuilder({ page })
+                .include(".delta-summary-dialog")
+                .analyze()
+            ).violations,
+          ).toEqual([]);
+          for (const viewport of [
+            { width: 1280, height: 800 },
+            { width: 1366, height: 768 },
+          ]) {
+            await page.setViewportSize(viewport);
+            await expect(confirmButton).toBeInViewport();
+            await dialog.screenshot({
+              path: path.join(
+                evidenceDir,
+                `${reason}-${locale}-${theme}-${viewport.width}x${viewport.height}.png`,
+              ),
+              animations: "disabled",
+            });
+          }
+          await page.setViewportSize({ width: 640, height: 800 });
+          await expect(confirmButton).toBeInViewport();
+          await page.setViewportSize({ width: 1280, height: 800 });
+          await page.route("**/t02-text-zoom.css", (route) =>
+            route.fulfill({
+              contentType: "text/css",
+              body: "html { font-size: 200%; }",
+            }),
+          );
+          const enlarged = await page.addStyleTag({
+            url: `${renderer.origin}/t02-text-zoom.css`,
+          });
+          await expect(confirmButton).toBeInViewport();
+          await enlarged.evaluate((element) => element.remove());
+          await confirmButton.click();
+          await expect(
+            review.locator(".adjustment-posted-success-card"),
+          ).toBeVisible();
+          await review
+            .getByRole("button", {
+              name:
+                locale === "en"
+                  ? "Back to original invoice"
+                  : "العودة إلى الفاتورة الأصلية",
+            })
+            .click();
+          const detail = review.locator(".posted-purchase-review");
+          await expect(detail).toContainText(invoice);
+          await expect(detail).toContainText("Al-Nahrain Medical");
+          await review
+            .getByRole("button", { name: index === 0 ? /-A01\//u : /-A02\//u })
+            .click();
+          const posted = review.locator(".posted-adjustment-view");
+          await expect(
+            posted.locator(".adjustment-header-comparison"),
+          ).toContainText(index === 0 ? target.name : duplicateNumber);
+          await expect(posted).toContainText(
+            `Header evidence ${index} ${locale} ${theme}`,
+          );
+          await posted
+            .getByRole("button", {
+              name: locale === "en" ? "Back to invoice" : "العودة إلى الفاتورة",
+            })
+            .click();
+        }
+      });
+    }
+  }
+
+  test("protects percentage Adjustment pricing and shows the derived retail correction", async ({
+    page,
+  }) => {
+    const created = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/purchases/drafts",
+      {
+        idempotencyKey: uuidV7(),
+        invoiceDate: "2026-09-08",
+        settlementContext: "debt",
+        supplierId,
+        supplierInvoiceNumber: "BROWSER-ADJUST-PERCENTAGE",
+      },
+    );
+    expect(created.status).toBe(201);
+    const draft = (created.body as { draft: PurchaseDraft }).draft;
+    const row = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      purchaseDraftRowsPath(draft.id),
+      {
+        costFils: "80000",
+        enteredQuantity: "4",
+        expectedVersion: draft.version,
+        expiryDate: "2029-05-31",
+        idempotencyKey: uuidV7(),
+        itemId: percentageProduct.id,
+        lotNumber: "PERCENTAGE-LOT",
+        notes: null,
+        pricing: { method: "by-percentage", marginPercentage: "20" },
+        unit: { kind: "inventory-unit" },
+      },
+    );
+    expect(row.status).toBe(201);
+    const ready = (row.body as { draft: PurchaseDraft }).draft;
+    const posted = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      purchaseDraftPostingsPath(ready.id),
+      { expectedVersion: ready.version, idempotencyKey: uuidV7() },
+    );
+    expect(posted.status).toBe(201);
+    const original = (posted.body as PurchasePostResult).posted;
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(
+      `${renderer.origin}#/purchases/posted/${original.id}/adjustment`,
+    );
+    const review = page.locator("#purchase-posted-view");
+    await review
+      .getByRole("combobox", { name: "Reason", exact: true })
+      .selectOption("price error");
+    await review
+      .getByRole("button", { name: "Create adjustment copy" })
+      .click();
+    const retail = review.getByRole("textbox", {
+      name: `Retail price (fils) ${percentageProduct.displayName}`,
+    });
+    await expect(retail).toHaveAttribute("readonly", "");
+    await expect(retail).toHaveValue("100000");
+    await review
+      .getByRole("textbox", {
+        name: `Primary supplier cost (fils) ${percentageProduct.displayName}`,
+      })
+      .fill("100000");
+    await review.getByRole("button", { name: "Save and review Delta" }).click();
+    const summary = review.locator(".delta-summary-dialog");
+    await expect(summary).toContainText("100 IQD");
+    await expect(summary).toContainText("125 IQD");
+    await expect(summary).toContainText("80 IQD");
+    await expect(
+      summary.getByRole("button", { name: "Confirm and post Delta" }),
+    ).toBeEnabled();
+  });
+
+  test("manual T02 Adjustment reasons and protected fields in a disposable pharmacy", async ({
+    page,
+  }) => {
+    test.skip(
+      process.env.BREEV_M2_T02_MANUAL !== "1",
+      "Opt-in interactive manual checkpoint",
+    );
+    test.setTimeout(0);
+    const target = await apiRequest(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/suppliers",
+      {
+        allowanceEffectiveFrom: "2026-01-01",
+        defaultAllowancePercentage: "25",
+        idempotencyKey: uuidV7(),
+        name: "Manual T02 Supplier B",
+        terms: "Net 30",
+      },
+    );
+    expect(target.status).toBe(201);
+    let quantityPurchaseId = "";
+    for (const suffix of [
+      "QUANTITY",
+      "PRICE",
+      "SUPPLIER",
+      "INVOICE",
+      "OTHER",
+      "DUPLICATE",
+    ]) {
+      const original = await postPurchaseForReview(
+        apiOrigin,
+        credentials,
+        supplierId,
+        purchaseProduct.id,
+        `MANUAL-T02-${suffix}`,
+      );
+      if (suffix === "QUANTITY") quantityPurchaseId = original.posted.id;
+    }
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto(`${renderer.origin}#/purchases`);
+    // The human reviews the five independent reason cases. Resume once after
+    // saving QUANTITY to preview, before Confirm, to exercise durable restart.
+    for (;;) {
+      await page.pause();
+      const original = await apiRequest(
+        apiOrigin,
+        credentials,
+        "GET",
+        `/purchases/posted/${quantityPurchaseId}`,
+      );
+      expect(original.status).toBe(200);
+      const active = (
+        original.body as {
+          activeAdjustmentDrafts: { id: string }[];
+        }
+      ).activeAdjustmentDrafts[0];
+      if (active !== undefined) {
+        const saved = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          purchaseAdjustmentDraftPath(active.id),
+        );
+        expect(saved.status).toBe(200);
+        const draft = saved.body as PurchaseAdjustmentDraft;
+        if (
+          draft.reason === "quantity error" &&
+          draft.evidence === "T02 quantity checked" &&
+          draft.rows.length === 1 &&
+          draft.rows[0]!.enteredQuantity === "8"
+        )
+          break;
+      }
+      console.warn(
+        "Restart skipped: case A must first Save and review quantity 8, Quantity error, and evidence T02 quantity checked. The fixture will pause again without restarting or clearing your input.",
+      );
+    }
+    await stopProcess(api!);
+    api = startApi(apiPort, databaseRoles, credentials);
+    await waitForHealth(apiOrigin);
+    await page.reload();
+    // Remain available for the rest of the human checkpoint; no automatic acceptance.
+    await page.pause();
+  });
+
   test("manual T01 Adjustment checkpoint in a disposable pharmacy", async ({
     page,
     context,
@@ -1660,9 +2079,6 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       .first();
     await openNewest.focus();
     await pressKeyOnFocused(page, openNewest, "Enter");
-    const newestHeading = await dialog
-      .locator("#posted-detail-title")
-      .textContent();
     const detail = dialog.locator(".posted-purchase-review");
     await expect(
       detail.locator("header").getByText("Historical snapshot"),
@@ -1678,8 +2094,19 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       0,
     );
 
+    const initialPurchaseId = new URL(page.url()).hash.split("/")[3]!;
+    const navigationResponse = await apiRequest(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/purchases/posted/${initialPurchaseId}`,
+    );
+    expect(navigationResponse.status).toBe(200);
+    const maximumNavigationSteps = (
+      navigationResponse.body as { navigation: { total: number } }
+    ).navigation.total;
     const next = dialog.getByRole("button", { name: /Next/u });
-    for (let step = 0; step < 10; step += 1) {
+    for (let step = 0; step < maximumNavigationSteps; step += 1) {
       if ((await next.getAttribute("aria-disabled")) === "true") break;
       const currentNumber = await dialog
         .locator("#posted-detail-title")
@@ -1697,19 +2124,40 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       dialog.getByText("This is the last posted purchase invoice."),
     ).toBeAttached();
     const previous = dialog.getByRole("button", { name: /Previous/u });
+    const lastHeading = await dialog
+      .locator("#posted-detail-title")
+      .textContent();
     await previous.focus();
     await pressKeyOnFocused(page, previous, "Enter");
     await expect(dialog.locator("#posted-detail-title")).not.toHaveText(
-      newestHeading ?? "",
+      lastHeading ?? "",
     );
 
     const supplierDrilldown = dialog.getByRole("button", {
       name: "Open current supplier record",
     });
+    const selectedPurchaseId = new URL(page.url()).hash.split("/")[3]!;
+    const selectedPurchase = await apiRequest(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/purchases/posted/${selectedPurchaseId}`,
+    );
+    expect(selectedPurchase.status).toBe(200);
+    const selectedSupplier = await apiRequest(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/suppliers/${(selectedPurchase.body as { supplierId: string }).supplierId}`,
+    );
+    expect(selectedSupplier.status).toBe(200);
     await supplierDrilldown.focus();
     await pressKeyOnFocused(page, supplierDrilldown, "Enter");
     await expect(
-      dialog.getByRole("heading", { name: "Al-Nahrain Medical" }),
+      dialog.getByRole("heading", {
+        name: supplierSchema.parse(selectedSupplier.body).name,
+        exact: true,
+      }),
     ).toBeVisible();
     const supplierBack = dialog.getByRole("button", {
       name: "Back to invoice",

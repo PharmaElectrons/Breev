@@ -6,6 +6,8 @@ import {
   allowancePercentageSchema,
   purchaseAdjustmentDraftCreateRequestSchema,
   purchaseAdjustmentDraftSchema,
+  purchaseAdjustmentDraftUpdateRequestSchema,
+  purchaseAdjustmentHeaderComparisonSchema,
   purchaseAdjustmentPostRequestSchema,
   purchaseAdjustmentSummarySchema,
   purchaseReturnDraftCreateRequestSchema,
@@ -695,6 +697,8 @@ describe("supplier and purchase draft contracts", () => {
         },
       ],
       supplierReductionFils: "60000",
+      supplierId: SUPPLIER_ID,
+      supplierNameSnapshot: "Al-Nahrain",
     } as const;
     expect(purchaseReturnSummarySchema.parse(summary)).toEqual(summary);
     expect(summary.inventoryCarryingAmountFils).not.toBe(
@@ -790,6 +794,61 @@ describe("supplier and purchase draft contracts", () => {
       }).success,
     ).toBe(false);
   });
+  it.each(PURCHASE_ADJUSTMENT_REASONS)(
+    "accepts the required %s reason as an audit fact",
+    (reason) => {
+      expect(
+        purchaseAdjustmentDraftCreateRequestSchema.parse({
+          reason,
+          evidence: "Verified evidence",
+          idempotencyKey: COMMAND_ID,
+        }).reason,
+      ).toBe(reason);
+    },
+  );
+  it("requires readable immutable header identity facts and rejects unsupported header inputs", () => {
+    const header = {
+      supplierId: SUPPLIER_ID,
+      supplierNameSnapshot: "Al-Nahrain",
+      supplierInvoiceNumber: "INV-100",
+    };
+    expect(
+      purchaseAdjustmentHeaderComparisonSchema.parse({
+        before: header,
+        after: { ...header, supplierInvoiceNumber: "CORRECTED" },
+      }).after.supplierInvoiceNumber,
+    ).toBe("CORRECTED");
+    expect(
+      purchaseAdjustmentHeaderComparisonSchema.safeParse({
+        before: { supplierId: SUPPLIER_ID },
+        after: header,
+      }).success,
+    ).toBe(false);
+    const update = {
+      reason: "other",
+      evidence: null,
+      expectedVersion: "1",
+      idempotencyKey: COMMAND_ID,
+      rows: [],
+      supplierId: SUPPLIER_ID,
+      supplierInvoiceNumber: "INV-100",
+    };
+    expect(
+      purchaseAdjustmentDraftUpdateRequestSchema.safeParse(update).success,
+    ).toBe(true);
+    for (const unsupported of [
+      { invoiceDate: "2026-01-01" },
+      { settlementContext: "cash" },
+      { allowancePercentageSnapshot: "20" },
+    ]) {
+      expect(
+        purchaseAdjustmentDraftUpdateRequestSchema.safeParse({
+          ...update,
+          ...unsupported,
+        }).success,
+      ).toBe(false);
+    }
+  });
 
   it.each([
     "version-conflict",
@@ -880,6 +939,19 @@ describe("supplier and purchase draft contracts", () => {
         draftId: DRAFT_ID,
         draftVersion: "2",
         evidence: "Supplier invoice checked",
+        headerComparison: {
+          before: {
+            supplierId: SUPPLIER_ID,
+            supplierNameSnapshot: "Al-Nahrain",
+            supplierInvoiceNumber: "INV-100",
+          },
+          after: {
+            supplierId: SUPPLIER_ID,
+            supplierNameSnapshot: "Al-Nahrain",
+            supplierInvoiceNumber: "INV-100",
+          },
+        },
+        warnings: [],
         headerChanges: [],
         primarySupplierCostDeltaFils: "4000",
         quantityDelta: "4",

@@ -104,7 +104,20 @@ explicit manual PASS on 30 September 2026. The stakeholder's same-day
 [follow-up](../evidence/issue-198/followups.md) requires diagnostic request/audit
 references to be hidden by default in ordinary errors, with clear localized
 recovery and retained internal audit/support evidence. Purchasing remediation
-and later owning module tasks must carry that presentation requirement forward.
+and later owning module tasks must carry that presentation requirement forward;
+the enduring presentation rule is in [quality](quality.md#usability-and-accessibility).
+
+The [T02 candidate record](../evidence/issue-198/t02/README.md) traces the next
+bounded scope §6.3/M2-P04 slice: readable immutable header comparisons, stable-ID
+Supplier/invoice corrections, protected facts, exact Delta/audit paths and linked
+Return payable integrity. Its separate manual checkpoint received stakeholder
+PASS on 30 September 2026, followed by explicit confirmation that the manual
+tests were finished; see [manual results](../evidence/issue-198/t02/manual-results.md).
+The earlier evidence-note report remains an unresolved follow-up. The
+[T02 local exit gate](../evidence/issue-198/t02/pre-commit-gate.md) records the
+accepted commit's proof and precise host/prerequisite limitations. Existing
+duplicate-number and Return accounting defaults retain their unapproved status;
+this implementation does not close G-01/G-02 or the remaining Adjustment family.
 
 ## Windows payload optimization evidence
 

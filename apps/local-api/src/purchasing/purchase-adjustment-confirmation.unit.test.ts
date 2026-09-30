@@ -60,6 +60,19 @@ function fixture(): Parameters<typeof purchaseAdjustmentConfirmationHash>[0] {
       evidence: "Final supplier evidence",
       reason: "quantity error",
       headerChanges: [],
+      headerComparison: {
+        before: {
+          supplierId: "supplier-1",
+          supplierNameSnapshot: "Al-Nahrain",
+          supplierInvoiceNumber: "INV-1",
+        },
+        after: {
+          supplierId: "supplier-1",
+          supplierNameSnapshot: "Al-Nahrain",
+          supplierInvoiceNumber: "INV-1",
+        },
+      },
+      warnings: [],
       primarySupplierCostDeltaFils: "4000",
       quantityDelta: "4",
       rowDeltas: [],
@@ -83,6 +96,24 @@ describe("Adjustment authoritative confirmation", () => {
     );
     expect(purchaseAdjustmentConfirmationHash(input)).toMatch(
       /^[a-f0-9]{64}$/u,
+    );
+  });
+  it("binds readable header snapshots and duplicate warnings as preview facts", () => {
+    const original = fixture();
+    const renamed = fixture();
+    renamed.preview.headerComparison.after.supplierNameSnapshot =
+      "Corrected supplier";
+    expect(purchaseAdjustmentConfirmationHash(renamed)).not.toBe(
+      purchaseAdjustmentConfirmationHash(original),
+    );
+    const warning = fixture();
+    warning.preview.warnings.push({
+      code: "duplicate-supplier-invoice-number",
+      operationalRule: "warn-open-decision",
+      existingPostingIds: ["purchase-2"],
+    });
+    expect(purchaseAdjustmentConfirmationHash(warning)).not.toBe(
+      purchaseAdjustmentConfirmationHash(original),
     );
   });
 

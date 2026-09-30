@@ -3968,6 +3968,15 @@ export const purchaseAdjustmentRowDeltaSchema = z.strictObject({
   primarySupplierCostDeltaFils: signedBigintSchema,
   quantityDelta: signedBigintSchema,
 });
+export const purchaseAdjustmentHeaderSnapshotSchema = z.strictObject({
+  supplierId: z.uuidv7(),
+  supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
+  supplierNameSnapshot: supplierNameSchema,
+});
+export const purchaseAdjustmentHeaderComparisonSchema = z.strictObject({
+  before: purchaseAdjustmentHeaderSnapshotSchema,
+  after: purchaseAdjustmentHeaderSnapshotSchema,
+});
 export const purchaseAdjustmentSummarySchema = z.strictObject({
   allowanceDeltaFils: signedBigintSchema,
   confirmationHash: z.string().regex(/^[0-9a-f]{64}$/u),
@@ -3975,10 +3984,12 @@ export const purchaseAdjustmentSummarySchema = z.strictObject({
   draftId: z.uuidv7(),
   draftVersion: decimalRevisionSchema,
   evidence: purchaseAdjustmentEvidenceSchema,
+  headerComparison: purchaseAdjustmentHeaderComparisonSchema,
   headerChanges: z.array(purchaseAdjustmentFieldChangeSchema),
   primarySupplierCostDeltaFils: signedBigintSchema,
   quantityDelta: signedBigintSchema,
   reason: purchaseAdjustmentReasonSchema,
+  warnings: z.array(purchasePostingWarningSchema),
   rowDeltas: z.array(purchaseAdjustmentRowDeltaSchema),
   stockEffects: z.array(
     z.strictObject({
@@ -4054,6 +4065,11 @@ export const postedPurchaseAdjustmentSchema = z.strictObject({
 export const purchaseAdjustmentPostResultSchema = z.strictObject({
   posted: postedPurchaseAdjustmentSchema,
 });
+/** Read projection from the immutable correction chain; command receipts stay durable. */
+export const postedPurchaseAdjustmentDetailSchema =
+  postedPurchaseAdjustmentSchema.extend({
+    headerComparison: purchaseAdjustmentHeaderComparisonSchema,
+  });
 
 /** A Purchase Return has its own pharmacy/year PR series. */
 export const purchaseReturnNumberSchema = z.strictObject({
@@ -4133,6 +4149,8 @@ export const purchaseReturnSummarySchema = z.strictObject({
   draftVersion: decimalRevisionSchema,
   inventoryCarryingAmountFils: priceFilsSchema,
   rows: z.array(purchaseReturnSummaryRowSchema).min(1),
+  supplierId: z.uuidv7(),
+  supplierNameSnapshot: supplierNameSchema,
   supplierReductionFils: priceFilsSchema,
 });
 export const purchaseReturnPostRequestSchema = z.strictObject({
@@ -4522,7 +4540,7 @@ export const purchasePostedAdjustmentReadContract = {
   method: "GET",
   path: "/purchases/posted-adjustments/:adjustmentId",
   responses: {
-    200: postedPurchaseAdjustmentSchema,
+    200: postedPurchaseAdjustmentDetailSchema,
     ...purchasingReadDenialResponses,
     404: purchasingDenialSchema,
   },
@@ -5640,6 +5658,12 @@ export type PurchaseAdjustmentPostRequest = z.infer<
 >;
 export type PostedPurchaseAdjustment = z.infer<
   typeof postedPurchaseAdjustmentSchema
+>;
+export type PostedPurchaseAdjustmentDetail = z.infer<
+  typeof postedPurchaseAdjustmentDetailSchema
+>;
+export type PurchaseAdjustmentHeaderComparison = z.infer<
+  typeof purchaseAdjustmentHeaderComparisonSchema
 >;
 export type PurchaseAdjustmentPostResult = z.infer<
   typeof purchaseAdjustmentPostResultSchema

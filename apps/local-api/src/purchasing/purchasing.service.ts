@@ -103,6 +103,7 @@ import {
   type PurchasePriceCaptureResult,
 } from "./purchase-price-capture.js";
 import { preparePurchaseRow } from "./purchase-row.js";
+import { postedPurchaseWarnings } from "./purchase-duplicates.js";
 
 const SUPPLIER_PERMISSION = "suppliers.manage";
 const DRAFT_PERMISSION = "purchases.drafts.manage";
@@ -1096,40 +1097,6 @@ async function preparePostedRow(
 
 /** Duplicate supplier invoice numbers among already-posted purchases warn and
  * never block (docs/domain.md §"Catalog, purchasing, and inventory"). */
-async function postedPurchaseWarnings(
-  client: PoolClient,
-  pharmacyId: string,
-  supplierId: string,
-  supplierInvoiceNumber: string,
-): Promise<string[]> {
-  const duplicate = await client.query<{ id: string }>(
-    `with recursive ancestry(id, merged_into_supplier_id) as (
-       select supplier_row.id, supplier_row.merged_into_supplier_id
-       from suppliers supplier_row
-       where supplier_row.pharmacy_id = $1 and supplier_row.id = $2
-       union all
-       select parent.id, parent.merged_into_supplier_id
-       from suppliers parent
-       join ancestry on parent.id = ancestry.merged_into_supplier_id
-       where parent.pharmacy_id = $1
-     ), canonical(id) as (
-       select id from ancestry where merged_into_supplier_id is null limit 1
-     ), aliases(id) as (
-       select id from canonical
-       union
-       select supplier_row.id from suppliers supplier_row
-       join aliases on supplier_row.merged_into_supplier_id = aliases.id
-       where supplier_row.pharmacy_id = $1
-     )
-     select posted_row.id from posted_purchases posted_row
-     where posted_row.pharmacy_id = $1 and posted_row.supplier_id in (select id from aliases)
-       and posted_row.supplier_invoice_number = $3
-     order by posted_row.posted_at, posted_row.id`,
-    [pharmacyId, supplierId, supplierInvoiceNumber],
-  );
-  return duplicate.rows.map((row) => row.id);
-}
-
 function postedJournalView(
   entryId: string,
   lines: readonly {

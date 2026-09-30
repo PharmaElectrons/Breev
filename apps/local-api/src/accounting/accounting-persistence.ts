@@ -394,3 +394,26 @@ export async function applyPurchaseReturnSupplierEffect(
     ],
   );
 }
+
+/** Exact payable contributions of a bounded set of immutable document journals. */
+export async function readSupplierPayableContributions(
+  client: PoolClient,
+  pharmacyId: string,
+  journalEntryIds: readonly string[],
+): Promise<readonly { supplierId: string; balanceFils: bigint }[]> {
+  const result = await client.query<{
+    supplier_id: string;
+    balance_fils: string;
+  }>(
+    `select supplier_id, sum(credit_fils - debit_fils)::text as balance_fils
+     from accounting_journal_lines
+     where pharmacy_id = $1 and entry_id = any($2::uuid[])
+       and account_code = 'supplier-payable'
+     group by supplier_id order by supplier_id`,
+    [pharmacyId, journalEntryIds],
+  );
+  return result.rows.map((row) => ({
+    supplierId: row.supplier_id,
+    balanceFils: BigInt(row.balance_fils),
+  }));
+}

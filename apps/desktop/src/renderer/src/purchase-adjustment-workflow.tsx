@@ -23,9 +23,12 @@ import { useCommittedFocus } from "./committed-focus";
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
+import { PurchaseAdjustmentHeaderComparisonTable } from "./purchase-adjustment-header-comparison";
+import { formatAdjustmentFils } from "./purchase-adjustment-money";
 import {
   getAdjustmentReasonLabel,
   getPurchasingDenialMessage,
+  purchasingMessages,
 } from "./purchasing-messages";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
@@ -61,6 +64,9 @@ const text = {
     evidence: "Reason evidence",
     expenses: "Invoice expenses",
     expiry: "Expiry",
+    lot: "Lot",
+    protectedFields:
+      "Expiry, lot, product and unit are protected. For physical goods leaving, use a Purchase Return; for an invalid stock balance, use an authorized stock count or correction. Expiry and lot correction await pharmacist approval.",
     invoice: "Supplier invoice number",
     iqd: "IQD",
     item: "Item",
@@ -96,6 +102,7 @@ const text = {
     special: "Special price",
     start: "Create adjustment copy",
     supplier: "Supplier",
+    supplierImpact: "Supplier payable change",
     title: "Purchase Invoice Adjustment",
     total: "Total",
     totalCost: "Total cost",
@@ -135,6 +142,9 @@ const text = {
     evidence: "دليل السبب",
     expenses: "إضافة مصاريف للفاتورة",
     expiry: "الإكسباير",
+    lot: "التشغيلة",
+    protectedFields:
+      "الصلاحية والتشغيلة والصنف والوحدة حقول محمية. لخروج البضاعة فعلياً استخدم مرتجع شراء؛ ولرصيد مخزون غير صالح استخدم جرداً أو تصحيحاً مصرحاً به. تصحيح الصلاحية والتشغيلة ينتظر اعتماد الصيدلي.",
     invoice: "رقم الفاتورة",
     iqd: "د.ع",
     item: "اسم المادة",
@@ -169,6 +179,7 @@ const text = {
     special: "سعر خاص",
     start: "إنشاء نسخة التعديل",
     supplier: "المورد",
+    supplierImpact: "التغير في المستحق للمورد",
     title: "تعديل فاتورة شراء",
     total: "الإجمالي",
     totalCost: "مجموع الكلفة",
@@ -698,16 +709,29 @@ export function PurchaseAdjustmentWorkflow({
             ) : (
               <>
                 <div className="adjustment-banner-reason-wrap">
+                  <select
+                    className="adjustment-banner-reason-select"
+                    aria-label={copy.reason}
+                    disabled={busy || postUncertain}
+                    value={reason}
+                    onChange={(event) => {
+                      invalidatePreview();
+                      setReason(event.target.value as PurchaseAdjustmentReason);
+                    }}
+                  >
+                    {PURCHASE_ADJUSTMENT_REASONS.map((value) => (
+                      <option key={value} value={value}>
+                        {getAdjustmentReasonLabel(value, locale)}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     type="text"
                     className="adjustment-banner-reason-input"
-                    aria-label={copy.reason}
-                    placeholder={copy.adjustmentReasonPlaceholder}
+                    aria-label={copy.evidence}
+                    placeholder={copy.addEvidence}
                     disabled={busy || postUncertain}
-                    value={
-                      evidence ||
-                      (reason ? getAdjustmentReasonLabel(reason, locale) : "")
-                    }
+                    value={evidence}
                     onChange={(event) => editEvidence(event.target.value)}
                   />
                 </div>
@@ -753,25 +777,72 @@ export function PurchaseAdjustmentWorkflow({
             </div>
             <div className="adjustment-metadata-field">
               <span className="adjustment-metadata-label">{copy.invoice}:</span>
-              <bdi className="adjustment-metadata-value font-mono">
-                {nextSuffix}-{cleanOriginalNumber}
-              </bdi>
+              {draft === null ? (
+                <bdi className="adjustment-metadata-value font-mono">
+                  {detail.supplierInvoiceNumber}
+                </bdi>
+              ) : (
+                <input
+                  className="adjustment-header-input"
+                  aria-label={copy.invoice}
+                  value={draft.supplierInvoiceNumber}
+                  maxLength={120}
+                  disabled={busy || postUncertain}
+                  onChange={(event) =>
+                    editDraft({
+                      ...draft,
+                      supplierInvoiceNumber: event.target.value,
+                    })
+                  }
+                />
+              )}
             </div>
             <div className="adjustment-metadata-field">
               <span className="adjustment-metadata-label">
                 {copy.supplier}:
               </span>
-              <strong className="adjustment-metadata-value">
-                {draftSupplierName}
-              </strong>
+              {draft === null ? (
+                <strong className="adjustment-metadata-value">
+                  {draftSupplierName}
+                </strong>
+              ) : (
+                <select
+                  className="adjustment-header-input"
+                  aria-label={copy.supplier}
+                  value={draft.supplierId}
+                  disabled={busy || postUncertain}
+                  onChange={(event) =>
+                    editDraft({
+                      ...draft,
+                      supplierId: event.target.value,
+                      supplierNameSnapshot:
+                        suppliers.find(
+                          (supplier) => supplier.id === event.target.value,
+                        )?.name ?? draft.supplierNameSnapshot,
+                    })
+                  }
+                >
+                  {suppliers.some(
+                    (supplier) => supplier.id === draft.supplierId,
+                  ) ? null : (
+                    <option value={draft.supplierId}>
+                      {draft.supplierNameSnapshot}
+                    </option>
+                  )}
+                  {suppliers
+                    .filter((supplier) => supplier.status === "active")
+                    .map((supplier) => (
+                      <option key={supplier.id} value={supplier.id}>
+                        {supplier.id === draft.supplierId
+                          ? draft.supplierNameSnapshot
+                          : supplier.name}
+                      </option>
+                    ))}
+                </select>
+              )}
             </div>
             <div className="adjustment-metadata-search">
-              <input
-                type="search"
-                disabled
-                placeholder={copy.itemSearchHint}
-                aria-label={copy.itemSearchHint}
-              />
+              <p id="adjustment-protected-fields">{copy.protectedFields}</p>
             </div>
           </div>
 
@@ -873,25 +944,16 @@ export function PurchaseAdjustmentWorkflow({
                             <input
                               type="text"
                               placeholder="YYYY-MM-DD"
-                              disabled={busy || postUncertain}
+                              aria-label={`${copy.expiry} ${row.itemDisplayName}`}
+                              aria-describedby="adjustment-protected-fields"
+                              readOnly
                               value={row.expiryDate ?? ""}
-                              onChange={(event) =>
-                                editDraft({
-                                  ...draft,
-                                  rows: draft.rows.map((candidate) =>
-                                    candidate.lineageId === row.lineageId
-                                      ? {
-                                          ...candidate,
-                                          expiryDate:
-                                            event.target.value.trim() === ""
-                                              ? null
-                                              : event.target.value.trim(),
-                                        }
-                                      : candidate,
-                                  ),
-                                })
-                              }
                             />
+                            {row.lotNumber === null ? null : (
+                              <small>
+                                {copy.lot}: <bdi>{row.lotNumber}</bdi>
+                              </small>
+                            )}
                           </td>
                           <td>
                             <bdi>
@@ -904,6 +966,7 @@ export function PurchaseAdjustmentWorkflow({
                             <input
                               aria-label={`${copy.retail} ${row.itemDisplayName}`}
                               disabled={busy || postUncertain}
+                              readOnly={row.pricingMethod === "by-percentage"}
                               inputMode="numeric"
                               value={row.retailPriceFils}
                               onChange={(event) =>
@@ -1008,14 +1071,15 @@ export function PurchaseAdjustmentWorkflow({
                               type="text"
                               placeholder="YYYY-MM-DD"
                               value={row.expiryDate ?? ""}
-                              disabled={busy}
-                              onFocus={() => {
-                                void createDraft();
-                              }}
-                              onChange={() => {
-                                void createDraft();
-                              }}
+                              aria-label={`${copy.expiry} ${row.itemDisplayName}`}
+                              aria-describedby="adjustment-protected-fields"
+                              readOnly
                             />
+                            {row.lotNumber === null ? null : (
+                              <small>
+                                {copy.lot}: <bdi>{row.lotNumber}</bdi>
+                              </small>
+                            )}
                           </td>
                           <td>0%</td>
                           <td>
@@ -1217,92 +1281,140 @@ export function PurchaseAdjustmentWorkflow({
               aria-label={copy.difference}
               tabIndex={0}
             >
-              <table className="delta-summary-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{copy.item}</th>
-                    <th scope="col">{copy.qtyBefore}</th>
-                    <th scope="col">{copy.qtyAfter}</th>
-                    <th scope="col">{copy.qtyDelta}</th>
-                    <th scope="col">{copy.costBefore}</th>
-                    <th scope="col">{copy.costAfter}</th>
-                    <th scope="col">{copy.valueDelta}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.rowDeltas.map((row) => {
-                    const itemName =
-                      row.after?.itemDisplayName ??
-                      row.before?.itemDisplayName ??
-                      copy.item;
-                    const beforeQty = row.before?.enteredQuantity ?? "0";
-                    const afterQty = row.after?.enteredQuantity ?? "0";
-                    const qtyDeltaNum = Number(row.quantityDelta);
-                    const formattedQtyDelta =
-                      qtyDeltaNum > 0
-                        ? `+${row.quantityDelta}`
-                        : `${row.quantityDelta}`;
-                    const costBeforeFils = row.before?.costFils ?? "0";
-                    const costAfterFils = row.after?.costFils ?? "0";
-                    const costDeltaFils = row.primarySupplierCostDeltaFils;
-                    const isPositiveCost =
-                      BigInt(costDeltaFils.replace(/^-/u, "") || "0") > 0n &&
-                      !costDeltaFils.startsWith("-");
+              <PurchaseAdjustmentHeaderComparisonTable
+                comparison={summary.headerComparison}
+              />
+              {summary.warnings.length > 0 ? (
+                <p role="status" className="adjustment-warning">
+                  {purchasingMessages[locale].duplicate}{" "}
+                  {purchasingMessages[locale].openDecision}
+                </p>
+              ) : null}
+              {summary.supplierEffects.length > 0 ? (
+                <div>
+                  <p>{copy.supplierImpact}</p>
+                  <ul className="adjustment-supplier-effects">
+                    {summary.supplierEffects.map((effect) => (
+                      <li key={effect.supplierId}>
+                        {effect.supplierNameSnapshot}:{" "}
+                        <bdi>
+                          {formatAdjustmentFils(effect.deltaFils, locale)}
+                        </bdi>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {summary.rowDeltas.length === 0 ? (
+                <p>{copy.unchanged}</p>
+              ) : (
+                <table className="delta-summary-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{copy.item}</th>
+                      <th scope="col">{copy.qtyBefore}</th>
+                      <th scope="col">{copy.qtyAfter}</th>
+                      <th scope="col">{copy.qtyDelta}</th>
+                      <th scope="col">{copy.costBefore}</th>
+                      <th scope="col">{copy.costAfter}</th>
+                      <th scope="col">{copy.valueDelta}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.rowDeltas.map((row) => {
+                      const itemName =
+                        row.after?.itemDisplayName ??
+                        row.before?.itemDisplayName ??
+                        copy.item;
+                      const beforeQty = row.before?.enteredQuantity ?? "0";
+                      const afterQty = row.after?.enteredQuantity ?? "0";
+                      const qtyDeltaNum = Number(row.quantityDelta);
+                      const formattedQtyDelta =
+                        qtyDeltaNum > 0
+                          ? `+${row.quantityDelta}`
+                          : `${row.quantityDelta}`;
+                      const costBeforeFils = row.before?.costFils ?? "0";
+                      const costAfterFils = row.after?.costFils ?? "0";
+                      const costDeltaFils = row.primarySupplierCostDeltaFils;
+                      const isPositiveCost =
+                        BigInt(costDeltaFils.replace(/^-/u, "") || "0") > 0n &&
+                        !costDeltaFils.startsWith("-");
 
-                    return (
-                      <tr key={row.lineageId}>
-                        <th scope="row">
-                          <span className="purchase-item-name-pill">
-                            {itemName}
-                          </span>
-                        </th>
-                        <td>
-                          <bdi>{beforeQty}</bdi>
-                        </td>
-                        <td>
-                          <bdi>{afterQty}</bdi>
-                        </td>
-                        <td>
-                          {/* Hidden text preserves compatibility with test assertion "4 → 8 (4)" */}
-                          <span className="visually-hidden">
-                            {beforeQty} → {afterQty} ({row.quantityDelta})
-                          </span>
-                          <bdi
-                            className={
-                              qtyDeltaNum > 0
-                                ? "delta-positive"
-                                : qtyDeltaNum < 0
-                                  ? "delta-negative"
-                                  : ""
-                            }
-                          >
-                            {formattedQtyDelta}
-                          </bdi>
-                        </td>
-                        <td>
-                          <bdi>{formatFilsToIqd(costBeforeFils, locale)}</bdi>
-                        </td>
-                        <td>
-                          <bdi>{formatFilsToIqd(costAfterFils, locale)}</bdi>
-                        </td>
-                        <td>
-                          <bdi
-                            className={
-                              isPositiveCost
-                                ? "delta-positive"
-                                : costDeltaFils.startsWith("-")
-                                  ? "delta-negative"
-                                  : ""
-                            }
-                          >
-                            {formatFilsToIqd(costDeltaFils, locale)}
-                          </bdi>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      return (
+                        <tr key={row.lineageId}>
+                          <th scope="row">
+                            <span className="purchase-item-name-pill">
+                              {itemName}
+                            </span>
+                            {row.changes.some(
+                              (change) => change.field === "retail-price",
+                            ) ? (
+                              <p>
+                                {purchasingMessages[locale].sellingPrice}:{" "}
+                                <bdi>
+                                  {formatFilsToIqd(
+                                    row.before?.retailPriceFils ?? "0",
+                                    locale,
+                                  )}
+                                </bdi>{" "}
+                                →{" "}
+                                <bdi>
+                                  {formatFilsToIqd(
+                                    row.after?.retailPriceFils ?? "0",
+                                    locale,
+                                  )}
+                                </bdi>
+                              </p>
+                            ) : null}
+                          </th>
+                          <td>
+                            <bdi>{beforeQty}</bdi>
+                          </td>
+                          <td>
+                            <bdi>{afterQty}</bdi>
+                          </td>
+                          <td>
+                            {/* Hidden text preserves compatibility with test assertion "4 → 8 (4)" */}
+                            <span className="visually-hidden">
+                              {beforeQty} → {afterQty} ({row.quantityDelta})
+                            </span>
+                            <bdi
+                              className={
+                                qtyDeltaNum > 0
+                                  ? "delta-positive"
+                                  : qtyDeltaNum < 0
+                                    ? "delta-negative"
+                                    : ""
+                              }
+                            >
+                              {formattedQtyDelta}
+                            </bdi>
+                          </td>
+                          <td>
+                            <bdi>{formatFilsToIqd(costBeforeFils, locale)}</bdi>
+                          </td>
+                          <td>
+                            <bdi>{formatFilsToIqd(costAfterFils, locale)}</bdi>
+                          </td>
+                          <td>
+                            <bdi
+                              className={
+                                isPositiveCost
+                                  ? "delta-positive"
+                                  : costDeltaFils.startsWith("-")
+                                    ? "delta-negative"
+                                    : ""
+                              }
+                            >
+                              {formatAdjustmentFils(costDeltaFils, locale)}
+                            </bdi>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             {/* Footer */}
@@ -1326,7 +1438,7 @@ export function PurchaseAdjustmentWorkflow({
                 <span>{copy.netDeltaPosted}</span>
                 <span className="delta-summary-grand-total">
                   <bdi>
-                    {formatFilsToIqd(
+                    {formatAdjustmentFils(
                       summary.primarySupplierCostDeltaFils,
                       locale,
                     )}
@@ -1338,17 +1450,15 @@ export function PurchaseAdjustmentWorkflow({
                 <input
                   type="text"
                   className="delta-summary-reason-input"
-                  placeholder={copy.reasonAuditPlaceholder}
-                  aria-label={copy.reasonAuditPlaceholder}
+                  placeholder={copy.addEvidence}
+                  aria-label={copy.evidence}
                   value={evidence}
                   disabled={busy || postUncertain}
                   onChange={(event) => editEvidence(event.target.value)}
                 />
               </div>
 
-              <p className="visually-hidden">
-                {getAdjustmentReasonLabel(summary.reason, locale)}
-              </p>
+              <p>{getAdjustmentReasonLabel(summary.reason, locale)}</p>
               {!previewCurrent ? (
                 <p role="status">{copy.previewChanged}</p>
               ) : null}

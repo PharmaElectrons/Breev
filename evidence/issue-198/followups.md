@@ -24,3 +24,17 @@ the owning task. Protected Quick Product and Purchase row keyboard behavior
 remain unchanged.
 
 Status: pending implementation and verification in the owning tasks.
+
+## 30 September 2026 — optional Adjustment evidence note
+
+The stakeholder reported that the note shared by the Reason header and Delta
+dialog was absent after restart/Continue draft, while quantity survived. Both
+manual save histories had null evidence throughout; four strengthened real
+API/browser restart cases passed. The cause remains unconfirmed, with no
+production persistence fix claimed. See the [investigation](t02/evidence-restart-investigation.md).
+
+The stakeholder later accepted T02 and confirmed the manual tests were finished.
+Carry this report into subsequent Purchasing work without treating acceptance
+as proof of a fix. The new manual-fixture guard verifies saved case A evidence
+before allowing the restart. Do not mutate immutable posted notes/reasons or
+introduce speculative autosave/business-persistence workarounds.

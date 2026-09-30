@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
-  PostedPurchaseAdjustment,
+  PostedPurchaseAdjustmentDetail,
   PostedPurchaseReturn,
   Product,
   PurchasePostedDetail,
@@ -22,6 +22,7 @@ import {
   requestSupplier,
 } from "./purchasing-api";
 import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
+import { PurchaseAdjustmentHeaderComparisonTable } from "./purchase-adjustment-header-comparison";
 import { PurchaseReturnWorkflow } from "./purchase-return-workflow";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import {
@@ -121,7 +122,7 @@ export function PostedPurchaseReview({
   const [list, setList] = useState<PurchasePostedListResponse | null>(null);
   const [detail, setDetail] = useState<PurchasePostedDetail | null>(null);
   const [postedAdjustment, setPostedAdjustment] =
-    useState<PostedPurchaseAdjustment | null>(null);
+    useState<PostedPurchaseAdjustmentDetail | null>(null);
   const [postedReturn, setPostedReturn] = useState<PostedPurchaseReturn | null>(
     null,
   );
@@ -1374,7 +1375,7 @@ function PostedAdjustmentView({
   adjustment,
   onBack,
 }: {
-  readonly adjustment: PostedPurchaseAdjustment;
+  readonly adjustment: PostedPurchaseAdjustmentDetail;
   readonly onBack: () => void;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -1393,6 +1394,9 @@ function PostedAdjustmentView({
         {formatTimestamp(adjustment.postedAt, locale)}
       </p>
       {adjustment.evidence === null ? null : <p>{adjustment.evidence}</p>}
+      <PurchaseAdjustmentHeaderComparisonTable
+        comparison={adjustment.headerComparison}
+      />
       <dl className="posted-purchase-totals">
         <div>
           <dt>{copy.quantity}</dt>
@@ -1413,6 +1417,23 @@ function PostedAdjustmentView({
             {row.after?.itemDisplayName ?? row.before?.itemDisplayName}:{" "}
             {row.before?.enteredQuantity ?? "0"} →{" "}
             {row.after?.enteredQuantity ?? "0"} ({row.quantityDelta})
+            <p>
+              {copy.primarySupplierCost}:{" "}
+              <bdi>{formatFilsToIqd(row.before?.costFils ?? "0", locale)}</bdi>{" "}
+              → <bdi>{formatFilsToIqd(row.after?.costFils ?? "0", locale)}</bdi>
+            </p>
+            {row.changes.some((change) => change.field === "retail-price") ? (
+              <p>
+                {copy.sellingPrice}:{" "}
+                <bdi>
+                  {formatFilsToIqd(row.before?.retailPriceFils ?? "0", locale)}
+                </bdi>{" "}
+                →{" "}
+                <bdi>
+                  {formatFilsToIqd(row.after?.retailPriceFils ?? "0", locale)}
+                </bdi>
+              </p>
+            ) : null}
           </li>
         ))}
       </ul>

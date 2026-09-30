@@ -52,6 +52,73 @@ function extract(
 }
 
 describe("purchase adjustment Delta extraction", () => {
+  it.each([
+    {
+      field: "entered-quantity",
+      correctedRow: row("01", 8n),
+      correctedHeader: header,
+      quantity: 4n,
+      value: 4000n,
+    },
+    {
+      field: "primary-supplier-cost",
+      correctedRow: row("01", 4n, 1250n),
+      correctedHeader: header,
+      quantity: 0n,
+      value: 1000n,
+    },
+    {
+      field: "retail-price",
+      correctedRow: row("01", 4n, 1000n, 1900n),
+      correctedHeader: header,
+      quantity: 0n,
+      value: 0n,
+    },
+    {
+      field: "supplier",
+      correctedRow: row("01", 4n),
+      correctedHeader: {
+        ...header,
+        supplierId: "0199ed80-0000-7000-8000-000000000099",
+      },
+      quantity: 0n,
+      value: 0n,
+    },
+    {
+      field: "supplier-invoice-number",
+      correctedRow: row("01", 4n),
+      correctedHeader: { ...header, supplierInvoiceNumber: "CORRECTED" },
+      quantity: 0n,
+      value: 0n,
+    },
+  ])(
+    "represents $field independently with its exact effects",
+    ({ field, correctedRow, correctedHeader, quantity, value }) => {
+      const result = extractPurchaseAdjustmentDelta({
+        allowancePercentage: "10",
+        correctedHeader,
+        correctedRows: [correctedRow],
+        originalHeader: header,
+        originalRows: [row("01", 4n)],
+        priorAllowanceDeltaFils: 0n,
+        priorCostAfterDiscountDeltaFils: 0n,
+        priorEffects: [],
+        priorPrimarySupplierCostDeltaFils: 0n,
+      });
+      if (!result.ok) throw new Error(result.problem);
+      expect(
+        [
+          ...result.delta.headerChanges,
+          ...result.delta.rowDeltas.flatMap((delta) => delta.changes),
+        ].map((change) => change.field),
+      ).toEqual([field]);
+      expect(result.delta.quantityDelta).toBe(quantity);
+      expect(result.delta.primarySupplierCostDeltaFils).toBe(value);
+      expect(result.delta.allowanceDeltaFils).toBe(value / 10n);
+      expect(result.delta.costAfterDiscountDeltaFils).toBe((value * 9n) / 10n);
+    },
+  );
+
   it("posts exactly +4 for the verbatim 4 to 8 case", () => {
     const delta = extract([row("01", 4n)], [row("01", 8n)]);
     expect(delta.quantityDelta).toBe(4n);

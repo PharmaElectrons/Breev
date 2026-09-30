@@ -446,7 +446,9 @@ export function PurchaseReturnWorkflow({
               </dd>
             </div>
             <div>
-              <dt>{copy.supplier}</dt>
+              <dt>
+                {copy.supplier} — <bdi>{summary.supplierNameSnapshot}</bdi>
+              </dt>
               <dd>
                 <bdi>
                   {formatFilsToIqd(summary.supplierReductionFils, locale)}

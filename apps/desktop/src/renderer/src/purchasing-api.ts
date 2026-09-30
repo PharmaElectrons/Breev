@@ -3,7 +3,7 @@ import {
   BREEV_CSRF_VALUE,
   identityDenialSchema,
   licensingDenialSchema,
-  postedPurchaseAdjustmentSchema,
+  postedPurchaseAdjustmentDetailSchema,
   postedPurchaseReturnSchema,
   purchaseAdjustmentDraftDiscardContract,
   purchaseAdjustmentDraftDiscardPath,
@@ -70,7 +70,7 @@ import {
   supplierReadContract,
   supplierSchema,
   type PurchaseDraft,
-  type PostedPurchaseAdjustment,
+  type PostedPurchaseAdjustmentDetail,
   type PostedPurchaseReturn,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentDraftCreateRequest,
@@ -446,13 +446,13 @@ export const postPurchaseAdjustment = async (
 export const requestPostedPurchaseAdjustment = async (
   baseUrl: string,
   adjustmentId: string,
-): Promise<PostedPurchaseAdjustment> =>
+): Promise<PostedPurchaseAdjustmentDetail> =>
   await requestJson(
     baseUrl,
     purchasePostedAdjustmentPath(adjustmentId),
     purchasePostedAdjustmentReadContract.method,
     200,
-    postedPurchaseAdjustmentSchema,
+    postedPurchaseAdjustmentDetailSchema,
   );
 
 export const createPurchaseReturnDraft = async (
