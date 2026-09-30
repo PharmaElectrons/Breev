@@ -1447,6 +1447,17 @@ export function PurchasingRouteView({
       <div id="purchase-posted-view" hidden={view !== "posted"}>
         <PostedPurchaseReview
           baseUrl={baseUrl}
+          onNewInvoice={
+            canManageDrafts &&
+            activeDraft === null &&
+            supplierInvoiceNumber === "" &&
+            supplierId === "" &&
+            supplierSearchText === "" &&
+            invoiceDate === today() &&
+            settlementContext === "cash"
+              ? newDraft
+              : undefined
+          }
           inline={true}
           open={view === "posted"}
           onClose={() => {

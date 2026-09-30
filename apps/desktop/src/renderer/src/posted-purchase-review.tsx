@@ -22,6 +22,8 @@ import {
   requestSupplier,
 } from "./purchasing-api";
 import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
+import { formatAdjustmentFils } from "./purchase-adjustment-money";
+import { purchaseResultNavigation } from "./purchase-result-navigation";
 import { PurchaseAdjustmentHeaderComparisonTable } from "./purchase-adjustment-header-comparison";
 import { PurchaseReturnWorkflow } from "./purchase-return-workflow";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
@@ -98,6 +100,7 @@ export function PostedPurchaseReview({
   baseUrl,
   inline = false,
   onClose,
+  onNewInvoice,
   open,
   returnHash = "#/purchases",
 }: {
@@ -105,6 +108,7 @@ export function PostedPurchaseReview({
   readonly baseUrl: string;
   readonly inline?: boolean;
   readonly onClose: () => void;
+  readonly onNewInvoice?: (() => void) | undefined;
   readonly open: boolean;
   readonly returnHash?: string;
 }): React.JSX.Element {
@@ -119,6 +123,7 @@ export function PostedPurchaseReview({
   const postedAdjustmentOpenerRef = useRef<HTMLElement | null>(null);
   const postedReturnOpenerRef = useRef<HTMLElement | null>(null);
   const requestCommittedFocus = useCommittedFocus();
+  const listRequest = useRef(0);
   const [list, setList] = useState<PurchasePostedListResponse | null>(null);
   const [detail, setDetail] = useState<PurchasePostedDetail | null>(null);
   const [postedAdjustment, setPostedAdjustment] =
@@ -176,7 +181,7 @@ export function PostedPurchaseReview({
             ? postedPurchaseAddress(window.location.hash)
             : { correction: null, id: address.id };
         if (addressed === null) {
-          queueMicrotask(() => searchRef.current?.focus());
+          requestCommittedFocus(() => searchRef.current);
         } else {
           void loadDetail(addressed.id, undefined, addressed.correction);
         }
@@ -201,7 +206,7 @@ export function PostedPurchaseReview({
           ? postedPurchaseAddress(window.location.hash)
           : { correction: null, id: address.id };
       if (addressed === null) {
-        queueMicrotask(() => searchRef.current?.focus());
+        requestCommittedFocus(() => searchRef.current);
       } else {
         void loadDetail(addressed.id, undefined, addressed.correction);
       }
@@ -211,15 +216,17 @@ export function PostedPurchaseReview({
   }, [address, baseUrl, inline, open, returnHash]);
 
   async function loadList(input: PurchasePostedListRequest): Promise<void> {
+    const request = ++listRequest.current;
     setLoading(true);
     setError(null);
     setDenial(null);
     try {
-      setList(await requestPostedPurchases(baseUrl, input));
+      const result = await requestPostedPurchases(baseUrl, input);
+      if (request === listRequest.current) setList(result);
     } catch (caught) {
-      handleFailure(caught);
+      if (request === listRequest.current) handleFailure(caught);
     } finally {
-      setLoading(false);
+      if (request === listRequest.current) setLoading(false);
     }
   }
 
@@ -234,6 +241,10 @@ export function PostedPurchaseReview({
     setDenial(null);
     setAnnouncement("");
     try {
+      if (list === null) {
+        ++listRequest.current;
+        setList(await requestPostedPurchases(baseUrl, currentFilter()));
+      }
       setDetail(await requestPostedPurchase(baseUrl, purchaseId));
       setPostedAdjustment(null);
       setPostedReturn(null);
@@ -257,12 +268,12 @@ export function PostedPurchaseReview({
 
   function handleFailure(caught: unknown): void {
     if (caught instanceof IdentityApiDenied) {
-      setDenial(`${copy.reviewPermissionDenied} ${caught.denial.requestId}`);
+      setDenial(copy.reviewPermissionDenied);
     } else if (
       caught instanceof PurchasingApiDenied ||
       caught instanceof CatalogApiDenied
     ) {
-      setDenial(`${copy.reviewDenied} ${caught.denial.requestId}`);
+      setDenial(copy.reviewDenied);
     } else {
       setError(copy.reviewUnavailable);
     }
@@ -273,12 +284,28 @@ export function PostedPurchaseReview({
     setDetail(null);
     setCurrentRecord(null);
     setCorrection(null);
+    setAdjustmentDraftActive(false);
+    setReturnDraftActive(false);
     window.history.replaceState(null, "", returnHash);
     if (address !== undefined) {
       dialogRef.current?.close();
       return;
     }
     focusAfterRender(opener);
+  }
+
+  function currentFilter(): PurchasePostedListRequest {
+    return {
+      dateType: "posted-at",
+      direction: "descending",
+      sort: "posted-at",
+      ...(query.trim() === "" ? {} : { query: query.trim() }),
+    };
+  }
+
+  function searchPurchases(): void {
+    backToList();
+    requestCommittedFocus(() => searchRef.current);
   }
 
   function closeDrilldown(): void {
@@ -382,9 +409,9 @@ export function PostedPurchaseReview({
     focusAfterRender(opener);
   }
 
-  function openCorrection(kind: CorrectionKind, opener: HTMLElement): void {
+  function openCorrection(kind: CorrectionKind, opener?: HTMLElement): void {
     if (detail === null) return;
-    correctionOpenerRef.current = opener;
+    correctionOpenerRef.current = opener ?? null;
     setCorrection(kind);
     window.location.hash = `#/purchases/posted/${detail.id}/${kind}`;
   }
@@ -392,11 +419,17 @@ export function PostedPurchaseReview({
   function closeCorrection(): void {
     if (detail === null) return;
     const opener = correctionOpenerRef.current;
+    const focusKey =
+      opener?.dataset.reviewFocus ?? `${correction}-${detail.id}`;
     setCorrection(null);
     setAdjustmentDraftActive(false);
     setReturnDraftActive(false);
     window.history.replaceState(null, "", `#/purchases/posted/${detail.id}`);
-    focusAfterRender(opener);
+    requestCommittedFocus(() =>
+      containerRef.current?.querySelector<HTMLElement>(
+        `[data-review-focus="${focusKey}"]`,
+      ),
+    );
   }
 
   // Focus returns to the opener in the same commit that renders the view it
@@ -426,8 +459,8 @@ export function PostedPurchaseReview({
     if (detail === null) return;
     const id =
       directionToUse === "previous"
-        ? detail.navigation.previousId
-        : detail.navigation.nextId;
+        ? purchaseResultNavigation(list, detail.id).previousId
+        : purchaseResultNavigation(list, detail.id).nextId;
     if (id === null) {
       setAnnouncement(
         directionToUse === "previous"
@@ -495,7 +528,11 @@ export function PostedPurchaseReview({
           <button
             type="button"
             className="quiet-button"
-            onClick={() => void loadList({})}
+            onClick={() =>
+              void (detail === null
+                ? loadList(currentFilter())
+                : loadDetail(detail.id))
+            }
           >
             {copy.retry}
           </button>
@@ -507,7 +544,11 @@ export function PostedPurchaseReview({
           <button
             type="button"
             className="quiet-button"
-            onClick={() => void loadList({})}
+            onClick={() =>
+              void (detail === null
+                ? loadList(currentFilter())
+                : loadDetail(detail.id))
+            }
           >
             {copy.retry}
           </button>
@@ -535,8 +576,14 @@ export function PostedPurchaseReview({
         >
           {correction === "adjustment" ? (
             <PurchaseAdjustmentWorkflow
+              key={detail.id}
               baseUrl={baseUrl}
               detail={detail}
+              navigation={purchaseResultNavigation(list, detail.id)}
+              onNavigate={navigate}
+              onSearch={searchPurchases}
+              onNewInvoice={onNewInvoice}
+              onReturn={() => openCorrection("return")}
               leaveRequest={adjustmentLeaveRequest}
               onBack={closeCorrection}
               onDraftActive={setAdjustmentDraftActive}
@@ -561,7 +608,10 @@ export function PostedPurchaseReview({
         <CurrentRecordView record={currentRecord} onBack={closeDrilldown} />
       ) : detail !== null ? (
         <PostedPurchaseDetailView
-          detail={detail}
+          detail={{
+            ...detail,
+            navigation: purchaseResultNavigation(list, detail.id),
+          }}
           navigate={navigate}
           onBack={backToList}
           onCorrection={openCorrection}
@@ -600,7 +650,11 @@ export function PostedPurchaseReview({
                   aria-label={copy.searchPosted}
                   value={query}
                   placeholder={copy.searchPostedHint}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    ++listRequest.current;
+                    setList(null);
+                    setQuery(event.target.value);
+                  }}
                 />
               </div>
               <span className="proto-count-badge">
@@ -1405,9 +1459,33 @@ function PostedAdjustmentView({
           </dd>
         </div>
         <div>
-          <dt>{copy.primarySupplierCost}</dt>
+          <dt>{copy.primarySupplierCostDelta}</dt>
           <dd>
-            <bdi>{adjustment.primarySupplierCostDeltaFils}</bdi> {copy.fils}
+            <bdi>
+              {formatAdjustmentFils(
+                adjustment.primarySupplierCostDeltaFils,
+                locale,
+              )}
+            </bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.allowanceDelta}</dt>
+          <dd>
+            <bdi>
+              {formatAdjustmentFils(adjustment.allowanceDeltaFils, locale)}
+            </bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.costAfterDiscountDelta}</dt>
+          <dd>
+            <bdi>
+              {formatAdjustmentFils(
+                adjustment.costAfterDiscountDeltaFils,
+                locale,
+              )}
+            </bdi>
           </dd>
         </div>
       </dl>

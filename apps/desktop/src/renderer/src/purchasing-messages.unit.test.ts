@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { PURCHASE_ADJUSTMENT_REASONS } from "@breev/contracts/local-rest";
+import {
+  PURCHASE_ADJUSTMENT_REASONS,
+  PURCHASING_DENIAL_CODES,
+} from "@breev/contracts/local-rest";
 
 import {
   getAdjustmentReasonLabel,
   getPurchasingDenialMessage,
   purchasingMessages,
+  purchaseAdjustmentMessages,
+  purchasingSupportMessages,
 } from "./purchasing-messages";
 
 describe("purchasing translations", () => {
@@ -23,6 +28,17 @@ describe("purchasing translations", () => {
     expect(Object.keys(purchasingMessages.ar).sort()).toEqual(
       Object.keys(purchasingMessages.en).sort(),
     );
+    for (const catalogue of [
+      purchaseAdjustmentMessages,
+      purchasingSupportMessages,
+    ]) {
+      expect(Object.keys(catalogue.ar).sort()).toEqual(
+        Object.keys(catalogue.en).sort(),
+      );
+      for (const locale of ["ar", "en"] as const)
+        for (const value of Object.values(catalogue[locale]))
+          expect(value).not.toBe("");
+    }
   });
 
   it("translates every adjustment reason in Arabic and English", () => {
@@ -65,9 +81,10 @@ describe("purchasing translations", () => {
       "الكمية المرتجعة تتجاوز الكمية المتاحة في الفاتورة",
     );
 
-    // Fallback for unknown codes
-    expect(getPurchasingDenialMessage("unknown-denial-code", "ar")).toBe(
-      "unknown-denial-code",
-    );
+    for (const locale of ["ar", "en"] as const) {
+      for (const code of [...PURCHASING_DENIAL_CODES, "unknown-denial-code"]) {
+        expect(getPurchasingDenialMessage(code, locale)).not.toContain(code);
+      }
+    }
   });
 });

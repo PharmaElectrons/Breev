@@ -3977,6 +3977,11 @@ export const purchaseAdjustmentHeaderComparisonSchema = z.strictObject({
   before: purchaseAdjustmentHeaderSnapshotSchema,
   after: purchaseAdjustmentHeaderSnapshotSchema,
 });
+export const purchaseAdjustmentTotalsSchema = z.strictObject({
+  primarySupplierCostFils: priceFilsSchema,
+  allowanceFils: priceFilsSchema,
+  costAfterDiscountFils: priceFilsSchema,
+});
 export const purchaseAdjustmentSummarySchema = z.strictObject({
   allowanceDeltaFils: signedBigintSchema,
   confirmationHash: z.string().regex(/^[0-9a-f]{64}$/u),
@@ -3989,8 +3994,18 @@ export const purchaseAdjustmentSummarySchema = z.strictObject({
   primarySupplierCostDeltaFils: signedBigintSchema,
   quantityDelta: signedBigintSchema,
   reason: purchaseAdjustmentReasonSchema,
+  totalsComparison: z.strictObject({
+    before: purchaseAdjustmentTotalsSchema,
+    after: purchaseAdjustmentTotalsSchema,
+  }),
   warnings: z.array(purchasePostingWarningSchema),
   rowDeltas: z.array(purchaseAdjustmentRowDeltaSchema),
+  rowTotals: z.array(
+    z.strictObject({
+      lineageId: z.uuidv7(),
+      primarySupplierCostFils: priceFilsSchema,
+    }),
+  ),
   stockEffects: z.array(
     z.strictObject({
       batchId: z.uuidv7().nullable(),

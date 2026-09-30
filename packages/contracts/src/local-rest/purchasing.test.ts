@@ -933,7 +933,19 @@ describe("supplier and purchase draft contracts", () => {
     ).toHaveLength(1);
     expect(
       purchaseAdjustmentSummarySchema.parse({
-        allowanceDeltaFils: "-100",
+        totalsComparison: {
+          before: {
+            primarySupplierCostFils: "4000",
+            allowanceFils: "100",
+            costAfterDiscountFils: "3900",
+          },
+          after: {
+            primarySupplierCostFils: "8000",
+            allowanceFils: "200",
+            costAfterDiscountFils: "7800",
+          },
+        },
+        allowanceDeltaFils: "100",
         confirmationHash: "a".repeat(64),
         costAfterDiscountDeltaFils: "3900",
         draftId: DRAFT_ID,
@@ -971,6 +983,7 @@ describe("supplier and purchase draft contracts", () => {
             quantityDelta: "4",
           },
         ],
+        rowTotals: [{ lineageId: ROW_ID, primarySupplierCostFils: "8000" }],
         stockEffects: [
           {
             batchId: BATCH_ID,

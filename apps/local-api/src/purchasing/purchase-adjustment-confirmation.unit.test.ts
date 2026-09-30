@@ -53,6 +53,18 @@ function fixture(): Parameters<typeof purchaseAdjustmentConfirmationHash>[0] {
       },
     ],
     preview: {
+      totalsComparison: {
+        before: {
+          primarySupplierCostFils: "4000",
+          allowanceFils: "100",
+          costAfterDiscountFils: "3900",
+        },
+        after: {
+          primarySupplierCostFils: "8000",
+          allowanceFils: "200",
+          costAfterDiscountFils: "7800",
+        },
+      },
       allowanceDeltaFils: "100",
       costAfterDiscountDeltaFils: "3900",
       draftId: "draft-1",
@@ -76,6 +88,7 @@ function fixture(): Parameters<typeof purchaseAdjustmentConfirmationHash>[0] {
       primarySupplierCostDeltaFils: "4000",
       quantityDelta: "4",
       rowDeltas: [],
+      rowTotals: [],
       stockEffects: [],
       supplierEffects: [],
     },
@@ -114,6 +127,15 @@ describe("Adjustment authoritative confirmation", () => {
     });
     expect(purchaseAdjustmentConfirmationHash(warning)).not.toBe(
       purchaseAdjustmentConfirmationHash(original),
+    );
+  });
+
+  it("binds exact totals to the confirmation", () => {
+    const input = fixture();
+    const changed = fixture();
+    changed.preview.totalsComparison.after.allowanceFils = "201";
+    expect(purchaseAdjustmentConfirmationHash(changed)).not.toBe(
+      purchaseAdjustmentConfirmationHash(input),
     );
   });
 

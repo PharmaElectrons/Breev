@@ -23,7 +23,10 @@ Inspected occurrences: `purchase-adjustment-workflow.tsx`,
 the owning task. Protected Quick Product and Purchase row keyboard behavior
 remain unchanged.
 
-Status: pending implementation and verification in the owning tasks.
+Status: Adjustment, Return and Posted Purchase review denial presentation is
+implemented and accepted in T03, with localized explanation and closed support
+details. Other module occurrences remain pending in their owning tasks; this is
+not a global-module completion claim.
 
 ## 30 September 2026 — optional Adjustment evidence note
 

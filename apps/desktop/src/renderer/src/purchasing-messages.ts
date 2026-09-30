@@ -245,6 +245,9 @@ export const purchasingMessages = {
     postedAt: "Posted at",
     supplierInvoice: "Supplier invoice",
     primarySupplierCost: "Primary supplier cost",
+    primarySupplierCostDelta: "Primary Supplier Cost Delta",
+    allowanceDelta: "Supplier allowance Delta",
+    costAfterDiscountDelta: "Cost After Discount Delta",
     allowanceAmount: "Allowance amount",
     costAfterDiscount: "Cost after discount",
     postedRows: "Posted rows",
@@ -310,8 +313,10 @@ export const purchasingMessages = {
       "Purchase costs are hidden because this role does not have cost visibility permission.",
     costsHiddenBySetting:
       "Purchase costs are hidden by this user's purchase column settings.",
-    reviewPermissionDenied: "Access denied. Audit request:",
-    reviewDenied: "The requested record could not be opened. Audit request:",
+    reviewPermissionDenied:
+      "Access denied. Ask an authorized user to check your permissions, then retry.",
+    reviewDenied:
+      "The requested record could not be opened. Return to search and reload its current state.",
     reviewUnavailable:
       "The local API is unavailable. Close this window or retry without losing the current invoice.",
     openCurrentItem: "Open current item record",
@@ -368,12 +373,22 @@ export const purchasingMessages = {
     denialReturnQuantityExceeded:
       "Return quantity exceeds available quantity on the invoice.",
     denialReturnOverEligible:
-      "Return quantity exceeds eligible quantity (return-over-eligible).",
+      "Return quantity exceeds eligible quantity. Reduce it and review again.",
+    denialGeneric:
+      "This purchase action was refused. Your draft is preserved. Check the entries and access, then retry.",
+    denialSupplier:
+      "This Supplier is unavailable. Choose an active Supplier and save again.",
+    denialItem:
+      "This item or pricing mode changed. Reload the saved draft and review the item before retrying.",
+    denialInput:
+      "Check the quantities, whole-unit values and fils amounts, then save again. The draft is preserved.",
+    denialGone:
+      "This saved document is no longer available for this action. Return to search and reload its current state.",
     linkedAdjustmentsTitle: "Linked adjustments register",
     adjustmentNumber: "Adjustment #",
     adjustmentDateTime: "Date & Time",
     adjustmentReason: "Adjustment reason",
-    adjustmentNetDelta: "Net delta",
+    adjustmentNetDelta: "Primary cost Delta",
     openDocument: "Open document",
     adjustmentDraftBadge: "Purchase invoice adjustment draft",
     originalInvoiceBadge: "Original: Purchase invoice #",
@@ -629,6 +644,9 @@ export const purchasingMessages = {
     postedAt: "وقت الإدخال",
     supplierInvoice: "فاتورة المورد",
     primarySupplierCost: "الكلفة",
+    primarySupplierCostDelta: "فرق كلفة المورد الأساسية",
+    allowanceDelta: "فرق سماح المورد",
+    costAfterDiscountDelta: "فرق الكلفة بعد الخصم",
     allowanceAmount: "مبلغ السماح",
     costAfterDiscount: "الكلفة بعد الخصم",
     postedRows: "البنود المحفوظة",
@@ -694,8 +712,10 @@ export const purchasingMessages = {
       "تكاليف الشراء مخفية لأن هذا الدور لا يملك صلاحية عرض التكلفة.",
     costsHiddenBySetting:
       "تكاليف الشراء مخفية حسب إعدادات أعمدة الشراء لهذا المستخدم.",
-    reviewPermissionDenied: "رُفض الوصول. طلب التدقيق:",
-    reviewDenied: "تعذر فتح السجل المطلوب. طلب التدقيق:",
+    reviewPermissionDenied:
+      "رُفض الوصول. اطلب من مستخدم مخول مراجعة صلاحياتك ثم أعد المحاولة.",
+    reviewDenied:
+      "تعذر فتح السجل المطلوب. عد إلى البحث وأعد تحميل حالته الحالية.",
     reviewUnavailable:
       "واجهة Breev المحلية غير متاحة. أغلق النافذة أو أعد المحاولة دون فقدان الفاتورة الحالية.",
     openCurrentItem: "فتح سجل الصنف الحالي",
@@ -753,11 +773,20 @@ export const purchasingMessages = {
       "الكمية المرتجعة تتجاوز الكمية المتاحة في الفاتورة",
     denialReturnOverEligible:
       "الكمية المرتجعة تتجاوز الكمية المتاحة في الفاتورة",
+    denialGeneric:
+      "رُفض إجراء الشراء. تم الاحتفاظ بالمسودة. راجع البيانات والصلاحيات ثم أعد المحاولة.",
+    denialSupplier: "هذا المورد غير متاح. اختر مورداً نشطاً واحفظ مجدداً.",
+    denialItem:
+      "تغير الصنف أو أسلوب التسعير. أعد تحميل المسودة المحفوظة وراجع الصنف قبل المحاولة.",
+    denialInput:
+      "راجع الكميات والوحدات الصحيحة والمبالغ بالفلس ثم احفظ مجدداً. تم الاحتفاظ بالمسودة.",
+    denialGone:
+      "المستند المحفوظ غير متاح لهذا الإجراء. عد إلى البحث وأعد تحميل حالته الحالية.",
     linkedAdjustmentsTitle: "سجل التعديلات المرتبطة",
     adjustmentNumber: "رقم التعديل",
     adjustmentDateTime: "التاريخ والوقت",
     adjustmentReason: "سبب التعديل",
-    adjustmentNetDelta: "صافي الفرق",
+    adjustmentNetDelta: "فرق الكلفة الأساسية",
     openDocument: "فتح المسند",
     adjustmentDraftBadge: "مسودة تعديل فاتورة شراء",
     originalInvoiceBadge: "الأصل: فاتورة شراء رقم",
@@ -799,6 +828,210 @@ export function getAdjustmentReasonLabel(
   }
 }
 
+export const purchasingSupportMessages = {
+  ar: {
+    title: "تفاصيل الدعم",
+    copy: "نسخ مرجع الدعم",
+    copied: "تم نسخ المرجع",
+    failed: "تعذر النسخ. حدد المرجع وانسخه.",
+  },
+  en: {
+    title: "Support details",
+    copy: "Copy support reference",
+    copied: "Reference copied",
+    failed: "Copy unavailable. Select and copy the reference.",
+  },
+} as const;
+
+export const purchaseAdjustmentMessages = {
+  en: {
+    actions: "Actions",
+    addEvidence: "Evidence or note (optional)",
+    adjustmentDraftBadge: "Purchase invoice adjustment draft",
+    adjustmentReasonPlaceholder: "Adjustment reason",
+    adjustmentSubtitleAlert: "Draft adjustment",
+    afterDiscount: "Cost After Discount",
+    before: "Before",
+    after: "After",
+    noSupplierImpact: "No Supplier payable change",
+    stockImpact: "Inventory effects (base units)",
+    noStockImpact: "No stock or Inventory value change",
+    back: "Back to original invoice",
+    blocked:
+      "This Delta is not valid against current stock. Resolve it through a stock count, a Purchase Return, or another correction, then retry.",
+    cancel: "Cancel",
+    cancelAdjustment: "Cancel",
+    confirm: "Confirm and post Delta",
+    continue: "Continue draft",
+    cost: "Primary supplier cost (fils)",
+    costAfter: "Cost after",
+    costBefore: "Cost before",
+    date: "Date",
+    delete: "Delete draft",
+    deltaSummarySubtitle: "Purchase invoice adjustment",
+    deltaSummaryTitle: "Difference and impact",
+    difference: "Difference and impact",
+    discardQuestion:
+      "Leave this adjustment? Save edits, keep the saved draft, or explicitly delete it.",
+    discardOnly: "Delete this adjustment draft? This cannot be undone.",
+    keepLeave: "Keep saved draft and leave",
+    saveLeave: "Save draft and leave",
+    dirty: "Unsaved changes",
+    saved: "Saved draft",
+    saving: "Saving adjustment…",
+    unavailable: "Unavailable",
+    calculate: "Save and review to calculate",
+    unavailableRequest:
+      "The local API is unavailable. Your edits are still here. Retry when the connection returns.",
+    discountAmount: "Supplier allowance",
+    discountPercentage: "Allowance %",
+    evidence: "Reason evidence",
+    expenses: "Invoice offer (awaiting approval)",
+    expiry: "Expiry",
+    lot: "Lot",
+    protectedFields:
+      "Expiry, lot, product and unit are protected. For physical goods leaving, use a Purchase Return; for an invalid stock balance, use an authorized stock count or correction. Expiry and lot correction await pharmacist approval.",
+    invoice: "Supplier invoice number",
+    iqd: "IQD",
+    item: "Item",
+    itemSearchHint: "Search to add item…",
+    margin: "Margin %",
+    netDeltaPosted: "Primary Supplier Cost Delta:",
+    next: "Next <",
+    originalInvoiceBadge: "Original: Purchase invoice #",
+    posted: "Adjustment posted",
+    previous: "Previous >",
+    qtyAfter: "Qty after",
+    qtyBefore: "Qty before",
+    qtyDelta: "Qty delta",
+    quantity: "Quantity",
+    reason: "Reason",
+    reasonAuditPlaceholder: "Adjustment reason (recorded in audit log)",
+    remainingTotal: "Primary cost Delta",
+    remove: "Remove line",
+    retail: "Retail price (fils)",
+    returned: "Returned",
+    returnInvoice: "Purchase return",
+    returnTotal: "Cost After Discount Delta",
+    saveReview: "Save and review Delta",
+    previewChanged:
+      "The adjustment changed. Save and review it again before confirming.",
+    reloadDraft: "Reload saved adjustment",
+    retryPost:
+      "The posting result is uncertain. Retry Confirm to recover the same request safely.",
+    authorityDenied:
+      "This Adjustment action is not allowed for this user or device. Saved changes are preserved. Ask an authorized user to check access.",
+    sessionEnded:
+      "Your session ended. Sign in again, then reload the saved draft. Your unsaved edits remain here.",
+    searchInvoice: "Search invoice",
+    newInvoice: "New invoice",
+    special: "Special price",
+    start: "Create adjustment copy",
+    supplier: "Supplier",
+    supplierImpact: "Supplier payable change",
+    title: "Purchase Invoice Adjustment",
+    total: "Total",
+    totalCost: "Primary Supplier Cost (gross)",
+    unchanged: "Unchanged lines create no stock or value effects.",
+    unfinished:
+      "An unfinished adjustment draft already exists for this invoice.",
+    unit: "Unit",
+    valueDelta: "Value delta",
+  },
+  ar: {
+    actions: "إجراءات",
+    addEvidence: "دليل السبب أو ملاحظة (اختياري)",
+    adjustmentDraftBadge: "مسودة تعديل فاتورة شراء",
+    adjustmentReasonPlaceholder: "سبب التعديل",
+    adjustmentSubtitleAlert: "مسودة تعديل",
+    afterDiscount: "الكلفة بعد الخصم",
+    before: "قبل",
+    after: "بعد",
+    noSupplierImpact: "لا تغيير في مستحقات المورد",
+    stockImpact: "آثار المخزون (الوحدات الأساسية)",
+    noStockImpact: "لا تغيير في كمية المخزون أو قيمته",
+    back: "العودة إلى الفاتورة الأصلية",
+    blocked:
+      "هذا الفرق غير صالح مقابل المخزون الحالي. عالجه بجرد المخزون أو مردود شراء أو تصحيح آخر، ثم أعد المحاولة.",
+    cancel: "إلغاء",
+    cancelAdjustment: "إلغاء التعديل",
+    confirm: "تأكيد وحفظ التعديل",
+    continue: "متابعة المسودة",
+    cost: "الكلفة",
+    costAfter: "الكلفة بعد",
+    costBefore: "الكلفة قبل",
+    date: "التاريخ",
+    delete: "حذف المسودة",
+    deltaSummarySubtitle: "تعديل فاتورة شراء",
+    deltaSummaryTitle: "ملخص الفروقات",
+    difference: "ملخص الفروقات",
+    discardQuestion:
+      "هل تريد مغادرة التعديل؟ احفظ التغييرات أو احتفظ بالمسودة المحفوظة أو احذفها صراحةً.",
+    discardOnly: "هل تريد حذف مسودة التعديل؟ لا يمكن التراجع عن الحذف.",
+    keepLeave: "الاحتفاظ بالمسودة المحفوظة والمغادرة",
+    saveLeave: "حفظ المسودة والمغادرة",
+    dirty: "تغييرات غير محفوظة",
+    saved: "مسودة محفوظة",
+    saving: "جارٍ حفظ التعديل…",
+    unavailable: "غير متاح",
+    calculate: "احفظ وراجع لحساب القيم",
+    unavailableRequest:
+      "الواجهة المحلية غير متاحة. التغييرات ما زالت هنا. أعد المحاولة عند عودة الاتصال.",
+    discountAmount: "سماح المورد",
+    discountPercentage: "السماح %",
+    evidence: "دليل السبب",
+    expenses: "عرض الفاتورة (بانتظار الاعتماد)",
+    expiry: "الإكسباير",
+    lot: "التشغيلة",
+    protectedFields:
+      "الصلاحية والتشغيلة والصنف والوحدة حقول محمية. لخروج البضاعة فعلياً استخدم مرتجع شراء؛ ولرصيد مخزون غير صالح استخدم جرداً أو تصحيحاً مصرحاً به. تصحيح الصلاحية والتشغيلة ينتظر اعتماد الصيدلي.",
+    invoice: "رقم الفاتورة",
+    iqd: "د.ع",
+    item: "اسم المادة",
+    itemSearchHint: "ابحث لإضافة مادة…",
+    margin: "الربح %",
+    netDeltaPosted: "فرق كلفة المورد الأساسية:",
+    next: "التالية <",
+    originalInvoiceBadge: "الأصل: فاتورة شراء رقم",
+    posted: "تم حفظ التعديل",
+    previous: "السابقة >",
+    qtyAfter: "الكمية بعد",
+    qtyBefore: "الكمية قبل",
+    qtyDelta: "فرق الكمية",
+    quantity: "كمية",
+    reason: "السبب",
+    reasonAuditPlaceholder: "سبب التعديل (يُسجّل في سجل المراجعة)",
+    remainingTotal: "فرق الكلفة الأساسية",
+    remove: "حذف السطر",
+    retail: "سعر البيع",
+    returned: "الراجع",
+    returnInvoice: "إرجاع الفاتورة",
+    returnTotal: "فرق الكلفة بعد الخصم",
+    saveReview: "حفظ ومراجعة الفرق",
+    previewChanged: "تغير التعديل. احفظه وراجع الفروقات مجدداً قبل التأكيد.",
+    reloadDraft: "إعادة تحميل مسودة التعديل المحفوظة",
+    retryPost:
+      "نتيجة الحفظ غير مؤكدة. أعد التأكيد لاستعادة نتيجة الطلب نفسه بأمان.",
+    authorityDenied:
+      "إجراء التعديل غير مسموح لهذا المستخدم أو الجهاز. تم الاحتفاظ بالتغييرات المحفوظة. اطلب من مستخدم مخول مراجعة الوصول.",
+    sessionEnded:
+      "انتهت جلستك. سجل الدخول مجدداً ثم أعد تحميل المسودة المحفوظة. التغييرات غير المحفوظة ما زالت هنا.",
+    searchInvoice: "بحث عن فاتورة",
+    newInvoice: "فاتورة جديدة",
+    special: "سعر خاص",
+    start: "إنشاء نسخة التعديل",
+    supplier: "المورد",
+    supplierImpact: "التغير في المستحق للمورد",
+    title: "تعديل فاتورة شراء",
+    total: "الإجمالي",
+    totalCost: "كلفة المورد الأساسية (الإجمالية)",
+    unchanged: "الأسطر التي لم تتغير لا تنشئ حركة مخزون أو أثر قيمة.",
+    unfinished: "توجد مسودة تعديل غير مكتملة لهذه الفاتورة.",
+    unit: "الوحدة",
+    valueDelta: "فرق القيمة",
+  },
+} as const;
+
 export function getPurchasingDenialMessage(
   code: string,
   locale: "ar" | "en",
@@ -809,6 +1042,8 @@ export function getPurchasingDenialMessage(
       return copy.denialAdjustmentEmpty;
     case "version-conflict":
     case "adjustment-summary-stale":
+    case "return-summary-stale":
+    case "idempotency-conflict":
       return copy.versionConflictPost;
     case "adjustment-batch-conflict":
       return copy.denialAdjustmentBatchConflict;
@@ -818,7 +1053,27 @@ export function getPurchasingDenialMessage(
       return copy.denialReturnQuantityExceeded;
     case "return-over-eligible":
       return copy.denialReturnOverEligible;
+    case "supplier-archived":
+    case "supplier-merged":
+    case "supplier-not-found":
+    case "supplier-no-rate-on-date":
+      return copy.denialSupplier;
+    case "item-not-found":
+    case "item-unavailable":
+    case "pricing-mode-conflict":
+      return copy.denialItem;
+    case "invalid-input":
+    case "body-invalid":
+    case "unit-invalid":
+    case "money-overflow":
+      return copy.denialInput;
+    case "adjustment-draft-not-found":
+    case "adjustment-draft-discarded":
+    case "adjustment-draft-posted":
+    case "adjustment-original-not-found":
+    case "posted-purchase-not-found":
+      return copy.denialGone;
     default:
-      return code;
+      return copy.denialGeneric;
   }
 }

@@ -113,13 +113,19 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
     if (
       process.env.BREEV_M2_T01_MANUAL === "1" ||
-      process.env.BREEV_M2_T02_MANUAL === "1"
+      process.env.BREEV_M2_T02_MANUAL === "1" ||
+      process.env.BREEV_M2_T03_MANUAL === "1"
     ) {
       const manualUrl =
         administratorUrl === undefined ? null : new URL(administratorUrl);
-      if (manualUrl?.hostname !== "127.0.0.1" || manualUrl.port !== "5549") {
+      const manualPort =
+        process.env.BREEV_M2_T03_MANUAL === "1" ? "5552" : "5549";
+      if (
+        manualUrl?.hostname !== "127.0.0.1" ||
+        manualUrl.port !== manualPort
+      ) {
         throw new Error(
-          "The manual fixture requires this task's disposable loopback cluster on port 5549",
+          `The manual fixture requires this task's disposable loopback cluster on port ${manualPort}`,
         );
       }
     }
@@ -1916,6 +1922,547 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeEnabled();
   });
 
+  for (const locale of ["en", "ar"] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`Adjustment controls preserve filtered navigation, dirty work and exact totals ${locale} ${theme}`, async ({
+        page,
+      }) => {
+        const prefix = `BROWSER-T03-${locale}-${theme}`;
+        const originals: PurchasePostResult[] = [];
+        for (const suffix of ["A", "B", "C"])
+          originals.push(
+            await postPurchaseForReview(
+              apiOrigin,
+              credentials,
+              supplierId,
+              purchaseProduct.id,
+              `${prefix}-${suffix}`,
+            ),
+          );
+        await postPurchaseForReview(
+          apiOrigin,
+          credentials,
+          supplierId,
+          purchaseProduct.id,
+          `OUTSIDE-T03-${locale}-${theme}`,
+        );
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.goto(`${renderer.origin}#/purchases`);
+        await postedInvoicesTab(page).click();
+        const review = page.locator("#purchase-posted-view");
+        await review.getByRole("searchbox").fill(prefix);
+        await review.getByRole("searchbox").press("Enter");
+        const rows = review.locator(".posted-purchase-list tbody tr");
+        await expect(rows).toHaveCount(3);
+        await rows.first().getByRole("button").first().click();
+        const heading = review.locator("article.posted-purchase-review");
+        await expect(heading).toContainText(`${prefix}-C`);
+        const editName = locale === "en" ? /Edit Invoice/u : /تعديل الفاتورة/u;
+        const createName =
+          locale === "en" ? "Create adjustment copy" : "إنشاء نسخة التعديل";
+        const continueName =
+          locale === "en" ? "Continue draft" : "متابعة المسودة";
+        const adjustment = review.locator(".purchase-adjustment");
+        const action = (name: string) =>
+          adjustment.locator(`[data-adjustment-action="${name}"]`);
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await expect(action("previous")).toBeDisabled();
+        await expect(
+          adjustment
+            .getByText(locale === "en" ? "Unavailable" : "غير متاح", {
+              exact: true,
+            })
+            .first(),
+        ).toBeVisible();
+        await action("next").click();
+        await expect(heading).toContainText(`${prefix}-B`);
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await expect(action("previous")).toBeEnabled();
+        await adjustment.getByRole("button", { name: createName }).click();
+        const quantity = adjustment.getByRole("textbox", {
+          name: `${locale === "en" ? "Quantity" : "كمية"} ${purchaseProduct.displayName}`,
+          exact: true,
+        });
+        const evidence = adjustment.locator(".adjustment-banner-reason-input");
+        await quantity.fill("8");
+        await evidence.pressSequentially(
+          `T03 saved evidence ${locale} ${theme}`,
+        );
+        await expect(
+          adjustment.locator(".adjustment-totals-bar"),
+        ).toContainText(
+          locale === "en"
+            ? "Save and review to calculate"
+            : "احفظ وراجع لحساب القيم",
+        );
+        await action("previous").click();
+        const warning = adjustment.getByRole("alertdialog");
+        await expect(warning).toBeVisible();
+        await expect(action("keep-leave")).toHaveCount(0);
+        await page.keyboard.press("Escape");
+        await expect(warning).toBeHidden();
+        await expect(action("previous")).toBeFocused();
+        await expect(quantity).toHaveValue("8");
+        await action("search").click();
+        await action("save-leave").click();
+        await expect(review.getByRole("searchbox")).toHaveValue(prefix);
+        await expect(review.getByRole("searchbox")).toBeFocused();
+        await rows
+          .filter({ hasText: `${prefix}-B` })
+          .getByRole("button")
+          .first()
+          .click();
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await adjustment.getByRole("button", { name: continueName }).click();
+        await expect(quantity).toHaveValue("8");
+        await expect(evidence).toHaveValue(
+          `T03 saved evidence ${locale} ${theme}`,
+        );
+        // A malformed transient value cannot crash React or fabricate a total.
+        await quantity.fill("1.5");
+        await action("save-review").click();
+        await expect(adjustment.getByRole("alert")).toContainText(
+          locale === "en" ? "Check the quantities" : "راجع الكميات",
+        );
+        await expect(
+          adjustment.getByRole("alert").locator("code"),
+        ).toBeHidden();
+        await quantity.fill("8");
+        const summaryResponse = page.waitForResponse(
+          (response) => response.url().endsWith("/summary") && response.ok(),
+        );
+        await action("save-review").click();
+        const summary = (await (
+          await summaryResponse
+        ).json()) as PurchaseAdjustmentSummary;
+        expect(summary.totalsComparison).toEqual({
+          before: {
+            primarySupplierCostFils: "320000",
+            allowanceFils: "8000",
+            costAfterDiscountFils: "312000",
+          },
+          after: {
+            primarySupplierCostFils: "640000",
+            allowanceFils: "16000",
+            costAfterDiscountFils: "624000",
+          },
+        });
+        const modal = adjustment.getByRole("dialog");
+        const totals = modal.locator('[data-adjustment-totals="comparison"]');
+        await expect(totals).toContainText(
+          locale === "en" ? "624 IQD" : "٦٢٤ د.ع",
+        );
+        await expect(totals).toContainText(
+          locale === "en" ? "312 IQD" : "٣١٢ د.ع",
+        );
+        await expect(modal).toContainText(
+          locale === "en"
+            ? "Primary Supplier Cost Delta"
+            : "فرق كلفة المورد الأساسية",
+        );
+        await expect(action("close-summary")).toBeFocused();
+        const confirm = modal.getByRole("button", {
+          name:
+            locale === "en" ? "Confirm and post Delta" : "تأكيد وحفظ التعديل",
+        });
+        await confirm.focus();
+        await page.keyboard.press("Tab");
+        await expect(modal.locator(".delta-summary-table-wrap")).toBeFocused();
+        await page.keyboard.press("Shift+Tab");
+        await expect(confirm).toBeFocused();
+        expect(
+          (
+            await new AxeBuilder({ page })
+              .include(".delta-summary-dialog")
+              .analyze()
+          ).violations,
+        ).toEqual([]);
+        const captures = path.resolve(
+          import.meta.dirname,
+          "../../../../evidence/issue-198/t03/screenshots",
+        );
+        await mkdir(captures, { recursive: true });
+        for (const viewport of [
+          { width: 1280, height: 800 },
+          { width: 1366, height: 768 },
+        ]) {
+          await page.setViewportSize(viewport);
+          // Prototype purchases.tsx uses max-w-[640px], a 14px heading
+          // and a 12px comparison table, without the generic h3 underline.
+          await expect(modal).toHaveCSS("width", "640px");
+          await expect(modal.locator(".delta-summary-title")).toHaveCSS(
+            "font-size",
+            "14px",
+          );
+          await expect(modal.locator(".delta-summary-title")).toHaveCSS(
+            "border-bottom-width",
+            "0px",
+          );
+          await expect(totals).toHaveCSS("font-size", "12px");
+          await expect(
+            modal
+              .locator("table")
+              .last()
+              .locator("tbody tr")
+              .first()
+              .locator("td")
+              .last(),
+          ).toBeInViewport();
+          await expect(action("close-summary")).toBeInViewport();
+          await modal.screenshot({
+            animations: "disabled",
+            path: path.join(
+              captures,
+              `totals-${locale}-${theme}-${viewport.width}.png`,
+            ),
+          });
+        }
+        await page.setViewportSize({ width: 640, height: 800 });
+        await expect(confirm).toBeInViewport();
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.route("**/t03-text-zoom.css", (route) =>
+          route.fulfill({
+            contentType: "text/css",
+            body: "html { font-size: 200%; }",
+          }),
+        );
+        const zoom = await page.addStyleTag({
+          url: `${renderer.origin}/t03-text-zoom.css`,
+        });
+        await expect(confirm).toBeInViewport();
+        await zoom.evaluate((element) => element.remove());
+        await page.keyboard.press("Escape");
+        await expect(action("save-review")).toBeFocused();
+        await expect(action("save-review")).toBeInViewport();
+        await adjustment.screenshot({
+          animations: "disabled",
+          path: path.join(captures, `editor-${locale}-${theme}.png`),
+        });
+        // Permission refusal retains work; correlation is optional support detail.
+        const supportReference = uuidV7();
+        await page.route("**/purchases/adjustment-drafts/*/summary", (route) =>
+          route.fulfill({
+            status: 403,
+            contentType: "application/json",
+            body: JSON.stringify({
+              status: "denied",
+              code: "permission-denied",
+              requestId: supportReference,
+            }),
+          }),
+        );
+        await evidence.fill(`T03 denied evidence ${locale}`);
+        await action("save-review").click();
+        const denial = adjustment.getByRole("alert");
+        await expect(denial).toContainText(
+          locale === "en"
+            ? "This Adjustment action is not allowed"
+            : "إجراء التعديل غير مسموح",
+        );
+        await expect(denial.locator("code")).toBeHidden();
+        await denial.locator("summary").click();
+        await expect(denial.locator("code")).toHaveText(supportReference);
+        await page.unroute("**/purchases/adjustment-drafts/*/summary");
+        await page.route("**/purchases/adjustment-drafts/*/summary", (route) =>
+          route.fulfill({
+            status: 401,
+            contentType: "application/json",
+            body: JSON.stringify({
+              status: "denied",
+              code: "session-expired",
+              requestId: uuidV7(),
+            }),
+          }),
+        );
+        await action("save-review").click();
+        await expect(denial).toContainText(
+          locale === "en" ? "Your session ended" : "انتهت جلستك",
+        );
+        await expect(denial.locator("code")).toBeHidden();
+        await page.unroute("**/purchases/adjustment-drafts/*/summary");
+        // An unavailable save cannot carry the user away or erase typed input.
+        await quantity.fill("9");
+        await page.route("**/purchases/adjustment-drafts/*", (route) =>
+          route.request().method() === "PUT"
+            ? route.abort("failed")
+            : route.continue(),
+        );
+        await action("search").click();
+        await action("save-leave").click();
+        await expect(warning.getByRole("alert")).toContainText(
+          locale === "en"
+            ? "Your edits are still here"
+            : "التغييرات ما زالت هنا",
+        );
+        await action("continue-editing").click();
+        await expect(quantity).toHaveValue("9");
+        await page.unroute("**/purchases/adjustment-drafts/*");
+        await quantity.fill("8");
+        await action("return").click();
+        await action("keep-leave").click();
+        await expect(
+          review.getByRole("heading", {
+            name:
+              locale === "en"
+                ? "Purchase Return · goods physically leave stock"
+                : "مردود شراء · بضاعة تغادر المخزون فعلياً",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await review
+          .getByRole("button", {
+            name:
+              locale === "en"
+                ? "Back to original invoice"
+                : "العودة إلى الفاتورة الأصلية",
+            exact: true,
+          })
+          .click();
+        await expect(
+          review.locator('button[data-review-focus^="return-"]'),
+        ).toBeFocused();
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await adjustment.getByRole("button", { name: continueName }).click();
+        await expect(evidence).toHaveValue(`T03 denied evidence ${locale}`);
+        await quantity.fill("9");
+        await action("back").click();
+        await action("continue-editing").click();
+        await expect(quantity).toHaveValue("9");
+        await action("cancel-adjustment").click();
+        await expect(action("save-leave")).toHaveCount(0);
+        await action("discard-leave").click();
+        await expect(heading).toContainText(`${prefix}-B`);
+        const original = originals[1]!;
+        const detail = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          `/purchases/posted/${original.posted.id}`,
+        );
+        expect(
+          (detail.body as { activeAdjustmentDrafts: unknown[] })
+            .activeAdjustmentDrafts,
+        ).toHaveLength(0);
+        expect(
+          (detail.body as { primarySupplierCostFils: string })
+            .primarySupplierCostFils,
+        ).toBe("320000");
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await action("next").click();
+        await expect(heading).toContainText(`${prefix}-A`);
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await expect(action("next")).toBeDisabled();
+        await expect(action("previous")).toBeEnabled();
+        await adjustment.getByRole("button", { name: createName }).click();
+        await action("remove-row").click();
+        await expect(action("save-review")).toBeFocused();
+        const zeroResponse = page.waitForResponse(
+          (response) => response.url().endsWith("/summary") && response.ok(),
+        );
+        await action("save-review").click();
+        const zero = (await (
+          await zeroResponse
+        ).json()) as PurchaseAdjustmentSummary;
+        expect(zero.totalsComparison.after).toEqual({
+          primarySupplierCostFils: "0",
+          allowanceFils: "0",
+          costAfterDiscountFils: "0",
+        });
+        expect(zero.primarySupplierCostDeltaFils).toBe("-320000");
+        await expect(
+          adjustment
+            .getByRole("dialog")
+            .locator('[data-adjustment-totals="comparison"]'),
+        ).toContainText(locale === "en" ? "0 IQD" : "٠ د.ع");
+        await page.keyboard.press("Escape");
+        await action("cancel-adjustment").click();
+        await action("discard-leave").click();
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await action("search").click();
+        await expect(review.getByRole("searchbox")).toHaveValue(prefix);
+        await expect(rows).toHaveCount(3);
+        await rows
+          .filter({ hasText: `${prefix}-A` })
+          .getByRole("button")
+          .first()
+          .click();
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await adjustment.getByRole("button", { name: createName }).click();
+        await quantity.fill("6");
+        await action("new-invoice").click();
+        await action("save-leave").click();
+        const freshInvoice = page
+          .locator("#purchase-invoice-view")
+          .getByLabel(
+            locale === "en" ? "Supplier invoice number" : "رقم فاتورة المورد",
+            { exact: true },
+          );
+        await expect(freshInvoice).toBeVisible();
+        await expect(freshInvoice).toHaveValue("");
+        const retained = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          `/purchases/posted/${originals[0]!.posted.id}`,
+        );
+        const retainedId = (
+          retained.body as { activeAdjustmentDrafts: { id: string }[] }
+        ).activeAdjustmentDrafts[0]!.id;
+        const retainedDraft = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          purchaseAdjustmentDraftPath(retainedId),
+        );
+        expect(
+          (retainedDraft.body as PurchaseAdjustmentDraft).rows[0]!
+            .enteredQuantity,
+        ).toBe("6");
+        await freshInvoice.fill("UNSAVED-PURCHASE-WORK");
+        await postedInvoicesTab(page).click();
+        await review.getByRole("searchbox").fill(`${prefix}-A`);
+        await review.getByRole("searchbox").press("Enter");
+        await rows.first().getByRole("button").first().click();
+        await review
+          .getByRole("button", { name: editName, exact: true })
+          .click();
+        await adjustment.getByRole("button", { name: continueName }).click();
+        await expect(action("new-invoice")).toHaveCount(0);
+        await action("back").click();
+        await action("keep-leave").click();
+        await page
+          .locator(
+            'button.purchase-view-tab[aria-controls="purchase-invoice-view"]',
+          )
+          .click();
+        await expect(freshInvoice).toHaveValue("UNSAVED-PURCHASE-WORK");
+      });
+    }
+  }
+
+  test("manual T03 Adjustment controls and totals in a disposable pharmacy", async ({
+    page,
+  }) => {
+    test.skip(
+      process.env.BREEV_M2_T03_MANUAL !== "1",
+      "Opt-in interactive manual checkpoint",
+    );
+    test.setTimeout(0);
+    let restartPurchaseId = "";
+    for (const suffix of ["A", "B", "C"]) {
+      const original = await postPurchaseForReview(
+        apiOrigin,
+        credentials,
+        supplierId,
+        purchaseProduct.id,
+        `MANUAL-T03-${suffix}`,
+      );
+      if (suffix === "B") restartPurchaseId = original.posted.id;
+    }
+    await postPurchaseForReview(
+      apiOrigin,
+      credentials,
+      supplierId,
+      purchaseProduct.id,
+      "OUTSIDE-MANUAL-CHECKPOINT",
+    );
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto(`${renderer.origin}#/purchases`);
+    await postedInvoicesTab(page).click();
+    const review = page.locator("#purchase-posted-view");
+    await review.getByRole("searchbox").fill("MANUAL-T03-");
+    await review.getByRole("searchbox").press("Enter");
+    await expect(review.locator(".posted-purchase-list tbody tr")).toHaveCount(
+      3,
+    );
+    const manualEvidence = path.resolve(
+      import.meta.dirname,
+      "../../../../evidence/issue-198/t03/screenshots",
+    );
+    await mkdir(manualEvidence, { recursive: true });
+    await page.screenshot({
+      path: path.join(manualEvidence, "manual-ready.png"),
+      animations: "disabled",
+      fullPage: true,
+    });
+    // Human completes clean/dirty/totals cases; Resume validates the saved
+    // checkpoint through the API before a real restart, retaining the page on failure.
+    for (;;) {
+      await page.pause();
+      const original = await apiRequest(
+        apiOrigin,
+        credentials,
+        "GET",
+        `/purchases/posted/${restartPurchaseId}`,
+      );
+      const active = (
+        original.body as { activeAdjustmentDrafts: { id: string }[] }
+      ).activeAdjustmentDrafts[0];
+      if (active !== undefined) {
+        const saved = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          purchaseAdjustmentDraftPath(active.id),
+        );
+        const draft = saved.body as PurchaseAdjustmentDraft;
+        if (
+          draft.rows[0]?.enteredQuantity === "8" &&
+          draft.evidence === "T03 checkpoint saved"
+        )
+          break;
+      }
+      console.warn(
+        "Restart skipped: Save MANUAL-T03-B with quantity 8 and evidence T03 checkpoint saved first. Input was not cleared.",
+      );
+    }
+    await stopProcess(api!);
+    api = startApi(apiPort, databaseRoles, credentials);
+    await waitForHealth(apiOrigin);
+    await page.reload();
+    // Human checks resume/Return/filter/keyboard/theme behavior, then Resume
+    // enables an explicitly labelled presentation-only permission simulation.
+    await page.pause();
+    await page.route("**/purchases/adjustment-drafts/*/summary", (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "denied",
+          code: "permission-denied",
+          requestId: uuidV7(),
+        }),
+      }),
+    );
+    console.warn(
+      "Manual presentation simulation enabled: next Adjustment summary is denied. Real permission enforcement is proven separately by PostgreSQL tests.",
+    );
+    await page.pause();
+    await page.unroute("**/purchases/adjustment-drafts/*/summary");
+    console.warn(
+      "Permission simulation removed. Finish discard/post/immutable review checks, then Resume to close the fixture.",
+    );
+    await page.pause();
+  });
+
   test("manual T02 Adjustment reasons and protected fields in a disposable pharmacy", async ({
     page,
   }) => {
@@ -2215,11 +2762,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await dialog
       .getByRole("button", { name: "Back to original invoice" })
       .click();
-    await expect(
-      dialog.getByText(
-        "This adjustment is unfinished. Continue it or delete the draft before leaving.",
-      ),
-    ).toBeVisible();
+    await expect(dialog.getByRole("alertdialog")).toBeVisible();
     await dialog.getByRole("button", { name: "Continue draft" }).click();
     const adjustedQuantity = dialog.getByRole("textbox", {
       name: new RegExp(`Quantity ${purchaseProduct.displayName}`, "u"),
@@ -2340,7 +2883,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await postedInvoicesTab(page).click();
     const dialog = page.locator("#purchase-posted-view");
     await expect(dialog.getByRole("alert")).toContainText(
-      "Access denied. Audit request:",
+      "Access denied. Ask an authorized user",
     );
     await dialog.getByRole("button", { name: "Retry" }).click();
     await expect(
@@ -2846,8 +3389,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     // The refusal renders at the top of a stage the user has scrolled down to
     // reach the action, inside a dialog that scrolls too. Same contract as the
     // adjustment stage: on screen, focused, and the draft is kept.
-    const refusal = dialog.locator("section.purchase-return p.form-error");
-    await expect(refusal).toContainText("return-over-eligible");
+    const refusal = dialog
+      .locator("section.purchase-return")
+      .getByRole("alert");
+    await expect(refusal).toContainText(
+      "Return quantity exceeds eligible quantity",
+    );
+    await expect(refusal.locator("code")).toBeHidden();
     await expect(refusal).toBeFocused();
     await expect(refusal).toBeInViewport({ ratio: 1 });
     await expect(refusal).toHaveAttribute("role", "alert");
@@ -2932,7 +3480,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     // scrolled down, inside a dialog that scrolls too. It is only a refusal the
     // user can act on if it is on screen and announced, so it takes focus in
     // the commit that renders it.
-    const refusal = dialog.locator("section.purchase-adjustment p.form-error");
+    const refusal = dialog
+      .locator("section.purchase-adjustment")
+      .getByRole("alert");
     await expect(refusal).toContainText(
       "This Delta is not valid against current stock.",
     );

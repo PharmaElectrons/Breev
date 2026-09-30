@@ -1446,6 +1446,21 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       ),
     );
     const firstSummary = await previewAdjustment(firstSaved);
+    expect(firstSummary.totalsComparison).toEqual({
+      before: {
+        primarySupplierCostFils: "24000",
+        allowanceFils: "2400",
+        costAfterDiscountFils: "21600",
+      },
+      after: {
+        primarySupplierCostFils: "28000",
+        allowanceFils: "2800",
+        costAfterDiscountFils: "25200",
+      },
+    });
+    expect(
+      firstSummary.rowTotals.map((row) => row.primarySupplierCostFils),
+    ).toEqual(["8000", "20000"]);
     expect(firstSummary).toMatchObject({
       primarySupplierCostDeltaFils: "4000",
       quantityDelta: "4",
@@ -1515,6 +1530,18 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       ),
     );
     const secondSummary = await previewAdjustment(secondSaved);
+    expect(secondSummary.totalsComparison).toEqual({
+      before: {
+        primarySupplierCostFils: "28000",
+        allowanceFils: "2800",
+        costAfterDiscountFils: "25200",
+      },
+      after: {
+        primarySupplierCostFils: "26000",
+        allowanceFils: "2600",
+        costAfterDiscountFils: "23400",
+      },
+    });
     expect(secondSummary.quantityDelta).toBe("-2");
     const secondPost = await request(
       "POST",

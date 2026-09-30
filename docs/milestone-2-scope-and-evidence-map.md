@@ -148,8 +148,13 @@ manual PASS on 30 September 2026 with confirmation that the manual tests were
 finished. The earlier evidence-note report remains open. The accepted slice's
 [local exit gate](../evidence/issue-198/t02/pre-commit-gate.md) records proof and
 host/prerequisite limitations; see [manual results](../evidence/issue-198/t02/manual-results.md).
-The family remains **defect** while controls/totals, filtered navigation and the
-later Phase 1 checkpoints remain incomplete.
+
+The [accepted T03 slice](../evidence/issue-198/t03/README.md) supplies filtered Purchase
+navigation, explicit preservation/discard choices, exact server comparisons and
+localized hidden-by-default diagnostic references. Automated proof is bounded to
+those seams. Its [stakeholder PASS](../evidence/issue-198/t03/manual-results.md),
+30 September 2026, accepts agent verification. M2-P04 remains **defect** until all
+owning checkpoints finish; broader phase and professional gates remain open.
 
 The stakeholder's [diagnostic-reference follow-up](../evidence/issue-198/followups.md)
 requires ordinary errors to hide raw support UUIDs by default while retaining

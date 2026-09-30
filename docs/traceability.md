@@ -119,6 +119,20 @@ accepted commit's proof and precise host/prerequisite limitations. Existing
 duplicate-number and Return accounting defaults retain their unapproved status;
 this implementation does not close G-01/G-02 or the remaining Adjustment family.
 
+The [accepted T03 slice](../evidence/issue-198/t03/README.md) continues M2-P04 with
+filtered immutable Purchase navigation, explicit save/keep/discard controls,
+server-owned gross/allowance/discounted comparisons, truthful unavailable values,
+and the stakeholder's localized diagnostic presentation rule. Its separate
+[checkpoint](../evidence/issue-198/t03/manual-results.md) received stakeholder PASS
+on 30 September 2026 based on agent verification. It does not promote this
+requirement family to proven or close G-01/G-02. Purchase row/Quick Product behavior and later milestone exclusions
+remain unchanged.
+
+The T03 [visual verification](../evidence/issue-198/t03/prototype-fidelity.md)
+compares a source-rendered prototype modal with current captures and records
+scoped corrections to its geometry, typography and icon. This accepted bounded
+evidence does not replace broader phase gates.
+
 ## Windows payload optimization evidence
 
 The stakeholder initiated issue #126 implementation on 4 September 2026 after reviewing its size/performance investigation. The work preserves the existing G-05/G-06/G-07 authority, security and lifecycle requirements; it does not authorize a new installer architecture or relaxed durability. The [issue-126 implementation record](../evidence/issue-126/README.md) traces task evidence and the original issue's infeasible size/file-count assumptions. Measured budgets and any unresolved verification gaps must be presented explicitly in the review PR; the investigation does not close release gates or silently replace requirement acceptance criteria.

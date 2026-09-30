@@ -97,6 +97,8 @@ type AdjustmentCommandValue =
   PurchaseAdjustmentDraft | PurchaseAdjustmentPostResult;
 
 interface OriginalHeaderRow {
+  allowance_fils: string;
+  cost_after_discount_fils: string;
   allowance_percentage_snapshot: string;
   invoice_date: string;
   number_value: string;
@@ -1108,7 +1110,8 @@ async function readOriginalHeader(
     `select supplier_id, supplier_name_snapshot, supplier_invoice_number,
             invoice_date::text, settlement_context,
             allowance_percentage_snapshot::text,
-            primary_supplier_cost_fils::text, number_value::text, number_year
+            primary_supplier_cost_fils::text, allowance_fils::text,
+            cost_after_discount_fils::text, number_value::text, number_year
      from posted_purchases
      where pharmacy_id = $1 and id = $2${lock ? " for update" : ""}`,
     [pharmacyId, purchaseId],
@@ -1691,6 +1694,37 @@ async function calculateSummary(
             outcome.delta.primarySupplierCostDeltaFils,
           );
   const base = {
+    totalsComparison: {
+      before: {
+        primarySupplierCostFils: (
+          BigInt(original.primary_supplier_cost_fils) +
+          BigInt(prior.primary_delta)
+        ).toString(),
+        allowanceFils: (
+          BigInt(original.allowance_fils) + BigInt(prior.allowance_delta)
+        ).toString(),
+        costAfterDiscountFils: (
+          BigInt(original.cost_after_discount_fils) + BigInt(prior.net_delta)
+        ).toString(),
+      },
+      after: {
+        primarySupplierCostFils: (
+          BigInt(original.primary_supplier_cost_fils) +
+          BigInt(prior.primary_delta) +
+          outcome.delta.primarySupplierCostDeltaFils
+        ).toString(),
+        allowanceFils: (
+          BigInt(original.allowance_fils) +
+          BigInt(prior.allowance_delta) +
+          outcome.delta.allowanceDeltaFils
+        ).toString(),
+        costAfterDiscountFils: (
+          BigInt(original.cost_after_discount_fils) +
+          BigInt(prior.net_delta) +
+          outcome.delta.costAfterDiscountDeltaFils
+        ).toString(),
+      },
+    },
     allowanceDeltaFils: outcome.delta.allowanceDeltaFils.toString(),
     costAfterDiscountDeltaFils:
       outcome.delta.costAfterDiscountDeltaFils.toString(),
@@ -1725,6 +1759,12 @@ async function calculateSummary(
             },
           ],
     rowDeltas,
+    rowTotals: draftSnapshots.map((row) => ({
+      lineageId: row.lineageId,
+      primarySupplierCostFils: (
+        BigInt(row.enteredQuantity) * BigInt(row.costFils)
+      ).toString(),
+    })),
     stockEffects: rowDeltas
       .filter(
         (row) =>
