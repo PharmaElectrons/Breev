@@ -21,7 +21,11 @@ import {
   completeCountSession,
 } from "./inventory-api";
 import { CountEntryLabel, CountMeasure } from "./count-entry-label";
-import { buildCountEntryPreview, countEntryUnits } from "./count-entry";
+import {
+  buildCountEntryPreview,
+  countEntryUnits,
+  countFieldQuantity,
+} from "./count-entry";
 import { panelUnitLabel } from "./panel-unit-label";
 import { inventoryMessages } from "./inventory-messages";
 import { usePreferences } from "./preferences-provider";
@@ -717,7 +721,7 @@ function CountSessionLoop({
     if (
       session === null ||
       session.status !== "active" ||
-      !canRecord ||
+      !canApprove ||
       BigInt(session.pendingVarianceCount) > 0n
     ) {
       return;
@@ -794,7 +798,7 @@ function CountSessionLoop({
           <a className="quiet-button" href="#/inventory/count">
             {copy.startTitle}
           </a>
-          {session.status === "active" && canRecord ? (
+          {session.status === "active" && canApprove ? (
             <button
               aria-describedby={
                 BigInt(session.pendingVarianceCount) > 0n
@@ -822,7 +826,7 @@ function CountSessionLoop({
         </div>
       </header>
       {session.status === "active" &&
-      canRecord &&
+      canApprove &&
       BigInt(session.pendingVarianceCount) > 0n ? (
         <p id="count-complete-blocked" role="status">
           {copy.completionBlocked(session.pendingVarianceCount)}
@@ -1041,9 +1045,9 @@ function CountCaption({
   readonly packaging: Product["packaging"];
 }): React.JSX.Element {
   const preview = buildCountEntryPreview(packaging, fields);
-  const visible = countEntryUnits(packaging).filter(({ key }) => {
-    const value = fields[key]?.trim() ?? "";
-    return /^\d+$/u.test(value) && BigInt(value) > 0n;
+  const visible = countEntryUnits(packaging).flatMap((unit) => {
+    const quantity = countFieldQuantity(fields[unit.key] ?? "");
+    return quantity !== null && quantity > 0n ? [{ quantity, unit }] : [];
   });
   return (
     <p className="count-live-caption" aria-live="polite">
@@ -1052,17 +1056,11 @@ function CountCaption({
           <bdi>0</bdi> {panelUnitLabel(packaging.inventoryUnitName, 0n, locale)}
         </>
       ) : (
-        visible.map((unit, index) => (
+        visible.map(({ quantity, unit }, index) => (
           <span key={unit.key}>
             {index > 0 ? " + " : ""}
-            <bdi>
-              {formatNumber(BigInt(fields[unit.key] ?? "0"), locale)}
-            </bdi>{" "}
-            {panelUnitLabel(
-              unit.label,
-              BigInt(fields[unit.key] ?? "0"),
-              locale,
-            )}
+            <bdi>{formatNumber(quantity, locale)}</bdi>{" "}
+            {panelUnitLabel(unit.label, quantity, locale)}
           </span>
         ))
       )}

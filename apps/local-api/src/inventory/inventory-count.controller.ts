@@ -194,7 +194,7 @@ export class InventoryCountController {
       if (!parsedSessionId.success || !input.success) {
         throw await this.count.rejectInvalidBody(
           request,
-          "inventory.counts.record",
+          "inventory.counts.approve",
           "inventory.count.session.complete",
           [
             ...(parsedSessionId.success
