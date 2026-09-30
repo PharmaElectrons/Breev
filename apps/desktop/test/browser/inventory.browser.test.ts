@@ -461,6 +461,7 @@ test.describe.serial("read-only inventory review", () => {
             `quantity-${locale}-${theme}.png`,
           ),
         });
+        await assertReportTextResize(page);
         const sourceButton = page
           .locator(".report-table tbody tr")
           .first()
@@ -506,6 +507,7 @@ test.describe.serial("read-only inventory review", () => {
               `${kind}-${locale}-${theme}.png`,
             ),
           });
+          await assertReportTextResize(page);
         }
         await context.close();
       }
@@ -1086,6 +1088,34 @@ async function changeBatchStatus(
     },
   );
   expect(response.status).toBe(201);
+}
+
+async function assertReportTextResize(page: Page): Promise<void> {
+  await page.setViewportSize({ height: 768, width: 1024 });
+  await page.locator("html").evaluate((root) => {
+    root.style.fontSize = "200%";
+  });
+  for (const control of [
+    page.locator(".report-controls button[type='submit']"),
+    page.locator(".report-actions button").last(),
+    page.locator(".report-categories button[aria-current='page']"),
+  ]) {
+    await control.scrollIntoViewIfNeeded();
+    // Chromium can round a scrolled boundary by a fraction of a CSS pixel.
+    await expect(control).toBeInViewport({ ratio: 0.99 });
+    const bounds = await control.boundingBox();
+    expect(bounds?.width).toBeGreaterThanOrEqual(24);
+    expect(bounds?.height).toBeGreaterThanOrEqual(24);
+  }
+  expect(
+    await page
+      .locator("html")
+      .evaluate((root) => root.scrollWidth <= root.clientWidth),
+  ).toBe(true);
+  await page.locator("html").evaluate((root) => {
+    root.style.fontSize = "";
+  });
+  await page.setViewportSize({ height: 800, width: 1280 });
 }
 
 async function riskOrder(page: Page): Promise<string[]> {
