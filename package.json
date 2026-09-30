@@ -48,6 +48,7 @@
     "test:integration": "turbo run test:integration --filter=@breev/local-api",
     "test:licence-generator": "pnpm --filter @breev/local-api exec vitest run --config vitest.unit.config.ts src/licensing/dev-licence-generator.unit.test.ts && pnpm --filter @breev/desktop exec playwright test test/browser/licence-generator.browser.test.ts --config playwright.browser.config.ts",
     "test:release-tooling": "node --test tooling/release/verify-version.test.mjs",
+    "test:reports:windows": "node tooling/windows/run-report-checks.mjs",
     "test:smoke": "pnpm build && pnpm --filter @breev/desktop test:smoke",
     "test:unit": "turbo run test:unit && pnpm test:boundaries && pnpm test:dev-launcher && pnpm test:release-tooling",
     "typecheck": "turbo run typecheck",

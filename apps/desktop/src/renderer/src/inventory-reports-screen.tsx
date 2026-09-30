@@ -9,6 +9,7 @@ import {
   type InventoryReportQuery,
   type InventoryReportRow,
   type InventoryReportSource,
+  type InventoryReportActivityPage,
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIdentityState } from "./identity-state-provider";
@@ -22,6 +23,7 @@ import {
   exportInventoryReport,
   exportProtectedInventoryReport,
   ReportApiDenied,
+  readInventoryReportActivity,
 } from "./report-api";
 import { reportMessages } from "./report-messages";
 import {
@@ -29,7 +31,13 @@ import {
   pharmacyLocalToInstant,
   reportTimestamp,
 } from "./report-time";
-import { ReportColumnFilters, ReportTable } from "./report-workspace";
+import {
+  ReportColumnFilters,
+  ReportTable,
+  reportCell,
+} from "./report-workspace";
+import { canonicalReportFilters, ReportFilterError } from "./report-filter";
+import { ordinaryReportExport } from "./report-export-query";
 import { ReportSourceReview } from "./report-source-review";
 import { StepUpDialog, useStepUp, type StepUpDenial } from "./step-up";
 import { formatNumber } from "./preferences";
@@ -59,12 +67,27 @@ export function InventoryReportsScreen({
   const [report, setReport] = useState<InventoryReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [committedRequest, setCommittedRequest] = useState("");
+  const [draftDirty, setDraftDirty] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const initializedKind = useRef<string | null>(null);
   const [exportStatus, setExportStatus] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [confirmOrdinary, setConfirmOrdinary] = useState(false);
+  const ordinaryDialog = useRef<HTMLDialogElement>(null);
+  const ordinaryOpener = useRef<HTMLElement | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [filters, setFilters] = useState<InventoryReportQuery["filters"]>([]);
+  const [filterError, setFilterError] = useState<{
+    index: number;
+    message: string;
+  } | null>(null);
   const [activity, setActivity] = useState<InventoryReportRow | null>(null);
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityResult, setActivityResult] =
+    useState<InventoryReportActivityPage | null>(null);
+  const [activityError, setActivityError] = useState(false);
   const [source, setSource] = useState<InventoryReportSource | null>(null);
   const [stepUpDenial, setStepUpDenial] = useState<StepUpDenial | null>(null);
   const activityDialog = useRef<HTMLDialogElement>(null);
@@ -72,18 +95,55 @@ export function InventoryReportsScreen({
   const sourceOpener = useRef<HTMLElement | null>(null);
   const focus = useCommittedFocus();
   const queryKey = JSON.stringify(query);
+  const previousKind = useRef(kind);
+  const categoryMatchesQuery = previousKind.current === kind;
   useEffect(() => {
+    if (previousKind.current === kind) return;
+    previousKind.current = kind;
+    setFilters([]);
+    setFilterError(null);
+    setDraftDirty(false);
+    setQuery((current) => ({
+      ...(current.from === undefined ? {} : { from: current.from }),
+      ...(current.to === undefined ? {} : { to: current.to }),
+      ...(current.actorId === undefined ? {} : { actorId: current.actorId }),
+    }));
+  }, [kind]);
+  const stale =
+    report !== null &&
+    (draftDirty ||
+      loading ||
+      error !== null ||
+      committedRequest !== `${kind}:${queryKey}`);
+  const ordinary = report === null ? null : ordinaryReportExport(report.query);
+  useEffect(() => {
+    if (
+      confirmOrdinary &&
+      ordinaryDialog.current !== null &&
+      !ordinaryDialog.current.open
+    )
+      ordinaryDialog.current.showModal();
+  }, [confirmOrdinary]);
+  useEffect(() => {
+    if (!categoryMatchesQuery) return;
     let live = true;
     setLoading(true);
     setError(null);
-    setReport(null);
     void readInventoryReport(
       baseUrl,
       kind,
       JSON.parse(queryKey) as Partial<InventoryReportQuery>,
     )
       .then((value) => {
-        if (live) setReport(value);
+        if (live) {
+          setReport(value);
+          setCommittedRequest(`${kind}:${queryKey}`);
+          if (initializedKind.current !== kind) {
+            initializedKind.current = kind;
+            setFrom(pharmacyLocalDateTime(value.query.from, value.timeZone));
+            setTo(pharmacyLocalDateTime(value.query.to, value.timeZone));
+          }
+        }
       })
       .catch((caught: unknown) => {
         if (live)
@@ -104,25 +164,37 @@ export function InventoryReportsScreen({
     };
   }, [
     baseUrl,
+    categoryMatchesQuery,
     kind,
     queryKey,
     copy.denied,
     copy.invalidPeriod,
     copy.unavailable,
+    refresh,
   ]);
-  const reportFrom = report?.query.from;
-  const reportTo = report?.query.to;
   const timeZone = report?.timeZone;
   useEffect(() => {
-    if (
-      reportFrom !== undefined &&
-      reportTo !== undefined &&
-      timeZone !== undefined
-    ) {
-      setFrom(pharmacyLocalDateTime(reportFrom, timeZone));
-      setTo(pharmacyLocalDateTime(reportTo, timeZone));
-    }
-  }, [reportFrom, reportTo, timeZone]);
+    if (activity === null || report === null) return;
+    let live = true;
+    setActivityResult(null);
+    setActivityError(false);
+    void readInventoryReportActivity(
+      baseUrl,
+      report.kind,
+      report.query,
+      activity.id,
+      activityPage,
+    )
+      .then((result) => {
+        if (live) setActivityResult(result);
+      })
+      .catch(() => {
+        if (live) setActivityError(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [activity, report, activityPage, baseUrl]);
   useEffect(() => {
     if (
       activity !== null &&
@@ -158,7 +230,8 @@ export function InventoryReportsScreen({
     protectedExport: boolean,
     challengeId?: string,
   ): Promise<void> {
-    if (report === null) return;
+    if (report === null || stale || (!protectedExport && ordinary?.blocked))
+      return;
     setExporting(true);
     setExportStatus("");
     setError(null);
@@ -171,7 +244,11 @@ export function InventoryReportsScreen({
               challengeId,
               idempotencyKey: crypto.randomUUID(),
             })
-          : await exportInventoryReport(baseUrl, kind, report.query);
+          : await exportInventoryReport(
+              baseUrl,
+              kind,
+              ordinaryReportExport(report.query).query,
+            );
       const result = await window.breevDesktop.saveInventoryExport({
         bundle,
         format: "csv",
@@ -214,7 +291,7 @@ export function InventoryReportsScreen({
         ...(businessFrom === "" ? {} : { businessFrom }),
         ...(businessTo === "" ? {} : { businessTo }),
         ...(group === "" ? {} : { groupBy: group }),
-        filters,
+        filters: canonicalReportFilters(filters),
         sort: String(data.get("sort")),
         direction: String(data.get("direction")),
         columns: data.getAll("column"),
@@ -222,9 +299,17 @@ export function InventoryReportsScreen({
         page: 1,
       });
       setQuery(value);
+      setFilterError(null);
+      setDraftDirty(false);
+      setRefresh((n) => n + 1);
       setError(null);
-    } catch {
-      setError(copy.invalidPeriod);
+    } catch (caught) {
+      if (caught instanceof ReportFilterError)
+        setFilterError({
+          index: caught.index,
+          message: `${copy.columns[filters[caught.index]!.column]}: ${caught.rule === "precision" ? copy.filterPrecision : copy.filterNumber}`,
+        });
+      else setError(copy.invalidPeriod);
     }
   }
   return (
@@ -243,296 +328,451 @@ export function InventoryReportsScreen({
           </span>
         )}
       </header>
-      <nav className="report-categories" aria-label={copy.title}>
-        {INVENTORY_REPORT_KINDS.filter(
-          (k) => valuation || (k !== "value" && k !== "average-cost"),
-        ).map((k) => (
-          <button
-            type="button"
-            key={k}
-            aria-current={k === kind ? "page" : undefined}
-            onClick={() => {
-              const current = report?.query;
-              setFilters([]);
-              setQuery(
-                current === undefined
-                  ? {}
-                  : {
-                      from: current.from,
-                      to: current.to,
-                      ...(current.actorId === undefined
-                        ? {}
-                        : { actorId: current.actorId }),
-                    },
-              );
-              window.location.hash = `#/reports/inventory/${k}`;
-            }}
-          >
-            {copy.categories[k]}
-          </button>
-        ))}
-      </nav>
-      {loading ? <p role="status">{copy.loading}</p> : null}
-      {error === null ? null : (
-        <p className="denial-alert" role="alert">
-          {error}
-        </p>
-      )}
-      {report === null ? null : (
-        <>
-          <form
-            className="report-controls"
-            key={kind}
-            onSubmit={(e) => {
-              e.preventDefault();
-              apply(e.currentTarget);
-            }}
-          >
-            <div className="report-filter-grid">
-              <label>
-                {copy.from}
-                <input
-                  type="datetime-local"
-                  step="0.001"
-                  required
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                />
-              </label>
-              <label>
-                {copy.to}
-                <input
-                  type="datetime-local"
-                  step="0.001"
-                  required
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                />
-              </label>
-              <label>
-                {copy.actor}
-                <select name="actor" defaultValue={report.query.actorId ?? ""}>
-                  <option value="">{copy.allActors}</option>
-                  {report.actors.map((actor) => (
-                    <option key={actor.id} value={actor.id}>
-                      {actor.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {copy.group}
-                <select name="group" defaultValue={report.query.groupBy ?? ""}>
-                  <option value="">{copy.noGroup}</option>
-                  {INVENTORY_REPORT_DEFINITIONS[kind].groups.map((c) => (
-                    <option key={c} value={c}>
-                      {copy.columns[c]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {copy.businessFrom}
-                <input
-                  name="businessFrom"
-                  type="date"
-                  defaultValue={report.query.businessFrom ?? ""}
-                />
-              </label>
-              <label>
-                {copy.businessTo}
-                <input
-                  name="businessTo"
-                  type="date"
-                  defaultValue={report.query.businessTo ?? ""}
-                />
-              </label>
-              <label>
-                {copy.sort}
-                <select name="sort" defaultValue={report.query.sort}>
-                  {allowedColumns.map((c) => (
-                    <option key={c} value={c}>
-                      {copy.columns[c]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {copy.direction}
-                <select name="direction" defaultValue={report.query.direction}>
-                  <option value="ascending">{copy.ascending}</option>
-                  <option value="descending">{copy.descending}</option>
-                </select>
-              </label>
-              {kind === "consumption" ? (
-                <label>
-                  {copy.window}
-                  <select
-                    name="windowDays"
-                    defaultValue={report.query.windowDays}
-                  >
-                    {[30, 60, 90].map((n) => (
-                      <option key={n} value={n}>
-                        {formatNumber(n, locale)} {copy.days}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-            </div>
-            <details>
-              <summary>{copy.columnsLabel}</summary>
-              <fieldset className="report-columns">
-                <legend className="visually-hidden">{copy.columnsLabel}</legend>
-                {allowedColumns.map((c) => (
-                  <label key={c}>
-                    <input
-                      name="column"
-                      type="checkbox"
-                      value={c}
-                      defaultChecked={report.columns.includes(c)}
-                    />
-                    {copy.columns[c]}
-                  </label>
-                ))}
-              </fieldset>
-            </details>
-            <ReportColumnFilters
-              filters={filters}
-              columns={allowedColumns}
-              locale={locale}
-              onChange={setFilters}
-            />
-            <button className="primary-button" type="submit">
-              {copy.apply}
+      <div className="report-layout">
+        <aside className="report-sidebar">
+          <p>{copy.category}</p>
+          <nav aria-label={copy.category}>
+            <button type="button" aria-current="page">
+              {copy.inventoryCategory}
             </button>
-          </form>
-          <details
-            className="report-explanations"
-            open={kind === "alerts" || kind === "consumption"}
-          >
-            <summary>
-              {copy.categories[kind]} ·{" "}
-              {reportTimestamp(report.query.from, locale, report.timeZone)} →{" "}
-              {reportTimestamp(report.query.to, locale, report.timeZone)}
-            </summary>
-            {report.explanations.map((key) => (
-              <p key={key}>{copy.explanations[key]}</p>
+          </nav>
+        </aside>
+        <div className="report-main">
+          <div className="report-date-toolbar">
+            <label>
+              {copy.from}
+              <input
+                form="report-filters"
+                type="datetime-local"
+                step="0.001"
+                required
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  setDraftDirty(true);
+                }}
+              />
+            </label>
+            <label>
+              {copy.to}
+              <input
+                form="report-filters"
+                type="datetime-local"
+                step="0.001"
+                required
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  setDraftDirty(true);
+                }}
+              />
+            </label>
+            <div className="report-category-label">
+              {copy.category}
+              <strong>{copy.inventoryCategory}</strong>
+            </div>
+          </div>
+          <nav className="report-categories" aria-label={copy.title}>
+            {INVENTORY_REPORT_KINDS.filter(
+              (k) => valuation || (k !== "value" && k !== "average-cost"),
+            ).map((k) => (
+              <button
+                type="button"
+                key={k}
+                aria-current={k === kind ? "page" : undefined}
+                onClick={() => {
+                  const current = report?.query;
+                  setFilters([]);
+                  setDraftDirty(false);
+                  setQuery(
+                    current === undefined
+                      ? {}
+                      : {
+                          from: current.from,
+                          to: current.to,
+                          ...(current.actorId === undefined
+                            ? {}
+                            : { actorId: current.actorId }),
+                        },
+                  );
+                  window.location.hash = `#/reports/inventory/${k}`;
+                }}
+              >
+                {copy.categories[k]}
+              </button>
             ))}
-          </details>
-          {report.groups.length === 0 ? null : (
-            <ul className="report-groups" aria-label={copy.group}>
-              {report.groups.map((group) => (
-                <li key={`${group.key}:${group.productId}`}>
-                  <bdi>{group.key ?? "—"}</bdi> ·{" "}
-                  {formatNumber(group.rowCount, locale)} {copy.rows}
-                  {Object.entries(group.totals).map(([column, total]) => (
-                    <span key={column}>
-                      {" "}
-                      · {copy.columns[column as InventoryReportColumn]}:{" "}
-                      <bdi>{total}</bdi>
-                    </span>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          )}
-          {report.rows.length === 0 ? (
-            <p role="status">{copy.empty}</p>
-          ) : (
-            <ReportTable
-              report={report}
-              locale={locale}
-              onSort={(column) =>
-                setQuery({
-                  ...report.query,
-                  sort: column,
-                  direction:
-                    report.query.sort === column &&
-                    report.query.direction === "ascending"
-                      ? "descending"
-                      : "ascending",
-                  page: 1,
-                })
-              }
-              onActivity={(row, opener) => {
-                activityOpener.current = opener;
-                setActivity(row);
-              }}
-              onSource={openSource}
-            />
-          )}
-          <footer className="report-actions">
-            <p role="status">
-              {copy.rows}: {formatNumber(report.totalRows, locale)} ·{" "}
-              {formatNumber(report.query.page, locale)}
+          </nav>
+          <div className="report-content" aria-busy={loading}>
+            <p role="status" className="report-load-status">
+              {loading ? copy.loading : stale ? copy.stale : ""}
             </p>
             <button
-              className="quiet-button"
               type="button"
-              disabled={report.query.page <= 1}
-              onClick={() =>
-                setQuery({ ...report.query, page: report.query.page - 1 })
-              }
+              className="quiet-button report-retry"
+              onClick={() => setRefresh((n) => n + 1)}
             >
-              {copy.previous}
+              {copy.retry}
             </button>
-            <button
-              className="quiet-button"
-              type="button"
-              disabled={!report.hasMore}
-              onClick={() =>
-                setQuery({ ...report.query, page: report.query.page + 1 })
-              }
-            >
-              {copy.next}
-            </button>
-            {permissions.includes("reports.inventory.export") ? (
-              <button
-                className="quiet-button"
-                type="button"
-                disabled={exporting}
-                onClick={() => {
-                  void saveExport(false);
-                }}
-              >
-                {copy.export}
-              </button>
-            ) : null}
-            {identity?.state === "authenticated" &&
-            identity.user.role.kind === "built-in" &&
-            identity.user.role.key === "owner" &&
-            valuation &&
-            permissions.includes("reports.inventory.export") ? (
-              <button
-                id="report-sensitive-export"
-                className="quiet-button"
-                type="button"
-                disabled={exporting}
-                onClick={() => {
-                  void stepUp.begin(
-                    "inventory.sensitive.export",
-                    undefined,
-                    async (challenge) => {
-                      await saveExport(true, challenge);
-                    },
-                  );
-                }}
-              >
-                {copy.sensitiveExport}
-              </button>
-            ) : null}
-            <p role="status">{exportStatus}</p>
-          </footer>
-        </>
-      )}
+            {error === null ? null : (
+              <p className="denial-alert" role="alert">
+                {error}
+              </p>
+            )}
+            {report === null ? null : (
+              <>
+                <form
+                  id="report-filters"
+                  className="report-controls"
+                  key={kind}
+                  onChange={() => setDraftDirty(true)}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    apply(e.currentTarget);
+                  }}
+                >
+                  <div className="report-filter-grid">
+                    <label>
+                      {copy.actor}
+                      <select
+                        name="actor"
+                        defaultValue={report.query.actorId ?? ""}
+                      >
+                        <option value="">{copy.allActors}</option>
+                        {report.actors.map((actor) => (
+                          <option key={actor.id} value={actor.id}>
+                            {actor.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {copy.group}
+                      <select
+                        name="group"
+                        defaultValue={report.query.groupBy ?? ""}
+                      >
+                        <option value="">{copy.noGroup}</option>
+                        {INVENTORY_REPORT_DEFINITIONS[kind].groups.map((c) => (
+                          <option key={c} value={c}>
+                            {copy.columns[c]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {copy.businessFrom}
+                      <input
+                        name="businessFrom"
+                        type="date"
+                        defaultValue={report.query.businessFrom ?? ""}
+                      />
+                    </label>
+                    <label>
+                      {copy.businessTo}
+                      <input
+                        name="businessTo"
+                        type="date"
+                        defaultValue={report.query.businessTo ?? ""}
+                      />
+                    </label>
+                    <label>
+                      {copy.sort}
+                      <select
+                        name="sort"
+                        defaultValue={
+                          report.kind === kind ? report.query.sort : "item"
+                        }
+                      >
+                        {allowedColumns.map((c) => (
+                          <option key={c} value={c}>
+                            {copy.columns[c]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {copy.direction}
+                      <select
+                        name="direction"
+                        defaultValue={report.query.direction}
+                      >
+                        <option value="ascending">{copy.ascending}</option>
+                        <option value="descending">{copy.descending}</option>
+                      </select>
+                    </label>
+                    {kind === "consumption" ? (
+                      <label>
+                        {copy.window}
+                        <select
+                          name="windowDays"
+                          defaultValue={report.query.windowDays}
+                        >
+                          {[30, 60, 90].map((n) => (
+                            <option key={n} value={n}>
+                              {formatNumber(n, locale)} {copy.days}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+                  <details>
+                    <summary>{copy.columnsLabel}</summary>
+                    <fieldset className="report-columns">
+                      <legend className="visually-hidden">
+                        {copy.columnsLabel}
+                      </legend>
+                      {allowedColumns.map((c) => (
+                        <label key={c}>
+                          <input
+                            name="column"
+                            type="checkbox"
+                            value={c}
+                            defaultChecked={
+                              report.kind === kind
+                                ? report.columns.includes(c)
+                                : true
+                            }
+                          />
+                          {copy.columns[c]}
+                        </label>
+                      ))}
+                    </fieldset>
+                  </details>
+                  <ReportColumnFilters
+                    filters={filters}
+                    columns={allowedColumns}
+                    locale={locale}
+                    error={filterError}
+                    onChange={(values) => {
+                      setFilters(values);
+                      setDraftDirty(true);
+                      setFilterError(null);
+                    }}
+                  />
+                  <button className="primary-button" type="submit">
+                    {copy.apply}
+                  </button>
+                </form>
+                <details
+                  className="report-explanations"
+                  open={kind === "alerts" || kind === "consumption"}
+                >
+                  <summary>
+                    {copy.categories[report.kind]} ·{" "}
+                    {reportTimestamp(
+                      report.query.from,
+                      locale,
+                      report.timeZone,
+                    )}{" "}
+                    →{" "}
+                    {reportTimestamp(report.query.to, locale, report.timeZone)}
+                  </summary>
+                  {report.explanations.map((key) => (
+                    <p key={key}>{copy.explanations[key]}</p>
+                  ))}
+                </details>
+                {report.groups.length === 0 ? null : (
+                  <ul className="report-groups" aria-label={copy.group}>
+                    {report.groups.map((group, index) => (
+                      <li key={group.id} id={`report-group-${index}`}>
+                        <bdi>
+                          {reportCell(
+                            group.key,
+                            report.query.groupBy ?? "item",
+                            locale,
+                            report.timeZone,
+                          )}
+                        </bdi>{" "}
+                        · <bdi>{group.item ?? copy.unitUnavailable}</bdi> ·{" "}
+                        <bdi>{group.unit ?? copy.unitUnavailable}</bdi> ·{" "}
+                        {report.groups.some(
+                          (other) =>
+                            other.productId !== group.productId &&
+                            other.item === group.item &&
+                            other.unit === group.unit,
+                        ) ? (
+                          <bdi>{group.productId}</bdi>
+                        ) : null}
+                        {formatNumber(group.rowCount, locale)} {copy.rows}
+                        {group.continuesBefore || group.continuesAfter ? (
+                          <span> · {copy.groupContinued}</span>
+                        ) : null}
+                        {Object.entries(group.totals).map(([column, total]) => (
+                          <span key={column}>
+                            {" "}
+                            · {
+                              copy.columns[column as InventoryReportColumn]
+                            }:{" "}
+                            <bdi>
+                              {reportCell(
+                                total,
+                                column as InventoryReportColumn,
+                                locale,
+                                report.timeZone,
+                              )}
+                            </bdi>
+                          </span>
+                        ))}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {report.rows.length === 0 ? (
+                  <p role="status">{copy.empty}</p>
+                ) : null}
+                <ReportTable
+                  report={report}
+                  locale={locale}
+                  onSort={(column) =>
+                    setQuery((current) => ({
+                      ...report.query,
+                      sort: column,
+                      direction:
+                        (current.sort ?? report.query.sort) === column &&
+                        (current.direction ?? report.query.direction) ===
+                          "ascending"
+                          ? "descending"
+                          : "ascending",
+                      page: 1,
+                    }))
+                  }
+                  onActivity={(row, opener) => {
+                    activityOpener.current = opener;
+                    setActivity(row);
+                    setActivityPage(1);
+                  }}
+                  onSource={openSource}
+                />
+                <footer className="report-actions">
+                  <p role="status">
+                    {copy.rows}: {formatNumber(report.totalRows, locale)} ·{" "}
+                    {formatNumber(report.query.page, locale)}
+                  </p>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    aria-disabled={report.query.page <= 1}
+                    onClick={() =>
+                      report.query.page > 1 &&
+                      setQuery({ ...report.query, page: report.query.page - 1 })
+                    }
+                  >
+                    {copy.previous}
+                  </button>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    aria-disabled={!report.hasMore}
+                    onClick={() =>
+                      report.hasMore &&
+                      setQuery({ ...report.query, page: report.query.page + 1 })
+                    }
+                  >
+                    {copy.next}
+                  </button>
+                  {permissions.includes("reports.inventory.export") ? (
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      disabled={exporting || stale || ordinary?.blocked}
+                      aria-describedby={
+                        ordinary?.blocked
+                          ? "report-ordinary-blocked"
+                          : undefined
+                      }
+                      onClick={(e) => {
+                        if (ordinary?.reordered) {
+                          ordinaryOpener.current = e.currentTarget;
+                          setConfirmOrdinary(true);
+                        } else void saveExport(false);
+                      }}
+                    >
+                      {copy.export}
+                    </button>
+                  ) : null}
+                  {ordinary?.blocked ? (
+                    <p id="report-ordinary-blocked">{copy.ordinaryBlocked}</p>
+                  ) : null}
+                  {identity?.state === "authenticated" &&
+                  identity.user.role.kind === "built-in" &&
+                  identity.user.role.key === "owner" &&
+                  valuation &&
+                  permissions.includes("reports.inventory.view") &&
+                  permissions.includes("reports.inventory.export") ? (
+                    <button
+                      id="report-sensitive-export"
+                      className="quiet-button"
+                      type="button"
+                      disabled={exporting || stale}
+                      onClick={() => {
+                        void stepUp.begin(
+                          "inventory.sensitive.export",
+                          undefined,
+                          async (challenge) => {
+                            await saveExport(true, challenge);
+                          },
+                        );
+                      }}
+                    >
+                      {copy.sensitiveExport}
+                    </button>
+                  ) : null}
+                  <p role="status">{exportStatus}</p>
+                </footer>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <dialog
+        ref={ordinaryDialog}
+        className="posted-purchase-dialog report-activity-dialog"
+        aria-labelledby="report-order-title"
+        onClose={() => {
+          setConfirmOrdinary(false);
+          focus(() =>
+            document.activeElement === document.body
+              ? ordinaryOpener.current
+              : null,
+          );
+        }}
+      >
+        <h2 id="report-order-title">{copy.export}</h2>
+        <p>{copy.ordinaryReordered}</p>
+        <button
+          type="button"
+          className="quiet-button"
+          onClick={() => ordinaryDialog.current?.close()}
+        >
+          {copy.close}
+        </button>
+        <button
+          type="button"
+          className="primary-button"
+          disabled={exporting || stale}
+          onClick={() => {
+            ordinaryDialog.current?.close();
+            void saveExport(false);
+          }}
+        >
+          {copy.continueExport}
+        </button>
+      </dialog>
       <dialog
         ref={activityDialog}
         className="posted-purchase-dialog report-activity-dialog"
         aria-labelledby="report-activity-title"
         onClose={() => {
           setActivity(null);
-          focus(() => activityOpener.current);
+          focus(() => {
+            const active = document.activeElement;
+            return active === document.body ||
+              active === activityOpener.current ||
+              activityDialog.current?.contains(active)
+              ? activityOpener.current
+              : null;
+          });
         }}
       >
         <header className="posted-review-heading">
@@ -545,11 +785,15 @@ export function InventoryReportsScreen({
             {copy.close}
           </button>
         </header>
-        {activity?.activities.length === 0 ? (
+        {activityError ? (
+          <p role="alert">{copy.unavailable}</p>
+        ) : activityResult === null ? (
+          <p role="status">{copy.loading}</p>
+        ) : activityResult.rows.length === 0 ? (
           <p role="status">{copy.noActivity}</p>
         ) : (
           <ol className="report-activity-list">
-            {activity?.activities.map((a) => (
+            {activityResult.rows.map((a) => (
               <li key={a.id}>
                 <p>
                   {copy.states[a.reason]} ·{" "}
@@ -564,6 +808,19 @@ export function InventoryReportsScreen({
                   {copy.columns.businessDate}:{" "}
                   <bdi>{a.businessDate ?? "—"}</bdi>
                 </p>
+                {a.valueFils === null ? null : (
+                  <p>
+                    {copy.columns.activityValueFils}:{" "}
+                    <bdi>
+                      {reportCell(
+                        a.valueFils,
+                        "activityValueFils",
+                        locale,
+                        timeZone ?? "UTC",
+                      )}
+                    </bdi>
+                  </p>
+                )}
                 {a.source === null ? null : (
                   <button
                     className="quiet-button"
@@ -581,6 +838,42 @@ export function InventoryReportsScreen({
             ))}
           </ol>
         )}
+        <footer className="report-footer">
+          <button
+            type="button"
+            className="quiet-button"
+            aria-disabled={activityPage === 1 || activityResult === null}
+            onClick={() => {
+              if (activityPage > 1 && activityResult !== null)
+                setActivityPage((p) => p - 1);
+            }}
+          >
+            {copy.previous}
+          </button>
+          <span>{formatNumber(activityPage, locale)}</span>
+          <button
+            type="button"
+            className="quiet-button"
+            aria-disabled={!activityResult?.hasMore}
+            onClick={() => {
+              if (activityResult?.hasMore) setActivityPage((p) => p + 1);
+            }}
+          >
+            {copy.next}
+          </button>
+          {activityError ? (
+            <button
+              type="button"
+              className="quiet-button"
+              onClick={() => {
+                setActivity(null);
+                setActivityPage(1);
+              }}
+            >
+              {copy.close}
+            </button>
+          ) : null}
+        </footer>
       </dialog>
       {source === null ? null : (
         <ReportSourceReview
@@ -590,7 +883,12 @@ export function InventoryReportsScreen({
           returnHash={`#/reports/inventory/${kind}`}
           onClose={() => {
             setSource(null);
-            focus(() => sourceOpener.current);
+            focus(() =>
+              document.activeElement === document.body ||
+              document.activeElement === sourceOpener.current
+                ? sourceOpener.current
+                : null,
+            );
           }}
         />
       )}

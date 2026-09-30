@@ -8,6 +8,7 @@ import type {
 import { reportMessages } from "./report-messages";
 import { formatCurrencyFromFils, formatNumber } from "./preferences";
 import { reportTimestamp } from "./report-time";
+import { formatReportAverageCost } from "./report-filter";
 
 export function reportCell(
   value: string | null | undefined,
@@ -21,18 +22,14 @@ export function reportCell(
   if (column.endsWith("Fils"))
     return formatCurrencyFromFils(BigInt(value), locale);
   if (column.endsWith("Scaled")) {
-    const cost = BigInt(value),
-      scale = 10n ** 13n;
-    const tail = (cost % scale)
-      .toString()
-      .padStart(13, "0")
-      .replace(/0+$/u, "");
-    return `${formatNumber(cost / scale, locale)}${tail === "" ? "" : `.${tail}`} ${locale === "ar" ? "د.ع" : "IQD"}`;
+    return formatReportAverageCost(BigInt(value), locale);
   }
   if (/Quantity|Per30Days/u.test(column))
     return formatNumber(BigInt(value), locale);
   if (column === "postedAt") return reportTimestamp(value, locale, timeZone);
-  return copy.states[value] ?? value;
+  return ["status", "alert", "availability"].includes(column)
+    ? (copy.states[value] ?? value)
+    : value;
 }
 
 /** Shared report controls/table seam for the purchase report family as well. */
@@ -41,11 +38,13 @@ export function ReportColumnFilters({
   columns,
   locale,
   onChange,
+  error,
 }: {
   readonly filters: InventoryReportQuery["filters"];
   readonly columns: readonly InventoryReportColumn[];
   readonly locale: "ar" | "en";
   readonly onChange: (filters: InventoryReportQuery["filters"]) => void;
+  readonly error?: { index: number; message: string } | null;
 }): React.JSX.Element {
   const copy = reportMessages[locale];
   return (
@@ -65,11 +64,16 @@ export function ReportColumnFilters({
                       ? {
                           ...f,
                           column,
+                          value: "",
                           operator: /Quantity|Fils|Scaled|Per30Days/u.test(
                             column,
                           )
                             ? "eq"
-                            : "contains",
+                            : ["status", "alert", "availability"].includes(
+                                  column,
+                                )
+                              ? "eq"
+                              : "contains",
                         }
                       : f,
                   ),
@@ -102,7 +106,9 @@ export function ReportColumnFilters({
             >
               {(/Quantity|Fils|Scaled|Per30Days/u.test(filter.column)
                 ? ["eq", "gte", "lte"]
-                : ["contains", "eq"]
+                : ["status", "alert", "availability"].includes(filter.column)
+                  ? ["eq"]
+                  : ["contains", "eq"]
               ).map((op) => (
                 <option key={op} value={op}>
                   {copy[op as "eq" | "gte" | "lte" | "contains"]}
@@ -112,17 +118,58 @@ export function ReportColumnFilters({
           </label>
           <label>
             {copy.filterValue}
-            <input
-              value={filter.value}
-              onChange={(e) =>
-                onChange(
-                  filters.map((f, i) =>
-                    i === index ? { ...f, value: e.target.value } : f,
-                  ),
-                )
-              }
-            />
+            {["status", "alert", "availability"].includes(filter.column) ? (
+              <select
+                value={filter.value}
+                onChange={(e) =>
+                  onChange(
+                    filters.map((f, i) =>
+                      i === index ? { ...f, value: e.target.value } : f,
+                    ),
+                  )
+                }
+              >
+                <option value="">{copy.chooseValue}</option>
+                {(filter.column === "status"
+                  ? ["eligible", "expired", "recalled", "quarantined"]
+                  : filter.column === "alert"
+                    ? [
+                        "expired",
+                        "recalled",
+                        "quarantined",
+                        "historical-policy",
+                      ]
+                    : ["available", "historical-policy-unavailable"]
+                ).map((value) => (
+                  <option key={value} value={value}>
+                    {copy.states[value]}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                aria-invalid={error?.index === index}
+                aria-describedby={
+                  error?.index === index
+                    ? `report-filter-error-${index}`
+                    : undefined
+                }
+                value={filter.value}
+                onChange={(e) =>
+                  onChange(
+                    filters.map((f, i) =>
+                      i === index ? { ...f, value: e.target.value } : f,
+                    ),
+                  )
+                }
+              />
+            )}
           </label>
+          {error?.index === index ? (
+            <p id={`report-filter-error-${index}`} role="alert">
+              {error.message}
+            </p>
+          ) : null}
           <button
             className="quiet-button"
             type="button"
@@ -199,7 +246,17 @@ export function ReportTable({
         </thead>
         <tbody>
           {report.rows.map((row) => (
-            <tr key={row.id}>
+            <tr
+              key={row.id}
+              data-group-id={
+                report.groups.find((g) => g.rowIds.includes(row.id))?.id
+              }
+              aria-describedby={
+                report.groups.some((g) => g.rowIds.includes(row.id))
+                  ? `report-group-${report.groups.findIndex((g) => g.rowIds.includes(row.id))}`
+                  : undefined
+              }
+            >
               {report.columns.map((column, index) =>
                 index === 0 ? (
                   <th key={column} scope="row">
@@ -231,8 +288,7 @@ export function ReportTable({
                   type="button"
                   onClick={(e) => onActivity(row, e.currentTarget)}
                 >
-                  {copy.activity} ({formatNumber(row.activities.length, locale)}
-                  )
+                  {copy.activity} ({formatNumber(row.activityCount, locale)})
                 </button>
               </td>
               <td>

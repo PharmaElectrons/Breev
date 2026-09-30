@@ -32,9 +32,8 @@ const report: InventoryReportExport = {
       id,
       productId: id,
       batchId: null,
-      movementIds: [],
+      activityCount: 0,
       source: null,
-      activities: [],
       cells: {
         item: '=HYPERLINK("https://example.invalid", "دواء")',
         closingQuantity: "12345678901234567890",

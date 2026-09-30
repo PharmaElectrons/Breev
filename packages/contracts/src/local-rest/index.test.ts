@@ -404,8 +404,8 @@ describe("identity role contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and implemented permission surface", () => {
-    expect(LOCAL_API_VERSION).toBe("19");
-    expect(LOCAL_SCHEMA_VERSION).toBe("19");
+    expect(LOCAL_API_VERSION).toBe("20");
+    expect(LOCAL_SCHEMA_VERSION).toBe("21");
     expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
       "attendance.record",
       "catalog.item.manage",

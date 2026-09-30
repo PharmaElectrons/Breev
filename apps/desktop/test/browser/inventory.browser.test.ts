@@ -82,6 +82,8 @@ let sharedAdministrator: Pool | undefined;
 let sharedCredentials: Credentials | undefined;
 let sharedDatabaseRoles: SeparatedDatabaseRoles | undefined;
 
+test.use({ trace: "retain-on-failure" });
+
 test.describe.serial("read-only inventory review", () => {
   let administrator: Pool;
   let api: ChildProcessWithoutNullStreams | undefined;
@@ -90,6 +92,7 @@ test.describe.serial("read-only inventory review", () => {
   let databaseRoles: SeparatedDatabaseRoles;
   let postgres: StartedPostgreSqlContainer | undefined;
   let product: Product;
+  let supplier: Supplier;
   let renderer: RendererServer;
 
   test.beforeAll("inventory fixture", async () => {
@@ -125,7 +128,7 @@ test.describe.serial("read-only inventory review", () => {
     });
     expect(bootstrap.status).toBe(201);
     await login(OWNER_USERNAME, OWNER_PASSWORD);
-    const supplier = await createSupplier();
+    supplier = await createSupplier();
     const created = await apiRequest(
       "POST",
       "/catalog/products",
@@ -477,8 +480,51 @@ test.describe.serial("read-only inventory review", () => {
             )
             .first(),
         ).toBeVisible();
+        await page.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: evidencePath(
+            "issue-64",
+            "after",
+            `purchase-source-${locale}-${theme}.png`,
+          ),
+        });
         await page.locator(".report-source-dialog header button").click();
         await expect(sourceButton).toBeFocused();
+        const captureActivity = async (kind: string) => {
+          const rows = page.locator(".report-table tbody tr");
+          if ((await rows.count()) === 0) return;
+          const opener = rows.first().locator("td").nth(-2).getByRole("button");
+          await opener.focus();
+          await pressKeyOnFocused(page, opener, "Enter");
+          const activity = page.locator(
+            "dialog[aria-labelledby='report-activity-title']",
+          );
+          await expect(activity).toBeVisible();
+          await expect(
+            activity.locator("footer button").first(),
+          ).toHaveAttribute("aria-disabled", "true");
+          await expect(
+            activity
+              .locator(".report-activity-list, p[role='status']")
+              .filter({ hasNotText: locale === "ar" ? "جارٍ" : "Loading" }),
+          ).toHaveCount(1);
+          expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+            [],
+          );
+          await page.screenshot({
+            animations: "disabled",
+            fullPage: true,
+            path: evidencePath(
+              "issue-64",
+              "after",
+              `${kind}-activity-${locale}-${theme}.png`,
+            ),
+          });
+          await activity.locator("header button").click();
+          await expect(opener).toBeFocused();
+        };
+        await captureActivity("quantity");
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -508,9 +554,178 @@ test.describe.serial("read-only inventory review", () => {
             ),
           });
           await assertReportTextResize(page);
+          await captureActivity(kind);
         }
         await context.close();
       }
+    }
+  });
+
+  test("preserves report keyboard focus through delayed, superseded and failed refreshes", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/batches-expiry`);
+    await expect(page.locator(".report-table tbody tr").first()).toBeVisible();
+    const header = page
+      .getByRole("columnheader", { name: "Closing quantity" })
+      .getByRole("button");
+    const gates: Array<{ release: () => void; entered: Promise<void> }> = [];
+    let fail = false;
+    await page.route("**/reports/inventory/batches-expiry?*", async (route) => {
+      if (fail) {
+        await route.fulfill({
+          status: 503,
+          json: { message: "deterministic unavailable fixture" },
+        });
+        return;
+      }
+      let release!: () => void;
+      let entered!: () => void;
+      const wait = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const acknowledged = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      gates.push({ release, entered: acknowledged });
+      const response = await route.fetch();
+      entered();
+      await wait;
+      await route.fulfill({ response });
+    });
+    const requested = page.waitForRequest(
+      "**/reports/inventory/batches-expiry?*",
+    );
+    await header.focus();
+    await pressKeyOnFocused(page, header, "Enter");
+    await requested;
+    await expect(
+      page.getByRole("status").filter({ hasText: "Loading report" }),
+    ).toBeVisible();
+    await expect(header).toBeFocused();
+    const nextRequest = page.waitForRequest(
+      "**/reports/inventory/batches-expiry?*",
+    );
+    await pressKeyOnFocused(page, header, "Space");
+    await nextRequest;
+    await expect.poll(() => gates.length).toBe(2);
+    await gates[1]!.entered;
+    gates[1]!.release();
+    await expect(header.locator("..")).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    await expect(header).toBeFocused();
+    const from = page.getByLabel("From · posting time", { exact: true });
+    await from.focus();
+    await expect(from).toBeFocused();
+    await gates[0]!.entered;
+    gates[0]!.release();
+    await expect(header.locator("..")).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    await expect(from).toBeFocused();
+    fail = true;
+    await header.focus();
+    await pressKeyOnFocused(page, header, "Enter");
+    await expect(page.getByRole("alert")).toContainText("could not");
+    await expect(header).toBeFocused();
+    await expect(
+      page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await from.fill("2026-09-01T00:00:00.123");
+    await page.unroute("**/reports/inventory/batches-expiry?*");
+    const retry = page.getByRole("button", { name: "Retry", exact: true });
+    await retry.focus();
+    await pressKeyOnFocused(page, retry, "Enter");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(from).toHaveValue("2026-09-01T00:00:00.123");
+    await expect(
+      page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await page
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      }),
+    ).toBeEnabled();
+  });
+
+  test("filters exact displayed IQD and localized enums with announced validation", async ({
+    browser,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    for (const locale of ["en", "ar"] as const) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await installDesktopFake(page, renderer.origin, locale, "light");
+      await page.goto(`${renderer.origin}#/reports/inventory/value`);
+      await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+      const add = page.getByRole("button", {
+        name: locale === "en" ? "Add column filter" : "إضافة مرشح عمود",
+        exact: true,
+      });
+      await add.click();
+      const filter = page.locator(".report-filter-row").first();
+      await filter.locator("select").first().selectOption("closingValueFils");
+      await filter.locator("input").fill("1.0001");
+      const apply = page.getByRole("button", {
+        name: locale === "en" ? "Apply filters" : "تطبيق المرشحات",
+        exact: true,
+      });
+      await apply.click();
+      await expect(filter.getByRole("alert")).toBeVisible();
+      await expect(filter.locator("input")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      await filter.locator("select").nth(1).selectOption("gte");
+      await filter.locator("input").fill(locale === "ar" ? "-٠٫٠٠١" : "-0.001");
+      const submitted = page.waitForRequest("**/reports/inventory/value?*");
+      await apply.click();
+      const wire = JSON.parse(
+        new URL((await submitted).url()).searchParams.get("query")!,
+      ) as { filters: Array<{ value: string }> };
+      expect(wire.filters[0]!.value).toBe("-1");
+      await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+      await expect(filter.getByRole("alert")).toHaveCount(0);
+      await page.locator(".report-categories button").nth(3).click();
+      await expect(page.locator(".report-table caption")).toContainText(
+        locale === "en" ? "Batches" : "الدفعات",
+      );
+      await add.click();
+      await page
+        .locator(".report-filter-row select")
+        .first()
+        .selectOption("status");
+      const enumSelect = page.locator(".report-filter-row select").nth(2);
+      await enumSelect.selectOption({
+        label: locale === "en" ? "Eligible" : "مؤهل",
+      });
+      const enumRequest = page.waitForRequest(
+        "**/reports/inventory/batches-expiry?*",
+      );
+      await apply.click();
+      const enumWire = JSON.parse(
+        new URL((await enumRequest).url()).searchParams.get("query")!,
+      ) as { filters: Array<{ value: string }> };
+      expect(enumWire.filters[0]!.value).toBe("eligible");
+      await expect(
+        page.locator(".report-table tbody tr").first(),
+      ).toBeVisible();
+      await context.close();
     }
   });
 
@@ -564,9 +779,7 @@ test.describe.serial("read-only inventory review", () => {
       ],
     });
     expect(
-      exported.rows.every((row) =>
-        row.activities.every((activity) => activity.valueFils === null),
-      ),
+      exported.rows.every((row) => row.cells.closingValueFils === undefined),
     ).toBe(true);
     await page
       .getByRole("button", {
@@ -600,6 +813,79 @@ test.describe.serial("read-only inventory review", () => {
         .getByRole("status")
         .filter({ hasText: "No matching rows for this period and filters." }),
     ).toBeVisible();
+  });
+
+  test("redacts exports after sensitive sorting and refuses sensitive membership", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    for (const kind of ["value", "average-cost"]) {
+      await page.goto(`${renderer.origin}#/reports/inventory/${kind}`);
+      await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+      const column = kind === "value" ? "Closing value" : "Closing WAC / unit";
+      const header = page
+        .getByRole("columnheader", { name: column })
+        .getByRole("button");
+      await header.click();
+      await expect(header.locator("..")).toHaveAttribute(
+        "aria-sort",
+        "ascending",
+      );
+      const exportButton = page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      });
+      await expect(exportButton).toBeEnabled();
+      await exportButton.click();
+      const confirmation = page.getByRole("dialog", {
+        name: "Export CSV · without costs",
+        exact: true,
+      });
+      await expect(confirmation).toContainText(
+        "order items by name, ascending",
+      );
+      await confirmation
+        .getByRole("button", { name: "Continue to save", exact: true })
+        .click();
+      await expect(
+        page.getByRole("status").filter({ hasText: "Report saved." }),
+      ).toBeVisible();
+      const saved = await page.evaluate(
+        () =>
+          (globalThis as { __inventoryExport?: Record<string, unknown> })
+            .__inventoryExport,
+      );
+      expect(saved).toBeDefined();
+      delete saved!.format;
+      const exported = inventoryReportExportSchema.parse(saved);
+      expect(exported.query.sort).toBe("item");
+      expect(exported.query.direction).toBe("ascending");
+      expect(exported.rows[0]!.cells.closingValueFils).toBeUndefined();
+      expect(exported.rows[0]!.cells.closingAverageCostScaled).toBeUndefined();
+    }
+    await page
+      .getByRole("button", { name: "Add column filter", exact: true })
+      .click();
+    await page
+      .locator(".report-filter-row select")
+      .first()
+      .selectOption("closingAverageCostScaled");
+    await page.locator(".report-filter-row input").fill("1");
+    await page.locator(".report-filter-row select").nth(1).selectOption("gte");
+    await page
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(page.locator("#report-ordinary-blocked")).toContainText(
+      "Cost criteria determine",
+    );
+    await expect(
+      page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await expect(page.locator("#report-sensitive-export")).toBeEnabled();
   });
 
   test("shows a recoverable API-down state and owner-only export", async ({
@@ -961,12 +1247,23 @@ test.describe.serial("read-only inventory review", () => {
       .getByRole("button", { name: "Apply variance", exact: true })
       .click();
     const dialog = page.getByRole("dialog", { name: "Apply variance" });
+    // Visibility precedes the dialog's initial focus commit. Synchronize on
+    // that commit before typing so a late focus request cannot steal evidence.
+    await expect(
+      dialog.getByRole("textbox", { name: "Application reason", exact: true }),
+    ).toBeFocused();
     await dialog
       .getByRole("textbox", { name: "Application reason", exact: true })
       .fill("Shelf was one strip short");
     await dialog
       .getByRole("textbox", { name: "Evidence", exact: true })
       .fill("Count sheet gate");
+    await expect(
+      dialog.getByRole("textbox", { name: "Application reason", exact: true }),
+    ).toHaveValue("Shelf was one strip short");
+    await expect(
+      dialog.getByRole("textbox", { name: "Evidence", exact: true }),
+    ).toHaveValue("Count sheet gate");
     await dialog
       .getByRole("button", { name: "Apply variance", exact: true })
       .click();
@@ -1010,12 +1307,78 @@ test.describe.serial("read-only inventory review", () => {
         expect(
           (await new AxeBuilder({ page: reportPage }).analyze()).violations,
         ).toEqual([]);
+        await reportPage.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: evidencePath(
+            "issue-64",
+            "after",
+            `count-source-${locale}-${theme}.png`,
+          ),
+        });
         await review.locator("header button").click();
         await expect(source).toBeFocused();
         await expect(reportRow).toHaveCount(1);
         await context.close();
       }
     }
+  });
+
+  test("pages complete posted activity and restores nested source and drawer focus", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    for (let index = 0; index < 51; index++)
+      await postPurchase(supplier, product, `ACTIVITY-${index}`);
+    const frozen = await administrator.query<{
+      movements: string;
+      journals: string;
+    }>(
+      `select (select count(*)::text from inventory_movements) as movements,
+              (select count(*)::text from accounting_journal_entries) as journals`,
+    );
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    const row = page
+      .locator(".report-table tbody tr")
+      .filter({ hasText: product.displayName });
+    const opener = row.locator("td").nth(-2).getByRole("button");
+    await opener.focus();
+    await pressKeyOnFocused(page, opener, "Enter");
+    const activity = page.locator(
+      "dialog[aria-labelledby='report-activity-title']",
+    );
+    await expect(activity.locator("li")).toHaveCount(50);
+    const source = activity.locator("li").first().getByRole("button");
+    await source.focus();
+    await pressKeyOnFocused(page, source, "Space");
+    await expect(page.locator(".report-source-dialog")).toBeVisible();
+    await page.locator(".report-source-dialog header button").click();
+    await expect(source).toBeFocused();
+    const next = activity.getByRole("button", {
+      name: "Next page",
+      exact: true,
+    });
+    await next.focus();
+    await pressKeyOnFocused(page, next, "Enter");
+    await expect(next).toHaveAttribute("aria-disabled", "true");
+    await expect(next).toBeFocused();
+    await expect(activity.locator("li")).toHaveCount(5);
+    await activity
+      .getByRole("button", { name: "Previous page", exact: true })
+      .click();
+    await expect(activity.locator("li")).toHaveCount(50);
+    await activity.locator("header button").click();
+    await expect(opener).toBeFocused();
+    const after = await administrator.query<{
+      movements: string;
+      journals: string;
+    }>(
+      `select (select count(*)::text from inventory_movements) as movements,
+              (select count(*)::text from accounting_journal_entries) as journals`,
+    );
+    expect(after.rows).toEqual(frozen.rows);
   });
 });
 
@@ -1491,13 +1854,14 @@ async function createSupplier(
 async function postPurchase(
   supplier: Supplier,
   item: Product,
+  reference = "BROWSER-INVENTORY-1",
 ): Promise<PurchasePostResult> {
   const created = await apiRequest("POST", "/purchases/drafts", {
     idempotencyKey: uuidV7(),
     invoiceDate: "2026-06-15",
     settlementContext: "debt",
     supplierId: supplier.id,
-    supplierInvoiceNumber: "BROWSER-INVENTORY-1",
+    supplierInvoiceNumber: reference,
   });
   expect(created.status).toBe(201);
   let draft = (created.body as { draft: PurchaseDraft }).draft;
@@ -1508,7 +1872,8 @@ async function postPurchase(
     expiryDate: "2027-01-31",
     idempotencyKey: uuidV7(),
     itemId: item.id,
-    lotNumber: "BROWSER-LOT-1",
+    lotNumber:
+      reference === "BROWSER-INVENTORY-1" ? "BROWSER-LOT-1" : reference,
     notes: null,
     pricing: { method: "by-price", retailPriceFils: "999999" },
     unit: { kind: "inventory-unit" },

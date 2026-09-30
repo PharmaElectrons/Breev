@@ -4,11 +4,12 @@ import {
   inventoryReportExportSchema,
   inventoryReportDenialSchema,
   inventoryReportProtectedExportRequestSchema,
+  inventoryReportActivityPageSchema,
 } from "./inventory-reports.js";
 export * from "./inventory-reports.js";
 
-export const LOCAL_API_VERSION = "19" as const;
-export const LOCAL_SCHEMA_VERSION = "19" as const;
+export const LOCAL_API_VERSION = "20" as const;
+export const LOCAL_SCHEMA_VERSION = "21" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -2334,6 +2335,14 @@ export const inventoryReportExportContract = {
     413: inventoryReportDenialSchema,
   },
 } as const;
+export const inventoryReportActivityContract = {
+  ...inventoryReportContract,
+  path: "/reports/inventory/:kind/activity",
+  responses: {
+    ...inventoryReportContract.responses,
+    200: inventoryReportActivityPageSchema,
+  },
+} as const;
 export const inventoryReportProtectedExportContract = {
   method: "POST",
   path: "/inventory/report-exports",
@@ -3214,6 +3223,7 @@ export const reorderItemReturnsPath = (itemId: string): string =>
 
 export const INVENTORY_CONTRACTS = [
   inventoryReportContract,
+  inventoryReportActivityContract,
   inventoryReportExportContract,
   inventoryReportProtectedExportContract,
   inventoryAllocationPreviewContract,

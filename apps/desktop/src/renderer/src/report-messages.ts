@@ -5,6 +5,17 @@ import type {
 
 interface ReportCopy {
   title: string;
+  category: string;
+  inventoryCategory: string;
+  stale: string;
+  retry: string;
+  chooseValue: string;
+  filterPrecision: string;
+  filterNumber: string;
+  groupContinued: string;
+  ordinaryBlocked: string;
+  ordinaryReordered: string;
+  continueExport: string;
   description: string;
   from: string;
   to: string;
@@ -57,6 +68,23 @@ interface ReportCopy {
 export const reportMessages: Record<"ar" | "en", ReportCopy> = {
   en: {
     title: "Inventory reports",
+    category: "Category",
+    inventoryCategory: "Items and inventory",
+    stale:
+      "The displayed result is from the last successful request. Apply your changes before exporting.",
+    retry: "Retry",
+    chooseValue: "Choose a value",
+    filterPrecision:
+      "Too many decimal places: quantities are whole units, IQD supports 3 places and average cost supports 13.",
+    filterNumber:
+      "Enter an exact number using correctly grouped digits and a decimal separator.",
+    groupContinued:
+      "Includes rows on other pages; totals cover the full filtered group.",
+    ordinaryBlocked:
+      "Cost criteria determine which rows are included. Remove those criteria or use the protected export.",
+    ordinaryReordered:
+      "This export omits costs and will order items by name, ascending. The report is currently sorted by a sensitive value.",
+    continueExport: "Continue to save",
     description:
       "Historical stock and posted activity. From is inclusive; To is exclusive.",
     from: "From · posting time",
@@ -173,6 +201,21 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
   },
   ar: {
     title: "تقارير المخزون",
+    category: "التصنيف",
+    inventoryCategory: "المواد والمخزون",
+    stale: "النتيجة المعروضة من آخر طلب ناجح. طبّق التغييرات قبل التصدير.",
+    retry: "إعادة المحاولة",
+    chooseValue: "اختر قيمة",
+    filterPrecision:
+      "المنازل العشرية زائدة: الكميات وحدات صحيحة، والدينار يدعم ٣ منازل ومتوسط الكلفة ١٣ منزلة.",
+    filterNumber: "أدخل رقماً دقيقاً مع فواصل الآلاف والعشرية الصحيحة.",
+    groupContinued:
+      "يشمل صفوفاً في صفحات أخرى؛ الإجماليات تغطي المجموعة المرشّحة كاملة.",
+    ordinaryBlocked:
+      "معايير الكلفة تحدد الصفوف المشمولة. أزل هذه المعايير أو استخدم التصدير المحمي.",
+    ordinaryReordered:
+      "هذا التصدير يحذف الكلفة ويرتب الأصناف حسب الاسم تصاعدياً. التقرير مرتب حالياً بقيمة حساسة.",
+    continueExport: "متابعة الحفظ",
     description:
       "المخزون التاريخي والحركات المرحّلة. وقت البداية مشمول ووقت النهاية غير مشمول.",
     from: "من · وقت الترحيل",

@@ -13,6 +13,8 @@ import {
   type InventoryReportKind,
   type InventoryReportQuery,
   type InventoryReportProtectedExportRequest,
+  inventoryReportActivityPageSchema,
+  type InventoryReportActivityPage,
 } from "@breev/contracts/local-rest";
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 export class ReportApiDenied extends Error {
@@ -77,6 +79,20 @@ export async function exportInventoryReport(
     await reportRequest(
       baseUrl,
       `${inventoryReportPath(kind)}/export?${new URLSearchParams({ query: JSON.stringify(query) }).toString()}`,
+    ),
+  );
+}
+export async function readInventoryReportActivity(
+  baseUrl: string,
+  kind: InventoryReportKind,
+  query: InventoryReportQuery,
+  rowId: string,
+  page = 1,
+): Promise<InventoryReportActivityPage> {
+  return inventoryReportActivityPageSchema.parse(
+    await reportRequest(
+      baseUrl,
+      `${inventoryReportPath(kind)}/activity?${new URLSearchParams({ query: JSON.stringify({ query, rowId, page, pageSize: 50 }) }).toString()}`,
     ),
   );
 }

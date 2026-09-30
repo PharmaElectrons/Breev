@@ -139,7 +139,18 @@ const integer = z
   .string()
   .regex(/^(?:0|-?[1-9][0-9]*)$/u)
   .max(80);
-const instant = z.iso.datetime();
+const instant = z.iso
+  .datetime()
+  .refine(
+    (value) => (value.match(/\.(\d+)Z$/u)?.[1]?.length ?? 0) <= 6,
+    "Posting timestamps support at most six fractional digits",
+  );
+function instantMicros(value: string): bigint {
+  const [seconds, fraction = ""] = value.replace(/Z$/u, "").split(".");
+  return (
+    BigInt(Date.parse(`${seconds}Z`)) * 1000n + BigInt(fraction.padEnd(6, "0"))
+  );
+}
 export const inventoryReportQuerySchema = z
   .strictObject({
     from: instant.optional(),
@@ -177,7 +188,9 @@ export const inventoryReportQuerySchema = z
       (q.from === undefined) !== (q.to === undefined) ||
       (q.from !== undefined &&
         q.to !== undefined &&
-        Date.parse(q.from) >= Date.parse(q.to))
+        instant.safeParse(q.from).success &&
+        instant.safeParse(q.to).success &&
+        instantMicros(q.from) >= instantMicros(q.to))
     ) {
       ctx.addIssue({
         code: "custom",
@@ -257,6 +270,7 @@ export const inventoryReportSourceSchema = z.strictObject({
 export type InventoryReportSource = z.infer<typeof inventoryReportSourceSchema>;
 export const inventoryReportActivitySchema = z.strictObject({
   id: z.uuidv7(),
+  movementId: z.uuidv7().nullable(),
   quantity: integer,
   valueFils: integer.nullable(),
   postedAt: instant,
@@ -314,9 +328,8 @@ export const inventoryReportRowSchema = z.strictObject({
   productId: z.uuidv7(),
   batchId: z.uuidv7().nullable(),
   cells: inventoryReportCellsSchema,
-  activities: z.array(inventoryReportActivitySchema),
+  activityCount: z.number().int().nonnegative(),
   source: inventoryReportSourceSchema.nullable(),
-  movementIds: z.array(z.uuidv7()),
 });
 export type InventoryReportRow = z.infer<typeof inventoryReportRowSchema>;
 export const inventoryReportSchema = z.strictObject({
@@ -338,6 +351,12 @@ export const inventoryReportSchema = z.strictObject({
   groups: z.array(
     z.strictObject({
       key: z.string().nullable(),
+      id: z.string().min(1).max(1200),
+      item: z.string().max(726).nullable(),
+      unit: z.string().max(40).nullable(),
+      rowIds: z.array(z.string().min(1).max(100)),
+      continuesBefore: z.boolean(),
+      continuesAfter: z.boolean(),
       productId: z.uuidv7().nullable(),
       rowCount: z.number().int().nonnegative(),
       totals: z.partialRecord(inventoryReportColumnSchema, integer),
@@ -355,6 +374,21 @@ export const inventoryReportSchema = z.strictObject({
   ),
 });
 export type InventoryReport = z.infer<typeof inventoryReportSchema>;
+export const inventoryReportActivityQuerySchema = z.strictObject({
+  query: inventoryReportQuerySchema,
+  rowId: z.string().min(1).max(100),
+  page: z.number().int().min(1).max(100_000).default(1),
+  pageSize: z.number().int().min(1).max(100).default(50),
+});
+export const inventoryReportActivityPageSchema = z.strictObject({
+  rows: z.array(inventoryReportActivitySchema).max(100),
+  totalRows: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  hasMore: z.boolean(),
+});
+export type InventoryReportActivityPage = z.infer<
+  typeof inventoryReportActivityPageSchema
+>;
 export const inventoryReportExportSchema = inventoryReportSchema
   .extend({ exportedAt: instant })
   .refine(
@@ -378,7 +412,6 @@ export const inventoryReportDenialSchema = z.strictObject({
     "future-cutoff",
     "sensitive-query-denied",
     "export-too-large",
-    "report-too-large",
     "owner-role-required",
     "idempotency-conflict",
   ]),

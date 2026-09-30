@@ -19,7 +19,7 @@ export function serializeInventoryReportCsv(
     "Batch ID",
     "Source document ID",
     "Source document type",
-    "Movement IDs",
+    "Activity count",
     "Explanations",
   ];
   const rows = report.rows.map((row) => [
@@ -36,7 +36,7 @@ export function serializeInventoryReportCsv(
     row.batchId ?? "",
     row.source?.documentId ?? "",
     row.source?.documentType ?? "",
-    row.movementIds.join(" "),
+    row.activityCount.toString(),
     report.explanations.join("; "),
     ...report.columns.map((column) => row.cells[column] ?? ""),
   ]);

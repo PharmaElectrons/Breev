@@ -10,6 +10,7 @@ import type { Request } from "express";
 import {
   inventoryReportContract,
   inventoryReportExportContract,
+  inventoryReportActivityContract,
 } from "@breev/contracts/local-rest";
 import { translateIdentityDenial } from "../identity-access/identity-access.controller.js";
 import {
@@ -38,6 +39,16 @@ export class InventoryReportController {
   ) {
     return await translateReportDenial(() =>
       this.reports.read(request, kind, query, true),
+    );
+  }
+  @Get(inventoryReportActivityContract.path)
+  public async activity(
+    @Req() request: Request,
+    @Param("kind") kind: string,
+    @Query() query: unknown,
+  ) {
+    return await translateReportDenial(() =>
+      this.reports.activity(request, kind, query),
     );
   }
 }

@@ -218,6 +218,20 @@
       "when": 1790467200000,
       "tag": "0030_inventory_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790553600000,
+      "tag": "0031_report_posting_cutoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790640000000,
+      "tag": "0032_report_bounded_reads",
+      "breakpoints": true
     }
   ]
 }

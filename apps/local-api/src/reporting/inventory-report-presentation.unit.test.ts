@@ -1,109 +1,113 @@
 import { describe, expect, it } from "vitest";
 import {
   inventoryReportQueryFor,
-  inventoryReportSchema,
+  type InventoryReport,
 } from "@breev/contracts/local-rest";
 import {
   presentInventoryReport,
-  type ReportPresentationInput,
+  presentReportActivity,
 } from "./inventory-report-presentation.js";
-const productId = "019941a0-0000-7000-8000-000000000001";
-const actorId = "019941a0-0000-7000-8000-000000000002";
-const otherActorId = "019941a0-0000-7000-8000-000000000003";
-const sourceId = "019941a0-0000-7000-8000-000000000004";
-function fixture(): ReportPresentationInput {
+const id = "019941a0-0000-7000-8000-000000000001";
+const source = {
+  documentId: id,
+  documentType: "purchase-adjustment" as const,
+  originalDocumentId: id,
+  label: "P1-A01",
+  openable: true,
+};
+const permissions = {
+  valuation: false,
+  purchasesOpenable: true,
+  purchaseCorrectionsOpenable: false,
+  countsOpenable: false,
+};
+function report(): InventoryReport {
   return {
-    kind: "quantity",
-    query: {
-      ...inventoryReportQueryFor("quantity").parse({
-        actorId,
-        groupBy: "item",
-        pageSize: 1,
-      }),
-      from: "2026-09-01T00:00:00.000Z",
-      to: "2026-09-30T00:00:00.000Z",
-    },
-    pharmacyId: sourceId,
-    capturedAt: "2026-09-30T00:00:00.000Z",
+    kind: "value",
+    pharmacyId: id,
+    capturedAt: "2026-09-30T00:00:00Z",
     timeZone: "Asia/Baghdad",
-    valuation: false,
-    purchasesOpenable: false,
-    purchaseCorrectionsOpenable: false,
-    countsOpenable: false,
-    exportAll: false,
-    users: new Map([[actorId, "Owner"]]),
-    metadata: new Map([
-      [
-        `${sourceId}:1`,
-        {
-          item: "Recorded item",
-          unit: "strip",
-          businessDate: "2026-08-01",
-          label: "P1/2026",
-          originalDocumentId: null,
-        },
-      ],
-    ]),
-    inventory: {
-      batches: [],
-      counts: [],
-      countMetadata: new Map(),
-      facts: [
-        {
-          id: productId,
-          productId,
-          batchId: null,
-          quantity: 10n,
-          valueFils: 1000n,
-          occurredAt: new Date("2026-08-01T00:00:00Z"),
-          actorId,
-          reason: "purchase-receipt",
-          source: { id: sourceId, type: "purchase-invoice", ordinal: 1 },
-          movementId: productId,
-        },
-        {
-          id: otherActorId,
-          productId,
-          batchId: null,
-          quantity: -2n,
-          valueFils: -200n,
-          occurredAt: new Date("2026-09-02T00:00:00Z"),
-          actorId: otherActorId,
-          reason: "purchase-return",
-          source: { id: sourceId, type: "purchase-return", ordinal: 1 },
-          movementId: otherActorId,
-        },
-      ],
+    query: {
+      ...inventoryReportQueryFor("value").parse({
+        columns: ["closingValueFils"],
+      }),
+      from: "2026-09-01T00:00:00Z",
+      to: "2026-09-30T00:00:00Z",
     },
+    dateBasis: "immutable-posting-time",
+    balanceBasis: "all-pharmacy-activity",
+    sensitivity: "valuation",
+    columns: ["closingValueFils"],
+    rows: [
+      {
+        id,
+        productId: id,
+        batchId: null,
+        source,
+        activityCount: 2,
+        cells: {
+          item: "Frozen item",
+          unit: "strip",
+          openingQuantity: "10",
+          closingQuantity: "8",
+          closingValueFils: "800",
+        },
+      },
+    ],
+    totalRows: 1,
+    hasMore: false,
+    actors: [],
+    explanations: [],
+    groups: [
+      {
+        id: "group",
+        key: "Frozen item",
+        item: "Frozen item",
+        unit: "strip",
+        productId: id,
+        rowCount: 1,
+        rowIds: [id],
+        continuesBefore: false,
+        continuesAfter: false,
+        totals: { activityQuantity: "-2", activityValueFils: "-200" },
+      },
+    ],
   };
 }
-describe("report composition", () => {
-  it("keeps pharmacy balances when the actor has no period activity", () => {
-    const report = inventoryReportSchema.parse(
-      presentInventoryReport(fixture()),
-    );
-    expect(report.rows[0]?.cells).toEqual({
-      item: "Recorded item",
-      unit: "strip",
-      openingQuantity: "10",
-      periodQuantity: "-2",
-      activityQuantity: "0",
-      closingQuantity: "8",
-    });
-    expect(report.rows[0]?.activities).toEqual([]);
-    expect(report.rows[0]?.source?.openable).toBe(false);
-    expect(report.groups[0]?.totals).toEqual({ activityQuantity: "0" });
+describe("report permission presentation", () => {
+  it("redacts rows, groups and selection metadata without changing balances or membership", () => {
+    const result = presentInventoryReport(report(), permissions);
+    expect(result.rows[0]!.cells.closingValueFils).toBeUndefined();
+    expect(result.rows[0]!.cells.closingQuantity).toBe("8");
+    expect(result.groups[0]!.totals).toEqual({ activityQuantity: "-2" });
+    expect(result.groups[0]!.rowIds).toEqual([id]);
+    expect(result.query.columns).toEqual(["item", "unit"]);
+    expect(result.rows[0]!.source!.openable).toBe(false);
   });
-  it("does not silently use current labels or infer absent business dates", () => {
-    const input = fixture();
-    const report = presentInventoryReport({
-      ...input,
-      metadata: new Map(),
-      query: { ...input.query, actorId: undefined, businessFrom: "2026-09-01" },
-    });
-    expect(report.rows[0]?.cells.item).toBeNull();
-    expect(report.rows[0]?.cells.closingQuantity).toBe("8");
-    expect(report.rows[0]?.activities).toHaveLength(0);
-    expect(report.explanations).toContain("business-date-unavailable");
+  it("checks correction permission separately and redacts activity carrying values", () => {
+    const result = presentReportActivity(
+      {
+        id,
+        movementId: id,
+        quantity: "-2",
+        valueFils: "-200",
+        postedAt: "2026-09-02T00:00:00Z",
+        businessDate: null,
+        actorId: id,
+        actor: "Owner",
+        reason: "purchase-adjustment",
+        source,
+      },
+      permissions,
+    );
+    expect(result.valueFils).toBeNull();
+    expect(result.source!.openable).toBe(false);
+    expect(
+      presentInventoryReport(report(), {
+        ...permissions,
+        valuation: true,
+        purchaseCorrectionsOpenable: true,
+      }).rows[0]!.source!.openable,
+    ).toBe(true);
   });
 });
