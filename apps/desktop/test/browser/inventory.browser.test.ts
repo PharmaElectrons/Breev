@@ -923,6 +923,7 @@ test.describe.serial("read-only inventory review", () => {
 
   test("blocks count completion until the pending variance is applied", async ({
     page,
+    browser,
   }) => {
     await login(OWNER_USERNAME, OWNER_PASSWORD);
     const stocked = await stockNamedItem(
@@ -974,6 +975,47 @@ test.describe.serial("read-only inventory review", () => {
     await expect(page.locator("#count-complete-blocked")).toHaveCount(0);
     await complete.click();
     await expect(complete).toHaveText("Session completed.");
+    for (const locale of ["ar", "en"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = await browser.newContext({
+          viewport: { height: 800, width: 1280 },
+        });
+        const reportPage = await context.newPage();
+        await installDesktopFake(reportPage, renderer.origin, locale, theme);
+        await reportPage.goto(
+          `${renderer.origin}#/reports/inventory/stocktake-movements`,
+        );
+        const reportRow = reportPage
+          .locator(".report-table tbody tr")
+          .filter({ hasText: "Count Gate Item" });
+        await expect(reportRow).toHaveCount(1);
+        expect(
+          (await new AxeBuilder({ page: reportPage }).analyze()).violations,
+        ).toEqual([]);
+        await reportPage.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: evidencePath(
+            "issue-64",
+            "after",
+            `stocktake-movements-${locale}-${theme}.png`,
+          ),
+        });
+        const source = reportRow.locator("td").last().getByRole("button");
+        await source.click();
+        const review = reportPage.locator(".count-session-review-dialog");
+        await expect(review).toBeVisible();
+        await expect(review.locator("tbody")).toContainText("Count Gate Item");
+        await expect(review.locator("input, textarea, select")).toHaveCount(0);
+        expect(
+          (await new AxeBuilder({ page: reportPage }).analyze()).violations,
+        ).toEqual([]);
+        await review.locator("header button").click();
+        await expect(source).toBeFocused();
+        await expect(reportRow).toHaveCount(1);
+        await context.close();
+      }
+    }
   });
 });
 
