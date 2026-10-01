@@ -1,4 +1,8 @@
 import { sql } from "drizzle-orm";
+import type {
+  PurchaseInvoiceOfferInput,
+  PurchaseInvoiceOfferSnapshot,
+} from "@breev/contracts/local-rest";
 import {
   bigint,
   date,
@@ -108,6 +112,11 @@ export const supplierAllowanceRates = pgTable(
 export const purchaseDrafts = pgTable(
   "purchase_drafts",
   {
+    invoiceOffer: jsonb("invoice_offer")
+      .$type<PurchaseInvoiceOfferInput>()
+      .notNull()
+      .default({ mode: "none", value: "0" }),
+    offerRuleVersion: integer("offer_rule_version").notNull().default(1),
     id: uuid()
       .default(sql`uuidv7()`)
       .primaryKey(),
@@ -193,6 +202,15 @@ export const purchaseDraftRows = pgTable(
 export const postedPurchases = pgTable(
   "posted_purchases",
   {
+    invoiceOffer: jsonb("invoice_offer")
+      .$type<PurchaseInvoiceOfferSnapshot>()
+      .notNull()
+      .default({
+        input: { mode: "none", value: "0" },
+        ruleVersion: 1,
+        basisFils: "0",
+        offerFils: "0",
+      }),
     id: uuid()
       .default(sql`uuidv7()`)
       .primaryKey(),
@@ -243,6 +261,7 @@ export const postedPurchases = pgTable(
 export const postedPurchaseRows = pgTable(
   "posted_purchase_rows",
   {
+    offerFils: bigint("offer_fils", { mode: "bigint" }).notNull().default(0n),
     id: uuid()
       .default(sql`uuidv7()`)
       .primaryKey(),
@@ -299,6 +318,11 @@ export const postedPurchaseRows = pgTable(
 export const purchaseAdjustmentDrafts = pgTable(
   "purchase_adjustment_drafts",
   {
+    invoiceOffer: jsonb("invoice_offer")
+      .$type<PurchaseInvoiceOfferInput>()
+      .notNull()
+      .default({ mode: "none", value: "0" }),
+    offerRuleVersion: integer("offer_rule_version").notNull().default(1),
     id: uuid()
       .default(sql`uuidv7()`)
       .primaryKey(),
@@ -389,6 +413,27 @@ export const purchaseAdjustmentDraftRows = pgTable(
 export const postedPurchaseAdjustments = pgTable(
   "posted_purchase_adjustments",
   {
+    offerBeforeSnapshot: jsonb("offer_before_snapshot")
+      .$type<PurchaseInvoiceOfferSnapshot>()
+      .notNull()
+      .default({
+        input: { mode: "none", value: "0" },
+        ruleVersion: 1,
+        basisFils: "0",
+        offerFils: "0",
+      }),
+    offerAfterSnapshot: jsonb("offer_after_snapshot")
+      .$type<PurchaseInvoiceOfferSnapshot>()
+      .notNull()
+      .default({
+        input: { mode: "none", value: "0" },
+        ruleVersion: 1,
+        basisFils: "0",
+        offerFils: "0",
+      }),
+    offerDeltaFils: bigint("offer_delta_fils", { mode: "bigint" })
+      .notNull()
+      .default(0n),
     id: uuid()
       .default(sql`uuidv7()`)
       .primaryKey(),

@@ -1,0 +1,174 @@
+
+Running 8 tests using 1 worker
+
+
+
+(node:13428) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/8] test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing
+[2/8] test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  1) test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+    Expected: in viewport
+    Received: viewport ratio 0.7976190447807312
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+        23 × locator resolved to <td data-column-field="inventory-units">4 Strip</td>
+           - unexpected value "viewport ratio 0.7976190447807312"
+
+
+      2334 |   // window is not a subject a person can read, and the default ratio would
+      2335 |   // call that "in viewport".
+    > 2336 |   await expect(subject).toBeInViewport({ ratio: 1 });
+           |                         ^
+      2337 | }
+      2338 |
+      2339 | /**
+        at expectOnScreen (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:2336:25)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1687:15
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1659:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1616:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-4ff2e-ake-of-2-packs-1-strip-is-9\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-4ff2e-ake-of-2-packs-1-strip-is-9\error-context.md
+
+
+
+(node:22532) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[3/8] test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · en · dark › scope — the item-details panel in purchasing
+[4/8] test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  2) test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+    Expected: in viewport
+    Received: viewport ratio 0.7976190447807312
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+        23 × locator resolved to <td data-column-field="inventory-units">4 Strip</td>
+           - unexpected value "viewport ratio 0.7976190447807312"
+
+
+      2334 |   // window is not a subject a person can read, and the default ratio would
+      2335 |   // call that "in viewport".
+    > 2336 |   await expect(subject).toBeInViewport({ ratio: 1 });
+           |                         ^
+      2337 | }
+      2338 |
+      2339 | /**
+        at expectOnScreen (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:2336:25)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1687:15
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1659:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1616:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-d6800-ake-of-2-packs-1-strip-is-9\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-d6800-ake-of-2-packs-1-strip-is-9\error-context.md
+
+
+
+(node:20420) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[5/8] test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · ar · light › scope — the item-details panel in purchasing
+[6/8] test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  3) test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+
+    Error: expect(locator).toHaveText(expected) failed
+
+    Locator:  locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+    Expected: "4 Strip"
+    Received: "4 أشرطة"
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveText" with timeout 10000ms
+      - waiting for locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+        23 × locator resolved to <td data-column-field="inventory-units">4 أشرطة</td>
+           - unexpected value "4 أشرطة"
+
+
+      1667 |               // it reads "4 Strip" in both locales. The scenario's claim is the
+      1668 |               // conversion, and this is that literal.
+    > 1669 |               await expect(row.inventoryUnits).toHaveText(
+           |                                                ^
+      1670 |                 `4 ${PANADOL_INVENTORY_UNIT}`,
+      1671 |               );
+      1672 |               // That column is the last one inside
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1669:48
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1659:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1616:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-24b59-ake-of-2-packs-1-strip-is-9\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-24b59-ake-of-2-packs-1-strip-is-9\error-context.md
+
+
+
+(node:22192) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[7/8] test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · ar · dark › scope — the item-details panel in purchasing
+[8/8] test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  4) test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+
+    Error: expect(locator).toHaveText(expected) failed
+
+    Locator:  locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+    Expected: "4 Strip"
+    Received: "4 أشرطة"
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveText" with timeout 10000ms
+      - waiting for locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+        23 × locator resolved to <td data-column-field="inventory-units">4 أشرطة</td>
+           - unexpected value "4 أشرطة"
+
+
+      1667 |               // it reads "4 Strip" in both locales. The scenario's claim is the
+      1668 |               // conversion, and this is that literal.
+    > 1669 |               await expect(row.inventoryUnits).toHaveText(
+           |                                                ^
+      1670 |                 `4 ${PANADOL_INVENTORY_UNIT}`,
+      1671 |               );
+      1672 |               // That column is the last one inside
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1669:48
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1659:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1616:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-fa14e-ake-of-2-packs-1-strip-is-9\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-fa14e-ake-of-2-packs-1-strip-is-9\error-context.md
+
+
+  4 failed
+    test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+    test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+    test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+    test\acceptance\milestone-2.acceptance.test.ts:1615:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+  4 passed (2.0m)
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.acceptance.config.ts --grep "scope.*item-details|units scenario"

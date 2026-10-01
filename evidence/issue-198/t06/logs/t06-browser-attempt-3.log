@@ -1,0 +1,45 @@
+
+Running 4 tests using 1 worker
+
+
+
+(node:6972) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/4] test\browser\purchasing.browser.test.ts:2206:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light
+  1) test\browser\purchasing.browser.test.ts:2206:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('.purchase-item-suggestions')
+    Expected substring: "T06 Zero en-light 500 mg tablet GSK"
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toContainText" with timeout 10000ms
+      - waiting for locator('.purchase-item-suggestions')
+
+
+      2568 |         const searchStart = performance.now();
+      2569 |         await item.fill(`T06 Zero ${suffix}`);
+    > 2570 |         await expect(page.locator(".purchase-item-suggestions")).toContainText(
+           |                                                                  ^
+      2571 |           zero.displayName,
+      2572 |         );
+      2573 |         const searchMs = performance.now() - searchStart;
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:2570:66
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-689a8-non-blocking-entry-en-light\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-689a8-non-blocking-entry-en-light\error-context.md
+
+
+[2/4] test\browser\purchasing.browser.test.ts:2206:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en dark
+[3/4] test\browser\purchasing.browser.test.ts:2206:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar light
+[4/4] test\browser\purchasing.browser.test.ts:2206:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar dark
+  1 failed
+    test\browser\purchasing.browser.test.ts:2206:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light 
+  3 did not run
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 authoritative"

@@ -1,0 +1,59 @@
+
+Running 10 tests using 1 worker
+
+
+
+(node:17168) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/10] test\acceptance\milestone-2.acceptance.test.ts:272:5 › milestone 2 acceptance · en · light › clause 1 — defines an item and finds it by smart search
+[2/10] test\acceptance\milestone-2.acceptance.test.ts:455:5 › milestone 2 acceptance · en · light › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[3/10] test\acceptance\milestone-2.acceptance.test.ts:588:5 › milestone 2 acceptance · en · light › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[4/10] test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate
+  1) test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate 
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('.delta-summary-dialog').locator('.delta-summary-table:not([data-adjustment-totals]):not(.adjustment-header-comparison) tbody > tr').first().locator('th, td').nth(6)
+    Expected: in viewport
+    Received: viewport ratio 0.9979550242424011
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('.delta-summary-dialog').locator('.delta-summary-table:not([data-adjustment-totals]):not(.adjustment-header-comparison) tbody > tr').first().locator('th, td').nth(6)
+        23 × locator resolved to <td>…</td>
+           - unexpected value "viewport ratio 0.9979550242424011"
+
+
+      2315 |   // window is not a subject a person can read, and the default ratio would
+      2316 |   // call that "in viewport".
+    > 2317 |   await expect(subject).toBeInViewport({ ratio: 1 });
+           |                         ^
+      2318 | }
+      2319 |
+      2320 | /**
+        at expectOnScreen (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:2317:25)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:754:17
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:733:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:713:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-f7dd3-ce-and-a-return-is-separate\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-f7dd3-ce-and-a-return-is-separate\error-context.md
+
+
+[5/10] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · en · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[6/10] test\acceptance\milestone-2.acceptance.test.ts:998:5 › milestone 2 acceptance · en · light › reorder from sales — the draft is byte-identical before and after
+[7/10] test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · en · light › bilingual pass — direction, theme and keyboard operation
+[8/10] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[9/10] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing
+[10/10] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  1 failed
+    test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate 
+  6 did not run
+  3 passed (35.7s)
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.acceptance.config.ts -g "milestone 2 acceptance · en · light"

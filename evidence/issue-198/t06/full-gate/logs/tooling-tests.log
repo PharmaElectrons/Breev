@@ -1,0 +1,24 @@
+✔ Turbo passes launcher-owned runtime configuration to start tasks (1748.3402ms)
+✔ accepts one stable version shared by tag and manifests (4.2724ms)
+✔ accepts the current unreleased manifest pair without a tag (0.4007ms)
+✔ rejects non-stable release tag 1.2.3 (1.0531ms)
+✔ rejects non-stable release tag v1.2 (0.3083ms)
+✔ rejects non-stable release tag v01.2.3 (0.3141ms)
+✔ rejects non-stable release tag v1.02.3 (0.2478ms)
+✔ rejects non-stable release tag v1.2.03 (0.2639ms)
+✔ rejects non-stable release tag v1.2.3-beta.1 (0.3716ms)
+✔ rejects non-stable release tag v1.2.3+build.1 (0.3385ms)
+✔ rejects mismatched package versions (0.586ms)
+✔ rejects a tag that does not match the package version (0.4395ms)
+✔ rejects an unexpected workspace identity (0.3712ms)
+✔ accepts a dated changelog section for the release version (0.8831ms)
+✔ rejects a release version missing from the changelog (0.5494ms)
+✔ rejects a changelog without an Unreleased section (0.3481ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1988.9679

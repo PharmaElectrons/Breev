@@ -833,6 +833,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     expiryDate: string,
   ): Promise<PurchaseDraft> {
     const created = await request("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: "2026-06-15",
       settlementContext: "debt",
@@ -949,6 +950,7 @@ function adjustmentUpdateBody(
   rows: ReturnType<typeof adjustmentRows>,
 ) {
   return {
+    invoiceOffer: draft.invoiceOffer,
     evidence: draft.evidence,
     expectedVersion: draft.version,
     idempotencyKey: uuidV7(),

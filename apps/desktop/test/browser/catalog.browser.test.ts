@@ -1535,48 +1535,6 @@ test.describe.serial("Product catalog screens", () => {
     );
   });
 
-  test("An unbuilt surface is honest about itself in both locales and themes", async ({
-    browser,
-  }) => {
-    for (const locale of ["en", "ar"] as const) {
-      for (const theme of ["light", "dark"] as const) {
-        const context = await browser.newContext({
-          viewport: { height: 768, width: 1_024 },
-        });
-        const page = await context.newPage();
-        await installDesktopFake(page, renderer.origin, { locale, theme });
-        // Sales is built as of #58; Patients remains an unbuilt required
-        // surface while later reporting stays out of the current shell.
-        await page.goto(`${renderer.origin}#/patients`);
-
-        const heading = page.getByTestId("unavailable-surface");
-        await expect(heading).toBeVisible();
-        await expect(heading).toContainText(
-          locale === "en"
-            ? "This screen is not available yet"
-            : "هذه الشاشة غير متاحة بعد",
-        );
-
-        // No fabricated pharmacy data may appear on a surface Breev has not
-        // built. The prototype's mock rows are the failure this guards against.
-        await expect(page.locator("table")).toHaveCount(0);
-
-        const accessibility = await new AxeBuilder({ page }).analyze();
-        expect(accessibility.violations).toEqual([]);
-
-        await page.screenshot({
-          animations: "disabled",
-          fullPage: true,
-          path: path.join(
-            adoptionEvidenceDir,
-            `unavailable-surface-${locale}-${theme}.png`,
-          ),
-        });
-        await context.close();
-      }
-    }
-  });
-
   test("A direct hash cannot mount a surface the pharmacy is not entitled to", async ({
     page,
   }) => {

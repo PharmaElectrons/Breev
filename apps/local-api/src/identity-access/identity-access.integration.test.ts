@@ -342,6 +342,7 @@ describe.sequential("identity/access PostgreSQL seam", () => {
   });
 
   it("rate-limits password guessing per verified device", async () => {
+    await waitForStableAuthRateWindow();
     const loginDevice = await registerDevice();
     for (let attempt = 0; attempt < 5; attempt += 1) {
       expect(

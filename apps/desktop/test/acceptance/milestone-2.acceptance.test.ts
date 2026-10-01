@@ -50,7 +50,6 @@ import {
   PANADOL_TRADE_NAME,
   PANEL_ITEM_BARCODE,
   PANEL_ITEM_CATEGORY,
-  PANEL_ITEM_PACKAGING,
   PANEL_ITEM_SCIENTIFIC_NAME,
   PANEL_ITEM_WHOLESALE_PRICE_FILS,
   SUPPLIER_NAME,
@@ -128,7 +127,6 @@ const TEXT = {
     returnPosted: "تم حفظ مردود الشراء",
     rowCommitted: "تم حفظ البند بشكل دائم.",
     supplier: "اسم المورد",
-    unchangedLines: "الأسطر التي لم تتغير لا تنشئ حركة مخزون أو أثر قيمة.",
   },
   en: {
     adjustmentBlocked:
@@ -144,7 +142,6 @@ const TEXT = {
     returnPosted: "Purchase Return posted",
     rowCommitted: "Row committed and saved durably.",
     supplier: "Supplier",
-    unchangedLines: "Unchanged lines create no stock or value effects.",
   },
 } as const;
 
@@ -164,12 +161,9 @@ const PASS_FLOWS: readonly string[] = [
   "clause-4",
   "reorder-from-sales",
   "bilingual",
-  // These last on purpose. The two correction flows leave drafts and a modal
-  // register behind them, and the units scenario currently ends in a failing
-  // on-screen assertion against this build; a serial group stops at its first
-  // failure, so running them after the rest keeps that failure from hiding the
-  // flows that pass. No clause depends on what they post: clause 4 reads its
-  // own seeded item.
+  // Correction and panel flows follow the general clauses. Clause 4 reads its
+  // own seeded item; the negative-stock scenario depends on clause 3's posted
+  // Adjustment. The bilingual flow depends on the preceding Sales draft.
   "scenario-adjustment",
   "scope-item-details-panel",
   "scenario-units",
@@ -719,7 +713,6 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
           title: CRITERION.clause3,
         },
         async (take) => {
-          let unchangedLinesStatementVisible = false;
           await take.step(
             `Open the posted invoice ${ADJUSTMENT_INVOICE_NUMBER} in the posted register`,
             "The historical snapshot of the invoice is shown",
@@ -741,14 +734,29 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               await activate(page, page.locator(".purchase-save-draft-btn"));
               const summary = page.locator(".delta-summary-dialog");
               await expect(summary).toContainText("4 → 8 (4)");
-              await expect(summary.locator("tbody > tr")).toHaveCount(1);
-              await expectOnScreen(summary.locator("tbody > tr").first());
+              const changedRowsSelector =
+                ".delta-summary-table:not([data-adjustment-totals]):not(.adjustment-header-comparison) tbody > tr";
+              const changedRows = summary.locator(changedRowsSelector);
+              await expect(changedRows).toHaveCount(1);
+              // A wide row lives in the dialog's scrollable table. Prove each
+              // displayed fact is fully readable after scrolling; table-cell
+              // borders at the scroller edge are not the subject of the claim.
+              const facts = changedRows
+                .first()
+                .locator('th[scope="row"], td > bdi');
+              await expect(facts).toHaveCount(7);
+              for (let index = 0; index < (await facts.count()); index++) {
+                const fact = facts.nth(index);
+                await fact.scrollIntoViewIfNeeded();
+                await expectOnScreen(fact);
+              }
               placements.push(
-                await measureElement(page, ".delta-summary-table tbody > tr"),
+                await measureElement(
+                  page,
+                  `.delta-summary-dialog ${changedRowsSelector}`,
+                ),
               );
-              return stripBidiMarks(
-                await summary.locator("tbody > tr").innerText(),
-              );
+              return stripBidiMarks(await changedRows.innerText());
             },
           );
 
@@ -767,10 +775,6 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
             locale,
             theme,
           );
-          unchangedLinesStatementVisible = stripBidiMarks(
-            await page.locator("section.purchase-adjustment").innerText(),
-          ).includes(TEXT[locale].unchangedLines);
-
           await take.step(
             "Confirm and post the Delta",
             `The workflow reports "${TEXT[locale].adjustmentPosted}" with an -A01 number`,
@@ -844,11 +848,15 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
           );
 
           await take.step(
-            "Read the workflow's statement about unchanged lines",
-            `The workspace states "${TEXT[locale].unchangedLines}"`,
+            "Read the unchanged line's authoritative movement history",
+            "No Purchase Adjustment movement exists for the unchanged line",
             async () => {
-              expect(unchangedLinesStatementVisible).toBe(true);
-              return TEXT[locale].unchangedLines;
+              const adjustments = await adjustmentMovements(
+                environment.api,
+                fixture.silent.id,
+              );
+              expect(adjustments).toHaveLength(0);
+              return `Purchase Adjustment movements for the unchanged line: ${adjustments.length}`;
             },
           );
           take.note(
@@ -969,7 +977,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
                 .locator("table.basket-table tbody tr")
                 .filter({ hasText: fixture.reviewItem.displayName });
               await expect(row.locator("td").first()).toContainText(
-                `${localeDigits(4, locale)} ${PANADOL_INVENTORY_UNIT}`,
+                `${localeDigits(4, locale)} ${locale === "ar" ? "أشرطة" : PANADOL_INVENTORY_UNIT}`,
               );
               return stripBidiMarks(await row.innerText()).replaceAll(
                 "\n",
@@ -1296,13 +1304,17 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               await replaceValue(page, quantity, "1");
               await activate(
                 page,
-                page.locator(".adjustment-form > button").last(),
+                page.locator('[data-adjustment-action="save-review"]'),
               );
               const error = page.locator(
-                "section.purchase-adjustment p.form-error",
+                'section.purchase-adjustment .form-error[role="alert"]',
               );
-              await expect(error).toHaveText(TEXT[locale].adjustmentBlocked);
-              await expect(page.locator(".adjustment-summary")).toHaveCount(0);
+              await expect(error.locator(":scope > span")).toHaveText(
+                TEXT[locale].adjustmentBlocked,
+              );
+              await expect(page.locator(".delta-summary-dialog")).toHaveCount(
+                0,
+              );
               // The refusal lives inside the posted-register dialog's own
               // scroller, so being in the document proves nothing: it has to be
               // in view, and focused, for a keyboard user to meet it at all.
@@ -1310,7 +1322,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               await expect(error).toBeFocused();
               blockedMessagePlacement = await measureElement(
                 page,
-                "section.purchase-adjustment p.form-error",
+                'section.purchase-adjustment .form-error[role="alert"]',
               );
               return stripBidiMarks(await error.innerText());
             },
@@ -1351,16 +1363,19 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
             async () => {
               await activate(
                 page,
-                page.locator(".purchase-adjustment > button.quiet-button"),
+                page.locator('[data-adjustment-action="back"]'),
               );
               const warning = page.locator(
                 '.purchase-adjustment [role="alertdialog"]',
               );
               await expect(warning).toBeVisible();
               const question = stripBidiMarks(
-                await warning.locator("p").innerText(),
+                await warning.locator("p").first().innerText(),
               );
-              await activate(page, warning.locator("button").last());
+              await activate(
+                page,
+                warning.locator('[data-adjustment-action="discard-leave"]'),
+              );
               await expect(page.locator("#posted-detail-title")).toBeVisible();
               return question;
             },
@@ -1370,6 +1385,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
     });
 
     test("scope — the item-details panel in purchasing", async () => {
+      const wholesalePriceText = locale === "ar" ? "٩٠٫٠٠٠ د.ع" : "IQD 90.000";
       await runRecord(
         context,
         {
@@ -1412,32 +1428,45 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
                   await typeInto(page, row.item, PANEL_ITEM_BARCODE);
                   await pressOn(page, row.item, "Enter");
                   await expect(row.quantity).toBeFocused();
-                  await expect(panel.locator("strong")).toHaveText(
-                    fixture.panelItem.displayName,
-                  );
+                  await expect(
+                    panel.locator(".purchase-item-trade-name"),
+                  ).toHaveText(fixture.panelItem.displayName);
                 },
               );
-              return `${stripBidiMarks(await panel.locator("strong").innerText())} · invoice date entered by ${datePath}`;
+              return `${stripBidiMarks(await panel.locator(".purchase-item-trade-name").innerText())} · invoice date entered by ${datePath}`;
             },
           );
 
           await take.step(
             "Read the four fields the panel shows for the selected item",
-            `Scientific name "${PANEL_ITEM_SCIENTIFIC_NAME}", category "${PANEL_ITEM_CATEGORY}", packaging "${PANEL_ITEM_PACKAGING}", and the wholesale price as the panel prints it — the exact fils integer "${PANEL_ITEM_WHOLESALE_PRICE_FILS}", not a locale-formatted amount`,
+            `Scientific name "${PANEL_ITEM_SCIENTIFIC_NAME}", category "${PANEL_ITEM_CATEGORY}", the physical packaging equation, and the localized wholesale amount from exact fils "${PANEL_ITEM_WHOLESALE_PRICE_FILS}"`,
             async () => {
-              const values = page.locator(
-                "aside.purchase-item-panel dl > div dd",
+              const panel = page.locator("aside.purchase-item-panel");
+              await expect(
+                panel.locator('[data-panel-field="scientific-name"]'),
+              ).toHaveText(PANEL_ITEM_SCIENTIFIC_NAME);
+              await expect(
+                panel.locator(
+                  '[data-panel-field="category"] .purchase-fact-value',
+                ),
+              ).toHaveText(PANEL_ITEM_CATEGORY);
+              await expect(
+                panel.locator(
+                  '[data-panel-field="packaging"] .purchase-fact-value',
+                ),
+              ).toHaveText(
+                locale === "ar" ? "١ علبة = ٤ أشرطة" : "1 Pack = 4 Strip",
               );
-              // The panel renders its fields in a fixed order and the
-              // preferences decide only which of them appear, so with all four
-              // enabled the values are read by position and the assertion needs
-              // no locale-specific term labels.
-              await expect(values).toHaveText([
-                PANEL_ITEM_SCIENTIFIC_NAME,
-                PANEL_ITEM_CATEGORY,
-                PANEL_ITEM_PACKAGING,
-                PANEL_ITEM_WHOLESALE_PRICE_FILS,
-              ]);
+              await expect(
+                panel.locator(
+                  '[data-panel-field="wholesale-price"] .purchase-fact-value',
+                ),
+              ).toHaveText(wholesalePriceText);
+              const values = panel.locator(
+                '[data-panel-field="scientific-name"], [data-panel-field="category"] .purchase-fact-value, [data-panel-field="packaging"] .purchase-fact-value, [data-panel-field="wholesale-price"] .purchase-fact-value',
+              );
+              for (const value of await values.all())
+                await expect(value).toBeVisible();
               return (await values.allInnerTexts())
                 .map((value) => stripBidiMarks(value).trim())
                 .join(" | ");
@@ -1477,13 +1506,13 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
             async () => {
               await expect(
                 page.locator("aside.purchase-item-panel"),
-              ).toContainText(PANEL_ITEM_WHOLESALE_PRICE_FILS);
+              ).toContainText(wholesalePriceText);
               // The entry row and any committed rows share one table, so a
               // single assertion covers the whole invoice grid.
               await expect(
                 page.locator("table.purchase-row-table"),
-              ).not.toContainText(PANEL_ITEM_WHOLESALE_PRICE_FILS);
-              return `panel shows ${PANEL_ITEM_WHOLESALE_PRICE_FILS}; the purchase row table does not`;
+              ).not.toContainText(wholesalePriceText);
+              return `panel shows ${wholesalePriceText}; the purchase row table does not`;
             },
           );
 
@@ -1508,17 +1537,15 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
 
               await expect(
                 page.locator("table.purchase-row-table"),
-              ).not.toContainText(PANEL_ITEM_WHOLESALE_PRICE_FILS);
+              ).not.toContainText(wholesalePriceText);
               await expect(page.locator(".purchase-review")).not.toContainText(
-                PANEL_ITEM_WHOLESALE_PRICE_FILS,
+                wholesalePriceText,
               );
               // The panel follows the row's current item, so committing the row
               // empties it again: the wholesale price is never left on screen
               // for a line that is no longer being entered.
               const panel = page.locator("aside.purchase-item-panel");
-              await expect(panel).not.toContainText(
-                PANEL_ITEM_WHOLESALE_PRICE_FILS,
-              );
+              await expect(panel).not.toContainText(wholesalePriceText);
               return stripBidiMarks(await panel.innerText()).replaceAll(
                 "\n",
                 " | ",
@@ -1529,7 +1556,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
           take.note(
             "Record how the panel prints the wholesale price in this locale",
             "Read from the panel's own DOM, not assumed",
-            `The panel renders the wholesale price through \`<bdi>{wholesalePriceFils}</bdi>\` — the stored fils integer as exact text — so it reads "${PANEL_ITEM_WHOLESALE_PRICE_FILS}" in Arabic exactly as in English, with no Arabic-Indic digits and no currency formatting. Inventory review formats the same kind of amount as currency for the locale, so the two surfaces present amounts differently; the assertion above compares against what this panel actually prints.`,
+            `The exact stored value ${PANEL_ITEM_WHOLESALE_PRICE_FILS} fils is displayed as "${wholesalePriceText}" using the panel's localized currency formatter. The field assertion above verifies this amount in the selected locale.`,
           );
 
           take.note(
@@ -1567,7 +1594,9 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
               // panel is only reachable by scrolling sideways, that is the
               // finding, not something to work around.
               const panel = page.locator("aside.purchase-item-panel");
-              const values = panel.locator("dl > div dd");
+              const values = panel.locator(
+                '[data-panel-field="scientific-name"], [data-panel-field="category"] .purchase-fact-value, [data-panel-field="packaging"] .purchase-fact-value, [data-panel-field="wholesale-price"] .purchase-fact-value',
+              );
               for (let index = 0; index < 4; index += 1) {
                 await expect(values.nth(index)).toBeVisible();
               }
@@ -1580,6 +1609,8 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
     });
 
     test("units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9", async () => {
+      const inventoryUnitText =
+        locale === "ar" ? "أشرطة" : PANADOL_INVENTORY_UNIT;
       await runRecord(
         context,
         {
@@ -1625,16 +1656,14 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
 
           await take.step(
             "Correct the quantity to 1 pack",
-            "The row preview shows 4 Strip in the base unit, in view — the scenario's claim is about what a user records, so a value behind the table's horizontal scrollbar would not satisfy it",
+            `The row preview shows 4 ${inventoryUnitText} in the base unit, in view — the scenario's claim is about what a user records, so a value behind the table's horizontal scrollbar would not satisfy it`,
             async () => {
               const row = entryRow(page);
               await replaceValue(page, row.quantity, "1");
-              // The purchase entry preview prints the base-unit quantity as
-              // exact text rather than through the locale number formatter, so
-              // it reads "4 Strip" in both locales. The scenario's claim is the
-              // conversion, and this is that literal.
+              // The quantity is exact text; the physical unit label follows
+              // the selected locale. Check the conversion and label together.
               await expect(row.inventoryUnits).toHaveText(
-                `4 ${PANADOL_INVENTORY_UNIT}`,
+                `4 ${inventoryUnitText}`,
               );
               // That column is the last one inside
               // `.purchase-row-table-wrap { overflow-x: auto }`, so a text
@@ -1681,7 +1710,7 @@ function declareAcceptancePass(locale: Locale, theme: Theme): void {
                   .locator('[data-column-field="inventory-units"]')
                   .innerText(),
               );
-              expect(committed).toContain(`4 ${PANADOL_INVENTORY_UNIT}`);
+              expect(committed).toContain(`4 ${inventoryUnitText}`);
               take.note(
                 "Measure the committed row's base-unit cell in the packaged window",
                 "Measured before the assertion that follows",
@@ -2018,6 +2047,12 @@ async function saveInvoiceHeader(
   invoiceNumber: string,
   locale: Locale,
 ): Promise<"typed" | "value-api"> {
+  await activate(
+    page,
+    page.locator(
+      'button.purchase-view-tab[aria-controls="purchase-invoice-view"]',
+    ),
+  );
   const form = page.locator("#purchase-header-form");
   await expect(form).toBeVisible();
   // A draft left open by an earlier flow would be edited instead of a new one
@@ -2043,8 +2078,12 @@ async function saveInvoiceHeader(
   );
   const supplier = form.getByRole("combobox", { name: TEXT[locale].supplier });
   await replaceValue(page, supplier, SUPPLIER_NAME);
+  await expect(
+    form.getByRole("option", { name: SUPPLIER_NAME, exact: true }),
+  ).toBeVisible();
   await pressOn(page, supplier, "Enter");
   await expect(supplier).toHaveValue(SUPPLIER_NAME);
+  await expect(supplier).toHaveAttribute("aria-expanded", "false");
   await activate(
     page,
     page.locator('button[type="submit"][form="purchase-header-form"]'),

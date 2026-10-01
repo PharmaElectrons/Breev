@@ -1,0 +1,32 @@
+
+Running 1 test using 1 worker
+
+
+
+(node:21040) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/1] test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements
+  1) test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+
+    error: column reference "n" is ambiguous
+
+      258 |         to_jsonb(source) || jsonb_build_object('id', uuidv7(), 'name', 'T06 Reference Supplier ' || n))).*
+      259 |         from suppliers source cross join generate_series(1, 999) n where source.id = $1`, [supplierId]);
+    > 260 |       await admin.query(`create temporary table t06_reference_batches as
+          |       ^
+      261 |         select seed.product_id, uuidv7() as batch_id, n,
+      262 |           statement_timestamp() - (((seed.n * 2 + n) % 730) || ' days')::interval as received_at
+      263 |         from t06_reference_products seed cross join generate_series(1, 4) n where n <= 2 or seed.n = 1`);
+        at P:\Projects\PharmaElectrons\node_modules\.pnpm\pg-pool@3.14.0_pg@8.23.0\node_modules\pg-pool\index.js:45:11
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:260:7
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+
+  1 failed
+    test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 M2 reference-volume"

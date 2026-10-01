@@ -6,6 +6,8 @@ import {
   allowancePercentageSchema,
   purchaseAdjustmentDraftCreateRequestSchema,
   purchaseAdjustmentDraftSchema,
+  purchaseAdjustmentDraftUpdateRequestSchema,
+  purchaseAdjustmentHeaderComparisonSchema,
   purchaseAdjustmentPostRequestSchema,
   purchaseAdjustmentSummarySchema,
   purchaseReturnDraftCreateRequestSchema,
@@ -29,6 +31,7 @@ import {
   purchasePostRequestSchema,
   purchasePostResultSchema,
   purchasingDenialSchema,
+  identityDenialSchema,
   supplierCreateRequestSchema,
 } from "./index.js";
 
@@ -43,6 +46,12 @@ const JOURNAL_ID = "018fa000-0000-7000-8000-000000000005";
 
 function postedPurchase() {
   return {
+    invoiceOffer: {
+      input: { mode: "none", value: "0" },
+      ruleVersion: 1,
+      basisFils: "0",
+      offerFils: "0",
+    },
     allowanceFils: "4000",
     allowanceSnapshot: { basisFils: "160000", percentage: "2.5" },
     costAfterDiscountFils: "156000",
@@ -118,6 +127,7 @@ describe("supplier and purchase draft contracts", () => {
 
   it("requires the complete header before draft creation", () => {
     const header = {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: COMMAND_ID,
       invoiceDate: "2026-09-03",
       settlementContext: "debt",
@@ -142,6 +152,8 @@ describe("supplier and purchase draft contracts", () => {
   it("models the duplicate as a non-blocking typed warning", () => {
     const result = {
       draft: {
+        invoiceOffer: { mode: "none", value: "0" },
+        offerRuleVersion: 1,
         allowanceSnapshot: { basisFils: "0", percentage: "2.5" },
         createdAt: "2026-09-03T12:00:00.000Z",
         id: DRAFT_ID,
@@ -182,7 +194,7 @@ describe("supplier and purchase draft contracts", () => {
   });
 
   it("has no supplier, draft, or posting hard-delete route", () => {
-    expect(PURCHASING_CONTRACTS).toHaveLength(33);
+    expect(PURCHASING_CONTRACTS).toHaveLength(34);
     expect(
       PURCHASING_CONTRACTS.map((contract) => contract.method),
     ).not.toContain("DELETE");
@@ -584,6 +596,7 @@ describe("supplier and purchase draft contracts", () => {
     const posted = postedPurchase();
     const detail = {
       activeAdjustmentDrafts: [],
+      invoiceOffer: posted.invoiceOffer,
       activeReturnDrafts: [],
       adjustments: [],
       allowanceFils: posted.allowanceFils,
@@ -606,7 +619,9 @@ describe("supplier and purchase draft contracts", () => {
       primarySupplierCostFils: posted.primarySupplierCostFils,
       returns: [],
       rows: posted.rows.map((row) => ({
+        allowanceFils: "4000",
         baseUnitsPerEnteredUnit: row.baseUnitsPerEnteredUnit,
+        batchId: row.batchId,
         costAfterDiscountFils: row.costAfterDiscountFils,
         enteredQuantity: row.enteredQuantity,
         expiryDate: row.expiryDate,
@@ -617,7 +632,13 @@ describe("supplier and purchase draft contracts", () => {
         itemId: row.itemId,
         linePrimarySupplierCostFils: row.linePrimarySupplierCostFils,
         lotNumber: row.lotNumber,
+        marginPercentage: row.marginPercentage,
+        movementId: row.movementId,
+        notes: row.notes,
+        offerFils: "0",
         ordinal: row.ordinal,
+        priceCapture: row.priceCapture,
+        pricingMethod: row.pricingMethod,
         primarySupplierCostFils: row.primarySupplierCostFils,
         retailPriceFils: row.retailPriceFils,
         unit: row.unit,
@@ -632,6 +653,43 @@ describe("supplier and purchase draft contracts", () => {
       purchasePostedDetailSchema.safeParse({
         ...detail,
         costVisibility: "hidden-by-setting",
+      }).success,
+    ).toBe(false);
+    const hidden = {
+      ...detail,
+      costVisibility: "hidden-by-permission",
+      allowanceFils: null,
+      allowancePercentageSnapshot: null,
+      invoiceOffer: null,
+      costAfterDiscountFils: null,
+      primarySupplierCostFils: null,
+      rows: detail.rows.map((row) => ({
+        ...row,
+        allowanceFils: null,
+        offerFils: null,
+        marginPercentage: null,
+        costAfterDiscountFils: null,
+        linePrimarySupplierCostFils: null,
+        primarySupplierCostFils: null,
+      })),
+    };
+    expect(purchasePostedDetailSchema.parse(hidden)).toEqual(hidden);
+    for (const field of [
+      "allowanceFils",
+      "offerFils",
+      "marginPercentage",
+    ] as const) {
+      expect(
+        purchasePostedDetailSchema.safeParse({
+          ...hidden,
+          rows: hidden.rows.map((row) => ({ ...row, [field]: "20" })),
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      purchasePostedDetailSchema.safeParse({
+        ...detail,
+        rows: detail.rows.map((row) => ({ ...row, notes: undefined })),
       }).success,
     ).toBe(false);
   });
@@ -694,6 +752,8 @@ describe("supplier and purchase draft contracts", () => {
         },
       ],
       supplierReductionFils: "60000",
+      supplierId: SUPPLIER_ID,
+      supplierNameSnapshot: "Al-Nahrain",
     } as const;
     expect(purchaseReturnSummarySchema.parse(summary)).toEqual(summary);
     expect(summary.inventoryCarryingAmountFils).not.toBe(
@@ -789,6 +849,102 @@ describe("supplier and purchase draft contracts", () => {
       }).success,
     ).toBe(false);
   });
+  it.each(PURCHASE_ADJUSTMENT_REASONS)(
+    "accepts the required %s reason as an audit fact",
+    (reason) => {
+      expect(
+        purchaseAdjustmentDraftCreateRequestSchema.parse({
+          reason,
+          evidence: "Verified evidence",
+          idempotencyKey: COMMAND_ID,
+        }).reason,
+      ).toBe(reason);
+    },
+  );
+  it("requires readable immutable header identity facts and rejects unsupported header inputs", () => {
+    const header = {
+      supplierId: SUPPLIER_ID,
+      supplierNameSnapshot: "Al-Nahrain",
+      supplierInvoiceNumber: "INV-100",
+    };
+    expect(
+      purchaseAdjustmentHeaderComparisonSchema.parse({
+        before: header,
+        after: { ...header, supplierInvoiceNumber: "CORRECTED" },
+      }).after.supplierInvoiceNumber,
+    ).toBe("CORRECTED");
+    expect(
+      purchaseAdjustmentHeaderComparisonSchema.safeParse({
+        before: { supplierId: SUPPLIER_ID },
+        after: header,
+      }).success,
+    ).toBe(false);
+    const update = {
+      invoiceOffer: { mode: "none", value: "0" },
+      reason: "other",
+      evidence: null,
+      expectedVersion: "1",
+      idempotencyKey: COMMAND_ID,
+      rows: [],
+      supplierId: SUPPLIER_ID,
+      supplierInvoiceNumber: "INV-100",
+    };
+    expect(
+      purchaseAdjustmentDraftUpdateRequestSchema.safeParse(update).success,
+    ).toBe(true);
+    for (const unsupported of [
+      { invoiceDate: "2026-01-01" },
+      { settlementContext: "cash" },
+      { allowancePercentageSnapshot: "20" },
+    ]) {
+      expect(
+        purchaseAdjustmentDraftUpdateRequestSchema.safeParse({
+          ...update,
+          ...unsupported,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it.each([
+    "version-conflict",
+    "adjustment-summary-stale",
+    "idempotency-conflict",
+    "adjustment-batch-conflict",
+    "adjustment-draft-posted",
+  ])("validates the %s confirmation denial", (code) => {
+    const denial = {
+      code,
+      fieldErrors: [],
+      requestId: POSTING_ID,
+      status: "denied",
+    };
+    expect(purchasingDenialSchema.parse(denial)).toEqual(denial);
+    expect(
+      purchaseAdjustmentPostRequestSchema.safeParse({
+        expectedVersion: "2",
+        confirmationHash: "stale",
+        idempotencyKey: COMMAND_ID,
+      }).success,
+    ).toBe(false);
+    expect(
+      purchaseAdjustmentPostRequestSchema.safeParse({
+        expectedVersion: "0",
+        confirmationHash: "a".repeat(64),
+        idempotencyKey: COMMAND_ID,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates permission denial through the identity boundary", () => {
+    const denial = {
+      code: "permission-denied",
+      requiredPermission: "purchases.adjustments.manage",
+      requestId: POSTING_ID,
+      status: "denied",
+    };
+    expect(identityDenialSchema.parse(denial)).toEqual(denial);
+  });
 
   it("validates durable adjustment drafts, signed summaries, and confirmation", () => {
     const snapshot = {
@@ -813,6 +969,8 @@ describe("supplier and purchase draft contracts", () => {
     } as const;
     expect(
       purchaseAdjustmentDraftSchema.parse({
+        invoiceOffer: { mode: "none", value: "0" },
+        offerRuleVersion: 1,
         allowancePercentageSnapshot: "2.5",
         createdAt: "2026-06-15T09:00:00.000Z",
         evidence: null,
@@ -833,14 +991,48 @@ describe("supplier and purchase draft contracts", () => {
     ).toHaveLength(1);
     expect(
       purchaseAdjustmentSummarySchema.parse({
-        allowanceDeltaFils: "-100",
+        offerComparison: {
+          before: postedPurchase().invoiceOffer,
+          after: postedPurchase().invoiceOffer,
+        },
+        offerDeltaFils: "0",
+        totalsComparison: {
+          before: {
+            primarySupplierCostFils: "4000",
+            offerFils: "0",
+            allowanceFils: "100",
+            costAfterDiscountFils: "3900",
+          },
+          after: {
+            primarySupplierCostFils: "8000",
+            offerFils: "0",
+            allowanceFils: "200",
+            costAfterDiscountFils: "7800",
+          },
+        },
+        allowanceDeltaFils: "100",
         confirmationHash: "a".repeat(64),
         costAfterDiscountDeltaFils: "3900",
         draftId: DRAFT_ID,
         draftVersion: "2",
+        evidence: "Supplier invoice checked",
+        headerComparison: {
+          before: {
+            supplierId: SUPPLIER_ID,
+            supplierNameSnapshot: "Al-Nahrain",
+            supplierInvoiceNumber: "INV-100",
+          },
+          after: {
+            supplierId: SUPPLIER_ID,
+            supplierNameSnapshot: "Al-Nahrain",
+            supplierInvoiceNumber: "INV-100",
+          },
+        },
+        warnings: [],
         headerChanges: [],
         primarySupplierCostDeltaFils: "4000",
         quantityDelta: "4",
+        reason: "quantity error",
         rowDeltas: [
           {
             after: snapshot,
@@ -856,6 +1048,7 @@ describe("supplier and purchase draft contracts", () => {
             quantityDelta: "4",
           },
         ],
+        rowTotals: [{ lineageId: ROW_ID, primarySupplierCostFils: "8000" }],
         stockEffects: [
           {
             batchId: BATCH_ID,

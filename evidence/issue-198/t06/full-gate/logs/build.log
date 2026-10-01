@@ -1,0 +1,60 @@
+$ turbo run build
+• turbo 2.10.11
+
+   • Packages in scope: @breev/contracts, @breev/desktop, @breev/local-api
+   • Running build in 3 packages
+   • Remote caching disabled
+
+@breev/contracts:build: cache miss, executing c74abdd8ac4b356e
+@breev/contracts:build: $ tsc -p tsconfig.build.json
+@breev/desktop:build: cache miss, executing b47ad907cee54973
+@breev/local-api:build: cache miss, executing d568e55f0e15e716
+@breev/desktop:build: $ node scripts/build.mjs
+@breev/local-api:build: $ tsc -p tsconfig.build.json
+@breev/desktop:build: vite v7.3.6 building ssr environment for production...
+@breev/desktop:build: transforming...
+@breev/desktop:build: ✓ 235 modules transformed.
+@breev/desktop:build: rendering chunks...
+@breev/desktop:build: out/main/index.js  673.44 kB
+@breev/desktop:build: ✓ built in 3.88s
+@breev/desktop:build: vite v7.3.6 building ssr environment for production...
+@breev/desktop:build: transforming...
+@breev/desktop:build: ✓ 84 modules transformed.
+@breev/desktop:build: rendering chunks...
+@breev/desktop:build: out/preload/index.cjs  251.08 kB
+@breev/desktop:build: ✓ built in 908ms
+@breev/desktop:build: vite v7.3.6 building client environment for production...
+@breev/desktop:build: transforming...
+@breev/desktop:build: ✓ 2777 modules transformed.
+@breev/desktop:build: rendering chunks...
+@breev/desktop:build: ../../out/renderer/index.html                                                        0.71 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-400-normal-CFZh1unN.woff       17.51 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-700-normal-Cl4F7CZR.woff       17.78 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-500-normal-BletK1Hp.woff       18.64 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-600-normal-Dk5eISD_.woff       18.88 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-400-normal-Bo5KPYvw.woff2      19.16 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-700-normal-BzSf6GNr.woff2      19.50 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-500-normal-Cd6jVIg7.woff2      20.09 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-600-normal-KrqB56Mw.woff2      20.50 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-400-normal-V6pRDFza.woff2            21.17 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-500-normal-BWZEU5yA.woff2            21.83 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-600-normal-C8RAYTDA.woff2            21.86 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-400-normal-6-qcROiO.woff             27.50 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-600-normal-BfsvjouI.woff             28.18 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-500-normal-CJOVTJB7.woff             28.21 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-400-normal-CyU-ddYS.woff2     42.85 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-400-normal-EA1o-u_Q.woff      44.14 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-700-normal-DrtBj6UE.woff2     44.28 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-700-normal-9rXc6cUL.woff      44.36 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-500-normal-C4MQITzh.woff2     45.30 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-600-normal-0pRdybE_.woff2     45.69 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-600-normal-MJZ0liF5.woff      46.78 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-500-normal-DPXcppbm.woff      46.92 kB
+@breev/desktop:build: ../../out/renderer/assets/index-DLzJVNmr.css                                       322.94 kB
+@breev/desktop:build: ../../out/renderer/assets/index-DD3Xl51B.js                                      2,466.05 kB
+@breev/desktop:build: ✓ built in 14.38s
+
+ Tasks:    3 successful, 3 total
+Cached:    0 cached, 3 total
+  Time:    24.921s 
+

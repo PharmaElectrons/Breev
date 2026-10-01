@@ -1,0 +1,39 @@
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+
+ ❯ src/purchasing/purchase-posting.integration.test.ts (22 tests | 1 failed | 21 skipped) 6523ms
+     × T05 searches stable posted numbers and keeps complete row snapshots unchanged after master edits 1811ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T05 searches stable posted numbers and keeps complete row snapshots unchanged after master edits
+AssertionError: [Nest] 19396  - 10/01/2026, 2:07:12 PM    WARN [RecoveryJobService] BREEV_BACKUP_DIRECTORY is not configured, so no recovery points will be produced
+[Nest] 19396  - 10/01/2026, 2:07:13 PM    WARN [InventorySafetyService] The batch-safety job runtime is unavailable or the pharmacy is not bootstrapped
+
+{"body":{"code":"pricing-mode-conflict","fieldErrors":[{"code":"invalid","path":["rows",0]}],"requestId":"01a0f725-a9bf-72f4-b42f-5f9728e357ff","status":"denied"},"status":409}: expected 409 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 409
+
+ ❯ src/purchasing/purchase-posting.integration.test.ts:678:78
+    676|       },
+    677|     );
+    678|     expect(evidenceSavedResponse.status, diagnostics(evidenceSavedResp…
+       |                                                                              ^
+    679|     const evidenceSaved = evidenceSavedResponse.body as unknown as Pur…
+    680|     expect(evidenceSaved.rows).toEqual(copied.rows);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 21 skipped (22)
+   Start at  14:07:07
+   Duration  8.22s (transform 282ms, setup 0ms, import 1.45s, tests 6.52s, environment 0ms)
+
+undefined
+P:\Projects\PharmaElectrons\apps\local-api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/purchasing/purchase-posting.integration.test.ts -t "T05 searches"

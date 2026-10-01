@@ -1,0 +1,92 @@
+[
+  {
+    "name": "format-write",
+    "log": ".scratch/runtime/m2-p1-t03-gate-format-write.log",
+    "seconds": 20.33,
+    "exit": 0
+  },
+  {
+    "name": "format-check",
+    "log": ".scratch/runtime/m2-p1-t03-gate-format-check.log",
+    "seconds": 15.99,
+    "exit": 0
+  },
+  {
+    "name": "lint",
+    "log": ".scratch/runtime/m2-p1-t03-gate-lint.log",
+    "seconds": 16.22,
+    "exit": 0
+  },
+  {
+    "name": "typecheck",
+    "log": ".scratch/runtime/m2-p1-t03-gate-typecheck.log",
+    "seconds": 32.66,
+    "exit": 0
+  },
+  {
+    "name": "build",
+    "log": ".scratch/runtime/m2-p1-t03-gate-build.log",
+    "seconds": 15.18,
+    "exit": 0
+  },
+  {
+    "name": "unit",
+    "log": ".scratch/runtime/m2-p1-t03-gate-unit.log",
+    "seconds": 33.61,
+    "exit": 1
+  },
+  {
+    "name": "desktop-unit",
+    "log": ".scratch/runtime/m2-p1-t03-gate-desktop-unit.log",
+    "seconds": 19.39,
+    "exit": 0
+  },
+  {
+    "name": "boundaries",
+    "log": ".scratch/runtime/m2-p1-t03-gate-boundaries.log",
+    "seconds": 3.39,
+    "exit": 0
+  },
+  {
+    "name": "dev-launcher",
+    "log": ".scratch/runtime/m2-p1-t03-gate-dev-launcher.log",
+    "seconds": 1.5,
+    "exit": 0
+  },
+  {
+    "name": "release-tooling",
+    "log": ".scratch/runtime/m2-p1-t03-gate-release-tooling.log",
+    "seconds": 1.31,
+    "exit": 0
+  },
+  {
+    "name": "integration",
+    "log": ".scratch/runtime/m2-p1-t03-gate-integration.log",
+    "seconds": 128.73,
+    "exit": 1
+  },
+  {
+    "name": "integration-loose",
+    "log": ".scratch/runtime/m2-p1-t03-gate-integration-loose.log",
+    "seconds": 419.36,
+    "exit": 1
+  },
+  {
+    "name": "browser",
+    "log": ".scratch/runtime/m2-p1-t03-gate-browser.log",
+    "seconds": 705.1,
+    "exit": 1
+  },
+  {
+    "name": "package",
+    "log": ".scratch/runtime/m2-p1-t03-gate-package.log",
+    "seconds": 20.63,
+    "exit": 0
+  },
+  {
+    "name": "smoke",
+    "log": ".scratch/runtime/m2-p1-t03-gate-smoke.log",
+    "seconds": 42.94,
+    "exit": 0
+  }
+]

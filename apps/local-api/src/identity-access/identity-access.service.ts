@@ -535,6 +535,23 @@ export class IdentityAccessService {
          select $1, role_row.id, permission_name.name, $2
          from pharmacy_roles role_row
          cross join (values
+           ('patients.discounts.manage'),
+           ('patients.manage'),
+           ('patients.notes.manage'),
+           ('patients.notes.view'),
+           ('patients.view')
+         ) as permission_name(name)
+         where role_row.pharmacy_id = $1
+           and role_row.role_key in ('manager', 'pharmacist')`,
+        [pharmacyId, ownerId],
+      );
+      await client.query(
+        `insert into role_permission_grants (
+           pharmacy_id, role_id, permission_name, granted_by
+         )
+         select $1, role_row.id, permission_name.name, $2
+         from pharmacy_roles role_row
+         cross join (values
            ('inventory.batch_safety.manage'),
            ('inventory.counts.approve'), ('inventory.counts.record'),
            ('inventory.reorder.manage'), ('inventory.reorder.confirm'),
@@ -2815,6 +2832,27 @@ export class IdentityAccessService {
       throw this.denied(403, "permission-denied", requestId, permission);
     }
     return context;
+  }
+
+  /** Recheck patient permissions and the verified device/session in the write transaction. */
+  public async revalidatePatientOperation(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+    requiredPermissions: readonly PermissionName[],
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    const fresh = await this.currentContext(client, expected);
+    for (const permission of requiredPermissions) {
+      if (!hasPermission(fresh.permissions, permission)) {
+        throw await this.contextDenial(
+          fresh,
+          403,
+          "permission-denied",
+          permission,
+        );
+      }
+    }
+    return fresh;
   }
 
   public async revalidateLicenceAdministration(

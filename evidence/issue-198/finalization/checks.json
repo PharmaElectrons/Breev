@@ -1,0 +1,105 @@
+[
+  {
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\final-merged-build.log",
+    "arguments": [
+      "build"
+    ],
+    "exit": 0,
+    "seconds": 34.23,
+    "name": "final-merged-build",
+    "started": "2026-10-01T18:58:56.5966116+03:00"
+  },
+  {
+    "exit": 1,
+    "started": "2026-10-01T18:58:59.1816246+03:00",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\final-merged-contracts.log",
+    "name": "final-merged-contracts",
+    "arguments": [
+      "--filter",
+      "@breev/contracts",
+      "test:unit"
+    ],
+    "seconds": 6.1
+  },
+  {
+    "arguments": [
+      "--filter",
+      "@breev/contracts",
+      "test:unit"
+    ],
+    "name": "final-merged-contracts-retry",
+    "exit": 0,
+    "seconds": 3.66,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\final-merged-contracts-retry.log",
+    "started": "2026-10-01T18:59:44.7434596+03:00"
+  },
+  {
+    "name": "final-merged-postgres",
+    "seconds": 62.69,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\final-merged-postgres.log",
+    "exit": 0,
+    "arguments": [
+      "--filter",
+      "@breev/local-api",
+      "exec",
+      "vitest",
+      "run",
+      "src/purchasing/purchase-invoice-offer-migration.integration.test.ts",
+      "src/purchasing/purchase-posting.integration.test.ts",
+      "src/identity-access/custom-roles-migration.integration.test.ts",
+      "--reporter",
+      "verbose"
+    ],
+    "started": "2026-10-01T19:00:40.3812163+03:00"
+  },
+  {
+    "name": "final-merged-typecheck",
+    "seconds": 42.24,
+    "exit": 0,
+    "started": "2026-10-01T19:00:42.4438964+03:00",
+    "arguments": [
+      "typecheck"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\final-merged-typecheck.log"
+  },
+  {
+    "seconds": 15.76,
+    "started": "2026-10-01T19:00:45.0888459+03:00",
+    "name": "final-merged-focused-units",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\final-merged-focused-units.log",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "vitest",
+      "run",
+      "src/renderer/src/purchasing-item-details.unit.test.ts",
+      "src/renderer/src/purchasing-api.unit.test.ts",
+      "src/renderer/src/purchase-row-entry.unit.test.ts",
+      "src/renderer/src/navbar-collapse-menu.unit.test.ts",
+      "src/renderer/src/settings-screen.unit.test.ts"
+    ],
+    "exit": 0
+  },
+  {
+    "seconds": 54.59,
+    "name": "final-merged-t06-browser",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.browser.config.ts",
+      "test/browser/purchasing.browser.test.ts",
+      "--grep",
+      "T06 authoritative",
+      "--output",
+      "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\phase-1-finalize-1790869895\\browser-run"
+    ],
+    "exit": 0,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\final-merged-t06-browser.log",
+    "started": "2026-10-01T19:04:02.039425+03:00"
+  }
+]

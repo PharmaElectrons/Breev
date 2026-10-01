@@ -1,0 +1,153 @@
+
+Running 20 tests using 1 worker
+
+
+
+(node:24116) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/20] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate
+[2/20] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · en · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[3/20] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+  1) test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked 
+
+    Error: Timeout 10000ms exceeded while waiting on the predicate
+
+       at keyboard.ts:28
+
+      26 |     await control.focus();
+      27 |     await expect(control).toBeFocused({ timeout: 1_000 });
+    > 28 |   }).toPass({ timeout: 10_000 });
+         |      ^
+      29 | }
+      30 |
+      31 | export async function pressOn(
+        at focusControl (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\keyboard.ts:28:6)
+        at activate (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\keyboard.ts:42:9)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1308:21
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1297:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1163:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-d2c10-ilent-invalid-Delta-blocked\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-d2c10-ilent-invalid-Delta-blocked\error-context.md
+
+
+[4/20] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing
+[5/20] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:22044) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[6/20] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · en · dark › clause 3 — an adjustment records only the difference, and a return is separate
+[7/20] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · en · dark › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[8/20] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+  2) test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked 
+
+    Error: Timeout 10000ms exceeded while waiting on the predicate
+
+       at keyboard.ts:28
+
+      26 |     await control.focus();
+      27 |     await expect(control).toBeFocused({ timeout: 1_000 });
+    > 28 |   }).toPass({ timeout: 10_000 });
+         |      ^
+      29 | }
+      30 |
+      31 | export async function pressOn(
+        at focusControl (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\keyboard.ts:28:6)
+        at activate (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\keyboard.ts:42:9)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1308:21
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1297:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1163:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-afb33-ilent-invalid-Delta-blocked\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-afb33-ilent-invalid-Delta-blocked\error-context.md
+
+
+[9/20] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · en · dark › scope — the item-details panel in purchasing
+[10/20] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:14308) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[11/20] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · ar · light › clause 3 — an adjustment records only the difference, and a return is separate
+[12/20] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · ar · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[13/20] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · ar · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+  3) test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · ar · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked 
+
+    Error: Timeout 10000ms exceeded while waiting on the predicate
+
+       at keyboard.ts:28
+
+      26 |     await control.focus();
+      27 |     await expect(control).toBeFocused({ timeout: 1_000 });
+    > 28 |   }).toPass({ timeout: 10_000 });
+         |      ^
+      29 | }
+      30 |
+      31 | export async function pressOn(
+        at focusControl (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\keyboard.ts:28:6)
+        at activate (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\keyboard.ts:42:9)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1308:21
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1297:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1163:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-e5384-ilent-invalid-Delta-blocked\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-e5384-ilent-invalid-Delta-blocked\error-context.md
+
+
+[14/20] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · ar · light › scope — the item-details panel in purchasing
+[15/20] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:24052) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[16/20] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · ar · dark › clause 3 — an adjustment records only the difference, and a return is separate
+[17/20] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · ar · dark › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[18/20] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · ar · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+  4) test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · ar · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked 
+
+    Error: Timeout 10000ms exceeded while waiting on the predicate
+
+       at keyboard.ts:28
+
+      26 |     await control.focus();
+      27 |     await expect(control).toBeFocused({ timeout: 1_000 });
+    > 28 |   }).toPass({ timeout: 10_000 });
+         |      ^
+      29 | }
+      30 |
+      31 | export async function pressOn(
+        at focusControl (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\keyboard.ts:28:6)
+        at activate (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\keyboard.ts:42:9)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1308:21
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1297:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1163:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-7502f-ilent-invalid-Delta-blocked\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-7502f-ilent-invalid-Delta-blocked\error-context.md
+
+
+[19/20] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · ar · dark › scope — the item-details panel in purchasing
+[20/20] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  4 failed
+    test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked 
+    test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked 
+    test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · ar · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked 
+    test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · ar · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked 
+  8 did not run
+  8 passed (2.2m)
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.acceptance.config.ts --grep "clause 3|clause 4|adjustment scenario|scope.*item-details|units scenario"

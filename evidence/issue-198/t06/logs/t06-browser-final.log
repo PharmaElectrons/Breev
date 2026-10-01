@@ -1,0 +1,48 @@
+
+Running 6 tests using 1 worker
+
+
+
+(node:20748) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/6] test\browser\purchasing.browser.test.ts:487:3 › Supplier and Purchase Draft screens › enters the header keyboard-first, warns without blocking, and resumes after restart
+[2/6] test\browser\purchasing.browser.test.ts:640:3 › Supplier and Purchase Draft screens › enters durable rows by scanner and Enter, quick-creates a Product, and follows persisted column order
+[3/6] test\browser\purchasing.browser.test.ts:2360:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light
+[4/6] test\browser\purchasing.browser.test.ts:2360:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en dark
+  1) test\browser\purchasing.browser.test.ts:2360:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en dark 
+
+    Error: expect(locator).toHaveText(expected) failed
+
+    Locator: locator('aside.purchasing-authoritative-panel').getByRole('alert')
+    Expected: "Item facts unavailable. Check the local connection and retry; stock is not shown as zero."
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveText" with timeout 10000ms
+      - waiting for locator('aside.purchasing-authoritative-panel').getByRole('alert')
+
+
+      2790 |         await item.fill(`T06POS-${suffix}`);
+      2791 |         await item.press("Enter");
+    > 2792 |         await expect(panel.getByRole("alert")).toHaveText(
+           |                                                ^
+      2793 |           copy.panelUnavailable,
+      2794 |         );
+      2795 |         await expect(panel.locator('[data-panel-field="balance"]')).toHaveCount(
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:2792:48
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-37073--non-blocking-entry-en-dark\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-37073--non-blocking-entry-en-dark\error-context.md
+
+
+[5/6] test\browser\purchasing.browser.test.ts:2360:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar light
+[6/6] test\browser\purchasing.browser.test.ts:2360:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar dark
+  1 failed
+    test\browser\purchasing.browser.test.ts:2360:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en dark 
+  2 did not run
+  3 passed (47.7s)
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 authoritative|enters the header keyboard-first|enters durable rows"

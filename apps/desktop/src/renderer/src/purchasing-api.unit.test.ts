@@ -11,11 +11,37 @@ import {
   requestPostedPurchases,
   rememberPurchasePost,
   requestSuppliers,
+  requestPurchaseItemDetails,
 } from "./purchasing-api";
 
 const REQUEST_ID = "018f9999-9999-7999-8999-999999999999";
 
 describe("Purchasing REST client", () => {
+  it("cancels a superseded item projection through its fetch signal", async () => {
+    const selection = new AbortController();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_url, options) => {
+        const signal = options?.signal;
+        if (signal === undefined || signal === null)
+          throw new Error("Missing abort signal");
+        await new Promise<void>((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          }),
+        );
+        throw new Error("An aborted projection cannot return facts");
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = requestPurchaseItemDetails(
+      "http://127.0.0.1:3000",
+      "019c0000-0000-7000-8000-000000000001",
+      selection.signal,
+    );
+    selection.abort(new Error("Selection superseded"));
+    await expect(pending).rejects.toThrow("Selection superseded");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -76,6 +102,12 @@ describe("Purchasing REST client", () => {
     const draftId = "018fa000-0000-7000-8000-000000000001";
     const result = {
       posted: {
+        invoiceOffer: {
+          input: { mode: "none", value: "0" },
+          ruleVersion: 1,
+          basisFils: "0",
+          offerFils: "0",
+        },
         allowanceFils: "0",
         allowanceSnapshot: { basisFils: "1000", percentage: "0" },
         costAfterDiscountFils: "1000",
@@ -290,6 +322,7 @@ describe("Purchasing REST client", () => {
           allowancePercentageSnapshot: null,
           costAfterDiscountFils: null,
           costVisibility: "hidden-by-permission",
+          invoiceOffer: null,
           canAdjust: false,
           canReturn: false,
           id,
@@ -316,6 +349,14 @@ describe("Purchasing REST client", () => {
               inventoryUnitQuantity: "1",
               itemDisplayName: "Panadol snapshot",
               itemId: "018fa000-0000-7000-8000-000000000008",
+              allowanceFils: null,
+              batchId: "018fa000-0000-7000-8000-00000000000c",
+              marginPercentage: null,
+              movementId: "018fa000-0000-7000-8000-00000000000d",
+              notes: "Saved review note",
+              offerFils: null,
+              priceCapture: "by-price-propagated",
+              pricingMethod: "by-price",
               linePrimarySupplierCostFils: null,
               lotNumber: null,
               ordinal: 1,

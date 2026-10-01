@@ -409,6 +409,7 @@ describe.sequential(
 
     async function postPurchase(supplierId: string): Promise<string> {
       const draftResponse = await request("POST", "/purchases/drafts", {
+        invoiceOffer: { mode: "none", value: "0" },
         idempotencyKey: uuidV7(),
         invoiceDate: "2026-06-15",
         settlementContext: "debt",

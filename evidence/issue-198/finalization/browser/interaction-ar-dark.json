@@ -1,0 +1,11 @@
+{
+  "barcodeMs": 74.13829999999871,
+  "searchMs": 300.22589999999764,
+  "saveMs": 130.0408000000025,
+  "dataset": "small correctness fixture; reference performance is recorded separately",
+  "locale": "ar",
+  "theme": "dark",
+  "role": "Main renderer",
+  "network": "loopback; panel intentionally held/offline",
+  "releasePerformanceApproval": false
+}

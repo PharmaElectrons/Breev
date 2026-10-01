@@ -1,0 +1,46 @@
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a debt purchase atomically with document, snapshots, batch, movement, gross WAC, gross AP, and a balanced journal 3109ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T05 searches stable posted numbers and keeps complete row snapshots unchanged after master edits 3587ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a cash purchase that changes only the Cash Box balance, never a supplier payable 150ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > replays an idempotent retry, rejects a conflicting payload, and lets exactly one of two concurrent keys post 520ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts two different drafts concurrently with distinct numbers and conserved WAC 523ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > warns but still posts a duplicate supplier invoice number 410ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > keeps the draft and names the row rule when receipt evidence is missing 128ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > changes Cost After Discount but never gross WAC or AP when only the allowance percentage differs 470ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > enforces a balanced journal at commit even bypassing the application 163ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back a forced database failure after number allocation, leaving an audited unissued gap a retry reuses and issues 331ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back every earlier write when the final idempotency result cannot be recorded 287ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts only Purchase Adjustment Deltas, preserves the original, numbers A01/A02, replays once, serializes, and blocks consumed stock 1676ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > binds Adjustment evidence/version/hash across concurrent edits, API restart, lost-response retries, and immutable audit 9621ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > requires a new Adjustment confirmation when authoritative batch stock changes after preview 954ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back Adjustment confirmation posting at every write stage and recovers the same attempt 2777ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links 1476ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > corrects supplier identities and invoice numbers with immutable before/after headers, balanced transfers and current duplicate warnings 1051ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rejects protected row/header changes and unavailable suppliers without changing the saved copy, and revalidates a supplier at Post 639ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > keeps percentage pricing and conversion protected while showing the exact cost-derived retail Delta 480ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > transfers only the remaining Purchase payable after Returns and binds later Returns to the corrected Supplier 1288ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T04 persists versioned offers across restart, binds correction review, and preserves gross accounting and immutable history 4152ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T05 redacts saved row discounts and margin by setting and permission without losing non-cost facts 428ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T06 authoritative item details > T06 reconciles exact live balance, configured expiry, zero/missing values and frozen cost references 3071ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T06 authoritative item details > T06 preserves stock when valuation reconciliation is unavailable and performs no inventory writes 354ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T06 authoritative item details > T06 redacts stock and costs independently by server permissions and settings 525ms
+ ✓ src/identity-access/custom-roles-migration.integration.test.ts > migration 0011: custom roles upgrade > preserves identities while granting manager and owner permissions once 1062ms
+ ✓ src/identity-access/custom-roles-migration.integration.test.ts > migration 0011: custom roles upgrade > enforces one identity per role, unique custom names, and the owner floor in PostgreSQL 187ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > adds zero-offer facts without changing historical costs, receipts, hashes or role revisions 122ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > rejects malformed persisted offer {"mode":"fixed","value":"-1"} 48ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > rejects malformed persisted offer {"mode":"percentage","value":"100.000001"} 52ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > rejects malformed persisted offer {"mode":"percentage","value":"5.0000001"} 52ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > rejects malformed persisted offer {"mode":"none","value":"1"} 46ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > rejects malformed persisted offer {"mode":"fixed","value":"1","other":true} 48ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > rejects missing, unsupported or inconsistent snapshot {"input":{"mode":"fixed","value":"1"},"basisFils":"100","offerFils":"1"} 38ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > rejects missing, unsupported or inconsistent snapshot {"input":{"mode":"percentage","value":"5"},"ruleVersion":1,"basisFils":"100","offerFils":"6"} 1ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > rejects missing, unsupported or inconsistent snapshot {"input":{"mode":"fixed","value":"1"},"ruleVersion":2,"basisFils":"100","offerFils":"1"} 1ms
+ ✓ src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0032 invoice offer forward migration > stores one current receipt projection while retaining every original payload 8ms
+
+ Test Files  3 passed (3)
+      Tests  37 passed (37)
+   Start at  19:00:41
+   Duration  61.11s (transform 677ms, setup 0ms, import 5.09s, tests 55.12s, environment 0ms)
+

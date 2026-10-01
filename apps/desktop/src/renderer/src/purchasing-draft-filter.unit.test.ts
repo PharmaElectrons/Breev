@@ -4,6 +4,8 @@ import { filterPurchaseDrafts } from "./purchasing-draft-filter";
 
 function dummyDraft(overrides?: Partial<PurchaseDraft>): PurchaseDraft {
   return {
+    invoiceOffer: { mode: "none", value: "0" },
+    offerRuleVersion: 1,
     allowanceSnapshot: {
       basisFils: "0",
       percentage: "0",

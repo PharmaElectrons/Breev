@@ -1,0 +1,63 @@
+
+Running 1 test using 1 worker
+
+
+
+(node:22652) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/1] test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements
+test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements
+T06 reference interaction en/light sample 1
+
+T06 reference interaction en/light sample 2
+
+T06 reference interaction en/light sample 3
+
+T06 reference interaction en/light sample 4
+
+T06 reference interaction en/light sample 5
+
+T06 reference interaction en/light sample 6
+
+T06 reference interaction en/light sample 7
+
+T06 reference interaction en/light sample 8
+
+T06 reference interaction en/light sample 9
+
+T06 reference interaction en/light sample 10
+
+T06 reference interaction en/light sample 11
+
+T06 reference interaction en/light sample 12
+
+T06 reference interaction en/light sample 13
+
+T06 reference interaction en/light sample 14
+
+T06 reference interaction en/light sample 15
+
+T06 reference interaction en/light sample 16
+
+T06 reference interaction en/light sample 17
+
+T06 reference interaction en/light sample 18
+
+T06 reference interaction en/light sample 19
+
+T06 reference interaction en/light sample 20
+
+  1) test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+
+    Test timeout of 180000ms exceeded.
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+
+  1 failed
+    test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 M2 reference-volume"
