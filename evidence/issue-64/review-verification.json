@@ -195,9 +195,70 @@
       "exitCode": 0
     }
   ],
-  "priorHostedAttempt": {
-    "run": 36902346975,
-    "conclusion": "cancelled",
-    "reason": "Cancelled intentionally after final Arabic capture inspection found picker overlap; hosted verification is restarted on the final corrected head."
-  }
+  "dateLocaleRegression": {
+    "before": {
+      "exitCode": 1,
+      "classification": "Product regression introduced by native/text control root transition",
+      "expected": "2020-10-01",
+      "received": ""
+    },
+    "resolution": "Retain the entered date in control state across Arabic/English transitions",
+    "after": [
+      {
+        "command": "pnpm format:check",
+        "exitCode": 0,
+        "seconds": 12.11
+      },
+      {
+        "command": "pnpm lint",
+        "exitCode": 0,
+        "seconds": 10.25
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec tsc -p tsconfig.renderer.json --noEmit",
+        "exitCode": 0,
+        "seconds": 10.95
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec tsc -p tsconfig.node.json --noEmit",
+        "exitCode": 0,
+        "seconds": 2.94
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec vitest run src/renderer/src/report-time.unit.test.ts src/main/inventory-report-csv.unit.test.ts",
+        "exitCode": 0,
+        "seconds": 1.38
+      },
+      {
+        "command": "pnpm build",
+        "exitCode": 0,
+        "seconds": 6.85
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts -g shows all seven read-only reports|normalizes Arabic report date|preserves report keyboard focus",
+        "exitCode": 0,
+        "seconds": 91.84
+      },
+      {
+        "command": "pnpm package:desktop",
+        "exitCode": 0,
+        "seconds": 5.51
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec playwright test --config playwright.config.ts",
+        "exitCode": 0,
+        "seconds": 47.16
+      }
+    ]
+  },
+  "cancelledHostedAttempts": [
+    {
+      "run": 36902346975,
+      "reason": "Verify final RTL picker placement"
+    },
+    {
+      "run": 36904895651,
+      "reason": "Verify final preservation of pending dates across locales"
+    }
+  ]
 }

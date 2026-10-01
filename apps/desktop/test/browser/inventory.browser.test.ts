@@ -719,6 +719,16 @@ test.describe.serial("read-only inventory review", () => {
         name === "businessFrom" ? "2020-10-01" : "2026-10-01",
       );
     }
+    for (const language of ["التبديل إلى الإنجليزية", "Switch to Arabic"]) {
+      await page.getByTestId("collapse-menu-trigger").click();
+      await page.getByRole("button", { name: language, exact: true }).click();
+      await expect(page.locator("[name='businessFrom']")).toHaveValue(
+        "2020-10-01",
+      );
+      await expect(page.locator("[name='businessTo']")).toHaveValue(
+        "2026-10-01",
+      );
+    }
     const sent = page.waitForRequest("**/reports/inventory/quantity?*");
     await page.locator(".report-controls button[type='submit']").click();
     expect(

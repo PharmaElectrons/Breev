@@ -1,5 +1,5 @@
 import { normalizeIndicDigits } from "@breev/contracts/local-rest";
-import { useRef, type InputHTMLAttributes } from "react";
+import { useRef, useState, type InputHTMLAttributes } from "react";
 import { CalendarDays } from "lucide-react";
 import { usePreferences } from "./preferences-provider";
 import { reportMessages } from "../../shared/report-messages";
@@ -15,11 +15,14 @@ export function ReportDateInput({
   readonly type: "date" | "datetime-local";
 }): React.JSX.Element {
   const { locale } = usePreferences();
+  const [draft, setDraft] = useState(props.defaultValue ?? "");
   const entry = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const input = (
     <input
       {...props}
+      defaultValue={undefined}
+      value={props.value ?? draft}
       ref={entry}
       type={locale === "ar" ? "text" : type}
       dir="ltr"
@@ -41,6 +44,7 @@ export function ReportDateInput({
           if (start !== null && end !== null)
             input.setSelectionRange(start, end);
         }
+        setDraft(normalized);
         onChange?.(event);
       }}
     />
@@ -60,6 +64,7 @@ export function ReportDateInput({
         tabIndex={-1}
         onChange={(event) => {
           if (entry.current) entry.current.value = event.currentTarget.value;
+          setDraft(event.currentTarget.value);
           onChange?.(event);
         }}
       />
