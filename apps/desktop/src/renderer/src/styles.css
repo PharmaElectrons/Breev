@@ -1171,7 +1171,7 @@ a:focus-visible,
   --primary-foreground: #ffffff;
   --primary-wash: #f6f7f9;
   --border: #d7dee4;
-  --control-border: #d7dee4;
+  --control-border: #788e9d;
   --danger: #df202e;
   --danger-soft: #fce8ea;
   --info: #4a94cc;
@@ -1716,7 +1716,9 @@ a:focus-visible,
 }
 
 .catalog-workspace
-  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not(
+    .catalog-stepper-input
+  ),
 .catalog-workspace select,
 .catalog-workspace textarea {
   min-block-size: 2.125rem;
@@ -1737,7 +1739,9 @@ a:focus-visible,
 }
 
 .catalog-workspace
-  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):focus,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not(
+    .catalog-stepper-input
+  ):focus,
 .catalog-workspace select:focus,
 .catalog-workspace textarea:focus {
   border-color: var(--primary);
@@ -3497,6 +3501,44 @@ a:focus-visible,
   background: var(--card);
   box-shadow: 0 1px 2px var(--shadow);
   color: var(--foreground);
+}
+
+.catalog-workspace .catalog-stepper {
+  border: 1px solid var(--control-border);
+  border-radius: 0.375rem;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.catalog-workspace .catalog-stepper-input {
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+}
+
+.catalog-workspace .catalog-stepper-controls {
+  border-right: 1px solid var(--control-border);
+  background: var(--surface);
+}
+
+.catalog-workspace .catalog-stepper-button {
+  border: 0;
+  background: var(--surface);
+  color: var(--muted-foreground);
+}
+
+.catalog-workspace .catalog-stepper-button + .catalog-stepper-button {
+  border-top: 1px solid var(--control-border);
+}
+
+.catalog-workspace .catalog-stepper-button:hover:not(:disabled) {
+  background: var(--primary-wash);
+  color: var(--primary);
+}
+
+.catalog-workspace .catalog-stepper-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .inventory-metric span {
@@ -12135,7 +12177,7 @@ a:focus-visible,
 
   .sales-draft-context {
     display: block;
-    max-block-size: 5rem;
+    max-block-size: min(18rem, 40vh);
     overflow: auto;
     border-block-start: 1px solid var(--border);
     border-inline-start: 0;
@@ -12147,7 +12189,7 @@ a:focus-visible,
   }
 
   .sales-item-context {
-    display: none;
+    display: block;
   }
 
   .sales-draft-context-card,
@@ -13521,33 +13563,82 @@ a:focus-visible,
 }
 @media (max-width: 56rem) {
   .shell-page[data-sales-workspace] {
-    block-size: 100dvh;
-    min-block-size: 0;
-    overflow: hidden;
+    block-size: auto;
+    min-block-size: 100dvh;
+    overflow-x: hidden;
+    overflow-y: visible;
     grid-template-rows: auto minmax(0, 1fr);
   }
+
   .sales-workspace {
-    grid-template-rows: auto minmax(0, 1fr);
-    block-size: 100%;
-    overflow: hidden;
+    flex-direction: column;
+    block-size: auto;
+    min-block-size: 0;
+    overflow: visible;
   }
-  .sales-workspace-main,
+
+  .sales-draft-tray {
+    flex: 0 0 auto;
+    inline-size: auto;
+    min-inline-size: 0;
+    max-inline-size: none;
+    overflow: visible;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border);
+  }
+
+  .sales-workspace-main {
+    flex: 0 0 auto;
+    block-size: auto;
+    min-block-size: 0;
+    overflow: visible;
+  }
+
   .sales-draft-layout {
-    overflow: hidden;
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    block-size: auto;
     min-block-size: 0;
+    overflow: visible;
   }
-  .sales-draft-layout[data-draft-loaded="true"] {
-    grid-template-rows: minmax(0, 1fr);
-  }
-  .sales-invoice {
-    min-block-size: 0;
-  }
+
+  .sales-screen,
   .sales-screen[data-draft-loaded="true"] {
-    overflow: hidden;
+    flex: 0 0 auto;
+    block-size: auto;
+    min-block-size: 24rem;
+    overflow: visible;
   }
+
+  .sales-invoice {
+    flex: 0 0 auto;
+    min-block-size: 23rem;
+  }
+
+  .sales-side-stack {
+    flex: 0 0 auto;
+    inline-size: auto;
+    min-inline-size: 0;
+    max-inline-size: none;
+    overflow: visible;
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--border);
+  }
+
+  .sales-draft-context {
+    max-block-size: none;
+    overflow: visible;
+  }
+
+  .sales-item-context {
+    display: block;
+  }
+
   .sales-entry-row {
     grid-template-columns: auto minmax(0, 1fr);
   }
+
   .sales-entry-row .sales-scan {
     grid-column: 1 / -1;
   }

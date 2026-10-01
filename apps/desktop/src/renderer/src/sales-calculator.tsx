@@ -21,6 +21,25 @@ export interface SalesCalculatorProps {
   readonly onChangeUnit?: (() => void) | undefined;
 }
 
+export function stepCalculatorQuantity(
+  value: string,
+  direction: 1 | -1,
+): string {
+  const normalized = value.trim();
+  const current =
+    normalized.length === 0
+      ? direction === 1
+        ? 0n
+        : 1n
+      : /^\d+$/u.test(normalized)
+        ? BigInt(normalized)
+        : null;
+  if (current === null) return value;
+  const next =
+    direction === 1 ? current + 1n : current > 1n ? current - 1n : 1n;
+  return next.toString();
+}
+
 export function SalesCalculator({
   busy,
   allowPrice,
@@ -243,15 +262,13 @@ export function SalesCalculator({
                   setError(false);
                 } else if (key === "+") {
                   if (target === "quantity") {
-                    const currentNum = parseInt(value || "0", 10) || 0;
-                    setValue(String(currentNum + 1));
+                    setValue(stepCalculatorQuantity(value, 1));
                   } else {
                     append("+");
                   }
                 } else if (key === "-") {
                   if (target === "quantity") {
-                    const currentNum = parseInt(value || "1", 10) || 1;
-                    setValue(String(Math.max(1, currentNum - 1)));
+                    setValue(stepCalculatorQuantity(value, -1));
                   } else {
                     append("-");
                   }

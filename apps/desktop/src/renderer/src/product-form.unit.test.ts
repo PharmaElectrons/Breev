@@ -8,6 +8,7 @@ import {
   composeProductDisplayName,
   getAbandonedDirtyFields,
   serverPathToFormKey,
+  stepNumericText,
 } from "./product-form";
 import { formatDefaultUnit, formatFilsToIqd } from "./product-record";
 
@@ -370,6 +371,21 @@ describe("Product form and name generation", () => {
         thirdUnitName: "   ",
       });
       expect(payloadWithEmptyName.thirdUnit).toBeNull();
+    });
+  });
+
+  describe("numeric stepper values", () => {
+    it("keeps fractional margins and large fils exact", () => {
+      expect(stepNumericText("20.5", 1, 5, 0)).toBe("25.5");
+      expect(stepNumericText("20.5", -1, 5, 0)).toBe("15.5");
+      expect(stepNumericText("9007199254740993", 1, 500, 0)).toBe(
+        "9007199254741493",
+      );
+    });
+
+    it("leaves a value unchanged when a step would cross its bound", () => {
+      expect(stepNumericText("1", -1, 1, 1)).toBeNull();
+      expect(stepNumericText("100", 1, 5, 0, 100)).toBeNull();
     });
   });
 

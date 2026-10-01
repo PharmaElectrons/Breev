@@ -409,6 +409,67 @@ export function ModeSwitchConfirmationDialog({
   );
 }
 
+function decimalFractionDigits(value: string): number | null {
+  const match = /^-?\d+(?:\.(\d*))?$/u.exec(value.trim());
+  return match === null ? null : (match[1]?.length ?? 0);
+}
+
+function toScaledInteger(value: string, scale: number): bigint | null {
+  const match = /^(-?)(\d+)(?:\.(\d*))?$/u.exec(value.trim());
+  if (match === null) return null;
+  const fraction = match[3] ?? "";
+  const magnitude = BigInt(match[2] + fraction.padEnd(scale, "0"));
+  return match[1] === "-" ? -magnitude : magnitude;
+}
+
+function formatScaledInteger(value: bigint, scale: number): string {
+  const negative = value < 0n;
+  const digits = (negative ? -value : value)
+    .toString()
+    .padStart(scale + 1, "0");
+  const sign = negative ? "-" : "";
+  if (scale === 0) return sign + digits;
+  const whole = digits.slice(0, -scale);
+  const fraction = digits.slice(-scale).replace(/0+$/u, "");
+  return sign + whole + (fraction.length === 0 ? "" : "." + fraction);
+}
+
+export function stepNumericText(
+  value: string,
+  direction: 1 | -1,
+  step: number,
+  min: number,
+  max?: number,
+): string | null {
+  const stepText = String(step);
+  const minText = String(min);
+  const maxText = max === undefined ? null : String(max);
+  const values = [
+    value,
+    stepText,
+    minText,
+    ...(maxText === null ? [] : [maxText]),
+  ];
+  const scale = Math.max(
+    0,
+    ...values.map((candidate) => decimalFractionDigits(candidate) ?? 0),
+  );
+  const current = toScaledInteger(value, scale) ?? 0n;
+  const amount = toScaledInteger(stepText, scale);
+  const minimum = toScaledInteger(minText, scale);
+  const maximum = maxText === null ? null : toScaledInteger(maxText, scale);
+  if (
+    amount === null ||
+    minimum === null ||
+    (maxText !== null && maximum === null)
+  ) {
+    return null;
+  }
+  const next = current + BigInt(direction) * amount;
+  if (next < minimum || (maximum !== null && next > maximum)) return null;
+  return formatScaledInteger(next, scale);
+}
+
 interface StepperInputProps {
   readonly "aria-describedby"?: string;
   readonly "aria-invalid"?: boolean;
@@ -450,25 +511,22 @@ function StepperInput({
   const copy = catalogMessages[locale];
   const handleStep = (direction: 1 | -1): void => {
     if (disabled) return;
-    const current = Number.parseInt(value, 10);
-    const base = Number.isNaN(current) ? 0 : current;
-    const next = base + direction * step;
-    if (min !== undefined && next < min) return;
-    if (max !== undefined && next > max) return;
-    onChange(String(next));
+    const next = stepNumericText(value, direction, step, min, max);
+    if (next !== null) onChange(next);
   };
 
   return (
     <div
-      className={`relative flex items-center h-[34px] border border-[#D7DEE4] rounded-[6px] bg-white overflow-hidden ${className}`}
+      data-catalog-stepper
+      className={`catalog-stepper relative flex items-center h-[34px] overflow-hidden ${className}`}
     >
       <input
         aria-describedby={ariaDescribedby}
         aria-invalid={ariaInvalid}
         aria-label={ariaLabel}
         aria-required={ariaRequired}
-        className={`w-full h-full pl-6 pr-2.5 text-[13px] border-none outline-none bg-transparent ${
-          isBold ? "font-bold text-[#1E2A33]" : "text-[#1E2A33]"
+        className={`catalog-stepper-input w-full h-full pl-6 pr-2.5 text-[13px] border-none outline-none bg-transparent ${
+          isBold ? "font-bold" : ""
         }`}
         data-field-key={dataFieldKey}
         dir="ltr"
@@ -482,11 +540,11 @@ function StepperInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
-      <div className="absolute left-0 top-0 bottom-0 w-5 flex flex-col border-r border-[#CDCDCD] bg-[#FDFDFE]">
+      <div className="catalog-stepper-controls absolute left-0 top-0 bottom-0 w-5 flex flex-col">
         <button
           aria-controls={id}
           aria-label={copy.actions.increaseValue}
-          className="flex-1 flex items-center justify-center hover:bg-[#E5EAEF] text-[#5C7385] cursor-pointer"
+          className="catalog-stepper-button flex-1 flex items-center justify-center cursor-pointer"
           disabled={disabled}
           tabIndex={-1}
           type="button"
@@ -497,7 +555,7 @@ function StepperInput({
         <button
           aria-controls={id}
           aria-label={copy.actions.decreaseValue}
-          className="flex-1 flex items-center justify-center hover:bg-[#E5EAEF] text-[#5C7385] border-t border-[#CDCDCD] cursor-pointer"
+          className="catalog-stepper-button flex-1 flex items-center justify-center cursor-pointer"
           disabled={disabled}
           tabIndex={-1}
           type="button"

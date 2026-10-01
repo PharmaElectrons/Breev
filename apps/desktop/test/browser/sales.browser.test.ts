@@ -827,6 +827,8 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     const invoice = page.locator(`[data-sale-invoice="${draftId}"]`);
     await expect(invoice.locator("[data-sale-line-id]")).toHaveCount(1);
     await expect(invoice).toContainText("Panadol Extra GSK");
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await expect(page.locator(".sales-item-context")).toBeVisible();
     await expect(page.locator(".sales-item-context")).toContainText(
       "No stock movement recorded",
     );
@@ -860,6 +862,23 @@ test.describe.serial("sale drafts and the reorder row action", () => {
             .invoiceDiscountFils,
       )
       .toBe("1000");
+
+    const quantityEditor = invoice
+      .locator(".sales-line-editor")
+      .getByLabel("Quantity");
+    await quantityEditor.fill("7");
+    await calculator.getByRole("button", { name: "Invoice discount" }).click();
+    await calculator.getByRole("textbox", { name: "Calculator" }).fill("2");
+    await calculator.getByRole("button", { name: "Apply to draft" }).click();
+    await expect
+      .poll(
+        async () =>
+          ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+            .invoiceDiscountFils,
+      )
+      .toBe("2000");
+    await expect(quantityEditor).toHaveValue("7");
+
     await page.screenshot({
       path: evidencePath("issue-62", "workspace", "sale-invoice-en-light.png"),
     });
@@ -886,6 +905,16 @@ test.describe.serial("sale drafts and the reorder row action", () => {
         ),
       });
     }
+
+    await page.setViewportSize({ width: 512, height: 384 });
+    await invoice.locator(".sales-invoice-final").scrollIntoViewIfNeeded();
+    await expect(invoice.locator(".sales-invoice-final")).toBeInViewport();
+    const invoiceActions = invoice.locator(".sales-invoice-actions");
+    await invoiceActions.scrollIntoViewIfNeeded();
+    await expect(invoiceActions.getByRole("button").last()).toBeInViewport();
+    const salesActions = page.locator(".sales-action-footer");
+    await salesActions.scrollIntoViewIfNeeded();
+    await expect(salesActions.getByRole("button").last()).toBeInViewport();
 
     await invoice.getByRole("button", { name: /Open item record/ }).click();
     const itemRecord = page.getByRole("dialog", { name: "Item record" });
@@ -1036,6 +1065,15 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     });
     await priceButton.click();
     const dialog = page.getByRole("dialog", { name: "Change line price" });
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByLabel("Unit price (IQD)")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(priceButton).toBeFocused();
+    await priceButton.click();
     await dialog.getByLabel("Unit price (IQD)").fill("77.5");
     await dialog.getByLabel("Reason").fill("Approved local promotion");
     await dialog.getByRole("button", { name: "Save price" }).click();

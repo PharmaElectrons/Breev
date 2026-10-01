@@ -20,7 +20,7 @@ import {
   type ProductCreateRequest,
   type ProductDefinitionMode,
 } from "@breev/contracts/local-rest";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -1419,6 +1419,71 @@ test.describe.serial("Product catalog screens", () => {
         } finally {
           await context.close();
         }
+      }
+    }
+  });
+
+  test("Catalog text controls keep themed surfaces and visible boundaries", async ({
+    browser,
+  }) => {
+    for (const theme of ["light", "dark"] as const) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await installDesktopFake(page, renderer.origin, {
+          locale: "ar",
+          theme,
+        });
+        await page.goto(`${renderer.origin}#/catalog/products/new`);
+
+        const arabicName = page.locator('input[name="arabicSearchName"]');
+        const railSearch = page.locator(".catalog-rail-search");
+        await expect(arabicName).toBeVisible();
+        await expect(railSearch).toBeVisible();
+
+        const expectedBorder =
+          theme === "dark" ? "rgb(91, 120, 136)" : "rgb(120, 142, 157)";
+        const expectedSurface =
+          theme === "dark" ? "rgb(15, 23, 29)" : "rgb(255, 255, 255)";
+        const expectThemedBoundary = async (control: Locator) => {
+          const appearance = await control.evaluate((element) => {
+            const style =
+              element.ownerDocument.defaultView!.getComputedStyle(element);
+            return {
+              background: style.backgroundColor,
+              borderColor: style.borderTopColor,
+              borderWidth: style.borderTopWidth,
+            };
+          });
+          expect(appearance).toEqual({
+            background: expectedSurface,
+            borderColor: expectedBorder,
+            borderWidth: "1px",
+          });
+        };
+        await expectThemedBoundary(arabicName);
+        await expectThemedBoundary(railSearch);
+
+        await page.locator('input[name="tradeName"]').fill("Theme check");
+        await page
+          .locator("form.catalog-product-form button[type=submit]")
+          .click();
+        await expect(page.locator("form.catalog-product-form")).toHaveAttribute(
+          "data-create-step",
+          "2",
+        );
+        const wholesale = page.locator(
+          '[data-catalog-stepper]:has(input[name="pricing.wholesalePriceFils"])',
+        );
+        const cost = page.locator(
+          '[data-catalog-stepper]:has(input[name="pricing.costFils"])',
+        );
+        await expect(wholesale).toBeVisible();
+        await expect(cost).toBeVisible();
+        await expectThemedBoundary(wholesale);
+        await expectThemedBoundary(cost);
+      } finally {
+        await context.close();
       }
     }
   });

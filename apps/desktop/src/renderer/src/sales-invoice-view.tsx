@@ -184,8 +184,16 @@ function LineEditor({
   useEffect(() => {
     setQuantity(line.quantity);
     setPercentage(line.lineDiscountPercentage);
-    if (line.kind === "catalog" && line.unitId !== null) setUnitId(line.unitId);
-  }, [line]);
+    setUnitId(
+      line.kind === "catalog" && line.unitId !== null ? line.unitId : "",
+    );
+  }, [
+    line.id,
+    line.quantity,
+    line.lineDiscountPercentage,
+    line.kind,
+    line.unitId,
+  ]);
 
   return (
     <form

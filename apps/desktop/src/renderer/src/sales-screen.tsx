@@ -409,6 +409,26 @@ function SaleDraftScreen({
     readonly lineId: string;
     readonly initialPriceFils: string;
   } | null>(null);
+  const priceDialogReturnFocus = useRef<HTMLElement | null>(null);
+  const openPriceDialog = (lineId: string, initialPriceFils: string): void => {
+    const activeElement = document.activeElement;
+    priceDialogReturnFocus.current =
+      activeElement instanceof HTMLElement && activeElement !== document.body
+        ? activeElement
+        : null;
+    setPriceDialog({ lineId, initialPriceFils });
+    commitFocus(() =>
+      document.querySelector<HTMLElement>(".sales-price-dialog"),
+    );
+  };
+  const closePriceDialog = (): void => {
+    const returnTarget = priceDialogReturnFocus.current;
+    priceDialogReturnFocus.current = null;
+    setPriceDialog(null);
+    commitFocus(() =>
+      returnTarget?.isConnected ? returnTarget : searchRef.current,
+    );
+  };
   useEffect(() => {
     if (recordProductId !== null)
       commitFocus(() =>
@@ -1604,10 +1624,7 @@ function SaleDraftScreen({
             }}
             onOpenPrice={(line) => {
               setSelectedLineId(line.id);
-              setPriceDialog({
-                lineId: line.id,
-                initialPriceFils: line.unitPriceFils,
-              });
+              openPriceDialog(line.id, line.unitPriceFils);
             }}
             draft={draft}
             locale={locale}
@@ -1734,10 +1751,7 @@ function SaleDraftScreen({
                     }),
                   );
                 } else if (target === "price" && selectedLine !== null) {
-                  setPriceDialog({
-                    lineId: selectedLine.id,
-                    initialPriceFils: value,
-                  });
+                  openPriceDialog(selectedLine.id, value);
                 }
               }}
             />,
@@ -1756,7 +1770,7 @@ function SaleDraftScreen({
           busy={editBusy}
           pending={pendingEdit.current !== null}
           error={editError}
-          onCancel={() => setPriceDialog(null)}
+          onCancel={closePriceDialog}
           onRetry={() => {
             void sendPendingEdit();
           }}
@@ -1774,7 +1788,7 @@ function SaleDraftScreen({
                     reason,
                   },
                 ),
-              () => setPriceDialog(null),
+              closePriceDialog,
             );
           }}
         />
