@@ -1,0 +1,172 @@
+
+Running 8 tests using 1 worker
+
+
+
+(node:21128) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/8] test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing
+  1) test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('aside.purchase-item-panel')
+    Expected substring: "90000"
+    Received string:    "Product Info✕Paracetamol and Caffeine5000167000115Panel Detail ItemDetailed Balance0Pack0StripTotal : 0 StripPackaging1 Pack = 4 StripStock limits↓ Not available · ↑ Not available StripWholesale priceIQD 90.000Consumption rateNot available in M2Days of supplyNot available in M2ExpiryNo expiry recordedCategoryAnalgesicPricing modeBy PriceCurrent retail priceIQD 140.000Current average costNot available / StripEstimated surplusNot available in M2Stock alertsOut of stockPharmacy business date: 2026-10-01On-hand batchesNo on-hand batchesLast posted Purchase · saved row totalsNo posted Purchase cost reference"
+    Timeout: 10000ms
+
+    Call log:
+      - Expect "toContainText" with timeout 10000ms
+      - waiting for locator('aside.purchase-item-panel')
+        23 × locator resolved to <aside tabindex="-1" aria-labelledby="purchase-item-panel-title" class="purchase-item-sidebar purchase-item-panel purchasing-authoritative-panel">…</aside>
+           - unexpected value "Product Info✕Paracetamol and Caffeine5000167000115Panel Detail ItemDetailed Balance0Pack0StripTotal : 0 StripPackaging1 Pack = 4 StripStock limits↓ Not available · ↑ Not available StripWholesale priceIQD 90.000Consumption rateNot available in M2Days of supplyNot available in M2ExpiryNo expiry recordedCategoryAnalgesicPricing modeBy PriceCurrent retail priceIQD 140.000Current average costNot available / StripEstimated surplusNot available in M2Stock alertsOut of stockPharmacy business date: 2026-10-01On-hand batchesNo on-hand batchesLast posted Purchase · saved row totalsNo posted Purchase cost reference"
+
+
+      1505 |               await expect(
+      1506 |                 page.locator("aside.purchase-item-panel"),
+    > 1507 |               ).toContainText(PANEL_ITEM_WHOLESALE_PRICE_FILS);
+           |                 ^
+      1508 |               // The entry row and any committed rows share one table, so a
+      1509 |               // single assertion covers the whole invoice grid.
+      1510 |               await expect(
+        at observe (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1507:17)
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:30)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1501:22
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1389:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-a45a2-details-panel-in-purchasing\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-a45a2-details-panel-in-purchasing\error-context.md
+
+
+[2/8] test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:24108) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[3/8] test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · en · dark › scope — the item-details panel in purchasing
+  2) test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · en · dark › scope — the item-details panel in purchasing 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('aside.purchase-item-panel')
+    Expected substring: "90000"
+    Received string:    "Product Info✕Paracetamol and Caffeine5000167000115Panel Detail ItemDetailed Balance0Pack0StripTotal : 0 StripPackaging1 Pack = 4 StripStock limits↓ Not available · ↑ Not available StripWholesale priceIQD 90.000Consumption rateNot available in M2Days of supplyNot available in M2ExpiryNo expiry recordedCategoryAnalgesicPricing modeBy PriceCurrent retail priceIQD 140.000Current average costNot available / StripEstimated surplusNot available in M2Stock alertsOut of stockPharmacy business date: 2026-10-01On-hand batchesNo on-hand batchesLast posted Purchase · saved row totalsNo posted Purchase cost reference"
+    Timeout: 10000ms
+
+    Call log:
+      - Expect "toContainText" with timeout 10000ms
+      - waiting for locator('aside.purchase-item-panel')
+        23 × locator resolved to <aside tabindex="-1" aria-labelledby="purchase-item-panel-title" class="purchase-item-sidebar purchase-item-panel purchasing-authoritative-panel">…</aside>
+           - unexpected value "Product Info✕Paracetamol and Caffeine5000167000115Panel Detail ItemDetailed Balance0Pack0StripTotal : 0 StripPackaging1 Pack = 4 StripStock limits↓ Not available · ↑ Not available StripWholesale priceIQD 90.000Consumption rateNot available in M2Days of supplyNot available in M2ExpiryNo expiry recordedCategoryAnalgesicPricing modeBy PriceCurrent retail priceIQD 140.000Current average costNot available / StripEstimated surplusNot available in M2Stock alertsOut of stockPharmacy business date: 2026-10-01On-hand batchesNo on-hand batchesLast posted Purchase · saved row totalsNo posted Purchase cost reference"
+
+
+      1505 |               await expect(
+      1506 |                 page.locator("aside.purchase-item-panel"),
+    > 1507 |               ).toContainText(PANEL_ITEM_WHOLESALE_PRICE_FILS);
+           |                 ^
+      1508 |               // The entry row and any committed rows share one table, so a
+      1509 |               // single assertion covers the whole invoice grid.
+      1510 |               await expect(
+        at observe (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1507:17)
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:30)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1501:22
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1389:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-ed147-details-panel-in-purchasing\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-ed147-details-panel-in-purchasing\error-context.md
+
+
+[4/8] test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:7028) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[5/8] test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · ar · light › scope — the item-details panel in purchasing
+  3) test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · ar · light › scope — the item-details panel in purchasing 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('aside.purchase-item-panel').locator('[data-panel-field="packaging"] .purchase-fact-value')
+    Expected substring: "شريط"
+    Received string:    "١ علبة = ٤ أشرطة"
+    Timeout: 10000ms
+
+    Call log:
+      - Expect "toContainText" with timeout 10000ms
+      - waiting for locator('aside.purchase-item-panel').locator('[data-panel-field="packaging"] .purchase-fact-value')
+        23 × locator resolved to <span class="purchase-fact-value">…</span>
+           - unexpected value "١ علبة = ٤ أشرطة"
+
+
+      1455 |                   '[data-panel-field="packaging"] .purchase-fact-value',
+      1456 |                 ),
+    > 1457 |               ).toContainText(locale === "ar" ? "شريط" : "Strip");
+           |                 ^
+      1458 |               await expect(
+      1459 |                 panel.locator(
+      1460 |                   '[data-panel-field="wholesale-price"] .purchase-fact-value',
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1457:17
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1440:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1389:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-24d82-details-panel-in-purchasing\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-24d82-details-panel-in-purchasing\error-context.md
+
+
+[6/8] test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:12840) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[7/8] test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · ar · dark › scope — the item-details panel in purchasing
+  4) test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · ar · dark › scope — the item-details panel in purchasing 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('aside.purchase-item-panel').locator('[data-panel-field="packaging"] .purchase-fact-value')
+    Expected substring: "شريط"
+    Received string:    "١ علبة = ٤ أشرطة"
+    Timeout: 10000ms
+
+    Call log:
+      - Expect "toContainText" with timeout 10000ms
+      - waiting for locator('aside.purchase-item-panel').locator('[data-panel-field="packaging"] .purchase-fact-value')
+        23 × locator resolved to <span class="purchase-fact-value">…</span>
+           - unexpected value "١ علبة = ٤ أشرطة"
+
+
+      1455 |                   '[data-panel-field="packaging"] .purchase-fact-value',
+      1456 |                 ),
+    > 1457 |               ).toContainText(locale === "ar" ? "شريط" : "Strip");
+           |                 ^
+      1458 |               await expect(
+      1459 |                 panel.locator(
+      1460 |                   '[data-panel-field="wholesale-price"] .purchase-fact-value',
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1457:17
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1440:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1389:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-436b9-details-panel-in-purchasing\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-436b9-details-panel-in-purchasing\error-context.md
+
+
+[8/8] test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  4 failed
+    test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing 
+    test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · en · dark › scope — the item-details panel in purchasing 
+    test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · ar · light › scope — the item-details panel in purchasing 
+    test\acceptance\milestone-2.acceptance.test.ts:1388:5 › milestone 2 acceptance · ar · dark › scope — the item-details panel in purchasing 
+  4 did not run
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.acceptance.config.ts --grep "scope.*item-details|units scenario"

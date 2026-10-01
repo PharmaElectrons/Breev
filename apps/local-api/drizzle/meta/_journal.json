@@ -225,6 +225,13 @@
       "when": 1790553600000,
       "tag": "0031_patient_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790726400000,
+      "tag": "0032_purchase_invoice_offer",
+      "breakpoints": true
     }
   ]
 }

@@ -42,6 +42,9 @@ import {
   purchaseDraftUpdateContract,
   purchaseDraftUpdateRequestSchema,
   purchaseEntryPreferencesReadContract,
+  purchaseItemDetailsContract,
+  purchaseItemDetailsSchema,
+  type PurchaseItemDetails,
   purchaseEntryPreferencesUpdateContract,
   purchaseEntryPreferencesUpdateRequestSchema,
   purchasePostedDetailSchema,
@@ -69,7 +72,7 @@ import {
   type PurchasePostResult,
   type PurchasePostedDetail,
   type PurchasePostedListResponse,
-  type PostedPurchaseAdjustment,
+  type PostedPurchaseAdjustmentDetail,
   type PostedPurchaseReturn,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentPostResult,
@@ -113,6 +116,24 @@ export class PurchasingController {
     return await translatePurchasingDenial(() =>
       this.purchasing.listSuppliers(request),
     );
+  }
+
+  @Get(purchaseItemDetailsContract.path)
+  public async readItemDetails(
+    @Param("productId") productId: string,
+    @Req() request: Request,
+  ): Promise<PurchaseItemDetails> {
+    return await translatePurchasingDenial(async () => {
+      const id = purchaseItemDetailsSchema.shape.productId.safeParse(productId);
+      if (!id.success)
+        return await this.purchasing.rejectMissing(
+          request,
+          "purchase.item-details.read",
+          "purchases.drafts.manage",
+          "item-not-found",
+        );
+      return await this.purchasing.readItemDetails(request, id.data);
+    });
   }
 
   @Get(supplierReadContract.path)
@@ -643,7 +664,7 @@ export class PurchasingController {
   public async readPostedAdjustment(
     @Param("adjustmentId") adjustmentId: string,
     @Req() request: Request,
-  ): Promise<PostedPurchaseAdjustment> {
+  ): Promise<PostedPurchaseAdjustmentDetail> {
     return await translatePurchasingDenial(async () => {
       const id =
         postedPurchaseAdjustmentSchema.shape.id.safeParse(adjustmentId);

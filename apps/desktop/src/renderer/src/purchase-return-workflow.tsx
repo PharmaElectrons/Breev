@@ -19,7 +19,12 @@ import {
 import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
-import { getPurchasingDenialMessage } from "./purchasing-messages";
+import {
+  getPurchasingDenialMessage,
+  purchasingMessages,
+} from "./purchasing-messages";
+import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
+import { PurchasingSupportDetails } from "./purchasing-support-details";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
 
@@ -105,7 +110,7 @@ export function PurchaseReturnWorkflow({
   } | null>(null);
   const [leaveWarning, setLeaveWarning] = useState(false);
   const [postedNumber, setPostedNumber] = useState("");
-  const errorRef = useRef<HTMLParagraphElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
   const requestFocus = useCommittedFocus();
 
   useEffect(() => {
@@ -137,7 +142,17 @@ export function PurchaseReturnWorkflow({
       );
       return;
     }
-    refuse(String(caught));
+    if (
+      caught instanceof IdentityApiDenied ||
+      caught instanceof LicensingApiDenied
+    ) {
+      refuse(
+        purchasingMessages[locale].reviewPermissionDenied,
+        caught.denial.requestId,
+      );
+      return;
+    }
+    refuse(purchasingMessages[locale].reviewUnavailable);
   }
 
   async function createDraft(): Promise<void> {
@@ -267,12 +282,12 @@ export function PurchaseReturnWorkflow({
     <section className="purchase-return" aria-labelledby="return-title">
       <h3 id="return-title">{copy.title}</h3>
       {error === null ? null : (
-        <p className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
+        <div className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
           <span>{error.message}</span>
           {error.tracking ? (
-            <small className="form-error-tracking">{error.tracking}</small>
+            <PurchasingSupportDetails reference={error.tracking} />
           ) : null}
-        </p>
+        </div>
       )}
       {leaveWarning ? (
         <div
@@ -446,7 +461,9 @@ export function PurchaseReturnWorkflow({
               </dd>
             </div>
             <div>
-              <dt>{copy.supplier}</dt>
+              <dt>
+                {copy.supplier} — <bdi>{summary.supplierNameSnapshot}</bdi>
+              </dt>
               <dd>
                 <bdi>
                   {formatFilsToIqd(summary.supplierReductionFils, locale)}

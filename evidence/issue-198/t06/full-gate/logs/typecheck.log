@@ -1,0 +1,20 @@
+$ turbo run typecheck
+• turbo 2.10.11
+
+   • Packages in scope: @breev/contracts, @breev/desktop, @breev/local-api
+   • Running typecheck in 3 packages
+   • Remote caching disabled
+
+@breev/contracts:typecheck: cache miss, executing c3fabff64a146fb9
+@breev/contracts:build: cache hit, replaying logs c74abdd8ac4b356e
+@breev/contracts:build: $ tsc -p tsconfig.build.json
+@breev/local-api:typecheck: cache miss, executing e01851510c6e03f1
+@breev/desktop:typecheck: cache miss, executing b4dd4f155b996ea3
+@breev/contracts:typecheck: $ tsc -p tsconfig.json --noEmit
+@breev/local-api:typecheck: $ tsc -p tsconfig.json --noEmit
+@breev/desktop:typecheck: $ tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.renderer.json --noEmit
+
+ Tasks:    4 successful, 4 total
+Cached:    1 cached, 4 total
+  Time:    1m4.466s 
+

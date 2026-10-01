@@ -1,0 +1,14 @@
+[
+  {
+    "seconds": 136.27,
+    "log": ".scratch/runtime/t04-fixture-api-final.log",
+    "name": "api-fixtures",
+    "exit": 1
+  },
+  {
+    "seconds": 323.47,
+    "log": ".scratch/runtime/t04-fixture-browser-final.log",
+    "name": "browser-fixtures",
+    "exit": 1
+  }
+]

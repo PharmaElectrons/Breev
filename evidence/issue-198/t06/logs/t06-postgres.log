@@ -1,0 +1,26 @@
+X [ERROR] Could not resolve "P:\\Projects\\PharmaElectrons\\apps\\local-api\\vitest.integration.config.ts"
+
+failed to load config from P:\Projects\PharmaElectrons\apps\local-api\vitest.integration.config.ts
+
+⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯
+Error: Build failed with 1 error:
+error: Could not resolve "P:\\Projects\\PharmaElectrons\\apps\\local-api\\vitest.integration.config.ts"
+    at failureErrorWithLog (P:\Projects\PharmaElectrons\node_modules\.pnpm\esbuild@0.28.2\node_modules\esbuild\lib\main.js:1752:15)
+    at P:\Projects\PharmaElectrons\node_modules\.pnpm\esbuild@0.28.2\node_modules\esbuild\lib\main.js:1211:25
+    at runOnEndCallbacks (P:\Projects\PharmaElectrons\node_modules\.pnpm\esbuild@0.28.2\node_modules\esbuild\lib\main.js:1592:45)
+    at buildResponseToResult (P:\Projects\PharmaElectrons\node_modules\.pnpm\esbuild@0.28.2\node_modules\esbuild\lib\main.js:1209:7)
+    at P:\Projects\PharmaElectrons\node_modules\.pnpm\esbuild@0.28.2\node_modules\esbuild\lib\main.js:1236:16
+    at responseCallbacks.<computed> (P:\Projects\PharmaElectrons\node_modules\.pnpm\esbuild@0.28.2\node_modules\esbuild\lib\main.js:886:9)
+    at handleIncomingPacket (P:\Projects\PharmaElectrons\node_modules\.pnpm\esbuild@0.28.2\node_modules\esbuild\lib\main.js:941:12)
+    at Socket.readFromStdout (P:\Projects\PharmaElectrons\node_modules\.pnpm\esbuild@0.28.2\node_modules\esbuild\lib\main.js:864:7)
+    at Socket.emit (node:events:509:28)
+    at addChunk (node:internal/streams/readable:563:12) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+
+
+
+undefined
+P:\Projects\PharmaElectrons\apps\local-api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config vitest.integration.config.ts src/purchasing/purchase-posting.integration.test.ts -t T06

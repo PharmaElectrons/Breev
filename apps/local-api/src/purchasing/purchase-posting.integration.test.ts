@@ -15,9 +15,12 @@ import {
   purchaseDraftHeaderPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
+  purchaseItemDetailsPath,
+  purchaseItemDetailsSchema,
   type Product,
   type ProductCreateRequest,
   type PurchaseDraft,
+  type PurchaseEntryPreferences,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentPostResult,
   type PurchaseAdjustmentSummary,
@@ -38,7 +41,16 @@ import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import path from "node:path";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
+import { resolveCatalogPurchasePanel } from "../catalog/catalog-purchase-panel.js";
 import {
   createSeparatedDatabaseRoles,
   createSeparatedDatabaseRolesFromUrl,
@@ -62,6 +74,10 @@ interface DraftRowInput {
   enteredQuantity: string;
   itemId: string;
   lotNumber?: string | null;
+  notes?: string | null;
+  unit?:
+    | { kind: "inventory-unit" }
+    | { kind: "package-unit"; packageUnitName: string };
   retailPriceFils?: string;
 }
 
@@ -417,7 +433,7 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     });
   });
 
-  it("searches stable posted numbers and reads immutable snapshots separately from current master records", async () => {
+  it("T05 searches stable posted numbers and keeps complete row snapshots unchanged after master edits", async () => {
     const supplierResponse = await request(
       "POST",
       "/suppliers",
@@ -425,19 +441,93 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     );
     expect(supplierResponse.status, diagnostics(supplierResponse)).toBe(201);
     const supplier = supplierResponse.body as unknown as Supplier;
-    const productResponse = await request(
-      "POST",
-      "/catalog/products",
-      medicationRequest("Review Snapshot Item", false),
-    );
+    const productResponse = await request("POST", "/catalog/products", {
+      ...medicationRequest("Review Snapshot Item", false),
+      packaging: {
+        ...medicationRequest("Review Snapshot Item", false).packaging,
+        packageUnits: [{ name: "Pack", baseUnitsPerPackage: "4" }],
+      },
+    });
     expect(productResponse.status, diagnostics(productResponse)).toBe(201);
     const product = productResponse.body as unknown as Product;
+
+    const numericInvoices: PurchasePostResult["posted"][] = [];
+    for (const costFils of [
+      "3",
+      "10",
+      "9",
+      "100",
+      "1000",
+      "2",
+      "99",
+      "10000",
+      "100000",
+      "1",
+      "9999",
+      "1000000",
+    ]) {
+      const numericDraft = await createPostableDraft(
+        supplier.id,
+        `T05-NUMERIC-${costFils}`,
+        "debt",
+        [{ costFils, enteredQuantity: "1", itemId: product.id }],
+      );
+      const numericPost = await request(
+        "POST",
+        purchaseDraftPostingsPath(numericDraft.id),
+        { expectedVersion: numericDraft.version, idempotencyKey: uuidV7() },
+      );
+      expect(numericPost.status, diagnostics(numericPost)).toBe(201);
+      numericInvoices.push(
+        (numericPost.body as unknown as PurchasePostResult).posted,
+      );
+    }
+    const numericOrder = (
+      await request(
+        "GET",
+        "/purchases/posted?query=T05-NUMERIC&sort=number&direction=ascending",
+      )
+    ).body as unknown as PurchasePostedListResponse;
+    expect(numericOrder.purchases.map((invoice) => invoice.id)).toEqual(
+      numericInvoices.map((invoice) => invoice.id),
+    );
+    const costOrder = (
+      await request(
+        "GET",
+        "/purchases/posted?query=T05-NUMERIC&sort=primary-cost&direction=ascending",
+      )
+    ).body as unknown as PurchasePostedListResponse;
+    expect(
+      costOrder.purchases.map((invoice) => invoice.primarySupplierCostFils),
+    ).toEqual([
+      "1",
+      "2",
+      "3",
+      "9",
+      "10",
+      "99",
+      "100",
+      "1000",
+      "9999",
+      "10000",
+      "100000",
+      "1000000",
+    ]);
 
     const firstDraft = await createPostableDraft(
       supplier.id,
       "INV-REVIEW-STABLE-A",
       "debt",
-      [{ costFils: "1200", enteredQuantity: "2", itemId: product.id }],
+      [
+        {
+          costFils: "1200",
+          enteredQuantity: "2",
+          itemId: product.id,
+          unit: { kind: "package-unit", packageUnitName: "Pack" },
+          notes: "Saved bilingual note\nملاحظة محفوظة",
+          lotNumber: "T05-LOT",
+        },
+      ],
     );
     const firstResponse = await request(
       "POST",
@@ -472,6 +562,23 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     ).toBe(200);
     const baselineDetail =
       baselineDetailResponse.body as unknown as PurchasePostedDetail;
+    expect(baselineDetail.rows[0]).toMatchObject({
+      allowanceFils: "240",
+      offerFils: "0",
+      notes: "Saved bilingual note\nملاحظة محفوظة",
+      unit: { kind: "package-unit", packageUnitName: "Pack" },
+      baseUnitsPerEnteredUnit: "4",
+      enteredQuantity: "2",
+      inventoryUnitQuantity: "8",
+      lotNumber: "T05-LOT",
+      expiryDate: "2029-12-31",
+      retailPriceFils: "999999",
+      pricingMethod: "by-price",
+      priceCapture: "by-price-propagated",
+      marginPercentage: null,
+      batchId: first.rows[0]!.batchId,
+      movementId: first.rows[0]!.movementId,
+    });
 
     await administrator.query(
       `update suppliers set name = 'Current Supplier Changed', revision = revision + 1
@@ -480,9 +587,15 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     );
     await administrator.query(
       `update catalog_products
-       set display_name = 'Current Item Changed', retail_price_fils = 333333,
+       set display_name = 'Current Item Changed', arabic_search_name = 'اسم جديد', retail_price_fils = 333333,
+           wholesale_price_fils = 222222, pricing_method = 'by-percentage',
+           margin_percentage = 30, price_rounding = 'off',
            revision = revision + 1
        where pharmacy_id = $1 and id = $2`,
+      [pharmacyId, product.id],
+    );
+    await administrator.query(
+      `update catalog_product_units set name = case when kind = 'inventory' then 'Tablet' else 'Carton' end, base_units_per_package = case when kind = 'package' then 6 else base_units_per_package end where pharmacy_id = $1 and product_id = $2`,
       [pharmacyId, product.id],
     );
     await administrator.query(
@@ -565,6 +678,49 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       pricing: { retailPriceFils: "333333" },
     });
 
+    const copied = await createAdjustmentDraft(first.id, "other");
+    const evidenceSavedResponse = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(copied.id),
+      {
+        ...adjustmentUpdateBody(copied, adjustmentRows(copied)),
+        evidence: "T05 evidence survives master changes",
+      },
+    );
+    expect(
+      evidenceSavedResponse.status,
+      diagnostics(evidenceSavedResponse),
+    ).toBe(200);
+    const evidenceSaved =
+      evidenceSavedResponse.body as unknown as PurchaseAdjustmentDraft;
+    expect(evidenceSaved.rows).toEqual(
+      copied.rows.map((row) => ({ ...row, id: expect.any(String) })),
+    );
+    expect(evidenceSaved.evidence).toBe("T05 evidence survives master changes");
+    expect(BigInt(evidenceSaved.version)).toBe(BigInt(copied.version) + 1n);
+    const reopened = await request(
+      "GET",
+      purchaseAdjustmentDraftPath(copied.id),
+    );
+    expect(reopened.body).toEqual(evidenceSaved);
+
+    // Unchanged rows retain their saved facts; actual edits still go through
+    // the existing current-product validation and protected correction rules.
+    const changedRows = adjustmentRows(evidenceSaved);
+    changedRows[0]!.enteredQuantity = "3";
+    const changedResponse = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(copied.id),
+      adjustmentUpdateBody(evidenceSaved, changedRows),
+    );
+    expect(changedResponse.status, diagnostics(changedResponse)).toBe(409);
+    expect(changedResponse.body).toMatchObject({
+      code: "pricing-mode-conflict",
+    });
+    expect(
+      (await request("GET", purchaseAdjustmentDraftPath(copied.id))).body,
+    ).toEqual(evidenceSaved);
+
     const preferencesResponse = await request(
       "GET",
       "/purchases/entry-preferences",
@@ -616,6 +772,10 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       primarySupplierCostFils: null,
     });
     expect(hiddenDetail.rows[0]).toMatchObject({
+      allowanceFils: null,
+      offerFils: null,
+      marginPercentage: null,
+      notes: "Saved bilingual note\nملاحظة محفوظة",
       costAfterDiscountFils: null,
       linePrimarySupplierCostFils: null,
       primarySupplierCostFils: null,
@@ -869,6 +1029,7 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
 
   it("keeps the draft and names the row rule when receipt evidence is missing", async () => {
     const created = await request("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: "2026-06-15",
       settlementContext: "debt",
@@ -1446,6 +1607,23 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       ),
     );
     const firstSummary = await previewAdjustment(firstSaved);
+    expect(firstSummary.totalsComparison).toEqual({
+      before: {
+        offerFils: "0",
+        primarySupplierCostFils: "24000",
+        allowanceFils: "2400",
+        costAfterDiscountFils: "21600",
+      },
+      after: {
+        offerFils: "0",
+        primarySupplierCostFils: "28000",
+        allowanceFils: "2800",
+        costAfterDiscountFils: "25200",
+      },
+    });
+    expect(
+      firstSummary.rowTotals.map((row) => row.primarySupplierCostFils),
+    ).toEqual(["8000", "20000"]);
     expect(firstSummary).toMatchObject({
       primarySupplierCostDeltaFils: "4000",
       quantityDelta: "4",
@@ -1515,6 +1693,20 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       ),
     );
     const secondSummary = await previewAdjustment(secondSaved);
+    expect(secondSummary.totalsComparison).toEqual({
+      before: {
+        offerFils: "0",
+        primarySupplierCostFils: "28000",
+        allowanceFils: "2800",
+        costAfterDiscountFils: "25200",
+      },
+      after: {
+        offerFils: "0",
+        primarySupplierCostFils: "26000",
+        allowanceFils: "2600",
+        costAfterDiscountFils: "23400",
+      },
+    });
     expect(secondSummary.quantityDelta).toBe("-2");
     const secondPost = await request(
       "POST",
@@ -1569,7 +1761,7 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     ).toBe("3");
     expect(
       concurrentPosts.find(({ status }) => status === 409)?.body,
-    ).toMatchObject({ code: "adjustment-empty" });
+    ).toMatchObject({ code: "adjustment-summary-stale" });
 
     const current = await createAdjustmentDraft(originalId, "quantity error");
     const affected = current.rows[0]!;
@@ -1632,6 +1824,395 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       ),
     ).rejects.toMatchObject({ code: "55000" });
   }, 30_000);
+
+  it("binds Adjustment evidence/version/hash across concurrent edits, API restart, lost-response retries, and immutable audit", async () => {
+    const originalDraft = await createPostableDraft(
+      supplierLow.id,
+      "INV-CONFIRM-1",
+      "debt",
+      [
+        { costFils: "1000", enteredQuantity: "4", itemId: productMain.id },
+        { costFils: "2000", enteredQuantity: "2", itemId: productMain.id },
+      ],
+    );
+    const originalPost = await request(
+      "POST",
+      purchaseDraftPostingsPath(originalDraft.id),
+      { expectedVersion: originalDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(originalPost.status, diagnostics(originalPost)).toBe(201);
+    const originalId = (originalPost.body as unknown as PurchasePostResult)
+      .posted.id;
+    const originalBytes = await immutablePurchaseBytes(originalId);
+    const draft = await createAdjustmentDraft(originalId, "quantity error");
+    const saved = await saveAdjustmentDraft(draft, (rows) =>
+      rows.map((row, index) =>
+        index === 0 ? { ...row, enteredQuantity: "8" } : row,
+      ),
+    );
+    const oldSummary = await previewAdjustment(saved);
+    const boundaryPost = {
+      confirmationHash: oldSummary.confirmationHash,
+      expectedVersion: oldSummary.draftVersion,
+      idempotencyKey: uuidV7(),
+    };
+    for (const invalidCredentials of [
+      { ...credentials, deviceId: uuidV7() },
+      { ...credentials, sessionToken: randomBytes(32).toString("base64url") },
+    ]) {
+      expect(
+        (
+          await requestAs(
+            invalidCredentials,
+            "GET",
+            purchaseAdjustmentSummaryPath(saved.id),
+          )
+        ).status,
+      ).toBe(401);
+      expect(
+        (
+          await requestAs(
+            invalidCredentials,
+            "POST",
+            purchaseAdjustmentPostingsPath(saved.id),
+            boundaryPost,
+          )
+        ).status,
+      ).toBe(401);
+    }
+    const ownerRole = await administrator.query<{
+      role_id: string;
+      id: string;
+    }>(
+      "select role_id, id from identity_users where pharmacy_id = $1 and username = $2",
+      [pharmacyId, OWNER_USERNAME],
+    );
+    const owner = ownerRole.rows[0]!;
+    await administrator.query(
+      "delete from role_permission_grants where role_id = $1 and permission_name = 'purchases.costs.view'",
+      [owner.role_id],
+    );
+    await administrator.query(
+      "update pharmacy_roles set revision = revision + 1 where id = $1",
+      [owner.role_id],
+    );
+    try {
+      for (const denied of [
+        await request("GET", purchaseAdjustmentSummaryPath(saved.id)),
+        await request(
+          "POST",
+          purchaseAdjustmentPostingsPath(saved.id),
+          boundaryPost,
+        ),
+      ]) {
+        expect(denied).toMatchObject({
+          status: 403,
+          body: {
+            code: "permission-denied",
+            requiredPermission: "purchases.costs.view",
+          },
+        });
+      }
+    } finally {
+      await administrator.query(
+        "insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by) values ($1, $2, 'purchases.costs.view', $3)",
+        [pharmacyId, owner.role_id, owner.id],
+      );
+      await administrator.query(
+        "update pharmacy_roles set revision = revision + 1 where id = $1",
+        [owner.role_id],
+      );
+    }
+    expect(
+      (await request("GET", purchaseAdjustmentDraftPath(saved.id))).body,
+    ).toEqual(saved);
+    const edits = await Promise.all(
+      ["Final invoice evidence", "Concurrent evidence"].map((evidence) =>
+        request("PUT", purchaseAdjustmentDraftPath(saved.id), {
+          ...adjustmentUpdateBody(saved, adjustmentRows(saved)),
+          evidence,
+        }),
+      ),
+    );
+    expect(edits.map((result) => result.status).sort()).toEqual([200, 409]);
+    expect(edits.find((result) => result.status === 409)?.body).toMatchObject({
+      code: "version-conflict",
+    });
+    const updated = edits.find((result) => result.status === 200)!
+      .body as unknown as PurchaseAdjustmentDraft;
+    const oldPost = {
+      confirmationHash: oldSummary.confirmationHash,
+      expectedVersion: oldSummary.draftVersion,
+      idempotencyKey: uuidV7(),
+    };
+    const staleVersion = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      oldPost,
+    );
+    expect(staleVersion.status).toBe(409);
+    expect(staleVersion.body).toMatchObject({ code: "version-conflict" });
+    const staleHashKey = uuidV7();
+    const staleHash = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      {
+        ...oldPost,
+        expectedVersion: updated.version,
+        idempotencyKey: staleHashKey,
+      },
+    );
+    expect(staleHash.status).toBe(409);
+    expect(staleHash.body).toMatchObject({ code: "adjustment-summary-stale" });
+    const summary = await previewAdjustment(updated);
+    expect(summary.evidence).toBe(updated.evidence);
+    expect(summary.confirmationHash).not.toBe(oldSummary.confirmationHash);
+    const mismatch = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      {
+        confirmationHash: summary.confirmationHash,
+        expectedVersion: updated.version,
+        idempotencyKey: staleHashKey,
+      },
+    );
+    expect(mismatch.status).toBe(409);
+    expect(mismatch.body).toMatchObject({ code: "idempotency-conflict" });
+    const active = await request("GET", purchaseAdjustmentDraftPath(saved.id));
+    expect(active.body).toEqual(updated);
+
+    await stopProcess(api);
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    expect(
+      (await request("GET", purchaseAdjustmentDraftPath(saved.id))).body,
+    ).toEqual(updated);
+    expect(await previewAdjustment(updated)).toEqual(summary);
+    const postBody = {
+      confirmationHash: summary.confirmationHash,
+      expectedVersion: summary.draftVersion,
+      idempotencyKey: uuidV7(),
+    };
+    const results = await Promise.all([
+      request("POST", purchaseAdjustmentPostingsPath(saved.id), postBody),
+      request("POST", purchaseAdjustmentPostingsPath(saved.id), postBody),
+    ]);
+    expect(results.map((result) => result.status)).toEqual([201, 201]);
+    expect(results[0]!.body).toEqual(results[1]!.body);
+    const posted = (results[0]!.body as unknown as PurchaseAdjustmentPostResult)
+      .posted;
+    expect(posted).toMatchObject({
+      reason: summary.reason,
+      evidence: summary.evidence,
+      quantityDelta: "4",
+      primarySupplierCostDeltaFils: "4000",
+    });
+    expect(posted.rowDeltas).toHaveLength(1);
+    await stopProcess(api);
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    expect(
+      (
+        await request(
+          "POST",
+          purchaseAdjustmentPostingsPath(saved.id),
+          postBody,
+        )
+      ).body,
+    ).toEqual(results[0]!.body);
+    const conflicting = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      { ...postBody, confirmationHash: "0".repeat(64) },
+    );
+    expect(conflicting.body).toMatchObject({ code: "idempotency-conflict" });
+    const audit = await administrator.query<{ after_state: unknown }>(
+      `select after_state from posting_audit_records where pharmacy_id = $1 and correlation_id = $2 and action = 'purchase.adjustment.post' and outcome = 'committed'`,
+      [pharmacyId, postBody.idempotencyKey],
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]!.after_state).toMatchObject({
+      evidence: summary.evidence,
+      reason: summary.reason,
+      draftVersion: summary.draftVersion,
+      confirmationHash: summary.confirmationHash,
+    });
+    expect(await immutablePurchaseBytes(originalId)).toEqual(originalBytes);
+  }, 60_000);
+
+  it("requires a new Adjustment confirmation when authoritative batch stock changes after preview", async () => {
+    const originalDraft = await createPostableDraft(
+      supplierLow.id,
+      "INV-CONFIRM-STOCK",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "4", itemId: productMain.id }],
+    );
+    const originalPost = await request(
+      "POST",
+      purchaseDraftPostingsPath(originalDraft.id),
+      { expectedVersion: originalDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(originalPost.status).toBe(201);
+    const originalId = (originalPost.body as unknown as PurchasePostResult)
+      .posted.id;
+    const saved = await saveAdjustmentDraft(
+      await createAdjustmentDraft(originalId, "quantity error"),
+      (rows) => rows.map((row) => ({ ...row, enteredQuantity: "8" })),
+    );
+    const before = await previewAdjustment(saved);
+    const returnDraft = await saveReturnDraft(
+      await createReturnDraft(originalId),
+      "1",
+    );
+    const returnSummary = await previewReturn(returnDraft);
+    const returned = await request(
+      "POST",
+      purchaseReturnPostingsPath(returnDraft.id),
+      {
+        confirmationHash: returnSummary.confirmationHash,
+        expectedVersion: returnDraft.version,
+        idempotencyKey: uuidV7(),
+        stepUpChallengeId: await approvedReturnStepUp(returnDraft.id),
+      },
+    );
+    expect(returned.status, diagnostics(returned)).toBe(201);
+    const denied = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      {
+        confirmationHash: before.confirmationHash,
+        expectedVersion: before.draftVersion,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(denied.status).toBe(409);
+    expect(denied.body).toMatchObject({ code: "adjustment-summary-stale" });
+    expect(
+      (await request("GET", purchaseAdjustmentDraftPath(saved.id))).body,
+    ).toEqual(saved);
+    const after = await previewAdjustment(saved);
+    expect(after.draftVersion).toBe(before.draftVersion);
+    expect(after.confirmationHash).not.toBe(before.confirmationHash);
+    expect(after.quantityDelta).toBe("4");
+    const posted = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      {
+        confirmationHash: after.confirmationHash,
+        expectedVersion: after.draftVersion,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(posted.status, diagnostics(posted)).toBe(201);
+  }, 30_000);
+
+  it("rolls back Adjustment confirmation posting at every write stage and recovers the same attempt", async () => {
+    const originalDraft = await createPostableDraft(
+      supplierLow.id,
+      "INV-CONFIRM-ROLLBACK",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "4", itemId: productMain.id }],
+    );
+    const originalPost = await request(
+      "POST",
+      purchaseDraftPostingsPath(originalDraft.id),
+      { expectedVersion: originalDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(originalPost.status).toBe(201);
+    const saved = await saveAdjustmentDraft(
+      await createAdjustmentDraft(
+        (originalPost.body as unknown as PurchasePostResult).posted.id,
+        "quantity error",
+      ),
+      (rows) =>
+        rows.map((row) => ({
+          ...row,
+          enteredQuantity: "8",
+          pricing: { method: "by-price", retailPriceFils: "888888" },
+        })),
+    );
+    const summary = await previewAdjustment(saved);
+    const body = {
+      confirmationHash: summary.confirmationHash,
+      expectedVersion: summary.draftVersion,
+      idempotencyKey: uuidV7(),
+    };
+    const tables = [
+      "accounting_journal_entries",
+      "accounting_journal_lines",
+      "accounting_supplier_balances",
+      "posted_purchase_adjustments",
+      "inventory_movements",
+      "inventory_value_effects",
+      "catalog_products",
+      "inventory_valuation_state",
+      "posted_purchase_adjustment_rows",
+      "purchase_adjustment_drafts",
+      "posting_outbox_entries",
+      "posting_audit_records",
+      "posting_command_results",
+    ] as const;
+    async function businessBytes(): Promise<unknown[]> {
+      const values = [];
+      for (const table of tables) {
+        // Number-allocation audit is intentionally durable outside Post; every
+        // business/audit fact for the Adjustment itself must roll back.
+        const where =
+          table === "posting_audit_records"
+            ? " and action = 'purchase.adjustment.post'"
+            : "";
+        const result = await administrator.query<{ bytes: unknown }>(
+          `select coalesce(jsonb_agg(to_jsonb(fact) order by to_jsonb(fact)::text), '[]') as bytes from ${table} fact where pharmacy_id = $1${where}`,
+          [pharmacyId],
+        );
+        values.push(result.rows[0]!.bytes);
+      }
+      return values;
+    }
+    const before = await businessBytes();
+    for (const table of tables) {
+      const condition =
+        table === "posting_audit_records"
+          ? "if new.action = 'purchase.adjustment.post' then raise exception 'injected adjustment failure'; end if;"
+          : "raise exception 'injected adjustment failure';";
+      await administrator.query(
+        `create function test_adjustment_stage_failure() returns trigger language plpgsql as $$ begin ${condition} return new; end $$`,
+      );
+      await administrator.query(
+        `create trigger test_adjustment_stage_failure before insert or update on ${table} for each row execute function test_adjustment_stage_failure()`,
+      );
+      try {
+        const failure = await request(
+          "POST",
+          purchaseAdjustmentPostingsPath(saved.id),
+          body,
+        );
+        expect(failure.status, `stage ${table}`).toBe(500);
+      } finally {
+        await administrator.query(
+          `drop trigger test_adjustment_stage_failure on ${table}`,
+        );
+        await administrator.query(
+          "drop function test_adjustment_stage_failure()",
+        );
+      }
+      expect(await businessBytes(), `rollback ${table}`).toEqual(before);
+      expect(
+        (await request("GET", purchaseAdjustmentDraftPath(saved.id))).body,
+      ).toEqual(saved);
+      expect(await previewAdjustment(saved)).toEqual(summary);
+    }
+    const recovered = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      body,
+    );
+    expect(recovered.status, diagnostics(recovered)).toBe(201);
+    expect(
+      (await request("POST", purchaseAdjustmentPostingsPath(saved.id), body))
+        .body,
+    ).toEqual(recovered.body);
+  }, 60_000);
 
   it("posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links", async () => {
     const productResponse = await request(
@@ -1733,6 +2314,18 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       [pharmacyId, product.id],
     );
 
+    const returnEffectsBeforeFailure = await administrator.query<{
+      journal_count: string;
+      movement_count: string;
+    }>(
+      `select
+        (select count(*)::text from inventory_movements
+         where pharmacy_id = $1 and source_document_type = 'purchase-return') as movement_count,
+        (select count(*)::text from accounting_journal_entries
+         where pharmacy_id = $1 and template_id = 'purchase.return') as journal_count`,
+      [pharmacyId],
+    );
+
     await administrator.query(
       `create function test_force_return_outbox_failure()
          returns trigger language plpgsql as $$
@@ -1768,6 +2361,17 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
       );
     }
     expect(failedPost.status, diagnostics(failedPost)).not.toBe(201);
+
+    const reservedReturnNumber = await administrator.query<{
+      value: string;
+      status: string;
+    }>(
+      `select value::text, status from posting_number_allocations
+       where pharmacy_id = $1 and correlation_id = $2 and document_type = 'purchase-return'`,
+      [pharmacyId, idempotencyKey],
+    );
+    expect(reservedReturnNumber.rows).toHaveLength(1);
+    expect(reservedReturnNumber.rows[0]!.status).toBe("allocated");
 
     const rolledBack = await administrator.query<{
       audit_count: string;
@@ -1809,8 +2413,8 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     expect(rolledBack.rows[0]).toEqual({
       audit_count: "0",
       command_count: "0",
-      journal_count: "0",
-      movement_count: "0",
+      journal_count: returnEffectsBeforeFailure.rows[0]!.journal_count,
+      movement_count: returnEffectsBeforeFailure.rows[0]!.movement_count,
       outbox_count: "0",
       posted_count: "0",
       status: "active",
@@ -1852,7 +2456,7 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     const posted = postedResponse.body as unknown as PurchaseReturnPostResult;
     expect(posted.posted).toMatchObject({
       inventoryCarryingAmountFils: "8000",
-      number: { series: "PR", value: "2" },
+      number: { series: "PR", value: reservedReturnNumber.rows[0]!.value },
       originalInvoiceDate: original.posted.invoiceDate,
       originalNumber: original.posted.number,
       originalPurchaseId: original.posted.id,
@@ -2098,6 +2702,1042 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     }
   }, 30_000);
 
+  it("corrects supplier identities and invoice numbers with immutable before/after headers, balanced transfers and current duplicate warnings", async () => {
+    const supplierResponse = await request(
+      "POST",
+      "/suppliers",
+      supplierBody(supplierLow.name, "25", "2026-01-01"),
+    );
+    expect(supplierResponse.status, diagnostics(supplierResponse)).toBe(201);
+    const target = supplierResponse.body as unknown as Supplier;
+    expect(target.id).not.toBe(supplierLow.id);
+    const duplicateDraft = await createPostableDraft(
+      target.id,
+      "T02-DUPLICATE",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "4", itemId: productMain.id }],
+    );
+    const duplicate = await request(
+      "POST",
+      purchaseDraftPostingsPath(duplicateDraft.id),
+      { expectedVersion: duplicateDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(duplicate.status, diagnostics(duplicate)).toBe(201);
+    const originalDraft = await createPostableDraft(
+      supplierLow.id,
+      "T02-ORIGINAL",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "4", itemId: productMain.id }],
+    );
+    const originalResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(originalDraft.id),
+      { expectedVersion: originalDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(originalResponse.status, diagnostics(originalResponse)).toBe(201);
+    const original = originalResponse.body as unknown as PurchasePostResult;
+    const bytes = await immutablePurchaseBytes(original.posted.id);
+    const balancesBefore = await administrator.query<{
+      supplier_id: string;
+      balance_fils: string;
+    }>(
+      "select supplier_id, balance_fils::text from accounting_supplier_balances where pharmacy_id = $1 and supplier_id = any($2::uuid[])",
+      [pharmacyId, [supplierLow.id, target.id]],
+    );
+    const draft = await createAdjustmentDraft(
+      original.posted.id,
+      "supplier error",
+    );
+    const update = await request("PUT", purchaseAdjustmentDraftPath(draft.id), {
+      ...adjustmentUpdateBody(draft, adjustmentRows(draft)),
+      supplierId: target.id,
+      evidence: "T02 stable supplier identity",
+    });
+    expect(update.status, diagnostics(update)).toBe(200);
+    const saved = update.body as unknown as PurchaseAdjustmentDraft;
+    const summary = await previewAdjustment(saved);
+    expect(summary).toMatchObject({
+      quantityDelta: "0",
+      primarySupplierCostDeltaFils: "0",
+      rowDeltas: [],
+      stockEffects: [],
+      warnings: [],
+      headerComparison: {
+        before: {
+          supplierId: supplierLow.id,
+          supplierNameSnapshot: supplierLow.name,
+          supplierInvoiceNumber: "T02-ORIGINAL",
+        },
+        after: {
+          supplierId: target.id,
+          supplierNameSnapshot: target.name,
+          supplierInvoiceNumber: "T02-ORIGINAL",
+        },
+      },
+    });
+    expect(summary.headerChanges).toEqual([
+      { field: "supplier", before: supplierLow.id, after: target.id },
+    ]);
+    expect(summary.supplierEffects).toEqual([
+      {
+        supplierId: supplierLow.id,
+        supplierNameSnapshot: supplierLow.name,
+        deltaFils: "-4000",
+      },
+      {
+        supplierId: target.id,
+        supplierNameSnapshot: target.name,
+        deltaFils: "4000",
+      },
+    ]);
+    const postBody = {
+      confirmationHash: summary.confirmationHash,
+      expectedVersion: saved.version,
+      idempotencyKey: uuidV7(),
+    };
+    const postedResponse = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      postBody,
+    );
+    expect(postedResponse.status, diagnostics(postedResponse)).toBe(201);
+    const posted =
+      postedResponse.body as unknown as PurchaseAdjustmentPostResult;
+    expect(posted.posted.journal.lines).toHaveLength(2);
+    const balancesAfter = await administrator.query<{
+      supplier_id: string;
+      balance_fils: string;
+    }>(
+      "select supplier_id, balance_fils::text from accounting_supplier_balances where pharmacy_id = $1 and supplier_id = any($2::uuid[])",
+      [pharmacyId, [supplierLow.id, target.id]],
+    );
+    for (const after of balancesAfter.rows) {
+      const before = balancesBefore.rows.find(
+        (value) => value.supplier_id === after.supplier_id,
+      )!;
+      expect(BigInt(after.balance_fils) - BigInt(before.balance_fils)).toBe(
+        after.supplier_id === target.id ? 4000n : -4000n,
+      );
+    }
+    const movements = await administrator.query<{ count: string }>(
+      "select count(*)::text from inventory_movements where source_document_type = 'purchase-adjustment' and source_document_id = $1",
+      [posted.posted.id],
+    );
+    expect(movements.rows[0]!.count).toBe("0");
+    const second = await createAdjustmentDraft(
+      original.posted.id,
+      "invoice-number error",
+    );
+    const secondUpdate = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(second.id),
+      {
+        ...adjustmentUpdateBody(second, adjustmentRows(second)),
+        supplierInvoiceNumber: "T02-DUPLICATE",
+      },
+    );
+    expect(secondUpdate.status, diagnostics(secondUpdate)).toBe(200);
+    const secondSaved = secondUpdate.body as unknown as PurchaseAdjustmentDraft;
+    const secondSummary = await previewAdjustment(secondSaved);
+    expect(secondSummary).toMatchObject({
+      quantityDelta: "0",
+      primarySupplierCostDeltaFils: "0",
+      supplierEffects: [],
+      rowDeltas: [],
+      headerComparison: {
+        before: summary.headerComparison.after,
+        after: {
+          ...summary.headerComparison.after,
+          supplierInvoiceNumber: "T02-DUPLICATE",
+        },
+      },
+      warnings: [
+        {
+          code: "duplicate-supplier-invoice-number",
+          operationalRule: "warn-open-decision",
+          existingPostingIds: [
+            (duplicate.body as unknown as PurchasePostResult).posted.id,
+          ],
+        },
+      ],
+    });
+    const secondPost = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(secondSaved.id),
+      {
+        confirmationHash: secondSummary.confirmationHash,
+        expectedVersion: secondSaved.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(secondPost.status, diagnostics(secondPost)).toBe(201);
+    const renamed = await request("PUT", `/suppliers/${target.id}`, {
+      ...supplierBody("Master renamed after corrections", "25", "2026-01-01"),
+      expectedRevision: target.revision,
+    });
+    expect(renamed.status, diagnostics(renamed)).toBe(200);
+    const firstRead = await request(
+      "GET",
+      `/purchases/posted-adjustments/${posted.posted.id}`,
+    );
+    expect(firstRead.status, diagnostics(firstRead)).toBe(200);
+    expect(firstRead.body).toMatchObject({
+      headerComparison: summary.headerComparison,
+      supplierNameSnapshot: target.name,
+    });
+    for (const invalidCredentials of [
+      { ...credentials, deviceId: uuidV7() },
+      { ...credentials, sessionToken: randomBytes(32).toString("base64url") },
+    ]) {
+      expect(
+        (
+          await requestAs(
+            invalidCredentials,
+            "GET",
+            `/purchases/posted-adjustments/${posted.posted.id}`,
+          )
+        ).status,
+      ).toBe(401);
+    }
+    expect(
+      (await request("GET", `/purchases/posted-adjustments/${uuidV7()}`))
+        .status,
+    ).toBe(404);
+    const ownerResult = await administrator.query<{
+      id: string;
+      role_id: string;
+    }>(
+      "select id, role_id from identity_users where pharmacy_id = $1 and username = $2",
+      [pharmacyId, OWNER_USERNAME],
+    );
+    const owner = ownerResult.rows[0]!;
+    for (const permission of [
+      "purchases.posted.view",
+      "purchases.costs.view",
+    ]) {
+      await administrator.query(
+        "delete from role_permission_grants where role_id = $1 and permission_name = $2",
+        [owner.role_id, permission],
+      );
+      await administrator.query(
+        "update pharmacy_roles set revision = revision + 1 where id = $1",
+        [owner.role_id],
+      );
+      try {
+        const denied = await request(
+          "GET",
+          `/purchases/posted-adjustments/${posted.posted.id}`,
+        );
+        expect(denied).toMatchObject({
+          status: 403,
+          body: { code: "permission-denied", requiredPermission: permission },
+        });
+      } finally {
+        await administrator.query(
+          "insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by) values ($1, $2, $3, $4)",
+          [pharmacyId, owner.role_id, permission, owner.id],
+        );
+        await administrator.query(
+          "update pharmacy_roles set revision = revision + 1 where id = $1",
+          [owner.role_id],
+        );
+      }
+    }
+    const nextDraft = await createAdjustmentDraft(original.posted.id, "other");
+    const nextSaved = await saveAdjustmentDraft(nextDraft, (rows) =>
+      rows.map((row) => ({ ...row, enteredQuantity: "3" })),
+    );
+    expect(nextSaved.supplierNameSnapshot).toBe(target.name);
+    await expect(
+      administrator.query(
+        `insert into posted_purchase_adjustments (
+        pharmacy_id, draft_id, original_purchase_id, suffix_value, supplier_id,
+        supplier_name_snapshot, supplier_invoice_number, reason, evidence,
+        quantity_delta, primary_supplier_cost_delta_fils, allowance_delta_fils,
+        cost_after_discount_delta_fils, header_changes, journal_entry_id, posted_at, posted_by
+       ) select $1, $3, original_purchase_id, suffix_value + 1000, supplier_id,
+         supplier_name_snapshot, supplier_invoice_number, reason, evidence,
+         quantity_delta, primary_supplier_cost_delta_fils, allowance_delta_fils,
+         cost_after_discount_delta_fils, header_changes, journal_entry_id, posted_at, posted_by
+       from posted_purchase_adjustments where id = $2`,
+        [uuidV7(), posted.posted.id, nextSaved.id],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    const secondPosted =
+      secondPost.body as unknown as PurchaseAdjustmentPostResult;
+    const secondRead = await request(
+      "GET",
+      `/purchases/posted-adjustments/${secondPosted.posted.id}`,
+    );
+    expect(secondRead.body).toMatchObject({
+      headerComparison: secondSummary.headerComparison,
+    });
+    const links = await request(
+      "GET",
+      `/purchases/posted/${original.posted.id}`,
+    );
+    expect(
+      (links.body as unknown as PurchasePostedDetail).adjustments.map(
+        (link) => link.id,
+      ),
+    ).toEqual([posted.posted.id, secondPosted.posted.id]);
+    expect(firstRead.body?.originalPurchaseId).toBe(original.posted.id);
+    expect(await immutablePurchaseBytes(original.posted.id)).toEqual(bytes);
+    const audit = await administrator.query<{ after_state: unknown }>(
+      "select after_state from posting_audit_records where correlation_id = $1 and action = 'purchase.adjustment.post' and outcome = 'committed'",
+      [postBody.idempotencyKey],
+    );
+    expect(audit.rows[0]!.after_state).toMatchObject({
+      headerComparison: summary.headerComparison,
+      rowDeltas: [],
+      evidence: saved.evidence,
+      reason: "supplier error",
+    });
+    const currentDuplicate = await createPostableDraft(
+      target.id,
+      "T02-DUPLICATE",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "1", itemId: productMain.id }],
+    );
+    const duplicates = await request(
+      "POST",
+      purchaseDraftPostingsPath(currentDuplicate.id),
+      { expectedVersion: currentDuplicate.version, idempotencyKey: uuidV7() },
+    );
+    expect(duplicates.status, diagnostics(duplicates)).toBe(201);
+    expect(
+      (duplicates.body as unknown as PurchasePostResult).warnings[0]!
+        .existingPostingIds,
+    ).toContain(original.posted.id);
+  }, 60_000);
+
+  it("rejects protected row/header changes and unavailable suppliers without changing the saved copy, and revalidates a supplier at Post", async () => {
+    const supplierResponse = await request(
+      "POST",
+      "/suppliers",
+      supplierBody("T02 temporary Supplier", "0", "2026-01-01"),
+    );
+    expect(supplierResponse.status, diagnostics(supplierResponse)).toBe(201);
+    const temporarySupplier = supplierResponse.body as unknown as Supplier;
+    const originalDraft = await createPostableDraft(
+      temporarySupplier.id,
+      "T02-PROTECTED",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "4", itemId: productMain.id }],
+    );
+    const originalResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(originalDraft.id),
+      { expectedVersion: originalDraft.version, idempotencyKey: uuidV7() },
+    );
+    expect(originalResponse.status, diagnostics(originalResponse)).toBe(201);
+    const original = originalResponse.body as unknown as PurchasePostResult;
+    const draft = await createAdjustmentDraft(original.posted.id, "other");
+    const rows = adjustmentRows(draft);
+    for (const changes of [
+      { expiryDate: "2030-12-31" },
+      { lotNumber: "changed" },
+      { notes: "changed" },
+      { itemId: uuidV7() },
+      { unit: { kind: "package-unit", packageUnitName: "Unapproved" } },
+      { pricing: { method: "by-percentage", marginPercentage: "20" } },
+    ]) {
+      const denied = await request(
+        "PUT",
+        purchaseAdjustmentDraftPath(draft.id),
+        {
+          ...adjustmentUpdateBody(draft, rows),
+          rows: rows.map((row) => ({ ...row, ...changes })),
+        },
+      );
+      expect(denied.status, diagnostics(denied)).toBe(400);
+      expect(denied.body).toMatchObject({
+        code: "body-invalid",
+        fieldErrors: [{ rule: "purchase.adjustment.original-row-invalid" }],
+      });
+    }
+    for (const changes of [
+      { invoiceDate: "2030-12-31" },
+      { settlementContext: "cash" },
+      { allowancePercentageSnapshot: "50" },
+    ]) {
+      const denied = await request(
+        "PUT",
+        purchaseAdjustmentDraftPath(draft.id),
+        { ...adjustmentUpdateBody(draft, rows), ...changes },
+      );
+      expect(denied.status, diagnostics(denied)).toBe(400);
+    }
+    const invalidSupplier = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(draft.id),
+      { ...adjustmentUpdateBody(draft, rows), supplierId: uuidV7() },
+    );
+    expect(invalidSupplier.status).toBe(404);
+    expect(invalidSupplier.body).toMatchObject({ code: "supplier-not-found" });
+    expect(
+      (await request("GET", purchaseAdjustmentDraftPath(draft.id))).body,
+    ).toEqual(draft);
+    const saved = await saveAdjustmentDraft(draft, (values) =>
+      values.map((row) => ({ ...row, enteredQuantity: "8" })),
+    );
+    const summary = await previewAdjustment(saved);
+    const archived = await request(
+      "POST",
+      `/suppliers/${temporarySupplier.id}/archivals`,
+      {
+        expectedRevision: temporarySupplier.revision,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(archived.status, diagnostics(archived)).toBe(201);
+    const denied = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      {
+        confirmationHash: summary.confirmationHash,
+        expectedVersion: saved.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(denied.status, diagnostics(denied)).toBe(409);
+    expect(denied.body).toMatchObject({ code: "supplier-archived" });
+    expect(
+      (await request("GET", purchaseAdjustmentDraftPath(saved.id))).body,
+    ).toEqual(saved);
+  }, 30_000);
+
+  it("keeps percentage pricing and conversion protected while showing the exact cost-derived retail Delta", async () => {
+    const productResponse = await request("POST", "/catalog/products", {
+      ...medicationRequest("T02 Percentage", false),
+      pricing: {
+        method: "by-percentage",
+        marginPercentage: "20",
+        costFils: "80000",
+        rounding: "off",
+        wholesalePriceFils: "90000",
+      },
+    });
+    expect(productResponse.status, diagnostics(productResponse)).toBe(201);
+    const product = productResponse.body as unknown as Product;
+    const created = await request(
+      "POST",
+      "/purchases/drafts",
+      draftBody(supplierLow.id, "T02-PERCENTAGE", "2026-06-15"),
+    );
+    expect(created.status, diagnostics(created)).toBe(201);
+    const originalDraft = created.body?.draft as unknown as PurchaseDraft;
+    const committed = await request(
+      "POST",
+      purchaseDraftRowsPath(originalDraft.id),
+      {
+        expectedVersion: originalDraft.version,
+        idempotencyKey: uuidV7(),
+        itemId: product.id,
+        costFils: "80000",
+        enteredQuantity: "4",
+        expiryDate: "2029-12-31",
+        lotNumber: "T02-PCT-LOT",
+        notes: null,
+        pricing: { method: "by-percentage", marginPercentage: "20" },
+        unit: { kind: "inventory-unit" },
+      },
+    );
+    expect(committed.status, diagnostics(committed)).toBe(201);
+    const ready = committed.body?.draft as unknown as PurchaseDraft;
+    const originalResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(ready.id),
+      { expectedVersion: ready.version, idempotencyKey: uuidV7() },
+    );
+    expect(originalResponse.status, diagnostics(originalResponse)).toBe(201);
+    const original = originalResponse.body as unknown as PurchasePostResult;
+    const originalBytes = await immutablePurchaseBytes(original.posted.id);
+    const draft = await createAdjustmentDraft(
+      original.posted.id,
+      "price error",
+    );
+    for (const pricing of [
+      { method: "by-percentage", marginPercentage: "25" },
+      { method: "by-price", retailPriceFils: "99999" },
+      {
+        method: "by-percentage",
+        marginPercentage: "20",
+        retailPriceFils: "99999",
+      },
+    ]) {
+      const denied = await request(
+        "PUT",
+        purchaseAdjustmentDraftPath(draft.id),
+        {
+          ...adjustmentUpdateBody(draft, adjustmentRows(draft)),
+          rows: adjustmentRows(draft).map((row) => ({ ...row, pricing })),
+        },
+      );
+      expect(denied.status, diagnostics(denied)).toBe(400);
+    }
+    const saved = await saveAdjustmentDraft(draft, (rows) =>
+      rows.map((row) => ({ ...row, costFils: "100000" })),
+    );
+    const summary = await previewAdjustment(saved);
+    expect(summary.rowDeltas[0]).toMatchObject({
+      quantityDelta: "0",
+      primarySupplierCostDeltaFils: "80000",
+      changes: [
+        { field: "primary-supplier-cost", before: "80000", after: "100000" },
+        { field: "retail-price", before: "100000", after: "125000" },
+      ],
+    });
+    await administrator.query(
+      "update catalog_products set pricing_method = 'by-price', margin_percentage = null, price_rounding = null, revision = revision + 1 where pharmacy_id = $1 and id = $2",
+      [pharmacyId, product.id],
+    );
+    try {
+      const denied = await request(
+        "POST",
+        purchaseAdjustmentPostingsPath(saved.id),
+        {
+          expectedVersion: saved.version,
+          confirmationHash: summary.confirmationHash,
+          idempotencyKey: uuidV7(),
+        },
+      );
+      expect(denied.status, diagnostics(denied)).toBe(409);
+      expect(denied.body).toMatchObject({ code: "pricing-mode-conflict" });
+      expect(
+        (await request("GET", purchaseAdjustmentDraftPath(saved.id))).body,
+      ).toEqual(saved);
+    } finally {
+      await administrator.query(
+        "update catalog_products set pricing_method = 'by-percentage', margin_percentage = 20, price_rounding = 'off', revision = revision + 1 where pharmacy_id = $1 and id = $2",
+        [pharmacyId, product.id],
+      );
+    }
+    const posted = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      {
+        expectedVersion: saved.version,
+        confirmationHash: summary.confirmationHash,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(posted.status, diagnostics(posted)).toBe(201);
+    expect(
+      (posted.body as unknown as PurchaseAdjustmentPostResult).posted
+        .rowDeltas[0]!.after,
+    ).toMatchObject({
+      marginPercentage: "20",
+      pricingMethod: "by-percentage",
+      retailPriceFils: "125000",
+    });
+    expect(await immutablePurchaseBytes(original.posted.id)).toEqual(
+      originalBytes,
+    );
+  }, 30_000);
+
+  it("transfers only the remaining Purchase payable after Returns and binds later Returns to the corrected Supplier", async () => {
+    const supplierResponse = await request(
+      "POST",
+      "/suppliers",
+      supplierBody("T02 Return correction", "25", "2026-01-01"),
+    );
+    expect(supplierResponse.status, diagnostics(supplierResponse)).toBe(201);
+    const target = supplierResponse.body as unknown as Supplier;
+    const originalDraft = await createPostableDraft(
+      supplierLow.id,
+      "T02-RETURN-SUPPLIER",
+      "debt",
+      [{ costFils: "1000", enteredQuantity: "4", itemId: productMain.id }],
+    );
+    const originalResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(originalDraft.id),
+      {
+        expectedVersion: originalDraft.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(originalResponse.status, diagnostics(originalResponse)).toBe(201);
+    const original = originalResponse.body as unknown as PurchasePostResult;
+    const originalBytes = await immutablePurchaseBytes(original.posted.id);
+    const balances = await administrator.query<{
+      supplier_id: string;
+      balance_fils: string;
+    }>(
+      "select supplier_id, balance_fils::text from accounting_supplier_balances where pharmacy_id = $1 and supplier_id = any($2::uuid[])",
+      [pharmacyId, [supplierLow.id, target.id]],
+    );
+    const correction = await createAdjustmentDraft(
+      original.posted.id,
+      "supplier error",
+    );
+    const correctionResponse = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(correction.id),
+      {
+        ...adjustmentUpdateBody(correction, adjustmentRows(correction)),
+        supplierId: target.id,
+      },
+    );
+    expect(correctionResponse.status, diagnostics(correctionResponse)).toBe(
+      200,
+    );
+    const saved = correctionResponse.body as unknown as PurchaseAdjustmentDraft;
+    const beforeReturn = await previewAdjustment(saved);
+    const firstReturn = await saveReturnDraft(
+      await createReturnDraft(original.posted.id),
+      "1",
+    );
+    const firstSummary = await previewReturn(firstReturn);
+    const returnResponse = await request(
+      "POST",
+      purchaseReturnPostingsPath(firstReturn.id),
+      {
+        expectedVersion: firstReturn.version,
+        confirmationHash: firstSummary.confirmationHash,
+        idempotencyKey: uuidV7(),
+        stepUpChallengeId: await approvedReturnStepUp(firstReturn.id),
+      },
+    );
+    expect(returnResponse.status, diagnostics(returnResponse)).toBe(201);
+    expect(
+      (returnResponse.body as unknown as PurchaseReturnPostResult).posted,
+    ).toMatchObject({
+      supplierId: supplierLow.id,
+      supplierReductionFils: "1000",
+    });
+    const staleCorrection = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      {
+        expectedVersion: saved.version,
+        confirmationHash: beforeReturn.confirmationHash,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(staleCorrection.status, diagnostics(staleCorrection)).toBe(409);
+    expect(staleCorrection.body).toMatchObject({
+      code: "adjustment-summary-stale",
+    });
+    expect(
+      (await request("GET", purchaseAdjustmentDraftPath(saved.id))).body,
+    ).toEqual(saved);
+    const summary = await previewAdjustment(saved);
+    expect(summary.confirmationHash).not.toBe(beforeReturn.confirmationHash);
+    expect(summary.supplierEffects).toEqual([
+      {
+        supplierId: supplierLow.id,
+        supplierNameSnapshot: supplierLow.name,
+        deltaFils: "-3000",
+      },
+      {
+        supplierId: target.id,
+        supplierNameSnapshot: target.name,
+        deltaFils: "3000",
+      },
+    ]);
+    expect(summary.stockEffects).toEqual([]);
+    const correctionPostBody = {
+      confirmationHash: summary.confirmationHash,
+      expectedVersion: saved.version,
+      idempotencyKey: uuidV7(),
+    };
+    const correctionPost = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      correctionPostBody,
+    );
+    expect(correctionPost.status, diagnostics(correctionPost)).toBe(201);
+    const replay = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(saved.id),
+      correctionPostBody,
+    );
+    expect(replay.status, diagnostics(replay)).toBe(201);
+    expect(replay.body).toEqual(correctionPost.body);
+    const secondReturn = await saveReturnDraft(
+      await createReturnDraft(original.posted.id),
+      "1",
+    );
+    expect(secondReturn).toMatchObject({
+      supplierId: target.id,
+      supplierNameSnapshot: target.name,
+    });
+    const secondSummary = await previewReturn(secondReturn);
+    expect(secondSummary).toMatchObject({
+      supplierId: target.id,
+      supplierNameSnapshot: target.name,
+    });
+    const secondPost = await request(
+      "POST",
+      purchaseReturnPostingsPath(secondReturn.id),
+      {
+        expectedVersion: secondReturn.version,
+        confirmationHash: secondSummary.confirmationHash,
+        idempotencyKey: uuidV7(),
+        stepUpChallengeId: await approvedReturnStepUp(secondReturn.id),
+      },
+    );
+    expect(secondPost.status, diagnostics(secondPost)).toBe(201);
+    expect(
+      (secondPost.body as unknown as PurchaseReturnPostResult).posted,
+    ).toMatchObject({
+      supplierId: target.id,
+      supplierReductionFils: "1000",
+    });
+    const pendingReturn = await saveReturnDraft(
+      await createReturnDraft(original.posted.id),
+      "1",
+    );
+    const pendingSummary = await previewReturn(pendingReturn);
+    const back = await createAdjustmentDraft(
+      original.posted.id,
+      "supplier error",
+    );
+    const backResponse = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(back.id),
+      {
+        ...adjustmentUpdateBody(back, adjustmentRows(back)),
+        supplierId: supplierLow.id,
+      },
+    );
+    expect(backResponse.status, diagnostics(backResponse)).toBe(200);
+    const backSaved = backResponse.body as unknown as PurchaseAdjustmentDraft;
+    const backSummary = await previewAdjustment(backSaved);
+    expect(backSummary.supplierEffects).toEqual([
+      {
+        supplierId: target.id,
+        supplierNameSnapshot: target.name,
+        deltaFils: "-2000",
+      },
+      {
+        supplierId: supplierLow.id,
+        supplierNameSnapshot: supplierLow.name,
+        deltaFils: "2000",
+      },
+    ]);
+    const backPost = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(backSaved.id),
+      {
+        expectedVersion: backSaved.version,
+        confirmationHash: backSummary.confirmationHash,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(backPost.status, diagnostics(backPost)).toBe(201);
+    const challenge = await approvedReturnStepUp(pendingReturn.id);
+    const stale = await request(
+      "POST",
+      purchaseReturnPostingsPath(pendingReturn.id),
+      {
+        expectedVersion: pendingReturn.version,
+        confirmationHash: pendingSummary.confirmationHash,
+        idempotencyKey: uuidV7(),
+        stepUpChallengeId: challenge,
+      },
+    );
+    expect(stale.status, diagnostics(stale)).toBe(409);
+    expect(stale.body).toMatchObject({ code: "return-summary-stale" });
+    const reloaded = await request(
+      "GET",
+      purchaseReturnDraftPath(pendingReturn.id),
+    );
+    expect(reloaded.body).toMatchObject({
+      status: "active",
+      version: pendingReturn.version,
+      supplierId: supplierLow.id,
+    });
+    const fresh = await previewReturn(pendingReturn);
+    expect(fresh.confirmationHash).not.toBe(pendingSummary.confirmationHash);
+    const finalReturn = await request(
+      "POST",
+      purchaseReturnPostingsPath(pendingReturn.id),
+      {
+        expectedVersion: pendingReturn.version,
+        confirmationHash: fresh.confirmationHash,
+        idempotencyKey: uuidV7(),
+        stepUpChallengeId: challenge,
+      },
+    );
+    expect(finalReturn.status, diagnostics(finalReturn)).toBe(201);
+    expect(
+      (finalReturn.body as unknown as PurchaseReturnPostResult).posted,
+    ).toMatchObject({
+      supplierId: supplierLow.id,
+      supplierReductionFils: "1000",
+    });
+    const after = await administrator.query<{
+      supplier_id: string;
+      balance_fils: string;
+    }>(
+      "select supplier_id, balance_fils::text from accounting_supplier_balances where pharmacy_id = $1 and supplier_id = any($2::uuid[])",
+      [pharmacyId, [supplierLow.id, target.id]],
+    );
+    for (const row of after.rows) {
+      const before = balances.rows.find(
+        (entry) => entry.supplier_id === row.supplier_id,
+      );
+      expect(
+        BigInt(row.balance_fils) - BigInt(before?.balance_fils ?? "0"),
+      ).toBe(row.supplier_id === supplierLow.id ? -3000n : 0n);
+    }
+    expect(await immutablePurchaseBytes(original.posted.id)).toEqual(
+      originalBytes,
+    );
+  }, 30_000);
+
+  it("T04 persists versioned offers across restart, binds correction review, and preserves gross accounting and immutable history", async () => {
+    let draft = await createPostableDraft(supplierLow.id, "T04-OFFER", "debt", [
+      { costFils: "100000", enteredQuantity: "10", itemId: productMain.id },
+    ]);
+    const input = { mode: "percentage", value: "5" } as const;
+    const updated = await request("PUT", purchaseDraftHeaderPath(draft.id), {
+      ...draftBody(
+        draft.supplierId,
+        draft.supplierInvoiceNumber,
+        draft.invoiceDate,
+      ),
+      expectedVersion: draft.version,
+      invoiceOffer: input,
+    });
+    expect(updated.status, diagnostics(updated)).toBe(200);
+    draft = updated.body?.draft as unknown as PurchaseDraft;
+    await stopProcess(api);
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    const loaded = await request("GET", `/purchases/drafts/${draft.id}`);
+    expect(loaded.status, diagnostics(loaded)).toBe(200);
+    expect(loaded.body).toMatchObject({
+      invoiceOffer: input,
+      offerRuleVersion: 1,
+      review: {
+        grossFils: "1000000",
+        allowanceFils: "100000",
+        netFils: "850000",
+        invoiceOffer: {
+          input,
+          ruleVersion: 1,
+          basisFils: "1000000",
+          offerFils: "50000",
+        },
+        settlementEffect: { payableFils: "1000000" },
+      },
+    });
+    const invalid = await request("PUT", purchaseDraftHeaderPath(draft.id), {
+      ...draftBody(
+        draft.supplierId,
+        draft.supplierInvoiceNumber,
+        draft.invoiceDate,
+      ),
+      expectedVersion: draft.version,
+      invoiceOffer: { mode: "fixed", value: "900001" },
+    });
+    expect(invalid.status, diagnostics(invalid)).toBe(400);
+    expect(
+      (await request("GET", `/purchases/drafts/${draft.id}`)).body,
+    ).toMatchObject({ version: draft.version, invoiceOffer: input });
+    const postBody = {
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+    };
+    const postedResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(draft.id),
+      postBody,
+    );
+    expect(postedResponse.status, diagnostics(postedResponse)).toBe(201);
+    const posted = postedResponse.body as unknown as PurchasePostResult;
+    expect(posted.posted).toMatchObject({
+      primarySupplierCostFils: "1000000",
+      allowanceFils: "100000",
+      costAfterDiscountFils: "850000",
+      invoiceOffer: { input, offerFils: "50000" },
+      settlementEffect: { payableFils: "1000000" },
+      rows: [
+        {
+          linePrimarySupplierCostFils: "1000000",
+          costAfterDiscountFils: "850000",
+        },
+      ],
+    });
+    expect(
+      (await request("POST", purchaseDraftPostingsPath(draft.id), postBody))
+        .body,
+    ).toEqual(postedResponse.body);
+    const originalBytes = await immutablePurchaseBytes(posted.posted.id);
+    const before = await administrator.query(
+      "select total_quantity::text, total_value_scaled::text from inventory_valuation_state where pharmacy_id=$1 and product_id=$2",
+      [pharmacyId, productMain.id],
+    );
+    let correction = await createAdjustmentDraft(posted.posted.id, "other");
+    expect(correction.invoiceOffer).toEqual(input);
+    const offerOnly = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(correction.id),
+      {
+        ...adjustmentUpdateBody(correction, adjustmentRows(correction)),
+        invoiceOffer: { mode: "fixed", value: "25000" },
+      },
+    );
+    expect(offerOnly.status, diagnostics(offerOnly)).toBe(200);
+    correction = offerOnly.body as unknown as PurchaseAdjustmentDraft;
+    const preview = await previewAdjustment(correction);
+    expect(preview).toMatchObject({
+      primarySupplierCostDeltaFils: "0",
+      allowanceDeltaFils: "0",
+      offerDeltaFils: "-25000",
+      costAfterDiscountDeltaFils: "25000",
+      stockEffects: [],
+      supplierEffects: [],
+      totalsComparison: {
+        before: { offerFils: "50000", costAfterDiscountFils: "850000" },
+        after: { offerFils: "25000", costAfterDiscountFils: "875000" },
+      },
+    });
+    const correctionPost = {
+      expectedVersion: correction.version,
+      confirmationHash: preview.confirmationHash,
+      idempotencyKey: uuidV7(),
+    };
+    const correctionResponse = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(correction.id),
+      correctionPost,
+    );
+    expect(correctionResponse.status, diagnostics(correctionResponse)).toBe(
+      201,
+    );
+    expect(
+      (
+        await request(
+          "POST",
+          purchaseAdjustmentPostingsPath(correction.id),
+          correctionPost,
+        )
+      ).body,
+    ).toEqual(correctionResponse.body);
+    const a01 =
+      correctionResponse.body as unknown as PurchaseAdjustmentPostResult;
+    expect(a01.posted).toMatchObject({
+      offerDeltaFils: "-25000",
+      costAfterDiscountDeltaFils: "25000",
+      rowDeltas: [],
+      offerComparison: {
+        before: { offerFils: "50000" },
+        after: { input: { mode: "fixed", value: "25000" }, offerFils: "25000" },
+      },
+    });
+    expect(await immutablePurchaseBytes(posted.posted.id)).toEqual(
+      originalBytes,
+    );
+    expect(
+      (
+        await administrator.query(
+          "select total_quantity::text, total_value_scaled::text from inventory_valuation_state where pharmacy_id=$1 and product_id=$2",
+          [pharmacyId, productMain.id],
+        )
+      ).rows,
+    ).toEqual(before.rows);
+    const detail = await request(
+      "GET",
+      `/purchases/posted-adjustments/${a01.posted.id}`,
+    );
+    expect(detail.status, diagnostics(detail)).toBe(200);
+    expect(detail.body).toMatchObject({
+      offerComparison: preview.offerComparison,
+      offerDeltaFils: "-25000",
+    });
+    const a02draft = await createAdjustmentDraft(
+      posted.posted.id,
+      "quantity error",
+    );
+    expect(a02draft.invoiceOffer).toEqual({ mode: "fixed", value: "25000" });
+    const a02saved = await saveAdjustmentDraft(a02draft, (rows) =>
+      rows.map((row) => ({ ...row, enteredQuantity: "20" })),
+    );
+    const a02preview = await previewAdjustment(a02saved);
+    expect(a02preview).toMatchObject({
+      offerDeltaFils: "0",
+      costAfterDiscountDeltaFils: "900000",
+      totalsComparison: {
+        before: { costAfterDiscountFils: "875000" },
+        after: {
+          primarySupplierCostFils: "2000000",
+          offerFils: "25000",
+          costAfterDiscountFils: "1775000",
+        },
+      },
+    });
+    const a02 = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(a02saved.id),
+      {
+        expectedVersion: a02saved.version,
+        confirmationHash: a02preview.confirmationHash,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(a02.status, diagnostics(a02)).toBe(201);
+    expect(await immutablePurchaseBytes(posted.posted.id)).toEqual(
+      originalBytes,
+    );
+    const percentageDraft = await createAdjustmentDraft(
+      posted.posted.id,
+      "other",
+    );
+    const percentageSaved = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(percentageDraft.id),
+      {
+        ...adjustmentUpdateBody(
+          percentageDraft,
+          adjustmentRows(percentageDraft),
+        ),
+        invoiceOffer: { mode: "percentage", value: "5" },
+      },
+    );
+    expect(percentageSaved.status, diagnostics(percentageSaved)).toBe(200);
+    const a03Draft = percentageSaved.body as unknown as PurchaseAdjustmentDraft;
+    const a03Preview = await previewAdjustment(a03Draft);
+    const a03 = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(a03Draft.id),
+      {
+        expectedVersion: a03Draft.version,
+        confirmationHash: a03Preview.confirmationHash,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(a03.status, diagnostics(a03)).toBe(201);
+    const a04Draft = await createAdjustmentDraft(
+      posted.posted.id,
+      "quantity error",
+    );
+    expect(a04Draft.invoiceOffer).toEqual({ mode: "percentage", value: "5" });
+    const a04Saved = await saveAdjustmentDraft(a04Draft, (rows) =>
+      rows.map((row) => ({ ...row, enteredQuantity: "30" })),
+    );
+    const a04Preview = await previewAdjustment(a04Saved);
+    expect(a04Preview).toMatchObject({
+      offerDeltaFils: "50000",
+      costAfterDiscountDeltaFils: "850000",
+      offerComparison: {
+        before: { offerFils: "100000" },
+        after: {
+          input: { mode: "percentage", value: "5" },
+          basisFils: "3000000",
+          offerFils: "150000",
+        },
+      },
+    });
+    expect(await immutablePurchaseBytes(posted.posted.id)).toEqual(
+      originalBytes,
+    );
+  }, 60000);
+
   async function createReturnDraft(
     originalId: string,
   ): Promise<PurchaseReturnDraft> {
@@ -2131,6 +3771,624 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     expect(response.status, diagnostics(response)).toBe(200);
     return response.body as unknown as PurchaseReturnDraft;
   }
+
+  it("T05 redacts saved row discounts and margin by setting and permission without losing non-cost facts", async () => {
+    const productResponse = await request("POST", "/catalog/products", {
+      ...medicationRequest("T05 Margin Snapshot", false),
+      pricing: {
+        method: "by-percentage",
+        costFils: "80000",
+        marginPercentage: "20",
+        rounding: "off",
+        wholesalePriceFils: "90000",
+      },
+    });
+    expect(productResponse.status, diagnostics(productResponse)).toBe(201);
+    const product = productResponse.body as unknown as Product;
+    const created = await request("POST", "/purchases/drafts", {
+      ...draftBody(supplierLow.id, "T05-ROW-REDACTION", "2026-06-15"),
+      invoiceOffer: { mode: "percentage", value: "5" },
+    });
+    const draft = created.body?.draft as unknown as PurchaseDraft;
+    const committed = await request("POST", purchaseDraftRowsPath(draft.id), {
+      costFils: "100000",
+      enteredQuantity: "2",
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+      expiryDate: "2029-06-30",
+      lotNumber: "T05-MARGIN",
+      notes: "Saved visible note",
+      itemId: product.id,
+      pricing: { method: "by-percentage", marginPercentage: "20" },
+      unit: { kind: "inventory-unit" },
+    });
+    expect(committed.status, diagnostics(committed)).toBe(201);
+    const ready = committed.body?.draft as unknown as PurchaseDraft;
+    const posted = await request("POST", purchaseDraftPostingsPath(draft.id), {
+      expectedVersion: ready.version,
+      idempotencyKey: uuidV7(),
+    });
+    expect(posted.status, diagnostics(posted)).toBe(201);
+    const id = (posted.body as unknown as PurchasePostResult).posted.id;
+    const preferences = (await request("GET", "/purchases/entry-preferences"))
+      .body as unknown as {
+      afterCommit: string;
+      columns: { field: string; visible: boolean }[];
+      detailsPanelFields: string[];
+      revision: string;
+    };
+    async function visibility(visible: boolean) {
+      const current = (await request("GET", "/purchases/entry-preferences"))
+        .body as unknown as typeof preferences;
+      const result = await request("PUT", "/purchases/entry-preferences", {
+        ...current,
+        expectedRevision: current.revision,
+        revision: undefined,
+        idempotencyKey: uuidV7(),
+        columns: current.columns.map((column) =>
+          column.field === "cost" ? { ...column, visible } : column,
+        ),
+      });
+      expect(result.status, diagnostics(result)).toBe(200);
+    }
+    const owner = (
+      await administrator.query<{ id: string; role_id: string }>(
+        "select id, role_id from identity_users where pharmacy_id = $1 and username = $2",
+        [pharmacyId, OWNER_USERNAME],
+      )
+    ).rows[0]!;
+    await visibility(true);
+    const baseline = await request("GET", `/purchases/posted/${id}`);
+    expect(baseline.status, diagnostics(baseline)).toBe(200);
+    expect(baseline.body).toMatchObject({
+      rows: [
+        {
+          marginPercentage: "20.000000",
+          allowanceFils: "20000",
+          offerFils: "10000",
+          costAfterDiscountFils: "170000",
+          pricingMethod: "by-percentage",
+          notes: "Saved visible note",
+          retailPriceFils: "125000",
+        },
+      ],
+    });
+    function assertHidden(result: ApiResponse, costVisibility: string) {
+      expect(result.status, diagnostics(result)).toBe(200);
+      expect(result.body).toMatchObject({
+        costVisibility,
+        invoiceOffer: null,
+        allowanceFils: null,
+        rows: [
+          {
+            marginPercentage: null,
+            allowanceFils: null,
+            offerFils: null,
+            costAfterDiscountFils: null,
+            primarySupplierCostFils: null,
+            linePrimarySupplierCostFils: null,
+            notes: "Saved visible note",
+            retailPriceFils: "125000",
+            inventoryUnitQuantity: "2",
+          },
+        ],
+      });
+    }
+    try {
+      await visibility(false);
+      assertHidden(
+        await request("GET", `/purchases/posted/${id}`),
+        "hidden-by-setting",
+      );
+      await visibility(true);
+      await administrator.query(
+        "delete from role_permission_grants where role_id = $1 and permission_name = 'purchases.costs.view'",
+        [owner.role_id],
+      );
+      await administrator.query(
+        "update pharmacy_roles set revision = revision + 1 where id = $1",
+        [owner.role_id],
+      );
+      assertHidden(
+        await request("GET", `/purchases/posted/${id}`),
+        "hidden-by-permission",
+      );
+      const list = await request(
+        "GET",
+        "/purchases/posted?query=T05-ROW-REDACTION",
+      );
+      expect(list.body).toMatchObject({
+        costVisibility: "hidden-by-permission",
+        purchases: [
+          { primarySupplierCostFils: null, costAfterDiscountFils: null },
+        ],
+      });
+      expect(
+        (
+          await requestAs(
+            { ...credentials, deviceId: uuidV7() },
+            "GET",
+            `/purchases/posted/${id}`,
+          )
+        ).status,
+      ).toBe(401);
+    } finally {
+      await administrator.query(
+        "insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by) values ($1, $2, 'purchases.costs.view', $3) on conflict do nothing",
+        [pharmacyId, owner.role_id, owner.id],
+      );
+      await administrator.query(
+        "update pharmacy_roles set revision = revision + 1 where id = $1",
+        [owner.role_id],
+      );
+      await visibility(
+        preferences.columns.find((column) => column.field === "cost")!.visible,
+      );
+    }
+    for (const method of ["PUT", "PATCH", "DELETE"] as const)
+      expect(
+        (
+          await request(
+            method,
+            `/purchases/posted/${id}/rows/${(baseline.body as unknown as PurchasePostedDetail).rows[0]!.id}`,
+            {},
+          )
+        ).status,
+      ).toBe(404);
+  }, 30_000);
+
+  describe.sequential("T06 authoritative item details", () => {
+    let originalCostVisibility: boolean | null = null;
+
+    async function setPanelCostVisibility(visible: boolean) {
+      const response = await request("GET", "/purchases/entry-preferences");
+      expect(response.status, diagnostics(response)).toBe(200);
+      const current = response.body as unknown as PurchaseEntryPreferences;
+      const updated = await request("PUT", "/purchases/entry-preferences", {
+        afterCommit: current.afterCommit,
+        detailsPanelFields: current.detailsPanelFields,
+        columns: current.columns.map((column) =>
+          column.field === "cost" ? { ...column, visible } : column,
+        ),
+        expectedRevision: current.revision,
+        idempotencyKey: uuidV7(),
+      });
+      expect(updated.status, diagnostics(updated)).toBe(200);
+    }
+
+    beforeEach(async () => {
+      originalCostVisibility = null;
+      const response = await request("GET", "/purchases/entry-preferences");
+      expect(response.status, diagnostics(response)).toBe(200);
+      const current = response.body as unknown as PurchaseEntryPreferences;
+      originalCostVisibility = current.columns.find(
+        (column) => column.field === "cost",
+      )!.visible;
+      await setPanelCostVisibility(true);
+    });
+
+    afterEach(async () => {
+      if (originalCostVisibility !== null)
+        await setPanelCostVisibility(originalCostVisibility);
+    });
+
+    it("T06 reconciles exact live balance, configured expiry, zero/missing values and frozen cost references", async () => {
+      const createdProduct = await request("POST", "/catalog/products", {
+        ...medicationRequest("T06 Panel", false),
+        packaging: {
+          inventoryUnitName: "Strip",
+          packageUnits: [{ name: "Pack", baseUnitsPerPackage: "4" }],
+          thirdUnit: { name: "Treatment day" },
+          defaultUnits: {
+            count: { kind: "inventory-unit" },
+            sale: { kind: "inventory-unit" },
+            purchase: { kind: "package-unit", packageUnitName: "Pack" },
+          },
+        },
+        stockLevels: {
+          minimumLevel: "0",
+          maximumLevel: "20",
+          reorderPoint: null,
+        },
+        scientificName: null,
+        category: null,
+        pricing: {
+          method: "by-price",
+          retailPriceFils: "0",
+          wholesalePriceFils: null,
+        },
+      });
+      expect(createdProduct.status, diagnostics(createdProduct)).toBe(201);
+      const product = createdProduct.body as unknown as Product;
+      async function panel() {
+        const result = await request(
+          "GET",
+          purchaseItemDetailsPath(product.id),
+        );
+        expect(result.status, diagnostics(result)).toBe(200);
+        return purchaseItemDetailsSchema.parse(result.body);
+      }
+      const zero = await panel();
+      expect(zero).toMatchObject({
+        scientificName: null,
+        category: null,
+        retailPriceFils: "0",
+        wholesalePriceFils: null,
+        averageUnitCostFils: null,
+        lastPostedCost: null,
+        inventory: {
+          balance: "0",
+          minimumLevel: "0",
+          batches: [],
+          alerts: ["out-of-stock"],
+          reconciliation: "consistent",
+        },
+      });
+      expect(zero.inventory?.breakdown).toEqual([
+        { name: "Pack", quantity: "0" },
+        { name: "Strip", quantity: "0" },
+      ]);
+      const date = new Date(`${zero.businessDate}T00:00:00Z`);
+      const expiry = (days: number) => {
+        const value = new Date(date);
+        value.setUTCDate(value.getUTCDate() + days);
+        return value.toISOString().slice(0, 10);
+      };
+      const postedIds: string[] = [];
+      for (const [quantity, cost, unit, days] of [
+        ["2", "40000", { kind: "package-unit", packageUnitName: "Pack" }, -2],
+        ["3", "20000", { kind: "inventory-unit" }, 14],
+      ] as const) {
+        const created = await request(
+          "POST",
+          "/purchases/drafts",
+          draftBody(supplierLow.id, `T06-PANEL-${days}`, zero.businessDate),
+        );
+        let draft = created.body?.draft as unknown as PurchaseDraft;
+        const saved = await request("POST", purchaseDraftRowsPath(draft.id), {
+          enteredQuantity: quantity,
+          costFils: cost,
+          expectedVersion: draft.version,
+          idempotencyKey: uuidV7(),
+          itemId: product.id,
+          expiryDate: expiry(days),
+          lotNumber: `T06-${days}`,
+          notes: null,
+          pricing: { method: "by-price", retailPriceFils: "100000" },
+          unit,
+        });
+        expect(saved.status, diagnostics(saved)).toBe(201);
+        draft = saved.body?.draft as unknown as PurchaseDraft;
+        const posted = await request(
+          "POST",
+          purchaseDraftPostingsPath(draft.id),
+          { expectedVersion: draft.version, idempotencyKey: uuidV7() },
+        );
+        expect(posted.status, diagnostics(posted)).toBe(201);
+        postedIds.push(
+          (posted.body as unknown as PurchasePostResult).posted.id,
+        );
+      }
+      const live = await panel();
+      expect(live.inventory).toMatchObject({
+        balance: "11",
+        breakdown: [
+          { name: "Pack", quantity: "2" },
+          { name: "Strip", quantity: "3" },
+        ],
+        reconciliation: "consistent",
+      });
+      expect(
+        live.inventory?.batches.map((batch) => [
+          batch.balance,
+          batch.daysRemaining,
+          batch.status,
+        ]),
+      ).toEqual([
+        ["8", -2, "expired"],
+        ["3", 14, "near-expiry"],
+      ]);
+      expect(live.inventory?.alerts).toContain("expired");
+      expect(live.averageUnitCostFils).toBe("12727");
+      expect(live.lastPostedCost).toMatchObject({
+        purchaseId: postedIds[1],
+        enteredUnitName: "Strip",
+        enteredQuantity: "3",
+        primarySupplierCostFils: "60000",
+        costAfterDiscountFils: "54000",
+      });
+      const movement = (
+        await administrator.query<{ balance: string }>(
+          "select sum(quantity)::text as balance from inventory_movements where pharmacy_id = $1 and product_id = $2",
+          [pharmacyId, product.id],
+        )
+      ).rows[0]!;
+      expect(live.inventory?.balance).toBe(movement.balance);
+      await administrator.query(
+        "update inventory_receipt_class_rules set near_expiry_days = 7 where pharmacy_id = $1 and class = 'medication'",
+        [pharmacyId],
+      );
+      try {
+        expect((await panel()).inventory?.batches[1]?.status).toBe("eligible");
+      } finally {
+        await administrator.query(
+          "update inventory_receipt_class_rules set near_expiry_days = 90 where pharmacy_id = $1 and class = 'medication'",
+          [pharmacyId],
+        );
+      }
+      const current = (await request("GET", `/catalog/products/${product.id}`))
+        .body as unknown as Product;
+      const update = await request("PUT", `/catalog/products/${product.id}`, {
+        ...medicationRequest("T06 Changed Master", false),
+        barcodes: product.barcodes.map(({ kind, value }) => ({ kind, value })),
+        packaging: {
+          ...current.packaging,
+          inventoryUnitName: "Tablet",
+          packageUnits: [{ name: "Box", baseUnitsPerPackage: "6" }],
+          defaultUnits: {
+            count: { kind: "inventory-unit" },
+            sale: { kind: "inventory-unit" },
+            purchase: { kind: "package-unit", packageUnitName: "Box" },
+          },
+        },
+        expectedRevision: current.revision,
+        idempotencyKey: uuidV7(),
+        pricing: {
+          method: "by-price",
+          retailPriceFils: "230000",
+          wholesalePriceFils: "0",
+        },
+      });
+      expect(update.status, diagnostics(update)).toBe(200);
+      const changed = await panel();
+      expect(changed.inventory?.breakdown).toEqual([
+        { name: "Box", quantity: "1" },
+        { name: "Tablet", quantity: "5" },
+      ]);
+      expect(changed.wholesalePriceFils).toBe("0");
+      expect(changed.lastPostedCost).toEqual(live.lastPostedCost);
+      await stopProcess(api);
+      api = startApi();
+      await waitForHealth(apiOrigin, () => apiOutput);
+      expect(await panel()).toEqual(changed);
+      expect(
+        (await request("GET", purchaseItemDetailsPath(uuidV7()))).status,
+      ).toBe(404);
+      expect(
+        (
+          await requestAs(
+            { ...credentials, deviceId: uuidV7() },
+            "GET",
+            purchaseItemDetailsPath(product.id),
+          )
+        ).status,
+      ).toBe(401);
+    });
+
+    it("T06 preserves stock when valuation reconciliation is unavailable and performs no inventory writes", async () => {
+      const created = await request(
+        "POST",
+        "/catalog/products",
+        medicationRequest("T06 Reconciliation", false),
+      );
+      expect(created.status).toBe(201);
+      const productId = (created.body as Product).id;
+      const draft = await createPostableDraft(
+        supplierLow.id,
+        "T06-RECONCILIATION",
+        "debt",
+        [{ costFils: "1000", enteredQuantity: "2", itemId: productId }],
+      );
+      expect(
+        (
+          await request("POST", purchaseDraftPostingsPath(draft.id), {
+            expectedVersion: draft.version,
+            idempotencyKey: uuidV7(),
+          })
+        ).status,
+      ).toBe(201);
+      const administrator = new Pool({
+        connectionString: databaseRoles.migrationUrl,
+      });
+      try {
+        const original = (
+          await administrator.query(
+            "select total_quantity::text, total_value_scaled::text from inventory_valuation_state where product_id = $1",
+            [productId],
+          )
+        ).rows[0] as { total_quantity: string; total_value_scaled: string };
+        const counts = async () =>
+          (
+            await administrator.query(
+              "select (select count(*)::text from inventory_batches) batches, (select count(*)::text from inventory_movements) movements, (select count(*)::text from posted_purchase_rows) snapshots",
+            )
+          ).rows[0];
+        const before = await counts();
+        await administrator.query(
+          "update inventory_valuation_state set total_quantity = total_quantity + 1 where product_id = $1",
+          [productId],
+        );
+        try {
+          const response = await request(
+            "GET",
+            purchaseItemDetailsPath(productId),
+          );
+          expect(response.status).toBe(200);
+          const facts = purchaseItemDetailsSchema.parse(response.body);
+          expect(facts.inventory).toMatchObject({
+            balance: original.total_quantity,
+            reconciliation: "mismatch",
+          });
+          expect(facts.averageCostVisibility).toBe("visible");
+          expect(facts.averageUnitCostFils).toBeNull();
+          expect(await counts()).toEqual(before);
+        } finally {
+          await administrator.query(
+            "update inventory_valuation_state set total_quantity = $2, total_value_scaled = $3 where product_id = $1",
+            [productId, original.total_quantity, original.total_value_scaled],
+          );
+        }
+      } finally {
+        await administrator.end();
+      }
+    });
+
+    it("T06 redacts stock and costs independently by server permissions and settings", async () => {
+      const created = await request(
+        "POST",
+        "/catalog/products",
+        medicationRequest("T06 Permission Stock", false),
+      );
+      expect(created.status, diagnostics(created)).toBe(201);
+      const productId = (created.body as unknown as Product).id;
+      const draft = await createPostableDraft(
+        supplierLow.id,
+        "T06-PERMISSIONS",
+        "debt",
+        [{ costFils: "1000", enteredQuantity: "2", itemId: productId }],
+      );
+      expect(
+        (
+          await request("POST", purchaseDraftPostingsPath(draft.id), {
+            expectedVersion: draft.version,
+            idempotencyKey: uuidV7(),
+          })
+        ).status,
+      ).toBe(201);
+      const route = purchaseItemDetailsPath(productId);
+      const owner = (
+        await administrator.query<{ id: string; role_id: string }>(
+          "select id, role_id from identity_users where pharmacy_id = $1 and username = $2",
+          [pharmacyId, OWNER_USERNAME],
+        )
+      ).rows[0]!;
+      const preferences = (await request("GET", "/purchases/entry-preferences"))
+        .body as unknown as {
+        revision: string;
+        columns: { field: string; visible: boolean }[];
+        detailsPanelFields: string[];
+        afterCommit: string;
+      };
+      async function read() {
+        const result = await request("GET", route);
+        expect(result.status, diagnostics(result)).toBe(200);
+        return purchaseItemDetailsSchema.parse(result.body);
+      }
+      async function costSetting(visible: boolean) {
+        const current = (await request("GET", "/purchases/entry-preferences"))
+          .body as unknown as typeof preferences;
+        expect(
+          (
+            await request("PUT", "/purchases/entry-preferences", {
+              afterCommit: current.afterCommit,
+              detailsPanelFields: current.detailsPanelFields,
+              columns: current.columns.map((column) =>
+                column.field === "cost" ? { ...column, visible } : column,
+              ),
+              expectedRevision: current.revision,
+              idempotencyKey: uuidV7(),
+            })
+          ).status,
+        ).toBe(200);
+      }
+      const permissions = [
+        "purchases.costs.view",
+        "inventory.valuation.view",
+        "purchases.posted.view",
+        "inventory.review",
+        "purchases.drafts.manage",
+      ];
+      const existing = (
+        await administrator.query<{ permission_name: string }>(
+          "select permission_name from role_permission_grants where role_id = $1",
+          [owner.role_id],
+        )
+      ).rows.map((row) => row.permission_name);
+      async function revoke(permission: string) {
+        await administrator.query(
+          "delete from role_permission_grants where role_id = $1 and permission_name = $2",
+          [owner.role_id, permission],
+        );
+        await administrator.query(
+          "update pharmacy_roles set revision = revision + 1 where id = $1",
+          [owner.role_id],
+        );
+      }
+      async function restore(permission: string) {
+        if (existing.includes(permission))
+          await administrator.query(
+            "insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by) values ($1,$2,$3,$4) on conflict do nothing",
+            [pharmacyId, owner.role_id, permission, owner.id],
+          );
+        await administrator.query(
+          "update pharmacy_roles set revision = revision + 1 where id = $1",
+          [owner.role_id],
+        );
+      }
+      try {
+        await costSetting(false);
+        expect(await read()).toMatchObject({
+          costVisibility: "hidden-by-setting",
+          averageCostVisibility: "hidden-by-setting",
+          averageUnitCostFils: null,
+          lastPostedCost: null,
+          inventory: { balance: "2" },
+        });
+        await costSetting(true);
+        for (const permission of permissions) {
+          await revoke(permission);
+          if (permission === "purchases.drafts.manage")
+            expect((await request("GET", route)).status).toBe(403);
+          else {
+            const value = await read();
+            if (permission === "purchases.costs.view")
+              expect(value).toMatchObject({
+                averageUnitCostFils: null,
+                lastPostedCost: null,
+                costVisibility: "hidden-by-permission",
+              });
+            if (permission === "inventory.valuation.view")
+              expect(value).toMatchObject({
+                averageUnitCostFils: null,
+                averageCostVisibility: "hidden-by-permission",
+              });
+            if (permission === "purchases.posted.view")
+              expect(value).toMatchObject({
+                lastPostedCost: null,
+                costVisibility: "hidden-by-permission",
+              });
+            if (permission === "inventory.review")
+              expect(value).toMatchObject({
+                inventory: null,
+                averageUnitCostFils: null,
+                inventoryVisibility: "hidden-by-permission",
+              });
+          }
+          await restore(permission);
+        }
+        // This local database has one pharmacy. Exercise the public projection
+        // with an unrelated pharmacy context rather than inventing a second tenant.
+        const foreign = uuidV7();
+        const scopedClient = await administrator.connect();
+        try {
+          expect(
+            await resolveCatalogPurchasePanel(scopedClient, foreign, productId),
+          ).toBeNull();
+        } finally {
+          scopedClient.release();
+        }
+        expect(
+          (await request("GET", purchaseItemDetailsPath(foreign))).status,
+        ).toBe(404);
+      } finally {
+        for (const permission of permissions) await restore(permission);
+        await costSetting(
+          preferences.columns.find((column) => column.field === "cost")
+            ?.visible ?? true,
+        );
+      }
+    });
+  });
 
   async function previewReturn(
     draft: PurchaseReturnDraft,
@@ -2285,6 +4543,7 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     rows: readonly DraftRowInput[],
   ): Promise<PurchaseDraft> {
     const created = await request("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: "2026-06-15",
       settlementContext,
@@ -2302,12 +4561,12 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
         idempotencyKey: uuidV7(),
         itemId: row.itemId,
         lotNumber: row.lotNumber ?? null,
-        notes: null,
+        notes: row.notes ?? null,
         pricing: {
           method: "by-price",
           retailPriceFils: row.retailPriceFils ?? "999999",
         },
-        unit: { kind: "inventory-unit" },
+        unit: row.unit ?? { kind: "inventory-unit" },
       });
       expect(committed.status, diagnostics(committed)).toBe(201);
       draft = committed.body?.draft as unknown as PurchaseDraft;
@@ -2355,6 +4614,7 @@ function adjustmentUpdateBody(
   rows: ReturnType<typeof adjustmentRows>,
 ) {
   return {
+    invoiceOffer: draft.invoiceOffer,
     evidence: draft.evidence,
     expectedVersion: draft.version,
     idempotencyKey: uuidV7(),
@@ -2370,6 +4630,7 @@ function draftBody(
   invoiceDate: string,
 ) {
   return {
+    invoiceOffer: { mode: "none", value: "0" },
     idempotencyKey: uuidV7(),
     invoiceDate,
     settlementContext: "debt" as const,

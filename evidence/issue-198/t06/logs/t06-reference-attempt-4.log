@@ -1,0 +1,43 @@
+
+Running 1 test using 1 worker
+
+
+
+(node:4800) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/1] test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements
+  1) test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+
+    Error: expect(locator).toBeFocused() failed
+
+    Locator:  locator('.purchase-entry-row [data-enter-field="quantity"]')
+    Expected: focused
+    Received: inactive
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeFocused" with timeout 10000ms
+      - waiting for locator('.purchase-entry-row [data-enter-field="quantity"]')
+        23 × locator resolved to <input min="1" value="1" type="number" aria-label="Quantity" data-enter-field="quantity" class="purchase-stepper-input w-full"/>
+           - unexpected value "inactive"
+
+
+      311 |         await item.press("Escape"); await item.fill("");
+      312 |         await expect(page.locator("#purchase-item-suggestions-listbox")).toBeHidden();
+    > 313 |         const barcodeStart = performance.now(); await item.fill("5012345678949"); await item.press("Enter"); await expect(qty).toBeFocused();
+          |                                                                                                                                ^
+      314 |         samples.barcode.push(performance.now() - barcodeStart);
+      315 |         await qty.fill("1"); await qty.press("Enter"); await cost.fill("80000"); await cost.press("Enter");
+      316 |         await retail.fill("120000"); await retail.press("Enter"); await expiry.fill("2029-06-30");
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:313:128
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+
+  1 failed
+    test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 M2 reference-volume"

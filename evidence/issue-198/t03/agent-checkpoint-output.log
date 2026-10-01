@@ -1,0 +1,17 @@
+
+Running 9 tests using 1 worker
+
+
+
+(node:24344) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/9] test\browser\purchasing.browser.test.ts:1322:7 › Supplier and Purchase Draft screens › binds Adjustment confirmation to saved evidence and recovers stale/restart/timeout attempts en light
+[2/9] test\browser\purchasing.browser.test.ts:1322:7 › Supplier and Purchase Draft screens › binds Adjustment confirmation to saved evidence and recovers stale/restart/timeout attempts en dark
+[3/9] test\browser\purchasing.browser.test.ts:1322:7 › Supplier and Purchase Draft screens › binds Adjustment confirmation to saved evidence and recovers stale/restart/timeout attempts ar light
+[4/9] test\browser\purchasing.browser.test.ts:1322:7 › Supplier and Purchase Draft screens › binds Adjustment confirmation to saved evidence and recovers stale/restart/timeout attempts ar dark
+[5/9] test\browser\purchasing.browser.test.ts:1927:7 › Supplier and Purchase Draft screens › Adjustment controls preserve filtered navigation, dirty work and exact totals en light
+[6/9] test\browser\purchasing.browser.test.ts:1927:7 › Supplier and Purchase Draft screens › Adjustment controls preserve filtered navigation, dirty work and exact totals en dark
+[7/9] test\browser\purchasing.browser.test.ts:1927:7 › Supplier and Purchase Draft screens › Adjustment controls preserve filtered navigation, dirty work and exact totals ar light
+[8/9] test\browser\purchasing.browser.test.ts:1927:7 › Supplier and Purchase Draft screens › Adjustment controls preserve filtered navigation, dirty work and exact totals ar dark
+[9/9] test\browser\purchasing.browser.test.ts:2566:3 › Supplier and Purchase Draft screens › searches and reviews immutable purchases entirely by keyboard
+  9 passed (1.7m)

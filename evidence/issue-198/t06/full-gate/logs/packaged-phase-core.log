@@ -1,0 +1,197 @@
+
+Running 36 tests using 1 worker
+
+
+
+(node:5784) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/36] test\acceptance\milestone-2.acceptance.test.ts:270:5 › milestone 2 acceptance · en · light › clause 1 — defines an item and finds it by smart search
+[2/36] test\acceptance\milestone-2.acceptance.test.ts:453:5 › milestone 2 acceptance · en · light › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[3/36] test\acceptance\milestone-2.acceptance.test.ts:586:5 › milestone 2 acceptance · en · light › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[4/36] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate
+[5/36] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · en · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[6/36] test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · en · light › bilingual pass — direction, theme and keyboard operation
+  1) test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · en · light › bilingual pass — direction, theme and keyboard operation 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('[data-sale-draft-control="resume"]').first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 10000ms
+      - waiting for locator('[data-sale-draft-control="resume"]').first()
+
+
+      1137 |               ] as const) {
+      1138 |                 await activate(page, moduleTab(page, moduleId));
+    > 1139 |                 await expect(page.locator(marker).first()).toBeVisible();
+           |                                                            ^
+      1140 |                 visited.push(moduleId);
+      1141 |               }
+      1142 |               return visited.join(", ");
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1139:60
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1126:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1092:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-5d64f-heme-and-keyboard-operation\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-5d64f-heme-and-keyboard-operation\error-context.md
+
+
+[7/36] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[8/36] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing
+[9/36] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+(node:1508) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[10/36] test\acceptance\milestone-2.acceptance.test.ts:270:5 › milestone 2 acceptance · en · dark › clause 1 — defines an item and finds it by smart search
+[11/36] test\acceptance\milestone-2.acceptance.test.ts:453:5 › milestone 2 acceptance · en · dark › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[12/36] test\acceptance\milestone-2.acceptance.test.ts:586:5 › milestone 2 acceptance · en · dark › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[13/36] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · en · dark › clause 3 — an adjustment records only the difference, and a return is separate
+[14/36] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · en · dark › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[15/36] test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · en · dark › bilingual pass — direction, theme and keyboard operation
+  2) test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · en · dark › bilingual pass — direction, theme and keyboard operation 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('[data-sale-draft-control="resume"]').first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 10000ms
+      - waiting for locator('[data-sale-draft-control="resume"]').first()
+
+
+      1137 |               ] as const) {
+      1138 |                 await activate(page, moduleTab(page, moduleId));
+    > 1139 |                 await expect(page.locator(marker).first()).toBeVisible();
+           |                                                            ^
+      1140 |                 visited.push(moduleId);
+      1141 |               }
+      1142 |               return visited.join(", ");
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1139:60
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1126:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1092:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-e8ebe-heme-and-keyboard-operation\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-e8ebe-heme-and-keyboard-operation\error-context.md
+
+
+[16/36] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[17/36] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · en · dark › scope — the item-details panel in purchasing
+[18/36] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+(node:20252) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+
+[19/36] test\acceptance\milestone-2.acceptance.test.ts:270:5 › milestone 2 acceptance · ar · light › clause 1 — defines an item and finds it by smart search
+[20/36] test\acceptance\milestone-2.acceptance.test.ts:453:5 › milestone 2 acceptance · ar · light › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[21/36] test\acceptance\milestone-2.acceptance.test.ts:586:5 › milestone 2 acceptance · ar · light › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[22/36] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · ar · light › clause 3 — an adjustment records only the difference, and a return is separate
+[23/36] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · ar · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+  3) test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · ar · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('table.basket-table tbody tr').filter({ hasText: 'Review Stock Item' }).locator('td').first()
+    Expected substring: "٤ Strip"
+    Received string:    "٤ أشرطة"
+    Timeout: 10000ms
+
+    Call log:
+      - Expect "toContainText" with timeout 10000ms
+      - waiting for locator('table.basket-table tbody tr').filter({ hasText: 'Review Stock Item' }).locator('td').first()
+        23 × locator resolved to <td>…</td>
+           - unexpected value "٤ أشرطة"
+
+
+      980 |                 .locator("table.basket-table tbody tr")
+      981 |                 .filter({ hasText: fixture.reviewItem.displayName });
+    > 982 |               await expect(row.locator("td").first()).toContainText(
+          |                                                       ^
+      983 |                 `${localeDigits(4, locale)} ${PANADOL_INVENTORY_UNIT}`,
+      984 |               );
+      985 |               return stripBidiMarks(await row.innerText()).replaceAll(
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:982:55
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:959:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:879:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-98940--stocktaking-and-the-basket\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-98940--stocktaking-and-the-basket\error-context.md
+
+
+[24/36] test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · ar · light › bilingual pass — direction, theme and keyboard operation
+[25/36] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · ar · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[26/36] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · ar · light › scope — the item-details panel in purchasing
+[27/36] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:20264) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[28/36] test\acceptance\milestone-2.acceptance.test.ts:270:5 › milestone 2 acceptance · ar · dark › clause 1 — defines an item and finds it by smart search
+[29/36] test\acceptance\milestone-2.acceptance.test.ts:453:5 › milestone 2 acceptance · ar · dark › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[30/36] test\acceptance\milestone-2.acceptance.test.ts:586:5 › milestone 2 acceptance · ar · dark › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[31/36] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · ar · dark › clause 3 — an adjustment records only the difference, and a return is separate
+[32/36] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · ar · dark › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+  4) test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · ar · dark › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('table.basket-table tbody tr').filter({ hasText: 'Review Stock Item' }).locator('td').first()
+    Expected substring: "٤ Strip"
+    Received string:    "٤ أشرطة"
+    Timeout: 10000ms
+
+    Call log:
+      - Expect "toContainText" with timeout 10000ms
+      - waiting for locator('table.basket-table tbody tr').filter({ hasText: 'Review Stock Item' }).locator('td').first()
+        23 × locator resolved to <td>…</td>
+           - unexpected value "٤ أشرطة"
+
+
+      980 |                 .locator("table.basket-table tbody tr")
+      981 |                 .filter({ hasText: fixture.reviewItem.displayName });
+    > 982 |               await expect(row.locator("td").first()).toContainText(
+          |                                                       ^
+      983 |                 `${localeDigits(4, locale)} ${PANADOL_INVENTORY_UNIT}`,
+      984 |               );
+      985 |               return stripBidiMarks(await row.innerText()).replaceAll(
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:982:55
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:959:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:879:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-ab23b--stocktaking-and-the-basket\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-ab23b--stocktaking-and-the-basket\error-context.md
+
+
+[33/36] test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · ar · dark › bilingual pass — direction, theme and keyboard operation
+[34/36] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · ar · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[35/36] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · ar · dark › scope — the item-details panel in purchasing
+[36/36] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  4 failed
+    test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · en · light › bilingual pass — direction, theme and keyboard operation 
+    test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · en · dark › bilingual pass — direction, theme and keyboard operation 
+    test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · ar · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket 
+    test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · ar · dark › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket 
+  14 did not run
+  18 passed (2.8m)
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.acceptance.config.ts --grep-invert "reorder from sales"

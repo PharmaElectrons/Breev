@@ -1,5 +1,7 @@
 import {
   purchasePostedDetailSchema,
+  purchaseItemDetailsSchema,
+  type PurchaseItemDetails,
   purchasePostedListResponseSchema,
   postedPurchaseRowSchema,
   purchaseDraftDetailSchema,
@@ -11,6 +13,10 @@ import {
   purchasePostResultSchema,
   purchasingDenialSchema,
   supplierSchema,
+  purchaseInvoiceOfferInputSchema,
+  purchaseInvoiceOfferSnapshotSchema,
+  type PurchaseInvoiceOfferInput,
+  type PurchaseInvoiceOfferSnapshot,
   type PostedPurchaseJournalLine,
   type PostedPurchaseRow,
   type PurchaseDraft,
@@ -30,6 +36,7 @@ import {
   type PurchasePostResult,
   type PurchasePostedCostVisibility,
   type PurchasePostedDetail,
+  type PurchasePriceCapture,
   type PurchasePostedListRequest,
   type PurchasePostedListResponse,
   type PurchasingDenial,
@@ -42,7 +49,7 @@ import {
   type SupplierEditRequest,
   type SupplierMergeRequest,
 } from "@breev/contracts/local-rest";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type { Request } from "express";
 import type { PoolClient } from "pg";
 import {
@@ -94,15 +101,20 @@ import {
   POSTING_EVENT_TYPES,
   appendOutboxEntry,
 } from "../posting/outbox.js";
+import type { PurchaseLineCosts } from "./purchase-costs.js";
 import {
-  calculatePurchaseCosts,
-  type PurchaseLineCosts,
-} from "./purchase-costs.js";
+  calculateInvoiceOffer,
+  calculatePurchaseCostsWithOffer,
+} from "./purchase-invoice-offer.js";
 import {
   capturePurchaseRetailPrice,
   type PurchasePriceCaptureResult,
 } from "./purchase-price-capture.js";
 import { preparePurchaseRow } from "./purchase-row.js";
+import { postedPurchaseWarnings } from "./purchase-duplicates.js";
+import { resolveCatalogPurchasePanel } from "../catalog/catalog-purchase-panel.js";
+import { readInventoryPurchasePanel } from "../inventory/inventory-purchase-panel.js";
+import { businessDateOf } from "../inventory/business-date.js";
 
 const SUPPLIER_PERMISSION = "suppliers.manage";
 const DRAFT_PERMISSION = "purchases.drafts.manage";
@@ -171,6 +183,7 @@ join lateral (
 ) latest_rate on true`;
 
 const DRAFT_SELECT = `select draft_row.id, draft_row.pharmacy_id,
+  draft_row.invoice_offer, draft_row.offer_rule_version,
   draft_row.supplier_invoice_number, draft_row.supplier_id,
   draft_row.supplier_name_snapshot, draft_row.settlement_context,
   draft_row.invoice_date::text, draft_row.allowance_percentage_snapshot::text,
@@ -266,7 +279,7 @@ export const POSTED_PURCHASE_DETAIL_SELECT = `with ordered_purchase as (
   from posted_purchases posted_row
   where posted_row.pharmacy_id = $1
 )
-select id, supplier_id, supplier_name_snapshot, supplier_invoice_number,
+select id, supplier_id, supplier_name_snapshot, supplier_invoice_number, invoice_offer,
   invoice_date::text, settlement_context, allowance_percentage_snapshot::text,
   allowance_fils::text, cost_after_discount_fils::text,
   primary_supplier_cost_fils::text, number_value::text, number_year,
@@ -283,6 +296,11 @@ export const POSTED_PURCHASE_ROWS_SELECT = `select snapshot_row.id,
   snapshot_row.primary_supplier_cost_fils::text,
   snapshot_row.line_primary_supplier_cost_fils::text,
   snapshot_row.cost_after_discount_fils::text,
+  (snapshot_row.line_primary_supplier_cost_fils - snapshot_row.cost_after_discount_fils - snapshot_row.offer_fils)::text as allowance_fils,
+  snapshot_row.offer_fils::text,
+  snapshot_row.pricing_method, snapshot_row.margin_percentage::text,
+  snapshot_row.price_capture, snapshot_row.notes,
+  snapshot_row.batch_id, snapshot_row.movement_id,
   snapshot_row.retail_price_fils::text, snapshot_row.expiry_date::text,
   snapshot_row.lot_number
 from posted_purchase_rows snapshot_row
@@ -308,6 +326,7 @@ interface PostedPurchaseListRow {
 }
 
 interface PostedPurchaseDetailRow {
+  invoice_offer: PurchaseInvoiceOfferSnapshot;
   allowance_fils: string;
   allowance_percentage_snapshot: string;
   cost_after_discount_fils: string;
@@ -329,7 +348,9 @@ interface PostedPurchaseDetailRow {
 }
 
 interface PostedPurchaseSnapshotRow {
+  allowance_fils: string;
   base_units_per_entered_unit: string;
+  batch_id: string;
   cost_after_discount_fils: string;
   entered_package_unit_name: string | null;
   entered_quantity: string;
@@ -341,7 +362,13 @@ interface PostedPurchaseSnapshotRow {
   item_display_name: string;
   line_primary_supplier_cost_fils: string;
   lot_number: string | null;
+  margin_percentage: string | null;
+  movement_id: string;
+  notes: string | null;
+  offer_fils: string;
   ordinal: number;
+  price_capture: PurchasePriceCapture;
+  pricing_method: "by-price" | "by-percentage";
   primary_supplier_cost_fils: string;
   product_id: string;
   retail_price_fils: string;
@@ -599,6 +626,8 @@ function supplierView(row: SupplierRow): Supplier {
 
 function draftView(row: DraftRow): PurchaseDraft {
   return purchaseDraftSchema.parse({
+    invoiceOffer: purchaseInvoiceOfferInputSchema.parse(row.invoice_offer),
+    offerRuleVersion: row.offer_rule_version,
     allowanceSnapshot: {
       basisFils: row.allowance_basis_fils,
       percentage: normalizedPercentage(row.allowance_percentage_snapshot),
@@ -696,11 +725,48 @@ async function draftDetail(
     (total, row) => total + BigInt(row.costFils) * BigInt(row.enteredQuantity),
     0n,
   );
-  const allowance = calculateAllowance(
-    gross,
-    draft.allowanceSnapshot.percentage,
-  );
-  const net = gross - allowance;
+  const calculated =
+    rows.length === 0
+      ? null
+      : calculatePurchaseCostsWithOffer(
+          rows.map((row) => ({
+            enteredQuantity: BigInt(row.enteredQuantity),
+            primarySupplierCostFils: BigInt(row.costFils),
+          })),
+          draft.allowanceSnapshot.percentage,
+          draft.invoiceOffer,
+          draft.offerRuleVersion,
+        );
+  if (calculated !== null && !calculated.ok) {
+    throw new PurchasingCommandRejected(
+      400,
+      "body-invalid",
+      [{ code: "out-of-range", path: ["invoiceOffer"] }],
+      draft.id,
+    );
+  }
+  const allowance = calculated?.ok ? calculated.costs.allowanceFils : 0n;
+  const offer = calculated?.ok
+    ? {
+        ok: true as const,
+        snapshot: calculated.invoiceOffer,
+        costAfterDiscountFils: calculated.costs.costAfterDiscountFils,
+      }
+    : calculateInvoiceOffer(
+        draft.invoiceOffer,
+        draft.offerRuleVersion,
+        gross,
+        allowance,
+        [],
+      );
+  if (!offer.ok)
+    throw new PurchasingCommandRejected(
+      400,
+      "body-invalid",
+      [{ code: "out-of-range", path: ["invoiceOffer"] }],
+      draft.id,
+    );
+  const net = offer.costAfterDiscountFils;
   const warnings = new Set<"missing-expiry" | "missing-lot">();
   if (rows.some((row) => row.expiryDate === null))
     warnings.add("missing-expiry");
@@ -709,6 +775,7 @@ async function draftDetail(
     ...draft,
     review: {
       allowanceFils: allowance.toString(),
+      invoiceOffer: offer.snapshot,
       batches: rows.map((row) => ({
         expiryDate: row.expiryDate,
         itemDisplayName: row.itemDisplayName,
@@ -728,16 +795,6 @@ async function draftDetail(
     },
     rows,
   });
-}
-
-function calculateAllowance(grossFils: bigint, percentage: string): bigint {
-  const [whole = "0", fraction = ""] = percentage.split(".");
-  const scaled = BigInt(`${whole}${fraction.padEnd(6, "0")}`);
-  const denominator = 100_000_000n;
-  const numerator = grossFils * scaled;
-  const quotient = numerator / denominator;
-  const remainder = numerator % denominator;
-  return quotient + (remainder * 2n >= denominator ? 1n : 0n);
 }
 
 interface EntryPreferencesRow {
@@ -803,14 +860,14 @@ function postedPurchaseOrder(
     input.sort === "primary-cost" && !costsVisible
       ? "number"
       : (input.sort ?? "number");
-  const suffix = `posted_row.number_year ${direction}, posted_row.number_value ${direction}, posted_row.id ${direction}`;
+  const suffix = `posted_row.number_year ${direction}, posted_row.number_value::bigint ${direction}, posted_row.id ${direction}`;
   switch (sort) {
     case "invoice-date":
       return `posted_row.invoice_date ${direction}, ${suffix}`;
     case "posted-at":
       return `posted_row.posted_at ${direction}, ${suffix}`;
     case "primary-cost":
-      return `posted_row.primary_supplier_cost_fils ${direction}, ${suffix}`;
+      return `posted_row.primary_supplier_cost_fils::bigint ${direction}, ${suffix}`;
     case "supplier":
       return `lower(posted_row.supplier_name_snapshot) ${direction}, ${suffix}`;
     case "number":
@@ -840,6 +897,8 @@ function draftAuditState(
 ): Record<string, number | string> {
   return {
     allowanceBasisFils: draft.allowanceSnapshot.basisFils,
+    invoiceOffer: JSON.stringify(draft.invoiceOffer),
+    offerRuleVersion: draft.offerRuleVersion,
     allowancePercentageSnapshot: draft.allowanceSnapshot.percentage,
     invoiceDate: draft.invoiceDate,
     settlementContext: draft.settlementContext,
@@ -868,6 +927,8 @@ function purchasingDenied(
   );
 }
 interface DraftRow {
+  invoice_offer: PurchaseInvoiceOfferInput;
+  offer_rule_version: number;
   allowance_basis_fils: string;
   allowance_percentage_snapshot: string;
   created_at: Date;
@@ -1096,40 +1157,6 @@ async function preparePostedRow(
 
 /** Duplicate supplier invoice numbers among already-posted purchases warn and
  * never block (docs/domain.md §"Catalog, purchasing, and inventory"). */
-async function postedPurchaseWarnings(
-  client: PoolClient,
-  pharmacyId: string,
-  supplierId: string,
-  supplierInvoiceNumber: string,
-): Promise<string[]> {
-  const duplicate = await client.query<{ id: string }>(
-    `with recursive ancestry(id, merged_into_supplier_id) as (
-       select supplier_row.id, supplier_row.merged_into_supplier_id
-       from suppliers supplier_row
-       where supplier_row.pharmacy_id = $1 and supplier_row.id = $2
-       union all
-       select parent.id, parent.merged_into_supplier_id
-       from suppliers parent
-       join ancestry on parent.id = ancestry.merged_into_supplier_id
-       where parent.pharmacy_id = $1
-     ), canonical(id) as (
-       select id from ancestry where merged_into_supplier_id is null limit 1
-     ), aliases(id) as (
-       select id from canonical
-       union
-       select supplier_row.id from suppliers supplier_row
-       join aliases on supplier_row.merged_into_supplier_id = aliases.id
-       where supplier_row.pharmacy_id = $1
-     )
-     select posted_row.id from posted_purchases posted_row
-     where posted_row.pharmacy_id = $1 and posted_row.supplier_id in (select id from aliases)
-       and posted_row.supplier_invoice_number = $3
-     order by posted_row.posted_at, posted_row.id`,
-    [pharmacyId, supplierId, supplierInvoiceNumber],
-  );
-  return duplicate.rows.map((row) => row.id);
-}
-
 function postedJournalView(
   entryId: string,
   lines: readonly {
@@ -1162,6 +1189,7 @@ function postedJournalView(
 
 @Injectable()
 export class PurchasingService {
+  private readonly logger = new Logger(PurchasingService.name);
   public constructor(
     private readonly localDatabase: LocalDatabaseService,
     private readonly identity: IdentityAccessService,
@@ -1497,6 +1525,132 @@ export class PurchasingService {
     }
   }
 
+  public async readItemDetails(
+    request: Request,
+    productId: string,
+  ): Promise<PurchaseItemDetails> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      await client.query("begin isolation level repeatable read read only");
+      const catalog = await resolveCatalogPurchasePanel(
+        client,
+        context.pharmacyId,
+        productId,
+      );
+      if (catalog === null)
+        throw await this.readDenial(
+          context,
+          "purchase.item-details.read",
+          "item-not-found",
+          productId,
+        );
+      const stored = await selectEntryPreferences(
+        client,
+        context.pharmacyId,
+        context.actorId,
+      );
+      const preferences =
+        stored === undefined
+          ? DEFAULT_ENTRY_PREFERENCES
+          : entryPreferencesView(stored);
+      const costs = await postedPurchaseCostVisibility(client, context);
+      const inventoryVisible = context.permissions.includes("inventory.review");
+      const averageCostVisibility =
+        inventoryVisible &&
+        context.permissions.includes("inventory.valuation.view")
+          ? costs
+          : "hidden-by-permission";
+      const costVisibility = context.permissions.includes(POSTED_PERMISSION)
+        ? costs
+        : "hidden-by-permission";
+      const zone = await this.identity.readPharmacyBusinessTimeZone(
+        client,
+        context.pharmacyId,
+      );
+      const businessDate = businessDateOf(new Date(), zone);
+      const stock = inventoryVisible
+        ? await readInventoryPurchasePanel(
+            client,
+            context.pharmacyId,
+            catalog.facts,
+            catalog.packaging,
+            businessDate,
+          )
+        : null;
+      let lastPostedCost: PurchaseItemDetails["lastPostedCost"] = null;
+      if (costVisibility === "visible") {
+        const frozen = await client.query<{
+          purchase_id: string;
+          invoice_date: string;
+          entered_unit_name: string;
+          entered_quantity: string;
+          primary_cost: string;
+          discounted_cost: string;
+        }>(
+          `select posted.id as purchase_id, posted.invoice_date::text,
+                   case when snapshot.entered_unit_kind = 'inventory-unit' then snapshot.inventory_unit_name
+                     else snapshot.entered_package_unit_name end as entered_unit_name,
+                   snapshot.entered_quantity::text, snapshot.line_primary_supplier_cost_fils::text as primary_cost,
+                   snapshot.cost_after_discount_fils::text as discounted_cost
+            from posted_purchase_rows snapshot join posted_purchases posted
+              on posted.pharmacy_id = snapshot.pharmacy_id and posted.id = snapshot.posted_purchase_id
+            where snapshot.pharmacy_id = $1 and snapshot.product_id = $2
+            order by posted.posted_at desc, posted.id desc, snapshot.ordinal desc limit 1`,
+          [context.pharmacyId, productId],
+        );
+        const row = frozen.rows[0];
+        if (row !== undefined)
+          lastPostedCost = {
+            purchaseId: row.purchase_id,
+            invoiceDate: row.invoice_date,
+            enteredUnitName: row.entered_unit_name,
+            enteredQuantity: row.entered_quantity,
+            primarySupplierCostFils: row.primary_cost,
+            costAfterDiscountFils: row.discounted_cost,
+          };
+      }
+      const result = purchaseItemDetailsSchema.parse({
+        productId,
+        displayName: catalog.product.display_name,
+        scientificName: catalog.product.scientific_name,
+        category: catalog.product.category,
+        barcode: catalog.product.barcode,
+        visibleFields: preferences.detailsPanelFields,
+        packaging: catalog.packaging,
+        pricingMethod: catalog.product.pricing_method,
+        retailPriceFils: catalog.product.retail_price_fils,
+        wholesalePriceFils: preferences.detailsPanelFields.includes(
+          "wholesale-price",
+        )
+          ? catalog.product.wholesale_price_fils
+          : null,
+        businessDate,
+        inventoryVisibility: inventoryVisible
+          ? "visible"
+          : "hidden-by-permission",
+        inventory: stock?.inventory ?? null,
+        costVisibility,
+        averageCostVisibility,
+        averageUnitCostFils:
+          averageCostVisibility === "visible"
+            ? (stock?.averageUnitCostFils ?? null)
+            : null,
+        lastPostedCost,
+      });
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   public async listPostedPurchases(
     request: Request,
     input: PurchasePostedListRequest,
@@ -1708,6 +1862,9 @@ export class PurchasingService {
           reason: adjustment.reason,
         })),
         allowanceFils: costsVisible ? header.allowance_fils : null,
+        invoiceOffer: costsVisible
+          ? purchaseInvoiceOfferSnapshotSchema.parse(header.invoice_offer)
+          : null,
         allowancePercentageSnapshot: costsVisible
           ? normalizedPercentage(header.allowance_percentage_snapshot)
           : null,
@@ -1753,7 +1910,9 @@ export class PurchasingService {
             : null,
         })),
         rows: rowResult.rows.map((row) => ({
+          allowanceFils: costsVisible ? row.allowance_fils : null,
           baseUnitsPerEnteredUnit: row.base_units_per_entered_unit,
+          batchId: row.batch_id,
           costAfterDiscountFils: costsVisible
             ? row.cost_after_discount_fils
             : null,
@@ -1768,7 +1927,13 @@ export class PurchasingService {
             ? row.line_primary_supplier_cost_fils
             : null,
           lotNumber: row.lot_number,
+          marginPercentage: costsVisible ? row.margin_percentage : null,
+          movementId: row.movement_id,
+          notes: row.notes,
+          offerFils: costsVisible ? row.offer_fils : null,
           ordinal: row.ordinal,
+          priceCapture: row.price_capture,
+          pricingMethod: row.pricing_method,
           primarySupplierCostFils: costsVisible
             ? row.primary_supplier_cost_fils
             : null,
@@ -2363,8 +2528,8 @@ export class PurchasingService {
           `insert into purchase_drafts (
              pharmacy_id, supplier_invoice_number, supplier_id, supplier_name_snapshot,
              settlement_context, invoice_date, allowance_percentage_snapshot,
-             created_by, updated_by
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $8) returning id`,
+             created_by, updated_by, invoice_offer
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9::jsonb) returning id`,
           [
             context.pharmacyId,
             input.supplierInvoiceNumber,
@@ -2374,6 +2539,7 @@ export class PurchasingService {
             input.invoiceDate,
             supplier.percentage,
             context.actorId,
+            JSON.stringify(input.invoiceOffer),
           ],
         );
         const id = inserted.rows[0]?.id;
@@ -2382,6 +2548,7 @@ export class PurchasingService {
         const draft = draftView(
           await requiredDraft(client, context.pharmacyId, id),
         );
+        await draftDetail(client, context.pharmacyId, draft);
         const value = await draftResult(client, context.pharmacyId, draft);
         return {
           afterState: draftAuditState(draft, value.warnings.length),
@@ -2434,7 +2601,7 @@ export class PurchasingService {
           `update purchase_drafts set supplier_invoice_number = $3, supplier_id = $4,
              supplier_name_snapshot = $5, settlement_context = $6, invoice_date = $7,
              allowance_percentage_snapshot = $8, version = version + 1,
-             updated_at = statement_timestamp(), updated_by = $9
+             updated_at = statement_timestamp(), updated_by = $9, invoice_offer = $10::jsonb
            where pharmacy_id = $1 and id = $2`,
           [
             context.pharmacyId,
@@ -2446,11 +2613,13 @@ export class PurchasingService {
             input.invoiceDate,
             supplier.percentage,
             context.actorId,
+            JSON.stringify(input.invoiceOffer),
           ],
         );
         const draft = draftView(
           await requiredDraft(client, context.pharmacyId, draftId),
         );
+        await draftDetail(client, context.pharmacyId, draft);
         const value = await draftResult(client, context.pharmacyId, draft);
         return {
           afterState: draftAuditState(draft, value.warnings.length),
@@ -2574,14 +2743,24 @@ export class PurchasingService {
       );
     }
 
-    const costs = calculatePurchaseCosts(
+    const costs = calculatePurchaseCostsWithOffer(
       draftRows.map((row) => ({
         enteredQuantity: BigInt(row.entered_quantity),
         primarySupplierCostFils: BigInt(row.primary_supplier_cost_fils),
       })),
       draft.allowance_percentage_snapshot,
+      purchaseInvoiceOfferInputSchema.parse(draft.invoice_offer),
+      draft.offer_rule_version,
     );
     if (!costs.ok) {
+      if (costs.problem === "offer-exceeds-cost") {
+        throw new PurchasingCommandRejected(
+          400,
+          "body-invalid",
+          [{ code: "out-of-range", path: ["invoiceOffer"] }],
+          draftId,
+        );
+      }
       if (costs.problem !== "money-overflow") {
         throw new Error(
           `The committed Purchase Draft costs are invalid at posting: ${costs.problem}`,
@@ -2666,6 +2845,7 @@ export class PurchasingService {
     // here does not skip or reorder the published lock stages.
     const journal = await postPurchaseInvoiceJournal(client, {
       facts: {
+        invoiceOfferFils: BigInt(costs.invoiceOffer.offerFils),
         allowanceFils: costs.costs.allowanceFils,
         costAfterDiscountFils: costs.costs.costAfterDiscountFils,
         primarySupplierCostFils: costs.costs.primarySupplierCostFils,
@@ -2702,9 +2882,9 @@ export class PurchasingService {
          supplier_invoice_number, invoice_date, settlement_context,
          allowance_percentage_snapshot, allowance_basis_fils, allowance_fils,
          cost_after_discount_fils, primary_supplier_cost_fils, number_value,
-         number_year, journal_entry_id, posted_by, posted_at
+         number_year, journal_entry_id, posted_by, posted_at, invoice_offer
        ) values (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb
        ) returning id, posted_at`,
       [
         context.pharmacyId,
@@ -2724,6 +2904,7 @@ export class PurchasingService {
         journal.entryId,
         context.actorId,
         postingClock.posted_at,
+        JSON.stringify(costs.invoiceOffer),
       ],
     );
     const postedRow = inserted.rows[0];
@@ -2806,11 +2987,11 @@ export class PurchasingService {
            entered_quantity, inventory_unit_quantity, primary_supplier_cost_fils,
            line_primary_supplier_cost_fils, cost_after_discount_fils,
            pricing_method, retail_price_fils, margin_percentage, price_capture,
-           expiry_date, lot_number, notes, batch_id, movement_id
+           expiry_date, lot_number, notes, batch_id, movement_id, offer_fils
          ) values (
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::bigint, $11::bigint,
            $12::bigint, $13::bigint, $14::bigint, $15::bigint, $16, $17::bigint,
-           $18::numeric, $19, $20, $21, $22, $23, $24
+           $18::numeric, $19, $20, $21, $22, $23, $24, $25::bigint
          ) returning id`,
         [
           context.pharmacyId,
@@ -2837,6 +3018,7 @@ export class PurchasingService {
           item.row.notes,
           outcome.batchId,
           outcome.movementId,
+          costs.offerShares[index]!.toString(),
         ],
       );
       const rowId = insertedRow.rows[0]?.id;
@@ -2908,6 +3090,7 @@ export class PurchasingService {
       costs.costs.primarySupplierCostFils.toString();
     const value = purchasePostResultSchema.parse({
       posted: {
+        invoiceOffer: costs.invoiceOffer,
         allowanceFils: costs.costs.allowanceFils.toString(),
         allowanceSnapshot: {
           basisFils: primarySupplierCostFils,
@@ -2955,6 +3138,7 @@ export class PurchasingService {
     return {
       afterState: {
         allowanceFils: value.posted.allowanceFils,
+        invoiceOffer: JSON.stringify(value.posted.invoiceOffer),
         numberValue: value.posted.number.value,
         numberYear: value.posted.number.year,
         primarySupplierCostFils: value.posted.primarySupplierCostFils,
@@ -3016,6 +3200,7 @@ export class PurchasingService {
     code:
       | "adjustment-draft-not-found"
       | "adjustment-original-not-found"
+      | "item-not-found"
       | "draft-not-found"
       | "posted-purchase-not-found"
       | "return-draft-not-found"
@@ -3073,10 +3258,12 @@ export class PurchasingService {
           return replayPurchasingOutcome(replay, input.parser);
         }
         let success: CommandSuccess<T>;
+        await client.query("savepoint purchase_draft_work");
         try {
           success = await input.work(client);
         } catch (error) {
           if (!(error instanceof PurchasingCommandRejected)) throw error;
+          await client.query("rollback to savepoint purchase_draft_work");
           const requestId = await writePostingAudit(client, {
             action: input.commandName,
             actorUserId: input.context.actorId,
@@ -3141,6 +3328,12 @@ export class PurchasingService {
       } catch (error) {
         if (transactionOpen)
           await client.query("rollback").catch(() => undefined);
+        if (!(error instanceof PurchasingDenied)) {
+          this.logger.error(
+            "Purchasing command failed",
+            error instanceof Error ? error.stack : String(error),
+          );
+        }
         throw error;
       } finally {
         client.release();
@@ -3154,6 +3347,7 @@ export class PurchasingService {
     code:
       | "adjustment-draft-not-found"
       | "adjustment-original-not-found"
+      | "item-not-found"
       | "draft-not-found"
       | "posted-purchase-not-found"
       | "return-draft-not-found"

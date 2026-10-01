@@ -1,0 +1,92 @@
+[
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-format-write.log",
+    "exit": 0,
+    "seconds": 34.85,
+    "name": "format-write"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-format-check.log",
+    "exit": 0,
+    "seconds": 14.62,
+    "name": "format-check"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-lint.log",
+    "exit": 0,
+    "seconds": 49.87,
+    "name": "lint"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-typecheck.log",
+    "exit": 0,
+    "seconds": 58.41,
+    "name": "typecheck"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-build.log",
+    "exit": 0,
+    "seconds": 48.7,
+    "name": "build"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-unit.log",
+    "exit": 1,
+    "seconds": 33.96,
+    "name": "unit"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-desktop-unit.log",
+    "exit": 0,
+    "seconds": 17.63,
+    "name": "desktop-unit"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-boundaries.log",
+    "exit": 0,
+    "seconds": 2.61,
+    "name": "boundaries"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-dev-launcher.log",
+    "exit": 0,
+    "seconds": 1.15,
+    "name": "dev-launcher"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-release-tooling.log",
+    "exit": 0,
+    "seconds": 1.05,
+    "name": "release-tooling"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-integration.log",
+    "exit": 1,
+    "seconds": 120.27,
+    "name": "integration"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-integration-loose.log",
+    "exit": 1,
+    "seconds": 330.42,
+    "name": "integration-loose"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-browser.log",
+    "exit": 1,
+    "seconds": 522.5,
+    "name": "browser"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-package.log",
+    "exit": 0,
+    "seconds": 563.63,
+    "name": "package"
+  },
+  {
+    "log": ".scratch/runtime/m2-p1-t04-gate-smoke.log",
+    "exit": 0,
+    "seconds": 35.58,
+    "name": "smoke"
+  }
+]

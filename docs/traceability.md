@@ -91,6 +91,102 @@ The stakeholder's 6 September 2026 clarification identifies `design/prototype/sr
 
 The final unified visual PDF (including the quick-stocktake design) remains a pending client delivery in [`open-decisions.md`](open-decisions.md). When received it may refine appearance, but it adds no scope and cannot override written requirements.
 
+## M2 Adjustment confirmation remediation evidence
+
+The stakeholder initiated Phase 1 on 30 September 2026 through the Purchasing
+integrity prompt. Its first bounded task binds saved Adjustment facts to preview
+and Post. The [T01 candidate record](../evidence/issue-198/t01/README.md) traces
+scope §6.3 and M2-P04's version/hash, exact evidence, atomic retry, and audit proof.
+The [M2 evidence map](milestone-2-scope-and-evidence-map.md) retains the full
+Adjustment family's defect status and pending manual/later-task gates; this
+record does not approve G-01/G-02 or expand the funded milestone. T01 received
+explicit manual PASS on 30 September 2026. The stakeholder's same-day
+[follow-up](../evidence/issue-198/followups.md) requires diagnostic request/audit
+references to be hidden by default in ordinary errors, with clear localized
+recovery and retained internal audit/support evidence. Purchasing remediation
+and later owning module tasks must carry that presentation requirement forward;
+the enduring presentation rule is in [quality](quality.md#usability-and-accessibility).
+
+The [T02 candidate record](../evidence/issue-198/t02/README.md) traces the next
+bounded scope §6.3/M2-P04 slice: readable immutable header comparisons, stable-ID
+Supplier/invoice corrections, protected facts, exact Delta/audit paths and linked
+Return payable integrity. Its separate manual checkpoint received stakeholder
+PASS on 30 September 2026, followed by explicit confirmation that the manual
+tests were finished; see [manual results](../evidence/issue-198/t02/manual-results.md).
+The earlier evidence-note report remains an unresolved follow-up. The
+[T02 local exit gate](../evidence/issue-198/t02/pre-commit-gate.md) records the
+accepted commit's proof and precise host/prerequisite limitations. Existing
+duplicate-number and Return accounting defaults retain their unapproved status;
+this implementation does not close G-01/G-02 or the remaining Adjustment family.
+
+The [accepted T03 slice](../evidence/issue-198/t03/README.md) continues M2-P04 with
+filtered immutable Purchase navigation, explicit save/keep/discard controls,
+server-owned gross/allowance/discounted comparisons, truthful unavailable values,
+and the stakeholder's localized diagnostic presentation rule. Its separate
+[checkpoint](../evidence/issue-198/t03/manual-results.md) received stakeholder PASS
+on 30 September 2026 based on agent verification. It does not promote this
+requirement family to proven or close G-01/G-02. Purchase row/Quick Product behavior and later milestone exclusions
+remain unchanged.
+
+The T03 [visual verification](../evidence/issue-198/t03/prototype-fidelity.md)
+compares a source-rendered prototype modal with current captures and records
+scoped corrections to its geometry, typography and icon. This accepted bounded
+evidence does not replace broader phase gates.
+
+The stakeholder subsequently authorized #198 T04 to use documented defaults
+that can change later. The [source review](../evidence/issue-198/t04/source-review.md)
+traces the brief's independent invoice offer, prototype amount/percentage forms,
+gross valuation/liability boundaries, and missing two-discount approval.
+[Working defaults](../evidence/issue-198/t04/working-defaults.md) record exact
+version 1 arithmetic and correction behavior. The candidate implements M2-P02
+through draft, restart, Post, immutable review and linked Adjustment with a
+forward migration that preserves retained facts and original command payloads.
+This instruction permits implementation under recorded defaults; it does not
+approve accountant/legal policy, close G-01, promote M2-P02 to proven, or accept
+the separate T04 checkpoint. The stakeholder subsequently accepted T04 on
+1 October 2026 with “IT IS A PASS”; the [checkpoint](../evidence/issue-198/t04/manual-checkpoint.md)
+records that later decision. The [full local gate](../evidence/issue-198/t04/pre-commit-gate.md)
+ran once and records bounded request/expectation fixture maintenance, final
+affected proof and CNG/Docker/Windows harness limits. G-01 and the complete
+requirement family remain open. T05 follows the focused T04 commit.
+
+The accepted #198 T05 implementation addresses M2-P03's omitted saved row facts
+and document navigation, with its [ownership/source matrix](../evidence/issue-198/t05/source-review.md),
+[targeted verification](../evidence/issue-198/t05/verification.md) and
+[separate stakeholder PASS](../evidence/issue-198/t05/manual-checkpoint.md).
+The continuation completed the [T05 local pre-commit gate](../evidence/issue-198/t05/pre-commit-gate.md)
+with explicitly classified host limitations before its focused local commit.
+The reported evidence-only save
+failure after master edits was repaired with affected-scope API/browser proof.
+It exposes already-retained notes, pricing and stock references, preserves
+cost/margin redaction, and validates intentional draft Product/unit correction.
+Wholesale remains a current Product-panel fact under #49 and scope §4.4.
+No historical master-data backfill or professional policy approval is implied.
+
+The #198 T06 implementation addresses scope §4.4/#49 and M2-P03's
+Purchasing item-details surface through narrow Catalog/Inventory/Purchasing
+server projections. Its [field ownership review](../evidence/issue-198/t06/source-review.md)
+separates live exact stock, configured batch safety, current prices and saved
+row costs from unavailable later Reporting values. [Focused verification](../evidence/issue-198/t06/verification.md)
+and [prototype/isolation review](../evidence/issue-198/t06/prototype-fidelity.md)
+are bounded evidence. [Separate T06 manual acceptance](../evidence/issue-198/t06/manual-checkpoint.md)
+was explicitly PASS on 1 October 2026. The stakeholder later initiated the
+[consolidated full automated gate](../evidence/issue-198/t06/full-gate/report.md).
+Purchase-posting PostgreSQL and all executed Purchasing browser cases passed, including
+Returns; packaged panel and correction checks passed across four variants.
+The repository gate remains not fully green: host limitations, packaged Sales
+accessibility and Purchase preview-cell visibility remain open. T06 remains
+committed at `3ecde98`. The stakeholder subsequently gave explicit
+[Phase 1 PASS](../evidence/issue-198/phase-1-checkpoint.md), with Sales accessibility
+tracked separately in [#204](https://github.com/PharmaElectrons/Breev/issues/204)
+and Purchase preview clipping carried into Phase 2. This does not promote the
+complete family to proven, turn the repository gate green or close G-01/G-02/G-16.
+The later-authorized [Phase 1 finalization](../evidence/issue-198/finalization/README.md)
+integrates the current `dev` journal by retaining its Patient migrations and
+appending the unchanged offer SQL as `0032`. REST/schema version 19 identifies
+the combined schema; focused forward-migration/role/contract/browser proof is
+recorded separately, without rewriting historical gate results.
+
 ## Windows payload optimization evidence
 
 The stakeholder initiated issue #126 implementation on 4 September 2026 after reviewing its size/performance investigation. The work preserves the existing G-05/G-06/G-07 authority, security and lifecycle requirements; it does not authorize a new installer architecture or relaxed durability. The [issue-126 implementation record](../evidence/issue-126/README.md) traces task evidence and the original issue's infeasible size/file-count assumptions. Measured budgets and any unresolved verification gaps must be presented explicitly in the review PR; the investigation does not close release gates or silently replace requirement acceptance criteria.

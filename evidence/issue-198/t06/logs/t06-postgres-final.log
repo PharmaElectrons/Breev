@@ -1,0 +1,29 @@
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+
+ ❯ src/purchasing/purchase-posting.integration.test.ts (25 tests | 1 failed | 22 skipped) 15357ms
+     × T06 preserves stock when valuation reconciliation is unavailable and performs no inventory writes 107ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T06 preserves stock when valuation reconciliation is unavailable and performs no inventory writes
+TypeError: Cannot read properties of undefined (reading 'total_quantity')
+ ❯ src/purchasing/purchase-posting.integration.test.ts:4137:168
+    4135|         (
+    4136|           await administrator.query(
+    4137|             "select (select count(*)::text from inventory_batches) bat…
+       |                                                                                                                                                                        ^
+    4138|           )
+    4139|         ).rows[0];
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed | 22 skipped (25)
+   Start at  16:14:23
+   Duration  17.08s (transform 345ms, setup 0ms, import 1.37s, tests 15.36s, environment 0ms)
+
+undefined
+P:\Projects\PharmaElectrons\apps\local-api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config vitest.config.ts src/purchasing/purchase-posting.integration.test.ts -t T06

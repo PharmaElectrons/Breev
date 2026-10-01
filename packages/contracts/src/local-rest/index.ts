@@ -1,8 +1,8 @@
 import { z } from "zod";
 import * as patientContracts from "./patients.js";
 
-export const LOCAL_API_VERSION = "18" as const;
-export const LOCAL_SCHEMA_VERSION = "18" as const;
+export const LOCAL_API_VERSION = "19" as const;
+export const LOCAL_SCHEMA_VERSION = "19" as const;
 export const LOCAL_HEALTH_SUCCESS_STATUS = 200 as const;
 export const LOCAL_HEALTH_DATABASE_UNAVAILABLE_STATUS = 503 as const;
 export const LOCAL_PROOF_EVIDENCE_SUCCESS_STATUS = 200 as const;
@@ -3303,6 +3303,28 @@ const supplierTermsSchema = z
 export const allowancePercentageSchema = z
   .string()
   .regex(/^(?:100(?:\.0{1,6})?|(?:0|[1-9]\d?)(?:\.\d{1,6})?)$/u);
+/** Alternative inputs for the separate invoice offer; never two discounts. */
+export const purchaseInvoiceOfferInputSchema = z.discriminatedUnion("mode", [
+  z.strictObject({ mode: z.literal("none"), value: z.literal("0") }),
+  z.strictObject({ mode: z.literal("fixed"), value: priceFilsSchema }),
+  z.strictObject({
+    mode: z.literal("percentage"),
+    value: allowancePercentageSchema,
+  }),
+]);
+/** Version 1 is the recorded working policy, not accountant approval. */
+export const purchaseInvoiceOfferSnapshotSchema = z.strictObject({
+  input: purchaseInvoiceOfferInputSchema,
+  ruleVersion: z.literal(1),
+  basisFils: priceFilsSchema,
+  offerFils: priceFilsSchema,
+});
+export type PurchaseInvoiceOfferInput = z.infer<
+  typeof purchaseInvoiceOfferInputSchema
+>;
+export type PurchaseInvoiceOfferSnapshot = z.infer<
+  typeof purchaseInvoiceOfferSnapshotSchema
+>;
 const supplierFields = {
   allowanceEffectiveFrom: z.iso.date(),
   defaultAllowancePercentage: allowancePercentageSchema,
@@ -3338,6 +3360,7 @@ export const supplierMergeRequestSchema = z.strictObject({
 
 export const purchaseSettlementContextSchema = z.enum(["cash", "debt"]);
 const purchaseDraftHeaderFields = {
+  invoiceOffer: purchaseInvoiceOfferInputSchema,
   invoiceDate: z.iso.date(),
   settlementContext: purchaseSettlementContextSchema,
   supplierId: z.uuidv7(),
@@ -3349,6 +3372,7 @@ const purchaseDraftHeaderFields = {
 } as const;
 export const purchaseDraftSchema = z.strictObject({
   ...purchaseDraftHeaderFields,
+  offerRuleVersion: z.literal(1),
   allowanceSnapshot: z.strictObject({
     basisFils: z.string().regex(/^0$|^[1-9]\d*$/u),
     percentage: allowancePercentageSchema,
@@ -3496,6 +3520,7 @@ export const purchaseDraftRowSchema = z.strictObject({
 });
 export const purchaseDraftReviewSchema = z.strictObject({
   allowanceFils: priceFilsSchema,
+  invoiceOffer: purchaseInvoiceOfferSnapshotSchema,
   batches: z.array(
     z.strictObject({
       expiryDate: z.iso.date().nullable(),
@@ -3697,6 +3722,7 @@ export const postedPurchaseJournalSchema = z
  * transaction model": historical views use stored snapshots).
  */
 export const postedPurchaseSchema = z.strictObject({
+  invoiceOffer: purchaseInvoiceOfferSnapshotSchema,
   /**
    * The invoice's calculated allowance, from the snapshot percentage. Stored
    * and displayed, never posted: the allowance becomes a transaction only at
@@ -3892,7 +3918,9 @@ export const purchaseActiveReturnDraftSchema = z.strictObject({
 });
 
 export const purchasePostedDetailRowSchema = z.strictObject({
+  allowanceFils: nullableReviewCostSchema,
   baseUnitsPerEnteredUnit: packageUnitRatioSchema,
+  batchId: z.uuidv7(),
   costAfterDiscountFils: nullableReviewCostSchema,
   enteredQuantity: packageUnitRatioSchema,
   expiryDate: z.iso.date().nullable(),
@@ -3903,7 +3931,13 @@ export const purchasePostedDetailRowSchema = z.strictObject({
   itemId: z.uuidv7(),
   linePrimarySupplierCostFils: nullableReviewCostSchema,
   lotNumber: nullableTrimmedPurchaseText(120),
+  marginPercentage: marginPercentageSchema.nullable(),
+  movementId: z.uuidv7(),
+  notes: nullableTrimmedPurchaseText(1_000),
+  offerFils: nullableReviewCostSchema,
   ordinal: z.number().int().positive(),
+  priceCapture: purchasePriceCaptureSchema,
+  pricingMethod: productPricingMethodSchema,
   primarySupplierCostFils: nullableReviewCostSchema,
   retailPriceFils: priceFilsSchema,
   unit: inventoryCapableUnitSchema,
@@ -3915,6 +3949,7 @@ export const purchasePostedDetailSchema = z
     activeReturnDrafts: z.array(purchaseActiveReturnDraftSchema),
     adjustments: z.array(purchasePostedAdjustmentLinkSchema),
     allowanceFils: nullableReviewCostSchema,
+    invoiceOffer: purchaseInvoiceOfferSnapshotSchema.nullable(),
     allowancePercentageSnapshot: allowancePercentageSchema.nullable(),
     costAfterDiscountFils: nullableReviewCostSchema,
     costVisibility: purchasePostedCostVisibilitySchema,
@@ -3943,6 +3978,7 @@ export const purchasePostedDetailSchema = z
     const costsAreVisible = purchase.costVisibility === "visible";
     const headerCosts = [
       "allowanceFils",
+      "invoiceOffer",
       "allowancePercentageSnapshot",
       "costAfterDiscountFils",
       "primarySupplierCostFils",
@@ -3958,8 +3994,10 @@ export const purchasePostedDetailSchema = z
     }
     purchase.rows.forEach((row, index) => {
       for (const field of [
+        "allowanceFils",
         "costAfterDiscountFils",
         "linePrimarySupplierCostFils",
+        "offerFils",
         "primarySupplierCostFils",
       ] as const) {
         if ((row[field] !== null) !== costsAreVisible) {
@@ -3969,6 +4007,13 @@ export const purchasePostedDetailSchema = z
             path: ["rows", index, field],
           });
         }
+      }
+      if (!costsAreVisible && row.marginPercentage !== null) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Margin can reveal cost and must follow cost visibility",
+          path: ["rows", index, "marginPercentage"],
+        });
       }
     });
   });
@@ -4027,6 +4072,8 @@ export const purchaseAdjustmentDraftRowInputSchema = z.strictObject({
 });
 export const purchaseAdjustmentDraftSchema = z.strictObject({
   allowancePercentageSnapshot: allowancePercentageSchema,
+  invoiceOffer: purchaseInvoiceOfferInputSchema,
+  offerRuleVersion: z.literal(1),
   createdAt: z.iso.datetime(),
   evidence: purchaseAdjustmentEvidenceSchema,
   id: z.uuidv7(),
@@ -4049,6 +4096,7 @@ export const purchaseAdjustmentDraftCreateRequestSchema = z.strictObject({
   reason: purchaseAdjustmentReasonSchema,
 });
 export const purchaseAdjustmentDraftUpdateRequestSchema = z.strictObject({
+  invoiceOffer: purchaseInvoiceOfferInputSchema,
   evidence: purchaseAdjustmentEvidenceSchema,
   expectedVersion: decimalRevisionSchema,
   idempotencyKey: z.uuid(),
@@ -4071,16 +4119,50 @@ export const purchaseAdjustmentRowDeltaSchema = z.strictObject({
   primarySupplierCostDeltaFils: signedBigintSchema,
   quantityDelta: signedBigintSchema,
 });
+export const purchaseAdjustmentHeaderSnapshotSchema = z.strictObject({
+  supplierId: z.uuidv7(),
+  supplierInvoiceNumber: purchaseDraftHeaderFields.supplierInvoiceNumber,
+  supplierNameSnapshot: supplierNameSchema,
+});
+export const purchaseAdjustmentHeaderComparisonSchema = z.strictObject({
+  before: purchaseAdjustmentHeaderSnapshotSchema,
+  after: purchaseAdjustmentHeaderSnapshotSchema,
+});
+export const purchaseAdjustmentTotalsSchema = z.strictObject({
+  offerFils: priceFilsSchema,
+  primarySupplierCostFils: priceFilsSchema,
+  allowanceFils: priceFilsSchema,
+  costAfterDiscountFils: priceFilsSchema,
+});
 export const purchaseAdjustmentSummarySchema = z.strictObject({
+  offerDeltaFils: signedBigintSchema,
+  offerComparison: z.strictObject({
+    before: purchaseInvoiceOfferSnapshotSchema,
+    after: purchaseInvoiceOfferSnapshotSchema,
+  }),
   allowanceDeltaFils: signedBigintSchema,
   confirmationHash: z.string().regex(/^[0-9a-f]{64}$/u),
   costAfterDiscountDeltaFils: signedBigintSchema,
   draftId: z.uuidv7(),
   draftVersion: decimalRevisionSchema,
+  evidence: purchaseAdjustmentEvidenceSchema,
+  headerComparison: purchaseAdjustmentHeaderComparisonSchema,
   headerChanges: z.array(purchaseAdjustmentFieldChangeSchema),
   primarySupplierCostDeltaFils: signedBigintSchema,
   quantityDelta: signedBigintSchema,
+  reason: purchaseAdjustmentReasonSchema,
+  totalsComparison: z.strictObject({
+    before: purchaseAdjustmentTotalsSchema,
+    after: purchaseAdjustmentTotalsSchema,
+  }),
+  warnings: z.array(purchasePostingWarningSchema),
   rowDeltas: z.array(purchaseAdjustmentRowDeltaSchema),
+  rowTotals: z.array(
+    z.strictObject({
+      lineageId: z.uuidv7(),
+      primarySupplierCostFils: priceFilsSchema,
+    }),
+  ),
   stockEffects: z.array(
     z.strictObject({
       batchId: z.uuidv7().nullable(),
@@ -4128,6 +4210,8 @@ export const purchaseAdjustmentJournalSchema = z
     }
   });
 export const postedPurchaseAdjustmentSchema = z.strictObject({
+  offerDeltaFils: signedBigintSchema,
+  offerComparison: purchaseAdjustmentSummarySchema.shape.offerComparison,
   allowanceDeltaFils: signedBigintSchema,
   costAfterDiscountDeltaFils: signedBigintSchema,
   draftId: z.uuidv7(),
@@ -4155,6 +4239,11 @@ export const postedPurchaseAdjustmentSchema = z.strictObject({
 export const purchaseAdjustmentPostResultSchema = z.strictObject({
   posted: postedPurchaseAdjustmentSchema,
 });
+/** Read projection from the immutable correction chain; command receipts stay durable. */
+export const postedPurchaseAdjustmentDetailSchema =
+  postedPurchaseAdjustmentSchema.extend({
+    headerComparison: purchaseAdjustmentHeaderComparisonSchema,
+  });
 
 /** A Purchase Return has its own pharmacy/year PR series. */
 export const purchaseReturnNumberSchema = z.strictObject({
@@ -4234,6 +4323,8 @@ export const purchaseReturnSummarySchema = z.strictObject({
   draftVersion: decimalRevisionSchema,
   inventoryCarryingAmountFils: priceFilsSchema,
   rows: z.array(purchaseReturnSummaryRowSchema).min(1),
+  supplierId: z.uuidv7(),
+  supplierNameSnapshot: supplierNameSchema,
   supplierReductionFils: priceFilsSchema,
 });
 export const purchaseReturnPostRequestSchema = z.strictObject({
@@ -4470,6 +4561,102 @@ export const purchaseEntryPreferencesReadContract = {
     ...purchasingReadDenialResponses,
   },
 } as const;
+export const purchaseItemDetailsSchema = z
+  .strictObject({
+    productId: z.uuidv7(),
+    displayName: z.string().min(1),
+    scientificName: z.string().nullable(),
+    category: z.string().nullable(),
+    barcode: z.string().nullable(),
+    visibleFields: z.array(purchaseDetailsPanelFieldSchema),
+    packaging: z.strictObject({
+      inventoryUnitName: z.string().min(1),
+      packageUnits: z.array(
+        z.strictObject({
+          name: z.string().min(1),
+          baseUnitsPerPackage: packageUnitRatioSchema,
+        }),
+      ),
+    }),
+    pricingMethod: productPricingMethodSchema,
+    retailPriceFils: priceFilsSchema,
+    wholesalePriceFils: priceFilsSchema.nullable(),
+    businessDate: z.iso.date(),
+    inventoryVisibility: z.enum(["visible", "hidden-by-permission"]),
+    inventory: z
+      .strictObject({
+        balance: nonNegativeIntegerStringSchema,
+        breakdown: z.array(
+          z.strictObject({
+            name: z.string().min(1),
+            quantity: nonNegativeIntegerStringSchema,
+          }),
+        ),
+        minimumLevel: nonNegativeIntegerStringSchema.nullable(),
+        maximumLevel: nonNegativeIntegerStringSchema.nullable(),
+        reconciliation: z.enum(["consistent", "mismatch"]),
+        alerts: z.array(inventoryRiskIndicatorSchema),
+        batches: z.array(
+          z.strictObject({
+            id: z.uuidv7(),
+            balance: nonNegativeIntegerStringSchema,
+            lotNumber: z.string().nullable(),
+            originalExpiryDate: z.iso.date().nullable(),
+            effectiveExpiryDate: z.iso.date().nullable(),
+            daysRemaining: z.number().int().nullable(),
+            status: batchEligibilityStatusSchema,
+          }),
+        ),
+      })
+      .nullable(),
+    costVisibility: purchasePostedCostVisibilitySchema,
+    averageCostVisibility: purchasePostedCostVisibilitySchema,
+    averageUnitCostFils: priceFilsSchema.nullable(),
+    lastPostedCost: z
+      .strictObject({
+        purchaseId: z.uuidv7(),
+        invoiceDate: z.iso.date(),
+        enteredUnitName: z.string().min(1),
+        enteredQuantity: packageUnitRatioSchema,
+        primarySupplierCostFils: priceFilsSchema,
+        costAfterDiscountFils: priceFilsSchema,
+      })
+      .nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.inventoryVisibility !== "visible" && value.inventory !== null)
+      ctx.addIssue({
+        code: "custom",
+        path: ["inventory"],
+        message: "Denied stock facts must be redacted",
+      });
+    if (
+      value.averageCostVisibility !== "visible" &&
+      value.averageUnitCostFils !== null
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["averageUnitCostFils"],
+        message: "Denied valuation must be redacted",
+      });
+    if (value.costVisibility !== "visible" && value.lastPostedCost !== null)
+      ctx.addIssue({
+        code: "custom",
+        path: ["lastPostedCost"],
+        message: "Denied frozen costs must be redacted",
+      });
+  });
+export const purchaseItemDetailsContract = {
+  method: "GET",
+  path: "/purchases/items/:productId/details",
+  responses: {
+    200: purchaseItemDetailsSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
+  },
+} as const;
+export const purchaseItemDetailsPath = (productId: string): string =>
+  `/purchases/items/${encodeURIComponent(productId)}/details`;
 export const purchaseEntryPreferencesUpdateContract = {
   method: "PUT",
   path: "/purchases/entry-preferences",
@@ -4623,7 +4810,7 @@ export const purchasePostedAdjustmentReadContract = {
   method: "GET",
   path: "/purchases/posted-adjustments/:adjustmentId",
   responses: {
-    200: postedPurchaseAdjustmentSchema,
+    200: postedPurchaseAdjustmentDetailSchema,
     ...purchasingReadDenialResponses,
     404: purchasingDenialSchema,
   },
@@ -4757,6 +4944,7 @@ export const PURCHASING_CONTRACTS = [
   purchaseDraftUpdateContract,
   purchaseEntryPreferencesReadContract,
   purchaseEntryPreferencesUpdateContract,
+  purchaseItemDetailsContract,
   purchasePostContract,
   purchasePostedListContract,
   purchasePostedReadContract,
@@ -5691,6 +5879,7 @@ export type PurchasePostedListRequest = z.infer<
 export type PurchasePostedCostVisibility = z.infer<
   typeof purchasePostedCostVisibilitySchema
 >;
+export type PurchaseItemDetails = z.infer<typeof purchaseItemDetailsSchema>;
 export type PurchasePostedListItem = z.infer<
   typeof purchasePostedListItemSchema
 >;
@@ -5742,6 +5931,12 @@ export type PurchaseAdjustmentPostRequest = z.infer<
 >;
 export type PostedPurchaseAdjustment = z.infer<
   typeof postedPurchaseAdjustmentSchema
+>;
+export type PostedPurchaseAdjustmentDetail = z.infer<
+  typeof postedPurchaseAdjustmentDetailSchema
+>;
+export type PurchaseAdjustmentHeaderComparison = z.infer<
+  typeof purchaseAdjustmentHeaderComparisonSchema
 >;
 export type PurchaseAdjustmentPostResult = z.infer<
   typeof purchaseAdjustmentPostResultSchema

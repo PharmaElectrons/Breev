@@ -927,6 +927,7 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     expiryDate = "2029-12-31",
   ): Promise<PurchaseFixture> {
     const draftResponse = await request("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: "2026-06-15",
       settlementContext: "debt",

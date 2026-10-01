@@ -738,6 +738,48 @@ export interface PurchaseAdjustmentInventoryEffect {
   readonly quantityDelta: bigint;
 }
 
+/** Confirmation facts from Inventory's own movement ledger. Call after batch
+ * validation has acquired the affected locks, before any posting writes. */
+export async function readPurchaseAdjustmentConfirmationBatches(
+  client: PoolClient,
+  pharmacyId: string,
+  batchIds: readonly string[],
+): Promise<
+  {
+    batchId: string;
+    productId: string;
+    status: string;
+    quantity: string;
+    movementCount: string;
+  }[]
+> {
+  if (batchIds.length === 0) return [];
+  const result = await client.query<{
+    batch_id: string;
+    product_id: string;
+    status: string;
+    quantity: string;
+    movement_count: string;
+  }>(
+    `select batch.id as batch_id, batch.product_id, batch.status,
+            coalesce(sum(movement.quantity), 0)::text as quantity,
+            count(movement.id)::text as movement_count
+     from inventory_batches batch
+     left join inventory_movements movement
+       on movement.pharmacy_id = batch.pharmacy_id and movement.batch_id = batch.id
+     where batch.pharmacy_id = $1 and batch.id = any($2::uuid[])
+     group by batch.id order by batch.id`,
+    [pharmacyId, [...new Set(batchIds)].sort()],
+  );
+  return result.rows.map((row) => ({
+    batchId: row.batch_id,
+    productId: row.product_id,
+    status: row.status,
+    quantity: row.quantity,
+    movementCount: row.movement_count,
+  }));
+}
+
 export type PurchaseAdjustmentBatchProblem =
   | { readonly batchId: string; readonly kind: "batch-invalid" }
   | {
