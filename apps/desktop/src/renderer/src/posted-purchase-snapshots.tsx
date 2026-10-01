@@ -132,9 +132,16 @@ export function PostedReturnView({
 export function PostedPurchaseSnapshot({
   detail,
   print = false,
+  display,
 }: {
   readonly detail: PurchasePostedDetail;
   readonly print?: boolean;
+  readonly display?: {
+    readonly unit: (name: string) => string;
+    readonly adjustmentReason: (
+      reason: PostedPurchaseAdjustment["reason"],
+    ) => string;
+  };
 }): React.JSX.Element | null {
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
@@ -199,75 +206,84 @@ export function PostedPurchaseSnapshot({
         </p>
       )}
       <h2 className="purchase-snapshot-print-table-title">{copy.postedRows}</h2>
-      <table>
-        <colgroup>
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "22%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "9%" }} />
-          <col style={{ width: "11%" }} />
-          {costsVisible ? <col style={{ width: "13%" }} /> : null}
-          {costsVisible ? <col style={{ width: "13%" }} /> : null}
-          <col style={{ width: "11%" }} />
-          <col style={{ width: costsVisible ? "9%" : "35%" }} />
-        </colgroup>
-        <thead>
-          <tr>
-            <th scope="col">#</th>
-            <th scope="col">{copy.item}</th>
-            <th scope="col">{copy.quantity}</th>
-            <th scope="col">{copy.unit}</th>
-            <th scope="col">{copy.retail}</th>
-            {costsVisible ? (
-              <th scope="col">{copy.primarySupplierCost}</th>
-            ) : null}
-            {costsVisible ? (
-              <th scope="col">{copy.costAfterDiscount}</th>
-            ) : null}
-            <th scope="col">{copy.expiry}</th>
-            <th scope="col">{copy.lot}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {detail.rows.map((row) => (
-            <tr key={row.id}>
-              <th scope="row">{row.ordinal}</th>
-              <td>{row.itemDisplayName}</td>
-              <td>
-                <bdi>{row.inventoryUnitQuantity}</bdi>
-              </td>
-              <td>
-                {panelUnitLabel(
-                  row.inventoryUnitName,
-                  unitQuantity(row.inventoryUnitQuantity),
-                  locale,
-                )}
-              </td>
-              <td>
-                <bdi>{formatFilsToIqd(row.retailPriceFils, locale)}</bdi>
-              </td>
+      <div
+        className={display ? "report-snapshot-table-wrap" : undefined}
+        style={display ? undefined : { display: "contents" }}
+        tabIndex={display ? 0 : undefined}
+        role={display ? "region" : undefined}
+        aria-label={display ? copy.postedRows : undefined}
+      >
+        <table>
+          <colgroup>
+            <col style={{ width: "5%" }} />
+            <col style={{ width: "22%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "11%" }} />
+            {costsVisible ? <col style={{ width: "13%" }} /> : null}
+            {costsVisible ? <col style={{ width: "13%" }} /> : null}
+            <col style={{ width: "11%" }} />
+            <col style={{ width: costsVisible ? "9%" : "35%" }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">{copy.item}</th>
+              <th scope="col">{copy.quantity}</th>
+              <th scope="col">{copy.unit}</th>
+              <th scope="col">{copy.retail}</th>
               {costsVisible ? (
-                <td>
-                  <bdi>
-                    {formatFilsToIqd(row.linePrimarySupplierCostFils, locale)}
-                  </bdi>
-                </td>
+                <th scope="col">{copy.primarySupplierCost}</th>
               ) : null}
               {costsVisible ? (
-                <td>
-                  <bdi>
-                    {formatFilsToIqd(row.costAfterDiscountFils, locale)}
-                  </bdi>
-                </td>
+                <th scope="col">{copy.costAfterDiscount}</th>
               ) : null}
-              <td>
-                <bdi dir="ltr">{row.expiryDate ?? "—"}</bdi>
-              </td>
-              <td>{row.lotNumber ?? "—"}</td>
+              <th scope="col">{copy.expiry}</th>
+              <th scope="col">{copy.lot}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {detail.rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row">{row.ordinal}</th>
+                <td>{row.itemDisplayName}</td>
+                <td>
+                  <bdi>{row.inventoryUnitQuantity}</bdi>
+                </td>
+                <td>
+                  {display?.unit(row.inventoryUnitName) ??
+                    panelUnitLabel(
+                      row.inventoryUnitName,
+                      unitQuantity(row.inventoryUnitQuantity),
+                      locale,
+                    )}
+                </td>
+                <td>
+                  <bdi>{formatFilsToIqd(row.retailPriceFils, locale)}</bdi>
+                </td>
+                {costsVisible ? (
+                  <td>
+                    <bdi>
+                      {formatFilsToIqd(row.linePrimarySupplierCostFils, locale)}
+                    </bdi>
+                  </td>
+                ) : null}
+                {costsVisible ? (
+                  <td>
+                    <bdi>
+                      {formatFilsToIqd(row.costAfterDiscountFils, locale)}
+                    </bdi>
+                  </td>
+                ) : null}
+                <td>
+                  <bdi dir="ltr">{row.expiryDate ?? "—"}</bdi>
+                </td>
+                <td>{row.lotNumber ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {costsVisible ? (
         <section className="purchase-snapshot-print-summary">
           <h2>{copy.invoiceTotals}</h2>
@@ -304,7 +320,9 @@ export function PostedPurchaseSnapshot({
             {detail.adjustments.map((adjustment) => (
               <li key={adjustment.id}>
                 {formatAdjustmentNumber(adjustment.number)} ·{" "}
-                {adjustment.reason} · {adjustment.quantityDelta}
+                {display?.adjustmentReason(adjustment.reason) ??
+                  adjustment.reason}{" "}
+                · {adjustment.quantityDelta}
               </li>
             ))}
           </ul>

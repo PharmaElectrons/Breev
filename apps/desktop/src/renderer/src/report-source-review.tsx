@@ -12,11 +12,17 @@ import {
   requestPostedPurchaseAdjustment,
   requestPostedPurchaseReturn,
 } from "./purchasing-api";
+import { PostedPurchaseSnapshot } from "./posted-purchase-snapshots";
+import { ReportCorrectionSnapshot } from "./report-correction-snapshot";
 import {
-  PostedAdjustmentView,
-  PostedReturnView,
-  PostedPurchaseSnapshot,
-} from "./posted-purchase-snapshots";
+  getAdjustmentReasonLabel,
+  purchasingMessages,
+} from "./purchasing-messages";
+import {
+  containReportDialogFocus,
+  reportCell,
+  reportSourceLabel,
+} from "./report-workspace";
 import { usePreferences } from "./preferences-provider";
 import { reportMessages } from "./report-messages";
 
@@ -29,11 +35,13 @@ export function ReportSourceReview({
   source,
   onClose,
   returnHash,
+  timeZone,
 }: {
   readonly baseUrl: string;
   readonly source: InventoryReportSource;
   readonly onClose: () => void;
   readonly returnHash: string;
+  readonly timeZone: string;
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = reportMessages[locale];
@@ -41,6 +49,12 @@ export function ReportSourceReview({
   const focus = useCommittedFocus();
   const [view, setView] = useState<DocumentView | null>(null);
   const [error, setError] = useState(false);
+  const dismiss = (): void => {
+    dialog.current?.close();
+    // Commit dismissal with focus restoration; a queued native close event must
+    // not clear a source that the operator has already reopened.
+    onClose();
+  };
   useEffect(() => {
     if (source.documentType === "count-session") return;
     let live = true;
@@ -86,6 +100,9 @@ export function ReportSourceReview({
         open
         address={{ id: source.documentId }}
         returnHash={returnHash}
+        className="report-source-dialog"
+        onKeyDown={containReportDialogFocus}
+        displayUnit={(name) => reportCell(name, "unit", locale, timeZone)}
         onClose={onClose}
       />
     );
@@ -93,36 +110,49 @@ export function ReportSourceReview({
     <dialog
       ref={dialog}
       className="posted-purchase-dialog report-source-dialog"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+      lang={locale}
+      onKeyDown={containReportDialogFocus}
       aria-labelledby="report-source-title"
       onClose={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        dismiss();
+      }}
     >
       <header className="posted-review-heading">
-        <h2 id="report-source-title">{source.label}</h2>
-        <button
-          className="quiet-button"
-          type="button"
-          onClick={() => dialog.current?.close()}
-        >
+        <div>
+          <p className="purchase-context-label">
+            {purchasingMessages[locale].historicalSnapshot}
+          </p>
+          <h2 id="report-source-title">
+            <bdi>{reportSourceLabel(source.label, locale, timeZone)}</bdi>
+          </h2>
+        </div>
+        <button className="quiet-button" type="button" onClick={dismiss}>
           {copy.close}
         </button>
       </header>
-      {error ? (
-        <p role="alert">{copy.denied}</p>
-      ) : view === null ? (
-        <p role="status">{copy.loading}</p>
-      ) : view.kind === "invoice" ? (
-        <PostedPurchaseSnapshot detail={view.document} />
-      ) : view.kind === "adjustment" ? (
-        <PostedAdjustmentView
-          adjustment={view.document}
-          onBack={() => dialog.current?.close()}
-        />
-      ) : (
-        <PostedReturnView
-          purchaseReturn={view.document}
-          onBack={() => dialog.current?.close()}
-        />
-      )}
+      <div className="report-dialog-body">
+        {error ? (
+          <p role="alert">{copy.denied}</p>
+        ) : view === null ? (
+          <p role="status">{copy.loading}</p>
+        ) : view.kind === "invoice" ? (
+          <PostedPurchaseSnapshot
+            detail={view.document}
+            display={{
+              unit: (name) => reportCell(name, "unit", locale, timeZone),
+              adjustmentReason: (reason) =>
+                locale === "ar"
+                  ? getAdjustmentReasonLabel(reason, locale)
+                  : reason,
+            }}
+          />
+        ) : (
+          <ReportCorrectionSnapshot document={view.document} />
+        )}
+      </div>
     </dialog>
   );
 }

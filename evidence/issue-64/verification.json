@@ -359,6 +359,21 @@
     }
   },
   "physicalWindowsNarrator": "unverified",
+  "followUpEvidence": {
+    "sourceCommit": "3d9f56657f3d28bc4037c81e939ee546f06e0eb8",
+    "runUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36791265348",
+    "prRunUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36791208168",
+    "lastObservedStatus": "in progress",
+    "completion": "unverified",
+    "windowsCaptures": "not retrieved",
+    "windowsScaleMeasurements": "not retrieved",
+    "retrievalAttemptAt": "2026-10-01T02:23:46Z",
+    "classification": "host/network limitation",
+    "cliResult": "error connecting to api.github.com",
+    "webResult": "Both run pages failed to fetch: Cache miss.",
+    "sessionConstraints": "Restricted network; read-only .git; no escalation permitted.",
+    "publication": "This retrieval note is a local documentation update."
+  },
   "readinessBlockers": [
     "Original count reason/evidence failure cause remains unestablished.",
     "Intermittent packaged Main unavailable versus Repair required cause remains unresolved.",

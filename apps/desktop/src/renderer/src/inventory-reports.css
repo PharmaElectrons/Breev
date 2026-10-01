@@ -293,31 +293,282 @@
 .inventory-reports-workspace .report-actions p {
   margin: 0;
 }
-.inventory-reports-workspace .report-activity-dialog,
-.inventory-reports-workspace .report-source-dialog {
+.inventory-reports-workspace .report-export-dialog {
   max-block-size: min(85vh, 50rem);
   max-inline-size: min(95vw, 58rem);
   overflow: auto;
 }
+.inventory-reports-workspace .report-activity-dialog,
+.inventory-reports-workspace .report-source-dialog {
+  box-sizing: border-box;
+  inline-size: min(calc(100vw - 2rem), 58rem);
+  max-inline-size: calc(100vw - 2rem);
+  max-block-size: calc(100dvh - 2rem);
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+}
+.inventory-reports-workspace .report-activity-dialog {
+  inline-size: min(calc(100vw - 2rem), 44rem);
+}
+.inventory-reports-workspace .report-activity-dialog[open],
+.inventory-reports-workspace .report-source-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.inventory-reports-workspace .report-activity-dialog > header,
+.inventory-reports-workspace .report-source-dialog > header {
+  flex-shrink: 0;
+  padding: 0.85rem 1rem;
+  border-block-end: 1px solid var(--border);
+  background: var(--surface);
+}
+.inventory-reports-workspace .report-activity-dialog h2,
+.inventory-reports-workspace .report-source-dialog h2 {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.inventory-reports-workspace .report-dialog-context,
+.inventory-reports-workspace .report-source-dialog .purchase-context-label {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  margin-block-start: 0.25rem;
+}
+.inventory-reports-workspace .report-dialog-body {
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: auto;
+  padding: 0.75rem 1rem;
+}
 .inventory-reports-workspace .report-activity-list {
-  display: grid;
-  gap: 0.45rem;
-  padding-inline-start: 1.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 .inventory-reports-workspace .report-activity-list li {
   border-block-end: 1px solid var(--border);
-  padding-block-end: 0.5rem;
+  padding-block: 0.75rem;
+}
+.inventory-reports-workspace .report-activity-list li:first-child {
+  padding-block-start: 0;
+}
+.inventory-reports-workspace .report-activity-list li:last-child {
+  border: 0;
+  padding-block-end: 0;
+}
+.inventory-reports-workspace .report-movement-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.3rem 1rem;
+  margin-block-end: 0.5rem;
+}
+.inventory-reports-workspace .report-movement-heading > bdi {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.inventory-reports-workspace .report-movement-meta,
+.inventory-reports-workspace .report-snapshot-meta,
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-meta,
+.inventory-reports-workspace .report-source-dialog .count-session-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+  gap: 0.65rem 1rem;
+  margin: 0 0 0.6rem;
+}
+.inventory-reports-workspace .report-activity-dialog dt,
+.inventory-reports-workspace .report-source-dialog dt {
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  margin-block-end: 0.2rem;
+}
+.inventory-reports-workspace .report-movement-meta {
+  grid-template-columns: repeat(auto-fit, minmax(min(8.5rem, 100%), 1fr));
+  gap: 0.5rem 0.75rem;
+}
+.inventory-reports-workspace .report-activity-dialog dd,
+.inventory-reports-workspace .report-source-dialog dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.inventory-reports-workspace .report-source-reference {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-block-size: 1.75rem;
+  padding: 0.15rem 0.35rem;
+  border-color: transparent;
+  background: transparent;
+  font-size: 0.75rem;
+  text-align: start;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2rem;
+  overflow-wrap: anywhere;
+}
+.inventory-reports-workspace .report-source-reference > span {
+  flex-shrink: 0;
+}
+.inventory-reports-workspace .report-activity-dialog .report-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 1rem;
+  border-block-start: 1px solid var(--border);
+  background: var(--surface);
+}
+.inventory-reports-workspace .report-footer [aria-disabled="true"] {
+  color: var(--muted-foreground);
 }
 .inventory-reports-workspace .report-activity-list p {
   margin: 0.2rem 0;
 }
 .inventory-reports-workspace .posted-purchase-snapshot {
-  padding: 0.5rem;
+  padding: 0;
 }
 .inventory-reports-workspace
   .posted-purchase-snapshot
   .purchase-snapshot-print-note {
   display: block;
+}
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.inventory-reports-workspace .report-source-dialog h1,
+.inventory-reports-workspace .report-source-dialog h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-kicker {
+  display: none;
+}
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-note {
+  color: var(--muted-foreground);
+  border-inline-start: 3px solid var(--border);
+  padding-inline-start: 0.6rem;
+  font-size: 0.75rem;
+  margin-block: 0.5rem 0.85rem;
+}
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-table-title,
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-summary
+  h2,
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-links
+  h2 {
+  font-size: 0.8rem;
+  margin-block: 0.85rem 0.5rem;
+}
+.inventory-reports-workspace .report-source-dialog .report-snapshot-table-wrap,
+.inventory-reports-workspace .report-source-dialog .count-review-table-wrap {
+  min-block-size: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.inventory-reports-workspace .report-source-dialog table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.inventory-reports-workspace .report-source-dialog col {
+  width: auto !important;
+}
+.inventory-reports-workspace .report-source-dialog th,
+.inventory-reports-workspace .report-source-dialog td {
+  padding: 0.5rem 0.65rem;
+  border-block-end: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.inventory-reports-workspace .report-correction-snapshot tbody th,
+.inventory-reports-workspace .report-source-dialog .count-lines-table tbody th,
+.inventory-reports-workspace
+  .report-source-dialog
+  .posted-purchase-snapshot
+  tbody
+  td:nth-child(2) {
+  white-space: normal;
+  min-inline-size: 8rem;
+}
+.inventory-reports-workspace .report-correction-snapshot td,
+.inventory-reports-workspace
+  .report-correction-snapshot
+  thead
+  th:not(:first-child),
+.inventory-reports-workspace
+  .report-source-dialog
+  .posted-purchase-snapshot
+  td:nth-child(3),
+.inventory-reports-workspace
+  .report-source-dialog
+  .posted-purchase-snapshot
+  td:nth-child(5),
+.inventory-reports-workspace
+  .report-source-dialog
+  .posted-purchase-snapshot
+  td:nth-child(6),
+.inventory-reports-workspace
+  .report-source-dialog
+  .posted-purchase-snapshot
+  td:nth-child(7) {
+  text-align: end;
+}
+.inventory-reports-workspace .report-source-dialog thead th {
+  background: var(--surface);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.inventory-reports-workspace .report-source-dialog .report-snapshot-totals,
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-summary
+  dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0 0;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.inventory-reports-workspace .report-source-dialog .report-snapshot-totals dd,
+.inventory-reports-workspace
+  .report-source-dialog
+  .purchase-snapshot-print-total
+  dd {
+  font-weight: 700;
+}
+.inventory-reports-workspace .report-source-dialog .count-review-content {
+  min-block-size: 0;
+  overflow: auto;
+  padding: 0.75rem 1rem;
+}
+.inventory-reports-workspace .report-source-dialog > .posted-review-boundary {
+  flex-shrink: 0;
+  margin: 0.6rem 1rem 0;
 }
 .inventory-reports-workspace :focus-visible {
   outline: 2px solid var(--focus-ring);

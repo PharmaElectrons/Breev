@@ -30,11 +30,14 @@ import {
   pharmacyLocalDateTime,
   pharmacyLocalToInstant,
   reportTimestamp,
+  reportTimeZoneLabel,
 } from "./report-time";
 import {
   ReportColumnFilters,
   ReportTable,
   reportCell,
+  reportSourceLabel,
+  containReportDialogFocus,
 } from "./report-workspace";
 import { canonicalReportFilters, ReportFilterError } from "./report-filter";
 import { ordinaryReportExport } from "./report-export-query";
@@ -66,12 +69,21 @@ export function InventoryReportsScreen({
   const [query, setQuery] = useState<Partial<InventoryReportQuery>>({});
   const [report, setReport] = useState<InventoryReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<
+    | "denied"
+    | "invalidPeriod"
+    | "unavailable"
+    | "tooLarge"
+    | "exportFailed"
+    | null
+  >(null);
   const [committedRequest, setCommittedRequest] = useState("");
   const [draftDirty, setDraftDirty] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const initializedKind = useRef<string | null>(null);
-  const [exportStatus, setExportStatus] = useState("");
+  const [exportStatus, setExportStatus] = useState<
+    "saved" | "cancelled" | "tooLarge" | "exportFailed" | null
+  >(null);
   const [exporting, setExporting] = useState(false);
   const [confirmOrdinary, setConfirmOrdinary] = useState(false);
   const ordinaryDialog = useRef<HTMLDialogElement>(null);
@@ -81,7 +93,7 @@ export function InventoryReportsScreen({
   const [filters, setFilters] = useState<InventoryReportQuery["filters"]>([]);
   const [filterError, setFilterError] = useState<{
     index: number;
-    message: string;
+    rule: "number" | "precision";
   } | null>(null);
   const [activity, setActivity] = useState<InventoryReportRow | null>(null);
   const [activityPage, setActivityPage] = useState(1);
@@ -149,11 +161,11 @@ export function InventoryReportsScreen({
         if (live)
           setError(
             caught instanceof IdentityApiDenied
-              ? copy.denied
+              ? "denied"
               : caught instanceof ReportApiDenied &&
                   caught.code === "future-cutoff"
-                ? copy.invalidPeriod
-                : copy.unavailable,
+                ? "invalidPeriod"
+                : "unavailable",
           );
       })
       .finally(() => {
@@ -162,16 +174,7 @@ export function InventoryReportsScreen({
     return () => {
       live = false;
     };
-  }, [
-    baseUrl,
-    categoryMatchesQuery,
-    kind,
-    queryKey,
-    copy.denied,
-    copy.invalidPeriod,
-    copy.unavailable,
-    refresh,
-  ]);
+  }, [baseUrl, categoryMatchesQuery, kind, queryKey, refresh]);
   const timeZone = report?.timeZone;
   useEffect(() => {
     if (activity === null || report === null) return;
@@ -215,11 +218,11 @@ export function InventoryReportsScreen({
           caught instanceof LicensingApiDenied
         )
           setStepUpDenial(caught.denial);
-        else setError(copy.unavailable);
+        else setError("unavailable");
         return undefined;
       }
     },
-    [copy.unavailable],
+    [],
   );
   const stepUp = useStepUp(baseUrl, runStepUp);
   const openSource = (value: InventoryReportSource, opener: HTMLElement) => {
@@ -233,7 +236,7 @@ export function InventoryReportsScreen({
     if (report === null || stale || (!protectedExport && ordinary?.blocked))
       return;
     setExporting(true);
-    setExportStatus("");
+    setExportStatus(null);
     setError(null);
     try {
       const bundle =
@@ -256,21 +259,21 @@ export function InventoryReportsScreen({
       });
       setExportStatus(
         result.status === "saved"
-          ? copy.saved
+          ? "saved"
           : result.status === "cancelled"
-            ? copy.cancelled
+            ? "cancelled"
             : result.status === "export-too-large"
-              ? copy.tooLarge
-              : copy.unavailable,
+              ? "tooLarge"
+              : "exportFailed",
       );
     } catch (caught) {
       setError(
         caught instanceof ReportApiDenied && caught.code.endsWith("too-large")
-          ? copy.tooLarge
+          ? "tooLarge"
           : caught instanceof IdentityApiDenied ||
               caught instanceof ReportApiDenied
-            ? copy.denied
-            : copy.unavailable,
+            ? "denied"
+            : "exportFailed",
       );
     } finally {
       setExporting(false);
@@ -307,9 +310,9 @@ export function InventoryReportsScreen({
       if (caught instanceof ReportFilterError)
         setFilterError({
           index: caught.index,
-          message: `${copy.columns[filters[caught.index]!.column]}: ${caught.rule === "precision" ? copy.filterPrecision : copy.filterNumber}`,
+          rule: caught.rule,
         });
-      else setError(copy.invalidPeriod);
+      else setError("invalidPeriod");
     }
   }
   return (
@@ -324,7 +327,9 @@ export function InventoryReportsScreen({
         </div>
         {report === null ? null : (
           <span className="report-timezone">
-            <bdi>{report.timeZone}</bdi>
+            <bdi>
+              {reportTimeZoneLabel(report.timeZone, locale, report.query.to)}
+            </bdi>
           </span>
         )}
       </header>
@@ -415,7 +420,7 @@ export function InventoryReportsScreen({
             </button>
             {error === null ? null : (
               <p className="denial-alert" role="alert">
-                {error}
+                {copy[error]}
               </p>
             )}
             {report === null ? null : (
@@ -543,7 +548,14 @@ export function InventoryReportsScreen({
                     filters={filters}
                     columns={allowedColumns}
                     locale={locale}
-                    error={filterError}
+                    error={
+                      filterError === null
+                        ? null
+                        : {
+                            index: filterError.index,
+                            message: `${copy.columns[filters[filterError.index]!.column]}: ${filterError.rule === "precision" ? copy.filterPrecision : copy.filterNumber}`,
+                          }
+                    }
                     onChange={(values) => {
                       setFilters(values);
                       setDraftDirty(true);
@@ -585,7 +597,15 @@ export function InventoryReportsScreen({
                           )}
                         </bdi>{" "}
                         · <bdi>{group.item ?? copy.unitUnavailable}</bdi> ·{" "}
-                        <bdi>{group.unit ?? copy.unitUnavailable}</bdi> ·{" "}
+                        <bdi>
+                          {reportCell(
+                            group.unit,
+                            "unit",
+                            locale,
+                            report.timeZone,
+                          )}
+                        </bdi>{" "}
+                        ·{" "}
                         {report.groups.some(
                           (other) =>
                             other.productId !== group.productId &&
@@ -718,7 +738,9 @@ export function InventoryReportsScreen({
                       {copy.sensitiveExport}
                     </button>
                   ) : null}
-                  <p role="status">{exportStatus}</p>
+                  <p role="status">
+                    {exportStatus === null ? "" : copy[exportStatus]}
+                  </p>
                 </footer>
               </>
             )}
@@ -727,7 +749,7 @@ export function InventoryReportsScreen({
       </div>
       <dialog
         ref={ordinaryDialog}
-        className="posted-purchase-dialog report-activity-dialog"
+        className="posted-purchase-dialog report-export-dialog"
         aria-labelledby="report-order-title"
         onClose={() => {
           setConfirmOrdinary(false);
@@ -762,6 +784,9 @@ export function InventoryReportsScreen({
       <dialog
         ref={activityDialog}
         className="posted-purchase-dialog report-activity-dialog"
+        onKeyDown={containReportDialogFocus}
+        dir={locale === "ar" ? "rtl" : "ltr"}
+        lang={locale}
         aria-labelledby="report-activity-title"
         onClose={() => {
           setActivity(null);
@@ -776,7 +801,20 @@ export function InventoryReportsScreen({
         }}
       >
         <header className="posted-review-heading">
-          <h2 id="report-activity-title">{copy.activity}</h2>
+          <div>
+            <h2 id="report-activity-title">{copy.activity}</h2>
+            <p className="report-dialog-context">
+              <bdi>{activity?.cells.item ?? copy.unitUnavailable}</bdi> ·{" "}
+              <bdi>
+                {reportCell(
+                  activity?.cells.unit,
+                  "unit",
+                  locale,
+                  timeZone ?? "UTC",
+                )}
+              </bdi>
+            </p>
+          </div>
           <button
             className="quiet-button"
             type="button"
@@ -785,59 +823,86 @@ export function InventoryReportsScreen({
             {copy.close}
           </button>
         </header>
-        {activityError ? (
-          <p role="alert">{copy.unavailable}</p>
-        ) : activityResult === null ? (
-          <p role="status">{copy.loading}</p>
-        ) : activityResult.rows.length === 0 ? (
-          <p role="status">{copy.noActivity}</p>
-        ) : (
-          <ol className="report-activity-list">
-            {activityResult.rows.map((a) => (
-              <li key={a.id}>
-                <p>
-                  {copy.states[a.reason]} ·{" "}
-                  {a.actor === "system" ? copy.system : a.actor} ·{" "}
-                  <bdi>
-                    {reportTimestamp(a.postedAt, locale, timeZone ?? "UTC")}
-                  </bdi>
-                </p>
-                <p>
-                  {copy.columns.activityQuantity}:{" "}
-                  <bdi>{formatNumber(BigInt(a.quantity), locale)}</bdi> ·{" "}
-                  {copy.columns.businessDate}:{" "}
-                  <bdi>{a.businessDate ?? "—"}</bdi>
-                </p>
-                {a.valueFils === null ? null : (
-                  <p>
-                    {copy.columns.activityValueFils}:{" "}
+        <div className="report-dialog-body">
+          {activityError ? (
+            <p role="alert">{copy.unavailable}</p>
+          ) : activityResult === null ? (
+            <p role="status">{copy.loading}</p>
+          ) : activityResult.rows.length === 0 ? (
+            <p role="status">{copy.noActivity}</p>
+          ) : (
+            <ol className="report-activity-list">
+              {activityResult.rows.map((a) => (
+                <li key={a.id}>
+                  <div className="report-movement-heading">
+                    <strong>{copy.states[a.reason]}</strong>
                     <bdi>
-                      {reportCell(
-                        a.valueFils,
-                        "activityValueFils",
-                        locale,
-                        timeZone ?? "UTC",
-                      )}
+                      {reportTimestamp(a.postedAt, locale, timeZone ?? "UTC")}
                     </bdi>
-                  </p>
-                )}
-                {a.source === null ? null : (
-                  <button
-                    className="quiet-button"
-                    type="button"
-                    disabled={!a.source.openable}
-                    onClick={(e) => {
-                      if (a.source !== null)
-                        openSource(a.source, e.currentTarget);
-                    }}
-                  >
-                    {a.source.label}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ol>
-        )}
+                  </div>
+                  <dl className="report-movement-meta">
+                    <div>
+                      <dt>{copy.columns.actor}</dt>
+                      <dd>
+                        <bdi>
+                          {a.actor === "system" ? copy.system : a.actor}
+                        </bdi>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.columns.activityQuantity}</dt>
+                      <dd>
+                        <bdi>{formatNumber(BigInt(a.quantity), locale)}</bdi>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.columns.businessDate}</dt>
+                      <dd>
+                        <bdi dir="ltr">{a.businessDate ?? "—"}</bdi>
+                      </dd>
+                    </div>
+                    {a.valueFils === null ? null : (
+                      <div>
+                        <dt>{copy.columns.activityValueFils}</dt>
+                        <dd>
+                          <bdi>
+                            {reportCell(
+                              a.valueFils,
+                              "activityValueFils",
+                              locale,
+                              timeZone ?? "UTC",
+                            )}
+                          </bdi>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  {a.source === null ? null : (
+                    <button
+                      className="quiet-button report-source-reference"
+                      title={copy.openSource}
+                      type="button"
+                      disabled={!a.source.openable}
+                      onClick={(e) => {
+                        if (a.source !== null)
+                          openSource(a.source, e.currentTarget);
+                      }}
+                    >
+                      <bdi>
+                        {reportSourceLabel(
+                          a.source.label,
+                          locale,
+                          timeZone ?? "UTC",
+                        )}
+                      </bdi>
+                      <span aria-hidden="true">↗</span>
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
         <footer className="report-footer">
           <button
             type="button"
@@ -850,7 +915,9 @@ export function InventoryReportsScreen({
           >
             {copy.previous}
           </button>
-          <span>{formatNumber(activityPage, locale)}</span>
+          <span aria-live="polite">
+            {copy.page} <bdi>{formatNumber(activityPage, locale)}</bdi>
+          </span>
           <button
             type="button"
             className="quiet-button"
@@ -881,6 +948,7 @@ export function InventoryReportsScreen({
           baseUrl={baseUrl}
           source={source}
           returnHash={`#/reports/inventory/${kind}`}
+          timeZone={timeZone ?? "UTC"}
           onClose={() => {
             setSource(null);
             focus(() =>

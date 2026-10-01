@@ -1,3 +1,25 @@
+import { reportMessages } from "./report-messages";
+
+/** Display names never replace the IANA ID used by report queries and controls. */
+export function reportTimeZoneLabel(
+  timeZone: string,
+  locale: "ar" | "en",
+  instant: string,
+): string {
+  const copy = reportMessages[locale];
+  if (locale === "en") return timeZone;
+  if (timeZone === "Asia/Baghdad") return copy.baghdadTime;
+  if (timeZone === "UTC") return copy.utcTime;
+  return (
+    new Intl.DateTimeFormat(locale === "ar" ? "ar-IQ" : "en-IQ", {
+      timeZone,
+      timeZoneName: "longGeneric",
+    })
+      .formatToParts(new Date(instant))
+      .find((part) => part.type === "timeZoneName")?.value ?? copy.timeZone
+  );
+}
+
 /** Date controls use the pharmacy zone, independently of the workstation zone. */
 export function pharmacyLocalDateTime(
   instant: string,

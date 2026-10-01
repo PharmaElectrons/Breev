@@ -476,7 +476,7 @@ test.describe.serial("read-only inventory review", () => {
         await expect(
           page
             .locator(
-              ".report-source-dialog .posted-purchase-snapshot, .report-source-dialog .posted-adjustment-view, .report-source-dialog .posted-return-view",
+              ".report-source-dialog .posted-purchase-snapshot, .report-source-dialog .report-correction-snapshot",
             )
             .first(),
         ).toBeVisible();
@@ -501,6 +501,12 @@ test.describe.serial("read-only inventory review", () => {
             "dialog[aria-labelledby='report-activity-title']",
           );
           await expect(activity).toBeVisible();
+          await expect(activity).toHaveAttribute(
+            "dir",
+            locale === "ar" ? "rtl" : "ltr",
+          );
+          await expect(activity.locator("header button")).toBeFocused();
+          await expect(activity.locator("footer")).toBeInViewport({ ratio: 1 });
           await expect(
             activity.locator("footer button").first(),
           ).toHaveAttribute("aria-disabled", "true");
@@ -509,6 +515,87 @@ test.describe.serial("read-only inventory review", () => {
               .locator(".report-activity-list, p[role='status']")
               .filter({ hasNotText: locale === "ar" ? "جارٍ" : "Loading" }),
           ).toHaveCount(1);
+          if (locale === "ar") {
+            await expect(activity).not.toContainText(
+              /Count session|purchase-receipt|purchase-adjustment|purchase-return|count-variance|Asia\/Baghdad/u,
+            );
+          }
+          if (kind === "quantity") {
+            const references = activity.locator(
+              ".report-source-reference:enabled",
+            );
+            for (let index = 0; index < (await references.count()); index++) {
+              const reference = references.nth(index);
+              await reference.focus();
+              await pressKeyOnFocused(page, reference, "Enter");
+              const snapshot = page.locator(".report-source-dialog");
+              await expect(snapshot).toBeVisible();
+              await expect(snapshot).toHaveAttribute(
+                "dir",
+                locale === "ar" ? "rtl" : "ltr",
+              );
+              await expect(snapshot.locator("table")).toBeVisible();
+              for (const total of await snapshot
+                .locator(".report-snapshot-totals dd")
+                .all())
+                await expect(total).not.toHaveText("—");
+              const close = snapshot.locator("header button");
+              await expect(close).toBeFocused();
+              if (locale === "ar")
+                await expect(snapshot).not.toContainText(
+                  /Strip|quantity error/u,
+                );
+              for (const viewport of [
+                { width: 800, height: 600 },
+                { width: 640, height: 480 },
+              ]) {
+                await page.setViewportSize(viewport);
+                await expect(close).toBeInViewport({ ratio: 1 });
+                await expect
+                  .poll(() =>
+                    snapshot.evaluate(
+                      (element) => element.scrollWidth <= element.clientWidth,
+                    ),
+                  )
+                  .toBe(true);
+              }
+              await page.setViewportSize({ width: 1280, height: 800 });
+              expect(
+                (await new AxeBuilder({ page }).analyze()).violations,
+              ).toEqual([]);
+              await page.screenshot({
+                path: evidencePath(
+                  "issue-64",
+                  "after",
+                  `report-snapshot-${index}-${locale}-${theme}.png`,
+                ),
+              });
+              await pressKeyOnFocused(page, close, "Shift+Tab");
+              expect(
+                await snapshot.evaluate((element) =>
+                  element.contains(element.ownerDocument.activeElement),
+                ),
+              ).toBe(true);
+              await page.keyboard.press("Escape");
+              await expect(snapshot).toHaveCount(0);
+              await expect(reference).toBeFocused();
+            }
+            await page.setViewportSize({ width: 640, height: 480 });
+            await expect(activity.locator("footer")).toBeInViewport({
+              ratio: 1,
+            });
+            await expect(activity.locator("header button")).toBeInViewport({
+              ratio: 1,
+            });
+            await expect
+              .poll(() =>
+                activity.evaluate(
+                  (element) => element.scrollWidth <= element.clientWidth,
+                ),
+              )
+              .toBe(true);
+            await page.setViewportSize({ width: 1280, height: 800 });
+          }
           expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
             [],
           );
@@ -541,6 +628,13 @@ test.describe.serial("read-only inventory review", () => {
             page.locator(".report-categories button[aria-current='page']"),
           ).toBeVisible();
           await expect(page.locator(".report-actions")).toBeVisible();
+          await expect(page.locator(".report-timezone")).toHaveText(
+            locale === "ar" ? "توقيت بغداد" : "Asia/Baghdad",
+          );
+          if (locale === "ar")
+            await expect(page.locator(".report-table")).not.toContainText(
+              /Strip|Count session|Report saved|eligible|available|quarantined/u,
+            );
           expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
             [],
           );
@@ -1302,8 +1396,36 @@ test.describe.serial("read-only inventory review", () => {
         await source.click();
         const review = reportPage.locator(".count-session-review-dialog");
         await expect(review).toBeVisible();
+        await expect(review).toHaveAttribute(
+          "dir",
+          locale === "ar" ? "rtl" : "ltr",
+        );
+        if (locale === "ar")
+          await expect(review).not.toContainText(
+            /Strip|Count session|applied/u,
+          );
         await expect(review.locator("tbody")).toContainText("Count Gate Item");
         await expect(review.locator("input, textarea, select")).toHaveCount(0);
+        const reviewClose = review.locator("header button");
+        await expect(reviewClose).toBeFocused();
+        await pressKeyOnFocused(reportPage, reviewClose, "Shift+Tab");
+        await expect(review.locator(".count-review-table-wrap")).toBeFocused();
+        await pressKeyOnFocused(
+          reportPage,
+          review.locator(".count-review-table-wrap"),
+          "Tab",
+        );
+        await expect(reviewClose).toBeFocused();
+        await reportPage.setViewportSize({ width: 640, height: 480 });
+        await expect(reviewClose).toBeInViewport({ ratio: 1 });
+        await expect
+          .poll(() =>
+            review.evaluate(
+              (element) => element.scrollWidth <= element.clientWidth,
+            ),
+          )
+          .toBe(true);
+        await reportPage.setViewportSize({ width: 1280, height: 800 });
         expect(
           (await new AxeBuilder({ page: reportPage }).analyze()).violations,
         ).toEqual([]);
@@ -1350,6 +1472,10 @@ test.describe.serial("read-only inventory review", () => {
       "dialog[aria-labelledby='report-activity-title']",
     );
     await expect(activity.locator("li")).toHaveCount(50);
+    await expect(activity.locator("footer")).toBeInViewport({ ratio: 1 });
+    await expect(
+      activity.locator("footer span[aria-live='polite']"),
+    ).toHaveText("Page 1");
     const source = activity.locator("li").first().getByRole("button");
     await source.focus();
     await pressKeyOnFocused(page, source, "Space");
@@ -1365,6 +1491,9 @@ test.describe.serial("read-only inventory review", () => {
     await expect(next).toHaveAttribute("aria-disabled", "true");
     await expect(next).toBeFocused();
     await expect(activity.locator("li")).toHaveCount(5);
+    await expect(
+      activity.locator("footer span[aria-live='polite']"),
+    ).toHaveText("Page 2");
     await activity
       .getByRole("button", { name: "Previous page", exact: true })
       .click();
@@ -1379,6 +1508,207 @@ test.describe.serial("read-only inventory review", () => {
               (select count(*)::text from accounting_journal_entries) as journals`,
     );
     expect(after.rows).toEqual(frozen.rows);
+  });
+  test("localizes report units, timezone and export outcomes across language switches", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const bottleRequest = medicationRequest();
+    bottleRequest.definition = {
+      mode: "medication",
+      fields: {
+        tradeName: "Report Bottle Item",
+        strength: null,
+        dosageForm: null,
+        manufacturer: null,
+      },
+    };
+    bottleRequest.packaging.inventoryUnitName = "Bottle";
+    const created = await apiRequest(
+      "POST",
+      "/catalog/products",
+      bottleRequest,
+    );
+    expect(created.status).toBe(201);
+    const bottle = created.body as Product;
+    await postPurchase(supplier, bottle, "REPORT-BOTTLE");
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    const screen = page.locator(".inventory-reports-workspace");
+    const bottleRow = screen
+      .locator("tbody tr")
+      .filter({ hasText: bottle.displayName });
+    const stripRow = screen
+      .locator("tbody tr")
+      .filter({ hasText: product.displayName });
+    await expect(bottleRow.locator("td").first()).toHaveText("Bottle");
+    await expect(stripRow.locator("td").first()).toHaveText("Strip");
+    await expect(screen.locator(".report-timezone")).toHaveText("Asia/Baghdad");
+    await page.getByLabel(/^Group by/u).selectOption("item");
+    await screen
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(screen.locator(".report-groups")).toContainText("Bottle");
+    const switchLanguage = async (from: "ar" | "en") => {
+      await page.getByTestId("collapse-menu-trigger").click();
+      await page
+        .getByRole("button", {
+          name: from === "en" ? "Switch to Arabic" : "التبديل إلى الإنجليزية",
+          exact: true,
+        })
+        .click();
+      await expect(page.locator("html")).toHaveAttribute(
+        "lang",
+        from === "en" ? "ar" : "en",
+      );
+    };
+    const exportButton = () =>
+      screen.getByRole("button", {
+        name: /^(Export CSV · without costs|تصدير جدول · دون التكاليف)$/u,
+      });
+    await exportButton().click();
+    await expect(screen.locator(".report-actions")).toContainText(
+      "Report saved.",
+    );
+    await page.screenshot({
+      path: evidencePath("inventory-report-localization", "english.png"),
+      fullPage: true,
+    });
+    await screen.locator(".report-table").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: evidencePath("inventory-report-localization", "english-table.png"),
+    });
+    await switchLanguage("en");
+    await expect(bottleRow.locator("td").first()).toHaveText("زجاجة");
+    await expect(stripRow.locator("td").first()).toHaveText("شريط");
+    await expect(screen.locator(".report-timezone")).toHaveText("توقيت بغداد");
+    await expect(screen.locator(".report-groups")).toContainText("زجاجة");
+    await expect(screen.locator(".report-groups")).toContainText("شريط");
+    await expect(screen.locator(".report-actions")).toContainText(
+      "تم حفظ التقرير.",
+    );
+    await expect(screen.locator(".report-actions")).not.toContainText(
+      "Report saved",
+    );
+    const activityOpener = bottleRow.locator("td").nth(-2).getByRole("button");
+    await activityOpener.click();
+    const movementDialog = page.locator(".report-activity-dialog");
+    await expect(movementDialog).toContainText("زجاجة");
+    await movementDialog.locator(".report-source-reference").first().click();
+    const bottleSnapshot = page.locator(".report-source-dialog");
+    await expect(bottleSnapshot.locator("table")).toContainText("زجاجة");
+    await expect(bottleSnapshot.locator("tbody tr td").nth(2)).toHaveText(
+      "زجاجة",
+    );
+    await expect(bottleSnapshot.locator("tbody tr td").first()).toHaveText(
+      bottle.displayName,
+    );
+    await bottleSnapshot.locator("header button").click();
+    await movementDialog.locator("header button").click();
+    await page.screenshot({
+      path: evidencePath("inventory-report-localization", "arabic.png"),
+      fullPage: true,
+    });
+    await screen.locator(".report-table").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: evidencePath("inventory-report-localization", "arabic-table.png"),
+    });
+
+    // A native save finishing after a language change uses the current UI locale.
+    await switchLanguage("ar");
+    await page.evaluate(() => {
+      (globalThis as { __holdReportExport?: boolean }).__holdReportExport =
+        true;
+    });
+    await exportButton().click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            typeof (globalThis as { __releaseReportExport?: () => void })
+              .__releaseReportExport,
+        ),
+      )
+      .toBe("function");
+    await switchLanguage("en");
+    await page.evaluate(() => {
+      (
+        globalThis as { __releaseReportExport?: () => void }
+      ).__releaseReportExport?.();
+    });
+    await expect(screen.locator(".report-actions")).toContainText(
+      "تم حفظ التقرير.",
+    );
+    await expect(screen.locator(".report-actions")).not.toContainText(
+      "Report saved",
+    );
+    await page.evaluate(() => {
+      (globalThis as { __holdReportExport?: boolean }).__holdReportExport =
+        false;
+    });
+
+    for (const outcome of [
+      { status: "cancelled", ar: "أُلغي التصدير.", en: "Export cancelled." },
+      {
+        status: "export-too-large",
+        ar: "يتجاوز التقرير حد التصدير.",
+        en: "The report exceeds the export limit.",
+      },
+      {
+        status: "failed",
+        ar: "تعذّر حفظ التقرير.",
+        en: "The report could not be saved.",
+      },
+    ] as const) {
+      await page.evaluate((status) => {
+        (
+          globalThis as { __reportExportResult?: { status: string } }
+        ).__reportExportResult = { status };
+      }, outcome.status);
+      await exportButton().click();
+      await expect(screen.locator(".report-actions")).toContainText(outcome.ar);
+      await switchLanguage("ar");
+      await expect(screen.locator(".report-actions")).toContainText(outcome.en);
+      await switchLanguage("en");
+      await expect(screen.locator(".report-actions")).toContainText(outcome.ar);
+    }
+    const wire = await page.evaluate(
+      () => (globalThis as { __inventoryExport?: unknown }).__inventoryExport,
+    );
+    const { format, ...bundle } = wire as Record<string, unknown>;
+    expect(format).toBe("csv");
+    const exported = inventoryReportExportSchema.parse(bundle);
+    expect(exported.timeZone).toBe("Asia/Baghdad");
+    expect(
+      exported.rows.find((row) => row.productId === bottle.id)?.cells.unit,
+    ).toBe("Bottle");
+    expect(
+      exported.rows.find((row) => row.productId === product.id)?.cells.unit,
+    ).toBe("Strip");
+
+    await screen
+      .getByRole("button", { name: "إضافة مرشح عمود", exact: true })
+      .click();
+    await screen
+      .locator(".report-filter-row select")
+      .first()
+      .selectOption("closingQuantity");
+    await screen.getByLabel("قيمة المرشح", { exact: true }).fill("1.5");
+    await screen
+      .getByRole("button", { name: "تطبيق المرشحات", exact: true })
+      .click();
+    await expect(
+      screen.locator(".report-filter-row [role='alert']"),
+    ).toContainText("المنازل العشرية زائدة");
+    await switchLanguage("ar");
+    await expect(
+      screen.locator(".report-filter-row [role='alert']"),
+    ).toContainText("Too many decimal places");
+    await switchLanguage("en");
+    await expect(
+      screen.locator(".report-filter-row [role='alert']"),
+    ).not.toContainText("Too many decimal places");
   });
 });
 
@@ -1792,7 +2122,18 @@ async function installDesktopFake(
             ...request.bundle,
             format: request.format,
           };
-          return { status: "saved" as const };
+          const controls = globalThis as {
+            __holdReportExport?: boolean;
+            __releaseReportExport?: () => void;
+            __reportExportResult?: Awaited<
+              ReturnType<BreevDesktopApi["saveInventoryExport"]>
+            >;
+          };
+          if (controls.__holdReportExport)
+            await new Promise<void>((resolve) => {
+              controls.__releaseReportExport = resolve;
+            });
+          return controls.__reportExportResult ?? { status: "saved" as const };
         },
         submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitManualEndpoint: async () => pairing,

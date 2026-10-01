@@ -43,10 +43,12 @@ interface ReportCopy {
   export: string;
   sensitiveExport: string;
   saved: string;
+  exportFailed: string;
   cancelled: string;
   tooLarge: string;
   previous: string;
   next: string;
+  page: string;
   rows: string;
   activity: string;
   noActivity: string;
@@ -60,6 +62,15 @@ interface ReportCopy {
   days: string;
   window: string;
   system: string;
+  timeZone: string;
+  baghdadTime: string;
+  utcTime: string;
+  countSession: string;
+  countSessionStarted: string;
+  line: string;
+  reason: string;
+  evidence: string;
+  units: Record<string, string>;
   categories: Record<InventoryReportKind, string>;
   columns: Record<InventoryReportColumn, string>;
   explanations: Record<string, string>;
@@ -115,11 +126,13 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
     export: "Export CSV · without costs",
     sensitiveExport: "Protected export · with costs",
     saved: "Report saved.",
+    exportFailed: "The report could not be saved. Try again.",
     cancelled: "Export cancelled.",
     tooLarge:
       "The report exceeds the export limit. Narrow the period or filters.",
     previous: "Previous page",
     next: "Next page",
+    page: "Page",
     rows: "Matching rows",
     activity: "Period activity",
     noActivity:
@@ -134,6 +147,15 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
     days: "days",
     window: "Consumption window ending at To",
     system: "System",
+    timeZone: "Pharmacy time",
+    baghdadTime: "Baghdad time",
+    utcTime: "Coordinated Universal Time",
+    countSession: "Count session",
+    countSessionStarted: "Count session started",
+    line: "line",
+    reason: "Reason",
+    evidence: "Evidence",
+    units: {},
     categories: {
       quantity: "Quantity",
       value: "Value",
@@ -185,6 +207,7 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
         "No eligible posted demand exists in milestone 2. Receipts, adjustments, supplier returns and count variances do not count as consumption.",
     },
     states: {
+      "purchase-invoice": "Purchase invoice",
       eligible: "Eligible",
       expired: "Expired",
       recalled: "Recalled",
@@ -242,13 +265,15 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
     eq: "يساوي",
     gte: "على الأقل",
     lte: "على الأكثر",
-    export: "تصدير CSV · دون التكاليف",
+    export: "تصدير جدول · دون التكاليف",
     sensitiveExport: "تصدير محمي · مع التكاليف",
     saved: "تم حفظ التقرير.",
+    exportFailed: "تعذّر حفظ التقرير. أعد المحاولة.",
     cancelled: "أُلغي التصدير.",
     tooLarge: "يتجاوز التقرير حد التصدير. قلّل الفترة أو المرشحات.",
     previous: "الصفحة السابقة",
     next: "الصفحة التالية",
+    page: "الصفحة",
     rows: "الصفوف المطابقة",
     activity: "حركات الفترة",
     noActivity:
@@ -263,6 +288,40 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
     days: "يوماً",
     window: "فترة الاستهلاك المنتهية عند وقت النهاية",
     system: "النظام",
+    timeZone: "توقيت الصيدلية",
+    baghdadTime: "توقيت بغداد",
+    utcTime: "التوقيت العالمي المنسق",
+    countSession: "جلسة جرد",
+    countSessionStarted: "بدأت جلسة الجرد",
+    line: "السطر",
+    reason: "السبب",
+    evidence: "الدليل",
+    units: {
+      strip: "شريط",
+      strips: "شريط",
+      bottle: "زجاجة",
+      bottles: "زجاجة",
+      pack: "علبة",
+      packs: "علبة",
+      box: "علبة",
+      boxes: "علبة",
+      tablet: "قرص",
+      tablets: "قرص",
+      capsule: "كبسولة",
+      capsules: "كبسولة",
+      ampoule: "أمبولة",
+      ampoules: "أمبولة",
+      vial: "قارورة",
+      vials: "قارورة",
+      tube: "أنبوب",
+      tubes: "أنبوب",
+      piece: "قطعة",
+      pieces: "قطعة",
+      sachet: "كيس",
+      sachets: "كيس",
+      unit: "وحدة",
+      units: "وحدة",
+    },
     categories: {
       quantity: "الكمية",
       value: "القيمة",
@@ -314,6 +373,7 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
         "لا يوجد طلب مرحّل مؤهل في المرحلة الثانية. الاستلام والتعديلات ومرتجعات المورد وفروق الجرد لا تُحسب استهلاكاً.",
     },
     states: {
+      "purchase-invoice": "فاتورة شراء",
       eligible: "مؤهل",
       expired: "منتهي",
       recalled: "مسحوب",

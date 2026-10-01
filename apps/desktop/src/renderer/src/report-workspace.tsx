@@ -10,6 +10,48 @@ import { formatCurrencyFromFils, formatNumber } from "./preferences";
 import { reportTimestamp } from "./report-time";
 import { formatReportAverageCost } from "./report-filter";
 
+/** Match Breev's dialog tab boundaries while native modality owns Escape/inertness. */
+export function containReportDialogFocus(
+  event: React.KeyboardEvent<HTMLDialogElement>,
+): void {
+  if (event.key !== "Tab") return;
+  const dialog = event.currentTarget;
+  const controls = dialog.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+  );
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  const active = dialog.ownerDocument.activeElement;
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first?.focus();
+  }
+}
+
+/** Only generated source captions are translated; document references stay intact. */
+export function reportSourceLabel(
+  value: string,
+  locale: "ar" | "en",
+  timeZone: string,
+): string {
+  if (locale === "en") return value;
+  const copy = reportMessages[locale];
+  const count = /^Count session ([\da-f-]+) · (?:line )?(\d+)$/u.exec(value);
+  if (count !== null)
+    return `${copy.countSession} ${count[1]} · ${copy.line} ${formatNumber(BigInt(count[2]!), locale)}`;
+  const started = /^Count session started (.+) · line (\d+)$/u.exec(value);
+  if (started !== null)
+    return `${copy.countSessionStarted} ${reportTimestamp(started[1]!, locale, timeZone)} · ${copy.line} ${formatNumber(BigInt(started[2]!), locale)}`;
+  const numbered = /^(C\d+\/\d+) · line (\d+)$/u.exec(value);
+  return numbered === null
+    ? ((Object.hasOwn(copy.states, value) ? copy.states[value] : undefined) ??
+        (value === "count-session" ? copy.countSession : value))
+    : `${numbered[1]} · ${copy.line} ${formatNumber(BigInt(numbered[2]!), locale)}`;
+}
+
 export function reportCell(
   value: string | null | undefined,
   column: InventoryReportColumn,
@@ -19,6 +61,13 @@ export function reportCell(
   const copy = reportMessages[locale];
   if (value == null)
     return column === "item" || column === "unit" ? copy.unitUnavailable : "—";
+  // Translate recognized unit captions only; never rewrite historical data.
+  if (column === "unit") {
+    const name = value.trim().toLowerCase();
+    return Object.hasOwn(copy.units, name) ? copy.units[name]! : value;
+  }
+  if (column === "actor" && value === "system") return copy.system;
+  if (column === "source") return reportSourceLabel(value, locale, timeZone);
   if (column.endsWith("Fils"))
     return formatCurrencyFromFils(BigInt(value), locale);
   if (column.endsWith("Scaled")) {
@@ -304,7 +353,11 @@ export function ReportTable({
                         onSource(row.source, e.currentTarget);
                     }}
                   >
-                    {row.source.label}
+                    {reportSourceLabel(
+                      row.source.label,
+                      locale,
+                      report.timeZone,
+                    )}
                   </button>
                 )}
               </td>
