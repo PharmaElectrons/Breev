@@ -1423,6 +1423,90 @@ test.describe.serial("Product catalog screens", () => {
     }
   });
 
+  test("Catalog edit canvas and packaging panels follow the theme in both locales", async ({
+    browser,
+  }) => {
+    test.setTimeout(180_000);
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        for (const viewport of [
+          { width: 1280, height: 800 },
+          { width: 1366, height: 768 },
+          { width: 1920, height: 1047 },
+        ]) {
+          const context = await browser.newContext({ viewport });
+          const page = await context.newPage();
+          try {
+            await installDesktopFake(page, renderer.origin, { locale, theme });
+            await page.goto(
+              `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
+            );
+            const canvas = page.locator(".product-screen-root");
+            await expect(canvas).toBeVisible();
+            const cards = canvas.locator(".catalog-packaging-card");
+            await expect(cards).toHaveCount(2);
+            const surfaces = await canvas.evaluate((element) => {
+              const view = element.ownerDocument.defaultView!;
+              const background = (
+                node: Parameters<typeof view.getComputedStyle>[0],
+              ): string => view.getComputedStyle(node).backgroundColor;
+              return {
+                canvas: background(element),
+                cards: Array.from(
+                  element.querySelectorAll(".catalog-packaging-card"),
+                  background,
+                ),
+                headers: Array.from(
+                  element.querySelectorAll(".catalog-packaging-header"),
+                  background,
+                ),
+                whitePanels: Array.from(
+                  element.querySelectorAll("div, section, details, header"),
+                ).filter(
+                  (node) =>
+                    view.getComputedStyle(node).display !== "none" &&
+                    background(node) === "rgb(255, 255, 255)",
+                ).length,
+              };
+            });
+            expect(surfaces.canvas).toBe(
+              theme === "dark" ? "rgb(22, 33, 42)" : "rgb(255, 255, 255)",
+            );
+            expect(surfaces.cards).toEqual(Array(2).fill(surfaces.canvas));
+            expect(surfaces.headers).toEqual(
+              Array(2).fill(
+                theme === "dark" ? "rgb(28, 41, 51)" : "rgb(246, 247, 249)",
+              ),
+            );
+            if (theme === "dark") expect(surfaces.whitePanels).toBe(0);
+            const axes = await new AxeBuilder({ page }).analyze();
+            expect(axes.violations).toEqual([]);
+            await expect(
+              canvas.locator(".catalog-product-form-actions"),
+            ).toBeInViewport({ ratio: 1 });
+            expect(
+              await page.locator("html").evaluate((element) => ({
+                client: element.clientWidth,
+                scroll: element.scrollWidth,
+              })),
+            ).toEqual({ client: viewport.width, scroll: viewport.width });
+            await page.screenshot({
+              animations: "disabled",
+              path: test
+                .info()
+                .outputPath(
+                  `catalog-edit-${locale}-${theme}-${viewport.width}.png`,
+                ),
+              fullPage: true,
+            });
+          } finally {
+            await context.close();
+          }
+        }
+      }
+    }
+  });
+
   test("Catalog text controls keep themed surfaces and visible boundaries", async ({
     browser,
   }) => {

@@ -1578,7 +1578,7 @@ export function ProductForm({
 
   return (
     <div
-      className="product-screen-root flex flex-col h-full bg-white select-none overflow-hidden"
+      className="product-screen-root flex flex-col h-full bg-[var(--product-form-surface)] select-none overflow-hidden"
       dir={locale === "ar" ? "rtl" : "ltr"}
     >
       {/* Dialogs */}
@@ -1771,12 +1771,12 @@ export function ProductForm({
             className="identity-card step-up-dialog max-w-md w-full p-4"
             role="dialog"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-[#D7DEE4]">
-              <h3 className="font-bold text-sm text-[#1E2A33]">
+            <div className="flex items-center justify-between pb-2 border-b border-[color:var(--product-form-border)]">
+              <h3 className="font-bold text-sm text-[color:var(--product-form-text)]">
                 {locale === "ar" ? "إدارة أرقام الباركود" : copy.barcodes.label}
               </h3>
               <button
-                className="text-[#5C7385] hover:text-[#1E2A33]"
+                className="text-[color:var(--product-form-muted)] hover:text-[color:var(--product-form-text)]"
                 type="button"
                 onClick={() => setShowBarcodeDialog(false)}
               >
@@ -1786,7 +1786,7 @@ export function ProductForm({
 
             <div className="my-3 space-y-2">
               {barcodes.length === 0 ? (
-                <p className="text-xs text-[#5C7385]">
+                <p className="text-xs text-[color:var(--product-form-muted)]">
                   {locale === "ar"
                     ? "لا توجد باركودات مسجلة"
                     : "No barcodes registered"}
@@ -1796,13 +1796,13 @@ export function ProductForm({
                   {barcodes.map((b, idx) => (
                     <li
                       key={`${b.kind}:${b.value}`}
-                      className="flex items-center justify-between p-2 rounded-[6px] bg-[#F6F7F9] border border-[#D7DEE4] text-xs font-mono"
+                      className="flex items-center justify-between p-2 rounded-[6px] bg-[var(--product-form-band)] border border-[color:var(--product-form-border)] text-xs font-mono"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-[#1E2A33]">
+                        <span className="font-bold text-[color:var(--product-form-text)]">
                           {b.value}
                         </span>
-                        <span className="text-[10px] text-[#5C7385] px-1.5 py-0.5 rounded bg-white border border-[#D7DEE4]">
+                        <span className="text-[10px] text-[color:var(--product-form-muted)] px-1.5 py-0.5 rounded bg-[var(--product-form-surface)] border border-[color:var(--product-form-border)]">
                           {b.kind === "product"
                             ? locale === "ar"
                               ? "منتج"
@@ -1815,7 +1815,7 @@ export function ProductForm({
                       <div className="flex items-center gap-1.5">
                         {canPrintBarcode && (
                           <button
-                            className="px-2 py-0.5 text-[11px] rounded border border-[#D7DEE4] bg-white hover:bg-[#EDF0F2]"
+                            className="px-2 py-0.5 text-[11px] rounded border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] hover:bg-[var(--product-form-hover)]"
                             type="button"
                             onClick={() => void handlePrintBarcode(b.value)}
                           >
@@ -1823,7 +1823,7 @@ export function ProductForm({
                           </button>
                         )}
                         <button
-                          className="text-[#DF202E] font-bold px-1 hover:bg-[#FCE8EA] rounded"
+                          className="text-[color:var(--product-form-danger)] font-bold px-1 hover:bg-[var(--product-form-danger-soft)] rounded"
                           type="button"
                           onClick={() => handleRemoveBarcode(idx)}
                         >
@@ -1836,7 +1836,7 @@ export function ProductForm({
               )}
             </div>
 
-            <div className="pt-2 border-t border-[#D7DEE4] flex justify-end">
+            <div className="pt-2 border-t border-[color:var(--product-form-border)] flex justify-end">
               <button
                 className="h-8 px-4 rounded-[6px] bg-[#4A6B82] text-white text-xs font-medium"
                 type="button"
@@ -1914,7 +1914,7 @@ export function ProductForm({
         {generalError ? (
           <div
             ref={errorSummaryRef}
-            className="p-2.5 rounded-[6px] bg-[#FCE8EA] border border-[#DF202E] text-xs text-[#BE1825] font-medium flex items-center justify-between"
+            className="p-2.5 rounded-[6px] bg-[var(--product-form-danger-soft)] border border-[color:var(--product-form-danger)] text-xs text-[color:var(--product-form-danger-text)] font-medium flex items-center justify-between"
             role="alert"
             tabIndex={-1}
           >
@@ -1930,7 +1930,7 @@ export function ProductForm({
             </div>
             {versionConflict && onReload ? (
               <button
-                className="px-2 py-1 rounded border border-[#DF202E] bg-white text-[#DF202E] hover:bg-[#fad3d6]"
+                className="px-2 py-1 rounded border border-[color:var(--product-form-danger)] bg-[var(--product-form-surface)] text-[color:var(--product-form-danger)] hover:bg-[var(--product-form-danger-hover)]"
                 type="button"
                 onClick={() => void handleReload()}
               >
@@ -1955,7 +1955,7 @@ export function ProductForm({
                         ? "\u0645\u0633\u062d \u0627\u0644\u0628\u0627\u0631\u0643\u0648\u062f"
                         : "Scan barcode"
                     }
-                    className="size-[34px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:border-[#4A6B82] hover:text-[#4A6B82] transition-colors"
+                    className="size-[34px] flex items-center justify-center rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[color:var(--product-form-muted)] hover:border-[color:var(--product-form-accent)] hover:text-[color:var(--product-form-accent)] transition-colors"
                     title={locale === "ar" ? "مسح باركود" : "Scan barcode"}
                     type="button"
                     onClick={() => barcodeInputRef.current?.focus()}
@@ -1968,7 +1968,7 @@ export function ProductForm({
                         ? "\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0628\u0627\u0631\u0643\u0648\u062f\u0627\u062a"
                         : "Manage barcodes"
                     }
-                    className="size-[34px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:border-[#4A6B82] hover:text-[#4A6B82] transition-colors"
+                    className="size-[34px] flex items-center justify-center rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[color:var(--product-form-muted)] hover:border-[color:var(--product-form-accent)] hover:text-[color:var(--product-form-accent)] transition-colors"
                     title={
                       locale === "ar" ? "إدارة الباركودات" : "Manage barcodes"
                     }
@@ -1983,7 +1983,7 @@ export function ProductForm({
                         ? "\u0637\u0628\u0627\u0639\u0629 \u0628\u0627\u0631\u0643\u0648\u062f"
                         : "Print barcode"
                     }
-                    className="size-[34px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:border-[#4A6B82] hover:text-[#4A6B82] transition-colors disabled:opacity-40"
+                    className="size-[34px] flex items-center justify-center rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[color:var(--product-form-muted)] hover:border-[color:var(--product-form-accent)] hover:text-[color:var(--product-form-accent)] transition-colors disabled:opacity-40"
                     disabled={!isEditing || barcodes.length === 0}
                     title={locale === "ar" ? "طباعة باركود" : "Print barcode"}
                     type="button"
@@ -2000,7 +2000,7 @@ export function ProductForm({
                         ? "\u0627\u0642\u062a\u0631\u0627\u062d \u0628\u0627\u0631\u0643\u0648\u062f \u062f\u0627\u062e\u0644\u064a"
                         : "Suggest barcode"
                     }
-                    className="size-[34px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:border-[#4A6B82] hover:text-[#4A6B82] transition-colors disabled:opacity-40"
+                    className="size-[34px] flex items-center justify-center rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[color:var(--product-form-muted)] hover:border-[color:var(--product-form-accent)] hover:text-[color:var(--product-form-accent)] transition-colors disabled:opacity-40"
                     disabled={!canSuggestBarcode || busy || hasUnsavedChanges}
                     title={
                       locale === "ar"
@@ -2018,7 +2018,7 @@ export function ProductForm({
                 <div className="w-[220px]">
                   <div className="flex items-center justify-between mb-1">
                     <label
-                      className="text-[11px] font-medium text-[#5C7385]"
+                      className="text-[11px] font-medium text-[color:var(--product-form-muted)]"
                       htmlFor={`${formId}-new-barcode`}
                     >
                       {locale === "ar"
@@ -2029,7 +2029,7 @@ export function ProductForm({
                       aria-label={
                         locale === "ar" ? "نوع الباركود" : "Barcode kind"
                       }
-                      className="text-[10px] bg-transparent border-none text-[#5C7385] cursor-pointer outline-none"
+                      className="text-[10px] bg-transparent border-none text-[color:var(--product-form-muted)] cursor-pointer outline-none"
                       value={newBarcodeKind}
                       onChange={(e) => {
                         markDraftDirty();
@@ -2048,7 +2048,7 @@ export function ProductForm({
                     id={`${formId}-new-barcode`}
                     ref={barcodeInputRef}
                     aria-label={copy.barcodes.label}
-                    className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right font-mono outline-none focus:border-[#4A6B82] transition-colors"
+                    className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right font-mono outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                     placeholder={copy.barcodes.placeholder}
                     type="text"
                     value={newBarcode}
@@ -2068,11 +2068,11 @@ export function ProductForm({
                       {barcodes.map((b, idx) => (
                         <span
                           key={`${b.kind}:${b.value}`}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-[#F6F7F9] border border-[#D7DEE4] text-[10px] font-mono text-[#1E2A33]"
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-[var(--product-form-band)] border border-[color:var(--product-form-border)] text-[10px] font-mono text-[color:var(--product-form-text)]"
                         >
                           <span>{b.value}</span>
                           <button
-                            className="text-[#DF202E] hover:font-bold"
+                            className="text-[color:var(--product-form-danger)] hover:font-bold"
                             type="button"
                             onClick={() => handleRemoveBarcode(idx)}
                           >
@@ -2087,16 +2087,18 @@ export function ProductForm({
                 {/* Scientific Name */}
                 <div className="flex-1">
                   <label
-                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                     htmlFor={`${formId}-scientificName`}
                   >
                     {copy.fields.scientificName}{" "}
-                    <span className="text-[#DF202E]">*</span>
+                    <span className="text-[color:var(--product-form-danger)]">
+                      *
+                    </span>
                   </label>
                   <input
                     id={`${formId}-scientificName`}
                     aria-label={copy.fields.scientificName}
-                    className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                    className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                     name="scientificName"
                     type="text"
                     value={scientificName}
@@ -2110,13 +2112,15 @@ export function ProductForm({
                 {/* Trade Name */}
                 <div className="flex-1">
                   <label
-                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                     htmlFor={`${formId}-tradeName`}
                   >
                     {mode === "medication"
                       ? copy.definition.medication.tradeName
                       : copy.definition.generalItem.company}{" "}
-                    <span className="text-[#DF202E]">*</span>
+                    <span className="text-[color:var(--product-form-danger)]">
+                      *
+                    </span>
                   </label>
                   {mode === "medication" ? (
                     <input
@@ -2129,7 +2133,7 @@ export function ProductForm({
                       }
                       aria-label={copy.definition.medication.tradeName}
                       aria-required="true"
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       name="tradeName"
                       type="text"
                       value={medicationFields.tradeName}
@@ -2152,7 +2156,7 @@ export function ProductForm({
                       }
                       aria-label={copy.definition.generalItem.company}
                       aria-required="true"
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       name="company"
                       type="text"
                       value={generalItemFields.company}
@@ -2181,7 +2185,7 @@ export function ProductForm({
                 {/* Far Left: Compound Highlight Color Control */}
                 <div className="flex flex-col gap-1">
                   <label
-                    className="text-[11px] font-medium text-[#5C7385] text-right"
+                    className="text-[11px] font-medium text-[color:var(--product-form-muted)] text-right"
                     htmlFor={`${formId}-manualColor`}
                   >
                     {copy.stateColours.manualColor}
@@ -2189,7 +2193,7 @@ export function ProductForm({
                   <div className="relative flex items-center gap-1">
                     <button
                       aria-label={copy.stateColours.clearColor}
-                      className="h-[34px] w-[28px] flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] hover:text-[#DF202E] hover:bg-[#FCE8EA] transition-colors"
+                      className="h-[34px] w-[28px] flex items-center justify-center rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[color:var(--product-form-muted)] hover:text-[color:var(--product-form-danger)] hover:bg-[var(--product-form-danger-soft)] transition-colors"
                       title={copy.stateColours.clearColor}
                       type="button"
                       onClick={() => {
@@ -2200,7 +2204,7 @@ export function ProductForm({
                       <X className="size-3.5" />
                     </button>
                     <input
-                      className="h-[34px] w-[48px] cursor-pointer rounded-[6px] border border-[#D7DEE4] bg-white p-1 outline-none transition-colors focus-visible:border-[#4A6B82] focus-visible:ring-2 focus-visible:ring-[#4A6B82]"
+                      className="h-[34px] w-[48px] cursor-pointer rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] p-1 outline-none transition-colors focus-visible:border-[color:var(--product-form-accent)] focus-visible:ring-2 focus-visible:ring-[#4A6B82]"
                       id={`${formId}-manualColor`}
                       type="color"
                       value={stateColours.manual || "#ffffff"}
@@ -2220,7 +2224,7 @@ export function ProductForm({
                 {/* Arabic Search Name */}
                 <div className="flex-1">
                   <label
-                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                     htmlFor={`${formId}-arabicSearchName`}
                   >
                     {copy.fields.arabicSearchName}
@@ -2228,7 +2232,7 @@ export function ProductForm({
                   <input
                     id={`${formId}-arabicSearchName`}
                     aria-label={copy.fields.arabicSearchName}
-                    className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                    className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                     dir="rtl"
                     name="arabicSearchName"
                     type="text"
@@ -2243,7 +2247,7 @@ export function ProductForm({
                 {/* Category */}
                 <div className="w-[172px] shrink-0">
                   <label
-                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                     htmlFor={`${formId}-category`}
                   >
                     {copy.fields.category}
@@ -2255,7 +2259,7 @@ export function ProductForm({
                       aria-autocomplete="list"
                       aria-controls={categoryListId}
                       aria-label={copy.fields.category}
-                      className="h-[34px] min-w-0 flex-1 px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] min-w-0 flex-1 px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       list={categoryListId}
                       maxLength={96}
                       name="category"
@@ -2269,7 +2273,7 @@ export function ProductForm({
                     />
                     <button
                       aria-label={copy.fields.addCategory}
-                      className="size-[34px] shrink-0 flex items-center justify-center rounded-[6px] border border-[#D7DEE4] bg-white text-[#5C7385] transition-colors hover:border-[#4A6B82] hover:bg-[#F6F7F9] hover:text-[#4A6B82] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6B82] disabled:cursor-not-allowed disabled:opacity-45"
+                      className="size-[34px] shrink-0 flex items-center justify-center rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[color:var(--product-form-muted)] transition-colors hover:border-[color:var(--product-form-accent)] hover:bg-[var(--product-form-band)] hover:text-[color:var(--product-form-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6B82] disabled:cursor-not-allowed disabled:opacity-45"
                       disabled={!canAddCategory}
                       title={copy.fields.addCategory}
                       type="button"
@@ -2304,7 +2308,7 @@ export function ProductForm({
                 {/* Manufacturer / Sub-brand */}
                 <div className="w-[150px]">
                   <label
-                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                     htmlFor={`${formId}-manufacturer`}
                   >
                     {mode === "medication"
@@ -2315,7 +2319,7 @@ export function ProductForm({
                     <input
                       id={`${formId}-manufacturer`}
                       aria-label={copy.definition.medication.manufacturer}
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       name="manufacturer"
                       type="text"
                       value={medicationFields.manufacturer}
@@ -2331,7 +2335,7 @@ export function ProductForm({
                     <input
                       id={`${formId}-subBrand`}
                       aria-label={copy.definition.generalItem.subBrand}
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       name="subBrand"
                       type="text"
                       value={generalItemFields.subBrand}
@@ -2349,7 +2353,7 @@ export function ProductForm({
                 {/* Dosage Form / Type */}
                 <div className="w-[140px]">
                   <label
-                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                     htmlFor={`${formId}-dosageForm`}
                   >
                     {mode === "medication"
@@ -2360,7 +2364,7 @@ export function ProductForm({
                     <input
                       id={`${formId}-dosageForm`}
                       aria-label={copy.definition.medication.dosageForm}
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       name="dosageForm"
                       type="text"
                       value={medicationFields.dosageForm}
@@ -2376,7 +2380,7 @@ export function ProductForm({
                     <input
                       id={`${formId}-typeOfUse`}
                       aria-label={copy.definition.generalItem.typeOfUse}
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       name="typeOfUse"
                       type="text"
                       value={generalItemFields.typeOfUse}
@@ -2395,7 +2399,7 @@ export function ProductForm({
                   <>
                     <div className="w-[140px]">
                       <label
-                        className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                        className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                         htmlFor={`${formId}-property`}
                       >
                         {copy.definition.generalItem.property}
@@ -2403,7 +2407,7 @@ export function ProductForm({
                       <input
                         id={`${formId}-property`}
                         aria-label={copy.definition.generalItem.property}
-                        className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                        className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                         name="property"
                         type="text"
                         value={generalItemFields.property}
@@ -2418,7 +2422,7 @@ export function ProductForm({
                     </div>
                     <div className="w-[140px]">
                       <label
-                        className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                        className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                         htmlFor={`${formId}-targetAudience`}
                       >
                         {copy.definition.generalItem.targetAudience}
@@ -2426,7 +2430,7 @@ export function ProductForm({
                       <input
                         id={`${formId}-targetAudience`}
                         aria-label={copy.definition.generalItem.targetAudience}
-                        className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                        className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                         name="targetAudience"
                         type="text"
                         value={generalItemFields.targetAudience}
@@ -2445,7 +2449,7 @@ export function ProductForm({
                 {/* Strength / Size */}
                 <div className="w-[100px]">
                   <label
-                    className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                    className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                     htmlFor={`${formId}-strength`}
                   >
                     {mode === "medication"
@@ -2456,7 +2460,7 @@ export function ProductForm({
                     <input
                       id={`${formId}-strength`}
                       aria-label={copy.definition.medication.strength}
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       name="strength"
                       type="text"
                       value={medicationFields.strength}
@@ -2472,7 +2476,7 @@ export function ProductForm({
                     <input
                       id={`${formId}-size`}
                       aria-label={copy.definition.generalItem.size}
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82] transition-colors"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)] transition-colors"
                       name="size"
                       type="text"
                       value={generalItemFields.size}
@@ -2494,9 +2498,9 @@ export function ProductForm({
               {/* ======================================================== */}
               {/* ROW 3: Unit 1 — "الوحدة الأساسية (الصغرى)"              */}
               {/* ======================================================== */}
-              <div className="border border-[#D7DEE4] rounded-[6px] bg-white overflow-hidden">
+              <div className="catalog-packaging-card border border-[color:var(--product-form-border)] rounded-[6px] bg-[var(--product-form-surface)] overflow-hidden">
                 {/* Header Bar */}
-                <div className="h-[34px] px-3 bg-[#F6F7F9] border-b border-[#D7DEE4] flex items-center justify-between">
+                <div className="catalog-packaging-header h-[34px] px-3 bg-[var(--product-form-band)] border-b border-[color:var(--product-form-border)] flex items-center justify-between">
                   {/* Left side in RTL: Packaging toggle + Pricing method pill */}
                   <div className="flex items-center gap-3">
                     {/* Packaging Toggle */}
@@ -2523,7 +2527,7 @@ export function ProductForm({
                       </button>
                       <span
                         id={`${formId}-packaging-toggle-label`}
-                        className="text-[12px] text-[#5C7385]"
+                        className="text-[12px] text-[color:var(--product-form-muted)]"
                       >
                         {locale === "ar" ? "تفعيل التعبئة" : "Enable packaging"}
                       </span>
@@ -2531,13 +2535,13 @@ export function ProductForm({
 
                     {/* Sell Method Segmented Pill */}
                     <div className="flex items-center gap-1.5">
-                      <div className="inline-flex items-center rounded-full border border-[#D7DEE4] p-0.5 bg-white">
+                      <div className="inline-flex items-center rounded-full border border-[color:var(--product-form-border)] p-0.5 bg-[var(--product-form-surface)]">
                         <button
                           aria-pressed={pricingMethod === "by-price"}
                           className={`px-2.5 py-0.5 text-[11px] font-medium rounded-full transition-colors ${
                             pricingMethod === "by-price"
                               ? "bg-[#4A6B82] text-white"
-                              : "bg-transparent text-[#1E2A33]"
+                              : "bg-transparent text-[color:var(--product-form-text)]"
                           }`}
                           type="button"
                           onClick={() => {
@@ -2552,7 +2556,7 @@ export function ProductForm({
                           className={`px-2.5 py-0.5 text-[11px] font-medium rounded-full transition-colors ${
                             pricingMethod === "by-percentage"
                               ? "bg-[#4A6B82] text-white"
-                              : "bg-transparent text-[#1E2A33]"
+                              : "bg-transparent text-[color:var(--product-form-text)]"
                           }`}
                           type="button"
                           onClick={() => {
@@ -2563,14 +2567,14 @@ export function ProductForm({
                           {locale === "ar" ? "وفق نسبة %" : "By %"}
                         </button>
                       </div>
-                      <span className="text-[12px] text-[#5C7385]">
+                      <span className="text-[12px] text-[color:var(--product-form-muted)]">
                         {locale === "ar" ? "طريقة البيع" : "Sell method"}
                       </span>
                     </div>
                   </div>
 
                   {/* Right side in RTL: Title */}
-                  <span className="text-[13px] font-semibold text-[#1E2A33]">
+                  <span className="text-[13px] font-semibold text-[color:var(--product-form-text)]">
                     {locale === "ar"
                       ? "الوحدة الأساسية (الصغرى)"
                       : "Base Unit (Smallest)"}
@@ -2582,7 +2586,7 @@ export function ProductForm({
                   {/* Col 1: Special Price */}
                   <div>
                     <label
-                      className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                      className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                       htmlFor={`${formId}-pricing.wholesalePriceFils`}
                     >
                       {locale === "ar"
@@ -2605,11 +2609,13 @@ export function ProductForm({
                   {pricingMethod === "by-price" ? (
                     <div>
                       <label
-                        className="block text-[11px] font-bold text-[#1E2A33] mb-1 text-right"
+                        className="block text-[11px] font-bold text-[color:var(--product-form-text)] mb-1 text-right"
                         htmlFor={`${formId}-pricing.retailPriceFils`}
                       >
                         {copy.pricing.retailPriceFils}{" "}
-                        <span className="text-[#DF202E]">*</span>
+                        <span className="text-[color:var(--product-form-danger)]">
+                          *
+                        </span>
                       </label>
                       <StepperInput
                         id={`${formId}-pricing.retailPriceFils`}
@@ -2629,24 +2635,26 @@ export function ProductForm({
                   ) : (
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-[#5C7385]">
+                        <span className="text-[10px] text-[color:var(--product-form-muted)]">
                           {locale === "ar" ? "معاينة السعر:" : "Preview:"}{" "}
                           <output
                             aria-label={
                               copy.pricing.retailPriceCalculatedPreview
                             }
                           >
-                            <strong className="text-[#1E2A33] font-bold">
+                            <strong className="text-[color:var(--product-form-text)] font-bold">
                               {displayRetailPreview}
                             </strong>
                           </output>
                         </span>
                         <label
-                          className="block text-[11px] font-bold text-[#1E2A33] text-right"
+                          className="block text-[11px] font-bold text-[color:var(--product-form-text)] text-right"
                           htmlFor={`${formId}-pricing.marginPercentage`}
                         >
                           {copy.pricing.marginPercentage}{" "}
-                          <span className="text-[#DF202E]">*</span>
+                          <span className="text-[color:var(--product-form-danger)]">
+                            *
+                          </span>
                         </label>
                       </div>
                       <StepperInput
@@ -2664,7 +2672,7 @@ export function ProductForm({
                       />
                       <div className="flex items-center gap-1.5 pt-0.5">
                         <label
-                          className="text-[10px] text-[#5C7385] shrink-0"
+                          className="text-[10px] text-[color:var(--product-form-muted)] shrink-0"
                           htmlFor={`${formId}-pricing.rounding`}
                         >
                           {copy.pricing.rounding}:
@@ -2672,7 +2680,7 @@ export function ProductForm({
                         <select
                           id={`${formId}-pricing.rounding`}
                           aria-label={copy.pricing.rounding}
-                          className="h-[24px] flex-1 px-1.5 rounded-[4px] border border-[#D7DEE4] bg-white text-[11px] text-[#1E2A33] text-right outline-none"
+                          className="h-[24px] flex-1 px-1.5 rounded-[4px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[11px] text-[color:var(--product-form-text)] text-right outline-none"
                           value={rounding}
                           onChange={(e) => {
                             markDraftDirty();
@@ -2692,12 +2700,14 @@ export function ProductForm({
                   {/* Col 3: Cost */}
                   <div>
                     <label
-                      className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                      className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                       htmlFor={`${formId}-pricing.costFils`}
                     >
                       {copy.pricing.costFils}{" "}
                       {pricingMethod === "by-percentage" && (
-                        <span className="text-[#DF202E]">*</span>
+                        <span className="text-[color:var(--product-form-danger)]">
+                          *
+                        </span>
                       )}
                     </label>
                     <StepperInput
@@ -2717,17 +2727,19 @@ export function ProductForm({
                   {/* Col 4: Base Unit Name */}
                   <div>
                     <label
-                      className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                      className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                       htmlFor={`${formId}-packaging.inventoryUnitName`}
                     >
                       {copy.packaging.inventoryUnitName}{" "}
-                      <span className="text-[#DF202E]">*</span>
+                      <span className="text-[color:var(--product-form-danger)]">
+                        *
+                      </span>
                     </label>
                     <input
                       id={`${formId}-packaging.inventoryUnitName`}
                       aria-label={copy.packaging.inventoryUnitName}
                       aria-required="true"
-                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82]"
+                      className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)]"
                       data-field-key="packaging.inventoryUnitName"
                       name="packaging.inventoryUnitName"
                       placeholder={copy.packaging.inventoryUnitNamePlaceholder}
@@ -2746,11 +2758,11 @@ export function ProductForm({
               {/* ROW 4: Unit 2 — "الوحدة الثانوية (الكبرى)" (Conditional) */}
               {/* ======================================================== */}
               {packagingEnabled && (
-                <div className="border border-[#D7DEE4] rounded-[6px] bg-white overflow-hidden">
+                <div className="catalog-packaging-card border border-[color:var(--product-form-border)] rounded-[6px] bg-[var(--product-form-surface)] overflow-hidden">
                   {/* Header Bar */}
-                  <div className="h-[34px] px-3 bg-[#F6F7F9] border-b border-[#D7DEE4] flex items-center justify-between">
+                  <div className="catalog-packaging-header h-[34px] px-3 bg-[var(--product-form-band)] border-b border-[color:var(--product-form-border)] flex items-center justify-between">
                     <div />
-                    <span className="text-[13px] font-semibold text-[#1E2A33]">
+                    <span className="text-[13px] font-semibold text-[color:var(--product-form-text)]">
                       {locale === "ar"
                         ? "الوحدة الثانوية (الكبرى)"
                         : "Secondary Unit (Package)"}
@@ -2762,7 +2774,7 @@ export function ProductForm({
                     {/* Package size and conversion */}
                     <div>
                       <label
-                        className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                        className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                         htmlFor={`${formId}-packaging.packageUnits.0.baseUnitsPerPackage`}
                       >
                         {copy.packaging.baseUnitsPerPackage}
@@ -2798,7 +2810,7 @@ export function ProductForm({
                     {/* Col 5: Secondary Unit Name */}
                     <div>
                       <label
-                        className="block text-[11px] font-medium text-[#5C7385] mb-1 text-right"
+                        className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1 text-right"
                         htmlFor={`${formId}-packaging.packageUnits.0.name`}
                       >
                         {copy.packaging.packageUnitName}
@@ -2806,7 +2818,7 @@ export function ProductForm({
                       <input
                         id={`${formId}-packaging.packageUnits.0.name`}
                         aria-label={copy.packaging.packageUnitName}
-                        className="h-[34px] w-full px-2.5 rounded-[6px] border border-[#D7DEE4] bg-white text-[13px] text-[#1E2A33] text-right outline-none focus:border-[#4A6B82]"
+                        className="h-[34px] w-full px-2.5 rounded-[6px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-[13px] text-[color:var(--product-form-text)] text-right outline-none focus:border-[color:var(--product-form-accent)]"
                         data-field-key="packaging.packageUnits.0.name"
                         name="packaging.packageUnits.0.name"
                         placeholder={copy.packaging.packageUnitNamePlaceholder}
@@ -2825,17 +2837,17 @@ export function ProductForm({
 
                   {/* Repeatable package units drawer for Unit 3+ and browser test compliance */}
                   {isEditing && (
-                    <details className="catalog-secondary-panel border-t border-[#EDF0F2] bg-[#FDFDFE] text-xs">
-                      <summary className="px-3 py-1.5 font-medium text-[#5C7385] cursor-pointer">
+                    <details className="catalog-secondary-panel border-t border-[color:var(--product-form-divider)] bg-[var(--product-form-subtle)] text-xs">
+                      <summary className="px-3 py-1.5 font-medium text-[color:var(--product-form-muted)] cursor-pointer">
                         {copy.flow.optionalUnitSettings}
                       </summary>
                       <div className="p-3 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-[#1E2A33]">
+                          <span className="font-semibold text-[color:var(--product-form-text)]">
                             {copy.packaging.packageUnitsTitle}
                           </span>
                           <button
-                            className="h-7 px-2.5 rounded-[4px] border border-[#D7DEE4] bg-white text-xs text-[#4A6B82] hover:bg-[#F6F7F9]"
+                            className="h-7 px-2.5 rounded-[4px] border border-[color:var(--product-form-border)] bg-[var(--product-form-surface)] text-xs text-[color:var(--product-form-accent)] hover:bg-[var(--product-form-band)]"
                             type="button"
                             onClick={handleAddPackageUnit}
                           >
@@ -2845,11 +2857,11 @@ export function ProductForm({
                         {packageUnits.slice(1).map((pkg, idx) => (
                           <div
                             key={pkg.id}
-                            className="p-2 border border-[#D7DEE4] rounded-[6px] flex items-center gap-3 bg-white"
+                            className="p-2 border border-[color:var(--product-form-border)] rounded-[6px] flex items-center gap-3 bg-[var(--product-form-surface)]"
                           >
                             <input
                               aria-label={copy.packaging.packageUnitName}
-                              className="h-8 px-2 text-xs border border-[#D7DEE4] rounded-[4px] flex-1 text-right"
+                              className="h-8 px-2 text-xs border border-[color:var(--product-form-border)] rounded-[4px] flex-1 text-right"
                               placeholder={
                                 copy.packaging.packageUnitNamePlaceholder
                               }
@@ -2864,7 +2876,7 @@ export function ProductForm({
                             />
                             <input
                               aria-label={copy.packaging.baseUnitsPerPackage}
-                              className="h-8 px-2 text-xs border border-[#D7DEE4] rounded-[4px] w-24 text-center font-mono"
+                              className="h-8 px-2 text-xs border border-[color:var(--product-form-border)] rounded-[4px] w-24 text-center font-mono"
                               value={pkg.baseUnitsPerPackage}
                               onChange={(e) =>
                                 handleUpdatePackageUnit(
@@ -2875,7 +2887,7 @@ export function ProductForm({
                               }
                             />
                             <button
-                              className="text-xs text-[#DF202E] px-2 hover:font-bold"
+                              className="text-xs text-[color:var(--product-form-danger)] px-2 hover:font-bold"
                               type="button"
                               onClick={() => handleRemovePackageUnit(idx + 1)}
                             >
@@ -2884,9 +2896,9 @@ export function ProductForm({
                           </div>
                         ))}
                         {hasThirdUnit ? (
-                          <div className="pt-2 border-t border-[#EDF0F2]">
+                          <div className="pt-2 border-t border-[color:var(--product-form-divider)]">
                             <label
-                              className="block text-[11px] font-medium text-[#5C7385] mb-1"
+                              className="block text-[11px] font-medium text-[color:var(--product-form-muted)] mb-1"
                               htmlFor={`${formId}-packaging.thirdUnit.name`}
                             >
                               {copy.packaging.thirdUnitName}
@@ -2894,7 +2906,7 @@ export function ProductForm({
                             <input
                               id={`${formId}-packaging.thirdUnit.name`}
                               aria-label={copy.packaging.thirdUnitName}
-                              className="h-8 px-2 text-xs border border-[#D7DEE4] rounded-[4px] w-full text-right"
+                              className="h-8 px-2 text-xs border border-[color:var(--product-form-border)] rounded-[4px] w-full text-right"
                               data-field-key="packaging.thirdUnit.name"
                               name="packaging.thirdUnit.name"
                               placeholder={
@@ -2909,7 +2921,7 @@ export function ProductForm({
                           </div>
                         ) : (
                           <button
-                            className="quiet-button text-xs text-[#4A6B82]"
+                            className="quiet-button text-xs text-[color:var(--product-form-accent)]"
                             type="button"
                             onClick={() => {
                               markDraftDirty();
