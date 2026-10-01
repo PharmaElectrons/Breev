@@ -30,7 +30,7 @@ import {
   type PurchaseReturnSummary,
   type Supplier,
 } from "@breev/contracts/local-rest";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -744,41 +744,104 @@ test.describe.serial("read-only inventory review", () => {
     );
   });
 
-  test("keeps the English Reports label fully visible at 1280×800 in both themes", async ({
+  test("keeps the Reports label fully visible on direct entry at 1280×800 in both languages and themes", async ({
     browser,
   }) => {
     await login(OWNER_USERNAME, OWNER_PASSWORD);
-    for (const theme of ["light", "dark"] as const) {
-      const context = await browser.newContext({
-        viewport: { width: 1280, height: 800 },
-      });
-      const page = await context.newPage();
-      await installDesktopFake(page, renderer.origin, "en", theme);
-      await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
-      await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
-      const link = page.locator(".module-tab[data-module='reports']");
-      await expect(link).toBeInViewport({ ratio: 1 });
-      await expect
-        .poll(() =>
-          link.evaluate((element) => {
-            const label = element
-              .querySelector(".module-tab-label")!
-              .getBoundingClientRect();
-            const list = element.closest("ul")!.getBoundingClientRect();
-            return label.left >= list.left && label.right <= list.right;
-          }),
-        )
-        .toBe(true);
-      await page.screenshot({
-        path: evidencePath(
-          "issue-64",
-          "remediation",
-          `reports-navigation-en-${theme}.png`,
-        ),
-      });
-      await context.close();
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = await browser.newContext({
+          viewport: { width: 1280, height: 800 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+        await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+        const link = page.locator(".module-tab[data-module='reports']");
+        await expectNavigationLabelVisible(link);
+        await page.screenshot({
+          path: evidencePath(
+            "issue-64",
+            "remediation",
+            `reports-navigation-${locale}-${theme}.png`,
+          ),
+        });
+        await context.close();
+      }
     }
   });
+
+  for (const theme of ["light", "dark"] as const) {
+    for (const locale of ["ar", "en"] as const) {
+      test(`keeps active Reports navigation visible after ${locale === "ar" ? "Arabic -> English" : "English -> Arabic"} at 1280×800 (${theme})`, async ({
+        browser,
+      }) => {
+        await login(OWNER_USERNAME, OWNER_PASSWORD);
+        const context = await browser.newContext({
+          viewport: { width: 1280, height: 800 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+        await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+        const link = page.locator(".module-tab[data-module='reports']");
+        await expectNavigationLabelVisible(link);
+        const menu = page.getByTestId("collapse-menu-trigger");
+        await menu.click();
+        const language = page.getByRole("button", {
+          name: locale === "ar" ? "التبديل إلى الإنجليزية" : "Switch to Arabic",
+          exact: true,
+        });
+        await language.focus();
+        await pressKeyOnFocused(page, language, "Enter");
+        await expect(page.locator("html")).toHaveAttribute(
+          "lang",
+          locale === "ar" ? "en" : "ar",
+        );
+        await expect(link).not.toBeFocused();
+        await expect(link).toHaveAttribute("aria-current", "page");
+        await expectNavigationLabelVisible(link);
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        await context.close();
+      });
+
+      test(`keeps active Reports navigation visible after resize 1920 -> 1280 (${locale}, ${theme})`, async ({
+        browser,
+      }) => {
+        await login(OWNER_USERNAME, OWNER_PASSWORD);
+        const context = await browser.newContext({
+          viewport: { width: 1920, height: 800 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+        await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+        const link = page.locator(".module-tab[data-module='reports']");
+        await expectNavigationLabelVisible(link);
+        const submit = page.locator(".report-controls button[type='submit']");
+        await submit.focus();
+        await expect(submit).toBeFocused();
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await expectNavigationLabelVisible(link);
+        await expect(submit).toBeFocused();
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+
+        // Keyboard focus can still reveal other tabs, and leaving Reports
+        // removes its visibility subscription before the next resize.
+        const inventory = page.locator(".module-tab[data-module='inventory']");
+        await inventory.focus();
+        await expectNavigationLabelVisible(inventory);
+        await pressKeyOnFocused(page, inventory, "Enter");
+        await expect(page.locator("#inventory-title")).toBeVisible();
+        await page.setViewportSize({ width: 1920, height: 800 });
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await expectNavigationLabelVisible(inventory);
+        await expect(inventory).toBeFocused();
+        await expect(inventory).toHaveAttribute("aria-current", "page");
+        await context.close();
+      });
+    }
+  }
 
   test("traverses immutable adjustment and return sources to the permission-checked parent invoice", async ({
     page,
@@ -2079,6 +2142,24 @@ async function changeBatchStatus(
     },
   );
   expect(response.status).toBe(201);
+}
+
+async function expectNavigationLabelVisible(link: Locator): Promise<void> {
+  await expect
+    .poll(() =>
+      link.evaluate((element) => {
+        const label = element
+          .querySelector(".module-tab-label")!
+          .getBoundingClientRect();
+        const list = element.closest("ul")!;
+        const bounds = list.getBoundingClientRect();
+        const left = bounds.left + list.clientLeft;
+        const right = left + list.clientWidth;
+        return Math.max(0, left - label.left, label.right - right);
+      }),
+    )
+    .toBe(0);
+  await expect(link).toBeInViewport({ ratio: 1 });
 }
 
 async function assertReportTextResize(page: Page): Promise<void> {

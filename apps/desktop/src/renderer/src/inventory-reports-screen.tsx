@@ -108,12 +108,19 @@ export function InventoryReportsScreen({
   const sourceOpener = useRef<HTMLElement | null>(null);
   const focus = useCommittedFocus();
   useEffect(() => {
-    document
-      .querySelector<HTMLElement>(
-        ".module-tab[data-module='reports'][aria-current='page']",
-      )
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, []);
+    const revealActiveReports = () => {
+      document
+        .querySelector<HTMLElement>(
+          ".module-tab[data-module='reports'][aria-current='page']",
+        )
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    // Locale changes update both the labels and direction before this effect.
+    // Reuse the same visibility behavior on resize without moving focus.
+    revealActiveReports();
+    window.addEventListener("resize", revealActiveReports);
+    return () => window.removeEventListener("resize", revealActiveReports);
+  }, [locale]);
   const queryKey = JSON.stringify(query);
   const previousKind = useRef(kind);
   const categoryMatchesQuery = previousKind.current === kind;
