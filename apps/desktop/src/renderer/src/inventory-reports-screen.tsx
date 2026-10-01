@@ -25,7 +25,7 @@ import {
   ReportApiDenied,
   readInventoryReportActivity,
 } from "./report-api";
-import { reportMessages } from "./report-messages";
+import { reportMessages } from "../../shared/report-messages";
 import {
   pharmacyLocalDateTime,
   pharmacyLocalToInstant,
@@ -42,6 +42,7 @@ import {
 import { canonicalReportFilters, ReportFilterError } from "./report-filter";
 import { ordinaryReportExport } from "./report-export-query";
 import { ReportSourceReview } from "./report-source-review";
+import { ReportDateInput } from "./report-date-input";
 import { StepUpDialog, useStepUp, type StepUpDenial } from "./step-up";
 import { formatNumber } from "./preferences";
 import "./inventory-reports.css";
@@ -106,6 +107,13 @@ export function InventoryReportsScreen({
   const activityOpener = useRef<HTMLElement | null>(null);
   const sourceOpener = useRef<HTMLElement | null>(null);
   const focus = useCommittedFocus();
+  useEffect(() => {
+    document
+      .querySelector<HTMLElement>(
+        ".module-tab[data-module='reports'][aria-current='page']",
+      )
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, []);
   const queryKey = JSON.stringify(query);
   const previousKind = useRef(kind);
   const categoryMatchesQuery = previousKind.current === kind;
@@ -346,7 +354,7 @@ export function InventoryReportsScreen({
           <div className="report-date-toolbar">
             <label>
               {copy.from}
-              <input
+              <ReportDateInput
                 form="report-filters"
                 type="datetime-local"
                 step="0.001"
@@ -360,7 +368,7 @@ export function InventoryReportsScreen({
             </label>
             <label>
               {copy.to}
-              <input
+              <ReportDateInput
                 form="report-filters"
                 type="datetime-local"
                 step="0.001"
@@ -466,7 +474,7 @@ export function InventoryReportsScreen({
                     </label>
                     <label>
                       {copy.businessFrom}
-                      <input
+                      <ReportDateInput
                         name="businessFrom"
                         type="date"
                         defaultValue={report.query.businessFrom ?? ""}
@@ -474,7 +482,7 @@ export function InventoryReportsScreen({
                     </label>
                     <label>
                       {copy.businessTo}
-                      <input
+                      <ReportDateInput
                         name="businessTo"
                         type="date"
                         defaultValue={report.query.businessTo ?? ""}

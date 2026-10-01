@@ -5,7 +5,7 @@ import type {
   InventoryReportRow,
   InventoryReportSource,
 } from "@breev/contracts/local-rest";
-import { reportMessages } from "./report-messages";
+import { reportMessages } from "../../shared/report-messages";
 import { formatCurrencyFromFils, formatNumber } from "./preferences";
 import { reportTimestamp } from "./report-time";
 import { formatReportAverageCost } from "./report-filter";

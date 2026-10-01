@@ -50,7 +50,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -67,6 +67,7 @@ import {
 import { divideFilsRounded } from "../posting/money.js";
 import {
   readInventoryReportPage,
+  readInventoryReportActivity,
   InventoryReportExportTooLarge,
 } from "../inventory/inventory-report-query.js";
 import { inventoryReportQueryFor } from "@breev/contracts/local-rest";
@@ -1268,6 +1269,46 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     expect(complete.totalRows).toBeGreaterThan(query.pageSize);
     const client = await application.connect();
     try {
+      const completeRows = await readInventoryReportPage(
+        client,
+        pharmacyId,
+        "batches-expiry",
+        {
+          ...inventoryReportQueryFor("batches-expiry").parse(query),
+          ...query,
+        },
+        "2026-09-30",
+        true,
+        24 * 1024 * 1024,
+      );
+      const bytes = Buffer.byteLength(JSON.stringify(completeRows.rows));
+      const atLimit = await readInventoryReportPage(
+        client,
+        pharmacyId,
+        "batches-expiry",
+        {
+          ...inventoryReportQueryFor("batches-expiry").parse(query),
+          ...query,
+        },
+        "2026-09-30",
+        true,
+        bytes,
+      );
+      expect(atLimit.rows).toEqual(completeRows.rows);
+      await expect(
+        readInventoryReportPage(
+          client,
+          pharmacyId,
+          "batches-expiry",
+          {
+            ...inventoryReportQueryFor("batches-expiry").parse(query),
+            ...query,
+          },
+          "2026-09-30",
+          true,
+          bytes - 1,
+        ),
+      ).rejects.toBeInstanceOf(InventoryReportExportTooLarge);
       await expect(
         readInventoryReportPage(
           client,
@@ -1482,6 +1523,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     expect(Buffer.byteLength(JSON.stringify(viewed.body))).toBeLessThan(
       128 * 1024,
     );
+    const exportStarted = performance.now();
     const exported = await request(
       "GET",
       `${inventoryReportPath("batches-expiry")}/export?query=${encodeURIComponent(JSON.stringify(query))}`,
@@ -1492,8 +1534,159 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       code: "export-too-large",
     });
     expect(exported.body).not.toHaveProperty("rows");
+    const exportDenialMs = performance.now() - exportStarted;
+    expect(exportDenialMs).toBeLessThan(10_000);
+    expect(Buffer.byteLength(JSON.stringify(exported.body))).toBeLessThan(1024);
+    const afterDenial = await request(
+      "GET",
+      `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(JSON.stringify(query))}`,
+    );
+    expect(afterDenial.status, diagnostics(afterDenial)).toBe(200);
+    expect(inventoryReportSchema.parse(afterDenial.body).rows).toHaveLength(
+      100,
+    );
+    if (process.env.BREEV_REPORT_PERFORMANCE_LABEL) {
+      const period = {
+        from: "2020-01-01T00:00:00Z",
+        to: query.to,
+        pageSize: 100,
+      };
+      const scenarios = [
+        {
+          name: "movement-activity",
+          path: `${inventoryReportPath("quantity")}/activity`,
+          query: { query: period, rowId: product.id, page: 1, pageSize: 100 },
+        },
+        {
+          name: "historical-value",
+          path: inventoryReportPath("value"),
+          query: period,
+        },
+        {
+          name: "batch-history",
+          path: inventoryReportPath("batches-expiry"),
+          query: period,
+        },
+      ];
+      const measurements = [];
+      const plans: Record<string, unknown> = {};
+      for (const scenario of scenarios) {
+        const samples = [];
+        for (let sample = 0; sample < 20; sample++) {
+          const start = performance.now();
+          const response = await request(
+            "GET",
+            `${scenario.path}?query=${encodeURIComponent(JSON.stringify(scenario.query))}`,
+          );
+          expect(response.status, diagnostics(response)).toBe(200);
+          samples.push(performance.now() - start);
+        }
+        const sorted = [...samples].sort((a, b) => a - b);
+        measurements.push({
+          name: scenario.name,
+          samples,
+          p95: sorted[18],
+          p99: sorted[19],
+        });
+        const client = await application.connect();
+        try {
+          await client.query("begin read only");
+          await client.query("set local enable_nestloop = off");
+          let statement: string | undefined;
+          let values: unknown[] | undefined;
+          const observed = new Proxy(client, {
+            get(target, property) {
+              if (property !== "query") return Reflect.get(target, property);
+              return (...arguments_: unknown[]) => {
+                if (
+                  typeof arguments_[0] === "string" &&
+                  arguments_[0].startsWith("with report_date")
+                ) {
+                  statement = arguments_[0];
+                  values = arguments_[1] as unknown[];
+                }
+                return Reflect.apply(target.query, target, arguments_);
+              };
+            },
+          }) as PoolClient;
+          const kind =
+            scenario.name === "historical-value"
+              ? "value"
+              : scenario.name === "batch-history"
+                ? "batches-expiry"
+                : "quantity";
+          const canonical = {
+            ...inventoryReportQueryFor(kind).parse(period),
+            ...period,
+          };
+          if (scenario.name === "movement-activity")
+            await readInventoryReportActivity(
+              observed,
+              pharmacyId,
+              kind,
+              canonical,
+              "2026-10-01",
+              product.id,
+              1,
+              100,
+            );
+          else
+            await readInventoryReportPage(
+              observed,
+              pharmacyId,
+              kind,
+              canonical,
+              "2026-10-01",
+              false,
+              24 * 1024 * 1024,
+            );
+          plans[scenario.name] = (
+            await client.query(
+              `explain (analyze, buffers, format json) ${statement!}`,
+              values,
+            )
+          ).rows[0]["QUERY PLAN"];
+          await client.query("rollback");
+        } finally {
+          client.release();
+        }
+      }
+      const directory = path.resolve(
+        import.meta.dirname,
+        "../../../../artifacts/issue-64",
+      );
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        path.join(
+          directory,
+          `performance-${process.env.BREEV_REPORT_PERFORMANCE_LABEL}.json`,
+        ),
+        JSON.stringify(
+          {
+            platform: process.platform,
+            samples: 20,
+            facts: (
+              await administrator.query(
+                "select count(*)::integer as count from inventory_report_facts",
+              )
+            ).rows[0].count,
+            measurements,
+            exportDenialMs,
+          },
+          null,
+          2,
+        ),
+      );
+      await writeFile(
+        path.join(
+          directory,
+          `plans-${process.env.BREEV_REPORT_PERFORMANCE_LABEL}.json`,
+        ),
+        JSON.stringify(plans, null, 2),
+      );
+    }
     expect(await stockFacts()).toEqual(before);
-  }, 120_000);
+  }, 300_000);
 
   async function reportActivity(
     kind: (typeof INVENTORY_REPORT_KINDS)[number],

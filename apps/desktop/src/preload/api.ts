@@ -103,7 +103,7 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
       const serialized =
         request.format === "csv"
           ? "kind" in request.bundle
-            ? serializeInventoryReportCsv(request.bundle)
+            ? serializeInventoryReportCsv(request.bundle, request.locale)
             : serializeInventoryCsv(request.bundle)
           : JSON.stringify(request.bundle, null, 2) + "\n";
       if (

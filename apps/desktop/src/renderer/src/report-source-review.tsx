@@ -24,7 +24,9 @@ import {
   reportSourceLabel,
 } from "./report-workspace";
 import { usePreferences } from "./preferences-provider";
-import { reportMessages } from "./report-messages";
+import { reportMessages } from "../../shared/report-messages";
+import { useIdentityState } from "./identity-state-provider";
+import { formatNumber } from "./posted-purchase-snapshots";
 
 type DocumentView =
   | { kind: "invoice"; document: PurchasePostedDetail }
@@ -45,10 +47,35 @@ export function ReportSourceReview({
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = reportMessages[locale];
+  const { state: identity } = useIdentityState();
+  const canOpenInvoice =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("purchases.posted.view");
   const dialog = useRef<HTMLDialogElement>(null);
   const focus = useCommittedFocus();
   const [view, setView] = useState<DocumentView | null>(null);
   const [error, setError] = useState(false);
+  const [parent, setParent] = useState<PurchasePostedDetail | null>(null);
+  const [parentLoading, setParentLoading] = useState(false);
+  const [parentError, setParentError] = useState(false);
+  const parentOpener = useRef<HTMLButtonElement>(null);
+  const openParent = async (): Promise<void> => {
+    if (!canOpenInvoice || view === null || view.kind === "invoice") return;
+    setParentLoading(true);
+    setParentError(false);
+    try {
+      const invoice = await requestPostedPurchase(
+        baseUrl,
+        view.document.originalPurchaseId,
+      );
+      setParent(invoice);
+      focus(() => dialog.current?.querySelector(".report-parent-back"));
+    } catch {
+      setParentError(true);
+    } finally {
+      setParentLoading(false);
+    }
+  };
   const dismiss = (): void => {
     dialog.current?.close();
     // Commit dismissal with focus restoration; a queued native close event must
@@ -126,7 +153,11 @@ export function ReportSourceReview({
             {purchasingMessages[locale].historicalSnapshot}
           </p>
           <h2 id="report-source-title">
-            <bdi>{reportSourceLabel(source.label, locale, timeZone)}</bdi>
+            <bdi>
+              {parent === null
+                ? reportSourceLabel(source.label, locale, timeZone)
+                : formatNumber(parent)}
+            </bdi>
           </h2>
         </div>
         <button className="quiet-button" type="button" onClick={dismiss}>
@@ -134,7 +165,28 @@ export function ReportSourceReview({
         </button>
       </header>
       <div className="report-dialog-body">
-        {error ? (
+        {parent !== null ? (
+          <>
+            <button
+              className="quiet-button report-parent-back"
+              type="button"
+              onClick={() => {
+                setParent(null);
+                focus(() => parentOpener.current);
+              }}
+            >
+              {copy.backToSource}
+            </button>
+            <PostedPurchaseSnapshot
+              detail={parent}
+              display={{
+                unit: (name) => reportCell(name, "unit", locale, timeZone),
+                adjustmentReason: (reason) =>
+                  getAdjustmentReasonLabel(reason, locale),
+              }}
+            />
+          </>
+        ) : error ? (
           <p role="alert">{copy.denied}</p>
         ) : view === null ? (
           <p role="status">{copy.loading}</p>
@@ -150,7 +202,22 @@ export function ReportSourceReview({
             }}
           />
         ) : (
-          <ReportCorrectionSnapshot document={view.document} />
+          <>
+            <ReportCorrectionSnapshot document={view.document} />
+            {canOpenInvoice ? (
+              <button
+                ref={parentOpener}
+                className="quiet-button"
+                type="button"
+                disabled={parentLoading}
+                onClick={() => void openParent()}
+              >
+                {copy.openParentInvoice}
+              </button>
+            ) : null}
+            {parentLoading ? <p role="status">{copy.loading}</p> : null}
+            {parentError ? <p role="alert">{copy.denied}</p> : null}
+          </>
         )}
       </div>
     </dialog>

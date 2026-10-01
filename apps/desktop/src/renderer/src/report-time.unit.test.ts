@@ -5,6 +5,19 @@ import {
   reportTimeZoneLabel,
 } from "./report-time";
 describe("report pharmacy time controls", () => {
+  it("rejects impossible calendar days and rolled-over hours in text date entry", () => {
+    for (const value of [
+      "2026-02-30T10:30",
+      "2026-04-31T00:00",
+      "2026-09-01T24:00",
+    ])
+      expect(() => pharmacyLocalToInstant(value, "Asia/Baghdad")).toThrow();
+  });
+  it("normalizes Eastern Arabic-Indic date and time digits", () => {
+    expect(
+      pharmacyLocalToInstant("٢٠٢٦-١٠-٠١T١٠:٣٠:٠٠.١٢٣", "Asia/Baghdad"),
+    ).toBe(pharmacyLocalToInstant("2026-10-01T10:30:00.123", "Asia/Baghdad"));
+  });
   it("round-trips fractional pharmacy time across a month boundary", () => {
     const instant = "2026-08-31T21:00:00.123Z";
     expect(pharmacyLocalDateTime(instant, "Asia/Baghdad")).toBe(

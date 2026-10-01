@@ -1,3 +1,4 @@
+/** Pure bilingual report vocabulary used by the renderer and CSV adapter. */
 import type {
   InventoryReportColumn,
   InventoryReportKind,
@@ -10,6 +11,7 @@ interface ReportCopy {
   stale: string;
   retry: string;
   chooseValue: string;
+  chooseDate: string;
   filterPrecision: string;
   filterNumber: string;
   groupContinued: string;
@@ -53,6 +55,8 @@ interface ReportCopy {
   activity: string;
   noActivity: string;
   openSource: string;
+  openParentInvoice: string;
+  backToSource: string;
   close: string;
   unitUnavailable: string;
   sort: string;
@@ -85,6 +89,7 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
       "The displayed result is from the last successful request. Apply your changes before exporting.",
     retry: "Retry",
     chooseValue: "Choose a value",
+    chooseDate: "Choose date",
     filterPrecision:
       "Too many decimal places: quantities are whole units, IQD supports 3 places and average cost supports 13.",
     filterNumber:
@@ -138,6 +143,8 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
     noActivity:
       "No matching activity. Opening and closing stock still belong to the whole pharmacy.",
     openSource: "Open source record",
+    openParentInvoice: "Open original purchase invoice",
+    backToSource: "Back to source record",
     close: "Close",
     unitUnavailable: "Historical description unavailable",
     sort: "Sort by",
@@ -229,6 +236,7 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
     stale: "النتيجة المعروضة من آخر طلب ناجح. طبّق التغييرات قبل التصدير.",
     retry: "إعادة المحاولة",
     chooseValue: "اختر قيمة",
+    chooseDate: "اختيار التاريخ",
     filterPrecision:
       "المنازل العشرية زائدة: الكميات وحدات صحيحة، والدينار يدعم ٣ منازل ومتوسط الكلفة ١٣ منزلة.",
     filterNumber: "أدخل رقماً دقيقاً مع فواصل الآلاف والعشرية الصحيحة.",
@@ -279,6 +287,8 @@ export const reportMessages: Record<"ar" | "en", ReportCopy> = {
     noActivity:
       "لا توجد حركات مطابقة. يظل رصيد البداية والنهاية شاملاً للصيدلية كلها.",
     openSource: "فتح السجل الأصلي",
+    openParentInvoice: "فتح فاتورة الشراء الأصلية",
+    backToSource: "العودة إلى السجل الأصلي",
     close: "إغلاق",
     unitUnavailable: "الوصف التاريخي غير متاح",
     sort: "ترتيب حسب",

@@ -43,6 +43,8 @@ Every business-requirement area of the governing scope maps to one owning docume
 
 The root `README.md` and `running-locally.md` describe the code that is currently runnable and the checks that exercise it. They do not own product requirements. The coverage map above remains the authority for required behavior that has not been implemented yet.
 
+The stakeholder's 1 October Changes Requested on PR #201 / Issue #64 additionally require reliable bounded oversized-export denial, measured query improvements, Indic report-date entry, permission-checked parent-invoice traversal, an unclipped English Reports label, and business-only localized CSV columns. The inventory-report workflow and [follow-up evidence](../evidence/issue-64/review-fixes.md) reconcile this family. The 250,000-fact fixture is a saturation example, not an authorized history ceiling. No accounting, stock-posting, costing, professional-policy, or visual-approval requirement changes.
+
 ## Governing reconciliations
 
 Where sources conflict or the engineering baseline deliberately differs, this table records the governing result.

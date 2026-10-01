@@ -9,6 +9,43 @@
   overflow: hidden;
   color: var(--foreground);
 }
+.inventory-reports-workspace .report-date-entry {
+  position: relative;
+  display: block;
+  min-inline-size: 0;
+}
+.inventory-reports-workspace .report-date-entry > input:first-child {
+  inline-size: 100%;
+  padding-inline-end: 2rem;
+}
+.inventory-reports-workspace .report-date-entry .report-native-date-picker {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.inventory-reports-workspace .report-date-picker-button {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 0.25rem;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.inventory-reports-workspace .report-date-picker-button svg {
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+}
 .inventory-reports-workspace .report-heading {
   display: flex;
   flex-wrap: wrap;

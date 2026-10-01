@@ -176,6 +176,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     );
     for (const before of rolesBefore) {
       const after = rolesAfter.find((role) => role.id === before.id);
+      // 0033 replaces a report index and has no role-modifying statements (+0).
       expect(after?.revision, before.role_key ?? before.id).toBe(
         before.role_key === "owner"
           ? String(BigInt(before.revision) + 14n)

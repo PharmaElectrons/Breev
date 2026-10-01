@@ -1,44 +1,42 @@
-import type { InventoryReportExport } from "@breev/contracts/local-rest";
+import {
+  INVENTORY_REPORT_DEFINITIONS,
+  type InventoryReportExport,
+} from "@breev/contracts/local-rest";
 import { csvCell } from "./inventory-export-csv.js";
+import { reportMessages } from "../shared/report-messages.js";
 
-/** Exact wire strings and explicit basis travel with every exported row. */
+/** CSV contains the active business projection; technical context stays in the report bundle. */
 export function serializeInventoryReportCsv(
   report: InventoryReportExport,
+  locale: "ar" | "en",
 ): string {
-  const metadata = [
-    "Pharmacy ID",
-    "Report",
-    "From (UTC, inclusive)",
-    "To (UTC, exclusive)",
-    "Pharmacy timezone",
-    "Balance basis",
-    "Sensitivity",
-    "Grouping",
-    "Applied query",
-    "Product ID",
-    "Batch ID",
-    "Source document ID",
-    "Source document type",
-    "Activity count",
-    "Explanations",
-  ];
-  const rows = report.rows.map((row) => [
-    report.pharmacyId,
-    report.kind,
-    report.query.from,
-    report.query.to,
-    report.timeZone,
-    report.balanceBasis,
-    report.sensitivity,
-    report.query.groupBy ?? "",
-    JSON.stringify(report.query),
-    row.productId,
-    row.batchId ?? "",
-    row.source?.documentId ?? "",
-    row.source?.documentType ?? "",
-    row.activityCount.toString(),
-    report.explanations.join("; "),
-    ...report.columns.map((column) => row.cells[column] ?? ""),
-  ]);
-  return `\uFEFF${[[...metadata, ...report.columns], ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+  const copy = reportMessages[locale];
+  const columns = report.columns.filter((column) =>
+    INVENTORY_REPORT_DEFINITIONS[report.kind].columns.includes(column),
+  );
+  const headers = columns.map(
+    (column) =>
+      `${copy.columns[column]}${/Fils|Scaled/u.test(column) ? " (IQD)" : ""}`,
+  );
+  const rows = report.rows.map((row) =>
+    columns.map((column) => {
+      const value = row.cells[column] ?? "";
+      if (value === "") return value;
+      if (/Fils|Scaled/u.test(column))
+        return exactDecimal(value, column.endsWith("Scaled") ? 13 : 3);
+      if (["status", "alert", "availability"].includes(column))
+        return copy.states[value] ?? value;
+      if (column === "unit") return copy.units[value.toLowerCase()] ?? value;
+      return value;
+    }),
+  );
+  return `\uFEFF${[headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}
+
+function exactDecimal(value: string, places: number): string {
+  const number = BigInt(value);
+  const digits = (number < 0n ? -number : number)
+    .toString()
+    .padStart(places + 1, "0");
+  return `${number < 0n ? "-" : ""}${digits.slice(0, -places)}.${digits.slice(-places)}`;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { reportCell, reportSourceLabel } from "./report-workspace";
-import { reportMessages } from "./report-messages";
+import { reportMessages } from "../../shared/report-messages";
 
 describe("inventory report display localization", () => {
   it.each([

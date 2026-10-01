@@ -43,15 +43,48 @@ const report: InventoryReportExport = {
 };
 
 describe("inventory report CSV", () => {
-  it("exports all exact strings with a BOM, source basis, and spreadsheet-safe cells", () => {
-    const csv = serializeInventoryReportCsv(report);
-    expect(csv).toMatch(/^\uFEFF"Pharmacy ID","Report"/u);
+  it("exports only active business columns with readable headers and spreadsheet-safe exact cells", () => {
+    const csv = serializeInventoryReportCsv(report, "en");
+    expect(csv).toMatch(/^\uFEFF"Recorded item","Closing quantity"/u);
     expect(csv).toContain(
       '"\'=HYPERLINK(""https://example.invalid"", ""دواء"")"',
     );
     expect(csv).toContain('"12345678901234567890"');
-    expect(csv).toContain('"all-pharmacy-activity"');
-    expect(csv).toContain('"Explanations"');
+    expect(csv).not.toContain(id);
+    expect(csv).not.toContain("all-pharmacy-activity");
+    expect(csv).not.toContain("Explanations");
+    expect(csv).not.toContain("filters");
     expect(csv.split("\r\n")).toHaveLength(3);
+  });
+  it("localizes Arabic headers and preserves exact IQD and WAC decimals", () => {
+    const valueReport: InventoryReportExport = {
+      ...report,
+      kind: "value",
+      columns: ["item", "closingValueFils"],
+      rows: [
+        {
+          ...report.rows[0]!,
+          cells: { item: "دواء", closingValueFils: "12345678901234567890" },
+        },
+      ],
+    };
+    const csv = serializeInventoryReportCsv(valueReport, "ar");
+    expect(csv).toContain('"الصنف المسجل","قيمة النهاية (IQD)"');
+    expect(csv).toContain('"12345678901234567.890"');
+    const wac = serializeInventoryReportCsv(
+      {
+        ...valueReport,
+        kind: "average-cost",
+        columns: ["closingAverageCostScaled"],
+        rows: [
+          {
+            ...report.rows[0]!,
+            cells: { closingAverageCostScaled: "12345678901234567890" },
+          },
+        ],
+      },
+      "en",
+    );
+    expect(wac).toContain('"1234567.8901234567890"');
   });
 });

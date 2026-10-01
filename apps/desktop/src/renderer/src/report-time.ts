@@ -1,4 +1,5 @@
-import { reportMessages } from "./report-messages";
+import { normalizeIndicDigits } from "@breev/contracts/local-rest";
+import { reportMessages } from "../../shared/report-messages";
 
 /** Display names never replace the IANA ID used by report queries and controls. */
 export function reportTimeZoneLabel(
@@ -44,12 +45,17 @@ export function pharmacyLocalToInstant(
   value: string,
   timeZone: string,
 ): string {
+  value = normalizeIndicDigits(value);
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/u.test(value))
     throw new RangeError("Invalid local date-time");
   const target = new Date(`${value}Z`);
   if (Number.isNaN(target.getTime()))
     throw new RangeError("Invalid local date-time");
   const normalized = target.toISOString().slice(0, -1);
+  // Text date entry must retain native controls' rejection of impossible days
+  // and rolled-over hours rather than letting Date silently normalize them.
+  if (normalized.slice(0, 16) !== value.slice(0, 16))
+    throw new RangeError("Invalid local date-time");
   const offsets = new Set<number>();
   for (let hours = -48; hours <= 48; hours += 6) {
     const sample = new Date(target.getTime() + hours * 3600000);

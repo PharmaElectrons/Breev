@@ -13,6 +13,7 @@ import {
   inventoryReportExportSchema,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
+  purchasePostedPath,
   purchaseReturnDraftPath,
   purchaseReturnDraftsPath,
   purchaseReturnPostingsPath,
@@ -36,7 +37,7 @@ import {
 } from "@testcontainers/postgresql";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
@@ -54,6 +55,7 @@ import {
 } from "../local-api-process.js";
 import { evidencePath } from "./evidence-path.js";
 import { pressKeyOnFocused } from "./focus.js";
+import { serializeInventoryReportCsv } from "../../src/main/inventory-report-csv.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_USERNAME = "inventory.browser.owner";
@@ -655,6 +657,229 @@ test.describe.serial("read-only inventory review", () => {
     }
   });
 
+  test("normalizes Arabic report date entry including month ١٠ and submitted business dates", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "ar", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+    const posting = page.locator(
+      ".report-date-toolbar input:not([aria-hidden])",
+    );
+    await expect(
+      page.getByRole("button", { name: "اختيار التاريخ", exact: true }),
+    ).toHaveCount(4);
+    await page
+      .getByRole("button", { name: "اختيار التاريخ", exact: true })
+      .first()
+      .click();
+    await page.keyboard.press("Escape");
+    await posting.nth(0).fill("٢٠٢٠-٠١-٠١T٠٠:٠٠:٠٠.٠٠٠");
+    await expect(posting.nth(0)).toHaveValue("2020-01-01T00:00:00.000");
+    await posting.nth(0).evaluate((input) => {
+      const field = input as typeof input & {
+        focus(): void;
+        setSelectionRange(start: number, end: number): void;
+      };
+      field.focus();
+      field.setSelectionRange(5, 7);
+    });
+    await expect(posting.nth(0)).toBeFocused();
+    await page.keyboard.insertText("١");
+    await page.keyboard.insertText("٠");
+    await expect(posting.nth(0)).toHaveValue("2020-10-01T00:00:00.000");
+    await posting.nth(1).fill("٢٠٢٦-١٠-٠١T٠٠:٠٠:٠٠.٠٠٠");
+    await expect(posting.nth(1)).toHaveValue("2026-10-01T00:00:00.000");
+    for (const name of ["businessFrom", "businessTo"]) {
+      const input = page.locator(`[name='${name}']`);
+      await input.fill(name === "businessFrom" ? "٢٠٢٠-٠١-٠١" : "٢٠٢٦-٠١-٠١");
+      await input.evaluate((element) => {
+        const field = element as typeof element & {
+          focus(): void;
+          setSelectionRange(start: number, end: number): void;
+        };
+        field.focus();
+        field.setSelectionRange(5, 7);
+      });
+      await expect(input).toBeFocused();
+      await page.keyboard.insertText("١");
+      await page.keyboard.insertText("٠");
+      await expect(input).toHaveValue(
+        name === "businessFrom" ? "2020-10-01" : "2026-10-01",
+      );
+    }
+    const sent = page.waitForRequest("**/reports/inventory/quantity?*");
+    await page.locator(".report-controls button[type='submit']").click();
+    expect(
+      JSON.parse(new URL((await sent).url()).searchParams.get("query")!),
+    ).toMatchObject({
+      from: "2020-09-30T21:00:00.000Z",
+      to: "2026-09-30T21:00:00.000Z",
+      businessFrom: "2020-10-01",
+      businessTo: "2026-10-01",
+    });
+    await expect(page.locator(".report-controls [role='alert']")).toHaveCount(
+      0,
+    );
+  });
+
+  test("keeps the English Reports label fully visible at 1280×800 in both themes", async ({
+    browser,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    for (const theme of ["light", "dark"] as const) {
+      const context = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+      });
+      const page = await context.newPage();
+      await installDesktopFake(page, renderer.origin, "en", theme);
+      await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+      await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+      const link = page.locator(".module-tab[data-module='reports']");
+      await expect(link).toBeInViewport({ ratio: 1 });
+      await expect
+        .poll(() =>
+          link.evaluate((element) => {
+            const label = element
+              .querySelector(".module-tab-label")!
+              .getBoundingClientRect();
+            const list = element.closest("ul")!.getBoundingClientRect();
+            return label.left >= list.left && label.right <= list.right;
+          }),
+        )
+        .toBe(true);
+      await page.screenshot({
+        path: evidencePath(
+          "issue-64",
+          "remediation",
+          `reports-navigation-en-${theme}.png`,
+        ),
+      });
+      await context.close();
+    }
+  });
+
+  test("traverses immutable adjustment and return sources to the permission-checked parent invoice", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    await page
+      .locator(".report-table tbody tr")
+      .first()
+      .locator("td")
+      .nth(-2)
+      .getByRole("button")
+      .click();
+    const activity = page.locator(".report-activity-dialog");
+    for (const type of ["purchase-adjustment", "purchase-return"]) {
+      const record = (
+        await administrator.query<{ id: string; original_purchase_id: string }>(
+          `select id, original_purchase_id from ${type === "purchase-adjustment" ? "posted_purchase_adjustments" : "posted_purchase_returns"} order by posted_at limit 1`,
+        )
+      ).rows[0]!;
+      const source = activity
+        .locator(".report-source-reference")
+        .filter({ hasText: type === "purchase-adjustment" ? "-A01" : "PR" })
+        .first();
+      await source.click();
+      const snapshot = page.locator(".report-source-dialog");
+      await expect(
+        snapshot.locator(".report-correction-snapshot"),
+      ).toBeVisible();
+      const title = await snapshot.locator("h2").textContent();
+      const parent = snapshot.getByRole("button", {
+        name: "Open original purchase invoice",
+        exact: true,
+      });
+      const opened = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+          purchasePostedPath(record.original_purchase_id),
+      );
+      await parent.click();
+      expect((await opened).status()).toBe(200);
+      await expect(snapshot.locator(".posted-purchase-snapshot")).toBeVisible();
+      await expect(snapshot.locator(".posted-purchase-snapshot")).toContainText(
+        product.displayName,
+      );
+      await snapshot
+        .getByRole("button", { name: "Back to source record", exact: true })
+        .click();
+      await expect(snapshot.locator("h2")).toHaveText(title!);
+      await expect(parent).toBeFocused();
+      await snapshot.locator("header button").click();
+      await expect(source).toBeFocused();
+    }
+    await activity.locator("header button").click();
+    // Permission can change while the immutable correction is already open.
+    const temporary = await administrator.query<{
+      role_id: string;
+      permission_name: string;
+    }>(
+      `insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by)
+       select role.pharmacy_id, role.id, permission, (select granted_by from role_permission_grants where role_id = role.id limit 1)
+       from pharmacy_roles role cross join unnest(array['reports.inventory.view', 'purchases.posted.view', 'purchases.costs.view']) permission
+       where role.role_key = 'manager' on conflict do nothing returning role_id, permission_name`,
+    );
+    await login(MANAGER_USERNAME, MANAGER_PASSWORD);
+    await page.reload();
+    await page
+      .locator(".report-table tbody tr")
+      .first()
+      .locator("td")
+      .nth(-2)
+      .getByRole("button")
+      .click();
+    await activity
+      .locator(".report-source-reference")
+      .filter({ hasText: "-A01" })
+      .first()
+      .click();
+    const snapshot = page.locator(".report-source-dialog");
+    await expect(snapshot.locator(".report-correction-snapshot")).toBeVisible();
+    const revoked = await administrator.query<{
+      pharmacy_id: string;
+      role_id: string;
+      granted_by: string;
+    }>(
+      "delete from role_permission_grants where role_id = (select id from pharmacy_roles where role_key = 'manager') and permission_name = 'purchases.posted.view' returning pharmacy_id, role_id, granted_by",
+    );
+    try {
+      expect(revoked.rows).toHaveLength(1);
+      await snapshot
+        .getByRole("button", {
+          name: "Open original purchase invoice",
+          exact: true,
+        })
+        .click();
+      await expect(snapshot.getByRole("alert")).toHaveText(
+        "Your account cannot access this report or source record.",
+      );
+      await expect(snapshot.locator(".posted-purchase-snapshot")).toHaveCount(
+        0,
+      );
+      await expect(
+        snapshot.locator(".report-correction-snapshot"),
+      ).toBeVisible();
+    } finally {
+      const grant = revoked.rows[0];
+      if (grant)
+        await administrator.query(
+          "insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by) values ($1, $2, 'purchases.posted.view', $3)",
+          [grant.pharmacy_id, grant.role_id, grant.granted_by],
+        );
+      for (const permission of temporary.rows)
+        await administrator.query(
+          "delete from role_permission_grants where role_id = $1 and permission_name = $2",
+          [permission.role_id, permission.permission_name],
+        );
+      await login(OWNER_USERNAME, OWNER_PASSWORD);
+    }
+  });
+
   test("preserves report keyboard focus through delayed, superseded and failed refreshes", async ({
     page,
   }) => {
@@ -863,6 +1088,17 @@ test.describe.serial("read-only inventory review", () => {
     const { format, ...bundle } = wire as Record<string, unknown>;
     expect(format).toBe("csv");
     const exported = inventoryReportExportSchema.parse(bundle);
+    const csv = serializeInventoryReportCsv(exported, "en");
+    expect(csv.split("\r\n")[0]).toContain('"Recorded item"');
+    expect(csv).not.toMatch(
+      /Pharmacy ID|Product ID|Applied query|Explanations|openingQuantity/u,
+    );
+    expect(csv).not.toContain(exported.pharmacyId);
+    await mkdir(evidencePath("issue-64", "remediation"), { recursive: true });
+    await writeFile(
+      evidencePath("issue-64", "remediation", "quantity-en.csv"),
+      csv,
+    );
     expect(exported.sensitivity).toBe("redacted");
     expect(exported.rows).toHaveLength(exported.totalRows);
     expect(exported.query).toMatchObject({

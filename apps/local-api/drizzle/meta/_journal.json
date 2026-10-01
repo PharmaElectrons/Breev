@@ -232,6 +232,13 @@
       "when": 1790640000000,
       "tag": "0032_report_bounded_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790812800000,
+      "tag": "0033_report_effect_order",
+      "breakpoints": true
     }
   ]
 }

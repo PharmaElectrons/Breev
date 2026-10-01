@@ -10,7 +10,7 @@ import {
 } from "./posted-purchase-snapshots";
 import { formatCurrencyFromFils, formatNumber } from "./preferences";
 import { usePreferences } from "./preferences-provider";
-import { reportMessages } from "./report-messages";
+import { reportMessages } from "../../shared/report-messages";
 import {
   getAdjustmentReasonLabel,
   purchasingMessages,
