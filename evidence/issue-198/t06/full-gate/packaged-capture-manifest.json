@@ -1,0 +1,202 @@
+[
+  {
+    "modifiedUtc": "2026-10-01T15:10:40.8199837Z",
+    "hash": "E3F9B93D3D0BFDFBD93D91E50B6C6800734A750501CF8140F4403A9F10F6F583",
+    "name": "clause-3-adjustment-difference-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:09.6339992Z",
+    "hash": "173553685D199BD94BDAE8A25D4892C6E6BD3F5C17BEC79ADEFC4D7E0DCC9B28",
+    "name": "clause-3-adjustment-difference-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:36.5554767Z",
+    "hash": "043AD6CFAA44B8EF3D941D91C70EA5F8B924BB800BE88DE31044B2CDFBB3548E",
+    "name": "clause-3-adjustment-difference-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:07.0491839Z",
+    "hash": "EBC39EEA6E239CFA21D5460D7093E680C80F408055ACD066C850E8A6DB9D6F56",
+    "name": "clause-3-adjustment-difference-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:41.0360195Z",
+    "hash": "9C91F661DFDAA1D048B596EE8B45120C13F97E255596C8A9964903D269560ECB",
+    "name": "clause-3-adjustment-difference-full-page-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:09.9035899Z",
+    "hash": "00B5D3E851B9968240AAD4680A18C3A2B7A030630DD3DDA5AABC54A51DE2BCF5",
+    "name": "clause-3-adjustment-difference-full-page-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:36.8477792Z",
+    "hash": "97B4357F19B886F0A4B4141DD2CAD49C6DFAB0A6217A8290E2134574E230CB40",
+    "name": "clause-3-adjustment-difference-full-page-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:07.2400532Z",
+    "hash": "EC9913A6C79406941CD0BB5D78A8CC0DBF1E08AB3B46E8AD5A8166D6791ED1C5",
+    "name": "clause-3-adjustment-difference-full-page-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:43.1420154Z",
+    "hash": "292D322A1DFA57758A0E676617D6409A6F7BD64DE705CD320C3282B0817AFF99",
+    "name": "clause-3-linked-return-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:12.8642783Z",
+    "hash": "ED79FFD3C112E0E2FFD8EC16CEAEC95979D154D474107496A046E95C22F98772",
+    "name": "clause-3-linked-return-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:39.5987063Z",
+    "hash": "A7B24DD5192245A00BC8A386D77E1BD303AEFE4C44B3FDCC571361491F204A3E",
+    "name": "clause-3-linked-return-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:09.2219494Z",
+    "hash": "8B3849AAC99F3344419C740F02553801E8025917A82C12ADC316874E4F78D511",
+    "name": "clause-3-linked-return-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:42.4552027Z",
+    "hash": "A6C315508D9C569D840AD9BFB1EA0ECE0F649D770D9C9F1759484A29703B66C3",
+    "name": "clause-3-purchase-return-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:12.3144468Z",
+    "hash": "A78597FD1F1892F69890CCA4C7BA4F8C066B7FC4EC0F8CD998CF5DAB49A54AF2",
+    "name": "clause-3-purchase-return-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:38.2861481Z",
+    "hash": "62A03C8CE0356BB494E19C50FF79829B5F3E44A85D34C3D58C948D099272BE87",
+    "name": "clause-3-purchase-return-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:08.6658235Z",
+    "hash": "FE4E57E5D7DE50C4829A9A1E3581874690A476614346CA87C75A5CC9D6E631FF",
+    "name": "clause-3-purchase-return-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:17:03.9946396Z",
+    "hash": "142694680EA1D0EF94A2693D1BC8ABC08A38200B3F5BE3DBA61634D6B294696B",
+    "name": "purchase-item-panel-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:16:35.3389225Z",
+    "hash": "00B4FB925B9BC1F6E571B25F8AE526A27304AAD90AACEA1848942D5DECCC68D5",
+    "name": "purchase-item-panel-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:16:06.0852722Z",
+    "hash": "9BEF52647916E764D4418E9E16FC52D7FF61812403098A318AEA312BC45FEFBB",
+    "name": "purchase-item-panel-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:15:37.3398091Z",
+    "hash": "618967BD277204AF6AFC476D3DF6678A563AD77CFD7CB06D07E41B14ED91B474",
+    "name": "purchase-item-panel-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:17:04.2125947Z",
+    "hash": "D9F39452CA52424F44E2881A70B0097855EB80C39CB2555E6388CD4E86C820FB",
+    "name": "purchase-item-panel-full-page-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:16:35.4984808Z",
+    "hash": "23E44E4AEF3F82F0266775C6C3CBEEA5186119CF1D6C70611485480EF1F29EAB",
+    "name": "purchase-item-panel-full-page-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:16:06.2976142Z",
+    "hash": "FD4752D28144E1DBB4BE7B545D6C370F7F791287D3C76FB2D0FA0BE968EB5E9C",
+    "name": "purchase-item-panel-full-page-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:15:37.5287089Z",
+    "hash": "CD830AF25DB2195881ADB42094FC32C5320AB61F3B588794B67CA72B81B9B5F1",
+    "name": "purchase-item-panel-full-page-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:46.5969208Z",
+    "hash": "1D00D9E0949B47C5C8D2C42B2DD204A1F7721CA0BD4CBBCE1BFA9AB8B6B55759",
+    "name": "scenario-adjustment-blocked-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:16.9162548Z",
+    "hash": "DE1CD57B46778174C5D9003481D73BAB4849B6CDE69B779D2DF0E258EE13F3C7",
+    "name": "scenario-adjustment-blocked-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:45.3894956Z",
+    "hash": "B583A06CCFBF827EB2B3B388A832B7DAB63ADCE8DB143617C4CF4EE8FEAB8CF2",
+    "name": "scenario-adjustment-blocked-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:12.7356697Z",
+    "hash": "65747008CF3BBA1A0615714227E2B440EAEC2B7A71FD13478B0CBEE45419CA93",
+    "name": "scenario-adjustment-blocked-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:46.7474553Z",
+    "hash": "FDC0493CE04E3859F21EC9877B3E6A8249A9FDF9802A21A8B71BE583291C747B",
+    "name": "scenario-adjustment-blocked-full-page-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:17.0898375Z",
+    "hash": "A190F4C101CA6F028E6A9F8D769036993651E4BD4ADA70C1A375CB611CE4FD6C",
+    "name": "scenario-adjustment-blocked-full-page-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:45.6290973Z",
+    "hash": "E7C80C870965602C81D67097C8C3A5483D749532187F0D6323B067B377C5850C",
+    "name": "scenario-adjustment-blocked-full-page-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:12.8928517Z",
+    "hash": "D91781970C6B7281C68FC9A848AD31EFBB9BA9E024C74263E6B34793683CECDE",
+    "name": "scenario-adjustment-blocked-full-page-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:44.6042475Z",
+    "hash": "5C2D48E4B72617B39829DE3336A72AC28BCBD038FF9D71968A6D953E2EFB3875",
+    "name": "scenario-adjustment-movements-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:14.4623714Z",
+    "hash": "5697D86608DEAE60E7B4ADA54C20D46F787A63E085FD6C141BFE447C6590DA9C",
+    "name": "scenario-adjustment-movements-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:41.8394153Z",
+    "hash": "D348DE009D8FDC55F15192A077CAF324A23E600B8938E2747572516E8B495CA8",
+    "name": "scenario-adjustment-movements-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:10.7829731Z",
+    "hash": "8E4699D1962646ADF117A477D610E2A969E0BB5EDF2BEC3E1A9C6416FE61BAAE",
+    "name": "scenario-adjustment-movements-en-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:44.7110260Z",
+    "hash": "5C2D48E4B72617B39829DE3336A72AC28BCBD038FF9D71968A6D953E2EFB3875",
+    "name": "scenario-adjustment-movements-full-page-ar-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:10:14.5618514Z",
+    "hash": "5697D86608DEAE60E7B4ADA54C20D46F787A63E085FD6C141BFE447C6590DA9C",
+    "name": "scenario-adjustment-movements-full-page-ar-light.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:41.9848083Z",
+    "hash": "D348DE009D8FDC55F15192A077CAF324A23E600B8938E2747572516E8B495CA8",
+    "name": "scenario-adjustment-movements-full-page-en-dark.png"
+  },
+  {
+    "modifiedUtc": "2026-10-01T15:09:10.8970255Z",
+    "hash": "8E4699D1962646ADF117A477D610E2A969E0BB5EDF2BEC3E1A9C6416FE61BAAE",
+    "name": "scenario-adjustment-movements-full-page-en-light.png"
+  }
+]

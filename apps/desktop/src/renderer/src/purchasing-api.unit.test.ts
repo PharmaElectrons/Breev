@@ -11,11 +11,37 @@ import {
   requestPostedPurchases,
   rememberPurchasePost,
   requestSuppliers,
+  requestPurchaseItemDetails,
 } from "./purchasing-api";
 
 const REQUEST_ID = "018f9999-9999-7999-8999-999999999999";
 
 describe("Purchasing REST client", () => {
+  it("cancels a superseded item projection through its fetch signal", async () => {
+    const selection = new AbortController();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_url, options) => {
+        const signal = options?.signal;
+        if (signal === undefined || signal === null)
+          throw new Error("Missing abort signal");
+        await new Promise<void>((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          }),
+        );
+        throw new Error("An aborted projection cannot return facts");
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = requestPurchaseItemDetails(
+      "http://127.0.0.1:3000",
+      "019c0000-0000-7000-8000-000000000001",
+      selection.signal,
+    );
+    selection.abort(new Error("Selection superseded"));
+    await expect(pending).rejects.toThrow("Selection superseded");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });

@@ -7,6 +7,8 @@ import {
   LOCAL_DEVICE_SESSION_HEADER,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
+  purchaseItemDetailsPath,
+  purchaseItemDetailsSchema,
   purchaseAdjustmentDraftPath,
   purchaseAdjustmentPostingsPath,
   purchaseAdjustmentSummaryPath,
@@ -30,6 +32,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
+import { cpus, totalmem, platform, release } from "node:os";
 import { pressKeyOnFocused } from "./focus.js";
 import { Pool } from "pg";
 
@@ -227,6 +230,261 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await closeServer(renderer?.server);
     await stopProcess(api);
     await postgres?.stop().catch(() => undefined);
+  });
+
+  test("T06 M2 reference-volume interaction measurements", async ({ page }) => {
+    test.skip(
+      process.env.BREEV_T06_REFERENCE_VOLUME !== "1",
+      "Run reference-volume measurement alone so its bulk fixture cannot change another scenario's dataset",
+    );
+    test.setTimeout(180_000);
+    // Dedicated disposable test schema. Bulk seeding retains constraints and
+    // immutable-table triggers; it is volume evidence, not posting/audit proof.
+    const adminUrl = new URL(databaseRoles.applicationUrl);
+    adminUrl.username = "postgres";
+    adminUrl.password = "";
+    const admin = new Pool({
+      connectionString:
+        process.env.BREEV_TEST_POSTGRES_ADMIN_URL ?? adminUrl.toString(),
+    });
+    let dataset: Record<string, string>;
+    try {
+      await admin.query("begin");
+      await admin.query(`create temporary table t06_reference_products as
+        select n, uuidv7() as product_id, uuidv7() as inventory_unit_id, uuidv7() as package_unit_id
+        from generate_series(1, 9998) n`);
+      await admin.query(
+        `insert into catalog_products select (jsonb_populate_record(null::catalog_products,
+        to_jsonb(source) || jsonb_build_object('id', seed.product_id, 'display_name', 'T06 Reference Item ' || seed.n,
+        'medication_trade_name', 'T06 Reference Item ' || seed.n, 'arabic_search_name', 'مرجع ' || seed.n,
+        'count_default_unit_id', seed.inventory_unit_id, 'sale_default_unit_id', seed.inventory_unit_id,
+        'purchase_default_unit_id', seed.package_unit_id))).*
+        from catalog_products source cross join t06_reference_products seed where source.id = $1`,
+        [purchaseProduct.id],
+      );
+      await admin.query(`insert into catalog_product_units (id, pharmacy_id, product_id, kind, name, ordinal, base_units_per_package)
+        select inventory_unit_id, p.pharmacy_id, product_id, 'inventory'::catalog_unit_kind, 'Strip', 0, null from t06_reference_products seed join catalog_products p on p.id = seed.product_id
+        union all select package_unit_id, p.pharmacy_id, product_id, 'package'::catalog_unit_kind, 'Pack', 1, 4 from t06_reference_products seed join catalog_products p on p.id = seed.product_id`);
+      await admin.query(
+        `insert into suppliers select (jsonb_populate_record(null::suppliers,
+        to_jsonb(source) || jsonb_build_object('id', uuidv7(), 'name', 'T06 Reference Supplier ' || n))).*
+        from suppliers source cross join generate_series(1, 999) n where source.id = $1`,
+        [supplierId],
+      );
+      await admin.query(`create temporary table t06_reference_batches as
+        select seed.product_id, uuidv7() as batch_id, ordinal.n,
+          statement_timestamp() - (((seed.n * 2 + ordinal.n) % 730) || ' days')::interval as received_at
+        from t06_reference_products seed cross join generate_series(1, 4) ordinal(n) where ordinal.n <= 2 or seed.n = 1`);
+      await admin.query(
+        `insert into inventory_batches select (jsonb_populate_record(null::inventory_batches,
+        to_jsonb(source) || jsonb_build_object('id', seed.batch_id, 'product_id', seed.product_id,
+          'lot_number', 'T06 Reference batch ' || seed.n, 'quantity', 4, 'created_at', seed.received_at))).*
+        from t06_reference_batches seed cross join lateral (select * from inventory_batches where product_id = $1 limit 1) source`,
+        [purchaseProduct.id],
+      );
+      await admin.query(
+        `insert into inventory_movements select (jsonb_populate_record(null::inventory_movements,
+        to_jsonb(source) || jsonb_build_object('id', uuidv7(), 'batch_id', seed.batch_id, 'product_id', seed.product_id,
+          'quantity', 4, 'carrying_amount_fils', 80000, 'occurred_at', seed.received_at))).*
+        from t06_reference_batches seed cross join lateral (select * from inventory_movements where product_id = $1 limit 1) source`,
+        [purchaseProduct.id],
+      );
+      await admin.query(`insert into inventory_valuation_state (pharmacy_id, product_id, total_quantity, total_value_scaled)
+        select pharmacy_id, product_id, sum(quantity), sum(carrying_amount_fils)::numeric * 10000000000
+        from inventory_movements where product_id in (select product_id from t06_reference_products) group by pharmacy_id, product_id`);
+      await admin.query("commit");
+      await admin.query("analyze");
+      dataset = (
+        await admin.query(`select (select count(*)::text from catalog_products) as products,
+        (select count(*)::text from inventory_batches) as batches, (select count(*)::text from suppliers) as suppliers,
+        (select count(*)::text from inventory_movements) as movements`)
+      ).rows[0] as Record<string, string>;
+    } finally {
+      await admin.end();
+    }
+    const resultDir = path.resolve(
+      import.meta.dirname,
+      "../../../../evidence/issue-198/t06/performance",
+    );
+    await mkdir(resultDir, { recursive: true });
+    const measurements: Record<string, unknown>[] = [];
+    for (const locale of ["en", "ar"] as const)
+      for (const theme of ["light", "dark"] as const) {
+        const invoice = `T06-PERF-${locale}-${theme}`;
+        const created = await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          "/purchases/drafts",
+          {
+            invoiceOffer: { mode: "none", value: "0" },
+            idempotencyKey: uuidV7(),
+            invoiceDate: "2026-10-01",
+            settlementContext: "debt",
+            supplierId,
+            supplierInvoiceNumber: invoice,
+          },
+        );
+        expect(created.status).toBe(201);
+        await page.goto("about:blank");
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/purchases`);
+        await page
+          .getByRole("button", {
+            name: locale === "en" ? "Saved drafts" : "المسودات المحفوظة",
+            exact: true,
+          })
+          .click();
+        await page
+          .locator("#purchase-draft-register tbody tr", { hasText: invoice })
+          .getByRole("button")
+          .first()
+          .click();
+        const item = page.locator(
+          '.purchase-entry-row [data-enter-field="item"]',
+        );
+        const qty = page.locator(
+          '.purchase-entry-row [data-enter-field="quantity"]',
+        );
+        const cost = page.locator(
+          '.purchase-entry-row [data-enter-field="cost"]',
+        );
+        const retail = page.locator(
+          '.purchase-entry-row [data-enter-field="selling-price"]',
+        );
+        const expiry = page.locator(
+          '.purchase-entry-row [data-enter-field="expiry"]',
+        );
+        // Panel is deliberately slow through every measured interaction.
+        await page.route(
+          `**${purchaseItemDetailsPath(purchaseProduct.id)}`,
+          async (route) => {
+            await new Promise((resolve) => setTimeout(resolve, 4000));
+            await route.continue().catch(() => undefined);
+          },
+        );
+        const samples = {
+          search: [] as number[],
+          barcode: [] as number[],
+          durableSave: [] as number[],
+        };
+        for (let sample = 0; sample < 20; sample++) {
+          console.log(
+            `T06 reference interaction ${locale}/${theme} sample ${sample + 1}`,
+          );
+          await item.fill("");
+          const searchStart = performance.now();
+          await item.fill(
+            sample % 2 === 0 ? "Keyboard Purchase" : "اختبار الشراء",
+          );
+          await expect(
+            page.locator("#purchase-item-suggestions-listbox"),
+          ).toContainText(purchaseProduct.displayName);
+          samples.search.push(performance.now() - searchStart);
+          await item.fill("");
+          await expect(
+            page.locator("#purchase-item-suggestions-listbox"),
+          ).toBeHidden();
+          const barcodeStart = performance.now();
+          await item.fill("5012345678949");
+          await item.press("Enter");
+          try {
+            await expect(qty).toBeFocused();
+          } catch (error) {
+            await page.screenshot({
+              path: path.join(
+                resultDir,
+                `focus-failure-${locale}-${theme}-${sample}.png`,
+              ),
+              fullPage: true,
+            });
+            console.log(await page.locator(".purchase-entry-row").innerText());
+            console.log(
+              await page
+                .locator(".purchase-entry-row [data-enter-field]")
+                .evaluateAll((elements) =>
+                  elements.map((element) => ({
+                    field: element.getAttribute("data-enter-field"),
+                    focused: element === element.ownerDocument.activeElement,
+                  })),
+                ),
+            );
+            throw error;
+          }
+          samples.barcode.push(performance.now() - barcodeStart);
+          await qty.fill("1");
+          await qty.press("Enter");
+          await cost.fill("80000");
+          await cost.press("Enter");
+          await retail.fill("120000");
+          await retail.press("Enter");
+          await expiry.fill("2029-06-30");
+          const saveStart = performance.now();
+          await expiry.press("Enter");
+          await expect(
+            page.locator(".purchase-row-table tbody tr[data-row-id]"),
+          ).toHaveCount(sample + 1);
+          await expect(item).toBeFocused();
+          samples.durableSave.push(performance.now() - saveStart);
+        }
+        const stats = Object.fromEntries(
+          Object.entries(samples).map(([name, values]) => {
+            const sorted = [...values].sort((a, b) => a - b);
+            return [
+              name,
+              {
+                count: values.length,
+                p95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1],
+                p99Ms: sorted[Math.ceil(sorted.length * 0.99) - 1],
+                samplesMs: values,
+              },
+            ];
+          }),
+        );
+        measurements.push({ locale, theme, stats });
+        await writeFile(
+          path.join(resultDir, `samples-${locale}-${theme}.json`),
+          JSON.stringify(
+            {
+              dataset: dataset!,
+              locale,
+              theme,
+              stats,
+              certifiedProfile: false,
+            },
+            null,
+            2,
+          ),
+        );
+        await page.unrouteAll({ behavior: "ignoreErrors" });
+      }
+    await writeFile(
+      path.join(resultDir, "m2-reference-volume.json"),
+      JSON.stringify(
+        {
+          dataset: dataset!,
+          hardware: {
+            cpu: cpus()[0]?.model,
+            logicalProcessors: cpus().length,
+            memoryBytes: totalmem(),
+            os: platform(),
+            release: release(),
+          },
+          role: "Main browser renderer; production local API",
+          network: "loopback",
+          health: "API healthy; panel responses delayed 4s",
+          certifiedProfile: false,
+          patientProfiles: "M3 owner unavailable; not fabricated",
+          postedSaleHistory:
+            "not implemented in current M2; no 200000 posted-sale claim",
+          seed: "bulk constrained M2 volume fixture; not genuine posting history",
+          releaseThresholdApproval: false,
+          measurements,
+        },
+        null,
+        2,
+      ),
+    );
   });
 
   test("enters the header keyboard-first, warns without blocking, and resumes after restart", async ({
@@ -440,15 +698,23 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     const panel = page.locator("aside.purchase-item-panel");
     await expect(panel).toBeVisible();
     await expect(panel).toBeInViewport({ ratio: 1 });
-    await expect(panel.locator("strong")).toHaveText(
+    await expect(panel.locator(".purchase-item-trade-name")).toHaveText(
       purchaseProduct.displayName,
     );
-    await expect(panel.locator("dl > div dd")).toHaveText([
-      "Paracetamol",
-      "Pain relief",
-      "Strip · Pack × 4",
-      "90000",
-    ]);
+    await expect(
+      panel.locator('[data-panel-field="scientific-name"]'),
+    ).toHaveText("Paracetamol");
+    await expect(
+      panel.locator('[data-panel-field="category"] .purchase-fact-value'),
+    ).toHaveText("Pain relief");
+    await expect(
+      panel.locator('[data-panel-field="packaging"] .purchase-fact-value'),
+    ).toContainText("Strip");
+    await expect(
+      panel.locator(
+        '[data-panel-field="wholesale-price"] .purchase-fact-value',
+      ),
+    ).toContainText("90.000");
     await expect(page.locator("table.purchase-row-table")).not.toContainText(
       "90000",
     );
@@ -463,7 +729,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       await page.setViewportSize(viewport);
       await expect(panel).toBeInViewport({ ratio: 1 });
       await expect(
-        panel.locator(".purchase-fact-row:nth-child(3) .purchase-fact-value"),
+        panel.locator(
+          '[data-panel-field="wholesale-price"] .purchase-fact-value',
+        ),
       ).toBeInViewport({ ratio: 1 });
       // Polled: a resize relayouts asynchronously, so a single read can catch
       // the previous layout.
@@ -836,7 +1104,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           await expect(itemPanel).toBeInViewport({ ratio: 1 });
           await expect(
             itemPanel.locator(
-              ".purchase-fact-row:nth-child(3) .purchase-fact-value",
+              '[data-panel-field="wholesale-price"] .purchase-fact-value',
             ),
           ).toBeInViewport({ ratio: 1 });
           // The base-unit preview column, in this direction and theme.
@@ -853,10 +1121,21 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await expect(itemPanel.locator(".purchase-item-trade-name")).toHaveText(
           purchaseProduct.displayName,
         );
-        await expect(itemPanel.locator("dl > div dd")).toHaveCount(4);
-        for (const value of ["Paracetamol", "Pain relief", "Strip", "90000"]) {
+        await expect(
+          itemPanel.locator('[data-panel-field="category"]'),
+        ).toHaveCount(1);
+        for (const value of [
+          "Paracetamol",
+          "Pain relief",
+          locale === "ar" ? "شريط" : "Strip",
+        ]) {
           await expect(itemPanel).toContainText(value);
         }
+        await expect(
+          itemPanel.locator(
+            '[data-panel-field="wholesale-price"] .purchase-fact-value',
+          ),
+        ).toContainText(locale === "ar" ? "٩٠٫٠٠٠" : "90.000");
         await expect(page.locator(".purchase-item-empty")).toHaveCount(0);
         await expect(
           page.locator("table.purchase-row-table"),
@@ -2080,6 +2359,502 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         });
         await page.evaluate(
           'document.documentElement.style.removeProperty("font-size")',
+        );
+      });
+
+      test(`T06 authoritative item facts and non-blocking entry ${locale} ${theme}`, async ({
+        page,
+      }) => {
+        const copy =
+          locale === "en"
+            ? {
+                savedInvoices: "Saved drafts",
+                retry: "Retry",
+                panelMissing: "Not available",
+                panelReportingUnavailable: "Not available in M2",
+                panelNoBatches: "No on-hand batches",
+                panelLoading:
+                  "Loading current item facts… Row entry remains available.",
+                panelUnavailable:
+                  "Item facts unavailable. Check the local connection and retry; stock is not shown as zero.",
+                panelDenied:
+                  "Item facts denied. Ask an authorized user and retry.",
+              }
+            : {
+                savedInvoices: "المسودات المحفوظة",
+                retry: "إعادة المحاولة",
+                panelMissing: "غير متاح",
+                panelReportingUnavailable: "غير متاح في المرحلة الثانية",
+                panelNoBatches: "لا توجد دفعات بمخزون حالي",
+                panelLoading:
+                  "جارٍ تحميل معلومات المادة الحالية… إدخال السطر متاح.",
+                panelUnavailable:
+                  "معلومات المادة غير متاحة. تحقق من الاتصال المحلي وأعد المحاولة؛ لا يُعرض المخزون كصفر.",
+                panelDenied:
+                  "عرض معلومات المادة غير مسموح. اطلب مساعدة مستخدم مخوّل وأعد المحاولة.",
+              };
+        const proofDir = path.resolve(
+          import.meta.dirname,
+          "../../../../evidence/issue-198/t06/browser",
+        );
+        await mkdir(proofDir, { recursive: true });
+        const suffix = `${locale}-${theme}`;
+        const zeroRequest = medicationRequest(
+          `T06 Zero ${suffix}`,
+          `T06ZERO-${suffix}`,
+        );
+        zeroRequest.scientificName = null;
+        zeroRequest.category = null;
+        zeroRequest.pricing = {
+          method: "by-price",
+          retailPriceFils: "0",
+          wholesalePriceFils: null,
+        };
+        zeroRequest.stockLevels = {
+          minimumLevel: "0",
+          maximumLevel: null,
+          reorderPoint: null,
+        };
+        const positiveRequest = medicationRequest(
+          `T06 Batches ${suffix}`,
+          `T06POS-${suffix}`,
+        );
+        positiveRequest.pricing = {
+          method: "by-price",
+          retailPriceFils: "100000",
+          wholesalePriceFils: "0",
+        };
+        positiveRequest.stockLevels = {
+          minimumLevel: "2",
+          maximumLevel: "20",
+          reorderPoint: null,
+        };
+        const products: Product[] = [];
+        for (const request of [zeroRequest, positiveRequest]) {
+          const result = await apiRequest(
+            apiOrigin,
+            credentials,
+            "POST",
+            "/catalog/products",
+            request,
+          );
+          expect(result.status).toBe(201);
+          products.push(result.body as Product);
+        }
+        const [zero, positive] = products as [Product, Product];
+        const initial = purchaseItemDetailsSchema.parse(
+          (
+            await apiRequest(
+              apiOrigin,
+              credentials,
+              "GET",
+              purchaseItemDetailsPath(zero.id),
+            )
+          ).body,
+        );
+        const relativeDate = (days: number) =>
+          new Date(
+            Date.parse(`${initial.businessDate}T12:00:00Z`) + days * 86_400_000,
+          )
+            .toISOString()
+            .slice(0, 10);
+        for (const [quantity, cost, unit, days, lot] of [
+          [
+            "2",
+            "40000",
+            { kind: "package-unit", packageUnitName: "Pack" },
+            -2,
+            "T06-EXPIRED",
+          ],
+          ["3", "20000", { kind: "inventory-unit" }, 14, "T06-NEAR"],
+        ] as const) {
+          const created = await apiRequest(
+            apiOrigin,
+            credentials,
+            "POST",
+            "/purchases/drafts",
+            {
+              invoiceOffer: { mode: "none", value: "0" },
+              idempotencyKey: uuidV7(),
+              invoiceDate: initial.businessDate,
+              settlementContext: "debt",
+              supplierId,
+              supplierInvoiceNumber: `T06-STOCK-${suffix}-${lot}`,
+            },
+          );
+          expect(created.status).toBe(201);
+          let draft = (created.body as { draft: PurchaseDraft }).draft;
+          const saved = await apiRequest(
+            apiOrigin,
+            credentials,
+            "POST",
+            purchaseDraftRowsPath(draft.id),
+            {
+              costFils: cost,
+              enteredQuantity: quantity,
+              expectedVersion: draft.version,
+              expiryDate: relativeDate(days),
+              idempotencyKey: uuidV7(),
+              itemId: positive.id,
+              lotNumber: lot,
+              notes: null,
+              pricing: { method: "by-price", retailPriceFils: "100000" },
+              unit,
+            },
+          );
+          expect(saved.status).toBe(201);
+          draft = (saved.body as { draft: PurchaseDraft }).draft;
+          expect(
+            (
+              await apiRequest(
+                apiOrigin,
+                credentials,
+                "POST",
+                purchaseDraftPostingsPath(draft.id),
+                { expectedVersion: draft.version, idempotencyKey: uuidV7() },
+              )
+            ).status,
+          ).toBe(201);
+        }
+        const preferences = (
+          await apiRequest(
+            apiOrigin,
+            credentials,
+            "GET",
+            "/purchases/entry-preferences",
+          )
+        ).body as {
+          columns: { field: string; visible: boolean }[];
+          revision: string;
+        };
+        expect(
+          (
+            await apiRequest(
+              apiOrigin,
+              credentials,
+              "PUT",
+              "/purchases/entry-preferences",
+              {
+                expectedRevision: preferences.revision,
+                idempotencyKey: uuidV7(),
+                afterCommit: "return-to-item",
+                columns: preferences.columns.map((column) => ({
+                  ...column,
+                  visible: [
+                    "item",
+                    "quantity",
+                    "cost",
+                    "selling-price",
+                    "expiry",
+                  ].includes(column.field),
+                })),
+                detailsPanelFields: [
+                  "scientific-name",
+                  "category",
+                  "packaging",
+                  "wholesale-price",
+                ],
+              },
+            )
+          ).status,
+        ).toBe(200);
+        const invoice = `T06-ENTRY-${suffix}`;
+        expect(
+          (
+            await apiRequest(
+              apiOrigin,
+              credentials,
+              "POST",
+              "/purchases/drafts",
+              {
+                invoiceOffer: { mode: "none", value: "0" },
+                idempotencyKey: uuidV7(),
+                invoiceDate: initial.businessDate,
+                settlementContext: "debt",
+                supplierId,
+                supplierInvoiceNumber: invoice,
+              },
+            )
+          ).status,
+        ).toBe(201);
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.setViewportSize({ width: 1366, height: 768 });
+        await page.goto(`${renderer.origin}#/purchases`);
+        await page
+          .getByRole("button", { name: copy.savedInvoices, exact: true })
+          .click();
+        await page
+          .locator("#purchase-draft-register tbody tr", { hasText: invoice })
+          .getByRole("button")
+          .first()
+          .click();
+        const item = page.locator(
+          '.purchase-entry-row [data-enter-field="item"]',
+        );
+        const quantity = page.locator(
+          '.purchase-entry-row [data-enter-field="quantity"]',
+        );
+        const panel = page.locator("aside.purchasing-authoritative-panel");
+        const select = async (barcode: string) => {
+          await item.fill(barcode);
+          await item.press("Enter");
+          await expect(quantity).toBeFocused();
+        };
+        const balance = panel.locator(".purchase-balance-total-text").first();
+        await select(`T06ZERO-${suffix}`);
+        await expect(balance).toContainText(locale === "ar" ? "٠" : "0");
+        await expect(
+          panel.locator(
+            '[data-panel-field="wholesale-price"] .purchase-fact-value',
+          ),
+        ).toHaveText(copy.panelMissing);
+        await expect(
+          panel.locator('[data-panel-field="scientific-name"]'),
+        ).toHaveText(copy.panelMissing);
+        await expect(
+          panel.locator('[data-panel-field="category"] .purchase-fact-value'),
+        ).toHaveText(copy.panelMissing);
+        await expect(
+          panel.locator(
+            '[data-panel-field="consumption"] .purchase-fact-value',
+          ),
+        ).toHaveText(copy.panelReportingUnavailable);
+        await expect(
+          panel.locator(
+            '[data-panel-field="average-cost"] .purchase-fact-value',
+          ),
+        ).toContainText(copy.panelMissing);
+        await expect(panel).not.toContainText("Treatment day");
+        await page.screenshot({
+          path: path.join(proofDir, `zero-${suffix}.png`),
+          fullPage: true,
+        });
+        await select(`T06POS-${suffix}`);
+        await expect(balance).toContainText(locale === "ar" ? "١١" : "11");
+        await expect(
+          panel.locator(
+            '[data-panel-field="wholesale-price"] .purchase-fact-value',
+          ),
+        ).toContainText(locale === "ar" ? "٠٫٠٠٠" : "0.000");
+        await expect(panel.locator(".purchase-panel-batch")).toHaveCount(2);
+        await expect(
+          panel.locator('[data-panel-field="batch-expiry"]').first(),
+        ).toContainText("-2");
+        await expect(
+          panel.locator('[data-panel-field="batch-expiry"]').last(),
+        ).toContainText("14");
+        await expect(
+          panel.locator('[data-panel-field="average-cost"]'),
+        ).toContainText(locale === "ar" ? "١٢٫٧٢٧" : "12.727");
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        await page.screenshot({
+          path: path.join(proofDir, `positive-${suffix}.png`),
+          fullPage: true,
+        });
+        for (const viewport of [
+          { width: 1280, height: 800 },
+          { width: 1024, height: 768 },
+          { width: 1366, height: 768 },
+        ]) {
+          await page.setViewportSize(viewport);
+          await expect(panel).toBeInViewport({ ratio: 1 });
+          await expect(
+            panel.locator(
+              '[data-panel-field="wholesale-price"] .purchase-fact-value',
+            ),
+          ).toBeInViewport({ ratio: 1 });
+          await expect
+            .poll(() =>
+              page.evaluate<boolean>(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+              ),
+            )
+            .toBe(true);
+        }
+        await page.evaluate("document.documentElement.style.fontSize = '200%'");
+        await expect(panel).toBeInViewport({ ratio: 1 });
+        await expect
+          .poll(() =>
+            page.evaluate<boolean>(
+              "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+            ),
+          )
+          .toBe(true);
+        await page.screenshot({
+          path: path.join(proofDir, `text-200-${suffix}.png`),
+          fullPage: true,
+        });
+        await page.evaluate("document.documentElement.style.fontSize = ''");
+        await select(`T06ZERO-${suffix}`);
+        await expect(balance).toContainText(locale === "ar" ? "٠" : "0");
+        let release!: () => void, observed!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const started = new Promise<void>((resolve) => {
+          observed = resolve;
+        });
+        const detailsUrl = `**${purchaseItemDetailsPath(positive.id)}`;
+        await page.route(detailsUrl, async (route) => {
+          const response = await route.fetch();
+          observed();
+          await held;
+          await route.fulfill({ response }).catch(() => undefined);
+        });
+        const barcodeStart = performance.now();
+        await select(`T06POS-${suffix}`);
+        const barcodeMs = performance.now() - barcodeStart;
+        await started;
+        await expect(panel.getByRole("status")).toHaveText(copy.panelLoading);
+        await expect(panel.locator('[data-panel-field="balance"]')).toHaveCount(
+          0,
+        );
+        await page.screenshot({
+          path: path.join(proofDir, `loading-${suffix}.png`),
+          fullPage: true,
+        });
+        await quantity.fill("2");
+        await quantity.press("Enter");
+        const cost = page.locator(
+          '.purchase-entry-row [data-enter-field="cost"]',
+        );
+        await expect(cost).toBeFocused();
+        await cost.fill("40000");
+        await cost.press("Enter");
+        const retail = page.locator(
+          '.purchase-entry-row [data-enter-field="selling-price"]',
+        );
+        await expect(retail).toBeFocused();
+        await retail.fill("100000");
+        await retail.press("Enter");
+        const expiry = page.locator(
+          '.purchase-entry-row [data-enter-field="expiry"]',
+        );
+        await expect(expiry).toBeFocused();
+        await expiry.fill("2029-06-30");
+        const saveStart = performance.now();
+        await expiry.press("Enter");
+        await expect(
+          page.locator(".purchase-row-table tbody tr[data-row-id]"),
+        ).toHaveCount(1);
+        await expect(item).toBeFocused();
+        const saveMs = performance.now() - saveStart;
+        const searchStart = performance.now();
+        await item.fill(`T06 Zero ${suffix}`);
+        await expect(
+          page.locator("#purchase-item-suggestions-listbox"),
+        ).toContainText(zero.displayName);
+        const searchMs = performance.now() - searchStart;
+        await item.press("Enter");
+        await expect(panel.locator(".purchase-item-trade-name")).toHaveText(
+          zero.displayName,
+        );
+        release();
+        await page.unroute(detailsUrl);
+        await expect(
+          panel.locator('[data-panel-field="batches"]'),
+        ).toContainText(copy.panelNoBatches);
+        await expect(balance).toContainText(locale === "ar" ? "٠" : "0");
+        await page.route(detailsUrl, (route) =>
+          route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: "{}",
+          }),
+        );
+        await select(`T06POS-${suffix}`);
+        await expect(panel.getByRole("alert")).toHaveText(
+          copy.panelUnavailable,
+        );
+        await expect(panel.locator('[data-panel-field="balance"]')).toHaveCount(
+          0,
+        );
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        await page.screenshot({
+          path: path.join(proofDir, `unavailable-${suffix}.png`),
+          fullPage: true,
+        });
+        await page.unroute(detailsUrl);
+        await panel
+          .getByRole("button", { name: copy.retry, exact: true })
+          .click();
+        // Draft rows do not change stock. Only posting records movements.
+        await expect(balance).toContainText(locale === "ar" ? "١١" : "11");
+        await select(`T06ZERO-${suffix}`);
+        await expect(balance).toContainText(locale === "ar" ? "٠" : "0");
+        // Fail the projection's connection independently. Entire-browser
+        // offline also stops the shell's health/identity poll and belongs to
+        // the existing connection seam; it cannot reliably leave this editor up.
+        await page.route(detailsUrl, (route) =>
+          route.abort("internetdisconnected"),
+        );
+        await item.fill(`T06POS-${suffix}`);
+        await item.press("Enter");
+        await expect(panel.getByRole("alert")).toHaveText(
+          copy.panelUnavailable,
+        );
+        await expect(panel.locator('[data-panel-field="balance"]')).toHaveCount(
+          0,
+        );
+        await page.unroute(detailsUrl);
+        await panel
+          .getByRole("button", { name: copy.retry, exact: true })
+          .click();
+        await expect(balance).toContainText(locale === "ar" ? "١١" : "11");
+        await select(`T06ZERO-${suffix}`);
+        await expect(balance).toContainText(locale === "ar" ? "٠" : "0");
+        await page.route(detailsUrl, (route) =>
+          route.fulfill({
+            status: 403,
+            contentType: "application/json",
+            body: JSON.stringify({
+              code: "permission-denied",
+              requiredPermission: "purchases.drafts.manage",
+              status: "denied",
+              requestId: "019c0000-0000-7000-8000-000000000099",
+            }),
+          }),
+        );
+        await select(`T06POS-${suffix}`);
+        await expect(panel.getByRole("alert")).toHaveText(copy.panelDenied);
+        await expect(panel.locator('[data-panel-field="balance"]')).toHaveCount(
+          0,
+        );
+        await expect(panel).not.toContainText("019c0000");
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        await page.screenshot({
+          path: path.join(proofDir, `denied-${suffix}.png`),
+          fullPage: true,
+        });
+        await page.unroute(detailsUrl);
+        await panel
+          .getByRole("button", { name: copy.retry, exact: true })
+          .click();
+        await expect(balance).toContainText(locale === "ar" ? "١١" : "11");
+        await writeFile(
+          path.join(proofDir, `interaction-${suffix}.json`),
+          JSON.stringify(
+            {
+              barcodeMs,
+              searchMs,
+              saveMs,
+              dataset:
+                "small correctness fixture; reference performance is recorded separately",
+              locale,
+              theme,
+              role: "Main renderer",
+              network: "loopback; panel intentionally held/offline",
+              releasePerformanceApproval: false,
+            },
+            null,
+            2,
+          ),
         );
       });
 
@@ -3962,9 +4737,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(panel).toBeVisible();
     await expect(panel).toBeInViewport({ ratio: 1 });
     await expect(
-      panel.locator(".purchase-fact-row:nth-child(3) .purchase-fact-value"),
+      panel.locator(
+        '[data-panel-field="wholesale-price"] .purchase-fact-value',
+      ),
     ).toBeInViewport({ ratio: 1 });
-    await expect(panel).toContainText("90000");
+    await expect(
+      panel.locator(
+        '[data-panel-field="wholesale-price"] .purchase-fact-value',
+      ),
+    ).toContainText("90.000");
   });
 
   test("brings a refused Purchase Return into view and gives it focus", async ({

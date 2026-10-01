@@ -1,0 +1,206 @@
+$ playwright test --config playwright.acceptance.config.ts
+
+Running 40 tests using 1 worker
+
+
+(node:21404) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[1/40] test\acceptance\milestone-2.acceptance.test.ts:272:5 › milestone 2 acceptance · en · light › clause 1 — defines an item and finds it by smart search
+[2/40] test\acceptance\milestone-2.acceptance.test.ts:455:5 › milestone 2 acceptance · en · light › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[3/40] test\acceptance\milestone-2.acceptance.test.ts:588:5 › milestone 2 acceptance · en · light › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[4/40] test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate
+  1) test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.delta-summary-dialog').locator('tbody > tr')
+    Expected: 1
+    Received: 5
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 10000ms
+      - waiting for locator('.delta-summary-dialog').locator('tbody > tr')
+        23 × locator resolved to 5 elements
+           - unexpected value "5"
+
+
+      741 |               const summary = page.locator(".delta-summary-dialog");
+      742 |               await expect(summary).toContainText("4 → 8 (4)");
+    > 743 |               await expect(summary.locator("tbody > tr")).toHaveCount(1);
+          |                                                           ^
+      744 |               await expectOnScreen(summary.locator("tbody > tr").first());
+      745 |               placements.push(
+      746 |                 await measureElement(page, ".delta-summary-table tbody > tr"),
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:743:59
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:733:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:713:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-f7dd3-ce-and-a-return-is-separate\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-f7dd3-ce-and-a-return-is-separate\error-context.md
+
+
+[5/40] test\acceptance\milestone-2.acceptance.test.ts:866:5 › milestone 2 acceptance · en · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[6/40] test\acceptance\milestone-2.acceptance.test.ts:986:5 › milestone 2 acceptance · en · light › reorder from sales — the draft is byte-identical before and after
+[7/40] test\acceptance\milestone-2.acceptance.test.ts:1079:5 › milestone 2 acceptance · en · light › bilingual pass — direction, theme and keyboard operation
+[8/40] test\acceptance\milestone-2.acceptance.test.ts:1150:5 › milestone 2 acceptance · en · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[9/40] test\acceptance\milestone-2.acceptance.test.ts:1371:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing
+[10/40] test\acceptance\milestone-2.acceptance.test.ts:1594:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:22144) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[11/40] test\acceptance\milestone-2.acceptance.test.ts:272:5 › milestone 2 acceptance · en · dark › clause 1 — defines an item and finds it by smart search
+[12/40] test\acceptance\milestone-2.acceptance.test.ts:455:5 › milestone 2 acceptance · en · dark › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[13/40] test\acceptance\milestone-2.acceptance.test.ts:588:5 › milestone 2 acceptance · en · dark › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[14/40] test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · dark › clause 3 — an adjustment records only the difference, and a return is separate
+  2) test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · dark › clause 3 — an adjustment records only the difference, and a return is separate 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.delta-summary-dialog').locator('tbody > tr')
+    Expected: 1
+    Received: 5
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 10000ms
+      - waiting for locator('.delta-summary-dialog').locator('tbody > tr')
+        24 × locator resolved to 5 elements
+           - unexpected value "5"
+
+
+      741 |               const summary = page.locator(".delta-summary-dialog");
+      742 |               await expect(summary).toContainText("4 → 8 (4)");
+    > 743 |               await expect(summary.locator("tbody > tr")).toHaveCount(1);
+          |                                                           ^
+      744 |               await expectOnScreen(summary.locator("tbody > tr").first());
+      745 |               placements.push(
+      746 |                 await measureElement(page, ".delta-summary-table tbody > tr"),
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:743:59
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:733:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:713:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-43f9e-ce-and-a-return-is-separate\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-43f9e-ce-and-a-return-is-separate\error-context.md
+
+
+[15/40] test\acceptance\milestone-2.acceptance.test.ts:866:5 › milestone 2 acceptance · en · dark › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[16/40] test\acceptance\milestone-2.acceptance.test.ts:986:5 › milestone 2 acceptance · en · dark › reorder from sales — the draft is byte-identical before and after
+[17/40] test\acceptance\milestone-2.acceptance.test.ts:1079:5 › milestone 2 acceptance · en · dark › bilingual pass — direction, theme and keyboard operation
+[18/40] test\acceptance\milestone-2.acceptance.test.ts:1150:5 › milestone 2 acceptance · en · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[19/40] test\acceptance\milestone-2.acceptance.test.ts:1371:5 › milestone 2 acceptance · en · dark › scope — the item-details panel in purchasing
+[20/40] test\acceptance\milestone-2.acceptance.test.ts:1594:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:24016) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[21/40] test\acceptance\milestone-2.acceptance.test.ts:272:5 › milestone 2 acceptance · ar · light › clause 1 — defines an item and finds it by smart search
+[22/40] test\acceptance\milestone-2.acceptance.test.ts:455:5 › milestone 2 acceptance · ar · light › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[23/40] test\acceptance\milestone-2.acceptance.test.ts:588:5 › milestone 2 acceptance · ar · light › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[24/40] test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · ar · light › clause 3 — an adjustment records only the difference, and a return is separate
+  3) test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · ar · light › clause 3 — an adjustment records only the difference, and a return is separate 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.delta-summary-dialog').locator('tbody > tr')
+    Expected: 1
+    Received: 5
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 10000ms
+      - waiting for locator('.delta-summary-dialog').locator('tbody > tr')
+        24 × locator resolved to 5 elements
+           - unexpected value "5"
+
+
+      741 |               const summary = page.locator(".delta-summary-dialog");
+      742 |               await expect(summary).toContainText("4 → 8 (4)");
+    > 743 |               await expect(summary.locator("tbody > tr")).toHaveCount(1);
+          |                                                           ^
+      744 |               await expectOnScreen(summary.locator("tbody > tr").first());
+      745 |               placements.push(
+      746 |                 await measureElement(page, ".delta-summary-table tbody > tr"),
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:743:59
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:733:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:713:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-cb7bf-ce-and-a-return-is-separate\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-cb7bf-ce-and-a-return-is-separate\error-context.md
+
+
+[25/40] test\acceptance\milestone-2.acceptance.test.ts:866:5 › milestone 2 acceptance · ar · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[26/40] test\acceptance\milestone-2.acceptance.test.ts:986:5 › milestone 2 acceptance · ar · light › reorder from sales — the draft is byte-identical before and after
+[27/40] test\acceptance\milestone-2.acceptance.test.ts:1079:5 › milestone 2 acceptance · ar · light › bilingual pass — direction, theme and keyboard operation
+[28/40] test\acceptance\milestone-2.acceptance.test.ts:1150:5 › milestone 2 acceptance · ar · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[29/40] test\acceptance\milestone-2.acceptance.test.ts:1371:5 › milestone 2 acceptance · ar · light › scope — the item-details panel in purchasing
+[30/40] test\acceptance\milestone-2.acceptance.test.ts:1594:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+
+(node:24308) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[31/40] test\acceptance\milestone-2.acceptance.test.ts:272:5 › milestone 2 acceptance · ar · dark › clause 1 — defines an item and finds it by smart search
+[32/40] test\acceptance\milestone-2.acceptance.test.ts:455:5 › milestone 2 acceptance · ar · dark › clause 2 — saves a supplier invoice with cost and price per pricing mode
+[33/40] test\acceptance\milestone-2.acceptance.test.ts:588:5 › milestone 2 acceptance · ar · dark › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[34/40] test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · ar · dark › clause 3 — an adjustment records only the difference, and a return is separate
+  4) test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · ar · dark › clause 3 — an adjustment records only the difference, and a return is separate 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.delta-summary-dialog').locator('tbody > tr')
+    Expected: 1
+    Received: 5
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 10000ms
+      - waiting for locator('.delta-summary-dialog').locator('tbody > tr')
+        23 × locator resolved to 5 elements
+           - unexpected value "5"
+
+
+      741 |               const summary = page.locator(".delta-summary-dialog");
+      742 |               await expect(summary).toContainText("4 → 8 (4)");
+    > 743 |               await expect(summary.locator("tbody > tr")).toHaveCount(1);
+          |                                                           ^
+      744 |               await expectOnScreen(summary.locator("tbody > tr").first());
+      745 |               placements.push(
+      746 |                 await measureElement(page, ".delta-summary-table tbody > tr"),
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:743:59
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:733:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:713:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-52cdd-ce-and-a-return-is-separate\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-52cdd-ce-and-a-return-is-separate\error-context.md
+
+
+[35/40] test\acceptance\milestone-2.acceptance.test.ts:866:5 › milestone 2 acceptance · ar · dark › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[36/40] test\acceptance\milestone-2.acceptance.test.ts:986:5 › milestone 2 acceptance · ar · dark › reorder from sales — the draft is byte-identical before and after
+[37/40] test\acceptance\milestone-2.acceptance.test.ts:1079:5 › milestone 2 acceptance · ar · dark › bilingual pass — direction, theme and keyboard operation
+[38/40] test\acceptance\milestone-2.acceptance.test.ts:1150:5 › milestone 2 acceptance · ar · dark › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[39/40] test\acceptance\milestone-2.acceptance.test.ts:1371:5 › milestone 2 acceptance · ar · dark › scope — the item-details panel in purchasing
+[40/40] test\acceptance\milestone-2.acceptance.test.ts:1594:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  4 failed
+    test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate 
+    test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · en · dark › clause 3 — an adjustment records only the difference, and a return is separate 
+    test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · ar · light › clause 3 — an adjustment records only the difference, and a return is separate 
+    test\acceptance\milestone-2.acceptance.test.ts:712:5 › milestone 2 acceptance · ar · dark › clause 3 — an adjustment records only the difference, and a return is separate 
+  24 did not run
+  12 passed (2.4m)
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @breev/desktop@0.0.0 test:acceptance:m2: `playwright test --config playwright.acceptance.config.ts`
+Exit status 1

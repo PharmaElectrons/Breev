@@ -1,0 +1,11 @@
+
+Running 3 tests using 1 worker
+
+
+
+(node:6024) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/3] test\desktop.smoke.test.ts:67:1 › the packaged desktop enforces its outer security and health seams
+[2/3] test\desktop.smoke.test.ts:225:1 › the packaged desktop commits through its bound Main session offline and after API restart
+[3/3] test\desktop.smoke.test.ts:364:1 › the packaged Main and Preload bundles import no unresolved runtime package
+  3 passed (37.1s)

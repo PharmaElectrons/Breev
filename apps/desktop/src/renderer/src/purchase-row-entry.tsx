@@ -286,6 +286,7 @@ export function PurchaseRowEntry({
         ? null
         : {
             fields: preferences?.detailsPanelFields ?? [],
+            preferencesRevision: preferences?.revision ?? null,
             product: displayedProduct,
             expiryDate: activeExpiry || null,
             rowQuantity: activeQty || null,

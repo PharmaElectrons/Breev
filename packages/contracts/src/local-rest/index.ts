@@ -4458,6 +4458,102 @@ export const purchaseEntryPreferencesReadContract = {
     ...purchasingReadDenialResponses,
   },
 } as const;
+export const purchaseItemDetailsSchema = z
+  .strictObject({
+    productId: z.uuidv7(),
+    displayName: z.string().min(1),
+    scientificName: z.string().nullable(),
+    category: z.string().nullable(),
+    barcode: z.string().nullable(),
+    visibleFields: z.array(purchaseDetailsPanelFieldSchema),
+    packaging: z.strictObject({
+      inventoryUnitName: z.string().min(1),
+      packageUnits: z.array(
+        z.strictObject({
+          name: z.string().min(1),
+          baseUnitsPerPackage: packageUnitRatioSchema,
+        }),
+      ),
+    }),
+    pricingMethod: productPricingMethodSchema,
+    retailPriceFils: priceFilsSchema,
+    wholesalePriceFils: priceFilsSchema.nullable(),
+    businessDate: z.iso.date(),
+    inventoryVisibility: z.enum(["visible", "hidden-by-permission"]),
+    inventory: z
+      .strictObject({
+        balance: nonNegativeIntegerStringSchema,
+        breakdown: z.array(
+          z.strictObject({
+            name: z.string().min(1),
+            quantity: nonNegativeIntegerStringSchema,
+          }),
+        ),
+        minimumLevel: nonNegativeIntegerStringSchema.nullable(),
+        maximumLevel: nonNegativeIntegerStringSchema.nullable(),
+        reconciliation: z.enum(["consistent", "mismatch"]),
+        alerts: z.array(inventoryRiskIndicatorSchema),
+        batches: z.array(
+          z.strictObject({
+            id: z.uuidv7(),
+            balance: nonNegativeIntegerStringSchema,
+            lotNumber: z.string().nullable(),
+            originalExpiryDate: z.iso.date().nullable(),
+            effectiveExpiryDate: z.iso.date().nullable(),
+            daysRemaining: z.number().int().nullable(),
+            status: batchEligibilityStatusSchema,
+          }),
+        ),
+      })
+      .nullable(),
+    costVisibility: purchasePostedCostVisibilitySchema,
+    averageCostVisibility: purchasePostedCostVisibilitySchema,
+    averageUnitCostFils: priceFilsSchema.nullable(),
+    lastPostedCost: z
+      .strictObject({
+        purchaseId: z.uuidv7(),
+        invoiceDate: z.iso.date(),
+        enteredUnitName: z.string().min(1),
+        enteredQuantity: packageUnitRatioSchema,
+        primarySupplierCostFils: priceFilsSchema,
+        costAfterDiscountFils: priceFilsSchema,
+      })
+      .nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.inventoryVisibility !== "visible" && value.inventory !== null)
+      ctx.addIssue({
+        code: "custom",
+        path: ["inventory"],
+        message: "Denied stock facts must be redacted",
+      });
+    if (
+      value.averageCostVisibility !== "visible" &&
+      value.averageUnitCostFils !== null
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["averageUnitCostFils"],
+        message: "Denied valuation must be redacted",
+      });
+    if (value.costVisibility !== "visible" && value.lastPostedCost !== null)
+      ctx.addIssue({
+        code: "custom",
+        path: ["lastPostedCost"],
+        message: "Denied frozen costs must be redacted",
+      });
+  });
+export const purchaseItemDetailsContract = {
+  method: "GET",
+  path: "/purchases/items/:productId/details",
+  responses: {
+    200: purchaseItemDetailsSchema,
+    ...purchasingReadDenialResponses,
+    404: purchasingDenialSchema,
+  },
+} as const;
+export const purchaseItemDetailsPath = (productId: string): string =>
+  `/purchases/items/${encodeURIComponent(productId)}/details`;
 export const purchaseEntryPreferencesUpdateContract = {
   method: "PUT",
   path: "/purchases/entry-preferences",
@@ -4745,6 +4841,7 @@ export const PURCHASING_CONTRACTS = [
   purchaseDraftUpdateContract,
   purchaseEntryPreferencesReadContract,
   purchaseEntryPreferencesUpdateContract,
+  purchaseItemDetailsContract,
   purchasePostContract,
   purchasePostedListContract,
   purchasePostedReadContract,
@@ -5678,6 +5775,7 @@ export type PurchasePostedListRequest = z.infer<
 export type PurchasePostedCostVisibility = z.infer<
   typeof purchasePostedCostVisibilitySchema
 >;
+export type PurchaseItemDetails = z.infer<typeof purchaseItemDetailsSchema>;
 export type PurchasePostedListItem = z.infer<
   typeof purchasePostedListItemSchema
 >;

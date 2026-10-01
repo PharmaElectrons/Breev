@@ -1,0 +1,43 @@
+$ node scripts/build.mjs
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 235 modules transformed.
+rendering chunks...
+out/main/index.js  673.44 kB
+✓ built in 1.90s
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 84 modules transformed.
+rendering chunks...
+out/preload/index.cjs  251.08 kB
+✓ built in 557ms
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 2777 modules transformed.
+rendering chunks...
+../../out/renderer/index.html                                                        0.71 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-latin-400-normal-CFZh1unN.woff       17.51 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-latin-700-normal-Cl4F7CZR.woff       17.78 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-latin-500-normal-BletK1Hp.woff       18.64 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-latin-600-normal-Dk5eISD_.woff       18.88 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-latin-400-normal-Bo5KPYvw.woff2      19.16 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-latin-700-normal-BzSf6GNr.woff2      19.50 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-latin-500-normal-Cd6jVIg7.woff2      20.09 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-latin-600-normal-KrqB56Mw.woff2      20.50 kB
+../../out/renderer/assets/jetbrains-mono-latin-400-normal-V6pRDFza.woff2            21.17 kB
+../../out/renderer/assets/jetbrains-mono-latin-500-normal-BWZEU5yA.woff2            21.83 kB
+../../out/renderer/assets/jetbrains-mono-latin-600-normal-C8RAYTDA.woff2            21.86 kB
+../../out/renderer/assets/jetbrains-mono-latin-400-normal-6-qcROiO.woff             27.50 kB
+../../out/renderer/assets/jetbrains-mono-latin-600-normal-BfsvjouI.woff             28.18 kB
+../../out/renderer/assets/jetbrains-mono-latin-500-normal-CJOVTJB7.woff             28.21 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-arabic-400-normal-CyU-ddYS.woff2     42.85 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-arabic-400-normal-EA1o-u_Q.woff      44.14 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-arabic-700-normal-DrtBj6UE.woff2     44.28 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-arabic-700-normal-9rXc6cUL.woff      44.36 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-arabic-500-normal-C4MQITzh.woff2     45.30 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-arabic-600-normal-0pRdybE_.woff2     45.69 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-arabic-600-normal-MJZ0liF5.woff      46.78 kB
+../../out/renderer/assets/ibm-plex-sans-arabic-arabic-500-normal-DPXcppbm.woff      46.92 kB
+../../out/renderer/assets/index-CccDuN97.css                                       322.51 kB
+../../out/renderer/assets/index-CNsiw5_9.js                                      2,465.84 kB
+✓ built in 9.20s

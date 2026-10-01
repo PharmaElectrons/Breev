@@ -1,0 +1,143 @@
+{
+  "rendererOrigin": "http://127.0.0.1:55400",
+  "apiOrigin": "http://127.0.0.1:55357",
+  "databasePort": 5556,
+  "invoice": "MANUAL-T06-ENTRY",
+  "zeroProduct": "01a0f793-cddb-7a38-86fd-c7b233824290",
+  "positiveProduct": "01a0f793-ce65-77a2-aeff-5039f8d73dfc",
+  "zeroFacts": {
+    "productId": "01a0f793-cddb-7a38-86fd-c7b233824290",
+    "displayName": "T06 Zero 500 mg tablet GSK",
+    "scientificName": null,
+    "category": null,
+    "barcode": "T060",
+    "visibleFields": [
+      "scientific-name",
+      "category",
+      "packaging",
+      "wholesale-price"
+    ],
+    "packaging": {
+      "inventoryUnitName": "Strip",
+      "packageUnits": [
+        {
+          "name": "Pack",
+          "baseUnitsPerPackage": "4"
+        }
+      ]
+    },
+    "pricingMethod": "by-price",
+    "retailPriceFils": "0",
+    "wholesalePriceFils": null,
+    "businessDate": "2026-10-01",
+    "inventoryVisibility": "visible",
+    "inventory": {
+      "balance": "0",
+      "breakdown": [
+        {
+          "name": "Pack",
+          "quantity": "0"
+        },
+        {
+          "name": "Strip",
+          "quantity": "0"
+        }
+      ],
+      "minimumLevel": "0",
+      "maximumLevel": null,
+      "reconciliation": "consistent",
+      "alerts": [
+        "out-of-stock"
+      ],
+      "batches": []
+    },
+    "costVisibility": "visible",
+    "averageCostVisibility": "visible",
+    "averageUnitCostFils": null,
+    "lastPostedCost": null
+  },
+  "positiveFacts": {
+    "productId": "01a0f793-ce65-77a2-aeff-5039f8d73dfc",
+    "displayName": "T06 Batches 500 mg tablet GSK",
+    "scientificName": "Paracetamol",
+    "category": "Pain relief",
+    "barcode": "T061",
+    "visibleFields": [
+      "scientific-name",
+      "category",
+      "packaging",
+      "wholesale-price"
+    ],
+    "packaging": {
+      "inventoryUnitName": "Strip",
+      "packageUnits": [
+        {
+          "name": "Pack",
+          "baseUnitsPerPackage": "4"
+        }
+      ]
+    },
+    "pricingMethod": "by-price",
+    "retailPriceFils": "100000",
+    "wholesalePriceFils": "0",
+    "businessDate": "2026-10-01",
+    "inventoryVisibility": "visible",
+    "inventory": {
+      "balance": "11",
+      "breakdown": [
+        {
+          "name": "Pack",
+          "quantity": "2"
+        },
+        {
+          "name": "Strip",
+          "quantity": "3"
+        }
+      ],
+      "minimumLevel": "2",
+      "maximumLevel": "20",
+      "reconciliation": "consistent",
+      "alerts": [
+        "expired"
+      ],
+      "batches": [
+        {
+          "id": "01a0f793-cf9e-723e-bc0a-4ceabe8c932c",
+          "balance": "8",
+          "lotNumber": "T06-EXPIRED",
+          "originalExpiryDate": "2026-09-29",
+          "effectiveExpiryDate": "2026-09-29",
+          "daysRemaining": -2,
+          "status": "expired"
+        },
+        {
+          "id": "01a0f793-d03b-70b7-9ac6-600231be2abb",
+          "balance": "3",
+          "lotNumber": "T06-NEAR",
+          "originalExpiryDate": "2026-10-15",
+          "effectiveExpiryDate": "2026-10-15",
+          "daysRemaining": 14,
+          "status": "near-expiry"
+        }
+      ]
+    },
+    "costVisibility": "visible",
+    "averageCostVisibility": "visible",
+    "averageUnitCostFils": "12727",
+    "lastPostedCost": {
+      "purchaseId": "01a0f793-d038-77ea-b989-12bad77c05fd",
+      "invoiceDate": "2026-10-01",
+      "enteredUnitName": "Strip",
+      "enteredQuantity": "3",
+      "primarySupplierCostFils": "60000",
+      "costAfterDiscountFils": "58500"
+    }
+  },
+  "stages": [
+    "Truthful live facts and keyboard",
+    "Actual server cost permission removed",
+    "Held panel response",
+    "Panel connection unavailable",
+    "Arabic dark restored healthy"
+  ]
+}

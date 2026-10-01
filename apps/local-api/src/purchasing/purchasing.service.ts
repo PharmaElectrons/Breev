@@ -1,5 +1,7 @@
 import {
   purchasePostedDetailSchema,
+  purchaseItemDetailsSchema,
+  type PurchaseItemDetails,
   purchasePostedListResponseSchema,
   postedPurchaseRowSchema,
   purchaseDraftDetailSchema,
@@ -110,6 +112,9 @@ import {
 } from "./purchase-price-capture.js";
 import { preparePurchaseRow } from "./purchase-row.js";
 import { postedPurchaseWarnings } from "./purchase-duplicates.js";
+import { resolveCatalogPurchasePanel } from "../catalog/catalog-purchase-panel.js";
+import { readInventoryPurchasePanel } from "../inventory/inventory-purchase-panel.js";
+import { businessDateOf } from "../inventory/business-date.js";
 
 const SUPPLIER_PERMISSION = "suppliers.manage";
 const DRAFT_PERMISSION = "purchases.drafts.manage";
@@ -1515,6 +1520,132 @@ export class PurchasingService {
       return row === undefined
         ? DEFAULT_ENTRY_PREFERENCES
         : entryPreferencesView(row);
+    } finally {
+      client.release();
+    }
+  }
+
+  public async readItemDetails(
+    request: Request,
+    productId: string,
+  ): Promise<PurchaseItemDetails> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      await client.query("begin isolation level repeatable read read only");
+      const catalog = await resolveCatalogPurchasePanel(
+        client,
+        context.pharmacyId,
+        productId,
+      );
+      if (catalog === null)
+        throw await this.readDenial(
+          context,
+          "purchase.item-details.read",
+          "item-not-found",
+          productId,
+        );
+      const stored = await selectEntryPreferences(
+        client,
+        context.pharmacyId,
+        context.actorId,
+      );
+      const preferences =
+        stored === undefined
+          ? DEFAULT_ENTRY_PREFERENCES
+          : entryPreferencesView(stored);
+      const costs = await postedPurchaseCostVisibility(client, context);
+      const inventoryVisible = context.permissions.includes("inventory.review");
+      const averageCostVisibility =
+        inventoryVisible &&
+        context.permissions.includes("inventory.valuation.view")
+          ? costs
+          : "hidden-by-permission";
+      const costVisibility = context.permissions.includes(POSTED_PERMISSION)
+        ? costs
+        : "hidden-by-permission";
+      const zone = await this.identity.readPharmacyBusinessTimeZone(
+        client,
+        context.pharmacyId,
+      );
+      const businessDate = businessDateOf(new Date(), zone);
+      const stock = inventoryVisible
+        ? await readInventoryPurchasePanel(
+            client,
+            context.pharmacyId,
+            catalog.facts,
+            catalog.packaging,
+            businessDate,
+          )
+        : null;
+      let lastPostedCost: PurchaseItemDetails["lastPostedCost"] = null;
+      if (costVisibility === "visible") {
+        const frozen = await client.query<{
+          purchase_id: string;
+          invoice_date: string;
+          entered_unit_name: string;
+          entered_quantity: string;
+          primary_cost: string;
+          discounted_cost: string;
+        }>(
+          `select posted.id as purchase_id, posted.invoice_date::text,
+                   case when snapshot.entered_unit_kind = 'inventory-unit' then snapshot.inventory_unit_name
+                     else snapshot.entered_package_unit_name end as entered_unit_name,
+                   snapshot.entered_quantity::text, snapshot.line_primary_supplier_cost_fils::text as primary_cost,
+                   snapshot.cost_after_discount_fils::text as discounted_cost
+            from posted_purchase_rows snapshot join posted_purchases posted
+              on posted.pharmacy_id = snapshot.pharmacy_id and posted.id = snapshot.posted_purchase_id
+            where snapshot.pharmacy_id = $1 and snapshot.product_id = $2
+            order by posted.posted_at desc, posted.id desc, snapshot.ordinal desc limit 1`,
+          [context.pharmacyId, productId],
+        );
+        const row = frozen.rows[0];
+        if (row !== undefined)
+          lastPostedCost = {
+            purchaseId: row.purchase_id,
+            invoiceDate: row.invoice_date,
+            enteredUnitName: row.entered_unit_name,
+            enteredQuantity: row.entered_quantity,
+            primarySupplierCostFils: row.primary_cost,
+            costAfterDiscountFils: row.discounted_cost,
+          };
+      }
+      const result = purchaseItemDetailsSchema.parse({
+        productId,
+        displayName: catalog.product.display_name,
+        scientificName: catalog.product.scientific_name,
+        category: catalog.product.category,
+        barcode: catalog.product.barcode,
+        visibleFields: preferences.detailsPanelFields,
+        packaging: catalog.packaging,
+        pricingMethod: catalog.product.pricing_method,
+        retailPriceFils: catalog.product.retail_price_fils,
+        wholesalePriceFils: preferences.detailsPanelFields.includes(
+          "wholesale-price",
+        )
+          ? catalog.product.wholesale_price_fils
+          : null,
+        businessDate,
+        inventoryVisibility: inventoryVisible
+          ? "visible"
+          : "hidden-by-permission",
+        inventory: stock?.inventory ?? null,
+        costVisibility,
+        averageCostVisibility,
+        averageUnitCostFils:
+          averageCostVisibility === "visible"
+            ? (stock?.averageUnitCostFils ?? null)
+            : null,
+        lastPostedCost,
+      });
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
     } finally {
       client.release();
     }
@@ -3069,6 +3200,7 @@ export class PurchasingService {
     code:
       | "adjustment-draft-not-found"
       | "adjustment-original-not-found"
+      | "item-not-found"
       | "draft-not-found"
       | "posted-purchase-not-found"
       | "return-draft-not-found"
@@ -3215,6 +3347,7 @@ export class PurchasingService {
     code:
       | "adjustment-draft-not-found"
       | "adjustment-original-not-found"
+      | "item-not-found"
       | "draft-not-found"
       | "posted-purchase-not-found"
       | "return-draft-not-found"

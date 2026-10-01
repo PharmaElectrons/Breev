@@ -41,3 +41,30 @@ Carry this report into subsequent Purchasing work without treating acceptance
 as proof of a fix. The new manual-fixture guard verifies saved case A evidence
 before allowing the restart. Do not mutate immutable posted notes/reasons or
 introduce speculative autosave/business-persistence workarounds.
+
+## 1 October 2026 — consolidated automated gate findings
+
+The later-initiated [T06 / Phase 1 full automated gate](t06/full-gate/report.md)
+retains two visible findings rather than declaring the repository fully green:
+
+- Packaged Sales draft preservation passed, then Axe reported
+  `scrollable-region-focusable`. The Sales surface was not changed in Phase 1;
+  this run alone does not prove whether the issue predates the phase. Remediation
+  belongs to the Sales owner. See
+  [the original result](t06/full-gate/logs/packaged-en-light-ready-supplier.log).
+  Subsequently filed as [GitHub issue #204](https://github.com/PharmaElectrons/Breev/issues/204)
+  under explicit stakeholder authorization; serious accessibility impact, not
+  an observed draft data-loss/posting failure.
+- The packaged Purchase units scenario shows the correct `4 Strip` / `4 أشرطة`
+  conversion, but only approximately 79.8% of its base-unit preview cell is in
+  the default viewport in all four language/theme cases. The protected Purchase
+  entry layout and strict visibility assertion remain unchanged. The later
+  stocktake portion is not reached by that packaged scenario. See
+  [the affected result](t06/full-gate/logs/packaged-units-visibility-final.log).
+
+Status: open; no layout fix, waived accessibility rule or release approval is
+inferred. The stakeholder subsequently gave separate explicit
+[Phase 1 PASS](phase-1-checkpoint.md), carrying preview clipping into Phase 2.
+Earlier diagnostic-reference and unconfirmed optional
+evidence-note follow-ups remain in force. Existing CNG, Docker, Windows crash
+harness and G-16/physical-profile limits remain separately recorded.

@@ -1,0 +1,47 @@
+
+Running 4 tests using 1 worker
+
+
+
+(node:7636) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/4] test\browser\purchasing.browser.test.ts:2107:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light
+  1) test\browser\purchasing.browser.test.ts:2107:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light 
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('aside.purchasing-authoritative-panel').locator('[data-panel-field="wholesale-price"] .purchase-fact-value')
+    Expected: in viewport
+    Received: viewport ratio 0
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('aside.purchasing-authoritative-panel').locator('[data-panel-field="wholesale-price"] .purchase-fact-value')
+        23 × locator resolved to <span class="purchase-fact-value">…</span>
+           - unexpected value "viewport ratio 0"
+
+
+      2390 |               '[data-panel-field="wholesale-price"] .purchase-fact-value',
+      2391 |             ),
+    > 2392 |           ).toBeInViewport({ ratio: 1 });
+           |             ^
+      2393 |           await expect
+      2394 |             .poll(() =>
+      2395 |               page.evaluate<boolean>(
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:2392:13
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-689a8-non-blocking-entry-en-light\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-689a8-non-blocking-entry-en-light\error-context.md
+
+
+[2/4] test\browser\purchasing.browser.test.ts:2107:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en dark
+[3/4] test\browser\purchasing.browser.test.ts:2107:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar light
+[4/4] test\browser\purchasing.browser.test.ts:2107:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar dark
+  1 failed
+    test\browser\purchasing.browser.test.ts:2107:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light 
+  3 did not run
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 authoritative"

@@ -1,0 +1,34 @@
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a debt purchase atomically with document, snapshots, batch, movement, gross WAC, gross AP, and a balanced journal 1219ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T05 searches stable posted numbers and keeps complete row snapshots unchanged after master edits 2586ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a cash purchase that changes only the Cash Box balance, never a supplier payable 118ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > replays an idempotent retry, rejects a conflicting payload, and lets exactly one of two concurrent keys post 460ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts two different drafts concurrently with distinct numbers and conserved WAC 342ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > warns but still posts a duplicate supplier invoice number 244ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > keeps the draft and names the row rule when receipt evidence is missing 103ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > changes Cost After Discount but never gross WAC or AP when only the allowance percentage differs 366ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > enforces a balanced journal at commit even bypassing the application 123ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back a forced database failure after number allocation, leaving an audited unissued gap a retry reuses and issues 221ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back every earlier write when the final idempotency result cannot be recorded 229ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts only Purchase Adjustment Deltas, preserves the original, numbers A01/A02, replays once, serializes, and blocks consumed stock 1260ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > binds Adjustment evidence/version/hash across concurrent edits, API restart, lost-response retries, and immutable audit 6563ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > requires a new Adjustment confirmation when authoritative batch stock changes after preview 855ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back Adjustment confirmation posting at every write stage and recovers the same attempt 2292ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links 1218ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > corrects supplier identities and invoice numbers with immutable before/after headers, balanced transfers and current duplicate warnings 1192ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rejects protected row/header changes and unavailable suppliers without changing the saved copy, and revalidates a supplier at Post 583ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > keeps percentage pricing and conversion protected while showing the exact cost-derived retail Delta 435ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > transfers only the remaining Purchase payable after Returns and binds later Returns to the corrected Supplier 1315ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T04 persists versioned offers across restart, binds correction review, and preserves gross accounting and immutable history 3617ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T05 redacts saved row discounts and margin by setting and permission without losing non-cost facts 546ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T06 authoritative item details > T06 reconciles exact live balance, configured expiry, zero/missing values and frozen cost references 3173ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T06 authoritative item details > T06 preserves stock when valuation reconciliation is unavailable and performs no inventory writes 509ms
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T06 authoritative item details > T06 redacts stock and costs independently by server permissions and settings 572ms
+
+ Test Files  1 passed (1)
+      Tests  25 passed (25)
+   Start at  17:10:12
+   Duration  40.12s (transform 478ms, setup 0ms, import 2.03s, tests 37.70s, environment 0ms)
+

@@ -8,10 +8,8 @@ import type {
   PurchasingDenial,
   Supplier,
 } from "@breev/contracts/local-rest";
-import {
-  PurchaseItemPanel,
-  type PurchaseItemSelection,
-} from "./purchase-item-details";
+import type { PurchaseItemSelection } from "./purchase-item-details";
+import { PurchasingItemPanel } from "./purchasing-item-details";
 import { PurchaseRowEntry } from "./purchase-row-entry";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import { formatFilsToIqd } from "./product-record";
@@ -1057,7 +1055,7 @@ export function PurchasingRouteView({
           ) : null}
         </form>
 
-        <PurchaseItemPanel
+        <PurchasingItemPanel
           baseUrl={baseUrl}
           hidden={!canManageDrafts || view !== "invoice"}
           selection={itemSelection}

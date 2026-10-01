@@ -1,0 +1,3 @@
+$ eslint . && pnpm check:boundaries
+$ node tooling/boundaries/check.mjs
+Boundary check passed (468 source files).

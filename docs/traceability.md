@@ -163,6 +163,25 @@ cost/margin redaction, and validates intentional draft Product/unit correction.
 Wholesale remains a current Product-panel fact under #49 and scope §4.4.
 No historical master-data backfill or professional policy approval is implied.
 
+The #198 T06 implementation addresses scope §4.4/#49 and M2-P03's
+Purchasing item-details surface through narrow Catalog/Inventory/Purchasing
+server projections. Its [field ownership review](../evidence/issue-198/t06/source-review.md)
+separates live exact stock, configured batch safety, current prices and saved
+row costs from unavailable later Reporting values. [Focused verification](../evidence/issue-198/t06/verification.md)
+and [prototype/isolation review](../evidence/issue-198/t06/prototype-fidelity.md)
+are bounded evidence. [Separate T06 manual acceptance](../evidence/issue-198/t06/manual-checkpoint.md)
+was explicitly PASS on 1 October 2026. The stakeholder later initiated the
+[consolidated full automated gate](../evidence/issue-198/t06/full-gate/report.md).
+Purchase-posting PostgreSQL and all executed Purchasing browser cases passed, including
+Returns; packaged panel and correction checks passed across four variants.
+The repository gate remains not fully green: host limitations, packaged Sales
+accessibility and Purchase preview-cell visibility remain open. T06 remains
+uncommitted. The stakeholder subsequently gave explicit
+[Phase 1 PASS](../evidence/issue-198/phase-1-checkpoint.md), with Sales accessibility
+tracked separately in [#204](https://github.com/PharmaElectrons/Breev/issues/204)
+and Purchase preview clipping carried into Phase 2. This does not promote the
+complete family to proven, turn the repository gate green or close G-01/G-02/G-16.
+
 ## Windows payload optimization evidence
 
 The stakeholder initiated issue #126 implementation on 4 September 2026 after reviewing its size/performance investigation. The work preserves the existing G-05/G-06/G-07 authority, security and lifecycle requirements; it does not authorize a new installer architecture or relaxed durability. The [issue-126 implementation record](../evidence/issue-126/README.md) traces task evidence and the original issue's infeasible size/file-count assumptions. Measured budgets and any unresolved verification gaps must be presented explicitly in the review PR; the investigation does not close release gates or silently replace requirement acceptance criteria.

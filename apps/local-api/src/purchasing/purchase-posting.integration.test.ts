@@ -15,9 +15,12 @@ import {
   purchaseDraftHeaderPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
+  purchaseItemDetailsPath,
+  purchaseItemDetailsSchema,
   type Product,
   type ProductCreateRequest,
   type PurchaseDraft,
+  type PurchaseEntryPreferences,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentPostResult,
   type PurchaseAdjustmentSummary,
@@ -38,7 +41,16 @@ import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import path from "node:path";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
+import { resolveCatalogPurchasePanel } from "../catalog/catalog-purchase-panel.js";
 import {
   createSeparatedDatabaseRoles,
   createSeparatedDatabaseRolesFromUrl,
@@ -3924,6 +3936,463 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
         ).status,
       ).toBe(404);
   }, 30_000);
+
+  describe.sequential("T06 authoritative item details", () => {
+    let originalCostVisibility: boolean | null = null;
+
+    async function setPanelCostVisibility(visible: boolean) {
+      const response = await request("GET", "/purchases/entry-preferences");
+      expect(response.status, diagnostics(response)).toBe(200);
+      const current = response.body as unknown as PurchaseEntryPreferences;
+      const updated = await request("PUT", "/purchases/entry-preferences", {
+        afterCommit: current.afterCommit,
+        detailsPanelFields: current.detailsPanelFields,
+        columns: current.columns.map((column) =>
+          column.field === "cost" ? { ...column, visible } : column,
+        ),
+        expectedRevision: current.revision,
+        idempotencyKey: uuidV7(),
+      });
+      expect(updated.status, diagnostics(updated)).toBe(200);
+    }
+
+    beforeEach(async () => {
+      originalCostVisibility = null;
+      const response = await request("GET", "/purchases/entry-preferences");
+      expect(response.status, diagnostics(response)).toBe(200);
+      const current = response.body as unknown as PurchaseEntryPreferences;
+      originalCostVisibility = current.columns.find(
+        (column) => column.field === "cost",
+      )!.visible;
+      await setPanelCostVisibility(true);
+    });
+
+    afterEach(async () => {
+      if (originalCostVisibility !== null)
+        await setPanelCostVisibility(originalCostVisibility);
+    });
+
+    it("T06 reconciles exact live balance, configured expiry, zero/missing values and frozen cost references", async () => {
+      const createdProduct = await request("POST", "/catalog/products", {
+        ...medicationRequest("T06 Panel", false),
+        packaging: {
+          inventoryUnitName: "Strip",
+          packageUnits: [{ name: "Pack", baseUnitsPerPackage: "4" }],
+          thirdUnit: { name: "Treatment day" },
+          defaultUnits: {
+            count: { kind: "inventory-unit" },
+            sale: { kind: "inventory-unit" },
+            purchase: { kind: "package-unit", packageUnitName: "Pack" },
+          },
+        },
+        stockLevels: {
+          minimumLevel: "0",
+          maximumLevel: "20",
+          reorderPoint: null,
+        },
+        scientificName: null,
+        category: null,
+        pricing: {
+          method: "by-price",
+          retailPriceFils: "0",
+          wholesalePriceFils: null,
+        },
+      });
+      expect(createdProduct.status, diagnostics(createdProduct)).toBe(201);
+      const product = createdProduct.body as unknown as Product;
+      async function panel() {
+        const result = await request(
+          "GET",
+          purchaseItemDetailsPath(product.id),
+        );
+        expect(result.status, diagnostics(result)).toBe(200);
+        return purchaseItemDetailsSchema.parse(result.body);
+      }
+      const zero = await panel();
+      expect(zero).toMatchObject({
+        scientificName: null,
+        category: null,
+        retailPriceFils: "0",
+        wholesalePriceFils: null,
+        averageUnitCostFils: null,
+        lastPostedCost: null,
+        inventory: {
+          balance: "0",
+          minimumLevel: "0",
+          batches: [],
+          alerts: ["out-of-stock"],
+          reconciliation: "consistent",
+        },
+      });
+      expect(zero.inventory?.breakdown).toEqual([
+        { name: "Pack", quantity: "0" },
+        { name: "Strip", quantity: "0" },
+      ]);
+      const date = new Date(`${zero.businessDate}T00:00:00Z`);
+      const expiry = (days: number) => {
+        const value = new Date(date);
+        value.setUTCDate(value.getUTCDate() + days);
+        return value.toISOString().slice(0, 10);
+      };
+      const postedIds: string[] = [];
+      for (const [quantity, cost, unit, days] of [
+        ["2", "40000", { kind: "package-unit", packageUnitName: "Pack" }, -2],
+        ["3", "20000", { kind: "inventory-unit" }, 14],
+      ] as const) {
+        const created = await request(
+          "POST",
+          "/purchases/drafts",
+          draftBody(supplierLow.id, `T06-PANEL-${days}`, zero.businessDate),
+        );
+        let draft = created.body?.draft as unknown as PurchaseDraft;
+        const saved = await request("POST", purchaseDraftRowsPath(draft.id), {
+          enteredQuantity: quantity,
+          costFils: cost,
+          expectedVersion: draft.version,
+          idempotencyKey: uuidV7(),
+          itemId: product.id,
+          expiryDate: expiry(days),
+          lotNumber: `T06-${days}`,
+          notes: null,
+          pricing: { method: "by-price", retailPriceFils: "100000" },
+          unit,
+        });
+        expect(saved.status, diagnostics(saved)).toBe(201);
+        draft = saved.body?.draft as unknown as PurchaseDraft;
+        const posted = await request(
+          "POST",
+          purchaseDraftPostingsPath(draft.id),
+          { expectedVersion: draft.version, idempotencyKey: uuidV7() },
+        );
+        expect(posted.status, diagnostics(posted)).toBe(201);
+        postedIds.push(
+          (posted.body as unknown as PurchasePostResult).posted.id,
+        );
+      }
+      const live = await panel();
+      expect(live.inventory).toMatchObject({
+        balance: "11",
+        breakdown: [
+          { name: "Pack", quantity: "2" },
+          { name: "Strip", quantity: "3" },
+        ],
+        reconciliation: "consistent",
+      });
+      expect(
+        live.inventory?.batches.map((batch) => [
+          batch.balance,
+          batch.daysRemaining,
+          batch.status,
+        ]),
+      ).toEqual([
+        ["8", -2, "expired"],
+        ["3", 14, "near-expiry"],
+      ]);
+      expect(live.inventory?.alerts).toContain("expired");
+      expect(live.averageUnitCostFils).toBe("12727");
+      expect(live.lastPostedCost).toMatchObject({
+        purchaseId: postedIds[1],
+        enteredUnitName: "Strip",
+        enteredQuantity: "3",
+        primarySupplierCostFils: "60000",
+        costAfterDiscountFils: "54000",
+      });
+      const movement = (
+        await administrator.query<{ balance: string }>(
+          "select sum(quantity)::text as balance from inventory_movements where pharmacy_id = $1 and product_id = $2",
+          [pharmacyId, product.id],
+        )
+      ).rows[0]!;
+      expect(live.inventory?.balance).toBe(movement.balance);
+      await administrator.query(
+        "update inventory_receipt_class_rules set near_expiry_days = 7 where pharmacy_id = $1 and class = 'medication'",
+        [pharmacyId],
+      );
+      try {
+        expect((await panel()).inventory?.batches[1]?.status).toBe("eligible");
+      } finally {
+        await administrator.query(
+          "update inventory_receipt_class_rules set near_expiry_days = 90 where pharmacy_id = $1 and class = 'medication'",
+          [pharmacyId],
+        );
+      }
+      const current = (await request("GET", `/catalog/products/${product.id}`))
+        .body as unknown as Product;
+      const update = await request("PUT", `/catalog/products/${product.id}`, {
+        ...medicationRequest("T06 Changed Master", false),
+        barcodes: product.barcodes.map(({ kind, value }) => ({ kind, value })),
+        packaging: {
+          ...current.packaging,
+          inventoryUnitName: "Tablet",
+          packageUnits: [{ name: "Box", baseUnitsPerPackage: "6" }],
+          defaultUnits: {
+            count: { kind: "inventory-unit" },
+            sale: { kind: "inventory-unit" },
+            purchase: { kind: "package-unit", packageUnitName: "Box" },
+          },
+        },
+        expectedRevision: current.revision,
+        idempotencyKey: uuidV7(),
+        pricing: {
+          method: "by-price",
+          retailPriceFils: "230000",
+          wholesalePriceFils: "0",
+        },
+      });
+      expect(update.status, diagnostics(update)).toBe(200);
+      const changed = await panel();
+      expect(changed.inventory?.breakdown).toEqual([
+        { name: "Box", quantity: "1" },
+        { name: "Tablet", quantity: "5" },
+      ]);
+      expect(changed.wholesalePriceFils).toBe("0");
+      expect(changed.lastPostedCost).toEqual(live.lastPostedCost);
+      await stopProcess(api);
+      api = startApi();
+      await waitForHealth(apiOrigin, () => apiOutput);
+      expect(await panel()).toEqual(changed);
+      expect(
+        (await request("GET", purchaseItemDetailsPath(uuidV7()))).status,
+      ).toBe(404);
+      expect(
+        (
+          await requestAs(
+            { ...credentials, deviceId: uuidV7() },
+            "GET",
+            purchaseItemDetailsPath(product.id),
+          )
+        ).status,
+      ).toBe(401);
+    });
+
+    it("T06 preserves stock when valuation reconciliation is unavailable and performs no inventory writes", async () => {
+      const created = await request(
+        "POST",
+        "/catalog/products",
+        medicationRequest("T06 Reconciliation", false),
+      );
+      expect(created.status).toBe(201);
+      const productId = (created.body as Product).id;
+      const draft = await createPostableDraft(
+        supplierLow.id,
+        "T06-RECONCILIATION",
+        "debt",
+        [{ costFils: "1000", enteredQuantity: "2", itemId: productId }],
+      );
+      expect(
+        (
+          await request("POST", purchaseDraftPostingsPath(draft.id), {
+            expectedVersion: draft.version,
+            idempotencyKey: uuidV7(),
+          })
+        ).status,
+      ).toBe(201);
+      const adminUrl = new URL(databaseRoles.applicationUrl);
+      adminUrl.username = "postgres";
+      adminUrl.password = "";
+      const administrator = new Pool({
+        connectionString:
+          process.env.BREEV_TEST_POSTGRES_ADMIN_URL ?? adminUrl.toString(),
+      });
+      try {
+        const original = (
+          await administrator.query(
+            "select total_quantity::text, total_value_scaled::text from inventory_valuation_state where product_id = $1",
+            [productId],
+          )
+        ).rows[0] as { total_quantity: string; total_value_scaled: string };
+        const counts = async () =>
+          (
+            await administrator.query(
+              "select (select count(*)::text from inventory_batches) batches, (select count(*)::text from inventory_movements) movements, (select count(*)::text from posted_purchase_rows) snapshots",
+            )
+          ).rows[0];
+        const before = await counts();
+        await administrator.query(
+          "update inventory_valuation_state set total_quantity = total_quantity + 1 where product_id = $1",
+          [productId],
+        );
+        try {
+          const response = await request(
+            "GET",
+            purchaseItemDetailsPath(productId),
+          );
+          expect(response.status).toBe(200);
+          const facts = purchaseItemDetailsSchema.parse(response.body);
+          expect(facts.inventory).toMatchObject({
+            balance: original.total_quantity,
+            reconciliation: "mismatch",
+          });
+          expect(facts.averageCostVisibility).toBe("visible");
+          expect(facts.averageUnitCostFils).toBeNull();
+          expect(await counts()).toEqual(before);
+        } finally {
+          await administrator.query(
+            "update inventory_valuation_state set total_quantity = $2, total_value_scaled = $3 where product_id = $1",
+            [productId, original.total_quantity, original.total_value_scaled],
+          );
+        }
+      } finally {
+        await administrator.end();
+      }
+    });
+
+    it("T06 redacts stock and costs independently by server permissions and settings", async () => {
+      const created = await request(
+        "POST",
+        "/catalog/products",
+        medicationRequest("T06 Permission Stock", false),
+      );
+      expect(created.status, diagnostics(created)).toBe(201);
+      const productId = (created.body as unknown as Product).id;
+      const draft = await createPostableDraft(
+        supplierLow.id,
+        "T06-PERMISSIONS",
+        "debt",
+        [{ costFils: "1000", enteredQuantity: "2", itemId: productId }],
+      );
+      expect(
+        (
+          await request("POST", purchaseDraftPostingsPath(draft.id), {
+            expectedVersion: draft.version,
+            idempotencyKey: uuidV7(),
+          })
+        ).status,
+      ).toBe(201);
+      const route = purchaseItemDetailsPath(productId);
+      const owner = (
+        await administrator.query<{ id: string; role_id: string }>(
+          "select id, role_id from identity_users where pharmacy_id = $1 and username = $2",
+          [pharmacyId, OWNER_USERNAME],
+        )
+      ).rows[0]!;
+      const preferences = (await request("GET", "/purchases/entry-preferences"))
+        .body as unknown as {
+        revision: string;
+        columns: { field: string; visible: boolean }[];
+        detailsPanelFields: string[];
+        afterCommit: string;
+      };
+      async function read() {
+        const result = await request("GET", route);
+        expect(result.status, diagnostics(result)).toBe(200);
+        return purchaseItemDetailsSchema.parse(result.body);
+      }
+      async function costSetting(visible: boolean) {
+        const current = (await request("GET", "/purchases/entry-preferences"))
+          .body as unknown as typeof preferences;
+        expect(
+          (
+            await request("PUT", "/purchases/entry-preferences", {
+              afterCommit: current.afterCommit,
+              detailsPanelFields: current.detailsPanelFields,
+              columns: current.columns.map((column) =>
+                column.field === "cost" ? { ...column, visible } : column,
+              ),
+              expectedRevision: current.revision,
+              idempotencyKey: uuidV7(),
+            })
+          ).status,
+        ).toBe(200);
+      }
+      const permissions = [
+        "purchases.costs.view",
+        "inventory.valuation.view",
+        "purchases.posted.view",
+        "inventory.review",
+        "purchases.drafts.manage",
+      ];
+      const existing = (
+        await administrator.query<{ permission_name: string }>(
+          "select permission_name from role_permission_grants where role_id = $1",
+          [owner.role_id],
+        )
+      ).rows.map((row) => row.permission_name);
+      async function revoke(permission: string) {
+        await administrator.query(
+          "delete from role_permission_grants where role_id = $1 and permission_name = $2",
+          [owner.role_id, permission],
+        );
+        await administrator.query(
+          "update pharmacy_roles set revision = revision + 1 where id = $1",
+          [owner.role_id],
+        );
+      }
+      async function restore(permission: string) {
+        if (existing.includes(permission))
+          await administrator.query(
+            "insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by) values ($1,$2,$3,$4) on conflict do nothing",
+            [pharmacyId, owner.role_id, permission, owner.id],
+          );
+        await administrator.query(
+          "update pharmacy_roles set revision = revision + 1 where id = $1",
+          [owner.role_id],
+        );
+      }
+      try {
+        await costSetting(false);
+        expect(await read()).toMatchObject({
+          costVisibility: "hidden-by-setting",
+          averageCostVisibility: "hidden-by-setting",
+          averageUnitCostFils: null,
+          lastPostedCost: null,
+          inventory: { balance: "2" },
+        });
+        await costSetting(true);
+        for (const permission of permissions) {
+          await revoke(permission);
+          if (permission === "purchases.drafts.manage")
+            expect((await request("GET", route)).status).toBe(403);
+          else {
+            const value = await read();
+            if (permission === "purchases.costs.view")
+              expect(value).toMatchObject({
+                averageUnitCostFils: null,
+                lastPostedCost: null,
+                costVisibility: "hidden-by-permission",
+              });
+            if (permission === "inventory.valuation.view")
+              expect(value).toMatchObject({
+                averageUnitCostFils: null,
+                averageCostVisibility: "hidden-by-permission",
+              });
+            if (permission === "purchases.posted.view")
+              expect(value).toMatchObject({
+                lastPostedCost: null,
+                costVisibility: "hidden-by-permission",
+              });
+            if (permission === "inventory.review")
+              expect(value).toMatchObject({
+                inventory: null,
+                averageUnitCostFils: null,
+                inventoryVisibility: "hidden-by-permission",
+              });
+          }
+          await restore(permission);
+        }
+        // This local database has one pharmacy. Exercise the public projection
+        // with an unrelated pharmacy context rather than inventing a second tenant.
+        const foreign = uuidV7();
+        const scopedClient = await administrator.connect();
+        try {
+          expect(
+            await resolveCatalogPurchasePanel(scopedClient, foreign, productId),
+          ).toBeNull();
+        } finally {
+          scopedClient.release();
+        }
+        expect(
+          (await request("GET", purchaseItemDetailsPath(foreign))).status,
+        ).toBe(404);
+      } finally {
+        for (const permission of permissions) await restore(permission);
+        await costSetting(
+          preferences.columns.find((column) => column.field === "cost")
+            ?.visible ?? true,
+        );
+      }
+    });
+  });
 
   async function previewReturn(
     draft: PurchaseReturnDraft,
