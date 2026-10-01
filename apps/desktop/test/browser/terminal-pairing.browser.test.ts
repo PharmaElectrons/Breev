@@ -342,7 +342,7 @@ test.describe("terminal pairing screen", () => {
       theme: "light",
     });
     const page = screen.page;
-    await expect(page.getByTestId("shell-state")).toHaveText("Ready", {
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({
       timeout: 20_000,
     });
     await expect(page.getByTestId("terminal-pairing")).toHaveCount(0);
