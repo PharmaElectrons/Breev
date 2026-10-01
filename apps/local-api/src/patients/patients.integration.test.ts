@@ -1324,7 +1324,8 @@ describe.sequential("Patients HTTP and PostgreSQL boundary", () => {
       },
       scientificName: "Paracetamol",
       sharing: { aiSharingAllowed: false, externallyVisible: true },
-      stateColours: { coldStorageRequired: false, manual: "blue" },
+      stateColours: { coldStorageRequired: false, manual: "#0000ff" },
+      supplierIds: [supplier.id],
       stockLevels: {
         maximumLevel: null,
         minimumLevel: null,
