@@ -4187,12 +4187,8 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
           })
         ).status,
       ).toBe(201);
-      const adminUrl = new URL(databaseRoles.applicationUrl);
-      adminUrl.username = "postgres";
-      adminUrl.password = "";
       const administrator = new Pool({
-        connectionString:
-          process.env.BREEV_TEST_POSTGRES_ADMIN_URL ?? adminUrl.toString(),
+        connectionString: databaseRoles.migrationUrl,
       });
       try {
         const original = (

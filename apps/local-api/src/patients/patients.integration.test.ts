@@ -1342,6 +1342,7 @@ describe.sequential("Patients HTTP and PostgreSQL boundary", () => {
       {
         idempotencyKey: uuidV7(),
         invoiceDate: "2026-06-15",
+        invoiceOffer: { mode: "none", value: "0" },
         settlementContext: "debt",
         supplierId: supplier.id,
         supplierInvoiceNumber: "PATIENT-SNAPSHOT-1",

@@ -1,0 +1,394 @@
+verify	Verify PostgreSQL integration seam	﻿2026-10-01T16:21:02.3996781Z ##[group]Run pnpm test:integration
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.3997077Z ^[[36;1mpnpm test:integration^[[0m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.4053286Z shell: /usr/bin/bash -e {0}
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.4053510Z env:
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.4053725Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.4054137Z ##[endgroup]
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.7608969Z $ turbo run test:integration --filter=@breev/local-api
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8149090Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8158605Z    • Packages in scope: @breev/local-api
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8175727Z    • Running test:integration in 1 packages
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8176420Z    • Remote caching disabled
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8176848Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8177576Z ##[group]@breev/contracts:build
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8178222Z cache hit, replaying logs e1d096ef66c447c7
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8178882Z $ tsc -p tsconfig.build.json
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8179629Z ##[endgroup]
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8199464Z ##[group]@breev/local-api:build
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8210005Z cache hit, replaying logs 13a0352aa905d5a5
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8210589Z $ tsc -p tsconfig.build.json
+verify	Verify PostgreSQL integration seam	2026-10-01T16:21:02.8211092Z ##[endgroup]
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0225755Z ^[[;31m@breev/local-api:test:integration^[[;0m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0226363Z cache bypass, force executing 83b8b458d02bfbee
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0226834Z $ vitest run --config vitest.config.ts
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0227077Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0227659Z ^[[1m^[[30m^[[46m RUN ^[[49m^[[39m^[[22m ^[[36mv4.1.11 ^[[39m^[[90m/home/runner/work/Breev/Breev/apps/local-api^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0228096Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0228953Z  ^[[31m❯^[[39m src/purchasing/purchase-posting.integration.test.ts ^[[2m(^[[22m^[[2m25 tests^[[22m^[[2m | ^[[22m^[[31m1 failed^[[39m^[[2m)^[[22m^[[33m 29429^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0230375Z      ^[[32m✓^[[39m posts a debt purchase atomically with document, snapshots, batch, movement, gross WAC, gross AP, and a balanced journal^[[32m 274^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0232059Z      ^[[33m^[[2m✓^[[22m^[[39m T05 searches stable posted numbers and keeps complete row snapshots unchanged after master edits ^[[33m 998^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0233271Z      ^[[32m✓^[[39m posts a cash purchase that changes only the Cash Box balance, never a supplier payable^[[32m 50^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0234953Z      ^[[32m✓^[[39m replays an idempotent retry, rejects a conflicting payload, and lets exactly one of two concurrent keys post^[[32m 150^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0236136Z      ^[[32m✓^[[39m posts two different drafts concurrently with distinct numbers and conserved WAC^[[32m 135^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0237109Z      ^[[32m✓^[[39m warns but still posts a duplicate supplier invoice number^[[32m 88^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0238036Z      ^[[32m✓^[[39m keeps the draft and names the row rule when receipt evidence is missing^[[32m 48^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0239124Z      ^[[32m✓^[[39m changes Cost After Discount but never gross WAC or AP when only the allowance percentage differs^[[32m 171^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0240182Z      ^[[32m✓^[[39m enforces a balanced journal at commit even bypassing the application^[[32m 47^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0241350Z      ^[[32m✓^[[39m rolls back a forced database failure after number allocation, leaving an audited unissued gap a retry reuses and issues^[[32m 126^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0242596Z      ^[[32m✓^[[39m rolls back every earlier write when the final idempotency result cannot be recorded^[[32m 90^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0244139Z      ^[[33m^[[2m✓^[[22m^[[39m posts only Purchase Adjustment Deltas, preserves the original, numbers A01/A02, replays once, serializes, and blocks consumed stock ^[[33m 540^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0245772Z      ^[[33m^[[2m✓^[[22m^[[39m binds Adjustment evidence/version/hash across concurrent edits, API restart, lost-response retries, and immutable audit ^[[33m 2340^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0247049Z      ^[[33m^[[2m✓^[[22m^[[39m requires a new Adjustment confirmation when authoritative batch stock changes after preview ^[[33m 492^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0248780Z      ^[[33m^[[2m✓^[[22m^[[39m rolls back Adjustment confirmation posting at every write stage and recovers the same attempt ^[[33m 1517^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0249745Z      ^[[33m^[[2m✓^[[22m^[[39m posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links ^[[33m 653^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0251309Z      ^[[33m^[[2m✓^[[22m^[[39m corrects supplier identities and invoice numbers with immutable before/after headers, balanced transfers and current duplicate warnings ^[[33m 475^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0252791Z      ^[[33m^[[2m✓^[[22m^[[39m rejects protected row/header changes and unavailable suppliers without changing the saved copy, and revalidates a supplier at Post ^[[33m 330^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0254037Z      ^[[32m✓^[[39m keeps percentage pricing and conversion protected while showing the exact cost-derived retail Delta^[[32m 225^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0255006Z      ^[[33m^[[2m✓^[[22m^[[39m transfers only the remaining Purchase payable after Returns and binds later Returns to the corrected Supplier ^[[33m 817^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0256051Z      ^[[33m^[[2m✓^[[22m^[[39m T04 persists versioned offers across restart, binds correction review, and preserves gross accounting and immutable history ^[[33m 1542^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0256910Z      ^[[32m✓^[[39m T05 redacts saved row discounts and margin by setting and permission without losing non-cost facts^[[32m 200^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0257742Z        ^[[33m^[[2m✓^[[22m^[[39m T06 reconciles exact live balance, configured expiry, zero/missing values and frozen cost references ^[[33m 1355^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0258655Z ^[[31m       ^[[31m×^[[31m T06 preserves stock when valuation reconciliation is unavailable and performs no inventory writes^[[39m^[[32m 150^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0259612Z        ^[[33m^[[2m✓^[[22m^[[39m T06 redacts stock and costs independently by server permissions and settings ^[[33m 431^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0281103Z ##[error]command (/home/runner/work/Breev/Breev/apps/local-api) /home/runner/setup-pnpm/node_modules/.bin/bin/pnpm run test:integration exited (1)
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0291157Z @breev/local-api#test:integration:  ERROR  command (/home/runner/work/Breev/Breev/apps/local-api) /home/runner/setup-pnpm/node_modules/.bin/bin/pnpm run test:integration exited (1)
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0292171Z  ERROR  run failed: command  exited (1)
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0293193Z  ^[[32m✓^[[39m src/identity-access/identity-access.integration.test.ts ^[[2m(^[[22m^[[2m21 tests^[[22m^[[2m)^[[22m^[[33m 18051^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0294557Z      ^[[33m^[[2m✓^[[22m^[[39m denies unlicensed API use and makes licence administration recoverable ^[[33m 378^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0295588Z      ^[[33m^[[2m✓^[[22m^[[39m rate-limits password guessing per verified device ^[[33m 697^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0296638Z      ^[[33m^[[2m✓^[[22m^[[39m binds Step-Up to permission, password, lifetime, subject, and one use ^[[33m 940^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0297837Z      ^[[33m^[[2m✓^[[22m^[[39m counts wrong current passwords and keeps the shared device budget after a success ^[[33m 335^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0299065Z      ^[[33m^[[2m✓^[[22m^[[39m requires one-use Step-Up for an administrator reset and revokes every subject session ^[[33m 348^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0300252Z      ^[[33m^[[2m✓^[[22m^[[39m denies every protected API operation for a role without explicit grants ^[[33m 410^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0301302Z      ^[[33m^[[2m✓^[[22m^[[39m derives every named permission from explicit PostgreSQL grants ^[[33m 5041^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0302344Z      ^[[33m^[[2m✓^[[22m^[[39m creates, renames, grants, and assigns a custom role under Step-Up, audit, and idempotency ^[[33m 1107^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0303649Z      ^[[33m^[[2m✓^[[22m^[[39m keeps roles the only source of authority: shared grants, strict bodies, denied creation, manager administration, and rollback ^[[33m 747^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0305459Z      ^[[33m^[[2m✓^[[22m^[[39m applies explicit role grants and typed attendance settings end to end ^[[33m 516^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0306608Z      ^[[33m^[[2m✓^[[22m^[[39m survives restart and rejects expired, revoked, and wrong-device sessions ^[[33m 1218^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0307867Z  ^[[31m❯^[[39m src/patients/patients.integration.test.ts ^[[2m(^[[22m^[[2m17 tests^[[22m^[[2m | ^[[22m^[[31m1 failed^[[39m^[[2m)^[[22m^[[33m 9574^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0308951Z      ^[[32m✓^[[39m creates a Sale Draft before any patient exists and leaves patients empty^[[32m 25^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0309976Z      ^[[32m✓^[[39m allows all patient operations on Free Core and keeps the HTTP contract honest^[[32m 115^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0311068Z      ^[[32m✓^[[39m applies the shared terminal entitlement denial before patient authorization^[[32m 33^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0312177Z      ^[[32m✓^[[39m denies every patient operation to an authenticated alternate user and audits each denial^[[32m 204^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0313200Z      ^[[33m^[[2m✓^[[22m^[[39m cannot read or list a patient belonging to another real pharmacy ^[[33m 3682^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0314205Z      ^[[32m✓^[[39m seeds the patient permissions for owner, manager, and pharmacist^[[32m 2^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0315231Z      ^[[32m✓^[[39m saves a profile and first measurement atomically, audits access, and replays once^[[32m 68^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0316387Z      ^[[32m✓^[[39m keeps duplicate-looking profiles separate, exact BMI, and paginated append-only history^[[32m 117^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0317475Z      ^[[32m✓^[[39m leaves the existing Sale Draft unchanged after a patient profile edit^[[32m 55^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0318263Z ^[[31m     ^[[31m×^[[31m leaves an immutable posted purchase snapshot unchanged after a patient edit^[[39m^[[32m 53^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0319348Z      ^[[32m✓^[[39m serializes concurrent saves by revision and returns a runtime conflict^[[32m 36^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0320270Z      ^[[32m✓^[[39m rolls back profile, measurement, audit, and idempotency facts together^[[32m 46^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0321146Z      ^[[33m^[[2m✓^[[22m^[[39m replays the shared idempotency result after an API restart ^[[33m 1014^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0322038Z      ^[[32m✓^[[39m allows append-only measurement inserts as breev_app and denies update/delete^[[32m 30^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0323076Z      ^[[32m✓^[[39m enforces notes and discount permissions and reprojects idempotent responses^[[32m 242^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0324208Z      ^[[32m✓^[[39m uses the shared device security boundary for invalid device sessions^[[32m 21^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0325276Z      ^[[32m✓^[[39m grants patient permissions once to existing built-in roles without touching custom roles^[[32m 10^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0326366Z  ^[[32m✓^[[39m src/devices/devices.integration.test.ts ^[[2m(^[[22m^[[2m29 tests^[[22m^[[2m)^[[22m^[[33m 8243^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0327341Z      ^[[33m^[[2m✓^[[22m^[[39m gives state polling its own budget, above what the terminal spends ^[[33m 318^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0328354Z      ^[[33m^[[2m✓^[[22m^[[39m refuses a replayed invitation once a terminal has bound its key ^[[33m 313^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0329415Z      ^[[33m^[[2m✓^[[22m^[[39m keeps paired terminals working during grace but refuses to pair a new one ^[[33m 2696^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0331059Z ^[[90mstdout^[[2m | src/catalog/catalog.integration.test.ts^[[2m > ^[[22m^[[2mCatalog PostgreSQL and HTTP seam^[[2m > ^[[22m^[[2mrecords search p95 below 200 ms on more than 10,000 real PostgreSQL Products
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0333237Z ^[[22m^[[39m{"dataset":"10,000 generated Products plus functional fixtures","hardware":"linux-x64","locale":"en","metric":"catalog-product-search-p95-ms","p95":40.06,"samples":40,"theme":"API seam (theme independent)"}
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0334610Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0335825Z ^[[90mstdout^[[2m | src/catalog/catalog.integration.test.ts^[[2m > ^[[22m^[[2mCatalog PostgreSQL and HTTP seam^[[2m > ^[[22m^[[2mrecords search p95 below 200 ms on more than 10,000 real PostgreSQL Products
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0338366Z ^[[22m^[[39m{"dataset":"10,000 generated Products plus functional fixtures","hardware":"linux-x64","locale":"exact barcode (locale independent)","metric":"catalog-barcode-to-product-p95-ms","p95":9.52,"samples":40,"theme":"API seam (theme independent)"}
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0339488Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0340102Z  ^[[32m✓^[[39m src/catalog/catalog.integration.test.ts ^[[2m(^[[22m^[[2m17 tests^[[22m^[[2m)^[[22m^[[33m 8978^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0341723Z      ^[[33m^[[2m✓^[[22m^[[39m searches ordered subsequences and barcodes, suggests and prints an internal code, and keeps daily matching eligible across restart and day boundaries ^[[33m 1597^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0343252Z      ^[[33m^[[2m✓^[[22m^[[39m records search p95 below 200 ms on more than 10,000 real PostgreSQL Products ^[[33m 2460^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0344512Z      ^[[33m^[[2m✓^[[22m^[[39m calculates and stores exact percentage pricing for every rounding setting ^[[33m 489^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0345701Z  ^[[32m✓^[[39m src/inventory/inventory-count.integration.test.ts ^[[2m(^[[22m^[[2m11 tests^[[22m^[[2m)^[[22m^[[33m 11428^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0346972Z      ^[[33m^[[2m✓^[[22m^[[39m 1. runs the lifecycle, converts mixed units, allocates FEFO, and conserves valuation ^[[33m 804^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0348199Z      ^[[33m^[[2m✓^[[22m^[[39m 2. rolls back every posting fault together and reuses the committed number gap ^[[33m 1531^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0349417Z      ^[[33m^[[2m✓^[[22m^[[39m 3. replays idempotent success and rejection while conflicting bodies are refused ^[[33m 629^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0350840Z      ^[[33m^[[2m✓^[[22m^[[39m 4. revalidates balances after concurrent purchases and rejects stale versions ^[[33m 586^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0351957Z      ^[[33m^[[2m✓^[[22m^[[39m refuses completion while a non-zero variance is unapplied ^[[33m 416^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0353163Z      ^[[33m^[[2m✓^[[22m^[[39m blocks completion on an unapplied observed variance even after the live balance catches up ^[[33m 359^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0354490Z      ^[[33m^[[2m✓^[[22m^[[39m 6. survives an API restart with the same durable lines and version ^[[33m 1203^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0355702Z      ^[[33m^[[2m✓^[[22m^[[39m 7. rejects direct quantity edits and leaves raw inventory facts unchanged across reads ^[[33m 676^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0356992Z  ^[[32m✓^[[39m src/inventory/inventory-safety.integration.test.ts ^[[2m(^[[22m^[[2m4 tests^[[22m^[[2m)^[[22m^[[33m 27553^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0358335Z      ^[[33m^[[2m✓^[[22m^[[39m recovers the real queue across claim, date-commit, final-commit, and duplicate-delivery crashes ^[[33m 23956^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0359781Z  ^[[32m✓^[[39m src/inventory/inventory-reorder-authorization.integration.test.ts ^[[2m(^[[22m^[[2m3 tests^[[22m^[[2m)^[[22m^[[33m 13642^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0361017Z      ^[[33m^[[2m✓^[[22m^[[39m allows the split permissions and audits every denied command ^[[33m 4864^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0362150Z      ^[[33m^[[2m✓^[[22m^[[39m audits tenant, locked-user, device, step-up, and expected-version boundaries ^[[33m 988^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0363401Z  ^[[32m✓^[[39m src/main-device/main-device-security.integration.test.ts ^[[2m(^[[22m^[[2m31 tests^[[22m^[[2m)^[[22m^[[33m 7714^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0364873Z      ^[[33m^[[2m✓^[[22m^[[39m serves health from the protected runtime connection file without the schema-owner credential ^[[33m 950^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0366093Z      ^[[33m^[[2m✓^[[22m^[[39m keeps the binding, audit, mutation, and rate window across restart ^[[33m 1141^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0367189Z      ^[[33m^[[2m✓^[[22m^[[39m bounds recent denial rows while retaining every denial in totals ^[[33m 1584^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0368585Z  ^[[32m✓^[[39m src/posting/posting-infrastructure.integration.test.ts ^[[2m(^[[22m^[[2m18 tests^[[22m^[[2m)^[[22m^[[33m 4650^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0369678Z        ^[[33m^[[2m✓^[[22m^[[39m keeps one key independent across command kinds ^[[33m 514^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0370693Z        ^[[33m^[[2m✓^[[22m^[[39m reruns the deadlocked command and reuses the number it allocated ^[[33m 1024^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0371797Z  ^[[32m✓^[[39m src/sales/sale-draft.integration.test.ts ^[[2m(^[[22m^[[2m16 tests^[[22m^[[2m)^[[22m^[[33m 7983^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0372799Z      ^[[33m^[[2m✓^[[22m^[[39m 3. survives a killed local API and resumes exactly ^[[33m 1114^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0374006Z      ^[[33m^[[2m✓^[[22m^[[39m 8. saves sale lines and totals across API restart, with exact idempotent edits ^[[33m 1097^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0375316Z      ^[[33m^[[2m✓^[[22m^[[39m stores a versioned quick-access grid with current unit pricing and preserves archived tiles ^[[33m 1114^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0376632Z  ^[[32m✓^[[39m src/catalog/catalog-authorization.integration.test.ts ^[[2m(^[[22m^[[2m8 tests^[[22m^[[2m)^[[22m^[[33m 6684^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0377892Z  ^[[32m✓^[[39m src/inventory/inventory-reorder.integration.test.ts ^[[2m(^[[22m^[[2m7 tests^[[22m^[[2m)^[[22m^[[33m 7162^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0379050Z      ^[[33m^[[2m✓^[[22m^[[39m 1. runs the lifecycle and leaves review and movement facts unchanged ^[[33m 490^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0380212Z      ^[[33m^[[2m✓^[[22m^[[39m 2. serializes and replays idempotent adds with deterministic re-add behavior ^[[33m 577^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0381422Z      ^[[33m^[[2m✓^[[22m^[[39m 3. replays every transition and every rejected command without a second write ^[[33m 432^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0382816Z      ^[[33m^[[2m✓^[[22m^[[39m 4. enforces versions, transitions, inactive products, and merged-product reads ^[[33m 667^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0384120Z      ^[[33m^[[2m✓^[[22m^[[39m 6. survives an API restart with durable basket and Ordered Items state ^[[33m 1124^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0385362Z  ^[[32m✓^[[39m src/reporting/inventory-review.integration.test.ts ^[[2m(^[[22m^[[2m5 tests^[[22m^[[2m)^[[22m^[[33m 5605^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0386480Z      ^[[33m^[[2m✓^[[22m^[[39m reconciles adjustments and a purchase return exactly once ^[[33m 447^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0387597Z  ^[[32m✓^[[39m src/purchasing/purchasing.integration.test.ts ^[[2m(^[[22m^[[2m10 tests^[[22m^[[2m)^[[22m^[[33m 7651^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0388674Z      ^[[33m^[[2m✓^[[22m^[[39m survives an API restart with its version and header intact ^[[33m 1019^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0389984Z      ^[[33m^[[2m✓^[[22m^[[39m commits exact rows once, resolves concurrent versions, resumes after restart, and keeps active rows editable ^[[33m 1163^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0391475Z      ^[[33m^[[2m✓^[[22m^[[39m T05 corrects a draft Product and unit atomically with exact conversion, versions, retries and restart ^[[33m 1156^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0392755Z      ^[[33m^[[2m✓^[[22m^[[39m default-denies both supplier and draft commands and audits the denials ^[[33m 418^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0394093Z  ^[[32m✓^[[39m src/identity-access/settings-crash.integration.test.ts ^[[2m(^[[22m^[[2m6 tests^[[22m^[[2m)^[[22m^[[33m 22337^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0395483Z      ^[[33m^[[2m✓^[[22m^[[39m survives a crash before claim with one settings change, one audit fact, one outbox row, and one outcome ^[[33m 1147^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0396910Z      ^[[33m^[[2m✓^[[22m^[[39m survives a crash after claim with one settings change, one audit fact, one outbox row, and one outcome ^[[33m 5257^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0398381Z      ^[[33m^[[2m✓^[[22m^[[39m survives a crash after external success with one settings change, one audit fact, one outbox row, and one outcome ^[[33m 5092^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0400001Z      ^[[33m^[[2m✓^[[22m^[[39m survives a crash before Breev records the outcome with one settings change, one audit fact, one outbox row, and one outcome ^[[33m 5364^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0401490Z      ^[[33m^[[2m✓^[[22m^[[39m records nothing new when the same job is delivered a second time ^[[33m 1914^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0402744Z  ^[[32m✓^[[39m src/inventory/inventory-count-authorization.integration.test.ts ^[[2m(^[[22m^[[2m5 tests^[[22m^[[2m)^[[22m^[[33m 6486^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0404110Z      ^[[33m^[[2m✓^[[22m^[[39m allows and denies each count command by record and approve permission ^[[33m 1009^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0405314Z  ^[[32m✓^[[39m src/durable-jobs/durable-jobs.integration.test.ts ^[[2m(^[[22m^[[2m21 tests^[[22m^[[2m)^[[22m^[[33m 62303^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0406484Z        ^[[33m^[[2m✓^[[22m^[[39m commits a durable job atomically with a Drizzle business transaction ^[[33m 2012^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0407630Z        ^[[33m^[[2m✓^[[22m^[[39m rolls back a durable job when a Drizzle business transaction aborts ^[[33m 1517^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0408813Z        ^[[33m^[[2m✓^[[22m^[[39m supports atomic transactional enqueue using a raw PoolClient transaction ^[[33m 2035^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0410124Z        ^[[33m^[[2m✓^[[22m^[[39m Crash Point 1 (Before Claim): recovers and completes jobs enqueued while worker process was down ^[[33m 657^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0411582Z        ^[[33m^[[2m✓^[[22m^[[39m Crash Point 2 (After Claim / Mid-Flight): recovers abandoned job via lease expiry after hard process SIGKILL ^[[33m 4869^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0413116Z        ^[[33m^[[2m✓^[[22m^[[39m Crash Point 3 (After External Success): recovers after hard process SIGKILL without duplicating external effect ^[[33m 4834^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0414807Z        ^[[33m^[[2m✓^[[22m^[[39m Crash Point 4 (Before Outcome Recording): recovers after hard SIGKILL before outcome transaction commits ^[[33m 4824^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0416557Z        ^[[33m^[[2m✓^[[22m^[[39m ensures two concurrent worker instances across 50 jobs process disjoint sets with zero double claims ^[[33m 12131^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0417937Z        ^[[33m^[[2m✓^[[22m^[[39m retries failed jobs with backoff and moves exhausted jobs to dead-letter state ^[[33m 6085^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0419365Z        ^[[33m^[[2m✓^[[22m^[[39m surfaces forwarded DLQ jobs when queue is configured with deadLetter destination and supports pagination ^[[33m 2028^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0420672Z        ^[[33m^[[2m✓^[[22m^[[39m boots full NestJS application context (AppModule) deterministically ^[[33m 613^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0421837Z        ^[[33m^[[2m✓^[[22m^[[39m degrades instead of aborting startup when the database is unreachable ^[[33m 15184^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0423044Z        ^[[33m^[[2m✓^[[22m^[[39m drains active work cleanly when service shuts down via onApplicationShutdown ^[[33m 2535^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0425118Z ^[[90mstdout^[[2m | src/inventory/inventory-safety-no-override.integration.test.ts^[[2m > ^[[22m^[[2minventory batch-safety refusal matrix^[[2m > ^[[22m^[[2mrefuses every hard-blocked batch for every role and Step-Up state
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0426508Z ^[[22m^[[39mrole	stepUp	target	httpNamed	httpUnnamed	inProcess
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0427286Z owner	none	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0428190Z owner	none	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0429074Z owner	none	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0429966Z owner	pending	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0430901Z owner	pending	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0431822Z owner	pending	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0432812Z owner	approved-correction	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0434196Z owner	approved-correction	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0435272Z owner	approved-correction	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0436296Z owner	approved-export	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0437316Z owner	approved-export	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0438328Z owner	approved-export	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0439277Z manager	none	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0440199Z manager	none	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0441114Z manager	none	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0442030Z manager	pending	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0442975Z manager	pending	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0444027Z manager	pending	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0445042Z manager	approved-correction	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0446141Z manager	approved-correction	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0447234Z manager	approved-correction	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0448277Z manager	approved-export	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0449495Z manager	approved-export	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0450537Z manager	approved-export	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0451508Z pharmacist	none	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0452456Z pharmacist	none	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0453399Z pharmacist	none	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0454468Z pharmacist	pending	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0455454Z pharmacist	pending	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0456438Z pharmacist	pending	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0457502Z pharmacist	approved-correction	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0458635Z pharmacist	approved-correction	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0459763Z pharmacist	approved-correction	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0460984Z pharmacist	approved-export:challenge-denied	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0462258Z pharmacist	approved-export:challenge-denied	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0463520Z pharmacist	approved-export:challenge-denied	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0464722Z sales_employee	none	expired	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0465658Z sales_employee	none	quarantined	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0466731Z sales_employee	none	recalled	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0467765Z sales_employee	pending:challenge-denied	expired	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0468926Z sales_employee	pending:challenge-denied	quarantined	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0470079Z sales_employee	pending:challenge-denied	recalled	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0471301Z sales_employee	approved-correction:challenge-denied	expired	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0472593Z sales_employee	approved-correction:challenge-denied	quarantined	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0474001Z sales_employee	approved-correction:challenge-denied	recalled	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0475269Z sales_employee	approved-export:challenge-denied	expired	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0476520Z sales_employee	approved-export:challenge-denied	quarantined	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0477770Z sales_employee	approved-export:challenge-denied	recalled	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0478883Z purchasing_employee	none	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0479931Z purchasing_employee	none	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0480976Z purchasing_employee	none	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0482202Z purchasing_employee	pending:challenge-denied	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0483636Z purchasing_employee	pending:challenge-denied	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0485030Z purchasing_employee	pending:challenge-denied	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0486368Z purchasing_employee	approved-correction:challenge-denied	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0487779Z purchasing_employee	approved-correction:challenge-denied	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0489190Z purchasing_employee	approved-correction:challenge-denied	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0490556Z purchasing_employee	approved-export:challenge-denied	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0491932Z purchasing_employee	approved-export:challenge-denied	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0493294Z purchasing_employee	approved-export:challenge-denied	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0494563Z inventory_employee	none	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0495604Z inventory_employee	none	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0496631Z inventory_employee	none	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0497768Z inventory_employee	pending:challenge-denied	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0499138Z inventory_employee	pending:challenge-denied	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0500399Z inventory_employee	pending:challenge-denied	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0501720Z inventory_employee	approved-correction:challenge-denied	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0503279Z inventory_employee	approved-correction:challenge-denied	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0504585Z inventory_employee	approved-correction:challenge-denied	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0505380Z inventory_employee	approved-export:challenge-denied	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0506148Z inventory_employee	approved-export:challenge-denied	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0506912Z inventory_employee	approved-export:challenge-denied	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0507544Z accountant	none	expired	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0508068Z accountant	none	quarantined	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0508573Z accountant	none	recalled	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0509148Z accountant	pending:challenge-denied	expired	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0509782Z accountant	pending:challenge-denied	quarantined	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0510411Z accountant	pending:challenge-denied	recalled	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0511077Z accountant	approved-correction:challenge-denied	expired	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0511786Z accountant	approved-correction:challenge-denied	quarantined	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0512621Z accountant	approved-correction:challenge-denied	recalled	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0513252Z accountant	approved-export	expired	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0513978Z accountant	approved-export	quarantined	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0514651Z accountant	approved-export	recalled	403:identity-denied	403:identity-denied	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0515254Z custom-all-permissions	none	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0515879Z custom-all-permissions	none	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0516500Z custom-all-permissions	none	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0517123Z custom-all-permissions	pending	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0517771Z custom-all-permissions	pending	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0518404Z custom-all-permissions	pending	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0519070Z custom-all-permissions	approved-correction	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0519794Z custom-all-permissions	approved-correction	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0520513Z custom-all-permissions	approved-correction	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0521195Z custom-all-permissions	approved-export	expired	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0521873Z custom-all-permissions	approved-export	quarantined	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0522559Z custom-all-permissions	approved-export	recalled	409:regulatory-hard-block	200:target-blocked	regulatory-hard-block
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0523021Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0523527Z  ^[[32m✓^[[39m src/inventory/inventory-safety-no-override.integration.test.ts ^[[2m(^[[22m^[[2m3 tests^[[22m^[[2m)^[[22m^[[33m 20093^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0524437Z      ^[[33m^[[2m✓^[[22m^[[39m refuses every hard-blocked batch for every role and Step-Up state ^[[33m 4754^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0525184Z  ^[[32m✓^[[39m src/identity-access/settings-posting.integration.test.ts ^[[2m(^[[22m^[[2m8 tests^[[22m^[[2m)^[[22m^[[33m 18876^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0525928Z      ^[[33m^[[2m✓^[[22m^[[39m posts the settings change, its audit, its event, and one durable outcome ^[[33m 1867^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0526559Z      ^[[33m^[[2m✓^[[22m^[[39m replays the committed result for the same key and body ^[[33m 1983^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0527154Z      ^[[33m^[[2m✓^[[22m^[[39m commits once when two identical requests arrive together ^[[33m 3900^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0527782Z      ^[[33m^[[2m✓^[[22m^[[39m rolls every written record back together when any write is refused ^[[33m 1970^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0528362Z      ^[[33m^[[2m✓^[[22m^[[39m runs the whole path with no route to the internet ^[[33m 2052^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0528946Z      ^[[33m^[[2m✓^[[22m^[[39m returns the one committed outcome after a killed service restarts ^[[33m 2956^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0529709Z  ^[[32m✓^[[39m src/pharmacy-ca/pharmacy-ca.integration.test.ts ^[[2m(^[[22m^[[2m19 tests^[[22m^[[2m | ^[[22m^[[33m1 skipped^[[39m^[[2m)^[[22m^[[33m 4520^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0530490Z  ^[[32m✓^[[39m src/reporting/inventory-authorization.integration.test.ts ^[[2m(^[[22m^[[2m3 tests^[[22m^[[2m)^[[22m^[[33m 5551^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0531219Z      ^[[33m^[[2m✓^[[22m^[[39m allows preferences for review roles and audits all protected export decisions ^[[33m 442^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0532342Z ^[[33m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RecoveryJobService] ^[[39m^[[33mMissed backup run: no verified recovery point exists. Scheduling a catch-up run.^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0533476Z ^[[33m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RecoveryJobService] ^[[39m^[[33mMissed backup run: no verified recovery point exists. Scheduling a catch-up run.^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0534679Z ^[[33m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RecoveryJobService] ^[[39m^[[33mMissed backup run: no verified recovery point exists. Scheduling a catch-up run.^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0535761Z ^[[32m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RecoveryCoordinatorService] ^[[39m^[[32mVerified recovery point 01a0f84a-0b01-796f-80e0-c55db22af1a9 (66315 bytes)^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0536810Z ^[[33m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RestoreQuarantineService] ^[[39m^[[33mDataset entered Restore Quarantine: Restored from recovery point^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0538124Z ^[[31m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RestoreQuarantineService] ^[[39m^[[31mRestore Quarantine verification failed: main_device_security_verification: No Main device provisioning records found in the restored dataset^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0539254Z ^[[32m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RestoreQuarantineService] ^[[39m^[[32mRestore Quarantine verified and cleared^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0540145Z ^[[33m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RecoveryJobService] ^[[39m^[[33mRecorded 1 interrupted recovery point run(s) as failed^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0541149Z ^[[32m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RecoveryCoordinatorService] ^[[39m^[[32mVerified recovery point 01a0f84a-0c66-7526-8c37-1dbac9676338 (75859 bytes)^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0542330Z ^[[32m[Nest] 45475  - ^[[39m10/01/2026, 4:26:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RecoveryCoordinatorService] ^[[39m^[[32mRecovery point 01a0f84a-0c66-7526-8c37-1dbac9676338 is already verified; skipping the duplicate run^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0543306Z  ^[[32m✓^[[39m test/recovery.integration.test.ts ^[[2m(^[[22m^[[2m13 tests^[[22m^[[2m)^[[22m^[[33m 2936^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0544090Z  ^[[32m✓^[[39m src/licensing/licensing.integration.test.ts ^[[2m(^[[22m^[[2m8 tests^[[22m^[[2m)^[[22m^[[33m 2931^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0544826Z  ^[[32m✓^[[39m src/sales/sale-draft-authorization.integration.test.ts ^[[2m(^[[22m^[[2m6 tests^[[22m^[[2m)^[[22m^[[33m 5651^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0545604Z  ^[[32m✓^[[39m src/identity-access/custom-roles-migration.integration.test.ts ^[[2m(^[[22m^[[2m2 tests^[[22m^[[2m)^[[22m^[[33m 3194^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0546348Z      ^[[33m^[[2m✓^[[22m^[[39m preserves identities while granting manager and owner permissions once ^[[33m 399^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0547115Z  ^[[32m✓^[[39m windows/api-runtime.integration.test.mjs ^[[2m(^[[22m^[[2m7 tests^[[22m^[[2m | ^[[22m^[[33m1 skipped^[[39m^[[2m)^[[22m^[[33m 6123^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0547893Z      ^[[33m^[[2m✓^[[22m^[[39m ships exact SQL bytes, metadata, legal notices and the native addon without node_modules ^[[33m 427^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0548624Z      ^[[33m^[[2m✓^[[22m^[[39m resolves the full Nest dependency graph and reports degraded without a database ^[[33m 343^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0549327Z      ^[[33m^[[2m✓^[[22m^[[39m runs concurrent and repeated shipped migrations with least-privilege roles ^[[33m 887^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0550011Z      ^[[33m^[[2m✓^[[22m^[[39m serves healthy through the bundled Nest API without migration credentials ^[[33m 1054^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0550767Z  ^[[32m✓^[[39m src/identity-access/inventory-reorder-migration.integration.test.ts ^[[2m(^[[22m^[[2m1 test^[[22m^[[2m)^[[22m^[[33m 4190^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0551613Z      ^[[33m^[[2m✓^[[22m^[[39m grants the reorder permissions once and preserves customized roles ^[[33m 302^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0552373Z  ^[[32m✓^[[39m src/purchasing/purchase-invoice-offer-migration.integration.test.ts ^[[2m(^[[22m^[[2m10 tests^[[22m^[[2m)^[[22m^[[33m 3625^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0553446Z ^[[90mstdout^[[2m | src/devices/devices-ca.integration.test.ts^[[2m > ^[[22m^[[2mdevices CA read-path seam^[[2m > ^[[22m^[[2mkeeps a concurrent GET /health well under the pre-fix stall while polling status
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0554289Z ^[[22m^[[39m[devices-ca] GET /health round-trip: 8ms
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0554466Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0554823Z  ^[[32m✓^[[39m src/devices/devices-ca.integration.test.ts ^[[2m(^[[22m^[[2m4 tests^[[22m^[[2m)^[[22m^[[33m 3656^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0555554Z  ^[[32m✓^[[39m src/identity-access/batch-safety-migration.integration.test.ts ^[[2m(^[[22m^[[2m2 tests^[[22m^[[2m)^[[22m^[[33m 2646^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0556318Z  ^[[32m✓^[[39m src/identity-access/sale-draft-migration.integration.test.ts ^[[2m(^[[22m^[[2m2 tests^[[22m^[[2m)^[[22m^[[33m 3552^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0557092Z  ^[[32m✓^[[39m src/catalog/catalog-packaging-migration.integration.test.ts ^[[2m(^[[22m^[[2m1 test^[[22m^[[2m)^[[22m^[[33m 2487^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0557883Z  ^[[32m✓^[[39m src/identity-access/inventory-review-migration.integration.test.ts ^[[2m(^[[22m^[[2m1 test^[[22m^[[2m)^[[22m^[[33m 3544^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0558630Z      ^[[33m^[[2m✓^[[22m^[[39m adds the inventory grants, advances each touched role once, and is idempotent ^[[33m 890^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0559321Z  ^[[32m✓^[[39m test/windows-service-boot.integration.test.ts ^[[2m(^[[22m^[[2m2 tests^[[22m^[[2m)^[[22m^[[33m 5734^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0559977Z      ^[[33m^[[2m✓^[[22m^[[39m binds the LAN mutual-TLS listener when the endpoint is configured ^[[33m 1606^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0560572Z      ^[[33m^[[2m✓^[[22m^[[39m binds no LAN listener when the endpoint is absent ^[[33m 1050^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0561297Z  ^[[32m✓^[[39m src/identity-access/purchasing-role-default-migration.integration.test.ts ^[[2m(^[[22m^[[2m1 test^[[22m^[[2m)^[[22m^[[33m 3112^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0562180Z      ^[[33m^[[2m✓^[[22m^[[39m preserves a customized role and advances an untouched old default once ^[[33m 425^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0562925Z  ^[[32m✓^[[39m src/identity-access/inventory-count-migration.integration.test.ts ^[[2m(^[[22m^[[2m1 test^[[22m^[[2m)^[[22m^[[33m 2704^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0563596Z  ^[[32m✓^[[39m test/health.integration.test.ts ^[[2m(^[[22m^[[2m3 tests^[[22m^[[2m)^[[22m^[[33m 4681^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0564345Z      ^[[33m^[[2m✓^[[22m^[[39m reports the defined repair requirement from the real API ^[[33m 951^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0564929Z      ^[[33m^[[2m✓^[[22m^[[39m keeps the API reachable and reports PostgreSQL failure ^[[33m 589^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0565502Z  ^[[32m✓^[[39m test/migrate.integration.test.ts ^[[2m(^[[22m^[[2m4 tests^[[22m^[[2m)^[[22m^[[33m 4511^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0566208Z      ^[[33m^[[2m✓^[[22m^[[39m migrates the database through connection files and preserves application least privilege ^[[33m 1003^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0566875Z      ^[[33m^[[2m✓^[[22m^[[39m runs idempotently against an already migrated database ^[[33m 527^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0567535Z      ^[[33m^[[2m✓^[[22m^[[39m rejects an application role used as the schema owner without exposing its password ^[[33m 486^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0568237Z      ^[[33m^[[2m✓^[[22m^[[39m reports missing migration credentials without exposing connection details ^[[33m 462^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0568884Z  ^[[32m✓^[[39m test/windows-boot.integration.test.ts ^[[2m(^[[22m^[[2m2 tests^[[22m^[[2m)^[[22m^[[33m 34627^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0569501Z      ^[[33m^[[2m✓^[[22m^[[39m stays up and reports degraded when PostgreSQL is unreachable ^[[33m 16135^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0570095Z      ^[[33m^[[2m✓^[[22m^[[39m stays up and reports degraded against an unmigrated database ^[[33m 18162^[[2mms^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0570507Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0570767Z ^[[31m⎯⎯⎯⎯⎯⎯⎯^[[39m^[[1m^[[41m Failed Tests 2 ^[[49m^[[22m^[[31m⎯⎯⎯⎯⎯⎯⎯^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0570960Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0571668Z ^[[41m^[[1m FAIL ^[[22m^[[49m src/patients/patients.integration.test.ts^[[2m > ^[[22mPatients HTTP and PostgreSQL boundary^[[2m > ^[[22mleaves an immutable posted purchase snapshot unchanged after a patient edit
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0572930Z ^[[31m^[[1mAssertionError^[[22m: ^[[33m[Nest] 9583  - ^[[31m10/01/2026, 4:21:55 PM ^[[33m   WARN^[[31m ^[[38;5;3m[RecoveryJobService] ^[[31m^[[33mBREEV_BACKUP_DIRECTORY is not configured, so no recovery points will be produced^[[31m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0574200Z ^[[33m[Nest] 9583  - ^[[31m10/01/2026, 4:21:56 PM ^[[33m   WARN^[[31m ^[[38;5;3m[InventorySafetyService] ^[[31m^[[33mThe batch-safety job runtime is unavailable or the pharmacy is not bootstrapped^[[31m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0574664Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0575468Z [{"body":{"code":"body-invalid","fieldErrors":[{"code":"required","path":["invoiceOffer"]}],"requestId":"01a0f845-d3af-7e94-b48a-c51163318186","status":"denied"},"status":400}]: expected 400 to be 201 // Object.is equality^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0576037Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0576153Z ^[[32m- Expected^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0576365Z ^[[31m+ Received^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0576472Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0576558Z ^[[32m- 201^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0576748Z ^[[31m+ 400^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0576846Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0577153Z ^[[36m ^[[2m❯^[[22m src/patients/patients.integration.test.ts:^[[2m1350:67^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0577560Z     ^[[90m1348|^[[39m       }^[[33m,^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0577821Z     ^[[90m1349|^[[39m     )^[[33m;^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0578251Z     ^[[90m1350|^[[39m     expect(draftResponse.status, failureContext([draftResponse])).toBe…
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0578735Z     ^[[90m   |^[[39m                                                                   ^[[31m^^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0579365Z     ^[[90m1351|^[[39m     ^[[35mlet^[[39m draft ^[[33m=^[[39m purchaseDraftCreateContract^[[33m.^[[39mresponses[^[[34m201^[[39m]^[[33m.^[[39m^[[34mparse^[[39m(
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0580043Z     ^[[90m1352|^[[39m       draftResponse^[[33m.^[[39mbody^[[33m,^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0580229Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0580420Z ^[[31m^[[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0580576Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0581546Z ^[[41m^[[1m FAIL ^[[22m^[[49m src/purchasing/purchase-posting.integration.test.ts^[[2m > ^[[22mPurchase posting PostgreSQL seam^[[2m > ^[[22mT06 authoritative item details^[[2m > ^[[22mT06 preserves stock when valuation reconciliation is unavailable and performs no inventory writes
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0582562Z ^[[31m^[[1mError^[[22m: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0583233Z ^[[90m ^[[2m❯^[[22m ../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.23.0/node_modules/pg-pool/index.js:^[[2m45:11^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0583927Z ^[[36m ^[[2m❯^[[22m src/purchasing/purchase-posting.integration.test.ts:^[[2m4199:11^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0584323Z     ^[[90m4197|^[[39m       try {
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0584601Z     ^[[90m4198|^[[39m         const original = (
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0584930Z     ^[[90m4199|^[[39m           await administrator.query(
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0585220Z     ^[[90m   |^[[39m           ^[[31m^^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0586159Z     ^[[90m4200|^[[39m             "select total_quantity::text, total_value_scaled::text fro…
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0586526Z     ^[[90m4201|^[[39m             [productId],
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0586674Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0586868Z ^[[31m^[[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯^[[22m^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0587034Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0587039Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0587377Z ^[[2m Test Files ^[[22m ^[[1m^[[31m2 failed^[[39m^[[22m^[[2m | ^[[22m^[[1m^[[32m38 passed^[[39m^[[22m^[[90m (40)^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0588043Z ^[[2m      Tests ^[[22m ^[[1m^[[31m2 failed^[[39m^[[22m^[[2m | ^[[22m^[[1m^[[32m353 passed^[[39m^[[22m^[[2m | ^[[22m^[[33m2 skipped^[[39m^[[90m (357)^[[39m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0588486Z ^[[2m   Start at ^[[22m 16:21:03
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0589131Z ^[[2m   Duration ^[[22m 441.53s^[[2m (transform 1.63s, setup 0ms, import 23.20s, tests 414.42s, environment 3ms)^[[22m
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0589427Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0589433Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0596400Z ##[error]AssertionError: [Nest] 9583  - 10/01/2026, 4:21:55 PM    WARN [RecoveryJobService] BREEV_BACKUP_DIRECTORY is not configured, so no recovery points will be produced
+verify	Verify PostgreSQL integration seam	[Nest] 9583  - 10/01/2026, 4:21:56 PM    WARN [InventorySafetyService] The batch-safety job runtime is unavailable or the pharmacy is not bootstrapped
+verify	Verify PostgreSQL integration seam	
+verify	Verify PostgreSQL integration seam	[{"body":{"code":"body-invalid","fieldErrors":[{"code":"required","path":["invoiceOffer"]}],"requestId":"01a0f845-d3af-7e94-b48a-c51163318186","status":"denied"},"status":400}]: expected 400 to be 201 // Object.is equality
+verify	Verify PostgreSQL integration seam	
+verify	Verify PostgreSQL integration seam	- Expected
+verify	Verify PostgreSQL integration seam	+ Received
+verify	Verify PostgreSQL integration seam	
+verify	Verify PostgreSQL integration seam	- 201
+verify	Verify PostgreSQL integration seam	+ 400
+verify	Verify PostgreSQL integration seam	
+verify	Verify PostgreSQL integration seam	 ❯ src/patients/patients.integration.test.ts:1350:67
+verify	Verify PostgreSQL integration seam	
+verify	Verify PostgreSQL integration seam	
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0598683Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0600252Z ##[error]Error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+verify	Verify PostgreSQL integration seam	 ❯ ../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.23.0/node_modules/pg-pool/index.js:45:11
+verify	Verify PostgreSQL integration seam	 ❯ src/purchasing/purchase-posting.integration.test.ts:4199:11
+verify	Verify PostgreSQL integration seam	
+verify	Verify PostgreSQL integration seam	
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0601299Z [ELIFECYCLE] Command failed with exit code 1.
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0601474Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0601584Z  Tasks:    2 successful, 3 total
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0601819Z Cached:    2 cached, 3 total
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0602028Z   Time:    7m22.226s 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0602280Z Failed:    @breev/local-api#test:integration
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0602444Z 
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0634852Z [ELIFECYCLE] Command failed with exit code 1.
+verify	Verify PostgreSQL integration seam	2026-10-01T16:28:25.0825433Z ##[error]Process completed with exit code 1.

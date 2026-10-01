@@ -50,6 +50,18 @@ necessary merged-schema version; the offer SQL is unchanged.
 
 ## Preserved boundaries and open findings
 
+PR [#205](https://github.com/PharmaElectrons/Breev/pull/205)'s first Linux CI
+run passed source/unit checks but found two integration-fixture defects:
+the newly integrated Patient snapshot fixture omitted required `invoiceOffer`,
+and the T06 reconciliation fixture guessed a passwordless `postgres` URL in
+Testcontainers. The latter now uses the fixture's existing schema-owner URL;
+the Patient fixture explicitly supplies a zero offer. No runtime behavior,
+security boundary or assertion was weakened. The two affected PostgreSQL tests
+passed in a focused sequential retry (40 other tests were intentionally filtered
+out), and scoped ESLint/format checks passed. See `logs/final-ci-fixture-repair.log`
+and `ci-fixture-repair.json`. The first remote failure is retained in
+`logs/github-ci-first-failure.log`; it is separate from the original local gate.
+
 The two unrelated dirty files remain excluded and retain their recorded hashes:
 `use-startup-connection.ts` and `tooling/dev.mjs`. Accepted historical browser
 images were backed up and restored; the new integrated-candidate images are
