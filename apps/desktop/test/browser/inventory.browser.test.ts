@@ -840,6 +840,7 @@ async function purchaseStock(
 ): Promise<string> {
   const supplier = await createSupplier(`Inventory ${invoiceNumber}`);
   const created = await apiRequest("POST", "/purchases/drafts", {
+    invoiceOffer: { mode: "none", value: "0" },
     idempotencyKey: uuidV7(),
     invoiceDate: "2026-06-15",
     settlementContext: "debt",
@@ -1216,6 +1217,7 @@ async function postPurchase(
   item: Product,
 ): Promise<PurchasePostResult> {
   const created = await apiRequest("POST", "/purchases/drafts", {
+    invoiceOffer: { mode: "none", value: "0" },
     idempotencyKey: uuidV7(),
     invoiceDate: "2026-06-15",
     settlementContext: "debt",
@@ -1264,6 +1266,7 @@ async function postPurchaseAdjustment(purchaseId: string): Promise<void> {
     "PUT",
     purchaseAdjustmentDraftPath(draft.id),
     {
+      invoiceOffer: draft.invoiceOffer,
       evidence: null,
       expectedVersion: draft.version,
       idempotencyKey: uuidV7(),

@@ -3200,6 +3200,28 @@ const supplierTermsSchema = z
 export const allowancePercentageSchema = z
   .string()
   .regex(/^(?:100(?:\.0{1,6})?|(?:0|[1-9]\d?)(?:\.\d{1,6})?)$/u);
+/** Alternative inputs for the separate invoice offer; never two discounts. */
+export const purchaseInvoiceOfferInputSchema = z.discriminatedUnion("mode", [
+  z.strictObject({ mode: z.literal("none"), value: z.literal("0") }),
+  z.strictObject({ mode: z.literal("fixed"), value: priceFilsSchema }),
+  z.strictObject({
+    mode: z.literal("percentage"),
+    value: allowancePercentageSchema,
+  }),
+]);
+/** Version 1 is the recorded working policy, not accountant approval. */
+export const purchaseInvoiceOfferSnapshotSchema = z.strictObject({
+  input: purchaseInvoiceOfferInputSchema,
+  ruleVersion: z.literal(1),
+  basisFils: priceFilsSchema,
+  offerFils: priceFilsSchema,
+});
+export type PurchaseInvoiceOfferInput = z.infer<
+  typeof purchaseInvoiceOfferInputSchema
+>;
+export type PurchaseInvoiceOfferSnapshot = z.infer<
+  typeof purchaseInvoiceOfferSnapshotSchema
+>;
 const supplierFields = {
   allowanceEffectiveFrom: z.iso.date(),
   defaultAllowancePercentage: allowancePercentageSchema,
@@ -3235,6 +3257,7 @@ export const supplierMergeRequestSchema = z.strictObject({
 
 export const purchaseSettlementContextSchema = z.enum(["cash", "debt"]);
 const purchaseDraftHeaderFields = {
+  invoiceOffer: purchaseInvoiceOfferInputSchema,
   invoiceDate: z.iso.date(),
   settlementContext: purchaseSettlementContextSchema,
   supplierId: z.uuidv7(),
@@ -3246,6 +3269,7 @@ const purchaseDraftHeaderFields = {
 } as const;
 export const purchaseDraftSchema = z.strictObject({
   ...purchaseDraftHeaderFields,
+  offerRuleVersion: z.literal(1),
   allowanceSnapshot: z.strictObject({
     basisFils: z.string().regex(/^0$|^[1-9]\d*$/u),
     percentage: allowancePercentageSchema,
@@ -3393,6 +3417,7 @@ export const purchaseDraftRowSchema = z.strictObject({
 });
 export const purchaseDraftReviewSchema = z.strictObject({
   allowanceFils: priceFilsSchema,
+  invoiceOffer: purchaseInvoiceOfferSnapshotSchema,
   batches: z.array(
     z.strictObject({
       expiryDate: z.iso.date().nullable(),
@@ -3594,6 +3619,7 @@ export const postedPurchaseJournalSchema = z
  * transaction model": historical views use stored snapshots).
  */
 export const postedPurchaseSchema = z.strictObject({
+  invoiceOffer: purchaseInvoiceOfferSnapshotSchema,
   /**
    * The invoice's calculated allowance, from the snapshot percentage. Stored
    * and displayed, never posted: the allowance becomes a transaction only at
@@ -3812,6 +3838,7 @@ export const purchasePostedDetailSchema = z
     activeReturnDrafts: z.array(purchaseActiveReturnDraftSchema),
     adjustments: z.array(purchasePostedAdjustmentLinkSchema),
     allowanceFils: nullableReviewCostSchema,
+    invoiceOffer: purchaseInvoiceOfferSnapshotSchema.nullable(),
     allowancePercentageSnapshot: allowancePercentageSchema.nullable(),
     costAfterDiscountFils: nullableReviewCostSchema,
     costVisibility: purchasePostedCostVisibilitySchema,
@@ -3840,6 +3867,7 @@ export const purchasePostedDetailSchema = z
     const costsAreVisible = purchase.costVisibility === "visible";
     const headerCosts = [
       "allowanceFils",
+      "invoiceOffer",
       "allowancePercentageSnapshot",
       "costAfterDiscountFils",
       "primarySupplierCostFils",
@@ -3924,6 +3952,8 @@ export const purchaseAdjustmentDraftRowInputSchema = z.strictObject({
 });
 export const purchaseAdjustmentDraftSchema = z.strictObject({
   allowancePercentageSnapshot: allowancePercentageSchema,
+  invoiceOffer: purchaseInvoiceOfferInputSchema,
+  offerRuleVersion: z.literal(1),
   createdAt: z.iso.datetime(),
   evidence: purchaseAdjustmentEvidenceSchema,
   id: z.uuidv7(),
@@ -3946,6 +3976,7 @@ export const purchaseAdjustmentDraftCreateRequestSchema = z.strictObject({
   reason: purchaseAdjustmentReasonSchema,
 });
 export const purchaseAdjustmentDraftUpdateRequestSchema = z.strictObject({
+  invoiceOffer: purchaseInvoiceOfferInputSchema,
   evidence: purchaseAdjustmentEvidenceSchema,
   expectedVersion: decimalRevisionSchema,
   idempotencyKey: z.uuid(),
@@ -3978,11 +4009,17 @@ export const purchaseAdjustmentHeaderComparisonSchema = z.strictObject({
   after: purchaseAdjustmentHeaderSnapshotSchema,
 });
 export const purchaseAdjustmentTotalsSchema = z.strictObject({
+  offerFils: priceFilsSchema,
   primarySupplierCostFils: priceFilsSchema,
   allowanceFils: priceFilsSchema,
   costAfterDiscountFils: priceFilsSchema,
 });
 export const purchaseAdjustmentSummarySchema = z.strictObject({
+  offerDeltaFils: signedBigintSchema,
+  offerComparison: z.strictObject({
+    before: purchaseInvoiceOfferSnapshotSchema,
+    after: purchaseInvoiceOfferSnapshotSchema,
+  }),
   allowanceDeltaFils: signedBigintSchema,
   confirmationHash: z.string().regex(/^[0-9a-f]{64}$/u),
   costAfterDiscountDeltaFils: signedBigintSchema,
@@ -4053,6 +4090,8 @@ export const purchaseAdjustmentJournalSchema = z
     }
   });
 export const postedPurchaseAdjustmentSchema = z.strictObject({
+  offerDeltaFils: signedBigintSchema,
+  offerComparison: purchaseAdjustmentSummarySchema.shape.offerComparison,
   allowanceDeltaFils: signedBigintSchema,
   costAfterDiscountDeltaFils: signedBigintSchema,
   draftId: z.uuidv7(),

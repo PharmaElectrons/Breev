@@ -895,6 +895,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           {
             idempotencyKey: uuidV7(),
             invoiceDate: "2026-09-08",
+            invoiceOffer: { mode: "none", value: "0" },
             settlementContext: "cash",
             supplierId,
             supplierInvoiceNumber: unitsInvoice,
@@ -1466,6 +1467,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           {
             evidence: concurrentEvidence,
             reason: loaded.reason,
+            invoiceOffer: loaded.invoiceOffer,
             supplierId: loaded.supplierId,
             supplierInvoiceNumber: loaded.supplierInvoiceNumber,
             expectedVersion: loaded.version,
@@ -1623,6 +1625,214 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         expect(
           (corrections.body as { adjustments: unknown[] }).adjustments,
         ).toHaveLength(1);
+      });
+    }
+  }
+
+  for (const locale of ["en", "ar"] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`T04 saves independent invoice offers and immutable corrections ${locale} ${theme}`, async ({
+        page,
+      }) => {
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.setViewportSize({ width: 1280, height: 800 });
+        const invoice = `T04-UI-${locale}-${theme}`;
+        const t04Dir = path.resolve(
+          import.meta.dirname,
+          "../../../../evidence/issue-198/t04/screenshots",
+        );
+        await mkdir(t04Dir, { recursive: true });
+        await createPurchaseWithOneRow(
+          page,
+          renderer.origin,
+          supplierId,
+          invoice,
+          "2029-06-30",
+          locale,
+        );
+        const percent = page.getByLabel(
+          locale === "en" ? "Invoice offer %" : "عرض الفاتورة %",
+          { exact: true },
+        );
+        const amount = page.getByLabel(
+          locale === "en" ? "Invoice offer (IQD)" : "عرض الفاتورة (د.ع)",
+          { exact: true },
+        );
+        const headerSave = page.getByRole("button", {
+          name: locale === "en" ? "Save changes" : "حفظ التغييرات",
+          exact: true,
+        });
+        await percent.fill("5");
+        await expect(amount).toHaveValue("0");
+        await page
+          .getByRole("button", {
+            name: locale === "en" ? "Post purchase" : "حفظ الفاتورة",
+            exact: true,
+          })
+          .click();
+        await expect(page.getByRole("alert")).toContainText(
+          locale === "en" ? "Save the offer" : "احفظ العرض",
+        );
+        await headerSave.click();
+        await expect(page.locator(".purchase-invoice-offer")).toContainText(
+          locale === "en" ? "148 IQD" : "١٤٨",
+        );
+        await stopProcess(api);
+        api = startApi(apiPort, databaseRoles, credentials);
+        await waitForHealth(apiOrigin);
+        await page.reload();
+        await page
+          .getByRole("button", {
+            name: locale === "en" ? "Saved drafts" : "المسودات المحفوظة",
+            exact: true,
+          })
+          .click();
+        await page
+          .locator("#purchase-draft-register tbody tr", { hasText: invoice })
+          .getByRole("button")
+          .first()
+          .click();
+        await expect(percent).toHaveValue("5");
+        await amount.fill("4");
+        await expect(percent).toHaveValue("0");
+        await headerSave.click();
+        await expect(page.locator(".purchase-invoice-offer")).toContainText(
+          locale === "en" ? "152 IQD" : "١٥٢",
+        );
+        await amount.fill("157");
+        await headerSave.click();
+        await expect(page.getByRole("alert")).toContainText(
+          locale === "en" ? "cannot exceed" : "لا يمكن أن يتجاوز",
+        );
+        await expect(amount).toHaveValue("157");
+        await amount.fill("4");
+        await headerSave.click();
+        await expect(headerSave).toBeEnabled();
+        await expect(page.getByRole("alert")).toHaveCount(0);
+        await expect(
+          page.getByRole("button", {
+            name: locale === "en" ? "Post purchase" : "حفظ الفاتورة",
+            exact: true,
+          }),
+        ).toBeInViewport();
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(t04Dir, `offer-draft-${locale}-${theme}.png`),
+        });
+        const postedPromise = page.waitForResponse(
+          (response) =>
+            response.url().endsWith("/postings") && response.status() === 201,
+        );
+        await page
+          .getByRole("button", {
+            name: locale === "en" ? "Post purchase" : "حفظ الفاتورة",
+            exact: true,
+          })
+          .click();
+        const original = (await (
+          await postedPromise
+        ).json()) as PurchasePostResult;
+        expect(original.posted).toMatchObject({
+          invoiceOffer: {
+            input: { mode: "fixed", value: "4000" },
+            offerFils: "4000",
+          },
+          costAfterDiscountFils: "152000",
+          primarySupplierCostFils: "160000",
+        });
+        await page.goto(`${renderer.origin}#/purchases`);
+        await postedInvoicesTab(page).click();
+        const review = page.locator("#purchase-posted-view");
+        await review.getByRole("searchbox").fill(invoice);
+        await review.getByRole("searchbox").press("Enter");
+        await review
+          .locator(".posted-purchase-list tbody tr", { hasText: invoice })
+          .getByRole("button")
+          .first()
+          .click();
+        await review
+          .getByRole("button", {
+            name: locale === "en" ? "Edit Invoice" : "تعديل الفاتورة",
+          })
+          .click();
+        await review
+          .getByRole("button", {
+            name:
+              locale === "en" ? "Create adjustment copy" : "إنشاء نسخة التعديل",
+          })
+          .click();
+        const adjustment = page.locator(".purchase-adjustment");
+        await adjustment
+          .getByLabel(locale === "en" ? "Invoice offer %" : "عرض الفاتورة %", {
+            exact: true,
+          })
+          .fill("10");
+        const summaryPromise = page.waitForResponse(
+          (response) => response.url().endsWith("/summary") && response.ok(),
+        );
+        await adjustment
+          .getByRole("button", {
+            name:
+              locale === "en" ? "Save and review Delta" : "حفظ ومراجعة الفرق",
+          })
+          .click();
+        const summary = (await (
+          await summaryPromise
+        ).json()) as PurchaseAdjustmentSummary;
+        expect(summary).toMatchObject({
+          offerDeltaFils: "12000",
+          primarySupplierCostDeltaFils: "0",
+          costAfterDiscountDeltaFils: "-12000",
+          stockEffects: [],
+          supplierEffects: [],
+        });
+        const dialog = page.locator(".delta-summary-dialog");
+        const confirm = dialog.getByRole("button", {
+          name:
+            locale === "en" ? "Confirm and post Delta" : "تأكيد وحفظ التعديل",
+          exact: true,
+        });
+        await expect(confirm).toBeInViewport();
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(t04Dir, `offer-summary-${locale}-${theme}.png`),
+        });
+        const a01Promise = page.waitForResponse(
+          (response) =>
+            response.url().endsWith("/postings") && response.status() === 201,
+        );
+        await confirm.click();
+        const a01 = (await (
+          await a01Promise
+        ).json()) as PurchaseAdjustmentPostResult;
+        expect(a01.posted).toMatchObject({
+          offerComparison: {
+            before: { offerFils: "4000" },
+            after: {
+              input: { mode: "percentage", value: "10" },
+              offerFils: "16000",
+            },
+          },
+          offerDeltaFils: "12000",
+          rowDeltas: [],
+        });
+        await page.reload();
+        const originalGet = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          `/purchases/posted/${original.posted.id}`,
+        );
+        expect(originalGet.body).toMatchObject({
+          invoiceOffer: original.posted.invoiceOffer,
+          costAfterDiscountFils: "152000",
+        });
       });
     }
   }
@@ -1857,6 +2067,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         settlementContext: "debt",
         supplierId,
         supplierInvoiceNumber: "BROWSER-ADJUST-PERCENTAGE",
+        invoiceOffer: { mode: "none", value: "0" },
       },
     );
     expect(created.status).toBe(201);
@@ -2044,11 +2255,13 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         ).json()) as PurchaseAdjustmentSummary;
         expect(summary.totalsComparison).toEqual({
           before: {
+            offerFils: "0",
             primarySupplierCostFils: "320000",
             allowanceFils: "8000",
             costAfterDiscountFils: "312000",
           },
           after: {
+            offerFils: "0",
             primarySupplierCostFils: "640000",
             allowanceFils: "16000",
             costAfterDiscountFils: "624000",
@@ -2277,6 +2490,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           await zeroResponse
         ).json()) as PurchaseAdjustmentSummary;
         expect(zero.totalsComparison.after).toEqual({
+          offerFils: "0",
           primarySupplierCostFils: "0",
           allowanceFils: "0",
           costAfterDiscountFils: "0",
@@ -3222,6 +3436,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         settlementContext: "cash",
         supplierId,
         supplierInvoiceNumber: "BROWSER-LONG-INVOICE",
+        invoiceOffer: { mode: "none", value: "0" },
       },
     );
     expect(created.status).toBe(201);
@@ -3314,6 +3529,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         settlementContext: "debt",
         supplierId,
         supplierInvoiceNumber: "BROWSER-OVER-RETURN",
+        invoiceOffer: { mode: "none", value: "0" },
       },
     );
     expect(created.status).toBe(201);
@@ -3757,11 +3973,11 @@ async function createPurchaseWithOneRow(
           supplier: "Supplier",
         };
   await page.goto(`${rendererOrigin}#/purchases`);
-  await page.getByLabel(labels.invoice).fill(invoiceNumber);
   await page
     .getByRole("combobox", { name: labels.supplier, exact: true })
     .click();
   await page.locator(`[data-supplier-id="${supplierId}"]`).click();
+  await page.getByLabel(labels.invoice).fill(invoiceNumber);
   await page
     .getByLabel(locale === "ar" ? "تاريخ الفاتورة" : "Invoice date", {
       exact: true,
@@ -3806,6 +4022,7 @@ async function postPurchaseForReview(
       settlementContext: "debt",
       supplierId,
       supplierInvoiceNumber: invoiceNumber,
+      invoiceOffer: { mode: "none", value: "0" },
     },
   );
   expect(created.status).toBe(201);

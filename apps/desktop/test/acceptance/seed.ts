@@ -365,6 +365,7 @@ async function postPurchase(
   }[],
 ): Promise<PurchasePostResult> {
   const created = await api.request("POST", "/purchases/drafts", {
+    invoiceOffer: { mode: "none", value: "0" },
     idempotencyKey: uuidV7(),
     invoiceDate: "2026-09-08",
     settlementContext: "debt",

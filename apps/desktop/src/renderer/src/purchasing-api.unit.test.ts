@@ -76,6 +76,12 @@ describe("Purchasing REST client", () => {
     const draftId = "018fa000-0000-7000-8000-000000000001";
     const result = {
       posted: {
+        invoiceOffer: {
+          input: { mode: "none", value: "0" },
+          ruleVersion: 1,
+          basisFils: "0",
+          offerFils: "0",
+        },
         allowanceFils: "0",
         allowanceSnapshot: { basisFils: "1000", percentage: "0" },
         costAfterDiscountFils: "1000",
@@ -290,6 +296,7 @@ describe("Purchasing REST client", () => {
           allowancePercentageSnapshot: null,
           costAfterDiscountFils: null,
           costVisibility: "hidden-by-permission",
+          invoiceOffer: null,
           canAdjust: false,
           canReturn: false,
           id,

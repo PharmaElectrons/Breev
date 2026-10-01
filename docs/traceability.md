@@ -133,6 +133,23 @@ compares a source-rendered prototype modal with current captures and records
 scoped corrections to its geometry, typography and icon. This accepted bounded
 evidence does not replace broader phase gates.
 
+The stakeholder subsequently authorized #198 T04 to use documented defaults
+that can change later. The [source review](../evidence/issue-198/t04/source-review.md)
+traces the brief's independent invoice offer, prototype amount/percentage forms,
+gross valuation/liability boundaries, and missing two-discount approval.
+[Working defaults](../evidence/issue-198/t04/working-defaults.md) record exact
+version 1 arithmetic and correction behavior. The candidate implements M2-P02
+through draft, restart, Post, immutable review and linked Adjustment with a
+forward migration that preserves retained facts and original command payloads.
+This instruction permits implementation under recorded defaults; it does not
+approve accountant/legal policy, close G-01, promote M2-P02 to proven, or accept
+the separate T04 checkpoint. The stakeholder subsequently accepted T04 on
+1 October 2026 with “IT IS A PASS”; the [checkpoint](../evidence/issue-198/t04/manual-checkpoint.md)
+records that later decision. The [full local gate](../evidence/issue-198/t04/pre-commit-gate.md)
+ran once and records bounded request/expectation fixture maintenance, final
+affected proof and CNG/Docker/Windows harness limits. G-01 and the complete
+requirement family remain open. T05 follows the focused T04 commit.
+
 ## Windows payload optimization evidence
 
 The stakeholder initiated issue #126 implementation on 4 September 2026 after reviewing its size/performance investigation. The work preserves the existing G-05/G-06/G-07 authority, security and lifecycle requirements; it does not authorize a new installer architecture or relaxed durability. The [issue-126 implementation record](../evidence/issue-126/README.md) traces task evidence and the original issue's infeasible size/file-count assumptions. Measured budgets and any unresolved verification gaps must be presented explicitly in the review PR; the investigation does not close release gates or silently replace requirement acceptance criteria.

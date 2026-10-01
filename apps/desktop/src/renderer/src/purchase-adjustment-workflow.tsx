@@ -61,6 +61,7 @@ import { formatFilsToIqd } from "./product-record";
 import { PurchaseAdjustmentHeaderComparisonTable } from "./purchase-adjustment-header-comparison";
 import { formatAdjustmentFils } from "./purchase-adjustment-money";
 import { PurchasingSupportDetails } from "./purchasing-support-details";
+import { PurchaseInvoiceOfferFields } from "./purchase-invoice-offer-fields";
 import {
   getAdjustmentReasonLabel,
   getPurchasingDenialMessage,
@@ -162,6 +163,18 @@ export function PurchaseAdjustmentWorkflow({
   }
 
   function handleError(caught: unknown): void {
+    if (
+      caught instanceof PurchasingApiDenied &&
+      caught.denial.fieldErrors.some(
+        (field) => field.path[0] === "invoiceOffer",
+      )
+    ) {
+      refuse(
+        purchasingMessages[locale].invoiceOfferInvalid,
+        caught.denial.requestId,
+      );
+      return;
+    }
     if (
       caught instanceof IdentityApiDenied &&
       caught.denial.code.startsWith("session-")
@@ -352,6 +365,7 @@ export function PurchaseAdjustmentWorkflow({
           })),
           supplierId: currentDraft.supplierId,
           supplierInvoiceNumber: currentDraft.supplierInvoiceNumber,
+          invoiceOffer: currentDraft.invoiceOffer,
         },
       );
       setDraft(updated);
@@ -1173,9 +1187,15 @@ export function PurchaseAdjustmentWorkflow({
               </div>
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
-                  {copy.expenses}:
+                  {purchasingMessages[locale].invoiceOffer}:
                 </span>
-                <bdi className="font-mono">{copy.unavailable}</bdi>
+                <bdi className="font-mono">
+                  {displayMoney(
+                    draft === null
+                      ? detail.invoiceOffer?.offerFils
+                      : reviewedTotals?.offerFils,
+                  )}
+                </bdi>
               </div>
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
@@ -1202,6 +1222,17 @@ export function PurchaseAdjustmentWorkflow({
             </div>
 
             <div className="adjustment-totals-group">
+              {draft === null ? null : (
+                <div className="purchase-invoice-offer adjustment-offer-inputs">
+                  <PurchaseInvoiceOfferFields
+                    value={draft.invoiceOffer}
+                    onChange={(invoiceOffer) =>
+                      editDraft({ ...draft, invoiceOffer })
+                    }
+                    disabled={busy || postUncertain}
+                  />
+                </div>
+              )}
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
                   {copy.afterDiscount}:
@@ -1396,6 +1427,11 @@ export function PurchaseAdjustmentWorkflow({
                         "allowanceFils",
                         copy.discountAmount,
                         summary.allowanceDeltaFils,
+                      ],
+                      [
+                        "offerFils",
+                        purchasingMessages[locale].invoiceOffer,
+                        summary.offerDeltaFils,
                       ],
                       [
                         "costAfterDiscountFils",

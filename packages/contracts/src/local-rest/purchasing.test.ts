@@ -46,6 +46,12 @@ const JOURNAL_ID = "018fa000-0000-7000-8000-000000000005";
 
 function postedPurchase() {
   return {
+    invoiceOffer: {
+      input: { mode: "none", value: "0" },
+      ruleVersion: 1,
+      basisFils: "0",
+      offerFils: "0",
+    },
     allowanceFils: "4000",
     allowanceSnapshot: { basisFils: "160000", percentage: "2.5" },
     costAfterDiscountFils: "156000",
@@ -121,6 +127,7 @@ describe("supplier and purchase draft contracts", () => {
 
   it("requires the complete header before draft creation", () => {
     const header = {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: COMMAND_ID,
       invoiceDate: "2026-09-03",
       settlementContext: "debt",
@@ -145,6 +152,8 @@ describe("supplier and purchase draft contracts", () => {
   it("models the duplicate as a non-blocking typed warning", () => {
     const result = {
       draft: {
+        invoiceOffer: { mode: "none", value: "0" },
+        offerRuleVersion: 1,
         allowanceSnapshot: { basisFils: "0", percentage: "2.5" },
         createdAt: "2026-09-03T12:00:00.000Z",
         id: DRAFT_ID,
@@ -587,6 +596,7 @@ describe("supplier and purchase draft contracts", () => {
     const posted = postedPurchase();
     const detail = {
       activeAdjustmentDrafts: [],
+      invoiceOffer: posted.invoiceOffer,
       activeReturnDrafts: [],
       adjustments: [],
       allowanceFils: posted.allowanceFils,
@@ -825,6 +835,7 @@ describe("supplier and purchase draft contracts", () => {
       }).success,
     ).toBe(false);
     const update = {
+      invoiceOffer: { mode: "none", value: "0" },
       reason: "other",
       evidence: null,
       expectedVersion: "1",
@@ -913,6 +924,8 @@ describe("supplier and purchase draft contracts", () => {
     } as const;
     expect(
       purchaseAdjustmentDraftSchema.parse({
+        invoiceOffer: { mode: "none", value: "0" },
+        offerRuleVersion: 1,
         allowancePercentageSnapshot: "2.5",
         createdAt: "2026-06-15T09:00:00.000Z",
         evidence: null,
@@ -933,14 +946,21 @@ describe("supplier and purchase draft contracts", () => {
     ).toHaveLength(1);
     expect(
       purchaseAdjustmentSummarySchema.parse({
+        offerComparison: {
+          before: postedPurchase().invoiceOffer,
+          after: postedPurchase().invoiceOffer,
+        },
+        offerDeltaFils: "0",
         totalsComparison: {
           before: {
             primarySupplierCostFils: "4000",
+            offerFils: "0",
             allowanceFils: "100",
             costAfterDiscountFils: "3900",
           },
           after: {
             primarySupplierCostFils: "8000",
+            offerFils: "0",
             allowanceFils: "200",
             costAfterDiscountFils: "7800",
           },

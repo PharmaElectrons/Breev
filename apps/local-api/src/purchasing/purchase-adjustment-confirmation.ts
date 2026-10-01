@@ -22,6 +22,8 @@ export function purchaseAdjustmentConfirmationHash(input: {
     | "invoiceDate"
     | "settlementContext"
     | "allowancePercentageSnapshot"
+    | "invoiceOffer"
+    | "offerRuleVersion"
     | "reason"
     | "evidence"
     | "supplierId"

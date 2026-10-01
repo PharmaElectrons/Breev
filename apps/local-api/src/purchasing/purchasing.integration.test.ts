@@ -571,6 +571,7 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
       {
         reason: adjustmentDraft.reason,
         evidence: adjustmentDraft.evidence,
+        invoiceOffer: adjustmentDraft.invoiceOffer,
         supplierId: adjustmentDraft.supplierId,
         supplierInvoiceNumber: adjustmentDraft.supplierInvoiceNumber,
         expectedVersion: adjustmentDraft.version,
@@ -828,6 +829,7 @@ function draftBody(
   invoiceDate: string,
 ) {
   return {
+    invoiceOffer: { mode: "none", value: "0" },
     idempotencyKey: uuidV7(),
     invoiceDate,
     settlementContext: "debt" as const,

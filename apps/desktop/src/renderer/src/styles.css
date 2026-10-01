@@ -4943,6 +4943,37 @@ a:focus-visible,
   font-size: 1.5rem;
 }
 
+.purchase-invoice-offer label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+.purchase-invoice-offer input {
+  min-inline-size: 0;
+  inline-size: 100%;
+  min-block-size: 2.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--control-border);
+  background: var(--muted);
+  color: var(--foreground);
+  font-family: var(--font-family-mono);
+  text-align: center;
+}
+
+.purchase-invoice-offer input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.purchase-adjustment .adjustment-offer-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
 .purchase-return-total {
   grid-column: span 2;
 }

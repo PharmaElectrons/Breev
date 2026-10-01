@@ -211,6 +211,13 @@
       "when": 1790380800000,
       "tag": "0029_sale_price_override",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790726400000,
+      "tag": "0030_purchase_invoice_offer",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,13 @@ import type { PurchaseAdjustmentReason } from "@breev/contracts/local-rest";
 
 export const purchasingMessages = {
   en: {
+    invoiceOffer: "Invoice offer",
+    invoiceOfferPercentage: "Invoice offer %",
+    invoiceOfferAmount: "Invoice offer (IQD)",
+    invoiceOfferSave:
+      "Save the offer before posting. Amount and percentage are alternatives.",
+    invoiceOfferInvalid:
+      "Enter a valid offer. Supplier allowance and invoice offer together cannot exceed the gross cost.",
     item: "Item name",
     quantity: "Qty",
     returned: "Return",
@@ -408,6 +415,12 @@ export const purchasingMessages = {
     confirmAndPostAdjustment: "Confirm and post Delta",
   },
   ar: {
+    invoiceOffer: "عرض الفاتورة",
+    invoiceOfferPercentage: "عرض الفاتورة %",
+    invoiceOfferAmount: "عرض الفاتورة (د.ع)",
+    invoiceOfferSave: "احفظ العرض قبل الترحيل. المبلغ والنسبة خياران بديلان.",
+    invoiceOfferInvalid:
+      "أدخل عرضاً صالحاً. مجموع سماح المورد وعرض الفاتورة لا يمكن أن يتجاوز الكلفة الأساسية.",
     item: "اسم المادة",
     quantity: "كمية",
     returned: "الراجع",

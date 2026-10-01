@@ -1231,6 +1231,19 @@ function PostedPurchaseDetailView({
         ) : null}
         {costsVisible ? (
           <div>
+            <dt>{copy.invoiceOffer}</dt>
+            <dd>
+              <bdi>
+                {formatFilsToIqd(detail.invoiceOffer!.offerFils, locale)}
+              </bdi>
+              {detail.invoiceOffer!.input.mode === "percentage"
+                ? ` (${detail.invoiceOffer!.input.value}%)`
+                : null}
+            </dd>
+          </div>
+        ) : null}
+        {costsVisible ? (
+          <div>
             <dt>{copy.snapshot}</dt>
             <dd>{detail.allowancePercentageSnapshot}%</dd>
           </div>
@@ -1488,6 +1501,27 @@ function PostedAdjustmentView({
             </bdi>
           </dd>
         </div>
+        <div>
+          <dt>{copy.invoiceOffer}</dt>
+          <dd>
+            <bdi>
+              {formatAdjustmentFils(
+                adjustment.offerComparison.before.offerFils,
+                locale,
+              )}
+            </bdi>{" "}
+            →{" "}
+            <bdi>
+              {formatAdjustmentFils(
+                adjustment.offerComparison.after.offerFils,
+                locale,
+              )}
+            </bdi>{" "}
+            (
+            <bdi>{formatAdjustmentFils(adjustment.offerDeltaFils, locale)}</bdi>
+            )
+          </dd>
+        </div>
       </dl>
       <ul>
         {adjustment.rowDeltas.map((row) => (
@@ -1741,6 +1775,14 @@ function PurchaseSnapshotPrint({
               <dt>{copy.allowanceAmount}</dt>
               <dd>
                 <bdi>{formatFilsToIqd(detail.allowanceFils, locale)}</bdi>
+              </dd>
+            </div>
+            <div className="purchase-snapshot-print-total">
+              <dt>{copy.invoiceOffer}</dt>
+              <dd>
+                <bdi>
+                  {formatFilsToIqd(detail.invoiceOffer!.offerFils, locale)}
+                </bdi>
               </dd>
             </div>
             <div className="purchase-snapshot-print-total">

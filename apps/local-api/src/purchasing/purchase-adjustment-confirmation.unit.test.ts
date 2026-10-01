@@ -31,6 +31,8 @@ function fixture(): Parameters<typeof purchaseAdjustmentConfirmationHash>[0] {
       invoiceDate: "2026-09-30",
       settlementContext: "debt",
       allowancePercentageSnapshot: "2.5",
+      invoiceOffer: { mode: "none", value: "0" },
+      offerRuleVersion: 1,
       reason: "quantity error",
       evidence: "Final supplier evidence",
       supplierId: "supplier-1",
@@ -53,13 +55,30 @@ function fixture(): Parameters<typeof purchaseAdjustmentConfirmationHash>[0] {
       },
     ],
     preview: {
+      offerDeltaFils: "0",
+      offerComparison: {
+        before: {
+          input: { mode: "none", value: "0" },
+          ruleVersion: 1,
+          basisFils: "0",
+          offerFils: "0",
+        },
+        after: {
+          input: { mode: "none", value: "0" },
+          ruleVersion: 1,
+          basisFils: "0",
+          offerFils: "0",
+        },
+      },
       totalsComparison: {
         before: {
+          offerFils: "0",
           primarySupplierCostFils: "4000",
           allowanceFils: "100",
           costAfterDiscountFils: "3900",
         },
         after: {
+          offerFils: "0",
           primarySupplierCostFils: "8000",
           allowanceFils: "200",
           costAfterDiscountFils: "7800",
@@ -249,6 +268,26 @@ describe("Adjustment authoritative confirmation", () => {
         Object.assign(value, {
           inventory: [{ ...value.inventory[0], status: "quarantined" }],
         });
+      },
+    ],
+    [
+      "offer input",
+      (value: ReturnType<typeof fixture>) => {
+        Object.assign(value.draft, {
+          invoiceOffer: { mode: "percentage", value: "5" },
+        });
+      },
+    ],
+    [
+      "offer rule",
+      (value: ReturnType<typeof fixture>) => {
+        Object.assign(value.draft, { offerRuleVersion: 2 });
+      },
+    ],
+    [
+      "offer result",
+      (value: ReturnType<typeof fixture>) => {
+        Object.assign(value.preview, { offerDeltaFils: "1" });
       },
     ],
     [

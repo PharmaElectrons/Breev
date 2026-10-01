@@ -2284,6 +2284,12 @@ function PurchaseReview({
           </dd>
         </div>
         <div className="purchase-review-stat">
+          <dt className="purchase-review-stat-label">{copy.invoiceOffer}</dt>
+          <dd className="purchase-review-stat-value">
+            <bdi>{draft.review.invoiceOffer.offerFils}</bdi> {copy.fils}
+          </dd>
+        </div>
+        <div className="purchase-review-stat">
           <dt className="purchase-review-stat-label">
             {draft.review.settlementEffect.context === "cash"
               ? copy.tenderEffect

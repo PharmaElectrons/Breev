@@ -6,6 +6,10 @@ import {
   postedPurchaseAdjustmentSchema,
   postedPurchaseAdjustmentDetailSchema,
   purchasingDenialSchema,
+  purchaseInvoiceOfferInputSchema,
+  purchaseInvoiceOfferSnapshotSchema,
+  type PurchaseInvoiceOfferInput,
+  type PurchaseInvoiceOfferSnapshot,
   type PostedPurchaseAdjustment,
   type PostedPurchaseAdjustmentDetail,
   type PurchaseAdjustmentDraft,
@@ -81,6 +85,10 @@ import { purchaseAdjustmentConfirmationHash } from "./purchase-adjustment-confir
 import { preparePurchaseRow } from "./purchase-row.js";
 import { postedPurchaseWarnings } from "./purchase-duplicates.js";
 import { PurchasingDenied } from "./purchasing.service.js";
+import {
+  calculateInvoiceOffer,
+  calculatePurchaseCostsWithOffer,
+} from "./purchase-invoice-offer.js";
 
 const ADJUSTMENT_PERMISSION = "purchases.adjustments.manage";
 const COST_PERMISSION = "purchases.costs.view";
@@ -97,6 +105,7 @@ type AdjustmentCommandValue =
   PurchaseAdjustmentDraft | PurchaseAdjustmentPostResult;
 
 interface OriginalHeaderRow {
+  invoice_offer: PurchaseInvoiceOfferSnapshot;
   allowance_fils: string;
   cost_after_discount_fils: string;
   allowance_percentage_snapshot: string;
@@ -131,7 +140,12 @@ interface SnapshotRowRecord {
   retail_price_fils: string;
 }
 
-interface AdjustmentDraftHeaderRow extends OriginalHeaderRow {
+interface AdjustmentDraftHeaderRow extends Omit<
+  OriginalHeaderRow,
+  "invoice_offer"
+> {
+  invoice_offer: PurchaseInvoiceOfferInput;
+  offer_rule_version: 1;
   created_at: Date;
   evidence: string | null;
   id: string;
@@ -232,8 +246,8 @@ export class PurchaseAdjustmentsService {
              pharmacy_id, original_purchase_id, supplier_id,
              supplier_name_snapshot, supplier_invoice_number, invoice_date,
              settlement_context, allowance_percentage_snapshot, reason,
-             evidence, created_by, updated_by
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+             evidence, created_by, updated_by, invoice_offer, offer_rule_version
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12::jsonb, $13)
            returning id`,
           [
             context.pharmacyId,
@@ -247,6 +261,8 @@ export class PurchaseAdjustmentsService {
             input.reason,
             input.evidence,
             context.actorId,
+            JSON.stringify(current.invoiceOffer.input),
+            current.invoiceOffer.ruleVersion,
           ],
         );
         const draftId = inserted.rows[0]?.id;
@@ -303,6 +319,7 @@ export class PurchaseAdjustmentsService {
       readonly rows: readonly PurchaseAdjustmentDraftRowInput[];
       readonly supplierId: string;
       readonly supplierInvoiceNumber: string;
+      readonly invoiceOffer: PurchaseInvoiceOfferInput;
     },
   ): Promise<PurchaseAdjustmentDraft> {
     const context = await this.requireContext(request);
@@ -368,7 +385,7 @@ export class PurchaseAdjustmentsService {
            set supplier_id = $3, supplier_name_snapshot = $4,
                supplier_invoice_number = $5, reason = $6, evidence = $7,
                version = version + 1, updated_at = statement_timestamp(),
-               updated_by = $8
+               updated_by = $8, invoice_offer = $9::jsonb
            where pharmacy_id = $1 and id = $2`,
           [
             context.pharmacyId,
@@ -381,6 +398,7 @@ export class PurchaseAdjustmentsService {
             input.reason,
             input.evidence,
             context.actorId,
+            JSON.stringify(input.invoiceOffer),
           ],
         );
         const updatedHeader = (
@@ -639,10 +657,12 @@ export class PurchaseAdjustmentsService {
              reason, evidence, quantity_delta,
              primary_supplier_cost_delta_fils, allowance_delta_fils,
              cost_after_discount_delta_fils, header_changes,
-             journal_entry_id, posted_at, posted_by
+             journal_entry_id, posted_at, posted_by,
+             offer_before_snapshot, offer_after_snapshot, offer_delta_fils
            ) values (
              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::bigint,
-             $11::bigint, $12::bigint, $13::bigint, $14::jsonb, $15, $16, $17
+             $11::bigint, $12::bigint, $13::bigint, $14::jsonb, $15, $16, $17,
+             $18::jsonb, $19::jsonb, $20::bigint
            ) returning id`,
           [
             context.pharmacyId,
@@ -662,6 +682,9 @@ export class PurchaseAdjustmentsService {
             journal.entryId,
             postedAt,
             context.actorId,
+            JSON.stringify(calculated.summary.offerComparison.before),
+            JSON.stringify(calculated.summary.offerComparison.after),
+            calculated.summary.offerDeltaFils,
           ],
         );
         const adjustmentId = inserted.rows[0]?.id;
@@ -757,6 +780,8 @@ export class PurchaseAdjustmentsService {
           pharmacyId: context.pharmacyId,
         });
         const posted = postedPurchaseAdjustmentSchema.parse({
+          offerComparison: calculated.summary.offerComparison,
+          offerDeltaFils: calculated.summary.offerDeltaFils,
           allowanceDeltaFils: calculated.summary.allowanceDeltaFils,
           costAfterDiscountDeltaFils:
             calculated.summary.costAfterDiscountDeltaFils,
@@ -791,6 +816,8 @@ export class PurchaseAdjustmentsService {
             evidence: header!.evidence,
             draftVersion: header!.version,
             confirmationHash: calculated.summary.confirmationHash,
+            offerComparison: calculated.summary.offerComparison,
+            offerDeltaFils: calculated.summary.offerDeltaFils,
             headerComparison: calculated.summary.headerComparison,
             rowDeltas: postedDeltas,
             supplierEffects: calculated.summary.supplierEffects,
@@ -1111,7 +1138,7 @@ async function readOriginalHeader(
             invoice_date::text, settlement_context,
             allowance_percentage_snapshot::text,
             primary_supplier_cost_fils::text, allowance_fils::text,
-            cost_after_discount_fils::text, number_value::text, number_year
+            cost_after_discount_fils::text, number_value::text, number_year, invoice_offer
      from posted_purchases
      where pharmacy_id = $1 and id = $2${lock ? " for update" : ""}`,
     [pharmacyId, purchaseId],
@@ -1151,6 +1178,7 @@ async function readCurrentCorrectedState(
     supplierNameSnapshot: string;
   };
   correctionVersion: string;
+  invoiceOffer: PurchaseInvoiceOfferSnapshot;
   rows: PurchaseAdjustmentSnapshotRow[];
 }> {
   const originalRows = await readOriginalRows(client, pharmacyId, purchaseId);
@@ -1178,12 +1206,13 @@ async function readCurrentCorrectedState(
       );
   }
   const latest = await client.query<{
+    offer_after_snapshot: PurchaseInvoiceOfferSnapshot;
     correction_version: string;
     supplier_id: string;
     supplier_invoice_number: string;
     supplier_name_snapshot: string;
   }>(
-    `select suffix_value::text as correction_version, supplier_id, supplier_name_snapshot, supplier_invoice_number
+    `select suffix_value::text as correction_version, supplier_id, supplier_name_snapshot, supplier_invoice_number, offer_after_snapshot
      from posted_purchase_adjustments
      where pharmacy_id = $1 and original_purchase_id = $2
      order by suffix_value desc limit 1`,
@@ -1192,6 +1221,11 @@ async function readCurrentCorrectedState(
   const header = latest.rows[0];
   return {
     correctionVersion: header?.correction_version ?? "0",
+    invoiceOffer: purchaseInvoiceOfferSnapshotSchema.parse(
+      header === undefined
+        ? original.invoice_offer
+        : header.offer_after_snapshot,
+    ),
     header:
       header === undefined
         ? {
@@ -1228,6 +1262,7 @@ function draftHeaderSelect(): string {
     draft.invoice_date::text, draft.settlement_context,
     draft.allowance_percentage_snapshot::text, draft.reason, draft.evidence,
     draft.status, draft.version::text, draft.created_at, draft.updated_at,
+    draft.invoice_offer, draft.offer_rule_version,
     original.number_value::text, original.number_year,
     original.primary_supplier_cost_fils::text
   from purchase_adjustment_drafts draft
@@ -1271,6 +1306,8 @@ async function readDraftView(
   const row = result.rows[0];
   if (row === undefined) throw new Error("Purchase Adjustment Draft not found");
   return purchaseAdjustmentDraftSchema.parse({
+    invoiceOffer: purchaseInvoiceOfferInputSchema.parse(row.invoice_offer),
+    offerRuleVersion: row.offer_rule_version,
     allowancePercentageSnapshot: normalizeDecimal(
       row.allowance_percentage_snapshot,
     ),
@@ -1625,6 +1662,39 @@ async function calculateSummary(
   });
   if (!outcome.ok)
     throw new Error(`Adjustment Delta failed: ${outcome.problem}`);
+  const costs =
+    draftRows.length === 0
+      ? null
+      : calculatePurchaseCostsWithOffer(
+          draftRows.map((row) => ({
+            enteredQuantity: BigInt(row.enteredQuantity),
+            primarySupplierCostFils: BigInt(row.costFils),
+          })),
+          normalizeDecimal(original.allowance_percentage_snapshot),
+          draftHeader.invoice_offer,
+          draftHeader.offer_rule_version,
+        );
+  if (costs !== null && !costs.ok)
+    reject(400, "body-invalid", [
+      { code: "out-of-range", path: ["invoiceOffer"] },
+    ]);
+  const offer = costs?.ok
+    ? { ok: true as const, snapshot: costs.invoiceOffer }
+    : calculateInvoiceOffer(
+        draftHeader.invoice_offer,
+        draftHeader.offer_rule_version,
+        0n,
+        0n,
+        [],
+      );
+  if (!offer.ok)
+    reject(400, "body-invalid", [
+      { code: "out-of-range", path: ["invoiceOffer"] },
+    ]);
+  const netDelta =
+    outcome.delta.costAfterDiscountDeltaFils -
+    BigInt(offer.snapshot.offerFils) +
+    BigInt(original.invoice_offer.offerFils);
   const currentMap = new Map(current.rows.map((row) => [row.lineageId, row]));
   const draftMap = new Map(draftSnapshots.map((row) => [row.lineageId, row]));
   const rowDeltas = outcome.delta.rowDeltas
@@ -1694,8 +1764,13 @@ async function calculateSummary(
             outcome.delta.primarySupplierCostDeltaFils,
           );
   const base = {
+    offerComparison: { before: current.invoiceOffer, after: offer.snapshot },
+    offerDeltaFils: (
+      BigInt(offer.snapshot.offerFils) - BigInt(current.invoiceOffer.offerFils)
+    ).toString(),
     totalsComparison: {
       before: {
+        offerFils: current.invoiceOffer.offerFils,
         primarySupplierCostFils: (
           BigInt(original.primary_supplier_cost_fils) +
           BigInt(prior.primary_delta)
@@ -1708,6 +1783,7 @@ async function calculateSummary(
         ).toString(),
       },
       after: {
+        offerFils: offer.snapshot.offerFils,
         primarySupplierCostFils: (
           BigInt(original.primary_supplier_cost_fils) +
           BigInt(prior.primary_delta) +
@@ -1721,13 +1797,12 @@ async function calculateSummary(
         costAfterDiscountFils: (
           BigInt(original.cost_after_discount_fils) +
           BigInt(prior.net_delta) +
-          outcome.delta.costAfterDiscountDeltaFils
+          netDelta
         ).toString(),
       },
     },
     allowanceDeltaFils: outcome.delta.allowanceDeltaFils.toString(),
-    costAfterDiscountDeltaFils:
-      outcome.delta.costAfterDiscountDeltaFils.toString(),
+    costAfterDiscountDeltaFils: netDelta.toString(),
     draftId: draftHeader.id,
     draftVersion: draftHeader.version,
     evidence: draftHeader.evidence,
@@ -1798,6 +1873,8 @@ async function calculateSummary(
       allowancePercentageSnapshot: normalizeDecimal(
         draftHeader.allowance_percentage_snapshot,
       ),
+      invoiceOffer: draftHeader.invoice_offer,
+      offerRuleVersion: draftHeader.offer_rule_version,
       reason: draftHeader.reason,
       evidence: draftHeader.evidence,
       supplierId: draftHeader.supplier_id,
@@ -1812,6 +1889,7 @@ async function calculateSummary(
     },
     current: {
       correctionVersion: current.correctionVersion,
+      invoiceOffer: current.invoiceOffer,
       header: current.header,
       rows: current.rows as unknown as JsonObject[],
     },
@@ -1916,6 +1994,8 @@ function draftRowSnapshot(
 function assertMeaningfulChange(calculated: CalculatedSummary): void {
   if (
     calculated.summary.headerChanges.length === 0 &&
+    JSON.stringify(calculated.summary.offerComparison.before.input) ===
+      JSON.stringify(calculated.summary.offerComparison.after.input) &&
     calculated.summary.rowDeltas.every(
       (row) =>
         row.changes.length === 0 &&
@@ -2179,6 +2259,8 @@ function displayRowChanges(
 
 function draftAuditState(draft: PurchaseAdjustmentDraft): JsonObject {
   return {
+    invoiceOffer: draft.invoiceOffer,
+    offerRuleVersion: draft.offerRuleVersion,
     evidence: draft.evidence,
     originalPurchaseId: draft.originalPurchaseId,
     reason: draft.reason,
@@ -2221,6 +2303,9 @@ async function readPostedAdjustmentView(
   adjustmentId: string,
 ): Promise<PostedPurchaseAdjustmentDetail | undefined> {
   const header = await client.query<{
+    offer_before_snapshot: PurchaseInvoiceOfferSnapshot;
+    offer_after_snapshot: PurchaseInvoiceOfferSnapshot;
+    offer_delta_fils: string;
     allowance_delta_fils: string;
     cost_after_discount_delta_fils: string;
     draft_id: string;
@@ -2246,6 +2331,7 @@ async function readPostedAdjustmentView(
     before_invoice_number: string;
   }>(
     `select adjustment.id, adjustment.draft_id,
+            adjustment.offer_before_snapshot, adjustment.offer_after_snapshot, adjustment.offer_delta_fils::text,
             adjustment.original_purchase_id, adjustment.suffix_value::text,
             adjustment.supplier_id, adjustment.supplier_name_snapshot,
             adjustment.supplier_invoice_number, adjustment.reason,
@@ -2312,6 +2398,11 @@ async function readPostedAdjustmentView(
     [pharmacyId, row.journal_entry_id],
   );
   return postedPurchaseAdjustmentDetailSchema.parse({
+    offerComparison: {
+      before: row.offer_before_snapshot,
+      after: row.offer_after_snapshot,
+    },
+    offerDeltaFils: row.offer_delta_fils,
     allowanceDeltaFils: row.allowance_delta_fils,
     costAfterDiscountDeltaFils: row.cost_after_discount_delta_fils,
     draftId: row.draft_id,

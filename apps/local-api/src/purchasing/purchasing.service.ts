@@ -11,6 +11,10 @@ import {
   purchasePostResultSchema,
   purchasingDenialSchema,
   supplierSchema,
+  purchaseInvoiceOfferInputSchema,
+  purchaseInvoiceOfferSnapshotSchema,
+  type PurchaseInvoiceOfferInput,
+  type PurchaseInvoiceOfferSnapshot,
   type PostedPurchaseJournalLine,
   type PostedPurchaseRow,
   type PurchaseDraft,
@@ -42,7 +46,7 @@ import {
   type SupplierEditRequest,
   type SupplierMergeRequest,
 } from "@breev/contracts/local-rest";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type { Request } from "express";
 import type { PoolClient } from "pg";
 import {
@@ -94,10 +98,11 @@ import {
   POSTING_EVENT_TYPES,
   appendOutboxEntry,
 } from "../posting/outbox.js";
+import type { PurchaseLineCosts } from "./purchase-costs.js";
 import {
-  calculatePurchaseCosts,
-  type PurchaseLineCosts,
-} from "./purchase-costs.js";
+  calculateInvoiceOffer,
+  calculatePurchaseCostsWithOffer,
+} from "./purchase-invoice-offer.js";
 import {
   capturePurchaseRetailPrice,
   type PurchasePriceCaptureResult,
@@ -172,6 +177,7 @@ join lateral (
 ) latest_rate on true`;
 
 const DRAFT_SELECT = `select draft_row.id, draft_row.pharmacy_id,
+  draft_row.invoice_offer, draft_row.offer_rule_version,
   draft_row.supplier_invoice_number, draft_row.supplier_id,
   draft_row.supplier_name_snapshot, draft_row.settlement_context,
   draft_row.invoice_date::text, draft_row.allowance_percentage_snapshot::text,
@@ -267,7 +273,7 @@ export const POSTED_PURCHASE_DETAIL_SELECT = `with ordered_purchase as (
   from posted_purchases posted_row
   where posted_row.pharmacy_id = $1
 )
-select id, supplier_id, supplier_name_snapshot, supplier_invoice_number,
+select id, supplier_id, supplier_name_snapshot, supplier_invoice_number, invoice_offer,
   invoice_date::text, settlement_context, allowance_percentage_snapshot::text,
   allowance_fils::text, cost_after_discount_fils::text,
   primary_supplier_cost_fils::text, number_value::text, number_year,
@@ -309,6 +315,7 @@ interface PostedPurchaseListRow {
 }
 
 interface PostedPurchaseDetailRow {
+  invoice_offer: PurchaseInvoiceOfferSnapshot;
   allowance_fils: string;
   allowance_percentage_snapshot: string;
   cost_after_discount_fils: string;
@@ -600,6 +607,8 @@ function supplierView(row: SupplierRow): Supplier {
 
 function draftView(row: DraftRow): PurchaseDraft {
   return purchaseDraftSchema.parse({
+    invoiceOffer: purchaseInvoiceOfferInputSchema.parse(row.invoice_offer),
+    offerRuleVersion: row.offer_rule_version,
     allowanceSnapshot: {
       basisFils: row.allowance_basis_fils,
       percentage: normalizedPercentage(row.allowance_percentage_snapshot),
@@ -697,11 +706,48 @@ async function draftDetail(
     (total, row) => total + BigInt(row.costFils) * BigInt(row.enteredQuantity),
     0n,
   );
-  const allowance = calculateAllowance(
-    gross,
-    draft.allowanceSnapshot.percentage,
-  );
-  const net = gross - allowance;
+  const calculated =
+    rows.length === 0
+      ? null
+      : calculatePurchaseCostsWithOffer(
+          rows.map((row) => ({
+            enteredQuantity: BigInt(row.enteredQuantity),
+            primarySupplierCostFils: BigInt(row.costFils),
+          })),
+          draft.allowanceSnapshot.percentage,
+          draft.invoiceOffer,
+          draft.offerRuleVersion,
+        );
+  if (calculated !== null && !calculated.ok) {
+    throw new PurchasingCommandRejected(
+      400,
+      "body-invalid",
+      [{ code: "out-of-range", path: ["invoiceOffer"] }],
+      draft.id,
+    );
+  }
+  const allowance = calculated?.ok ? calculated.costs.allowanceFils : 0n;
+  const offer = calculated?.ok
+    ? {
+        ok: true as const,
+        snapshot: calculated.invoiceOffer,
+        costAfterDiscountFils: calculated.costs.costAfterDiscountFils,
+      }
+    : calculateInvoiceOffer(
+        draft.invoiceOffer,
+        draft.offerRuleVersion,
+        gross,
+        allowance,
+        [],
+      );
+  if (!offer.ok)
+    throw new PurchasingCommandRejected(
+      400,
+      "body-invalid",
+      [{ code: "out-of-range", path: ["invoiceOffer"] }],
+      draft.id,
+    );
+  const net = offer.costAfterDiscountFils;
   const warnings = new Set<"missing-expiry" | "missing-lot">();
   if (rows.some((row) => row.expiryDate === null))
     warnings.add("missing-expiry");
@@ -710,6 +756,7 @@ async function draftDetail(
     ...draft,
     review: {
       allowanceFils: allowance.toString(),
+      invoiceOffer: offer.snapshot,
       batches: rows.map((row) => ({
         expiryDate: row.expiryDate,
         itemDisplayName: row.itemDisplayName,
@@ -729,16 +776,6 @@ async function draftDetail(
     },
     rows,
   });
-}
-
-function calculateAllowance(grossFils: bigint, percentage: string): bigint {
-  const [whole = "0", fraction = ""] = percentage.split(".");
-  const scaled = BigInt(`${whole}${fraction.padEnd(6, "0")}`);
-  const denominator = 100_000_000n;
-  const numerator = grossFils * scaled;
-  const quotient = numerator / denominator;
-  const remainder = numerator % denominator;
-  return quotient + (remainder * 2n >= denominator ? 1n : 0n);
 }
 
 interface EntryPreferencesRow {
@@ -841,6 +878,8 @@ function draftAuditState(
 ): Record<string, number | string> {
   return {
     allowanceBasisFils: draft.allowanceSnapshot.basisFils,
+    invoiceOffer: JSON.stringify(draft.invoiceOffer),
+    offerRuleVersion: draft.offerRuleVersion,
     allowancePercentageSnapshot: draft.allowanceSnapshot.percentage,
     invoiceDate: draft.invoiceDate,
     settlementContext: draft.settlementContext,
@@ -869,6 +908,8 @@ function purchasingDenied(
   );
 }
 interface DraftRow {
+  invoice_offer: PurchaseInvoiceOfferInput;
+  offer_rule_version: number;
   allowance_basis_fils: string;
   allowance_percentage_snapshot: string;
   created_at: Date;
@@ -1129,6 +1170,7 @@ function postedJournalView(
 
 @Injectable()
 export class PurchasingService {
+  private readonly logger = new Logger(PurchasingService.name);
   public constructor(
     private readonly localDatabase: LocalDatabaseService,
     private readonly identity: IdentityAccessService,
@@ -1675,6 +1717,9 @@ export class PurchasingService {
           reason: adjustment.reason,
         })),
         allowanceFils: costsVisible ? header.allowance_fils : null,
+        invoiceOffer: costsVisible
+          ? purchaseInvoiceOfferSnapshotSchema.parse(header.invoice_offer)
+          : null,
         allowancePercentageSnapshot: costsVisible
           ? normalizedPercentage(header.allowance_percentage_snapshot)
           : null,
@@ -2330,8 +2375,8 @@ export class PurchasingService {
           `insert into purchase_drafts (
              pharmacy_id, supplier_invoice_number, supplier_id, supplier_name_snapshot,
              settlement_context, invoice_date, allowance_percentage_snapshot,
-             created_by, updated_by
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $8) returning id`,
+             created_by, updated_by, invoice_offer
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9::jsonb) returning id`,
           [
             context.pharmacyId,
             input.supplierInvoiceNumber,
@@ -2341,6 +2386,7 @@ export class PurchasingService {
             input.invoiceDate,
             supplier.percentage,
             context.actorId,
+            JSON.stringify(input.invoiceOffer),
           ],
         );
         const id = inserted.rows[0]?.id;
@@ -2349,6 +2395,7 @@ export class PurchasingService {
         const draft = draftView(
           await requiredDraft(client, context.pharmacyId, id),
         );
+        await draftDetail(client, context.pharmacyId, draft);
         const value = await draftResult(client, context.pharmacyId, draft);
         return {
           afterState: draftAuditState(draft, value.warnings.length),
@@ -2401,7 +2448,7 @@ export class PurchasingService {
           `update purchase_drafts set supplier_invoice_number = $3, supplier_id = $4,
              supplier_name_snapshot = $5, settlement_context = $6, invoice_date = $7,
              allowance_percentage_snapshot = $8, version = version + 1,
-             updated_at = statement_timestamp(), updated_by = $9
+             updated_at = statement_timestamp(), updated_by = $9, invoice_offer = $10::jsonb
            where pharmacy_id = $1 and id = $2`,
           [
             context.pharmacyId,
@@ -2413,11 +2460,13 @@ export class PurchasingService {
             input.invoiceDate,
             supplier.percentage,
             context.actorId,
+            JSON.stringify(input.invoiceOffer),
           ],
         );
         const draft = draftView(
           await requiredDraft(client, context.pharmacyId, draftId),
         );
+        await draftDetail(client, context.pharmacyId, draft);
         const value = await draftResult(client, context.pharmacyId, draft);
         return {
           afterState: draftAuditState(draft, value.warnings.length),
@@ -2541,14 +2590,24 @@ export class PurchasingService {
       );
     }
 
-    const costs = calculatePurchaseCosts(
+    const costs = calculatePurchaseCostsWithOffer(
       draftRows.map((row) => ({
         enteredQuantity: BigInt(row.entered_quantity),
         primarySupplierCostFils: BigInt(row.primary_supplier_cost_fils),
       })),
       draft.allowance_percentage_snapshot,
+      purchaseInvoiceOfferInputSchema.parse(draft.invoice_offer),
+      draft.offer_rule_version,
     );
     if (!costs.ok) {
+      if (costs.problem === "offer-exceeds-cost") {
+        throw new PurchasingCommandRejected(
+          400,
+          "body-invalid",
+          [{ code: "out-of-range", path: ["invoiceOffer"] }],
+          draftId,
+        );
+      }
       if (costs.problem !== "money-overflow") {
         throw new Error(
           `The committed Purchase Draft costs are invalid at posting: ${costs.problem}`,
@@ -2633,6 +2692,7 @@ export class PurchasingService {
     // here does not skip or reorder the published lock stages.
     const journal = await postPurchaseInvoiceJournal(client, {
       facts: {
+        invoiceOfferFils: BigInt(costs.invoiceOffer.offerFils),
         allowanceFils: costs.costs.allowanceFils,
         costAfterDiscountFils: costs.costs.costAfterDiscountFils,
         primarySupplierCostFils: costs.costs.primarySupplierCostFils,
@@ -2669,9 +2729,9 @@ export class PurchasingService {
          supplier_invoice_number, invoice_date, settlement_context,
          allowance_percentage_snapshot, allowance_basis_fils, allowance_fils,
          cost_after_discount_fils, primary_supplier_cost_fils, number_value,
-         number_year, journal_entry_id, posted_by, posted_at
+         number_year, journal_entry_id, posted_by, posted_at, invoice_offer
        ) values (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb
        ) returning id, posted_at`,
       [
         context.pharmacyId,
@@ -2691,6 +2751,7 @@ export class PurchasingService {
         journal.entryId,
         context.actorId,
         postingClock.posted_at,
+        JSON.stringify(costs.invoiceOffer),
       ],
     );
     const postedRow = inserted.rows[0];
@@ -2773,11 +2834,11 @@ export class PurchasingService {
            entered_quantity, inventory_unit_quantity, primary_supplier_cost_fils,
            line_primary_supplier_cost_fils, cost_after_discount_fils,
            pricing_method, retail_price_fils, margin_percentage, price_capture,
-           expiry_date, lot_number, notes, batch_id, movement_id
+           expiry_date, lot_number, notes, batch_id, movement_id, offer_fils
          ) values (
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::bigint, $11::bigint,
            $12::bigint, $13::bigint, $14::bigint, $15::bigint, $16, $17::bigint,
-           $18::numeric, $19, $20, $21, $22, $23, $24
+           $18::numeric, $19, $20, $21, $22, $23, $24, $25::bigint
          ) returning id`,
         [
           context.pharmacyId,
@@ -2804,6 +2865,7 @@ export class PurchasingService {
           item.row.notes,
           outcome.batchId,
           outcome.movementId,
+          costs.offerShares[index]!.toString(),
         ],
       );
       const rowId = insertedRow.rows[0]?.id;
@@ -2875,6 +2937,7 @@ export class PurchasingService {
       costs.costs.primarySupplierCostFils.toString();
     const value = purchasePostResultSchema.parse({
       posted: {
+        invoiceOffer: costs.invoiceOffer,
         allowanceFils: costs.costs.allowanceFils.toString(),
         allowanceSnapshot: {
           basisFils: primarySupplierCostFils,
@@ -2922,6 +2985,7 @@ export class PurchasingService {
     return {
       afterState: {
         allowanceFils: value.posted.allowanceFils,
+        invoiceOffer: JSON.stringify(value.posted.invoiceOffer),
         numberValue: value.posted.number.value,
         numberYear: value.posted.number.year,
         primarySupplierCostFils: value.posted.primarySupplierCostFils,
@@ -3040,10 +3104,12 @@ export class PurchasingService {
           return replayPurchasingOutcome(replay, input.parser);
         }
         let success: CommandSuccess<T>;
+        await client.query("savepoint purchase_draft_work");
         try {
           success = await input.work(client);
         } catch (error) {
           if (!(error instanceof PurchasingCommandRejected)) throw error;
+          await client.query("rollback to savepoint purchase_draft_work");
           const requestId = await writePostingAudit(client, {
             action: input.commandName,
             actorUserId: input.context.actorId,
@@ -3108,6 +3174,12 @@ export class PurchasingService {
       } catch (error) {
         if (transactionOpen)
           await client.query("rollback").catch(() => undefined);
+        if (!(error instanceof PurchasingDenied)) {
+          this.logger.error(
+            "Purchasing command failed",
+            error instanceof Error ? error.stack : String(error),
+          );
+        }
         throw error;
       } finally {
         client.release();

@@ -869,6 +869,7 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
 
   it("keeps the draft and names the row rule when receipt evidence is missing", async () => {
     const created = await request("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: "2026-06-15",
       settlementContext: "debt",
@@ -1448,11 +1449,13 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     const firstSummary = await previewAdjustment(firstSaved);
     expect(firstSummary.totalsComparison).toEqual({
       before: {
+        offerFils: "0",
         primarySupplierCostFils: "24000",
         allowanceFils: "2400",
         costAfterDiscountFils: "21600",
       },
       after: {
+        offerFils: "0",
         primarySupplierCostFils: "28000",
         allowanceFils: "2800",
         costAfterDiscountFils: "25200",
@@ -1532,11 +1535,13 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     const secondSummary = await previewAdjustment(secondSaved);
     expect(secondSummary.totalsComparison).toEqual({
       before: {
+        offerFils: "0",
         primarySupplierCostFils: "28000",
         allowanceFils: "2800",
         costAfterDiscountFils: "25200",
       },
       after: {
+        offerFils: "0",
         primarySupplierCostFils: "26000",
         allowanceFils: "2600",
         costAfterDiscountFils: "23400",
@@ -3324,6 +3329,255 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     );
   }, 30_000);
 
+  it("T04 persists versioned offers across restart, binds correction review, and preserves gross accounting and immutable history", async () => {
+    let draft = await createPostableDraft(supplierLow.id, "T04-OFFER", "debt", [
+      { costFils: "100000", enteredQuantity: "10", itemId: productMain.id },
+    ]);
+    const input = { mode: "percentage", value: "5" } as const;
+    const updated = await request("PUT", purchaseDraftHeaderPath(draft.id), {
+      ...draftBody(
+        draft.supplierId,
+        draft.supplierInvoiceNumber,
+        draft.invoiceDate,
+      ),
+      expectedVersion: draft.version,
+      invoiceOffer: input,
+    });
+    expect(updated.status, diagnostics(updated)).toBe(200);
+    draft = updated.body?.draft as unknown as PurchaseDraft;
+    await stopProcess(api);
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    const loaded = await request("GET", `/purchases/drafts/${draft.id}`);
+    expect(loaded.status, diagnostics(loaded)).toBe(200);
+    expect(loaded.body).toMatchObject({
+      invoiceOffer: input,
+      offerRuleVersion: 1,
+      review: {
+        grossFils: "1000000",
+        allowanceFils: "100000",
+        netFils: "850000",
+        invoiceOffer: {
+          input,
+          ruleVersion: 1,
+          basisFils: "1000000",
+          offerFils: "50000",
+        },
+        settlementEffect: { payableFils: "1000000" },
+      },
+    });
+    const invalid = await request("PUT", purchaseDraftHeaderPath(draft.id), {
+      ...draftBody(
+        draft.supplierId,
+        draft.supplierInvoiceNumber,
+        draft.invoiceDate,
+      ),
+      expectedVersion: draft.version,
+      invoiceOffer: { mode: "fixed", value: "900001" },
+    });
+    expect(invalid.status, diagnostics(invalid)).toBe(400);
+    expect(
+      (await request("GET", `/purchases/drafts/${draft.id}`)).body,
+    ).toMatchObject({ version: draft.version, invoiceOffer: input });
+    const postBody = {
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+    };
+    const postedResponse = await request(
+      "POST",
+      purchaseDraftPostingsPath(draft.id),
+      postBody,
+    );
+    expect(postedResponse.status, diagnostics(postedResponse)).toBe(201);
+    const posted = postedResponse.body as unknown as PurchasePostResult;
+    expect(posted.posted).toMatchObject({
+      primarySupplierCostFils: "1000000",
+      allowanceFils: "100000",
+      costAfterDiscountFils: "850000",
+      invoiceOffer: { input, offerFils: "50000" },
+      settlementEffect: { payableFils: "1000000" },
+      rows: [
+        {
+          linePrimarySupplierCostFils: "1000000",
+          costAfterDiscountFils: "850000",
+        },
+      ],
+    });
+    expect(
+      (await request("POST", purchaseDraftPostingsPath(draft.id), postBody))
+        .body,
+    ).toEqual(postedResponse.body);
+    const originalBytes = await immutablePurchaseBytes(posted.posted.id);
+    const before = await administrator.query(
+      "select total_quantity::text, total_value_scaled::text from inventory_valuation_state where pharmacy_id=$1 and product_id=$2",
+      [pharmacyId, productMain.id],
+    );
+    let correction = await createAdjustmentDraft(posted.posted.id, "other");
+    expect(correction.invoiceOffer).toEqual(input);
+    const offerOnly = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(correction.id),
+      {
+        ...adjustmentUpdateBody(correction, adjustmentRows(correction)),
+        invoiceOffer: { mode: "fixed", value: "25000" },
+      },
+    );
+    expect(offerOnly.status, diagnostics(offerOnly)).toBe(200);
+    correction = offerOnly.body as unknown as PurchaseAdjustmentDraft;
+    const preview = await previewAdjustment(correction);
+    expect(preview).toMatchObject({
+      primarySupplierCostDeltaFils: "0",
+      allowanceDeltaFils: "0",
+      offerDeltaFils: "-25000",
+      costAfterDiscountDeltaFils: "25000",
+      stockEffects: [],
+      supplierEffects: [],
+      totalsComparison: {
+        before: { offerFils: "50000", costAfterDiscountFils: "850000" },
+        after: { offerFils: "25000", costAfterDiscountFils: "875000" },
+      },
+    });
+    const correctionPost = {
+      expectedVersion: correction.version,
+      confirmationHash: preview.confirmationHash,
+      idempotencyKey: uuidV7(),
+    };
+    const correctionResponse = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(correction.id),
+      correctionPost,
+    );
+    expect(correctionResponse.status, diagnostics(correctionResponse)).toBe(
+      201,
+    );
+    expect(
+      (
+        await request(
+          "POST",
+          purchaseAdjustmentPostingsPath(correction.id),
+          correctionPost,
+        )
+      ).body,
+    ).toEqual(correctionResponse.body);
+    const a01 =
+      correctionResponse.body as unknown as PurchaseAdjustmentPostResult;
+    expect(a01.posted).toMatchObject({
+      offerDeltaFils: "-25000",
+      costAfterDiscountDeltaFils: "25000",
+      rowDeltas: [],
+      offerComparison: {
+        before: { offerFils: "50000" },
+        after: { input: { mode: "fixed", value: "25000" }, offerFils: "25000" },
+      },
+    });
+    expect(await immutablePurchaseBytes(posted.posted.id)).toEqual(
+      originalBytes,
+    );
+    expect(
+      (
+        await administrator.query(
+          "select total_quantity::text, total_value_scaled::text from inventory_valuation_state where pharmacy_id=$1 and product_id=$2",
+          [pharmacyId, productMain.id],
+        )
+      ).rows,
+    ).toEqual(before.rows);
+    const detail = await request(
+      "GET",
+      `/purchases/posted-adjustments/${a01.posted.id}`,
+    );
+    expect(detail.status, diagnostics(detail)).toBe(200);
+    expect(detail.body).toMatchObject({
+      offerComparison: preview.offerComparison,
+      offerDeltaFils: "-25000",
+    });
+    const a02draft = await createAdjustmentDraft(
+      posted.posted.id,
+      "quantity error",
+    );
+    expect(a02draft.invoiceOffer).toEqual({ mode: "fixed", value: "25000" });
+    const a02saved = await saveAdjustmentDraft(a02draft, (rows) =>
+      rows.map((row) => ({ ...row, enteredQuantity: "20" })),
+    );
+    const a02preview = await previewAdjustment(a02saved);
+    expect(a02preview).toMatchObject({
+      offerDeltaFils: "0",
+      costAfterDiscountDeltaFils: "900000",
+      totalsComparison: {
+        before: { costAfterDiscountFils: "875000" },
+        after: {
+          primarySupplierCostFils: "2000000",
+          offerFils: "25000",
+          costAfterDiscountFils: "1775000",
+        },
+      },
+    });
+    const a02 = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(a02saved.id),
+      {
+        expectedVersion: a02saved.version,
+        confirmationHash: a02preview.confirmationHash,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(a02.status, diagnostics(a02)).toBe(201);
+    expect(await immutablePurchaseBytes(posted.posted.id)).toEqual(
+      originalBytes,
+    );
+    const percentageDraft = await createAdjustmentDraft(
+      posted.posted.id,
+      "other",
+    );
+    const percentageSaved = await request(
+      "PUT",
+      purchaseAdjustmentDraftPath(percentageDraft.id),
+      {
+        ...adjustmentUpdateBody(
+          percentageDraft,
+          adjustmentRows(percentageDraft),
+        ),
+        invoiceOffer: { mode: "percentage", value: "5" },
+      },
+    );
+    expect(percentageSaved.status, diagnostics(percentageSaved)).toBe(200);
+    const a03Draft = percentageSaved.body as unknown as PurchaseAdjustmentDraft;
+    const a03Preview = await previewAdjustment(a03Draft);
+    const a03 = await request(
+      "POST",
+      purchaseAdjustmentPostingsPath(a03Draft.id),
+      {
+        expectedVersion: a03Draft.version,
+        confirmationHash: a03Preview.confirmationHash,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(a03.status, diagnostics(a03)).toBe(201);
+    const a04Draft = await createAdjustmentDraft(
+      posted.posted.id,
+      "quantity error",
+    );
+    expect(a04Draft.invoiceOffer).toEqual({ mode: "percentage", value: "5" });
+    const a04Saved = await saveAdjustmentDraft(a04Draft, (rows) =>
+      rows.map((row) => ({ ...row, enteredQuantity: "30" })),
+    );
+    const a04Preview = await previewAdjustment(a04Saved);
+    expect(a04Preview).toMatchObject({
+      offerDeltaFils: "50000",
+      costAfterDiscountDeltaFils: "850000",
+      offerComparison: {
+        before: { offerFils: "100000" },
+        after: {
+          input: { mode: "percentage", value: "5" },
+          basisFils: "3000000",
+          offerFils: "150000",
+        },
+      },
+    });
+    expect(await immutablePurchaseBytes(posted.posted.id)).toEqual(
+      originalBytes,
+    );
+  }, 60000);
+
   async function createReturnDraft(
     originalId: string,
   ): Promise<PurchaseReturnDraft> {
@@ -3511,6 +3765,7 @@ describe.sequential("Purchase posting PostgreSQL seam", () => {
     rows: readonly DraftRowInput[],
   ): Promise<PurchaseDraft> {
     const created = await request("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: "2026-06-15",
       settlementContext,
@@ -3581,6 +3836,7 @@ function adjustmentUpdateBody(
   rows: ReturnType<typeof adjustmentRows>,
 ) {
   return {
+    invoiceOffer: draft.invoiceOffer,
     evidence: draft.evidence,
     expectedVersion: draft.version,
     idempotencyKey: uuidV7(),
@@ -3596,6 +3852,7 @@ function draftBody(
   invoiceDate: string,
 ) {
   return {
+    invoiceOffer: { mode: "none", value: "0" },
     idempotencyKey: uuidV7(),
     invoiceDate,
     settlementContext: "debt" as const,

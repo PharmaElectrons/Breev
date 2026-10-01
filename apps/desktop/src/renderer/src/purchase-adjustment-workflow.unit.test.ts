@@ -6,6 +6,12 @@ import * as preferencesModule from "./preferences-provider";
 import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
 
 const detail: PurchasePostedDetail = {
+  invoiceOffer: {
+    input: { mode: "none", value: "0" },
+    ruleVersion: 1,
+    basisFils: "0",
+    offerFils: "0",
+  },
   activeAdjustmentDrafts: [],
   activeReturnDrafts: [],
   adjustments: [],
@@ -114,6 +120,7 @@ describe("Adjustment actions and authoritative display", () => {
       primarySupplierCostFils: null,
       costAfterDiscountFils: null,
       costVisibility: "hidden-by-permission",
+      invoiceOffer: null,
       rows: detail.rows.map((row) => ({
         ...row,
         linePrimarySupplierCostFils: null,
