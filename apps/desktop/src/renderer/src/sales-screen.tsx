@@ -52,6 +52,11 @@ import {
   suspendSaleDraft,
 } from "./sales-api";
 import { SalesInvoiceView } from "./sales-invoice-view";
+import {
+  readSaleLineEdit,
+  reconcileSaleLineEdits,
+  saveSaleLineEdit,
+} from "./sales-line-drafts";
 import { SaleQuickAccessPanel } from "./sales-quick-access-panel";
 import { SalePriceDialog } from "./sales-price-dialog";
 import {
@@ -393,6 +398,17 @@ function SaleDraftScreen({
   readonly onReloadDrafts: () => Promise<void>;
   readonly resumeToken: number;
 }): React.JSX.Element {
+  const { state: identity } = useIdentityState();
+  const lineEditScope =
+    identity?.state === "authenticated"
+      ? JSON.stringify([
+          baseUrl,
+          identity.pharmacy.id,
+          identity.user.id,
+          identity.session.id,
+        ])
+      : null;
+  const [, refreshLineEdits] = useState(0);
   const { locale } = usePreferences();
   const copy = salesMessages[locale];
   const basketCopy = basketMessages[locale];
@@ -535,6 +551,7 @@ function SaleDraftScreen({
     try {
       const loaded = await readSaleDraft(baseUrl, draftId);
       if (sequence !== draftRequestSequence.current) return;
+      if (lineEditScope !== null) reconcileSaleLineEdits(lineEditScope, loaded);
       setDraft(loaded);
       // The search field owns focus the moment the draft is actionable.
       commitFocus(() => searchRef.current);
@@ -548,7 +565,7 @@ function SaleDraftScreen({
     } finally {
       if (sequence === draftRequestSequence.current) setDraftLoading(false);
     }
-  }, [baseUrl, commitFocus, copy, draftId]);
+  }, [baseUrl, commitFocus, copy, draftId, lineEditScope]);
 
   useEffect(() => {
     void loadDraft();
@@ -742,6 +759,8 @@ function SaleDraftScreen({
     try {
       const updated = await attempt.run();
       pendingEdit.current = null;
+      if (lineEditScope !== null)
+        reconcileSaleLineEdits(lineEditScope, updated);
       setDraft(updated);
       attempt.onSuccess?.();
       await onReloadDrafts();
@@ -750,6 +769,8 @@ function SaleDraftScreen({
     } catch (caught) {
       if (caught instanceof SalesApiDenied) {
         if (caught.denial.currentDraft !== undefined) {
+          if (lineEditScope !== null)
+            reconcileSaleLineEdits(lineEditScope, caught.denial.currentDraft);
           setDraft(caught.denial.currentDraft);
           const nextKey = newSalesIdempotencyKey();
           pendingEdit.current = {
@@ -1616,6 +1637,19 @@ function SaleDraftScreen({
             canOverridePrice={canOverridePrice}
             pendingConfirmation={!editBusy && pendingEdit.current !== null}
             selectedLineId={selectedLine?.id ?? null}
+            lineEdit={
+              selectedLine === null || lineEditScope === null
+                ? null
+                : readSaleLineEdit(lineEditScope, draftId, selectedLine)
+            }
+            onEditLine={(lineId, edit) => {
+              const line = draft.lines.find(
+                (candidate) => candidate.id === lineId,
+              );
+              if (line === undefined || lineEditScope === null) return;
+              saveSaleLineEdit(lineEditScope, draftId, line, edit);
+              refreshLineEdits((revision) => revision + 1);
+            }}
             onSelectLine={setSelectedLineId}
             onOpenProduct={(line) => {
               if (line.productId === null) return;

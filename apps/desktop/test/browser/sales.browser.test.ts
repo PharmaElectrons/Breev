@@ -1115,6 +1115,79 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     );
   });
 
+  test("preserves unsubmitted row edits across Products navigation and clears them after Apply", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    const draftId = await openFreshDraft(page);
+    await page.locator("#sale-draft-search").fill("Panadol Extra");
+    await page.locator(`[data-sale-line-add="${panadol.id}"]`).click();
+    const invoice = page.locator(`[data-sale-invoice="${draftId}"]`);
+    const editor = invoice.locator(".sales-line-editor");
+    await expect(editor.getByLabel("Quantity")).toHaveValue("1");
+    const before = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    const line = before.lines[0]!;
+    expect(line.kind).toBe("catalog");
+    if (line.kind !== "catalog") throw new Error("Expected a catalog line");
+    const alternativeUnit = line.eligibleUnits.find(
+      (unit) => unit.unitId !== line.unitId,
+    )!;
+    expect(alternativeUnit).toBeDefined();
+    await editor.getByLabel("Quantity").fill("7");
+    await editor.getByLabel("Line discount %").fill("12");
+    await editor.getByRole("combobox").selectOption(alternativeUnit.unitId);
+
+    const returnToDraft = async (): Promise<void> => {
+      await page.getByRole("link", { name: "Products", exact: true }).click();
+      await expect(page.locator(".catalog-workspace")).toBeVisible();
+      await page.getByRole("link", { name: "Sales", exact: true }).click();
+      await page
+        .locator('[data-sale-draft-control="select"]')
+        .selectOption(draftId);
+      await expect(invoice).toBeVisible();
+    };
+    await returnToDraft();
+    await expect(editor.getByLabel("Quantity")).toHaveValue("7");
+    await expect(editor.getByLabel("Line discount %")).toHaveValue("12");
+    await expect(editor.getByRole("combobox")).toHaveValue(
+      alternativeUnit.unitId,
+    );
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      before,
+    );
+
+    await editor.getByRole("button", { name: "Apply", exact: true }).click();
+    await expect
+      .poll(async () => {
+        const saved = (await apiRequest("GET", saleDraftPath(draftId)))
+          .body as SaleDraft;
+        return saved.lines[0]?.quantity;
+      })
+      .toBe("7");
+    await expect(
+      editor.getByRole("button", { name: "Apply", exact: true }),
+    ).toBeEnabled();
+    // A later authoritative edit must not resurrect a cached acknowledged value.
+    const calculator = page.getByRole("region", { name: "Calculator" });
+    await calculator
+      .getByRole("button", { name: "Change quantity", exact: true })
+      .click();
+    await calculator.getByRole("textbox", { name: "Calculator" }).fill("3");
+    await calculator
+      .getByRole("button", { name: "Apply to draft", exact: true })
+      .click();
+    await expect(editor.getByLabel("Quantity")).toHaveValue("3");
+    await returnToDraft();
+    await expect(editor.getByLabel("Quantity")).toHaveValue("3");
+    await expect(editor.getByLabel("Line discount %")).toHaveValue("12");
+    await expect(editor.getByRole("combobox")).toHaveValue(
+      alternativeUnit.unitId,
+    );
+  });
+
   test("a manager pin persists and a sales tile adds its configured catalog unit", async ({
     page,
   }) => {

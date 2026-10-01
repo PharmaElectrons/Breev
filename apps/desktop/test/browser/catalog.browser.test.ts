@@ -1444,8 +1444,11 @@ test.describe.serial("Product catalog screens", () => {
         const expectedBorder =
           theme === "dark" ? "rgb(91, 120, 136)" : "rgb(120, 142, 157)";
         const expectedSurface =
-          theme === "dark" ? "rgb(15, 23, 29)" : "rgb(255, 255, 255)";
-        const expectThemedBoundary = async (control: Locator) => {
+          theme === "dark" ? "rgb(19, 29, 52)" : "rgb(255, 255, 255)";
+        const expectThemedBoundary = async (
+          control: Locator,
+          surface = expectedSurface,
+        ) => {
           const appearance = await control.evaluate((element) => {
             const style =
               element.ownerDocument.defaultView!.getComputedStyle(element);
@@ -1456,13 +1459,33 @@ test.describe.serial("Product catalog screens", () => {
             };
           });
           expect(appearance).toEqual({
-            background: expectedSurface,
+            background: surface,
             borderColor: expectedBorder,
             borderWidth: "1px",
           });
+          const luminance = (colour: string): number => {
+            const channels = colour.match(/\d+/gu)!.slice(0, 3).map(Number);
+            return channels.reduce((total, channel, index) => {
+              const value = channel / 255;
+              const linear =
+                value <= 0.04045
+                  ? value / 12.92
+                  : ((value + 0.055) / 1.055) ** 2.4;
+              return total + linear * [0.2126, 0.7152, 0.0722][index]!;
+            }, 0);
+          };
+          const border = luminance(appearance.borderColor);
+          const background = luminance(appearance.background);
+          expect(
+            (Math.max(border, background) + 0.05) /
+              (Math.min(border, background) + 0.05),
+          ).toBeGreaterThanOrEqual(3);
         };
         await expectThemedBoundary(arabicName);
-        await expectThemedBoundary(railSearch);
+        await expectThemedBoundary(
+          railSearch,
+          theme === "dark" ? "rgb(15, 23, 29)" : expectedSurface,
+        );
 
         await page.locator('input[name="tradeName"]').fill("Theme check");
         await page
@@ -1482,6 +1505,20 @@ test.describe.serial("Product catalog screens", () => {
         await expect(cost).toBeVisible();
         await expectThemedBoundary(wholesale);
         await expectThemedBoundary(cost);
+        if (theme === "dark") {
+          await wholesale.locator("input").focus();
+          const focus = await wholesale.evaluate((element) => {
+            const style =
+              element.ownerDocument.defaultView!.getComputedStyle(element);
+            return { border: style.borderTopColor, shadow: style.boxShadow };
+          });
+          expect(focus.border).toBe("rgb(127, 166, 192)");
+          expect(focus.shadow).not.toBe("none");
+        }
+        await page.screenshot({
+          path: test.info().outputPath(`catalog-controls-${theme}.png`),
+          fullPage: true,
+        });
       } finally {
         await context.close();
       }

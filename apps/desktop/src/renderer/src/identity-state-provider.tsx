@@ -11,6 +11,7 @@ import {
 
 import { requestIdentityState } from "./identity-api";
 import { clearProductFormDrafts } from "./product-form-drafts";
+import { clearSaleLineEdits } from "./sales-line-drafts";
 
 const IDENTITY_POLL_INTERVAL_MS = 5_000;
 
@@ -112,6 +113,7 @@ export function IdentityStateProvider({
   useEffect(() => {
     if (state?.state === "unauthenticated") {
       clearProductFormDrafts();
+      clearSaleLineEdits();
     }
   }, [state]);
 

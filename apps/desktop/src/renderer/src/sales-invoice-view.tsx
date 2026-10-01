@@ -6,6 +6,7 @@ import {
   formatNumber,
   type Locale,
 } from "./preferences";
+import { saleLineEditValues, type SaleLineEdit } from "./sales-line-drafts";
 
 interface InvoiceCopy {
   readonly heading: string;
@@ -142,6 +143,8 @@ export interface SalesInvoiceViewProps {
   readonly pendingConfirmation: boolean;
   readonly readOnly?: boolean;
   readonly selectedLineId: string | null;
+  readonly lineEdit: SaleLineEdit | null;
+  readonly onEditLine: (lineId: string, edit: SaleLineEdit) => void;
   readonly onSelectLine: (lineId: string | null) => void;
   readonly onOpenProduct: (line: SaleDraftLine) => void;
   readonly onOpenPrice: (line: SaleDraftLine) => void;
@@ -160,12 +163,16 @@ export interface SalesInvoiceViewProps {
 
 function LineEditor({
   line,
+  edit,
+  onEdit,
   locale,
   busy,
   onChange,
   onRemove,
 }: {
   readonly line: SaleDraftLine;
+  readonly edit: SaleLineEdit;
+  readonly onEdit: (edit: SaleLineEdit) => void;
   readonly locale: Locale;
   readonly busy: boolean;
   readonly onChange: (change: {
@@ -176,24 +183,7 @@ function LineEditor({
   readonly onRemove: () => void;
 }): React.JSX.Element {
   const copy = invoiceCopy[locale];
-  const [quantity, setQuantity] = useState(line.quantity);
-  const [percentage, setPercentage] = useState(line.lineDiscountPercentage);
-  const [unitId, setUnitId] = useState(
-    line.kind === "catalog" && line.unitId !== null ? line.unitId : "",
-  );
-  useEffect(() => {
-    setQuantity(line.quantity);
-    setPercentage(line.lineDiscountPercentage);
-    setUnitId(
-      line.kind === "catalog" && line.unitId !== null ? line.unitId : "",
-    );
-  }, [
-    line.id,
-    line.quantity,
-    line.lineDiscountPercentage,
-    line.kind,
-    line.unitId,
-  ]);
+  const { quantity, unitId, lineDiscountPercentage: percentage } = edit;
 
   return (
     <form
@@ -223,7 +213,9 @@ function LineEditor({
           <select
             disabled={busy}
             value={unitId}
-            onChange={(event) => setUnitId(event.target.value)}
+            onChange={(event) =>
+              onEdit({ ...edit, unitId: event.target.value })
+            }
           >
             {line.eligibleUnits.map((unit) => (
               <option key={unit.unitId} value={unit.unitId}>
@@ -244,7 +236,9 @@ function LineEditor({
           required
           type="number"
           value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
+          onChange={(event) =>
+            onEdit({ ...edit, quantity: event.target.value })
+          }
         />
       </label>
       <label>
@@ -257,7 +251,9 @@ function LineEditor({
           required
           type="number"
           value={percentage}
-          onChange={(event) => setPercentage(event.target.value)}
+          onChange={(event) =>
+            onEdit({ ...edit, lineDiscountPercentage: event.target.value })
+          }
         />
       </label>
       <div className="sales-line-editor-actions">
@@ -280,6 +276,8 @@ export function SalesInvoiceView({
   pendingConfirmation,
   readOnly = false,
   selectedLineId,
+  lineEdit,
+  onEditLine,
   onSelectLine,
   onOpenProduct,
   onOpenPrice,
@@ -551,6 +549,8 @@ export function SalesInvoiceView({
           busy={busy}
           key={selectedLine.id}
           line={selectedLine}
+          edit={lineEdit ?? saleLineEditValues(selectedLine)}
+          onEdit={(edit) => onEditLine(selectedLine.id, edit)}
           locale={locale}
           onChange={(change) => onChangeLine(selectedLine.id, change)}
           onRemove={() => {
