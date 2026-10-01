@@ -34,6 +34,7 @@ import {
   type PurchasePostResult,
   type PurchasePostedCostVisibility,
   type PurchasePostedDetail,
+  type PurchasePriceCapture,
   type PurchasePostedListRequest,
   type PurchasePostedListResponse,
   type PurchasingDenial,
@@ -290,6 +291,11 @@ export const POSTED_PURCHASE_ROWS_SELECT = `select snapshot_row.id,
   snapshot_row.primary_supplier_cost_fils::text,
   snapshot_row.line_primary_supplier_cost_fils::text,
   snapshot_row.cost_after_discount_fils::text,
+  (snapshot_row.line_primary_supplier_cost_fils - snapshot_row.cost_after_discount_fils - snapshot_row.offer_fils)::text as allowance_fils,
+  snapshot_row.offer_fils::text,
+  snapshot_row.pricing_method, snapshot_row.margin_percentage::text,
+  snapshot_row.price_capture, snapshot_row.notes,
+  snapshot_row.batch_id, snapshot_row.movement_id,
   snapshot_row.retail_price_fils::text, snapshot_row.expiry_date::text,
   snapshot_row.lot_number
 from posted_purchase_rows snapshot_row
@@ -337,7 +343,9 @@ interface PostedPurchaseDetailRow {
 }
 
 interface PostedPurchaseSnapshotRow {
+  allowance_fils: string;
   base_units_per_entered_unit: string;
+  batch_id: string;
   cost_after_discount_fils: string;
   entered_package_unit_name: string | null;
   entered_quantity: string;
@@ -349,7 +357,13 @@ interface PostedPurchaseSnapshotRow {
   item_display_name: string;
   line_primary_supplier_cost_fils: string;
   lot_number: string | null;
+  margin_percentage: string | null;
+  movement_id: string;
+  notes: string | null;
+  offer_fils: string;
   ordinal: number;
+  price_capture: PurchasePriceCapture;
+  pricing_method: "by-price" | "by-percentage";
   primary_supplier_cost_fils: string;
   product_id: string;
   retail_price_fils: string;
@@ -841,14 +855,14 @@ function postedPurchaseOrder(
     input.sort === "primary-cost" && !costsVisible
       ? "number"
       : (input.sort ?? "number");
-  const suffix = `posted_row.number_year ${direction}, posted_row.number_value ${direction}, posted_row.id ${direction}`;
+  const suffix = `posted_row.number_year ${direction}, posted_row.number_value::bigint ${direction}, posted_row.id ${direction}`;
   switch (sort) {
     case "invoice-date":
       return `posted_row.invoice_date ${direction}, ${suffix}`;
     case "posted-at":
       return `posted_row.posted_at ${direction}, ${suffix}`;
     case "primary-cost":
-      return `posted_row.primary_supplier_cost_fils ${direction}, ${suffix}`;
+      return `posted_row.primary_supplier_cost_fils::bigint ${direction}, ${suffix}`;
     case "supplier":
       return `lower(posted_row.supplier_name_snapshot) ${direction}, ${suffix}`;
     case "number":
@@ -1765,7 +1779,9 @@ export class PurchasingService {
             : null,
         })),
         rows: rowResult.rows.map((row) => ({
+          allowanceFils: costsVisible ? row.allowance_fils : null,
           baseUnitsPerEnteredUnit: row.base_units_per_entered_unit,
+          batchId: row.batch_id,
           costAfterDiscountFils: costsVisible
             ? row.cost_after_discount_fils
             : null,
@@ -1780,7 +1796,13 @@ export class PurchasingService {
             ? row.line_primary_supplier_cost_fils
             : null,
           lotNumber: row.lot_number,
+          marginPercentage: costsVisible ? row.margin_percentage : null,
+          movementId: row.movement_id,
+          notes: row.notes,
+          offerFils: costsVisible ? row.offer_fils : null,
           ordinal: row.ordinal,
+          priceCapture: row.price_capture,
+          pricingMethod: row.pricing_method,
           primarySupplierCostFils: costsVisible
             ? row.primary_supplier_cost_fils
             : null,

@@ -1,0 +1,4 @@
+apps/desktop/src/renderer/src/purchase-row-entry.tsx 369ms
+apps/desktop/src/renderer/src/purchasing-messages.ts 80ms (unchanged)
+apps/desktop/src/renderer/src/posted-purchase-review.tsx 180ms (unchanged)
+apps/desktop/test/browser/purchasing.browser.test.ts 401ms (unchanged)

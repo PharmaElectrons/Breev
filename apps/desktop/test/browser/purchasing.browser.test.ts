@@ -1631,6 +1631,458 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
   for (const locale of ["en", "ar"] as const) {
     for (const theme of ["light", "dark"] as const) {
+      test(`T05 complete saved rows and preserved filtered navigation ${locale} ${theme}`, async ({
+        page,
+      }) => {
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.setViewportSize({ width: 1280, height: 800 });
+        const invoice = `T05-NAV-${locale}-${theme}`;
+        if (locale === "en" && theme === "light") {
+          for (let index = 0; index < 22; index++) {
+            await postPurchaseForReview(
+              apiOrigin,
+              credentials,
+              supplierId,
+              purchaseProduct.id,
+              `T05-NAV-SCROLL-${index}`,
+            );
+          }
+        }
+        const created = await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          "/purchases/drafts",
+          {
+            invoiceOffer: { mode: "percentage", value: "5" },
+            idempotencyKey: uuidV7(),
+            invoiceDate: "2026-06-15",
+            settlementContext: "debt",
+            supplierId,
+            supplierInvoiceNumber: invoice,
+          },
+        );
+        expect(created.status).toBe(201);
+        let draft = (created.body as { draft: PurchaseDraft }).draft;
+        for (const [quantity, cost, unit] of [
+          ["2", "100000", { kind: "package-unit", packageUnitName: "Pack" }],
+          ["1", "40000", { kind: "inventory-unit" }],
+        ] as const) {
+          const committed = await apiRequest(
+            apiOrigin,
+            credentials,
+            "POST",
+            purchaseDraftRowsPath(draft.id),
+            {
+              costFils: cost,
+              enteredQuantity: quantity,
+              expectedVersion: draft.version,
+              expiryDate: "2029-06-30",
+              idempotencyKey: uuidV7(),
+              itemId: purchaseProduct.id,
+              lotNumber: "T05-LOT",
+              notes: "Saved note\nملاحظة محفوظة",
+              pricing: { method: "by-price", retailPriceFils: "120000" },
+              unit,
+            },
+          );
+          expect(committed.status).toBe(201);
+          draft = (committed.body as { draft: PurchaseDraft }).draft;
+        }
+        await page.goto(`${renderer.origin}#/purchases`);
+        await page
+          .getByRole("button", {
+            name: locale === "en" ? "Saved drafts" : "المسودات المحفوظة",
+            exact: true,
+          })
+          .click();
+        await page
+          .locator("#purchase-draft-register tbody tr", { hasText: invoice })
+          .getByRole("button")
+          .first()
+          .click();
+        const savedRows = page.locator(
+          ".purchase-row-table tbody tr[data-row-id]",
+        );
+        const firstRow = savedRows.first();
+        await firstRow.locator(".purchase-action-icon-btn.edit").click();
+        await firstRow
+          .locator("summary.purchase-action-icon-btn.optional")
+          .click();
+        const optional = firstRow.locator(".purchase-optional-controls-body");
+        const productSearch = optional.getByRole("searchbox");
+        await productSearch.fill("Percentage Purchase");
+        await optional
+          .getByRole("button", {
+            name: percentageProduct.displayName,
+            exact: true,
+          })
+          .click();
+        await optional.getByRole("combobox").selectOption("inventory-unit");
+        await optional
+          .getByRole("button", {
+            name: locale === "en" ? "Done" : "تم",
+            exact: true,
+          })
+          .click();
+        await firstRow.locator(".purchase-action-icon-btn.cancel").click();
+        await expect(
+          firstRow.locator(".purchase-action-icon-btn.edit"),
+        ).toBeFocused();
+        const unmodified = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          `/purchases/drafts/${draft.id}`,
+        );
+        expect(unmodified.body).toMatchObject({
+          version: draft.version,
+          rows: [
+            { itemId: purchaseProduct.id, inventoryUnitQuantity: "8" },
+            { inventoryUnitQuantity: "1" },
+          ],
+        });
+        await firstRow.locator(".purchase-action-icon-btn.edit").click();
+        await firstRow
+          .locator("summary.purchase-action-icon-btn.optional")
+          .click();
+        await productSearch.fill("Percentage Purchase");
+        await optional
+          .getByRole("button", {
+            name: percentageProduct.displayName,
+            exact: true,
+          })
+          .click();
+        await optional.getByRole("combobox").selectOption("inventory-unit");
+        await optional
+          .getByRole("button", {
+            name: locale === "en" ? "Done" : "تم",
+            exact: true,
+          })
+          .click();
+        const correctedResponse = page.waitForResponse(
+          (response) =>
+            response.request().method() === "PUT" &&
+            response.url().includes("/rows/") &&
+            response.status() === 200,
+        );
+        await expect(
+          firstRow.getByPlaceholder(
+            locale === "en" ? "Calculated on Save row" : "يحسب عند حفظ السطر",
+            { exact: true },
+          ),
+        ).toHaveValue("");
+        await firstRow.locator(".purchase-action-icon-btn.save").click();
+        const corrected = (await (await correctedResponse).json()) as {
+          draft: PurchaseDraft;
+        };
+        draft = corrected.draft;
+        await expect(
+          firstRow.locator(".purchase-action-icon-btn.edit"),
+        ).toBeFocused();
+        expect(corrected).toMatchObject({
+          draft: {
+            review: {
+              grossFils: "240000",
+              allowanceFils: "6000",
+              netFils: "222000",
+              invoiceOffer: { offerFils: "12000" },
+            },
+            rows: [
+              {
+                itemId: percentageProduct.id,
+                inventoryUnitQuantity: "2",
+                pricingMethod: "by-percentage",
+                marginPercentage: "20",
+                retailPriceFils: "125000",
+                notes: "Saved note\nملاحظة محفوظة",
+              },
+              { inventoryUnitQuantity: "1" },
+            ],
+          },
+        });
+        const postedResponse = await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          purchaseDraftPostingsPath(draft.id),
+          { expectedVersion: draft.version, idempotencyKey: uuidV7() },
+        );
+        expect(postedResponse.status).toBe(201);
+        const posted = (postedResponse.body as PurchasePostResult).posted;
+        await postedInvoicesTab(page).click();
+        const review = page.locator("#purchase-posted-view");
+        await review.getByRole("searchbox").fill("T05-NAV-");
+        await review.locator(".posted-review-filters summary").click();
+        const filters = review.locator(".posted-review-filter-fields");
+        await filters
+          .getByLabel(locale === "en" ? "Date type" : "نوع التاريخ", {
+            exact: true,
+          })
+          .selectOption("invoice-date");
+        await filters
+          .getByLabel(locale === "en" ? "From date" : "من تاريخ", {
+            exact: true,
+          })
+          .fill("2026-01-01");
+        await filters
+          .getByLabel(locale === "en" ? "To date" : "إلى تاريخ", {
+            exact: true,
+          })
+          .fill("2026-12-31");
+        await filters
+          .getByLabel(locale === "en" ? "Sort by" : "الترتيب حسب", {
+            exact: true,
+          })
+          .selectOption("number");
+        await filters
+          .getByLabel(locale === "en" ? "Direction" : "اتجاه الترتيب", {
+            exact: true,
+          })
+          .selectOption("ascending");
+        const listRows = review.locator(".posted-purchase-list tbody tr");
+        await expect(listRows.filter({ hasText: invoice })).toHaveCount(1);
+        const scroll = review.locator(".proto-table-wrap");
+        await scroll.evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+        });
+        const scrollTop = await scroll.evaluate((element) => element.scrollTop);
+        expect(scrollTop).toBeGreaterThan(0);
+        await listRows
+          .filter({ hasText: invoice })
+          .getByRole("button")
+          .first()
+          .click();
+        const detail = review.locator(".posted-purchase-review");
+        await expect(detail.locator(".posted-row-notes")).toHaveCount(2);
+        await detail.locator(".posted-row-snapshots summary").click();
+        await expect(detail).toContainText(posted.rows[0]!.batchId);
+        await expect(detail).toContainText(posted.rows[0]!.movementId);
+        await expect(detail.locator(".posted-row-snapshots")).toContainText(
+          locale === "en" ? "By Percentage" : "بالنسبة",
+        );
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        const captures = path.resolve(
+          import.meta.dirname,
+          "../../../../evidence/issue-198/t05/screenshots",
+        );
+        await mkdir(captures, { recursive: true });
+        await page.screenshot({
+          path: path.join(captures, `snapshot-${locale}-${theme}.png`),
+          fullPage: true,
+          animations: "disabled",
+        });
+        const item = detail.getByRole("button", {
+          name: new RegExp(
+            `${locale === "en" ? "Open current item record" : "فتح سجل الصنف الحالي"} ${percentageProduct.displayName}`,
+          ),
+        });
+        await item.click();
+        await review
+          .getByRole("button", {
+            name: locale === "en" ? "Back to invoice" : "العودة إلى الفاتورة",
+            exact: true,
+          })
+          .click();
+        await expect(item).toBeFocused();
+        await expect(detail.locator(".posted-row-notes")).toHaveCount(2);
+        await expect(detail.locator(".posted-row-snapshots")).toHaveAttribute(
+          "open",
+          "",
+        );
+        const heading = detail.locator("#posted-detail-title");
+        const originalHeading = await heading.textContent();
+        await detail
+          .getByRole("button", {
+            name: locale === "en" ? /Previous/ : /السابق/,
+          })
+          .click();
+        await expect(heading).not.toHaveText(originalHeading!);
+        await detail
+          .getByRole("button", { name: locale === "en" ? /Next/ : /التالي/ })
+          .click();
+        await expect(heading).toHaveText(originalHeading!);
+        // Reproduce the manual checkpoint order: change current master units
+        // before saving only Adjustment evidence on the historical invoice.
+        const currentMasterResponse = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          `/catalog/products/${purchaseProduct.id}`,
+        );
+        expect(currentMasterResponse.status).toBe(200);
+        const currentMaster = currentMasterResponse.body as Product;
+        if (currentMaster.pricing.method !== "by-price") {
+          throw new Error(
+            "The Keyboard Purchase fixture must use by-price pricing",
+          );
+        }
+        const restoreMaster = medicationRequest(
+          "Keyboard Purchase",
+          "5012345678949",
+        );
+        restoreMaster.pricing = currentMaster.pricing;
+        const changedMaster = {
+          ...restoreMaster,
+          definition: medicationRequest(
+            "T05 Current Master Changed",
+            "5012345678949",
+          ).definition,
+          packaging: {
+            ...restoreMaster.packaging,
+            inventoryUnitName: "Tablet",
+            packageUnits: [{ name: "Box", baseUnitsPerPackage: "6" }],
+            defaultUnits: {
+              ...restoreMaster.packaging.defaultUnits,
+              purchase: { kind: "package-unit", packageUnitName: "Box" },
+            },
+          },
+          expectedRevision: currentMaster.revision,
+          idempotencyKey: uuidV7(),
+        };
+        const masterChangedResponse = await apiRequest(
+          apiOrigin,
+          credentials,
+          "PUT",
+          `/catalog/products/${purchaseProduct.id}`,
+          changedMaster,
+        );
+        expect(masterChangedResponse.status).toBe(200);
+        await detail
+          .getByRole("button", {
+            name: locale === "en" ? "Edit Invoice" : "تعديل الفاتورة",
+            exact: true,
+          })
+          .click();
+        const correction = review.locator(".purchase-adjustment");
+        await review
+          .getByRole("button", {
+            name:
+              locale === "en" ? "Create adjustment copy" : "إنشاء نسخة التعديل",
+          })
+          .click();
+        await correction
+          .locator(".adjustment-banner-reason-input")
+          .fill("T05 dirty navigation evidence");
+        await correction.locator('[data-adjustment-action="search"]').click();
+        await expect(correction.getByRole("alertdialog")).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(
+          correction.locator(".adjustment-banner-reason-input"),
+        ).toHaveValue("T05 dirty navigation evidence");
+        await correction.locator('[data-adjustment-action="search"]').click();
+        await correction
+          .locator('[data-adjustment-action="save-leave"]')
+          .click();
+        await expect(review.getByRole("searchbox")).toHaveValue("T05-NAV-");
+        const savedOriginal = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          `/purchases/posted/${posted.id}`,
+        );
+        const activeDrafts = (
+          savedOriginal.body as { activeAdjustmentDrafts: { id: string }[] }
+        ).activeAdjustmentDrafts;
+        expect(activeDrafts).toHaveLength(1);
+        const savedEvidence = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          purchaseAdjustmentDraftPath(activeDrafts[0]!.id),
+        );
+        expect(savedEvidence.body).toMatchObject({
+          evidence: "T05 dirty navigation evidence",
+          rows: [
+            { inventoryUnitName: "Strip" },
+            { inventoryUnitName: "Strip" },
+          ],
+        });
+        const restoredMasterResponse = await apiRequest(
+          apiOrigin,
+          credentials,
+          "PUT",
+          `/catalog/products/${purchaseProduct.id}`,
+          {
+            ...restoreMaster,
+            expectedRevision: (masterChangedResponse.body as Product).revision,
+            idempotencyKey: uuidV7(),
+          },
+        );
+        expect(restoredMasterResponse.status).toBe(200);
+        await listRows
+          .filter({ hasText: invoice })
+          .getByRole("button")
+          .first()
+          .click();
+        await expect(detail.locator(".posted-row-notes")).toHaveCount(2);
+        await detail
+          .getByRole("button", {
+            name: locale === "en" ? "Back to results" : "العودة إلى النتائج",
+            exact: true,
+          })
+          .click();
+        await expect(review.getByRole("searchbox")).toHaveValue("T05-NAV-");
+        await expect(
+          filters.getByLabel(locale === "en" ? "Sort by" : "الترتيب حسب", {
+            exact: true,
+          }),
+        ).toHaveValue("number");
+        await expect(
+          filters.getByLabel(locale === "en" ? "Direction" : "اتجاه الترتيب", {
+            exact: true,
+          }),
+        ).toHaveValue("ascending");
+        await expect(scroll).toHaveJSProperty("scrollTop", scrollTop);
+        await expect(
+          listRows.filter({ hasText: invoice }).getByRole("button").first(),
+        ).toBeFocused();
+        await page.screenshot({
+          path: path.join(captures, `navigation-${locale}-${theme}.png`),
+          fullPage: true,
+          animations: "disabled",
+        });
+        for (const viewport of [
+          { width: 1366, height: 768 },
+          { width: 1024, height: 768 },
+        ]) {
+          await page.setViewportSize(viewport);
+          await expect(review.getByRole("searchbox")).toBeInViewport();
+          await expect(
+            filters.getByLabel(locale === "en" ? "From date" : "من تاريخ", {
+              exact: true,
+            }),
+          ).toBeInViewport();
+          await expect(
+            filters.getByLabel(
+              locale === "en" ? "Direction" : "اتجاه الترتيب",
+              { exact: true },
+            ),
+          ).toBeInViewport();
+        }
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.evaluate('document.documentElement.style.fontSize = "200%"');
+        await expect(review.getByRole("searchbox")).toBeInViewport();
+        await expect(
+          filters.getByLabel(locale === "en" ? "Direction" : "اتجاه الترتيب", {
+            exact: true,
+          }),
+        ).toBeInViewport();
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        await page.screenshot({
+          path: path.join(captures, `navigation-200-${locale}-${theme}.png`),
+          fullPage: true,
+          animations: "disabled",
+        });
+        await page.evaluate(
+          'document.documentElement.style.removeProperty("font-size")',
+        );
+      });
+
       test(`T04 saves independent invoice offers and immutable corrections ${locale} ${theme}`, async ({
         page,
       }) => {
@@ -3107,6 +3559,12 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     failNextPostedListResponse = true;
     await postedInvoicesTab(page).click();
+    // Reopening preserves T05's loaded result set. Explicitly request a fresh
+    // list before checking an unavailable response, rather than expecting Close
+    // to discard the accepted navigation state.
+    await dialog
+      .getByRole("searchbox", { name: "Search posted purchases" })
+      .press("Enter");
     await expect(dialog.getByRole("alert")).toContainText(
       "The local API is unavailable.",
     );

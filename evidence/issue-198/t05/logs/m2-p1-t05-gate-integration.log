@@ -1,0 +1,1010 @@
+$ turbo run test:integration --filter=@breev/local-api
+• turbo 2.10.11
+
+   • Packages in scope: @breev/local-api
+   • Running test:integration in 1 packages
+   • Remote caching disabled
+
+@breev/contracts:build: cache hit, replaying logs c6eaeb201a7ffa82
+@breev/contracts:build: $ tsc -p tsconfig.build.json
+@breev/local-api:build: cache hit, replaying logs d186e321e949832c
+@breev/local-api:build: $ tsc -p tsconfig.build.json
+@breev/local-api:test:integration: cache bypass, force executing 4e929e5f6a0f277b
+@breev/local-api:test:integration: $ vitest run --config vitest.config.ts
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-reorder-authorization.integration.test.ts (3 tests | 3 skipped) 19ms
+@breev/local-api:test:integration:      ↓ allows the split permissions and audits every denied command
+@breev/local-api:test:integration:      ↓ audits tenant, locked-user, device, step-up, and expected-version boundaries
+@breev/local-api:test:integration:      ↓ allows an entitled terminal and denies it after entitlement removal
+@breev/local-api:test:integration:  ❯ test/windows-boot.integration.test.ts (2 tests | 1 failed) 17404ms
+@breev/local-api:test:integration:      ✓ stays up and reports degraded when PostgreSQL is unreachable  17380ms
+@breev/local-api:test:integration:      × stays up and reports degraded against an unmigrated database 8ms
+@breev/local-api:test:integration:  ❯ src/catalog/catalog-authorization.integration.test.ts (8 tests | 8 skipped) 20ms
+@breev/local-api:test:integration:      ↓ allows item editing with the matching tenant, active user, verified device, permission, and Free Core entitlement
+@breev/local-api:test:integration:      ↓ allows search-only visibility but denies and audits barcode edits and matching approval without item management
+@breev/local-api:test:integration:      ↓ denies an unauthorized user by default and makes the permission denial auditable
+@breev/local-api:test:integration:      ↓ allows an active authorized user and denies the same user when locked
+@breev/local-api:test:integration:      ↓ allows the verified Main device and denies an invalid device binding before item editing
+@breev/local-api:test:integration:      ↓ allows the context pharmacy and denies a Product outside that tenant-scoped resource set
+@breev/local-api:test:integration:      ↓ keeps Catalog in Free Core while the inherited entitlement boundary denies an unavailable paid capability
+@breev/local-api:test:integration:      ↓ allows an entitled paired terminal and denies it immediately after its entitlement is removed
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-safety.integration.test.ts (4 tests | 4 skipped) 20ms
+@breev/local-api:test:integration:      ↓ enforces FEFO, hard blocks, daily detection, append-only facts, and correction
+@breev/local-api:test:integration:      ↓ rejects direct mutation and preserves the business-date boundary
+@breev/local-api:test:integration:      ↓ recovers the real queue across claim, date-commit, final-commit, and duplicate-delivery crashes
+@breev/local-api:test:integration:      ↓ reports an unavailable runtime and audits Step-Up correction denials
+@breev/local-api:test:integration:  ❯ src/pharmacy-ca/pharmacy-ca.integration.test.ts (19 tests | 19 skipped) 29ms
+@breev/local-api:test:integration:        ↓ creates a pharmacy CA on first initialization
+@breev/local-api:test:integration:        ↓ is idempotent and reuses the existing CA on subsequent initialization
+@breev/local-api:test:integration:        ↓ fails closed when the existing CA key is missing or inaccessible
+@breev/local-api:test:integration:        ↓ fails closed when the stored CA identity does not match its key
+@breev/local-api:test:integration:        ↓ issues a server certificate chaining to CA with breev-server role
+@breev/local-api:test:integration:        ↓ issues a device certificate chaining to CA with breev-device role
+@breev/local-api:test:integration:        ↓ refuses to certify a device identifier the installation already knows
+@breev/local-api:test:integration:        ↓ rejects an expired certificate
+@breev/local-api:test:integration:        ↓ rejects role mismatch (server presented as device)
+@breev/local-api:test:integration:        ↓ rejects role mismatch (device presented as server)
+@breev/local-api:test:integration:        ↓ rejects a certificate with a mismatched installation identity
+@breev/local-api:test:integration:        ↓ rejects a certificate signed by a foreign CA
+@breev/local-api:test:integration:        ↓ detects and enforces device revocation per request in PostgreSQL
+@breev/local-api:test:integration:        ↓ rejects a certificate fingerprint the device record does not name
+@breev/local-api:test:integration:        ↓ authenticates a terminal over mTLS with a valid device certificate
+@breev/local-api:test:integration:        ↓ rejects an mTLS request when client certificate is omitted
+@breev/local-api:test:integration:        ↓ rejects an mTLS request with a revoked device certificate
+@breev/local-api:test:integration:        ↓ rejects an mTLS request when server cert is used as client cert
+@breev/local-api:test:integration:        ↓ proves the CA private key is non-exportable from Windows CNG
+@breev/local-api:test:integration:  ❯ src/devices/devices.integration.test.ts (29 tests | 29 skipped) 19ms
+@breev/local-api:test:integration:      ↓ pairs a terminal end to end over the LAN channel and signs a user in
+@breev/local-api:test:integration:      ↓ keeps exactly one active session per terminal device
+@breev/local-api:test:integration:      ↓ refuses device administration from a terminal, whatever it may hold
+@breev/local-api:test:integration:      ↓ gives state polling its own budget, above what the terminal spends
+@breev/local-api:test:integration:      ↓ refuses anything but the pairing routes without a client certificate
+@breev/local-api:test:integration:      ↓ accepts the LAN authority only from the LAN listener
+@breev/local-api:test:integration:      ↓ refuses a second pairing session while one is open
+@breev/local-api:test:integration:      ↓ replays a pairing start without handing back the invitation
+@breev/local-api:test:integration:      ↓ counts wrong join secrets, fails the session, and commits the evidence
+@breev/local-api:test:integration:      ↓ fails the session on the attempt that exhausts the budget, whatever spent it
+@breev/local-api:test:integration:      ↓ refuses a replayed invitation once a terminal has bound its key
+@breev/local-api:test:integration:      ↓ denies a session the server clock has already expired
+@breev/local-api:test:integration:      ↓ refuses a join whose proof of possession does not match its request
+@breev/local-api:test:integration:      ↓ keeps concurrent joins of one session to a single bound key
+@breev/local-api:test:integration:      ↓ keeps concurrent confirmations of one session to a single device
+@breev/local-api:test:integration:      ↓ refuses a terminal beyond the licence's permitted device count
+@breev/local-api:test:integration:      ↓ keeps paired terminals working during grace but refuses to pair a new one
+@breev/local-api:test:integration:      ↓ refuses confirmation when the licence enters grace after the terminal joins
+@breev/local-api:test:integration:      ↓ serves one Main and three terminals at the same time over the LAN
+@breev/local-api:test:integration:      ↓ records an attendance event against the terminal that took it
+@breev/local-api:test:integration:      ↓ commits a role-authorized mutation started from a terminal
+@breev/local-api:test:integration:      ↓ stops a terminal the moment the licence stops permitting one
+@breev/local-api:test:integration:      ↓ refuses every protected route to a terminal with nobody signed in
+@breev/local-api:test:integration:      ↓ ends a revoked terminal's sessions and open connections at once
+@breev/local-api:test:integration:      ↓ refuses an in-flight terminal transaction once revocation has committed
+@breev/local-api:test:integration:      ↓ refuses a terminal login that raced its own revocation
+@breev/local-api:test:integration:      ↓ releases a seat only when a different authorized user approves
+@breev/local-api:test:integration:      ↓ refuses a seat release for a terminal that is still live
+@breev/local-api:test:integration:      ↓ never writes a secret, a key, or a reusable invitation anywhere
+@breev/local-api:test:integration:  ❯ src/catalog/catalog-packaging-migration.integration.test.ts (1 test | 1 skipped) 21ms
+@breev/local-api:test:integration:      ↓ backfills terminal Products and immutable snapshots, then restores their guards
+@breev/local-api:test:integration:  ❯ src/durable-jobs/durable-jobs.integration.test.ts (21 tests | 21 skipped) 20ms
+@breev/local-api:test:integration:        ↓ proves the pgboss schema is installed and managed under breev_schema_owner
+@breev/local-api:test:integration:        ↓ proves the breev_app role has no DDL/create schema privileges
+@breev/local-api:test:integration:        ↓ proves the breev_app role has full DML access to pgboss tables and 0 DDL access
+@breev/local-api:test:integration:        ↓ proves migratePgBoss runs idempotently on subsequent migration runs
+@breev/local-api:test:integration:        ↓ registers a timezone-aware schedule through the application role
+@breev/local-api:test:integration:        ↓ commits a durable job atomically with a Drizzle business transaction
+@breev/local-api:test:integration:        ↓ rolls back a durable job when a Drizzle business transaction aborts
+@breev/local-api:test:integration:        ↓ supports atomic transactional enqueue using a raw PoolClient transaction
+@breev/local-api:test:integration:        ↓ Crash Point 1 (Before Claim): recovers and completes jobs enqueued while worker process was down
+@breev/local-api:test:integration:        ↓ Crash Point 2 (After Claim / Mid-Flight): recovers abandoned job via lease expiry after hard process SIGKILL
+@breev/local-api:test:integration:        ↓ Crash Point 3 (After External Success): recovers after hard process SIGKILL without duplicating external effect
+@breev/local-api:test:integration:        ↓ Crash Point 4 (Before Outcome Recording): recovers after hard SIGKILL before outcome transaction commits
+@breev/local-api:test:integration:        ↓ ensures two concurrent worker instances across 50 jobs process disjoint sets with zero double claims
+@breev/local-api:test:integration:        ↓ verifies safe duplicate completion handling on completed jobs
+@breev/local-api:test:integration:        ↓ retries failed jobs with backoff and moves exhausted jobs to dead-letter state
+@breev/local-api:test:integration:        ↓ surfaces forwarded DLQ jobs when queue is configured with deadLetter destination and supports pagination
+@breev/local-api:test:integration:        ↓ resolves concurrent onModuleInit execution between LocalDatabaseService and DurableJobsService
+@breev/local-api:test:integration:        ↓ boots full NestJS application context (AppModule) deterministically
+@breev/local-api:test:integration:        ↓ degrades instead of aborting startup when the database is unreachable
+@breev/local-api:test:integration:        ↓ does not cache queue name in knownQueues when creation fails
+@breev/local-api:test:integration:        ↓ drains active work cleanly when service shuts down via onApplicationShutdown
+@breev/local-api:test:integration:  ❯ test/recovery.integration.test.ts (13 tests | 13 skipped) 23ms
+@breev/local-api:test:integration:      ↓ registers the recovery queue on startup even though init hooks run concurrently
+@breev/local-api:test:integration:      ↓ observes a missed backup run and enqueues exactly one catch-up
+@breev/local-api:test:integration:      ↓ records a verified recovery point only after the stored file verifies
+@breev/local-api:test:integration:      ↓ captures every application table and no partial backup reaches verified
+@breev/local-api:test:integration:      ↓ excludes the pharmacy CA private key and refuses a recovery point that would carry one
+@breev/local-api:test:integration:      ↓ keeps terminal recovery point outcomes immutable
+@breev/local-api:test:integration:      ↓ refuses to restore a recovery point that is not recorded as verified
+@breev/local-api:test:integration:      ↓ restores a verified recovery point into an isolated directory under quarantine
+@breev/local-api:test:integration:      ↓ persists the quarantine state of a dataset across a service restart
+@breev/local-api:test:integration:      ↓ refuses a restore that targets the live pharmacy cluster
+@breev/local-api:test:integration:      ↓ clears the quarantine only after the verification hooks pass
+@breev/local-api:test:integration:      ↓ records a run interrupted by a killed process as failed, never verified
+@breev/local-api:test:integration:      ↓ returns the existing recovery point when a duplicate job run repeats an identity
+@breev/local-api:test:integration:  ❯ src/identity-access/settings-posting.integration.test.ts (8 tests | 8 skipped) 18ms
+@breev/local-api:test:integration:      ↓ posts the settings change, its audit, its event, and one durable outcome
+@breev/local-api:test:integration:      ↓ replays the committed result for the same key and body
+@breev/local-api:test:integration:      ↓ refuses a reused key that carries a different request
+@breev/local-api:test:integration:      ↓ records a stale expected revision and replays it without re-executing
+@breev/local-api:test:integration:      ↓ commits once when two identical requests arrive together
+@breev/local-api:test:integration:      ↓ rolls every written record back together when any write is refused
+@breev/local-api:test:integration:      ↓ runs the whole path with no route to the internet
+@breev/local-api:test:integration:      ↓ returns the one committed outcome after a killed service restarts
+@breev/local-api:test:integration:  ❯ src/main-device/main-device-security.integration.test.ts (31 tests | 31 skipped) 25ms
+@breev/local-api:test:integration:      ↓ commits the protected mutation through a verified Main device session
+@breev/local-api:test:integration:      ↓ commits concurrent proof mutations atomically in PostgreSQL
+@breev/local-api:test:integration:      ↓ runs journaled Drizzle migrations outside the least-privilege application role
+@breev/local-api:test:integration:      ↓ serves health from the protected runtime connection file without the schema-owner credential
+@breev/local-api:test:integration:      ↓ rejects and audits a mutation without an Origin
+@breev/local-api:test:integration:      ↓ rejects and audits the non-exact Origin null
+@breev/local-api:test:integration:      ↓ rejects and audits the non-exact Origin https://attacker.example
+@breev/local-api:test:integration:      ↓ rejects and audits the non-exact Origin breev://app.attacker
+@breev/local-api:test:integration:      ↓ does not mistake a forged allowed Origin for Main device authority
+@breev/local-api:test:integration:      ↓ guards an otherwise unknown state-changing route before routing
+@breev/local-api:test:integration:      ↓ rejects a session token presented without its bound device credential
+@breev/local-api:test:integration:      ↓ rejects a caller-selected unregistered device context
+@breev/local-api:test:integration:      ↓ rejects a stolen session replayed with another verified device
+@breev/local-api:test:integration:      ↓ rejects a session token that is not bound to the verified device
+@breev/local-api:test:integration:      ↓ rejects the state-changing content type application/x-www-form-urlencoded
+@breev/local-api:test:integration:      ↓ rejects the state-changing content type multipart/form-data; boundary=attack
+@breev/local-api:test:integration:      ↓ rejects the state-changing content type text/plain
+@breev/local-api:test:integration:      ↓ rejects the state-changing content type application/json; charset=utf-8
+@breev/local-api:test:integration:      ↓ rejects the state-changing content type Application/JSON
+@breev/local-api:test:integration:      ↓ rejects a state-changing request without a content type
+@breev/local-api:test:integration:      ↓ rejects a mutation without the custom CSRF header
+@breev/local-api:test:integration:      ↓ rejects and audits invalid or oversized mutation bodies
+@breev/local-api:test:integration:      ↓ does not accept an ambient cookie as device or session authority
+@breev/local-api:test:integration:      ↓ allows only the exact mutation preflight
+@breev/local-api:test:integration:      ↓ answers the preflight for every renderer mutation in the contract registry
+@breev/local-api:test:integration:      ↓ refuses every preflight the renderer registry does not authorise
+@breev/local-api:test:integration:      ↓ keeps the catalog preflight narrow
+@breev/local-api:test:integration:      ↓ rejects a rebound Host before the mutation handler
+@breev/local-api:test:integration:      ↓ keeps the binding, audit, mutation, and rate window across restart
+@breev/local-api:test:integration:      ↓ bounds recent denial rows while retaining every denial in totals
+@breev/local-api:test:integration:      ↓ refuses normal use while the dataset is in Restore Quarantine
+@breev/local-api:test:integration:  ❯ src/posting/posting-infrastructure.integration.test.ts (18 tests | 18 skipped) 30ms
+@breev/local-api:test:integration:        ↓ lets exactly one of two identical concurrent commands execute
+@breev/local-api:test:integration:        ↓ refuses a reused key that carries a different request
+@breev/local-api:test:integration:        ↓ replays a stored terminal rejection with its own status
+@breev/local-api:test:integration:        ↓ replays for a second actor because the scope is the pharmacy and command
+@breev/local-api:test:integration:        ↓ keeps one key independent across command kinds
+@breev/local-api:test:integration:        ↓ never hands the same number to two concurrent allocations
+@breev/local-api:test:integration:        ↓ returns the same number to a retry that carries the same correlation
+@breev/local-api:test:integration:        ↓ converges when two attempts of one command race for its number
+@breev/local-api:test:integration:        ↓ leaves a rolled-back command an audited gap that is never reused
+@breev/local-api:test:integration:        ↓ issues a number only to the correlation that allocated it
+@breev/local-api:test:integration:        ↓ refuses to delete an allocation or rewind an issued one
+@breev/local-api:test:integration:        ↓ records an envelope only when the posting transaction commits
+@breev/local-api:test:integration:        ↓ refuses to rewrite or erase 'posting_command_results'
+@breev/local-api:test:integration:        ↓ refuses to rewrite or erase 'posting_audit_records'
+@breev/local-api:test:integration:        ↓ refuses to rewrite or erase 'posting_outbox_entries'
+@breev/local-api:test:integration:        ↓ refuses to rewrite or erase 'posting_post_commit_outcomes'
+@breev/local-api:test:integration:        ↓ refuses to rewind, retarget, or erase a number sequence
+@breev/local-api:test:integration:        ↓ reruns the deadlocked command and reuses the number it allocated
+@breev/local-api:test:integration:  ❯ src/identity-access/settings-crash.integration.test.ts (6 tests | 6 skipped) 20ms
+@breev/local-api:test:integration:      ↓ survives a crash before claim with one settings change, one audit fact, one outbox row, and one outcome
+@breev/local-api:test:integration:      ↓ survives a crash after claim with one settings change, one audit fact, one outbox row, and one outcome
+@breev/local-api:test:integration:      ↓ survives a crash after external success with one settings change, one audit fact, one outbox row, and one outcome
+@breev/local-api:test:integration:      ↓ survives a crash before Breev records the outcome with one settings change, one audit fact, one outbox row, and one outcome
+@breev/local-api:test:integration:      ↓ records nothing new when the same job is delivered a second time
+@breev/local-api:test:integration:      ↓ gives the settings command no business document number, through every crash and recovery above
+@breev/local-api:test:integration:  ❯ test/health.integration.test.ts (3 tests | 3 skipped) 25ms
+@breev/local-api:test:integration:      ↓ reports healthy only after a real PostgreSQL query succeeds
+@breev/local-api:test:integration:      ↓ reports the defined repair requirement from the real API
+@breev/local-api:test:integration:      ↓ keeps the API reachable and reports PostgreSQL failure
+@breev/local-api:test:integration:  ❯ src/devices/devices-ca.integration.test.ts (4 tests | 4 skipped) 19ms
+@breev/local-api:test:integration:      ↓ never creates a pharmacy CA from repeated pairing-session status polls
+@breev/local-api:test:integration:      ↓ never creates a pharmacy CA from the device inventory read
+@breev/local-api:test:integration:      ↓ denies every CA-presupposing command as ca-not-found, honestly, and creates no CA
+@breev/local-api:test:integration:      ↓ keeps a concurrent GET /health well under the pre-fix stall while polling status
+@breev/local-api:test:integration:  ❯ src/licensing/licensing.integration.test.ts (8 tests | 8 skipped) 17ms
+@breev/local-api:test:integration:      ↓ keeps Free Core usable with no licence, invalid paid state, and rollback
+@breev/local-api:test:integration:      ↓ persists exact signed documents and immutable monotonic time facts
+@breev/local-api:test:integration:      ↓ replays one persisted command result and rejects key reuse
+@breev/local-api:test:integration:      ↓ allows only signed capabilities and audits both outcomes
+@breev/local-api:test:integration:      ↓ serializes concurrent high-water advances across service instances
+@breev/local-api:test:integration:      ↓ leaves a caller transaction usable when a concurrent advance wins
+@breev/local-api:test:integration:      ↓ installs and round-trips a licence permitting far more than 10,000 devices
+@breev/local-api:test:integration:      ↓ honours the signed grace end: paid work continues after expiry and stops at graceEndsAt
+@breev/local-api:test:integration:  ❯ test/windows-service-boot.integration.test.ts (2 tests | 2 skipped) 18ms
+@breev/local-api:test:integration:      ↓ binds the LAN mutual-TLS listener when the endpoint is configured
+@breev/local-api:test:integration:      ↓ binds no LAN listener when the endpoint is absent
+@breev/local-api:test:integration:  ❯ test/migrate.integration.test.ts (4 tests | 4 skipped) 20ms
+@breev/local-api:test:integration:      ↓ migrates the database through connection files and preserves application least privilege
+@breev/local-api:test:integration:      ↓ runs idempotently against an already migrated database
+@breev/local-api:test:integration:      ↓ rejects an application role used as the schema owner without exposing its password
+@breev/local-api:test:integration:      ↓ reports missing migration credentials without exposing connection details
+@breev/local-api:test:integration:  ✓ windows/api-runtime.integration.test.mjs (7 tests) 39939ms
+@breev/local-api:test:integration:      ✓ ships exact SQL bytes, metadata, legal notices and the native addon without node_modules  1096ms
+@breev/local-api:test:integration:      ✓ executes the standalone migration runner and denies forced pg-native  337ms
+@breev/local-api:test:integration:      ✓ resolves the full Nest dependency graph and reports degraded without a database  730ms
+@breev/local-api:test:integration:      ✓ runs concurrent and repeated shipped migrations with least-privilege roles  2710ms
+@breev/local-api:test:integration:      ✓ serves healthy through the bundled Nest API without migration credentials  2915ms
+@breev/local-api:test:integration:      ✓ dumps/restores and verifies physical backup using only the pruned binaries  17537ms
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-safety-no-override.integration.test.ts (3 tests | 3 skipped) 20ms
+@breev/local-api:test:integration:      ↓ refuses every hard-blocked batch for every role and Step-Up state
+@breev/local-api:test:integration:      ↓ lists every expired and unresolved recalled or quarantined batch in the monthly review
+@breev/local-api:test:integration:      ↓ keeps safety source identifiers free of bypass-shaped escape hatches
+@breev/local-api:test:integration:  ❯ src/identity-access/identity-access.integration.test.ts (21 tests | 21 skipped) 22ms
+@breev/local-api:test:integration:      ↓ commits exactly one pharmacy and owner under a concurrent bootstrap race
+@breev/local-api:test:integration:      ↓ denies unlicensed API use and makes licence administration recoverable
+@breev/local-api:test:integration:      ↓ requires individual credentials and denies unauthenticated state changes
+@breev/local-api:test:integration:      ↓ rate-limits password guessing per verified device
+@breev/local-api:test:integration:      ↓ binds Step-Up to permission, password, lifetime, subject, and one use
+@breev/local-api:test:integration:      ↓ scopes Step-Up approval idempotency to the addressed challenge
+@breev/local-api:test:integration:      ↓ replays committed commands and rejects stale versions or changed reuse
+@breev/local-api:test:integration:      ↓ keeps the owner administration floor while non-owner grants remain configurable
+@breev/local-api:test:integration:      ↓ changes a user's own password, replaces the acting session, and replays safely
+@breev/local-api:test:integration:      ↓ counts wrong current passwords and keeps the shared device budget after a success
+@breev/local-api:test:integration:      ↓ requires one-use Step-Up for an administrator reset and revokes every subject session
+@breev/local-api:test:integration:      ↓ edits display names, rejects empty updates, and exercises role reassignment
+@breev/local-api:test:integration:      ↓ enforces user, role, and permission constraints in PostgreSQL
+@breev/local-api:test:integration:      ↓ denies every protected API operation for a role without explicit grants
+@breev/local-api:test:integration:      ↓ derives every named permission from explicit PostgreSQL grants
+@breev/local-api:test:integration:      ↓ lists only implemented permissions, refuses granting a future name, and filters a future grant seeded directly in PostgreSQL
+@breev/local-api:test:integration:      ↓ creates, renames, grants, and assigns a custom role under Step-Up, audit, and idempotency
+@breev/local-api:test:integration:      ↓ keeps roles the only source of authority: shared grants, strict bodies, denied creation, manager administration, and rollback
+@breev/local-api:test:integration:      ↓ applies explicit role grants and typed attendance settings end to end
+@breev/local-api:test:integration:      ↓ survives restart and rejects expired, revoked, and wrong-device sessions
+@breev/local-api:test:integration:      ↓ keeps password material out of responses, logs, and immutable audits
+@breev/local-api:test:integration:  ❯ src/identity-access/inventory-reorder-migration.integration.test.ts (1 test | 1 skipped) 16ms
+@breev/local-api:test:integration:      ↓ grants the reorder permissions once and preserves customized roles
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-count.integration.test.ts (9 tests | 9 skipped) 22ms
+@breev/local-api:test:integration:      ↓ 1. runs the lifecycle, converts mixed units, allocates FEFO, and conserves valuation
+@breev/local-api:test:integration:      ↓ 2. rolls back every posting fault together and reuses the committed number gap
+@breev/local-api:test:integration:      ↓ 3. replays idempotent success and rejection while conflicting bodies are refused
+@breev/local-api:test:integration:      ↓ 4. revalidates balances after concurrent purchases and rejects stale versions
+@breev/local-api:test:integration:      ↓ refuses completion while a non-zero variance is unapplied
+@breev/local-api:test:integration:      ↓ 5. protects completed sessions, lines, applications, movements, and journals from mutation
+@breev/local-api:test:integration:      ↓ 6. survives an API restart with the same durable lines and version
+@breev/local-api:test:integration:      ↓ 7. rejects direct quantity edits and leaves raw inventory facts unchanged across reads
+@breev/local-api:test:integration:      ↓ 8. reconciles raw movements, exposes the count reference, and excludes shortage from consumption
+@breev/local-api:test:integration:  ❯ src/purchasing/purchase-posting.integration.test.ts (22 tests | 22 skipped) 21ms
+@breev/local-api:test:integration:      ↓ posts a debt purchase atomically with document, snapshots, batch, movement, gross WAC, gross AP, and a balanced journal
+@breev/local-api:test:integration:      ↓ T05 searches stable posted numbers and keeps complete row snapshots unchanged after master edits
+@breev/local-api:test:integration:      ↓ posts a cash purchase that changes only the Cash Box balance, never a supplier payable
+@breev/local-api:test:integration:      ↓ replays an idempotent retry, rejects a conflicting payload, and lets exactly one of two concurrent keys post
+@breev/local-api:test:integration:      ↓ posts two different drafts concurrently with distinct numbers and conserved WAC
+@breev/local-api:test:integration:      ↓ warns but still posts a duplicate supplier invoice number
+@breev/local-api:test:integration:      ↓ keeps the draft and names the row rule when receipt evidence is missing
+@breev/local-api:test:integration:      ↓ changes Cost After Discount but never gross WAC or AP when only the allowance percentage differs
+@breev/local-api:test:integration:      ↓ enforces a balanced journal at commit even bypassing the application
+@breev/local-api:test:integration:      ↓ rolls back a forced database failure after number allocation, leaving an audited unissued gap a retry reuses and issues
+@breev/local-api:test:integration:      ↓ rolls back every earlier write when the final idempotency result cannot be recorded
+@breev/local-api:test:integration:      ↓ posts only Purchase Adjustment Deltas, preserves the original, numbers A01/A02, replays once, serializes, and blocks consumed stock
+@breev/local-api:test:integration:      ↓ binds Adjustment evidence/version/hash across concurrent edits, API restart, lost-response retries, and immutable audit
+@breev/local-api:test:integration:      ↓ requires a new Adjustment confirmation when authoritative batch stock changes after preview
+@breev/local-api:test:integration:      ↓ rolls back Adjustment confirmation posting at every write stage and recovers the same attempt
+@breev/local-api:test:integration:      ↓ posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links
+@breev/local-api:test:integration:      ↓ corrects supplier identities and invoice numbers with immutable before/after headers, balanced transfers and current duplicate warnings
+@breev/local-api:test:integration:      ↓ rejects protected row/header changes and unavailable suppliers without changing the saved copy, and revalidates a supplier at Post
+@breev/local-api:test:integration:      ↓ keeps percentage pricing and conversion protected while showing the exact cost-derived retail Delta
+@breev/local-api:test:integration:      ↓ transfers only the remaining Purchase payable after Returns and binds later Returns to the corrected Supplier
+@breev/local-api:test:integration:      ↓ T04 persists versioned offers across restart, binds correction review, and preserves gross accounting and immutable history
+@breev/local-api:test:integration:      ↓ T05 redacts saved row discounts and margin by setting and permission without losing non-cost facts
+@breev/local-api:test:integration:  ❯ src/sales/sale-draft.integration.test.ts (16 tests | 16 skipped) 21ms
+@breev/local-api:test:integration:      ↓ 1. creates, lists, and reads the minimal active draft
+@breev/local-api:test:integration:      ↓ 2. resumes at the expected version and preserves creation facts
+@breev/local-api:test:integration:      ↓ 3. survives a killed local API and resumes exactly
+@breev/local-api:test:integration:      ↓ 4. lets exactly one concurrent resume advance one version
+@breev/local-api:test:integration:      ↓ 5. replays an idempotent resume and rejects a changed request
+@breev/local-api:test:integration:      ↓ 6. rejects direct Sale Draft deletion and immutable-fact mutation
+@breev/local-api:test:integration:      ↓ 7. lets every basket outcome leave the Sale Draft byte-identical
+@breev/local-api:test:integration:      ↓ 8. saves sale lines and totals across API restart, with exact idempotent edits
+@breev/local-api:test:integration:      ↓ adds a miscellaneous line without a catalog or inventory link
+@breev/local-api:test:integration:      ↓ adds a configured package unit at its captured retail conversion in one revision
+@breev/local-api:test:integration:      ↓ records a reasoned manual price, replays it once, and restores retail pricing on unit change
+@breev/local-api:test:integration:      ↓ 9. rejects invalid edits without changing the draft and locks suspended or discarded drafts
+@breev/local-api:test:integration:      ↓ 10. limits Sale search to retail facts and excludes wholesale and cost
+@breev/local-api:test:integration:      ↓ returns positive batch positions, business-date expiry and estimated surplus
+@breev/local-api:test:integration:      ↓ requires Sale permission to read product context
+@breev/local-api:test:integration:      ↓ stores a versioned quick-access grid with current unit pricing and preserves archived tiles
+@breev/local-api:test:integration:  ❯ src/catalog/catalog.integration.test.ts (17 tests | 17 skipped) 19ms
+@breev/local-api:test:integration:      ↓ stores Product description without a stock balance, expiry, or unique display name
+@breev/local-api:test:integration:      ↓ round-trips integer stock levels and rejects an inverted range
+@breev/local-api:test:integration:      ↓ searches ordered subsequences and barcodes, suggests and prints an internal code, and keeps daily matching eligible across restart and day boundaries
+@breev/local-api:test:integration:      ↓ records search p95 below 200 ms on more than 10,000 real PostgreSQL Products
+@breev/local-api:test:integration:      ↓ calculates and stores exact percentage pricing for every rounding setting
+@breev/local-api:test:integration:      ↓ enforces default-unit, ratio, Third Unit, and pricing constraints in PostgreSQL
+@breev/local-api:test:integration:      ↓ rolls back every packaging replacement step with its audit and idempotency result
+@breev/local-api:test:integration:      ↓ rejects locked pricing fields at their exact API paths without editing the Product
+@breev/local-api:test:integration:      ↓ editing a field regenerates the current name while the posted snapshot name stays frozen
+@breev/local-api:test:integration:      ↓ rejects an update attempt on a posted Product snapshot
+@breev/local-api:test:integration:      ↓ rejects a delete attempt on a posted Product snapshot
+@breev/local-api:test:integration:      ↓ switches mode by clearing abandoned fields and surfaces that outcome
+@breev/local-api:test:integration:      ↓ archives a referenced Product and every existing reference still resolves
+@breev/local-api:test:integration:      ↓ merges a referenced Product, redirects future references, and keeps history readable
+@breev/local-api:test:integration:      ↓ has no hard-delete path in the schema, service, controller, repair, or cleanup surfaces
+@breev/local-api:test:integration:      ↓ denies and audits a direct Product balance write at the server boundary
+@breev/local-api:test:integration:      ↓ enforces tenant-safe Product references in PostgreSQL
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-reorder.integration.test.ts (7 tests | 7 skipped) 17ms
+@breev/local-api:test:integration:      ↓ 1. runs the lifecycle and leaves review and movement facts unchanged
+@breev/local-api:test:integration:      ↓ 2. serializes and replays idempotent adds with deterministic re-add behavior
+@breev/local-api:test:integration:      ↓ 3. replays every transition and every rejected command without a second write
+@breev/local-api:test:integration:      ↓ 4. enforces versions, transitions, inactive products, and merged-product reads
+@breev/local-api:test:integration:      ↓ 5. preserves append-only reorder rows and rejects invalid direct mutations
+@breev/local-api:test:integration:      ↓ 6. survives an API restart with durable basket and Ordered Items state
+@breev/local-api:test:integration:      ↓ 7. rolls back the row, audit, and result together when recording fails
+@breev/local-api:test:integration:  ❯ src/sales/sale-draft-authorization.integration.test.ts (6 tests | 6 skipped) 16ms
+@breev/local-api:test:integration:      ↓ allows the built-in sales employee and a custom role with the exact grant
+@breev/local-api:test:integration:      ↓ lets cashiers read quick access while only managers may replace settings
+@breev/local-api:test:integration:      ↓ denies a Sales cashier a manual price override before touching the draft
+@breev/local-api:test:integration:      ↓ denies a custom role with no sales grant and leaves the draft byte-identical
+@breev/local-api:test:integration:      ↓ keeps tenant, revoked-session, wrong-device, and absent-device denials outside the draft
+@breev/local-api:test:integration:      ↓ keeps the implemented permission vocabulary grantable for custom roles
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-count-authorization.integration.test.ts (4 tests | 4 skipped) 17ms
+@breev/local-api:test:integration:      ↓ allows and denies each count command by record and approve permission
+@breev/local-api:test:integration:      ↓ lets approve-only users read and apply but not record, and audits required evidence
+@breev/local-api:test:integration:      ↓ hides sensitive valuation fields and keeps approved step-up unrelated to count authority
+@breev/local-api:test:integration:      ↓ audits tenant, locked-user, stale-version, and device-boundary denials
+@breev/local-api:test:integration:  ❯ src/reporting/inventory-authorization.integration.test.ts (3 tests | 3 skipped) 18ms
+@breev/local-api:test:integration:      ↓ filters valuation by permission while every review role can read the item
+@breev/local-api:test:integration:      ↓ gates the original posted purchase drill-down independently of movement access
+@breev/local-api:test:integration:      ↓ allows preferences for review roles and audits all protected export decisions
+@breev/local-api:test:integration:  ❯ src/purchasing/purchasing.integration.test.ts (10 tests | 10 skipped) 16ms
+@breev/local-api:test:integration:      ↓ creates an audited supplier with append-only effective-dated allowance
+@breev/local-api:test:integration:      ↓ copies the invoice-date allowance and never changes the draft snapshot later
+@breev/local-api:test:integration:      ↓ warns for the same supplier number, allows saving, and ignores another supplier
+@breev/local-api:test:integration:      ↓ rejects a stale version and keeps the committed header
+@breev/local-api:test:integration:      ↓ survives an API restart with its version and header intact
+@breev/local-api:test:integration:      ↓ commits exact rows once, resolves concurrent versions, resumes after restart, and keeps active rows editable
+@breev/local-api:test:integration:      ↓ T05 corrects a draft Product and unit atomically with exact conversion, versions, retries and restart
+@breev/local-api:test:integration:      ↓ archives or merges suppliers without rewriting existing draft references
+@breev/local-api:test:integration:      ↓ requires explicit discard confirmation and never exposes hard delete
+@breev/local-api:test:integration:      ↓ default-denies both supplier and draft commands and audits the denials
+@breev/local-api:test:integration:  ❯ src/reporting/inventory-review.integration.test.ts (5 tests | 5 skipped) 18ms
+@breev/local-api:test:integration:      ↓ reconciles the API projection independently against movements and valuation state
+@breev/local-api:test:integration:      ↓ reconciles adjustments and a purchase return exactly once
+@breev/local-api:test:integration:      ↓ keeps all stock and posted facts unchanged across every review route
+@breev/local-api:test:integration:      ↓ rejects direct and maintenance-adjacent stock writes as the application role
+@breev/local-api:test:integration:      ↓ returns one complete pre- or post-posting snapshot under concurrent posting
+@breev/local-api:test:integration:  ❯ src/identity-access/inventory-review-migration.integration.test.ts (1 test | 1 skipped) 16ms
+@breev/local-api:test:integration:      ↓ adds the inventory grants, advances each touched role once, and is idempotent
+@breev/local-api:test:integration:  ❯ src/purchasing/purchase-invoice-offer-migration.integration.test.ts (10 tests | 10 skipped) 20ms
+@breev/local-api:test:integration:      ↓ adds zero-offer facts without changing historical costs, receipts, hashes or role revisions
+@breev/local-api:test:integration:      ↓ rejects malformed persisted offer {"mode":"fixed","value":"-1"}
+@breev/local-api:test:integration:      ↓ rejects malformed persisted offer {"mode":"percentage","value":"100.000001"}
+@breev/local-api:test:integration:      ↓ rejects malformed persisted offer {"mode":"percentage","value":"5.0000001"}
+@breev/local-api:test:integration:      ↓ rejects malformed persisted offer {"mode":"none","value":"1"}
+@breev/local-api:test:integration:      ↓ rejects malformed persisted offer {"mode":"fixed","value":"1","other":true}
+@breev/local-api:test:integration:      ↓ rejects missing, unsupported or inconsistent snapshot {"input":{"mode":"fixed","value":"1"},"basisFils":"100","offerFils":"1"}
+@breev/local-api:test:integration:      ↓ rejects missing, unsupported or inconsistent snapshot {"input":{"mode":"percentage","value":"5"},"ruleVersion":1,"basisFils":"100","offerFils":"6"}
+@breev/local-api:test:integration:      ↓ rejects missing, unsupported or inconsistent snapshot {"input":{"mode":"fixed","value":"1"},"ruleVersion":2,"basisFils":"100","offerFils":"1"}
+@breev/local-api:test:integration:      ↓ stores one current receipt projection while retaining every original payload
+@breev/local-api:test:integration:  ❯ src/identity-access/sale-draft-migration.integration.test.ts (2 tests | 2 skipped) 20ms
+@breev/local-api:test:integration:      ↓ upgrades the minimal draft with lines, lifecycle states, permission, and default grants
+@breev/local-api:test:integration:      ↓ guards Sale Drafts against direct deletion and immutable-fact mutation
+@breev/local-api:test:integration:  ❯ src/identity-access/batch-safety-migration.integration.test.ts (2 tests | 2 skipped) 17ms
+@breev/local-api:test:integration:      ↓ adds grants and revisions once, then remains idempotent
+@breev/local-api:test:integration:      ↓ keeps the three safety facts append-only and privilege-separated
+@breev/local-api:test:integration:  ❯ src/identity-access/inventory-count-migration.integration.test.ts (1 test | 1 skipped) 17ms
+@breev/local-api:test:integration:      ↓ grants count permissions once and remains idempotent
+@breev/local-api:test:integration:  ❯ src/identity-access/custom-roles-migration.integration.test.ts (2 tests | 2 skipped) 16ms
+@breev/local-api:test:integration:      ↓ preserves identities while granting manager and owner permissions once
+@breev/local-api:test:integration:      ↓ enforces one identity per role, unique custom names, and the owner floor in PostgreSQL
+@breev/local-api:test:integration:  ❯ src/identity-access/purchasing-role-default-migration.integration.test.ts (1 test | 1 skipped) 15ms
+@breev/local-api:test:integration:      ↓ preserves a customized role and advances an untouched old default once
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯ Failed Suites 39 ⎯⎯⎯⎯⎯⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  test/health.integration.test.ts > local API health persistence seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ test/health.integration.test.ts:31:16
+@breev/local-api:test:integration:      29|
+@breev/local-api:test:integration:      30|   beforeAll(async () => {
+@breev/local-api:test:integration:      31|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      32|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      33|     const port = await reservePort();
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  test/migrate.integration.test.ts > standalone privileged database migrations
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ test/migrate.integration.test.ts:37:16
+@breev/local-api:test:integration:      35|
+@breev/local-api:test:integration:      36|   beforeAll(async () => {
+@breev/local-api:test:integration:      37|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      38|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      39|     temporaryRoot = await mkdtemp(
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  test/recovery.integration.test.ts > Local recovery persistence seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ test/recovery.integration.test.ts:70:16
+@breev/local-api:test:integration:      68|     mkdirSync(backupOutputDir, { recursive: true });
+@breev/local-api:test:integration:      69|
+@breev/local-api:test:integration:      70|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      71|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      72|
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  test/windows-service-boot.integration.test.ts > Windows service LAN listener seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ test/windows-service-boot.integration.test.ts:33:16
+@breev/local-api:test:integration:      31|
+@breev/local-api:test:integration:      32|   beforeAll(async () => {
+@breev/local-api:test:integration:      33|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      34|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      35|   }, 120_000);
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/catalog/catalog-authorization.integration.test.ts > Catalog server-boundary allow/deny matrix
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/catalog/catalog-authorization.integration.test.ts:119:18
+@breev/local-api:test:integration:     117|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:     118|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:     119|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:     120|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     121|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/catalog/catalog-authorization.integration.test.ts > Catalog Additional POS entitlement boundary
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/catalog/catalog-authorization.integration.test.ts:668:18
+@breev/local-api:test:integration:     666|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:     667|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:     668|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:     669|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     670|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/catalog/catalog-packaging-migration.integration.test.ts > Catalog packaging and pricing forward migration
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/catalog/catalog-packaging-migration.integration.test.ts:17:16
+@breev/local-api:test:integration:      15|
+@breev/local-api:test:integration:      16|   beforeAll(async () => {
+@breev/local-api:test:integration:      17|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      18|     pool = new Pool({ connectionString: postgres.getConnectionUri() });
+@breev/local-api:test:integration:      19|   }, 120_000);
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/catalog/catalog.integration.test.ts > Catalog PostgreSQL and HTTP seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/catalog/catalog.integration.test.ts:83:18
+@breev/local-api:test:integration:      81|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      82|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      83|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      84|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      85|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/devices/devices-ca.integration.test.ts > devices CA read-path seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/devices/devices-ca.integration.test.ts:71:16
+@breev/local-api:test:integration:      69|
+@breev/local-api:test:integration:      70|   beforeAll(async () => {
+@breev/local-api:test:integration:      71|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      72|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      73|     credentials = createMainDeviceCredentials();
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/devices/devices.integration.test.ts > terminal pairing persistence seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/devices/devices.integration.test.ts:123:16
+@breev/local-api:test:integration:     121|
+@breev/local-api:test:integration:     122|   beforeAll(async () => {
+@breev/local-api:test:integration:     123|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:     124|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     125|     deviceSecret = randomBytes(32).toString("base64url");
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/durable-jobs/durable-jobs.integration.test.ts > DurableJobsService integration & resilience proof
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/durable-jobs/durable-jobs.integration.test.ts:39:16
+@breev/local-api:test:integration:      37|   beforeAll(async () => {
+@breev/local-api:test:integration:      38|     originalEnv = { ...process.env };
+@breev/local-api:test:integration:      39|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      40|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      41|
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/batch-safety-migration.integration.test.ts > migration 0022: batch safety
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/batch-safety-migration.integration.test.ts:60:18
+@breev/local-api:test:integration:      58|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      59|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      60|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      61|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      62|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/custom-roles-migration.integration.test.ts > migration 0011: custom roles upgrade
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/custom-roles-migration.integration.test.ts:70:18
+@breev/local-api:test:integration:      68|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      69|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      70|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      71|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      72|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/identity-access.integration.test.ts > identity/access PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/identity-access.integration.test.ts:69:18
+@breev/local-api:test:integration:      67|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      68|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      69|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      70|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      71|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/inventory-count-migration.integration.test.ts > migration 0023: inventory count sessions
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/inventory-count-migration.integration.test.ts:55:18
+@breev/local-api:test:integration:      53|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      54|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      55|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      56|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      57|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/inventory-reorder-migration.integration.test.ts > migration 0024: inventory reorder basket
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/inventory-reorder-migration.integration.test.ts:71:18
+@breev/local-api:test:integration:      69|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      70|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      71|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      72|       rootDatabaseUrl = postgres.getConnectionUri();
+@breev/local-api:test:integration:      73|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/inventory-review-migration.integration.test.ts > migration 0021: inventory review
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/inventory-review-migration.integration.test.ts:57:18
+@breev/local-api:test:integration:      55|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      56|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      57|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      58|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      59|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/purchasing-role-default-migration.integration.test.ts > purchasing role default migrations
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/purchasing-role-default-migration.integration.test.ts:53:18
+@breev/local-api:test:integration:      51|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      52|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      53|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      54|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      55|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/sale-draft-migration.integration.test.ts > migration 0025: Sale Drafts
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/sale-draft-migration.integration.test.ts:56:18
+@breev/local-api:test:integration:      54|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      55|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      56|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      57|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      58|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/settings-crash.integration.test.ts > pharmacy settings post-commit crash battery
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/settings-crash.integration.test.ts:149:16
+@breev/local-api:test:integration:     147|   beforeAll(async () => {
+@breev/local-api:test:integration:     148|     originalEnvironment = { ...process.env };
+@breev/local-api:test:integration:     149|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:     150|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     151|     credentials = createMainDeviceCredentials();
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/identity-access/settings-posting.integration.test.ts > pharmacy settings posting pipeline
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/identity-access/settings-posting.integration.test.ts:97:16
+@breev/local-api:test:integration:      95|
+@breev/local-api:test:integration:      96|   beforeAll(async () => {
+@breev/local-api:test:integration:      97|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      98|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      99|     credentials = createMainDeviceCredentials();
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/inventory/inventory-count-authorization.integration.test.ts > Inventory count server-boundary authorization matrix
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-count-authorization.integration.test.ts:122:20
+@breev/local-api:test:integration:     120|       const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_U…
+@breev/local-api:test:integration:     121|       if (administratorUrl === undefined) {
+@breev/local-api:test:integration:     122|         postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start…
+@breev/local-api:test:integration:        |                    ^
+@breev/local-api:test:integration:     123|         databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     124|       } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/inventory/inventory-count.integration.test.ts > Inventory count PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-count.integration.test.ts:80:18
+@breev/local-api:test:integration:      78|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      79|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      80|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      81|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      82|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/inventory/inventory-reorder-authorization.integration.test.ts > Inventory reorder server-boundary authorization matrix
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-reorder-authorization.integration.test.ts:161:20
+@breev/local-api:test:integration:     159|       const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_U…
+@breev/local-api:test:integration:     160|       if (administratorUrl === undefined) {
+@breev/local-api:test:integration:     161|         postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start…
+@breev/local-api:test:integration:        |                    ^
+@breev/local-api:test:integration:     162|         databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     163|       } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/inventory/inventory-reorder-authorization.integration.test.ts > Inventory reorder POS entitlement boundary
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-reorder-authorization.integration.test.ts:782:18
+@breev/local-api:test:integration:     780|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:     781|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:     782|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:     783|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     784|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/inventory/inventory-reorder.integration.test.ts > Inventory reorder PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-reorder.integration.test.ts:101:18
+@breev/local-api:test:integration:      99|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:     100|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:     101|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:     102|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     103|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/inventory/inventory-safety-no-override.integration.test.ts > inventory batch-safety refusal matrix
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-safety-no-override.integration.test.ts:119:18
+@breev/local-api:test:integration:     117|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:     118|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:     119|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:     120|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     121|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/inventory/inventory-safety.integration.test.ts > inventory batch safety PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/inventory/inventory-safety.integration.test.ts:67:18
+@breev/local-api:test:integration:      65|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      66|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      67|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      68|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      69|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/main-device/main-device-security.integration.test.ts > Main device security persistence seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/main-device/main-device-security.integration.test.ts:66:16
+@breev/local-api:test:integration:      64|
+@breev/local-api:test:integration:      65|   beforeAll(async () => {
+@breev/local-api:test:integration:      66|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      67|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      68|     credentials = createMainDeviceCredentials();
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/licensing/licensing.integration.test.ts > licensing PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/licensing/licensing.integration.test.ts:59:16
+@breev/local-api:test:integration:      57|
+@breev/local-api:test:integration:      58|   beforeAll(async () => {
+@breev/local-api:test:integration:      59|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      60|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      61|     process.env.DATABASE_URL = databaseRoles.applicationUrl;
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/pharmacy-ca/pharmacy-ca.integration.test.ts > Pharmacy CA and Terminal mTLS Integration Seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/pharmacy-ca/pharmacy-ca.integration.test.ts:74:16
+@breev/local-api:test:integration:      72|
+@breev/local-api:test:integration:      73|   beforeAll(async () => {
+@breev/local-api:test:integration:      74|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      75|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      76|
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/posting/posting-infrastructure.integration.test.ts > posting infrastructure PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/posting/posting-infrastructure.integration.test.ts:81:16
+@breev/local-api:test:integration:      79|
+@breev/local-api:test:integration:      80|   beforeAll(async () => {
+@breev/local-api:test:integration:      81|     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                ^
+@breev/local-api:test:integration:      82|     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      83|     process.env.DATABASE_URL = databaseRoles.applicationUrl;
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/purchasing/purchase-invoice-offer-migration.integration.test.ts > 0030 invoice offer forward migration
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/purchasing/purchase-invoice-offer-migration.integration.test.ts:49:18
+@breev/local-api:test:integration:      47|     const adminUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      48|     if (adminUrl === undefined) {
+@breev/local-api:test:integration:      49|       postgres = await new PostgreSqlContainer(
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      50|         "postgres:18.6-bookworm",
+@breev/local-api:test:integration:      51|       ).start();
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/purchasing/purchase-posting.integration.test.ts:88:18
+@breev/local-api:test:integration:      86|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      87|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      88|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      89|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      90|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/purchasing/purchasing.integration.test.ts:73:18
+@breev/local-api:test:integration:      71|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      72|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      73|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      74|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      75|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/reporting/inventory-authorization.integration.test.ts > Inventory review server-boundary authorization matrix
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/reporting/inventory-authorization.integration.test.ts:75:20
+@breev/local-api:test:integration:      73|       const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_U…
+@breev/local-api:test:integration:      74|       if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      75|         postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start…
+@breev/local-api:test:integration:        |                    ^
+@breev/local-api:test:integration:      76|         databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      77|       } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/reporting/inventory-review.integration.test.ts > Inventory review PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/reporting/inventory-review.integration.test.ts:96:18
+@breev/local-api:test:integration:      94|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      95|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      96|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      97|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      98|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/sales/sale-draft-authorization.integration.test.ts > Sale Draft server-boundary authorization matrix
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/sales/sale-draft-authorization.integration.test.ts:93:18
+@breev/local-api:test:integration:      91|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      92|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      93|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      94|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:      95|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  src/sales/sale-draft.integration.test.ts > Sale Draft PostgreSQL seam
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ src/sales/sale-draft.integration.test.ts:98:18
+@breev/local-api:test:integration:      96|     const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+@breev/local-api:test:integration:      97|     if (administratorUrl === undefined) {
+@breev/local-api:test:integration:      98|       postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+@breev/local-api:test:integration:        |                  ^
+@breev/local-api:test:integration:      99|       databaseRoles = await createSeparatedDatabaseRoles(postgres);
+@breev/local-api:test:integration:     100|     } else {
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  FAIL  test/windows-boot.integration.test.ts > local API boot under the Windows service configuration > stays up and reports degraded against an unmigrated database
+@breev/local-api:test:integration: Error: Could not find a working container runtime strategy
+@breev/local-api:test:integration:  ❯ getContainerRuntimeClient ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/container-runtime/clients/client.js:67:11
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/testcontainers@12.1.0_supports-color@7.2.0/node_modules/testcontainers/build/generic-container/generic-container.js:62:24
+@breev/local-api:test:integration:  ❯ PostgreSqlContainer.start ../../node_modules/.pnpm/@testcontainers+postgresql@12.1.0_supports-color@7.2.0/node_modules/@testcontainers/postgresql/build/postgresql-container.js:119:47
+@breev/local-api:test:integration:  ❯ test/windows-boot.integration.test.ts:63:20
+@breev/local-api:test:integration:      61|       { timeout: 120_000 },
+@breev/local-api:test:integration:      62|       async () => {
+@breev/local-api:test:integration:      63|         postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start…
+@breev/local-api:test:integration:        |                    ^
+@breev/local-api:test:integration:      64|         const databaseRoles = await createSeparatedDatabaseRoles(postg…
+@breev/local-api:test:integration:      65|         const { api, baseUrl, collectOutput } = await spawnWindowsStyl…
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/40]⎯
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration:  Test Files  38 failed | 1 passed (39)
+@breev/local-api:test:integration:       Tests  1 failed | 8 passed | 325 skipped (334)
+@breev/local-api:test:integration:    Start at  14:42:08
+@breev/local-api:test:integration:    Duration  148.42s (transform 2.85s, setup 0ms, import 78.77s, tests 58.07s, environment 5ms)
+@breev/local-api:test:integration: 
+@breev/local-api:test:integration: [ELIFECYCLE] Command failed with exit code 1.
+@breev/local-api#test:integration:  ERROR  command (P:\Projects\PharmaElectrons\apps\local-api) C:\Users\moata\AppData\Roaming\npm\pnpm.cmd run test:integration exited (1)
+
+ Tasks:    2 successful, 3 total
+Cached:    2 cached, 3 total
+  Time:    2m30.458s 
+Failed:    @breev/local-api#test:integration
+
+ ERROR  run failed: command  exited (1)
+[ELIFECYCLE] Command failed with exit code 1.

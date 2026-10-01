@@ -3815,7 +3815,9 @@ export const purchaseActiveReturnDraftSchema = z.strictObject({
 });
 
 export const purchasePostedDetailRowSchema = z.strictObject({
+  allowanceFils: nullableReviewCostSchema,
   baseUnitsPerEnteredUnit: packageUnitRatioSchema,
+  batchId: z.uuidv7(),
   costAfterDiscountFils: nullableReviewCostSchema,
   enteredQuantity: packageUnitRatioSchema,
   expiryDate: z.iso.date().nullable(),
@@ -3826,7 +3828,13 @@ export const purchasePostedDetailRowSchema = z.strictObject({
   itemId: z.uuidv7(),
   linePrimarySupplierCostFils: nullableReviewCostSchema,
   lotNumber: nullableTrimmedPurchaseText(120),
+  marginPercentage: marginPercentageSchema.nullable(),
+  movementId: z.uuidv7(),
+  notes: nullableTrimmedPurchaseText(1_000),
+  offerFils: nullableReviewCostSchema,
   ordinal: z.number().int().positive(),
+  priceCapture: purchasePriceCaptureSchema,
+  pricingMethod: productPricingMethodSchema,
   primarySupplierCostFils: nullableReviewCostSchema,
   retailPriceFils: priceFilsSchema,
   unit: inventoryCapableUnitSchema,
@@ -3883,8 +3891,10 @@ export const purchasePostedDetailSchema = z
     }
     purchase.rows.forEach((row, index) => {
       for (const field of [
+        "allowanceFils",
         "costAfterDiscountFils",
         "linePrimarySupplierCostFils",
+        "offerFils",
         "primarySupplierCostFils",
       ] as const) {
         if ((row[field] !== null) !== costsAreVisible) {
@@ -3894,6 +3904,13 @@ export const purchasePostedDetailSchema = z
             path: ["rows", index, field],
           });
         }
+      }
+      if (!costsAreVisible && row.marginPercentage !== null) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Margin can reveal cost and must follow cost visibility",
+          path: ["rows", index, "marginPercentage"],
+        });
       }
     });
   });

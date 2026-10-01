@@ -2,6 +2,26 @@ import type { PurchaseAdjustmentReason } from "@breev/contracts/local-rest";
 
 export const purchasingMessages = {
   en: {
+    priceOnSave: "Calculated on Save row",
+    conversionOnSave: "Validated on Save row",
+    correctRowProduct: "Correct saved row Product",
+    rowIdentityCorrectionHint:
+      "Changes apply only after Save row. Check quantity and cost per entered unit; the server validates the current Product and unit conversion. Cancel keeps the saved row.",
+    reviewFilters: "Filters and order",
+    savedRowFacts: "Saved row facts and references",
+    documentIdentity: "Document identity",
+    rowIdentity: "Row identity",
+    itemIdentity: "Product identity",
+    postedBy: "Posted by (saved user identity)",
+    enteredQuantity: "Entered quantity",
+    baseUnitsPerEnteredUnit: "Inventory units per entered unit",
+    enteredUnitCost: "Primary cost per entered unit",
+    pricingMethod: "Pricing mode",
+    byPrice: "By Price",
+    byPercentage: "By Percentage",
+    pricePropagated: "Approved invoice price became the current retail price",
+    priceCalculated: "Calculated from saved cost and margin",
+    notApplicable: "Not applicable",
     invoiceOffer: "Invoice offer",
     invoiceOfferPercentage: "Invoice offer %",
     invoiceOfferAmount: "Invoice offer (IQD)",
@@ -284,6 +304,7 @@ export const purchasingMessages = {
     postedReviewOnly:
       "Your role can review posted purchases. Purchase draft entry is hidden because this role does not have draft-management permission.",
     postedPurchaseRegister: "Posted purchase invoices",
+    postedPurchaseResults: "Filtered posted purchase results",
     historicalSnapshot: "Historical snapshot",
     snapshotBoundary:
       "Invoice values below are the facts stored at posting. Current item and supplier records open separately.",
@@ -415,6 +436,26 @@ export const purchasingMessages = {
     confirmAndPostAdjustment: "Confirm and post Delta",
   },
   ar: {
+    priceOnSave: "يحسب عند حفظ السطر",
+    conversionOnSave: "يتحقق عند حفظ السطر",
+    correctRowProduct: "تصحيح منتج السطر المحفوظ",
+    rowIdentityCorrectionHint:
+      "لا تطبّق التغييرات إلا بعد حفظ السطر. راجع الكمية والكلفة لكل وحدة مدخلة؛ يتحقق الخادم من المنتج الحالي وتحويل وحداته. الإلغاء يبقي السطر المحفوظ.",
+    reviewFilters: "التصفية والترتيب",
+    savedRowFacts: "حقائق السطور ومراجعها المحفوظة",
+    documentIdentity: "هوية المستند",
+    rowIdentity: "هوية السطر",
+    itemIdentity: "هوية المنتج",
+    postedBy: "رحّل بواسطة (هوية المستخدم المحفوظة)",
+    enteredQuantity: "الكمية المدخلة",
+    baseUnitsPerEnteredUnit: "وحدات المخزون لكل وحدة مدخلة",
+    enteredUnitCost: "الكلفة الأصلية لكل وحدة مدخلة",
+    pricingMethod: "طريقة التسعير",
+    byPrice: "بالسعر",
+    byPercentage: "بالنسبة",
+    pricePropagated: "أصبح سعر الفاتورة المعتمد سعر التجزئة الحالي",
+    priceCalculated: "محسوب من الكلفة والهامش المحفوظين",
+    notApplicable: "لا ينطبق",
     invoiceOffer: "عرض الفاتورة",
     invoiceOfferPercentage: "عرض الفاتورة %",
     invoiceOfferAmount: "عرض الفاتورة (د.ع)",
@@ -689,6 +730,7 @@ export const purchasingMessages = {
     postedReviewOnly:
       "يمكن لدورك مراجعة فواتير الشراء المُرحّلة. أُخفي إدخال مسودات الشراء لأن هذا الدور لا يملك صلاحية إدارتها.",
     postedPurchaseRegister: "سجل فواتير الشراء",
+    postedPurchaseResults: "نتائج فواتير الشراء المرحلة المصفاة",
     historicalSnapshot: "لقطة تاريخية",
     snapshotBoundary:
       "القيم أدناه هي الحقائق المحفوظة وقت الإدخال. تُفتح سجلات الأصناف والمورد الحالية بشكل منفصل.",

@@ -619,7 +619,9 @@ describe("supplier and purchase draft contracts", () => {
       primarySupplierCostFils: posted.primarySupplierCostFils,
       returns: [],
       rows: posted.rows.map((row) => ({
+        allowanceFils: "4000",
         baseUnitsPerEnteredUnit: row.baseUnitsPerEnteredUnit,
+        batchId: row.batchId,
         costAfterDiscountFils: row.costAfterDiscountFils,
         enteredQuantity: row.enteredQuantity,
         expiryDate: row.expiryDate,
@@ -630,7 +632,13 @@ describe("supplier and purchase draft contracts", () => {
         itemId: row.itemId,
         linePrimarySupplierCostFils: row.linePrimarySupplierCostFils,
         lotNumber: row.lotNumber,
+        marginPercentage: row.marginPercentage,
+        movementId: row.movementId,
+        notes: row.notes,
+        offerFils: "0",
         ordinal: row.ordinal,
+        priceCapture: row.priceCapture,
+        pricingMethod: row.pricingMethod,
         primarySupplierCostFils: row.primarySupplierCostFils,
         retailPriceFils: row.retailPriceFils,
         unit: row.unit,
@@ -645,6 +653,43 @@ describe("supplier and purchase draft contracts", () => {
       purchasePostedDetailSchema.safeParse({
         ...detail,
         costVisibility: "hidden-by-setting",
+      }).success,
+    ).toBe(false);
+    const hidden = {
+      ...detail,
+      costVisibility: "hidden-by-permission",
+      allowanceFils: null,
+      allowancePercentageSnapshot: null,
+      invoiceOffer: null,
+      costAfterDiscountFils: null,
+      primarySupplierCostFils: null,
+      rows: detail.rows.map((row) => ({
+        ...row,
+        allowanceFils: null,
+        offerFils: null,
+        marginPercentage: null,
+        costAfterDiscountFils: null,
+        linePrimarySupplierCostFils: null,
+        primarySupplierCostFils: null,
+      })),
+    };
+    expect(purchasePostedDetailSchema.parse(hidden)).toEqual(hidden);
+    for (const field of [
+      "allowanceFils",
+      "offerFils",
+      "marginPercentage",
+    ] as const) {
+      expect(
+        purchasePostedDetailSchema.safeParse({
+          ...hidden,
+          rows: hidden.rows.map((row) => ({ ...row, [field]: "20" })),
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      purchasePostedDetailSchema.safeParse({
+        ...detail,
+        rows: detail.rows.map((row) => ({ ...row, notes: undefined })),
       }).success,
     ).toBe(false);
   });

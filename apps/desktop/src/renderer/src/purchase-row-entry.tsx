@@ -19,6 +19,8 @@ import { requestProduct, searchProducts } from "./catalog-api";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import { formatFilsToIqd } from "./product-record";
 import { ProductForm } from "./product-form";
+import { useCommittedFocus } from "./committed-focus";
+import { PurchaseRowIdentityEditor } from "./purchase-row-identity-editor";
 import type { PurchaseItemSelection } from "./purchase-item-details";
 import {
   commitPurchaseDraftRow,
@@ -70,6 +72,7 @@ export function PurchaseRowEntry({
 }: PurchaseRowEntryProps): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = purchasingMessages[locale];
+  const requestEditFocus = useCommittedFocus();
   const [preferences, setPreferences] =
     useState<PurchaseEntryPreferences | null>(null);
   const [settingsDraft, setSettingsDraft] =
@@ -92,6 +95,11 @@ export function PurchaseRowEntry({
   const [editExpiryDate, setEditExpiryDate] = useState("");
   const [editLotNumber, setEditLotNumber] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [editUnit, setEditUnit] = useState<
+    PurchaseDraftDetail["rows"][number]["unit"]
+  >({ kind: "inventory-unit" });
+  const editAttempt = useRef<PurchasingCommandAttempt | null>(null);
   const [quickCreateValue, setQuickCreateValue] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -878,13 +886,22 @@ export function PurchaseRowEntry({
     setEditExpiryDate(row.expiryDate ?? "");
     setEditLotNumber(row.lotNumber ?? "");
     setEditNotes(row.notes ?? "");
+    setEditProduct(null);
+    setEditUnit(row.unit);
+    editAttempt.current = null;
     setError(null);
   }
 
   function cancelEditingRow(): void {
+    const rowId = editingRowId;
     setEditingRowId(null);
     if (editOptionalRef.current) editOptionalRef.current.open = false;
     setIsEditOptionalOpen(false);
+    requestEditFocus(() =>
+      document.querySelector<HTMLElement>(
+        `[data-row-id="${rowId}"] .purchase-action-icon-btn.edit`,
+      ),
+    );
   }
 
   async function saveEditedRow(
@@ -899,7 +916,7 @@ export function PurchaseRowEntry({
       return;
     }
     const pricing =
-      row.pricingMethod === "by-price"
+      (editProduct?.pricing.method ?? row.pricingMethod) === "by-price"
         ? ({
             method: "by-price",
             retailPriceFils: editRetailPriceFils,
@@ -913,22 +930,33 @@ export function PurchaseRowEntry({
       enteredQuantity: editQuantity,
       expectedVersion: draft.version,
       expiryDate: editExpiryDate === "" ? null : editExpiryDate,
-      itemId: row.itemId,
+      itemId: editProduct?.id ?? row.itemId,
       lotNumber: editLotNumber.trim() === "" ? null : editLotNumber.trim(),
       notes: editNotes.trim() === "" ? null : editNotes.trim(),
       pricing,
-      unit: row.unit,
+      unit: editUnit,
     };
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
+      const attempt = purchasingCommandAttempt(
+        editAttempt.current,
+        JSON.stringify({ draftId: draft.id, rowId: row.id, body }),
+      );
+      editAttempt.current = attempt;
       const result = await updatePurchaseDraftRow(baseUrl, draft.id, row.id, {
         ...body,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: attempt.idempotencyKey,
       });
       onDraftChanged(result.draft);
+      editAttempt.current = null;
       setEditingRowId(null);
+      requestEditFocus(() =>
+        document.querySelector<HTMLElement>(
+          `[data-row-id="${row.id}"] .purchase-action-icon-btn.edit`,
+        ),
+      );
       if (editOptionalRef.current) editOptionalRef.current.open = false;
       setIsEditOptionalOpen(false);
       setMessage(copy.rowUpdated);
@@ -1297,7 +1325,10 @@ export function PurchaseRowEntry({
                   })}
                   <td data-column-field="inventory-units">
                     {isEditing ? (
-                      isPositiveInteger(editQuantity) ? (
+                      editProduct !== null ||
+                      JSON.stringify(editUnit) !== JSON.stringify(row.unit) ? (
+                        <span>{copy.conversionOnSave}</span>
+                      ) : isPositiveInteger(editQuantity) ? (
                         <>
                           <bdi>
                             {(
@@ -1416,17 +1447,46 @@ export function PurchaseRowEntry({
                                 </button>
                               </div>
                               <div className="purchase-optional-fields">
-                                <label>
-                                  <span className="purchase-optional-label-text">
-                                    {copy.rowUnit}
-                                  </span>
-                                  <input
-                                    readOnly
-                                    disabled
-                                    value={row.inventoryUnitName}
-                                    className="is-disabled"
-                                  />
-                                </label>
+                                <PurchaseRowIdentityEditor
+                                  baseUrl={baseUrl}
+                                  row={row}
+                                  unit={editUnit}
+                                  onChange={(nextProduct, nextUnit) => {
+                                    if (
+                                      nextProduct.id !==
+                                      (editProduct?.id ?? row.itemId)
+                                    ) {
+                                      setEditRetailPriceFils(
+                                        nextProduct.pricing.retailPriceFils,
+                                      );
+                                      setEditMarginPercentage(
+                                        nextProduct.pricing.method ===
+                                          "by-percentage"
+                                          ? nextProduct.pricing.marginPercentage
+                                          : "0",
+                                      );
+                                    }
+                                    setEditProduct(nextProduct);
+                                    setEditUnit(nextUnit);
+                                  }}
+                                />
+                                {(editProduct?.pricing.method ??
+                                  row.pricingMethod) === "by-percentage" ? (
+                                  <label>
+                                    <span className="purchase-optional-label-text">
+                                      {copy.margin}
+                                    </span>
+                                    <input
+                                      value={editMarginPercentage}
+                                      inputMode="decimal"
+                                      onChange={(event) =>
+                                        setEditMarginPercentage(
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                ) : null}
                                 <label>
                                   <span className="purchase-optional-label-text">
                                     {copy.lot}
@@ -1991,8 +2051,11 @@ export function PurchaseRowEntry({
     switch (field) {
       case "item":
         return (
-          <span className="purchase-row-edit-item" title={row.itemDisplayName}>
-            {row.itemDisplayName}
+          <span
+            className="purchase-row-edit-item"
+            title={editProduct?.displayName ?? row.itemDisplayName}
+          >
+            {editProduct?.displayName ?? row.itemDisplayName}
           </span>
         );
       case "quantity":
@@ -2017,21 +2080,19 @@ export function PurchaseRowEntry({
             value={editCostFils}
             onChange={(e) => {
               setEditCostFils(e.target.value);
-              if (row.pricingMethod === "by-percentage") {
-                setEditRetailPriceFils(
-                  calculatePurchaseRetailPreview(
-                    e.target.value,
-                    editMarginPercentage,
-                    "nearest-250-iqd",
-                  ),
-                );
-              }
             }}
             onKeyDown={(e) => handleEditKeyDown(row, e)}
           />
         );
       case "selling-price": {
-        const locked = row.pricingMethod === "by-percentage";
+        const locked =
+          (editProduct?.pricing.method ?? row.pricingMethod) ===
+          "by-percentage";
+        const calculationPending =
+          locked &&
+          (editProduct !== null ||
+            editCostFils !== row.costFils ||
+            editMarginPercentage !== (row.marginPercentage ?? "0"));
         return (
           <input
             className="purchase-row-edit-input purchase-stepper-input w-full"
@@ -2041,7 +2102,8 @@ export function PurchaseRowEntry({
             readOnly={locked}
             tabIndex={locked ? -1 : 0}
             title={locked ? copy.lockedByPercentage : undefined}
-            value={editRetailPriceFils}
+            value={calculationPending ? "" : editRetailPriceFils}
+            placeholder={calculationPending ? copy.priceOnSave : undefined}
             onChange={(e) => setEditRetailPriceFils(e.target.value)}
             onKeyDown={(e) => handleEditKeyDown(row, e)}
           />

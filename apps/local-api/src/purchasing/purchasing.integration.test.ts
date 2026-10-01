@@ -11,6 +11,7 @@ import {
   purchaseDraftHeaderPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
+  purchaseDraftRowPath,
   type Product,
   type ProductCreateRequest,
   type PurchaseDraft,
@@ -378,6 +379,132 @@ describe.sequential("Supplier and Purchase Draft PostgreSQL seam", () => {
     );
     expect(rewritten.rows).toEqual([{ notes: "rewritten" }]);
   });
+
+  it("T05 corrects a draft Product and unit atomically with exact conversion, versions, retries and restart", async () => {
+    const supplierResponse = await request(
+      "POST",
+      "/suppliers",
+      supplierBody("T05 Draft Supplier", "10", "2026-01-01"),
+    );
+    const t05Supplier = supplierResponse.body as unknown as Supplier;
+    const originalResponse = await request("POST", "/catalog/products", {
+      ...medicationRequest("T05 Original"),
+      barcodes: [],
+    });
+    const replacementResponse = await request("POST", "/catalog/products", {
+      ...medicationRequest("T05 Replacement"),
+      barcodes: [],
+      packaging: {
+        ...medicationRequest("T05 Replacement").packaging,
+        packageUnits: [{ name: "Pack", baseUnitsPerPackage: "6" }],
+      },
+    });
+    expect(originalResponse.status, diagnostics(originalResponse)).toBe(201);
+    expect(replacementResponse.status, diagnostics(replacementResponse)).toBe(
+      201,
+    );
+    const original = originalResponse.body as unknown as Product;
+    const replacement = replacementResponse.body as unknown as Product;
+    const created = await request(
+      "POST",
+      "/purchases/drafts",
+      draftBody(t05Supplier.id, "T05-DRAFT-CORRECTION", "2026-06-15"),
+    );
+    const t05Draft = created.body?.draft as unknown as PurchaseDraft;
+    const input = {
+      costFils: "1000",
+      enteredQuantity: "2",
+      expectedVersion: t05Draft.version,
+      expiryDate: "2029-06-30",
+      idempotencyKey: uuidV7(),
+      itemId: original.id,
+      lotNumber: "T05-LOT",
+      notes: "Keep this note",
+      pricing: { method: "by-price", retailPriceFils: "120000" },
+      unit: { kind: "package-unit", packageUnitName: "Pack" },
+    };
+    const committed = await request(
+      "POST",
+      purchaseDraftRowsPath(t05Draft.id),
+      input,
+    );
+    expect(committed.status, diagnostics(committed)).toBe(201);
+    const before = committed.body?.draft as unknown as PurchaseDraftDetail;
+    const rowId = before.rows[0]!.id;
+    const correctedInput = {
+      ...input,
+      expectedVersion: before.version,
+      idempotencyKey: uuidV7(),
+      itemId: replacement.id,
+      enteredQuantity: "3",
+      costFils: "8000",
+    };
+    const corrected = await request(
+      "PUT",
+      purchaseDraftRowPath(before.id, rowId),
+      correctedInput,
+    );
+    expect(corrected.status, diagnostics(corrected)).toBe(200);
+    const after = corrected.body?.draft as unknown as PurchaseDraftDetail;
+    expect(after.version).toBe((BigInt(before.version) + 1n).toString());
+    expect(after.rows).toHaveLength(1);
+    expect(after.rows[0]).toMatchObject({
+      id: rowId,
+      itemId: replacement.id,
+      itemDisplayName: replacement.displayName,
+      baseUnitsPerEnteredUnit: "6",
+      inventoryUnitQuantity: "18",
+      notes: "Keep this note",
+      costFils: "8000",
+    });
+    expect(after.review).toMatchObject({
+      grossFils: "24000",
+      allowanceFils: "2400",
+      netFils: "21600",
+    });
+    expect(
+      await request(
+        "PUT",
+        purchaseDraftRowPath(before.id, rowId),
+        correctedInput,
+      ),
+    ).toEqual(corrected);
+    expect(
+      (
+        await request("PUT", purchaseDraftRowPath(before.id, rowId), {
+          ...correctedInput,
+          enteredQuantity: "4",
+        })
+      ).body,
+    ).toMatchObject({ code: "idempotency-conflict" });
+    expect(
+      (
+        await request("PUT", purchaseDraftRowPath(before.id, rowId), {
+          ...correctedInput,
+          idempotencyKey: uuidV7(),
+        })
+      ).body,
+    ).toMatchObject({ code: "version-conflict" });
+    expect(
+      (
+        await request("PUT", purchaseDraftRowPath(before.id, rowId), {
+          ...correctedInput,
+          expectedVersion: after.version,
+          idempotencyKey: uuidV7(),
+          unit: { kind: "package-unit", packageUnitName: "Unknown" },
+        })
+      ).body,
+    ).toMatchObject({ code: "unit-invalid" });
+    expect(
+      (await request("GET", `/purchases/drafts/${after.id}`)).body,
+    ).toEqual(after);
+    await stopProcess(api);
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    expect(
+      (await request("GET", `/purchases/drafts/${after.id}`)).body,
+    ).toEqual(after);
+  }, 30_000);
 
   it("archives or merges suppliers without rewriting existing draft references", async () => {
     const survivorResponse = await request(

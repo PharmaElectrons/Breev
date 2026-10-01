@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   PostedPurchaseAdjustmentDetail,
@@ -33,6 +33,7 @@ import {
 } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
+import "./posted-purchase-review.css";
 
 type CorrectionKind = "adjustment" | "return";
 type CurrentRecord =
@@ -117,6 +118,11 @@ export function PostedPurchaseReview({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const containerRef = useRef<HTMLElement | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const listScroll = useRef({ left: 0, top: 0 });
+  const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(
+    null,
+  );
   const detailOpenerRef = useRef<HTMLElement | null>(null);
   const drilldownOpenerRef = useRef<HTMLElement | null>(null);
   const correctionOpenerRef = useRef<HTMLElement | null>(null);
@@ -144,24 +150,33 @@ export function PostedPurchaseReview({
   const [denial, setDenial] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [query, setQuery] = useState("");
+  const [rowFactsOpen, setRowFactsOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<PurchasePostedListRequest>({
+    dateType: "posted-at",
+    direction: "descending",
+    sort: "posted-at",
+  });
+
+  useLayoutEffect(() => {
+    const container = listScrollRef.current;
+    if (container === null) return;
+    container.scrollTop = listScroll.current.top;
+    container.scrollLeft = listScroll.current.left;
+  }, [detail, currentRecord, correction, postedAdjustment, postedReturn, list]);
 
   useEffect(() => {
-    if (!open || detail !== null) return;
+    if (!open || detail !== null || list !== null) return;
 
     const timer = setTimeout(
       () => {
-        void loadList({
-          dateType: "posted-at",
-          direction: "descending",
-          ...(query.trim() === "" ? {} : { query: query.trim() }),
-          sort: "posted-at",
-        });
+        void loadList(currentFilter());
       },
       query.trim() !== "" ? 250 : 0,
     );
 
     return () => clearTimeout(timer);
-  }, [baseUrl, detail, open, query]);
+  }, [baseUrl, detail, filters, list, open, query]);
 
   useEffect(() => {
     if (inline) {
@@ -217,6 +232,15 @@ export function PostedPurchaseReview({
 
   async function loadList(input: PurchasePostedListRequest): Promise<void> {
     const request = ++listRequest.current;
+    if (
+      input.from !== undefined &&
+      input.to !== undefined &&
+      input.from > input.to
+    ) {
+      setError(copy.dateRangeInvalid);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     setDenial(null);
@@ -246,6 +270,7 @@ export function PostedPurchaseReview({
         setList(await requestPostedPurchases(baseUrl, currentFilter()));
       }
       setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+      setSelectedPurchaseId(purchaseId);
       setPostedAdjustment(null);
       setPostedReturn(null);
       setCurrentRecord(null);
@@ -291,16 +316,30 @@ export function PostedPurchaseReview({
       dialogRef.current?.close();
       return;
     }
-    focusAfterRender(opener);
+    if (selectedPurchaseId !== null) {
+      requestCommittedFocus(
+        () =>
+          containerRef.current?.querySelector<HTMLElement>(
+            `[data-review-focus="posted-${selectedPurchaseId}"]`,
+          ) ?? opener,
+      );
+    } else {
+      focusAfterRender(opener);
+    }
   }
 
   function currentFilter(): PurchasePostedListRequest {
     return {
-      dateType: "posted-at",
-      direction: "descending",
-      sort: "posted-at",
+      ...filters,
       ...(query.trim() === "" ? {} : { query: query.trim() }),
     };
+  }
+
+  function changeFilters(next: PurchasePostedListRequest): void {
+    ++listRequest.current;
+    setFilters(next);
+    setList(null);
+    listScroll.current = { left: 0, top: 0 };
   }
 
   function searchPurchases(): void {
@@ -589,6 +628,7 @@ export function PostedPurchaseReview({
               onDraftActive={setAdjustmentDraftActive}
               onPosted={async (purchaseId) => {
                 setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+                await loadList(currentFilter());
               }}
             />
           ) : (
@@ -600,6 +640,7 @@ export function PostedPurchaseReview({
               onDraftActive={setReturnDraftActive}
               onPosted={async (purchaseId) => {
                 setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+                await loadList(currentFilter());
               }}
             />
           )}
@@ -608,6 +649,8 @@ export function PostedPurchaseReview({
         <CurrentRecordView record={currentRecord} onBack={closeDrilldown} />
       ) : detail !== null ? (
         <PostedPurchaseDetailView
+          rowFactsOpen={rowFactsOpen}
+          onRowFactsToggle={setRowFactsOpen}
           detail={{
             ...detail,
             navigation: purchaseResultNavigation(list, detail.id),
@@ -626,19 +669,14 @@ export function PostedPurchaseReview({
         />
       ) : (
         <section
-          aria-label={copy.postedPurchaseRegister}
+          aria-label={copy.postedPurchaseResults}
           className="proto-posted-purchase-section"
         >
           <form
             className="proto-posted-toolbar"
             onSubmit={(event) => {
               event.preventDefault();
-              void loadList({
-                dateType: "posted-at",
-                direction: "descending",
-                ...(query.trim() === "" ? {} : { query: query.trim() }),
-                sort: "posted-at",
-              });
+              void loadList(currentFilter());
             }}
           >
             <div className="proto-toolbar-start">
@@ -653,6 +691,7 @@ export function PostedPurchaseReview({
                   onChange={(event) => {
                     ++listRequest.current;
                     setList(null);
+                    listScroll.current = { left: 0, top: 0 };
                     setQuery(event.target.value);
                   }}
                 />
@@ -664,6 +703,99 @@ export function PostedPurchaseReview({
             <div className="proto-toolbar-hint">
               <span>{copy.doubleClickHint}</span>
             </div>
+            <details
+              className="posted-review-filters"
+              open={filtersOpen}
+              onToggle={(event) => setFiltersOpen(event.currentTarget.open)}
+            >
+              <summary>{copy.reviewFilters}</summary>
+              <div className="posted-review-filter-fields">
+                <label>
+                  {copy.dateType}
+                  <select
+                    aria-label={copy.dateType}
+                    value={filters.dateType}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        dateType: event.target.value as
+                          "invoice-date" | "posted-at",
+                      })
+                    }
+                  >
+                    <option value="posted-at">{copy.postingDate}</option>
+                    <option value="invoice-date">{copy.invoiceDate}</option>
+                  </select>
+                </label>
+                <label>
+                  {copy.fromDate}
+                  <input
+                    type="date"
+                    value={filters.from ?? ""}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        from: event.target.value || undefined,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  {copy.toDate}
+                  <input
+                    type="date"
+                    value={filters.to ?? ""}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        to: event.target.value || undefined,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  {copy.sortBy}
+                  <select
+                    aria-label={copy.sortBy}
+                    value={filters.sort}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        sort: event.target
+                          .value as PurchasePostedListRequest["sort"],
+                      })
+                    }
+                  >
+                    <option value="posted-at">{copy.postingDate}</option>
+                    <option value="invoice-date">{copy.invoiceDate}</option>
+                    <option value="number">{copy.documentNumber}</option>
+                    <option value="supplier">{copy.supplier}</option>
+                    {costsVisible ? (
+                      <option value="primary-cost">
+                        {copy.primarySupplierCost}
+                      </option>
+                    ) : null}
+                  </select>
+                </label>
+                <label>
+                  {copy.sortDirection}
+                  <select
+                    aria-label={copy.sortDirection}
+                    value={filters.direction}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        direction: event.target.value as
+                          "ascending" | "descending",
+                      })
+                    }
+                  >
+                    <option value="ascending">{copy.ascending}</option>
+                    <option value="descending">{copy.descending}</option>
+                  </select>
+                </label>
+              </div>
+            </details>
           </form>
 
           {list?.costVisibility === "hidden-by-permission" ? (
@@ -673,7 +805,14 @@ export function PostedPurchaseReview({
           ) : null}
 
           <div
+            ref={listScrollRef}
             className="proto-table-wrap"
+            onScroll={(event) => {
+              listScroll.current = {
+                left: event.currentTarget.scrollLeft,
+                top: event.currentTarget.scrollTop,
+              };
+            }}
             role="group"
             aria-label={copy.scrollPosted}
             tabIndex={0}
@@ -734,6 +873,8 @@ export function PostedPurchaseReview({
                         key={purchase.id}
                         tabIndex={0}
                         className="proto-table-row"
+                        data-selected={selectedPurchaseId === purchase.id}
+                        data-review-focus={`posted-row-${purchase.id}`}
                         onDoubleClick={(event) => {
                           handleRowOpen(purchase, event.currentTarget);
                         }}
@@ -1027,6 +1168,8 @@ export function PostedPurchaseReview({
 
 function PostedPurchaseDetailView({
   detail,
+  rowFactsOpen,
+  onRowFactsToggle,
   navigate,
   onBack,
   onCorrection,
@@ -1036,6 +1179,8 @@ function PostedPurchaseDetailView({
   onSupplier,
 }: {
   readonly detail: PurchasePostedDetail;
+  readonly rowFactsOpen: boolean;
+  readonly onRowFactsToggle: (open: boolean) => void;
   readonly navigate: (direction: "next" | "previous") => void;
   readonly onBack: () => void;
   readonly onCorrection: (kind: CorrectionKind, opener: HTMLElement) => void;
@@ -1060,7 +1205,7 @@ function PostedPurchaseDetailView({
             data-review-focus={`adjustment-${detail.id}`}
             onClick={(event) => onCorrection("adjustment", event.currentTarget)}
           >
-            <span>📝</span> {copy.editInvoice}
+            <span aria-hidden="true">📝</span> {copy.editInvoice}
           </button>
         ) : null}
         {detail.canReturn ? (
@@ -1070,7 +1215,7 @@ function PostedPurchaseDetailView({
             data-review-focus={`return-${detail.id}`}
             onClick={(event) => onCorrection("return", event.currentTarget)}
           >
-            <span>↩️</span> {copy.returnInvoice}
+            <span aria-hidden="true">↩️</span> {copy.returnInvoice}
           </button>
         ) : null}
         <button type="button" className="quiet-button" onClick={onBack}>
@@ -1155,7 +1300,7 @@ function PostedPurchaseDetailView({
                                 adjustment.primarySupplierCostDeltaFils,
                                 locale,
                               )
-                            : `0 ${copy.iqd}`}
+                            : copy.unavailable}
                         </bdi>
                       </td>
                       <td>
@@ -1294,7 +1439,15 @@ function PostedPurchaseDetailView({
             {detail.rows.map((row) => (
               <tr key={row.id}>
                 <th scope="row">{row.ordinal}</th>
-                <td>{row.itemDisplayName}</td>
+                <td>
+                  {row.itemDisplayName}
+                  {row.notes !== null ? (
+                    <p className="posted-row-notes">
+                      <strong>{copy.notes}: </strong>
+                      {row.notes}
+                    </p>
+                  ) : null}
+                </td>
                 <td>
                   <bdi>{row.inventoryUnitQuantity}</bdi>
                 </td>
@@ -1341,6 +1494,132 @@ function PostedPurchaseDetailView({
           </tbody>
         </table>
       </div>
+      <details
+        className="posted-purchase-audit-details posted-row-snapshots"
+        open={rowFactsOpen}
+        onToggle={(event) => onRowFactsToggle(event.currentTarget.open)}
+      >
+        <summary>{copy.savedRowFacts}</summary>
+        <dl className="posted-purchase-totals">
+          <div>
+            <dt>{copy.documentIdentity}</dt>
+            <dd>
+              <bdi>{detail.id}</bdi>
+            </dd>
+          </div>
+          <div>
+            <dt>{copy.postedBy}</dt>
+            <dd>
+              <bdi>{detail.postedBy}</bdi>
+            </dd>
+          </div>
+        </dl>
+        {detail.rows.map((row) => (
+          <section
+            key={row.id}
+            aria-label={`${copy.savedRowFacts} ${row.ordinal}`}
+          >
+            <h4>
+              {row.ordinal}. {row.itemDisplayName}
+            </h4>
+            <dl className="posted-purchase-totals">
+              <div>
+                <dt>{copy.rowIdentity}</dt>
+                <dd>
+                  <bdi>{row.id}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.itemIdentity}</dt>
+                <dd>
+                  <bdi>{row.itemId}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.enteredQuantity}</dt>
+                <dd>
+                  <bdi>{row.enteredQuantity}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.rowUnit}</dt>
+                <dd>
+                  {row.unit.kind === "inventory-unit"
+                    ? row.inventoryUnitName
+                    : row.unit.packageUnitName}
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.baseUnitsPerEnteredUnit}</dt>
+                <dd>
+                  <bdi>{row.baseUnitsPerEnteredUnit}</bdi>{" "}
+                  {row.inventoryUnitName}
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.pricingMethod}</dt>
+                <dd>
+                  {row.pricingMethod === "by-price"
+                    ? copy.byPrice
+                    : copy.byPercentage}
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.priceCapture}</dt>
+                <dd>
+                  {row.priceCapture === "by-price-propagated"
+                    ? copy.pricePropagated
+                    : copy.priceCalculated}
+                </dd>
+              </div>
+              {costsVisible ? (
+                <>
+                  <div>
+                    <dt>{copy.enteredUnitCost}</dt>
+                    <dd>
+                      <bdi>
+                        {formatFilsToIqd(row.primarySupplierCostFils, locale)}
+                      </bdi>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.allowanceAmount}</dt>
+                    <dd>
+                      <bdi>{formatFilsToIqd(row.allowanceFils, locale)}</bdi>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.invoiceOffer}</dt>
+                    <dd>
+                      <bdi>{formatFilsToIqd(row.offerFils, locale)}</bdi>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.margin}</dt>
+                    <dd>
+                      {row.marginPercentage === null
+                        ? copy.notApplicable
+                        : `${row.marginPercentage}%`}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
+              <div>
+                <dt>{copy.batchId}</dt>
+                <dd>
+                  <bdi>{row.batchId}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.movementId}</dt>
+                <dd>
+                  <bdi>{row.movementId}</bdi>
+                </dd>
+              </div>
+            </dl>
+          </section>
+        ))}
+      </details>
       {detail.returns.length > 0 ? (
         <section
           className="posted-return-links"

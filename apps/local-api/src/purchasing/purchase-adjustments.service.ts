@@ -1475,6 +1475,19 @@ async function normalizeDraftRow(
       [{ code: "invalid", path: ["rows", ordinal - 1, "itemId"] }],
     );
   }
+  if (
+    prior !== undefined &&
+    prior.costFils === input.costFils &&
+    prior.enteredQuantity === input.enteredQuantity &&
+    (input.pricing.method === "by-percentage" ||
+      prior.retailPriceFils === input.pricing.retailPriceFils)
+  ) {
+    // Header/evidence saves must not reinterpret unchanged historical rows
+    // through current master units or pricing. Protected fields and current
+    // Product availability were checked above; actual row edits still use
+    // the existing validation below.
+    return { ...draftRowSnapshot(prior), ordinal };
+  }
   const prepared = preparePurchaseRow(product, input);
   if (!prepared.ok) {
     const code =

@@ -1,0 +1,92 @@
+[
+  {
+    "name": "format-write",
+    "seconds": 17.77,
+    "log": ".scratch/runtime/m2-p1-t05-gate-format-write.log",
+    "exit": 0
+  },
+  {
+    "name": "format-check",
+    "seconds": 13.91,
+    "log": ".scratch/runtime/m2-p1-t05-gate-format-check.log",
+    "exit": 0
+  },
+  {
+    "name": "lint",
+    "seconds": 14.2,
+    "log": ".scratch/runtime/m2-p1-t05-gate-lint.log",
+    "exit": 0
+  },
+  {
+    "name": "typecheck",
+    "seconds": 24.17,
+    "log": ".scratch/runtime/m2-p1-t05-gate-typecheck.log",
+    "exit": 0
+  },
+  {
+    "name": "build",
+    "seconds": 18.51,
+    "log": ".scratch/runtime/m2-p1-t05-gate-build.log",
+    "exit": 0
+  },
+  {
+    "name": "unit",
+    "seconds": 31.98,
+    "log": ".scratch/runtime/m2-p1-t05-gate-unit.log",
+    "exit": 1
+  },
+  {
+    "name": "desktop-unit",
+    "seconds": 17.43,
+    "log": ".scratch/runtime/m2-p1-t05-gate-desktop-unit.log",
+    "exit": 0
+  },
+  {
+    "name": "boundaries",
+    "seconds": 2.49,
+    "log": ".scratch/runtime/m2-p1-t05-gate-boundaries.log",
+    "exit": 0
+  },
+  {
+    "name": "dev-launcher",
+    "seconds": 1.14,
+    "log": ".scratch/runtime/m2-p1-t05-gate-dev-launcher.log",
+    "exit": 0
+  },
+  {
+    "name": "release-tooling",
+    "seconds": 1.02,
+    "log": ".scratch/runtime/m2-p1-t05-gate-release-tooling.log",
+    "exit": 0
+  },
+  {
+    "name": "integration",
+    "seconds": 151.3,
+    "log": ".scratch/runtime/m2-p1-t05-gate-integration.log",
+    "exit": 1
+  },
+  {
+    "name": "integration-loose",
+    "seconds": 398.51,
+    "log": ".scratch/runtime/m2-p1-t05-gate-integration-loose.log",
+    "exit": 1
+  },
+  {
+    "name": "browser",
+    "seconds": 653.46,
+    "log": ".scratch/runtime/m2-p1-t05-gate-browser.log",
+    "exit": 1
+  },
+  {
+    "name": "package",
+    "seconds": 15.95,
+    "log": ".scratch/runtime/m2-p1-t05-gate-package.log",
+    "exit": 0
+  },
+  {
+    "name": "smoke",
+    "seconds": 36.19,
+    "log": ".scratch/runtime/m2-p1-t05-gate-smoke.log",
+    "exit": 0
+  }
+]

@@ -150,6 +150,19 @@ ran once and records bounded request/expectation fixture maintenance, final
 affected proof and CNG/Docker/Windows harness limits. G-01 and the complete
 requirement family remain open. T05 follows the focused T04 commit.
 
+The accepted #198 T05 implementation addresses M2-P03's omitted saved row facts
+and document navigation, with its [ownership/source matrix](../evidence/issue-198/t05/source-review.md),
+[targeted verification](../evidence/issue-198/t05/verification.md) and
+[separate stakeholder PASS](../evidence/issue-198/t05/manual-checkpoint.md).
+The continuation completed the [T05 local pre-commit gate](../evidence/issue-198/t05/pre-commit-gate.md)
+with explicitly classified host limitations before its focused local commit.
+The reported evidence-only save
+failure after master edits was repaired with affected-scope API/browser proof.
+It exposes already-retained notes, pricing and stock references, preserves
+cost/margin redaction, and validates intentional draft Product/unit correction.
+Wholesale remains a current Product-panel fact under #49 and scope §4.4.
+No historical master-data backfill or professional policy approval is implied.
+
 ## Windows payload optimization evidence
 
 The stakeholder initiated issue #126 implementation on 4 September 2026 after reviewing its size/performance investigation. The work preserves the existing G-05/G-06/G-07 authority, security and lifecycle requirements; it does not authorize a new installer architecture or relaxed durability. The [issue-126 implementation record](../evidence/issue-126/README.md) traces task evidence and the original issue's infeasible size/file-count assumptions. Measured budgets and any unresolved verification gaps must be presented explicitly in the review PR; the investigation does not close release gates or silently replace requirement acceptance criteria.

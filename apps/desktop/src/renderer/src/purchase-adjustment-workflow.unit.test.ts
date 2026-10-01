@@ -35,7 +35,9 @@ const detail: PurchasePostedDetail = {
   navigation: { previousId: null, nextId: null, position: 1, total: 1 },
   rows: [
     {
+      allowanceFils: "8000",
       baseUnitsPerEnteredUnit: "1",
+      batchId: "018fa000-0000-7000-8000-000000000006",
       costAfterDiscountFils: "312000",
       enteredQuantity: "4",
       expiryDate: "2028-12-31",
@@ -46,7 +48,13 @@ const detail: PurchasePostedDetail = {
       itemId: "018fa000-0000-7000-8000-000000000005",
       linePrimarySupplierCostFils: "320000",
       lotNumber: "LOT-100",
+      marginPercentage: null,
+      movementId: "018fa000-0000-7000-8000-000000000007",
+      notes: null,
+      offerFils: "0",
       ordinal: 1,
+      priceCapture: "by-price-propagated",
+      pricingMethod: "by-price",
       primarySupplierCostFils: "80000",
       retailPriceFils: "120000",
       unit: { kind: "inventory-unit" },

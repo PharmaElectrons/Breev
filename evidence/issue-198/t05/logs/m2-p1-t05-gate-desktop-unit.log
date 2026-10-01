@@ -1,0 +1,11 @@
+$ pnpm --filter @breev/desktop test:unit
+$ vitest run --config vitest.config.ts
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/desktop
+
+
+ Test Files  64 passed (64)
+      Tests  669 passed (669)
+   Start at  14:41:46
+   Duration  15.14s (transform 7.98s, setup 0ms, import 51.68s, tests 7.78s, environment 18ms)
+
