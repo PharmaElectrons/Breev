@@ -33,6 +33,7 @@ export interface BasketProjectionSummary {
 }
 
 export interface BasketCopy {
+  readonly backToInventory: string;
   readonly actions: {
     readonly confirm: string;
     readonly remove: string;
@@ -148,6 +149,7 @@ function quantityCaption(parts: readonly BasketQuantityPart[]): string {
 }
 
 const arabic: BasketCopy = {
+  backToInventory: "العودة إلى المخزون",
   actions: {
     confirm: "تأكيد الطلب",
     remove: "إزالة من السلة",
@@ -218,6 +220,7 @@ const arabic: BasketCopy = {
 };
 
 const english: BasketCopy = {
+  backToInventory: "Back to Inventory",
   actions: {
     confirm: "Confirm order",
     remove: "Remove",

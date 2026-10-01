@@ -26,10 +26,19 @@ test-results
 .terminal-state/
 skills-lock.json
 notes.md
+repair-lan-ip.bat
 
 !.agents/skills/pr-review-remediate/
 !.agents/skills/pr-review-remediate/**
 !.agents/skills/ci-failure-prevention/
 !.agents/skills/ci-failure-prevention/**
+!.agents/skills/breev-today-tasks/
+!.agents/skills/breev-today-tasks/**
+!.agents/skills/prototype-ui-transplant/
+!.agents/skills/prototype-ui-transplant/**
 !.agents/rules/
 !.agents/rules/**
+today/
+evidence/
+breev-phase1-plan/
+*.pdf

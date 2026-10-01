@@ -211,27 +211,57 @@ Use disposable local data for destructive checks. The one-time setup and user ac
 
 ## Run automated checks
 
-```bash
-pnpm test:unit
-pnpm test:integration
-pnpm test:browser
-pnpm test:smoke
-pnpm test:licence-generator
-```
+Breev uses a **3-tier testing model** to keep daily feedback fast while protecting system integrity before release. Do not run the full suite for a single change.
 
-- Unit tests cover domain helpers, security policies, contracts, and static module boundaries.
-- Integration tests start PostgreSQL with Testcontainers and exercise migrations, database role separation, security, jobs, PKI, identity, and licensing flows.
-- Browser tests cover the Arabic and English UI, themes, accessibility, startup states, identity administration, attendance, and entitlement feature hiding.
-- `pnpm check:licence-artifact` inspects the built artifacts and fails if any private or shared licence-signing material reaches them. `pnpm verify` runs it after the build.
-- Smoke tests package Electron and exercise the real protocol, preload boundary, CSP, navigation blocks, device proof, API, and PostgreSQL.
+### Tier 1: Fast Inner Loop (< 1–3s, run continuously during editing)
 
-Run the complete repository gate with:
+Run only the targeted check for the module you are editing:
+
+| Layer / Modified Area | Fast Targeted Command |
+| :--- | :--- |
+| **Desktop Renderer UI** | `pnpm --filter @breev/desktop exec tsc -p tsconfig.renderer.json --noEmit`<br>`pnpm --filter @breev/desktop exec vitest run src/renderer/src/<feature>.unit.test.ts` |
+| **Local API Domain Logic** | `pnpm --filter @breev/local-api exec vitest run src/<module>/<file>.unit.test.ts` |
+| **Vitest Watch Mode** | `pnpm --filter @breev/desktop exec vitest watch`<br>`pnpm --filter @breev/local-api exec vitest watch --config vitest.unit.config.ts` |
+| **Single File Formatting** | `pnpm prettier --write <path-to-file>` |
+
+### Tier 2: Targeted Feature Seam (10–30s, run when finishing a slice)
+
+When completing a feature slice or schema change, run its specific seam test:
+
+- **Targeted Browser Flow:** Run only the relevant Playwright file or test name:
+  ```bash
+  pnpm --filter @breev/desktop exec playwright test test/browser/purchasing.browser.test.ts -g "posted purchase"
+  ```
+- **Targeted PostgreSQL Integration:** Run only the relevant integration test:
+  ```bash
+  pnpm --filter @breev/local-api exec vitest run src/posting/posting-infrastructure.integration.test.ts
+  ```
+- **Contracts Changes:**
+  ```bash
+  pnpm --filter @breev/contracts test:unit && pnpm --filter @breev/contracts build && pnpm typecheck
+  ```
+
+### Tier 3: Pre-Flight Gate (Run once before Git push or Pull Request)
+
+The full end-to-end gate verifies all workspaces, packaging, ASAR integrity, and cross-layer seams:
 
 ```bash
 pnpm verify
 ```
 
-Docker must be running for integration, browser, and smoke tests.
+Or individual seams:
+```bash
+pnpm test:unit
+pnpm test:integration
+pnpm test:browser
+pnpm test:smoke
+```
+
+- Unit tests cover pure domain logic, helpers, contracts, and module boundaries.
+- Integration tests require a local PostgreSQL service or Docker and exercise migrations, RLS, jobs, and PKI.
+- Browser tests spin up a test database and local API to verify UI, RTL/LTR, themes, and WCAG AA accessibility.
+- Smoke tests package the real Electron ASAR bundle and prove launch, IPC allowlists, and CSP hardening.
+
 
 ## Troubleshooting
 

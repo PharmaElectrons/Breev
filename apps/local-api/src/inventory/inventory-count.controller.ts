@@ -62,10 +62,20 @@ export class InventoryCountController {
   @Get(countSessionListContract.path)
   public async list(
     @Query("status") status: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("cursor") cursor: string | undefined,
     @Req() request: Request,
-  ): Promise<{ readonly sessions: readonly CountSessionSummary[] }> {
+  ): Promise<{
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly sessions: readonly CountSessionSummary[];
+  }> {
     return await translateCountDenial(async () => {
-      const input = countSessionListQuerySchema.safeParse({ status });
+      const input = countSessionListQuerySchema.safeParse({
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(limit === undefined ? {} : { limit }),
+        ...(status === undefined ? {} : { status }),
+      });
       if (!input.success) {
         throw await this.count.rejectInvalidBody(
           request,
@@ -184,7 +194,7 @@ export class InventoryCountController {
       if (!parsedSessionId.success || !input.success) {
         throw await this.count.rejectInvalidBody(
           request,
-          "inventory.counts.record",
+          "inventory.counts.approve",
           "inventory.count.session.complete",
           [
             ...(parsedSessionId.success

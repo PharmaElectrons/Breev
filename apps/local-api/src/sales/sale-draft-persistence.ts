@@ -1,12 +1,13 @@
 import type { PoolClient } from "pg";
 
-export type SaleDraftStatus = "active";
+export type SaleDraftStatus = "active" | "suspended" | "discarded";
 
 export interface SaleDraftRecord {
   readonly createdAt: string;
   readonly createdBy: string;
   readonly deviceId: string;
   readonly id: string;
+  readonly invoiceDiscountFils: string;
   readonly pharmacyId: string;
   readonly status: SaleDraftStatus;
   readonly updatedAt: string;
@@ -19,6 +20,7 @@ interface SaleDraftRow {
   readonly created_by: string;
   readonly device_id: string;
   readonly id: string;
+  readonly invoice_discount_fils: string;
   readonly pharmacy_id: string;
   readonly status: SaleDraftStatus;
   readonly updated_at: string;
@@ -27,7 +29,8 @@ interface SaleDraftRow {
 }
 
 const SALE_DRAFT_COLUMNS = `
-  id, pharmacy_id, status, version::text, created_at::text, created_by,
+  id, pharmacy_id, status, version::text, invoice_discount_fils::text,
+  created_at::text, created_by,
   updated_at::text, updated_by, device_id`;
 
 export async function insertSaleDraft(
@@ -103,15 +106,26 @@ export async function touchSaleDraft(
     readonly id: string;
     readonly pharmacyId: string;
     readonly updatedBy: string;
+    readonly status?: SaleDraftStatus;
+    readonly invoiceDiscountFils?: string;
   },
 ): Promise<SaleDraftRecord> {
   const result = await client.query<SaleDraftRow>(
     `update sale_drafts
      set version = version + 1, updated_at = statement_timestamp(),
-         updated_by = $3, device_id = $4
+         updated_by = $3, device_id = $4,
+         status = coalesce($5, status),
+         invoice_discount_fils = coalesce($6::bigint, invoice_discount_fils)
      where pharmacy_id = $1 and id = $2
      returning ${SALE_DRAFT_COLUMNS}`,
-    [input.pharmacyId, input.id, input.updatedBy, input.deviceId],
+    [
+      input.pharmacyId,
+      input.id,
+      input.updatedBy,
+      input.deviceId,
+      input.status ?? null,
+      input.invoiceDiscountFils ?? null,
+    ],
   );
   return requireSaleDraft(result.rows[0], "The Sale Draft was not resumed");
 }
@@ -122,6 +136,7 @@ function mapSaleDraft(row: SaleDraftRow): SaleDraftRecord {
     createdBy: row.created_by,
     deviceId: row.device_id,
     id: row.id,
+    invoiceDiscountFils: row.invoice_discount_fils,
     pharmacyId: row.pharmacy_id,
     status: row.status,
     updatedAt: isoDateTime(row.updated_at),

@@ -1,9 +1,12 @@
 import {
   INVENTORY_COLUMN_FIELDS,
+  normalizeIndicDigits,
   type IdentityDenial,
   type InventoryColumnField,
   type InventoryDenial,
   type InventoryItem,
+  type InventoryRiskIndicator,
+  type Product,
   type InventoryMovement,
   type LicensingDenial,
 } from "@breev/contracts/local-rest";
@@ -18,6 +21,7 @@ import {
   inventoryCommandAttempt,
   newInventoryIdempotencyKey,
   readBatchSafetyStatus,
+  readReorderBasket,
   requestInventoryItems,
   requestInventoryMovements,
   requestInventoryReviewPreferences,
@@ -26,12 +30,19 @@ import {
 import { BatchSafetyReview } from "./batch-safety-review";
 import { BatchSafetyPanel } from "./batch-safety-panel";
 import { basketMessages } from "./basket-messages";
+import { requestProduct, searchProducts } from "./catalog-api";
+import {
+  PurchaseItemPanel,
+  type PurchaseItemSelection,
+} from "./purchase-item-details";
 import { inventoryMessages, type InventoryCopy } from "./inventory-messages";
 import { createInventoryPreferenceSaveQueue } from "./inventory-preferences-save";
 import { useIdentityState } from "./identity-state-provider";
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 import { identityMessages } from "./identity-messages";
 import { licensingMessages } from "./licensing-messages";
+import { MoneyAmount } from "./money-amount";
+import { panelUnitLabel } from "./panel-unit-label";
 import { usePreferences } from "./preferences-provider";
 import {
   formatCurrencyFromFils,
@@ -42,7 +53,7 @@ import {
 import { PostedPurchaseReview } from "./posted-purchase-review";
 import { CountSessionReview } from "./count-session-review";
 import { CountSessionScreen } from "./count-session-screen";
-import { StateColourIndicators } from "./state-indicator";
+import { StateIndicator } from "./state-indicator";
 import { StepUpDialog, useStepUp } from "./step-up";
 
 type SortDirection = "ascending" | "descending";
@@ -51,6 +62,29 @@ type SortState = {
   readonly direction: SortDirection;
 };
 type ReviewDenial = IdentityDenial | InventoryDenial | LicensingDenial;
+
+async function collectCatalogSearchIds(
+  baseUrl: string,
+  query: string,
+): Promise<Set<string>> {
+  const ids = new Set<string>();
+  let offset = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const page = await searchProducts(baseUrl, {
+      limit: "100",
+      offset: String(offset),
+      query,
+    });
+    for (const { product } of page.results) ids.add(product.id);
+    if (!page.hasMore || page.results.length === 0) {
+      hasMore = false;
+    } else {
+      offset += page.results.length;
+    }
+  }
+  return ids;
+}
 
 const DEFAULT_COLUMNS = INVENTORY_COLUMN_FIELDS.map((field) => ({
   field,
@@ -182,13 +216,26 @@ function InventoryScreen({
     (IdentityDenial | LicensingDenial) | null
   >(null);
   const [announcement, setAnnouncement] = useState("");
+  const [basketFeedback, setBasketFeedback] = useState("");
+  const [basketCount, setBasketCount] = useState<number | null>(null);
+  const [addingProductId, setAddingProductId] = useState<string | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(
+    null,
+  );
+  const [panelProduct, setPanelProduct] = useState<Product | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIds, setSearchIds] = useState<ReadonlySet<string> | null>(null);
+  const [searchDegraded, setSearchDegraded] = useState(false);
+  const searchSequenceRef = useRef(0);
+  const basketRevisionRef = useRef(0);
   const [sort, setSort] = useState<SortState>({
     direction: "ascending",
     field: "item",
   });
   const [exportStatus, setExportStatus] = useState<
-    "cancelled" | "failed" | "idle" | "saved"
+    "cancelled" | "export-too-large" | "failed" | "idle" | "saved"
   >("idle");
+  const [preferenceNotice, setPreferenceNotice] = useState<string | null>(null);
   const settingsToggleRef = useRef<HTMLElement>(null);
   const requestCommittedFocus = useCommittedFocus();
   const reorderAttemptRef = useRef<ReturnType<
@@ -217,14 +264,46 @@ function InventoryScreen({
   const canRecordCount =
     identity?.state === "authenticated" &&
     identity.allowedPermissions.includes("inventory.counts.record");
+  const canSearchCatalog =
+    identity?.state === "authenticated" &&
+    identity.allowedPermissions.includes("catalog.item.search");
+
+  useEffect(() => {
+    const query = normalizeIndicDigits(searchQuery.trim());
+    setSearchIds(null);
+    setSearchDegraded(false);
+    if (query.length < 2 || !canSearchCatalog) return;
+    const sequence = ++searchSequenceRef.current;
+    const timer = window.setTimeout(() => {
+      void collectCatalogSearchIds(baseUrl, query)
+        .then((ids) => {
+          if (searchSequenceRef.current === sequence) {
+            setSearchIds(ids);
+            setSearchDegraded(false);
+          }
+        })
+        .catch(() => {
+          if (searchSequenceRef.current === sequence) {
+            setSearchIds(null);
+            setSearchDegraded(true);
+          }
+        });
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      searchSequenceRef.current++;
+    };
+  }, [baseUrl, canSearchCatalog, searchQuery]);
 
   async function addItemToBasket(item: InventoryItem): Promise<void> {
-    if (!canManageReorder) return;
+    if (!canManageReorder || addingProductId !== null) return;
     const attempt = inventoryCommandAttempt(
       reorderAttemptRef.current,
       item.productId,
     );
     reorderAttemptRef.current = attempt;
+    setAddingProductId(item.productId);
+    setBasketFeedback("");
     setError(null);
     setDenial(null);
     try {
@@ -235,17 +314,26 @@ function InventoryScreen({
       // A completed add is a finished intent: the next press is a new
       // command (a re-add refreshes the proposal), not a retry of this one.
       reorderAttemptRef.current = null;
+      if (result.outcome === "added") {
+        basketRevisionRef.current++;
+        setBasketCount((current) => (current === null ? 1 : current + 1));
+      }
       const basketCopy = basketMessages[locale];
       const quantity = formatNumber(BigInt(result.item.quantity), locale);
-      const unit = result.item.product.inventoryUnitName;
+      const unit = panelUnitLabel(
+        result.item.product.inventoryUnitName,
+        BigInt(result.item.quantity),
+        locale,
+      );
       const name = result.item.product.displayName;
-      setAnnouncement(
+      const feedback =
         result.outcome === "already-ordered"
           ? basketCopy.alreadyOrderedAnnouncement(name)
           : result.outcome === "updated"
             ? basketCopy.alreadyInBasketAnnouncement(name, quantity, unit)
-            : basketCopy.addedAnnouncement(name, quantity, unit),
-      );
+            : basketCopy.addedAnnouncement(name, quantity, unit);
+      setAnnouncement(feedback);
+      setBasketFeedback(feedback);
     } catch (caught) {
       if (
         caught instanceof InventoryApiDenied ||
@@ -256,24 +344,36 @@ function InventoryScreen({
       } else {
         setError(basketMessages[locale].reviewUnavailable);
       }
+    } finally {
+      setAddingProductId(null);
     }
   }
+
+  useEffect(() => {
+    if (!canManageReorder) return;
+    let active = true;
+    const revision = basketRevisionRef.current;
+    void readReorderBasket(baseUrl, { status: "basket" })
+      .then(({ items: basketItems }) => {
+        if (active && revision === basketRevisionRef.current)
+          setBasketCount(basketItems.length);
+      })
+      .catch(() => {
+        if (active && revision === basketRevisionRef.current)
+          setBasketCount(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [baseUrl, canManageReorder]);
 
   const load = useCallback(async (): Promise<void> => {
     setError(null);
     setDenial(null);
     try {
-      const [result, savedPreferences, nextSafetyStatus] = await Promise.all([
-        requestInventoryItems(baseUrl),
-        requestInventoryReviewPreferences(baseUrl),
-        readBatchSafetyStatus(baseUrl),
-      ]);
+      const result = await requestInventoryItems(baseUrl);
       setItems(result.items);
       setValuation(result.fields.valuation);
-      setSafetyStatus(nextSafetyStatus);
-      latestPreferenceColumnsRef.current = savedPreferences.columns;
-      latestPreferenceRevisionRef.current = savedPreferences.revision;
-      setPreferences(savedPreferences);
     } catch (caught) {
       if (caught instanceof InventoryApiDenied) {
         setDenial(caught.denial);
@@ -285,12 +385,53 @@ function InventoryScreen({
       } else {
         setError(copy.reviewUnavailable);
       }
+      return;
     }
-  }, [baseUrl, copy.reviewUnavailable]);
+    try {
+      const savedPreferences = await requestInventoryReviewPreferences(baseUrl);
+      latestPreferenceColumnsRef.current = savedPreferences.columns;
+      latestPreferenceRevisionRef.current = savedPreferences.revision;
+      setPreferences(savedPreferences);
+      setPreferenceNotice(null);
+    } catch {
+      setPreferenceNotice(copy.preferencesUnavailable);
+    }
+    try {
+      setSafetyStatus(await readBatchSafetyStatus(baseUrl));
+    } catch {
+      setSafetyStatus(null);
+    }
+  }, [baseUrl, copy.preferencesUnavailable, copy.reviewUnavailable]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const refresh = (): void => {
+      void load();
+    };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [load]);
+
+  useEffect(() => {
+    if (selectedProductId === null) {
+      setPanelProduct(null);
+      return;
+    }
+    let active = true;
+    void requestProduct(baseUrl, selectedProductId)
+      .then((product) => {
+        if (active) setPanelProduct(product);
+      })
+      .catch(() => {
+        if (active) setPanelProduct(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [baseUrl, selectedProductId]);
 
   const availableFields = useMemo(
     () =>
@@ -311,12 +452,71 @@ function InventoryScreen({
 
   const sortedItems = useMemo(
     () =>
-      [...(items ?? [])].sort((left, right) => {
-        const compared = compareItems(left, right, sort.field);
-        return sort.direction === "ascending" ? compared : -compared;
-      }),
+      [...(items ?? [])].sort((left, right) =>
+        compareItems(left, right, sort.field, sort.direction),
+      ),
     [items, sort],
   );
+  const visibleItems = useMemo(() => {
+    const query = normalizeIndicDigits(searchQuery.trim()).toLocaleLowerCase();
+    if (query === "") return sortedItems;
+    return sortedItems.filter(
+      (item) =>
+        normalizeIndicDigits(item.displayName)
+          .toLocaleLowerCase()
+          .includes(query) || searchIds?.has(item.productId),
+    );
+  }, [searchIds, searchQuery, sortedItems]);
+  const selectedItem = items?.find(
+    (item) => item.productId === selectedProductId,
+  );
+  const panelSelection: PurchaseItemSelection | null =
+    panelProduct === null || panelProduct.id !== selectedProductId
+      ? null
+      : {
+          inventory: {
+            balance: selectedItem?.balance ?? "0",
+            consumptionRatePer30Days:
+              selectedItem?.consumptionRatePer30Days ?? "0",
+            earliestExpiry: selectedItem?.batches.earliestExpiry ?? null,
+            maximumLevel: selectedItem?.stockLevels.maximumLevel ?? null,
+            minimumLevel: selectedItem?.stockLevels.minimumLevel ?? null,
+          },
+          product: panelProduct,
+        };
+  const metrics = useMemo(() => {
+    const rows = items ?? [];
+    const costs = rows.flatMap((item) =>
+      item.averageUnitCostFils === null
+        ? []
+        : [BigInt(item.averageUnitCostFils)],
+    );
+    return {
+      distinctItems: formatNumber(BigInt(rows.length), locale),
+      itemsWithStock: formatNumber(
+        BigInt(rows.filter((item) => BigInt(item.balance) > 0n).length),
+        locale,
+      ),
+      totalValue:
+        valuation === "granted"
+          ? formatCurrencyFromFils(
+              rows.reduce(
+                (sum, item) => sum + BigInt(item.valueFils ?? "0"),
+                0n,
+              ),
+              locale,
+            )
+          : "—",
+      averageCost:
+        valuation === "granted" && costs.length > 0
+          ? formatCurrencyFromFils(
+              costs.reduce((sum, cost) => sum + cost, 0n) /
+                BigInt(costs.length),
+              locale,
+            )
+          : "—",
+    };
+  }, [items, locale, valuation]);
 
   function changeSort(field: InventoryColumnField): void {
     const direction: SortDirection =
@@ -324,7 +524,9 @@ function InventoryScreen({
         ? "descending"
         : "ascending";
     setSort({ direction, field });
-    setAnnouncement(copy.sortAnnouncement(copy.columns[field], direction));
+    setAnnouncement(
+      copy.sortAnnouncement(inventoryColumnLabel(copy, field), direction),
+    );
   }
 
   async function changeVisibility(
@@ -380,7 +582,7 @@ function InventoryScreen({
   );
   const stepUp = useStepUp(baseUrl, runStepUp);
 
-  async function beginExport(): Promise<void> {
+  async function beginExport(format: "json" | "csv" = "json"): Promise<void> {
     setExportStatus("idle");
     await stepUp.begin(
       "inventory.sensitive.export",
@@ -394,6 +596,7 @@ function InventoryScreen({
           const result = await window.breevDesktop.saveInventoryExport({
             bundle,
             locale,
+            ...(format === "csv" ? { format } : {}),
           });
           setExportStatus(result.status);
         } catch (caught) {
@@ -438,39 +641,96 @@ function InventoryScreen({
   }
 
   return (
-    <section className="inventory-workspace" aria-labelledby="inventory-title">
-      <header className="inventory-heading">
-        <div>
-          <h2 id="inventory-title">{copy.title}</h2>
-          <p>{copy.readOnly}</p>
-          <p className="inventory-safety-summary">
-            {safetyStatus === null
-              ? copy.safety.unavailable
-              : copy.safety.dailyStatus(
-                  safetyStatus.state,
-                  safetyStatus.lastCompletedBusinessDate,
-                )}{" "}
-            <a href="#/inventory/safety-review">{copy.safety.review}</a>
-          </p>
-        </div>
-        <div className="inventory-actions">
+    <section
+      className="inventory-workspace inventory-review"
+      aria-labelledby="inventory-title"
+    >
+      <h2 className="visually-hidden" id="inventory-title">
+        {copy.title}
+      </h2>
+      <div className="inventory-metrics">
+        <InventoryMetric
+          label={copy.metrics.totalValue}
+          locale={locale}
+          money
+          tone="emerald"
+          value={metrics.totalValue}
+        />
+        <InventoryMetric
+          label={copy.metrics.averageCost}
+          locale={locale}
+          money
+          tone="accent"
+          value={metrics.averageCost}
+        />
+        <InventoryMetric
+          label={copy.metrics.distinctItems}
+          tone="emerald"
+          value={metrics.distinctItems}
+        />
+        <InventoryMetric
+          label={copy.metrics.itemsWithStock}
+          tone="accent"
+          value={metrics.itemsWithStock}
+        />
+      </div>
+      <div className="inventory-toolbar">
+        <label className="inventory-search">
+          <span className="visually-hidden">{copy.searchLabel}</span>
+          <input
+            autoComplete="off"
+            placeholder={copy.searchLabel}
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+          {searchDegraded ? (
+            <p className="field-hint" role="status">
+              {copy.searchDegraded}
+            </p>
+          ) : null}
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="M16 16.5 20 20.5" />
+          </svg>
+        </label>
+        <div className="inventory-toolbar-actions">
           {canRecordCount ? (
-            <a className="primary-button" href="#/inventory/count">
+            <a
+              className="inventory-chip inventory-chip-primary"
+              href="#/inventory/count"
+            >
               {copy.count.start}
             </a>
           ) : null}
           {canExport ? (
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => void beginExport()}
-            >
-              {copy.export}
-            </button>
+            <>
+              <button
+                aria-label={copy.export}
+                className="inventory-chip"
+                type="button"
+                onClick={() => void beginExport()}
+              >
+                {locale === "ar" ? "تصدير" : "Export"}
+              </button>
+              <button
+                aria-label={copy.exportCsv}
+                className="inventory-chip"
+                type="button"
+                onClick={() => void beginExport("csv")}
+              >
+                {locale === "ar" ? "تصدير CSV" : "Export CSV"}
+              </button>
+            </>
           ) : null}
           {canManageReorder ? (
-            <a className="quiet-button" href="#/basket">
+            <a className="inventory-chip" href="#/basket">
               {copy.openBasket}
+              {basketCount === null ? null : (
+                <span aria-hidden="true" className="inventory-basket-count">
+                  {basketCount}
+                </span>
+              )}
             </a>
           ) : null}
           <details className="inventory-settings">
@@ -495,7 +755,7 @@ function InventoryScreen({
                         void changeVisibility(field, event.target.checked)
                       }
                     />
-                    <span>{copy.columns[field]}</span>
+                    <span>{inventoryColumnLabel(copy, field)}</span>
                   </label>
                 );
               })}
@@ -503,19 +763,67 @@ function InventoryScreen({
             </div>
           </details>
         </div>
-      </header>
+      </div>
+      <p className="inventory-safety-summary">
+        {safetyStatus === null
+          ? copy.safety.unavailable
+          : copy.safety.dailyStatus(
+              safetyStatus.state,
+              safetyStatus.lastCompletedBusinessDate,
+            )}{" "}
+        <a href="#/inventory/safety-review">{copy.safety.review}</a>
+      </p>
       <p className="visually-hidden" id="inventory-read-only">
         {copy.readOnly}
       </p>
       <p className="visually-hidden" role="status" aria-live="polite">
         {announcement}
       </p>
+      {basketFeedback === "" ? null : (
+        <p className="inventory-basket-feedback" role="status">
+          {basketFeedback}
+        </p>
+      )}
+      {selectedItem === undefined ? null : (
+        <p className="inventory-selection visually-hidden" role="status">
+          <strong>{selectedItem.displayName}</strong>
+          <span>
+            {copy.columns.balance}:{" "}
+            {formatNumber(BigInt(selectedItem.balance), locale)}
+          </span>
+          <span>{copy.stateColours[selectedItem.stateColour.effective]}</span>
+          <a href={`#/inventory/items/${selectedItem.productId}/movements`}>
+            {copy.movement.title}
+          </a>
+        </p>
+      )}
+      <ul aria-label={copy.statusColumn} className="inventory-tint-legend">
+        {(
+          [
+            ["stable", statusMeaning(copy.stateColours.green)],
+            ["reorder", statusMeaning(copy.stateColours.orange)],
+            ["expiring", statusMeaning(copy.stateColours.yellow)],
+            ["over-maximum", statusMeaning(copy.stateColours.purple)],
+            ["critical", statusMeaning(copy.stateColours.red)],
+          ] as const
+        ).map(([status, label]) => (
+          <li data-status={status} key={status}>
+            <span aria-hidden="true" className="inventory-tint-swatch" />
+            <span>{label}</span>
+          </li>
+        ))}
+      </ul>
       {denial === null ? null : (
         <div className="denial-alert" role="alert">
           <p>
             {copy.permissionDenied} {denial.requestId}
           </p>
         </div>
+      )}
+      {preferenceNotice === null ? null : (
+        <p className="field-hint" role="status">
+          {preferenceNotice}
+        </p>
       )}
       {error === null ? null : (
         <div className="denial-alert" role="alert">
@@ -537,49 +845,52 @@ function InventoryScreen({
           {copy.exportFailed}
         </p>
       ) : null}
-      {items.length === 0 ? (
+      {exportStatus === "export-too-large" ? (
+        <p className="support-action-status" role="alert">
+          {copy.exportTooLarge}
+        </p>
+      ) : null}
+      {visibleItems.length === 0 ? (
         <p role="status">{copy.empty}</p>
       ) : (
-        <div className="inventory-table-scroll">
-          <table aria-describedby="inventory-read-only">
-            <caption className="visually-hidden">{copy.title}</caption>
-            <thead>
-              <tr>
-                {visibleFields.map((field) => (
-                  <th
-                    aria-sort={sort.field === field ? sort.direction : "none"}
-                    data-column-field={field}
-                    key={field}
-                    scope="col"
-                  >
-                    <button type="button" onClick={() => changeSort(field)}>
-                      {copy.columns[field]}
-                    </button>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedItems.map((item) => (
-                <tr key={item.productId}>
-                  {visibleFields.map((field) => (
-                    <td data-column-field={field} key={field}>
-                      <InventoryCell
-                        copy={copy}
-                        field={field}
-                        item={item}
-                        locale={locale}
-                        canManageReorder={canManageReorder}
-                        onAddToBasket={() => void addItemToBasket(item)}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <InventoryReviewTable
+          addingProductId={addingProductId}
+          canManageReorder={canManageReorder}
+          copy={copy}
+          items={visibleItems}
+          locale={locale}
+          selectedProductId={selectedProductId}
+          sort={sort}
+          visibleFields={visibleFields}
+          onAdd={(item) => void addItemToBasket(item)}
+          onSelect={(item) => {
+            setSelectedProductId(item.productId);
+            setAnnouncement(item.displayName);
+          }}
+          onSort={changeSort}
+        />
       )}
+      <div className="inventory-bottom-bar">
+        {canRecordCount ? (
+          <a
+            aria-hidden="true"
+            className="inventory-tool inventory-tool-strong"
+            href="#/inventory/count"
+            tabIndex={-1}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M7 7h10M7 12h10M7 17h6" />
+            </svg>
+            {copy.count.start}
+          </a>
+        ) : null}
+      </div>
+      <PurchaseItemPanel
+        defaultExpanded
+        emptyMessage={copy.panelEmpty}
+        hidden={false}
+        selection={panelSelection}
+      />
       {stepUp.pending === null ? null : (
         <StepUpDialog
           busy={false}
@@ -595,20 +906,168 @@ function InventoryScreen({
   );
 }
 
-function InventoryCell({
+function InventoryMetric({
+  label,
+  locale,
+  money = false,
+  tone,
+  value,
+}: {
+  readonly label: string;
+  readonly locale?: "ar" | "en";
+  readonly money?: boolean;
+  readonly tone?: "emerald" | "accent";
+  readonly value: string;
+}): React.JSX.Element {
+  return (
+    <div className="inventory-metric" data-tone={tone}>
+      <span>{label}</span>
+      <strong>
+        {money && locale !== undefined ? (
+          <MoneyAmount locale={locale} value={value} />
+        ) : (
+          <bdi>{value}</bdi>
+        )}
+      </strong>
+    </div>
+  );
+}
+
+function InventoryReviewTable({
+  addingProductId,
   canManageReorder,
+  copy,
+  items,
+  locale,
+  onAdd,
+  onSelect,
+  onSort,
+  selectedProductId,
+  sort,
+  visibleFields,
+}: {
+  readonly addingProductId: string | null;
+  readonly canManageReorder: boolean;
+  readonly copy: InventoryCopy;
+  readonly items: readonly InventoryItem[];
+  readonly locale: "ar" | "en";
+  readonly onAdd: (item: InventoryItem) => void;
+  readonly onSelect: (item: InventoryItem) => void;
+  readonly onSort: (field: InventoryColumnField) => void;
+  readonly selectedProductId: string | null;
+  readonly sort: SortState;
+  readonly visibleFields: readonly InventoryColumnField[];
+}): React.JSX.Element {
+  return (
+    <div className="inventory-table-scroll">
+      <table
+        aria-describedby="inventory-read-only"
+        className="inventory-review-table"
+      >
+        <caption className="visually-hidden">{copy.title}</caption>
+        <thead>
+          <tr>
+            {visibleFields.map((field) => (
+              <th
+                aria-sort={sort.field === field ? sort.direction : undefined}
+                data-column-field={field}
+                key={field}
+                scope="col"
+              >
+                <button
+                  className="inventory-sort-button"
+                  type="button"
+                  onClick={() => onSort(field)}
+                >
+                  {inventoryColumnLabel(copy, field)}
+                  <span aria-hidden="true" className="inventory-sort-icon">
+                    {sort.field !== field
+                      ? "↕"
+                      : sort.direction === "ascending"
+                        ? "↑"
+                        : "↓"}
+                  </span>
+                </button>
+              </th>
+            ))}
+            <th data-column-field="actions" scope="col">
+              {copy.actionsColumn}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            return (
+              <tr
+                key={item.productId}
+                data-selected={selectedProductId === item.productId}
+                data-status={inventoryRowStatus(item)}
+                onClick={(event) => {
+                  if (
+                    event.target instanceof Element &&
+                    event.target.closest("button, a, input")
+                  )
+                    return;
+                  onSelect(item);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.target !== event.currentTarget ||
+                    (event.key !== "Enter" && event.key !== " ")
+                  )
+                    return;
+                  event.preventDefault();
+                  onSelect(item);
+                }}
+                tabIndex={0}
+              >
+                {visibleFields.map((field) => (
+                  <td data-column-field={field} key={field}>
+                    <InventoryCell
+                      copy={copy}
+                      field={field}
+                      item={item}
+                      locale={locale}
+                    />
+                  </td>
+                ))}
+                <td
+                  className="inventory-actions-cell"
+                  data-column-field="actions"
+                >
+                  {canManageReorder ? (
+                    <button
+                      aria-label={copy.addToBasketAriaLabel(item.displayName)}
+                      aria-disabled={addingProductId === item.productId}
+                      className="quiet-button inventory-cart-add"
+                      data-review-focus={`inventory-basket-add-${item.productId}`}
+                      title={copy.addToBasket}
+                      type="button"
+                      onClick={() => onAdd(item)}
+                    >
+                      <BasketIcon />
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function InventoryCell({
   copy,
   field,
   item,
   locale,
-  onAddToBasket,
 }: {
   readonly copy: InventoryCopy;
   readonly field: InventoryColumnField;
   readonly item: InventoryItem;
   readonly locale: "ar" | "en";
-  readonly canManageReorder: boolean;
-  readonly onAddToBasket: () => void;
 }): React.JSX.Element {
   switch (field) {
     case "item":
@@ -624,17 +1083,6 @@ function InventoryCell({
           >
             {item.displayName}
           </button>
-          {canManageReorder ? (
-            <button
-              aria-label={copy.addToBasketAriaLabel(item.displayName)}
-              className="quiet-button"
-              data-review-focus={`inventory-basket-add-${item.productId}`}
-              type="button"
-              onClick={onAddToBasket}
-            >
-              {copy.addToBasket}
-            </button>
-          ) : null}
         </div>
       );
     case "balance":
@@ -643,15 +1091,22 @@ function InventoryCell({
       return item.valueFils === null ? (
         <span>—</span>
       ) : (
-        <bdi>{formatCurrencyFromFils(BigInt(item.valueFils), locale)}</bdi>
+        <MoneyAmount
+          locale={locale}
+          value={formatCurrencyFromFils(BigInt(item.valueFils), locale)}
+        />
       );
     case "averageCost":
       return item.averageUnitCostFils === null ? (
         <span>—</span>
       ) : (
-        <bdi>
-          {formatCurrencyFromFils(BigInt(item.averageUnitCostFils), locale)}
-        </bdi>
+        <MoneyAmount
+          locale={locale}
+          value={formatCurrencyFromFils(
+            BigInt(item.averageUnitCostFils),
+            locale,
+          )}
+        />
       );
     case "batches":
       return <bdi>{formatNumber(BigInt(item.batches.count), locale)}</bdi>;
@@ -672,14 +1127,117 @@ function InventoryCell({
         <bdi>{formatNumber(BigInt(item.consumptionRatePer30Days), locale)}</bdi>
       );
     case "risk":
-      return (
-        <StateColourIndicators
-          copy={copy}
-          riskIndicators={item.riskIndicators}
-          stateColour={item.stateColour}
-        />
-      );
+      return <InventoryStatusBadges copy={copy} item={item} />;
   }
+}
+
+const STATUS_RISK_PRIORITY = [
+  "recalled",
+  "quarantined",
+  "expired",
+  "out-of-stock",
+  "expiring-soon",
+  "below-minimum",
+  "at-or-below-reorder-point",
+  "above-maximum",
+  "cold-storage",
+  "missing-barcode",
+] as const satisfies readonly InventoryRiskIndicator[];
+
+export function inventoryRiskSortRank(item: InventoryItem): bigint {
+  const index = STATUS_RISK_PRIORITY.findIndex((indicator) =>
+    item.riskIndicators.includes(indicator),
+  );
+  return index === -1 ? BigInt(STATUS_RISK_PRIORITY.length) : BigInt(index);
+}
+
+function InventoryStatusBadges({
+  copy,
+  item,
+}: {
+  readonly copy: InventoryCopy;
+  readonly item: InventoryItem;
+}): React.JSX.Element {
+  const colourLabel = copy.stateColours[item.stateColour.effective];
+  const ordered = STATUS_RISK_PRIORITY.filter((indicator) =>
+    item.riskIndicators.includes(indicator),
+  );
+  const primary = ordered[0];
+  if (primary === undefined) {
+    return (
+      <span className="inventory-status-badges">
+        <StateIndicator
+          assistiveLabel={colourLabel}
+          colour={item.stateColour.effective}
+          kind="state"
+          label={statusMeaning(colourLabel)}
+        />
+      </span>
+    );
+  }
+  return (
+    <span className="inventory-status-badges">
+      <StateIndicator
+        assistiveLabel={colourLabel}
+        indicator={primary}
+        kind="risk"
+        label={copy.riskIndicators[primary]}
+      />
+      {ordered.slice(1).map((indicator) => (
+        <span data-indicator={indicator} key={indicator}>
+          {copy.riskIndicators[indicator]}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function BasketIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <path d="m15 11-1 9" />
+      <path d="m19 11-4-7" />
+      <path d="M2 11h20" />
+      <path d="m3.5 11 1.6 7.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6l1.7-7.4" />
+      <path d="M4.5 15.5h15" />
+      <path d="m5 11 4-7" />
+      <path d="m9 11 1 9" />
+    </svg>
+  );
+}
+
+function inventoryColumnLabel(
+  copy: InventoryCopy,
+  field: InventoryColumnField,
+): string {
+  return field === "risk" ? copy.statusColumn : copy.columns[field];
+}
+
+function statusMeaning(label: string): string {
+  const separator = " — ";
+  const index = label.indexOf(separator);
+  return index === -1 ? label : label.slice(index + separator.length);
+}
+
+function inventoryRowStatus(item: InventoryItem): string {
+  if (
+    item.riskIndicators.includes("expired") ||
+    item.riskIndicators.includes("out-of-stock") ||
+    item.stateColour.effective === "red"
+  )
+    return "critical";
+  if (item.riskIndicators.includes("expiring-soon")) return "expiring";
+  if (
+    item.riskIndicators.includes("below-minimum") ||
+    item.riskIndicators.includes("at-or-below-reorder-point")
+  )
+    return "reorder";
+  if (
+    item.riskIndicators.includes("above-maximum") ||
+    item.stateColour.effective === "purple"
+  )
+    return "over-maximum";
+  return "stable";
 }
 
 function levelText(item: InventoryItem, locale: "ar" | "en"): string {
@@ -698,6 +1256,7 @@ function compareItems(
   left: InventoryItem,
   right: InventoryItem,
   field: InventoryColumnField,
+  direction: SortDirection,
 ): number {
   const value = (item: InventoryItem): bigint | string | null => {
     switch (field) {
@@ -726,22 +1285,36 @@ function compareItems(
       case "consumptionRate":
         return BigInt(item.consumptionRatePer30Days);
       case "risk":
-        return item.riskIndicators.join(",");
+        return inventoryRiskSortRank(item);
     }
   };
-  return compareSortable(value(left), value(right));
+  return compareSortable(value(left), value(right), direction);
 }
 
-function compareSortable(
+export function compareSortable(
   left: bigint | string | null,
   right: bigint | string | null,
+  direction: SortDirection,
 ): number {
-  if (left === right) return 0;
-  if (left === null) return -1;
-  if (right === null) return 1;
-  if (typeof left === "bigint" && typeof right === "bigint")
-    return left < right ? -1 : 1;
-  return String(left).localeCompare(String(right));
+  const leftMissing = isMissingSortValue(left);
+  const rightMissing = isMissingSortValue(right);
+  if (leftMissing || rightMissing) {
+    if (leftMissing && rightMissing) return 0;
+    return leftMissing ? 1 : -1;
+  }
+  const compared =
+    typeof left === "bigint" && typeof right === "bigint"
+      ? left < right
+        ? -1
+        : left > right
+          ? 1
+          : 0
+      : String(left).localeCompare(String(right));
+  return direction === "ascending" ? compared : -compared;
+}
+
+function isMissingSortValue(value: bigint | string | null): boolean {
+  return value === null || (typeof value === "string" && value.trim() === "");
 }
 
 function isValuationField(field: InventoryColumnField): boolean {
@@ -834,25 +1407,34 @@ export function InventoryMovements({
 
   return (
     <section
-      className="inventory-workspace"
+      className="inventory-workspace inventory-detail-page"
       aria-labelledby="inventory-movement-title"
     >
-      <p>
-        <a href="#/inventory">{copy.backToInventory}</a>
-      </p>
-      <h2 id="inventory-movement-title">
-        {copy.movement.title} · <bdi>{response.productDisplayName}</bdi>
-      </h2>
+      <header className="inventory-detail-header">
+        <div className="inventory-detail-heading">
+          <a
+            className="inventory-chip inventory-chip-primary"
+            href="#/inventory"
+          >
+            {copy.backToInventory}
+          </a>
+          <h2 id="inventory-movement-title">
+            {copy.movement.title} — <bdi>{response.productDisplayName}</bdi>
+          </h2>
+        </div>
+      </header>
       <BatchSafetyPanel
         baseUrl={baseUrl}
         checkNow={checkNow}
         productId={productId}
       />
       {response.movements.length === 0 ? (
-        <p role="status">{copy.movement.empty}</p>
+        <div className="inventory-history-card inventory-history-empty">
+          <p role="status">{copy.movement.empty}</p>
+        </div>
       ) : (
-        <div className="inventory-table-scroll">
-          <table>
+        <div className="inventory-table-scroll inventory-history-card">
+          <table className="inventory-history-table">
             <caption className="visually-hidden">{copy.movement.title}</caption>
             <thead>
               <tr>
@@ -875,10 +1457,18 @@ export function InventoryMovements({
                     type="button"
                     onClick={(event) => {
                       openerRef.current = event.currentTarget;
-                      window.location.hash =
+                      const nextHash =
                         movement.reference.documentType === "count-session"
                           ? `#/inventory/items/${productId}/movements/count-sessions/${movement.reference.documentId}`
                           : `#/inventory/items/${productId}/movements/${movement.reference.documentId}`;
+                      // Closing the review uses replaceState, so the shell
+                      // still holds this document id and a repeat click does
+                      // not change that prop. Clear the dismiss flag or the
+                      // same reference stays closed until another one opens.
+                      setDismissedDocumentId(null);
+                      if (window.location.hash !== nextHash) {
+                        window.location.hash = nextHash;
+                      }
                     }}
                   >
                     {referenceLabel}
@@ -909,14 +1499,17 @@ export function InventoryMovements({
                       </bdi>
                     </td>
                     <td>
-                      <bdi>
-                        {movement.valueFils === null
-                          ? "—"
-                          : formatCurrencyFromFils(
-                              BigInt(movement.valueFils),
-                              locale,
-                            )}
-                      </bdi>
+                      {movement.valueFils === null ? (
+                        "—"
+                      ) : (
+                        <MoneyAmount
+                          locale={locale}
+                          value={formatCurrencyFromFils(
+                            BigInt(movement.valueFils),
+                            locale,
+                          )}
+                        />
+                      )}
                     </td>
                   </tr>
                 );

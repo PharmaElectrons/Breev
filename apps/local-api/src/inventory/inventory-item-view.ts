@@ -26,6 +26,7 @@ export function inventoryItemView(
   nearExpiryDays: number,
 ): InventoryItem {
   const balance = position?.balance ?? 0n;
+  const batches = position?.batches ?? [];
   const indicators = riskIndicators({
     balance,
     coldStorageRequired: fact.coldStorageRequired,
@@ -36,6 +37,8 @@ export function inventoryItemView(
     minimumLevel: fact.stockLevels.minimumLevel,
     businessDate,
     nearExpiryDays,
+    quarantinedCount: countedBatches(batches, "quarantined"),
+    recalledCount: countedBatches(batches, "recalled"),
     reorderPoint: fact.stockLevels.reorderPoint,
   });
   const automatic = automaticStateColour(indicators);
@@ -64,6 +67,17 @@ export function inventoryItemView(
     stockLevels: stockLevelsView(fact),
     valueFils: valuationGranted ? (position?.valueFils ?? 0n).toString() : null,
   });
+}
+
+function countedBatches(
+  batches: InventoryPosition["batches"],
+  status: "quarantined" | "recalled",
+): bigint {
+  return batches.reduce(
+    (count, batch) =>
+      batch.status === status && batch.balance > 0n ? count + 1n : count,
+    0n,
+  );
 }
 
 export function includeInReview(

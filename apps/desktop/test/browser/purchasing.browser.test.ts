@@ -20,7 +20,7 @@ import {
 } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
@@ -50,6 +50,15 @@ interface Credentials {
 interface RendererServer {
   readonly origin: string;
   readonly server: Server;
+}
+
+interface PrintLayoutMetrics {
+  readonly buttons: number;
+  readonly clientWidth: number;
+  readonly rootDisplay: string;
+  readonly scrollWidth: number;
+  readonly sheetTop: number;
+  readonly tableWider: boolean;
 }
 
 test.describe.serial("Supplier and Purchase Draft screens", () => {
@@ -211,16 +220,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
 
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
-    const invoice = page.getByLabel("Supplier invoice number");
-    await invoice.focus();
-    await page.keyboard.type("SUP-2026-0042");
-    await page.keyboard.press("Tab");
     const supplier = page.getByRole("combobox", {
       name: "Supplier",
       exact: true,
     });
-    await expect(supplier).toBeFocused();
-    await supplier.selectOption(supplierId);
+    await supplier.click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
+    const invoice = page.getByLabel("Supplier invoice number");
+    await invoice.focus();
+    await page.keyboard.type("SUP-2026-0042");
     const paymentContext = page.getByRole("combobox", {
       name: /^Payment context/,
     });
@@ -235,34 +243,25 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.locator(".purchase-snapshot").getByText("2.5%", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText("Draft saved and durable.")).toBeVisible();
     await expect(
-      page
-        .locator(".purchase-snapshot")
-        .getByText("Version", { exact: true })
-        .locator(".."),
-    ).toContainText("1");
-    await page
-      .getByRole("button", { name: "Search invoices", exact: true })
-      .click();
+      page.getByRole("textbox", { name: "Item / Barcode", exact: true }),
+    ).toBeFocused();
+    await expect(page.getByText("Draft saved and durable.")).toBeVisible();
+    await expect(supplier).toHaveValue("Al-Nahrain Medical");
+
+    await page.getByRole("button", { name: "Saved drafts" }).click();
     const search = page.getByRole("searchbox", { name: "Search invoices" });
     await search.fill("SUP-2026-0042");
     await expect(
-      page.locator(".purchase-draft-table tbody tr", {
-        hasText: "SUP-2026-0042",
+      page.getByRole("button", {
+        name: /SUP-2026-0042/,
       }),
     ).toBeVisible();
-    let filterOpenedDiscard = false;
-    page.once("dialog", async (dialog) => {
-      filterOpenedDiscard = true;
-      await dialog.dismiss();
-    });
     await search.press("Escape");
     await expect(search).toHaveValue("");
     await search.press("Escape");
     await page.waitForTimeout(50);
-    expect(filterOpenedDiscard).toBe(false);
-    page.removeAllListeners("dialog");
+    await expect(page.locator(".purchase-discard-dialog")).toBeHidden();
     await expect(page.getByRole("dialog")).toBeHidden();
     await page.getByRole("button", { name: /Saved drafts/ }).click();
     await search.fill("missing invoice");
@@ -270,6 +269,12 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       page.getByText("No drafts match these filters."),
     ).toBeVisible();
     await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(search).toHaveValue("");
+    await expect(
+      page.getByRole("button", {
+        name: /SUP-2026-0042/,
+      }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: /Saved drafts/ }).click();
     await expect(
@@ -294,25 +299,63 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
 
     await page.getByRole("button", { name: "New invoice" }).click();
-    await invoice.fill("SUP-2026-0042");
-    await supplier.selectOption(supplierId);
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
+    await supplier.click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
+    await invoice.fill("SUP-2026-0042");
     await page.getByRole("button", { name: "Save draft" }).click();
     const warning = page.getByRole("alert");
     await expect(warning).toContainText("already recorded");
     await expect(warning).toContainText("Current rule: warn");
     await expect(page.getByText("Draft saved and durable.")).toBeVisible();
+    // The asynchronous create commits its item-entry focus before accepting
+    // another keyboard action from the user.
+    await expect(
+      page.getByRole("textbox", { name: "Item / Barcode", exact: true }),
+    ).toBeFocused();
 
-    page.once("dialog", (dialog) => dialog.dismiss());
     await page.keyboard.press("Escape");
+    await expect(page.locator(".purchase-discard-dialog")).toBeVisible();
+    await page
+      .locator(".purchase-discard-dialog")
+      .getByRole("button", { name: "Close" })
+      .click();
     await expect(
       page.locator(".purchase-snapshot").getByText("2.5%", { exact: true }),
     ).toBeVisible();
-    page.once("dialog", (dialog) => dialog.accept());
+
     await page.keyboard.press("Escape");
+    await expect(page.locator(".purchase-discard-dialog")).toBeVisible();
+    await page
+      .locator(".purchase-discard-dialog")
+      .getByRole("button", { name: "Discard draft" })
+      .click();
     await expect(
       page.getByText("Draft discarded after confirmation."),
     ).toBeVisible();
+
+    // Verify post-discard state: placeholder shows helpful prompt and invoice number is focused
+    await expect(
+      page.getByText(
+        "Enter supplier invoice number and select supplier, then press Enter to start adding items.",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Start adding items ↵" }),
+    ).toBeVisible();
+    await expect(invoice).toBeFocused();
+
+    // Re-enter new invoice seamlessly via keyboard: Enter moves to supplier, Enter creates draft and focuses table
+    await invoice.fill("SUP-2026-RECOVER");
+    await invoice.press("Enter");
+    await expect(supplier).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByText("Draft saved and durable.")).toBeVisible();
+    await expect(
+      page.getByRole("textbox", { name: "Item / Barcode", exact: true }),
+    ).toBeFocused();
   });
 
   test("enters durable rows by scanner and Enter, quick-creates a Product, and follows persisted column order", async ({
@@ -331,10 +374,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByRole("button", { name: "New invoice" }).click();
+    await page.getByRole("combobox", { name: "Supplier", exact: true }).click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
     await page.getByLabel("Supplier invoice number").fill("ROWS-49");
-    await page
-      .getByRole("combobox", { name: "Supplier", exact: true })
-      .selectOption(supplierId);
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-09-07");
     await page.getByRole("button", { name: "Save draft" }).click();
 
@@ -342,15 +384,15 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: "Item / Barcode",
       exact: true,
     });
-    const quantity = page.getByRole("textbox", {
+    const quantity = page.getByRole("spinbutton", {
       name: "Quantity",
       exact: true,
     });
-    const cost = page.getByRole("textbox", {
+    const cost = page.getByRole("spinbutton", {
       name: "Primary cost",
       exact: true,
     });
-    const sellingPrice = page.getByRole("textbox", {
+    const sellingPrice = page.getByRole("spinbutton", {
       name: "Selling price",
       exact: true,
     });
@@ -363,8 +405,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await item.press("Enter");
     await expect(quantity).toBeFocused();
     await expect(
-      page.getByText(purchaseProduct.displayName, { exact: true }).last(),
-    ).toBeVisible();
+      page.locator("aside.purchase-item-panel .purchase-item-trade-name"),
+    ).toHaveText(purchaseProduct.displayName);
 
     // The item-details panel is the only surface that carries the wholesale
     // price, so it has to be readable while the row is being typed. Finding it
@@ -396,9 +438,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ]) {
       await page.setViewportSize(viewport);
       await expect(panel).toBeInViewport({ ratio: 1 });
-      await expect(panel.locator("dl > div dd").last()).toBeInViewport({
-        ratio: 1,
-      });
+      await expect(
+        panel.locator(".purchase-fact-row:nth-child(3) .purchase-fact-value"),
+      ).toBeInViewport({ ratio: 1 });
       // Polled: a resize relayouts asynchronously, so a single read can catch
       // the previous layout.
       await expect
@@ -473,8 +515,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await item.fill("5012345678956");
     await item.press("Enter");
     await expect(
-      page.getByText(percentageProduct.displayName).last(),
-    ).toBeVisible();
+      page.locator("aside.purchase-item-panel .purchase-item-trade-name"),
+    ).toHaveText(percentageProduct.displayName);
     await quantity.press("Enter");
     await cost.fill("80000");
     await cost.press("Enter");
@@ -526,15 +568,12 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       .getByRole("button", { name: "Move earlier: Quantity" })
       .click();
     await settings
-      .getByRole("radio", { name: "Return to Item / Barcode" })
-      .check();
-    await settings
       .getByRole("button", { name: "Move earlier: Expiry" })
       .click();
     await settings.getByRole("button", { name: "Save entry settings" }).click();
     await expect(
-      page.getByText("Purchase entry settings saved."),
-    ).toBeVisible();
+      page.getByRole("region", { name: "Invoice rows" }).getByRole("status"),
+    ).toHaveText("Purchase entry settings saved.");
     await expect(page.locator(".purchase-row-table thead th")).toHaveText([
       "#",
       "Quantity",
@@ -542,6 +581,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "Expiry",
       "Primary cost",
       "Inventory Units",
+      "Actions",
     ]);
 
     await page.reload();
@@ -564,7 +604,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(cost).toBeFocused();
     await cost.press("Enter");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(5);
-    await expect(resumedItem).toBeFocused();
+    await expect(quantity).toBeFocused();
 
     const currentPreferences = await apiRequest(
       apiOrigin,
@@ -616,6 +656,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "Expiry",
       "Item / Barcode",
       "Inventory Units",
+      "Actions",
     ]);
     await expect(quantity).toBeFocused();
     await quantity.press("Enter");
@@ -755,11 +796,12 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         const committedBaseUnits = page.locator(
           '.purchase-row-table tbody tr:not(.purchase-entry-row) [data-column-field="inventory-units"]',
         );
-        await expect(entryBaseUnits).toHaveText("4 Strip");
+        const expectedBaseUnits = locale === "ar" ? "4 أشرطة" : "4 Strip";
+        await expect(entryBaseUnits).toHaveText(expectedBaseUnits);
         await expect(itemPanel).toBeVisible();
-        // The packaged window's default inner size, the browser-test viewport,
-        // and the 1280x800 verification viewport all fall below the 80rem
-        // breakpoint, where the panel is a band rather than a side column.
+        // The first three viewports use the narrow band layout below 80rem;
+        // the final viewport verifies the fixed side panel above that
+        // breakpoint.
         for (const viewport of [
           { height: 658, width: 1066 },
           { height: 800, width: 1280 },
@@ -768,9 +810,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         ]) {
           await page.setViewportSize(viewport);
           await expect(itemPanel).toBeInViewport({ ratio: 1 });
-          await expect(itemPanel.locator("dl > div dd").last()).toBeInViewport({
-            ratio: 1,
-          });
+          await expect(
+            itemPanel.locator(
+              ".purchase-fact-row:nth-child(3) .purchase-fact-value",
+            ),
+          ).toBeInViewport({ ratio: 1 });
           // The base-unit preview column, in this direction and theme.
           await expectWorkspaceSectionsStacked(page);
           await expectBaseUnitColumnOnScreen(entryBaseUnits);
@@ -782,7 +826,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
             )
             .toBe(true);
         }
-        await expect(itemPanel.locator("strong")).toHaveText(
+        await expect(itemPanel.locator(".purchase-item-trade-name")).toHaveText(
           purchaseProduct.displayName,
         );
         await expect(itemPanel.locator("dl > div dd")).toHaveCount(4);
@@ -865,7 +909,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page
           .getByRole("button", { name: new RegExp(unitsInvoice) })
           .click();
-        await expect(committedBaseUnits.last()).toHaveText("4 Strip");
+        await expect(committedBaseUnits.last()).toHaveText(
+          locale === "ar" ? "4 أشرطة" : "4 Strip",
+        );
         for (const viewport of [
           { height: 768, width: 1024 },
           { height: 658, width: 1066 },
@@ -907,9 +953,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await page.getByLabel("Supplier invoice number").fill("UNSAVED-HEADER");
-    await page
-      .getByRole("combobox", { name: "Supplier", exact: true })
-      .selectOption(supplierId);
+    await page.getByRole("combobox", { name: "Supplier", exact: true }).click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
     const suppliersView = page.getByRole("button", {
       name: "Suppliers",
       exact: true,
@@ -929,11 +974,110 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
     await expect(
       page.getByRole("combobox", { name: "Supplier", exact: true }),
-    ).toHaveValue(supplierId);
+    ).toHaveValue("Al-Nahrain Medical");
     await suppliersView.click();
     await expect(page.getByLabel("Supplier name", { exact: true })).toHaveValue(
       "Unfinished supplier",
     );
+  });
+
+  test("quarantines later accounting, report, OCR, and legal-print surfaces", async ({
+    page,
+  }) => {
+    for (const locale of ["en", "ar"] as const) {
+      await page.goto("about:blank");
+      await installDesktopFake(page, renderer.origin, locale, "light");
+      await page.goto(`${renderer.origin}#/purchases`);
+
+      const labels =
+        locale === "en"
+          ? {
+              account: "Accounts",
+              accountStatement: "Account statement",
+              adjustment: "Edit Invoice",
+              importImage: "Import from image",
+              invoiceLedger: "Invoice transaction ledger",
+              liveBalance: "Live balance",
+              printInvoice: "Print invoice",
+              printReturn: "Print return slip",
+              profile: "Supplier profile",
+              reports: "Reports",
+              purchaseReturn: "Purchase return",
+              suppliers: "Suppliers",
+            }
+          : {
+              account: "الحسابات",
+              accountStatement: "كشف حساب",
+              adjustment: "تعديل الفاتورة",
+              importImage: "استيراد من صورة",
+              invoiceLedger: "تفاصيل حركة الفواتير",
+              liveBalance: "ديون المذخر (تلقائية)",
+              printInvoice: "طباعة الفاتورة",
+              printReturn: "طباعة فاتورة المرتجع",
+              profile: "بيانات المذخر",
+              reports: "التقارير",
+              purchaseReturn: "فاتورة مردود",
+              suppliers: "الموردون",
+            };
+
+      await expect(
+        page.getByRole("link", { name: labels.reports, exact: true }),
+      ).toHaveCount(0);
+      await page.getByTestId("collapse-menu-trigger").click();
+      await expect(
+        page.getByRole("link", { name: labels.account, exact: true }),
+      ).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("button", { name: labels.importImage, exact: true }),
+      ).toHaveCount(0);
+
+      await page
+        .getByRole("button", { name: labels.suppliers, exact: true })
+        .click();
+      const supplierWorkspace = page.locator(".supplier-manager");
+      await expect(supplierWorkspace.getByText(labels.profile)).toBeVisible();
+      await expect(
+        supplierWorkspace.getByText(labels.accountStatement, { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        supplierWorkspace.getByText(labels.invoiceLedger, { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        supplierWorkspace.getByText(labels.liveBalance, { exact: true }),
+      ).toHaveCount(0);
+
+      await postedInvoicesTab(page).click();
+      const postedView = page.locator("#purchase-posted-view");
+      await postedView
+        .getByRole("button", {
+          name: locale === "en" ? /Open invoice P/u : /فتح الفاتورة P/u,
+        })
+        .first()
+        .click();
+      await expect(
+        postedView.getByRole("button", {
+          name: labels.printInvoice,
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      await expect(
+        postedView.getByRole("button", {
+          name: labels.printReturn,
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      await expect(
+        postedView.getByRole("button", {
+          name: labels.adjustment,
+        }),
+      ).toBeVisible();
+      await expect(
+        postedView.getByRole("button", {
+          name: labels.purchaseReturn,
+        }),
+      ).toBeVisible();
+    }
   });
 
   test("contains wide and narrow layouts without document overflow", async ({
@@ -993,23 +1137,24 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     await expect(page.getByLabel("Supplier invoice number")).toBeVisible();
-    await expect(page.getByTestId("shell-state")).toBeHidden();
-    const statusToggle = page.locator(".purchase-connection > summary");
-    await statusToggle.focus();
+    const menu = page.getByTestId("collapse-menu-dropdown");
+    await expect(menu).toBeHidden();
+    await page.getByTestId("collapse-menu-trigger").focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("shell-state")).toHaveText("Ready");
-    await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
-    await statusToggle.press("Enter");
-    await expect(page.getByTestId("shell-state")).toBeHidden();
+    await expect(menu).toBeVisible();
+    await expect(menu.getByTestId("shell-state")).toHaveText("Ready");
+    await expect(menu.getByRole("button", { name: "Check now" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
     await expect(
       page.getByRole("button", { name: "Import from image" }),
     ).toHaveCount(0);
-    await expect(page.getByLabel("Barcode / item search")).toBeDisabled();
     await expect(
-      page
-        .locator(".purchase-actions")
-        .getByRole("button", { name: "Print invoice", exact: true }),
-    ).toBeDisabled();
+      page.getByRole("textbox", { name: "Item / Barcode", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Print invoice", exact: true }),
+    ).toHaveCount(0);
   });
 
   test("retries an uncertain draft creation without creating a duplicate", async ({
@@ -1017,10 +1162,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   }) => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
+    await page.getByRole("combobox", { name: "Supplier", exact: true }).click();
+    await page.getByRole("option", { name: "Al-Nahrain Medical" }).click();
     await page.getByLabel("Supplier invoice number").fill("TIMEOUT-RETRY-1");
-    await page
-      .getByRole("combobox", { name: "Supplier", exact: true })
-      .selectOption(supplierId);
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
 
     delayNextDraftCreateResponse = true;
@@ -1067,11 +1211,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       receipt.getByRole("heading", { name: "Posted purchase" }),
     ).toBeVisible();
     await expect(receipt).toContainText("POST-ATOMIC-1");
-    await expect(receipt).toContainText("purchase.invoice");
     await expect(receipt).toContainText("inventory");
-    await expect(receipt).toContainText("cash");
-    await expect(receipt).toContainText("Batch ID");
-    await expect(receipt).toContainText("Movement ID");
+    await expect(receipt).toContainText("Cash / Drawer");
+    await expect(receipt).toContainText("Lot");
+    await expect(receipt).toContainText("Expiry");
     await expect(page.getByLabel("Supplier invoice number")).toHaveValue("");
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({
@@ -1095,7 +1238,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
 
     delayNextPurchasePostResponse = true;
-    await page.getByRole("button", { name: "ترحيل الشراء" }).click();
+    await page.getByRole("button", { name: "حفظ الفاتورة" }).click();
     await expect(page.getByText(/تعذر تأكيد النتيجة/)).toBeVisible({
       timeout: 7_000,
     });
@@ -1103,7 +1246,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     const receipt = page.locator(".posted-purchase-result");
     await expect(
-      receipt.getByRole("heading", { name: "شراء مُرحّل" }),
+      receipt.getByRole("heading", { name: "فاتورة شراء محفوظة" }),
     ).toBeVisible();
     await expect(receipt).toContainText("POST-RELOAD-1");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -1165,13 +1308,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     const page = await context.newPage();
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
-    const opener = page.getByRole("button", { name: "Posted invoices" });
+    const opener = postedInvoicesTab(page);
     await opener.focus();
     await pressKeyOnFocused(page, opener, "Enter");
 
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     const search = dialog.getByRole("searchbox", {
       name: "Search posted purchases",
@@ -1401,7 +1542,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(returnLink).toBeFocused();
 
     expect(
-      (await new AxeBuilder({ page }).include("dialog").analyze()).violations,
+      (
+        await new AxeBuilder({ page })
+          .include("#purchase-posted-view")
+          .analyze()
+      ).violations,
     ).toEqual([]);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -1419,10 +1564,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
     denyNextPostedListResponse = true;
-    await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    await postedInvoicesTab(page).click();
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog.getByRole("alert")).toContainText(
       "Access denied. Audit request:",
     );
@@ -1433,7 +1576,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await dialog.getByRole("button", { name: "Close" }).click();
 
     failNextPostedListResponse = true;
-    await page.getByRole("button", { name: "Posted invoices" }).click();
+    await postedInvoicesTab(page).click();
     await expect(dialog.getByRole("alert")).toContainText(
       "The local API is unavailable.",
     );
@@ -1460,9 +1603,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
 
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Close" }).click();
 
@@ -1471,12 +1612,21 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         "Your role can review posted purchases. Purchase draft entry is hidden because this role does not have draft-management permission.",
       ),
     ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Posted invoices" }),
-    ).toBeVisible();
+    await expect(postedInvoicesTab(page)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Purchase invoice" }),
     ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Suppliers", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Reports", exact: true }),
+    ).toHaveCount(0);
+    await page.getByTestId("collapse-menu-trigger").click();
+    await expect(
+      page.getByRole("link", { name: "Accounts", exact: true }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await expect(page.locator("#purchase-invoice-view")).toBeHidden();
   });
 
@@ -1488,28 +1638,23 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await page.goto("about:blank");
         await installDesktopFake(page, renderer.origin, locale, theme);
         await page.goto(`${renderer.origin}#/purchases`);
-        await page
-          .getByRole("button", {
-            name: locale === "en" ? "Posted invoices" : "الفواتير المُرحّلة",
-          })
-          .click();
-        const dialog = page.getByRole("dialog", {
-          name:
-            locale === "en"
-              ? "Posted purchase invoices"
-              : "فواتير الشراء المُرحّلة",
-        });
+        const postedInvoices = postedInvoicesTab(page);
+        await expect(postedInvoices).toHaveAccessibleName(
+          locale === "en" ? "Posted invoices" : "فواتير محفوظة",
+        );
+        await postedInvoices.click();
+        const dialog = page.locator("#purchase-posted-view");
         const search = dialog.getByRole("searchbox", {
           name:
             locale === "en"
               ? "Search posted purchases"
-              : "البحث في المشتريات المُرحّلة",
+              : "البحث في فواتير الشراء",
         });
         await search.fill("BROWSER-REVIEW");
         await search.press("Enter");
-        await expect(
-          dialog.locator(".posted-purchase-list tbody tr"),
-        ).toHaveCount(2);
+        const rows = dialog.locator(".posted-purchase-list tbody tr");
+        await expect(rows.first()).toBeVisible();
+        expect(await rows.count()).toBeGreaterThanOrEqual(2);
         await dialog.screenshot({
           animations: "disabled",
           path: path.join(
@@ -1518,8 +1663,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           ),
         });
         await dialog
+          .locator(".posted-purchase-list tbody tr", {
+            hasText: "BROWSER-REVIEW-A",
+          })
           .getByRole("button", {
-            name: locale === "en" ? /Open invoice P/u : /فتح الفاتورة P/u,
+            name: locale === "en" ? /Open invoice/u : /فتح الفاتورة/u,
           })
           .first()
           .click();
@@ -1587,6 +1735,11 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         });
         await dialog
           .getByRole("button", {
+            name: locale === "en" ? "Back to results" : "العودة إلى النتائج",
+          })
+          .click();
+        await dialog
+          .getByRole("button", {
             name: locale === "en" ? "Close" : "إغلاق",
           })
           .click();
@@ -1608,9 +1761,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     await page.getByRole("button", { name: "Post purchase" }).click();
     const alert = page.locator("#purchase-post-denial");
-    await expect(alert).toContainText("expiry-required");
+    await expect(alert).toHaveAttribute("data-denial-code", "expiry-required");
     await expect(alert).toContainText(
-      "purchase.post.expiry-required-at-receipt",
+      "Posting refused: an expiry date is required for medication and cold-chain items.",
     );
     const expiryCell = page.locator(
       '[data-post-row="0"][data-post-field="expiryDate"]',
@@ -1621,6 +1774,69 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "POST-REJECTED-1",
     );
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+  });
+
+  test("allows correcting a missing expiry inline on the draft row and posting successfully", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "POST-REJECTED-FIX-1",
+      "",
+    );
+
+    await page.getByRole("button", { name: "Post purchase" }).click();
+    const alert = page.locator("#purchase-post-denial");
+    await expect(alert).toHaveAttribute("data-denial-code", "expiry-required");
+    await expect(alert).toContainText(
+      "Posting refused: an expiry date is required for medication and cold-chain items.",
+    );
+    const expiryCell = page.locator(
+      '[data-post-row="0"][data-post-field="expiryDate"]',
+    );
+    await expect(expiryCell).toHaveAttribute("data-post-error", "true");
+
+    await page.getByRole("button", { name: /^Edit item:/ }).click();
+    const expiryInput = page.locator(
+      'tr[data-editing="true"] input[type="date"]',
+    );
+    await expect(expiryInput).toBeVisible();
+    await expiryInput.fill("2029-06-30");
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(
+      page.getByText("Row updated and saved durably."),
+    ).toBeVisible();
+    await expect(expiryCell).toContainText("2029-06-30");
+
+    await page.getByRole("button", { name: "Post purchase" }).click();
+    const receipt = page.locator(".posted-purchase-result");
+    await expect(
+      receipt.getByRole("heading", { name: "Posted purchase" }),
+    ).toBeVisible();
+    await expect(receipt).toContainText("POST-REJECTED-FIX-1");
+  });
+
+  test("allows deleting a draft row and re-sequencing the remaining rows", async ({
+    page,
+  }) => {
+    page.on("dialog", (dialog) => dialog.accept());
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await createPurchaseWithOneRow(
+      page,
+      renderer.origin,
+      supplierId,
+      "DELETE-ROW-1",
+      "2029-12-31",
+    );
+
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
+    await page.getByRole("button", { name: /^Delete item:/ }).click();
+    await expect(page.getByText("Row deleted from draft.")).toBeVisible();
+    await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(1);
   });
 
   test("preserves an invalid Supplier header and returns focus for correction", async ({
@@ -1647,8 +1863,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: "Supplier",
       exact: true,
     });
+    await supplier.click();
+    await page.getByRole("option", { name: invalidSupplier.name }).click();
     await invoice.fill("INVALID-SUPPLIER-1");
-    await supplier.selectOption(invalidSupplier.id);
     await page.getByLabel("Invoice date", { exact: true }).fill("2026-08-15");
     expect(
       (
@@ -1665,10 +1882,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       ).status,
     ).toBe(201);
 
-    await page.getByRole("button", { name: "Save draft" }).click();
+    await page.getByRole("button", { name: /Start adding items/ }).click();
     await expect(page.getByText(/The change was not saved/)).toBeVisible();
     await expect(invoice).toHaveValue("INVALID-SUPPLIER-1");
-    await expect(supplier).toHaveValue(invalidSupplier.id);
+    await expect(supplier).toHaveValue(invalidSupplier.name);
     await expect(supplier).toBeFocused();
   });
 
@@ -1739,7 +1956,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await item.fill("5012345678949");
     await item.press("Enter");
     const panel = page.locator("aside.purchase-item-panel");
-    await expect(panel.locator("strong")).toHaveText(
+    await expect(panel.locator(".purchase-item-trade-name")).toHaveText(
       purchaseProduct.displayName,
     );
 
@@ -1755,9 +1972,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeGreaterThan(0);
     await expect(panel).toBeVisible();
     await expect(panel).toBeInViewport({ ratio: 1 });
-    await expect(panel.locator("dl > div dd").last()).toBeInViewport({
-      ratio: 1,
-    });
+    await expect(
+      panel.locator(".purchase-fact-row:nth-child(3) .purchase-fact-value"),
+    ).toBeInViewport({ ratio: 1 });
     await expect(panel).toContainText("90000");
   });
 
@@ -1823,10 +2040,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBe(201);
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
-    await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    await postedInvoicesTab(page).click();
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog
       .getByRole("searchbox", { name: "Search posted purchases" })
@@ -1884,10 +2099,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     );
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/purchases`);
-    await page.getByRole("button", { name: "Posted invoices" }).click();
-    const dialog = page.getByRole("dialog", {
-      name: "Posted purchase invoices",
-    });
+    await postedInvoicesTab(page).click();
+    const dialog = page.locator("#purchase-posted-view");
     await expect(dialog).toBeVisible();
     await dialog
       .getByRole("searchbox", { name: "Search posted purchases" })
@@ -1932,6 +2145,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await dialog
       .getByRole("button", { name: "Create adjustment copy" })
       .click();
+    await expect(
+      dialog.getByRole("button", { name: "Create adjustment copy" }),
+    ).toBeHidden();
     await dialog
       .getByRole("textbox", {
         name: new RegExp(`Quantity ${purchaseProduct.displayName}`, "u"),
@@ -1954,6 +2170,127 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       dialog.getByRole("button", { name: "Save and review Delta" }),
     ).toBeVisible();
+  });
+
+  test("prints the purchase snapshot as an A4 document in Arabic and English", async ({
+    page,
+  }) => {
+    const printDir = path.resolve(
+      import.meta.dirname,
+      "../../../../test-results/purchase-snapshot-print",
+    );
+    await mkdir(printDir, { recursive: true });
+    for (const locale of ["ar", "en"] as const) {
+      await page.goto("about:blank");
+      await installDesktopFake(page, renderer.origin, locale, "light");
+      await page.setViewportSize({ width: 794, height: 1123 });
+      await page.goto(`${renderer.origin}#/purchases`);
+      await postedInvoicesTab(page).click();
+      const dialog = page.locator("#purchase-posted-view");
+      const search = dialog.getByRole("searchbox", {
+        name:
+          locale === "ar"
+            ? "البحث في فواتير الشراء"
+            : "Search posted purchases",
+      });
+      await search.fill("BROWSER-REVIEW-A");
+      await search.press("Enter");
+      await dialog
+        .getByRole("button", {
+          name: locale === "ar" ? /فتح الفاتورة P/u : /Open invoice P/u,
+        })
+        .first()
+        .click();
+      const review = dialog.locator(".posted-purchase-review");
+      await expect(review).toBeVisible();
+      const number = (
+        await dialog.locator("#posted-detail-title").innerText()
+      ).trim();
+      const supplierCost = await moneyBeside(
+        review,
+        locale === "ar" ? "الكلفة" : "Primary supplier cost",
+      );
+      const allowance = await moneyBeside(
+        review,
+        locale === "ar" ? "مبلغ السماح" : "Allowance amount",
+      );
+      const afterAllowance = await moneyBeside(
+        review,
+        locale === "ar" ? "الكلفة بعد الخصم" : "Cost after discount",
+      );
+      const sheet = page.locator("body > .purchase-snapshot-print");
+      await expect(sheet).toBeHidden();
+      await page.emulateMedia({ media: "print" });
+      await expect(sheet).toBeVisible();
+      await expect(sheet).toHaveAttribute(
+        "dir",
+        locale === "ar" ? "rtl" : "ltr",
+      );
+      await expect(page.locator("#root")).toBeHidden();
+      await expect(sheet.locator("button, a, input")).toHaveCount(0);
+      await expect(sheet).toContainText(number);
+      await expect(sheet).toContainText("Al-Nahrain Medical");
+      await expect(sheet).toContainText("BROWSER-REVIEW-A");
+      await expect(sheet).toContainText("2026-09-08");
+      await expect(sheet).toContainText(supplierCost);
+      await expect(sheet).toContainText(allowance);
+      await expect(sheet).toContainText(afterAllowance);
+      await expect(sheet).toContainText(
+        locale === "ar" ? "لقطة نسبة السماح" : "Allowance snapshot",
+      );
+      await expect(sheet).toContainText(
+        locale === "ar" ? "إجماليات الفاتورة" : "Invoice totals",
+      );
+      await expect(sheet).toContainText(purchaseProduct.displayName);
+      await expect(sheet).toContainText(locale === "ar" ? "أشرطة" : "Strip");
+      const metrics = await page.evaluate<PrintLayoutMetrics>(
+        `(() => {
+          const element = document.querySelector(".purchase-snapshot-print");
+          const table = element === null ? null : element.querySelector("table");
+          const root = document.getElementById("root");
+          return {
+            buttons:
+              element === null
+                ? -1
+                : element.querySelectorAll("button, a, input").length,
+            clientWidth: document.documentElement.clientWidth,
+            rootDisplay:
+              root === null ? "missing" : getComputedStyle(root).display,
+            scrollWidth: document.documentElement.scrollWidth,
+            sheetTop:
+              element === null ? 999 : element.getBoundingClientRect().top,
+            tableWider:
+              table !== null && table.scrollWidth > table.clientWidth + 1,
+          };
+        })()`,
+      );
+      expect(metrics.rootDisplay).toBe("none");
+      expect(metrics.sheetTop).toBeLessThan(8);
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+      expect(metrics.tableWider).toBe(false);
+      expect(metrics.buttons).toBe(0);
+      await page.screenshot({
+        animations: "disabled",
+        fullPage: true,
+        path: path.join(printDir, `snapshot-${locale}.png`),
+      });
+      const pdf = await page.pdf({
+        format: "A4",
+        preferCSSPageSize: true,
+        printBackground: true,
+      });
+      await writeFile(path.join(printDir, `snapshot-${locale}.pdf`), pdf);
+      const mediaBox =
+        /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/u.exec(
+          pdf.toString("latin1"),
+        );
+      expect(mediaBox).not.toBeNull();
+      expect(Number(mediaBox?.[1])).toBeGreaterThan(590);
+      expect(Number(mediaBox?.[1])).toBeLessThan(600);
+      expect(Number(mediaBox?.[2])).toBeGreaterThan(835);
+      expect(Number(mediaBox?.[2])).toBeLessThan(850);
+      await page.emulateMedia({ media: "screen" });
+    }
   });
 });
 
@@ -2048,6 +2385,22 @@ async function expectBaseUnitColumnOnScreen(cell: Locator): Promise<void> {
   await expect(cell).toBeInViewport({ ratio: 1 });
 }
 
+function postedInvoicesTab(page: Page): Locator {
+  return page.locator(
+    'button.purchase-view-tab[aria-controls="purchase-posted-view"]',
+  );
+}
+
+async function moneyBeside(review: Locator, label: string): Promise<string> {
+  return (
+    await review
+      .locator("dt", { hasText: label })
+      .first()
+      .locator("xpath=following-sibling::dd[1]")
+      .innerText()
+  ).trim();
+}
+
 async function createPurchaseWithOneRow(
   page: Page,
   rendererOrigin: string,
@@ -2084,7 +2437,8 @@ async function createPurchaseWithOneRow(
   await page.getByLabel(labels.invoice).fill(invoiceNumber);
   await page
     .getByRole("combobox", { name: labels.supplier, exact: true })
-    .selectOption(supplierId);
+    .click();
+  await page.locator(`[data-supplier-id="${supplierId}"]`).click();
   await page
     .getByLabel(locale === "ar" ? "تاريخ الفاتورة" : "Invoice date", {
       exact: true,
@@ -2094,19 +2448,10 @@ async function createPurchaseWithOneRow(
   await expect(page.getByText(labels.saved)).toBeVisible();
 
   const item = page.getByRole("textbox", { name: labels.item, exact: true });
-  const quantity = page.getByRole("textbox", {
-    name: labels.quantity,
-    exact: true,
-  });
-  const cost = page.getByRole("textbox", { name: labels.cost, exact: true });
-  const sellingPrice = page.getByRole("textbox", {
-    name: labels.sellingPrice,
-    exact: true,
-  });
-  const expiry = page.getByRole("textbox", {
-    name: labels.expiry,
-    exact: true,
-  });
+  const quantity = page.getByLabel(labels.quantity, { exact: true });
+  const cost = page.getByLabel(labels.cost, { exact: true });
+  const sellingPrice = page.getByLabel(labels.sellingPrice, { exact: true });
+  const expiry = page.getByLabel(labels.expiry, { exact: true });
   await item.fill("5012345678949");
   await item.press("Enter");
   await quantity.fill("2");

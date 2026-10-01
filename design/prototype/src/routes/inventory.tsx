@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import {
+  deleteMedicine,
+  getConsumptionByMedicine,
   listExpiring,
   listLowStock,
   listMedicines,
@@ -9,7 +11,7 @@ import {
   type Medicine,
 } from "@/lib/db";
 import { computeFlags } from "@/lib/flags";
-import { useSettings } from "@/lib/settings";
+import { useSettings, type Settings } from "@/lib/settings";
 import { useI18n } from "@/lib/i18n";
 import {
   RefreshCw,
@@ -23,10 +25,15 @@ import {
   FileSpreadsheet,
   Download,
   ArrowLeftRight,
+  Trash2,
+  Eye,
+  EyeOff,
+  ClipboardCheck,
 } from "lucide-react";
 import { addToCart } from "@/lib/procurement-cart";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { InitialStockAuditDialog } from "@/components/initial-stock-audit";
 
 
 export const Route = createFileRoute("/inventory")({
@@ -40,6 +47,78 @@ export const Route = createFileRoute("/inventory")({
   component: InventoryPage,
 });
 
+type SortKey =
+  | "none"
+  | "name"
+  | "cost"
+  | "price"
+  | "expiry"
+  | "velocity"
+  | "qty"
+  | "minStock"
+  | "maxStock"
+  | "risk"
+  | "status";
+
+const DAY = 86400000;
+
+/** Days remaining until expiry (Infinity when no expiry recorded). */
+function daysToExpiry(m: Medicine): number {
+  if (!m.expiry_date) return Infinity;
+  return Math.floor((new Date(m.expiry_date).getTime() - Date.now()) / DAY);
+}
+
+/** Criticality index 0..100 — higher = more critical (short dated / out of stock / loss). */
+function riskScore(m: Medicine, all: Medicine[], settings: Settings): number {
+  let score = 0;
+  const d = daysToExpiry(m);
+  if (d < 0) score += 60;
+  else if (d <= 30) score += 45;
+  else if (d <= 90) score += 30;
+  else if (d <= 180) score += 15;
+
+  const qty = m.quantity_in_stock || 0;
+  const min = m.minimum_stock || 0;
+  if (qty < 0) score += 30;
+  else if (qty === 0) score += 25;
+  else if (qty <= min) score += 15;
+
+  if (Number(m.purchase_price) > 0 && Number(m.selling_price) > 0 && Number(m.purchase_price) > Number(m.selling_price)) {
+    score += 10;
+  }
+  if (computeFlags(m, all, settings).length > 0) score += 5;
+  return Math.min(100, score);
+}
+
+function riskBand(score: number): { key: "high" | "medium" | "low"; label: string; labelEn: string; color: string } {
+  if (score >= 45) return { key: "high", label: "خطورة عالية", labelEn: "High risk", color: "#DC2626" };
+  if (score >= 20) return { key: "medium", label: "خطورة متوسطة", labelEn: "Medium", color: "#D97706" };
+  return { key: "low", label: "آمن", labelEn: "Low", color: "#4A6B82" };
+}
+
+type StockStatus = "expired" | "out" | "low" | "in";
+
+function stockStatus(m: Medicine): StockStatus {
+  if (daysToExpiry(m) < 0) return "expired";
+  const qty = m.quantity_in_stock || 0;
+  if (qty <= 0) return "out";
+  if (qty <= (m.minimum_stock || 0)) return "low";
+  return "in";
+}
+
+/** Sort weight for status: critical states first when sorting descending. */
+function statusRank(m: Medicine): number {
+  const s = stockStatus(m);
+  return s === "expired" ? 4 : s === "out" ? 3 : s === "low" ? 2 : 1;
+}
+
+const STATUS_META: Record<StockStatus, { ar: string; en: string; color: string }> = {
+  expired: { ar: "منتهي الصلاحية", en: "Expired", color: "#DC2626" },
+  out: { ar: "نافد", en: "Out of stock", color: "#B91C1C" },
+  low: { ar: "رصيد منخفض", en: "Low stock", color: "#D97706" },
+  in: { ar: "متوفر", en: "In stock", color: "#15803D" },
+};
+
 function InventoryPage() {
   const { lang } = useI18n();
   const isAr = lang === "ar";
@@ -50,8 +129,12 @@ function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [stocktakeOpen, setStocktakeOpen] = useState(false);
-  const [sortKey, setSortKey] = useState<"none" | "status" | "price" | "qty">("none");
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("none");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [showBranch, setShowBranch] = useState(true);
+  const [showTransfer, setShowTransfer] = useState(true);
+  const [consumption, setConsumption] = useState<Record<string, number>>({});
   const [view, setView] = useState<"main" | "export">("main");
   const [branches, setBranches] = useState<Array<{ id: string; name: string; is_primary: boolean }>>([]);
   const [transferItem, setTransferItem] = useState<Medicine | null>(null);
@@ -77,6 +160,15 @@ function InventoryPage() {
       const { data } = await supabase.from("branches").select("id,name,is_primary").order("is_primary", { ascending: false }).order("name");
       setBranches((data ?? []) as Array<{ id: string; name: string; is_primary: boolean }>);
     })();
+    (async () => {
+      try {
+        const to = new Date();
+        const from = new Date(to.getTime() - 30 * 86400000);
+        setConsumption(await getConsumptionByMedicine(from.toISOString(), to.toISOString()));
+      } catch {
+        setConsumption({});
+      }
+    })();
   }, []);
 
 
@@ -93,17 +185,41 @@ function InventoryPage() {
     }
     if (sortKey !== "none") {
       const factor = sortDir === "asc" ? 1 : -1;
+      const val = (m: Medicine): number | string => {
+        switch (sortKey) {
+          case "name":
+            return (m.trade_name || "").toLowerCase();
+          case "cost":
+            return Number(m.small_unit_cost) || Number(m.purchase_price) || 0;
+          case "price":
+            return Number(m.small_unit_price) || Number(m.selling_price) || 0;
+          case "expiry":
+            return m.expiry_date ? new Date(m.expiry_date).getTime() : Number.MAX_SAFE_INTEGER;
+          case "velocity":
+            return consumption[m.id] ?? 0;
+          case "qty":
+            return m.quantity_in_stock || 0;
+          case "minStock":
+            return m.minimum_stock || 0;
+          case "maxStock":
+            return m.maximum_stock || 0;
+          case "risk":
+            return riskScore(m, items, settings);
+          default:
+            return statusRank(m);
+        }
+      };
       arr = [...arr].sort((a, b) => {
-        if (sortKey === "price") return factor * ((Number(a.selling_price) || 0) - (Number(b.selling_price) || 0));
-        if (sortKey === "qty") return factor * ((a.quantity_in_stock || 0) - (b.quantity_in_stock || 0));
-        // status: order by shortage (low first when desc)
-        const aLow = a.quantity_in_stock <= (a.minimum_stock || 0) ? 1 : 0;
-        const bLow = b.quantity_in_stock <= (b.minimum_stock || 0) ? 1 : 0;
-        return factor * (bLow - aLow);
+        const av = val(a);
+        const bv = val(b);
+        if (typeof av === "string" || typeof bv === "string") {
+          return factor * String(av).localeCompare(String(bv), "ar");
+        }
+        return factor * (av - bv);
       });
     }
     return arr;
-  }, [items, q, sortKey, sortDir]);
+  }, [items, q, sortKey, sortDir, consumption, settings]);
 
   const selected = useMemo(
     () => items.find((i) => i.id === selectedId),
@@ -122,16 +238,28 @@ function InventoryPage() {
   const distinctCount = items.length;
   const activeCount = items.filter((i) => (i.quantity_in_stock || 0) > 0).length;
 
-  const toggleSort = (k: "status" | "price" | "qty") => {
-    setSortKey((cur) => {
-      if (cur === k) {
-        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-        return k;
-      }
-      setSortDir("desc");
-      return k;
-    });
+  const colCount = 11 + (showBranch ? 1 : 0) + (showTransfer ? 1 : 0);
+
+  const toggleSort = (k: Exclude<SortKey, "none">) => {
+    if (sortKey === k) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(k);
+      setSortDir(k === "name" || k === "expiry" ? "asc" : "desc");
+    }
   };
+
+  const moveToTrash = async (it: Medicine) => {
+    if (!window.confirm(isAr ? `إرسال "${it.trade_name}" إلى السلة؟` : `Move "${it.trade_name}" to trash?`)) return;
+    try {
+      await deleteMedicine(it.id);
+      setItems((prev) => prev.filter((m) => m.id !== it.id));
+      toast.success(isAr ? "تم إرسال المادة إلى السلة" : "Item moved to trash");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
+
 
   const quickAddToBasket = (it: Medicine) => {
     const min = it.minimum_stock || 0;
@@ -250,17 +378,27 @@ function InventoryPage() {
           />
           {view === "main" && (
             <div className="flex items-center gap-1">
-              <SortBtn active={sortKey === "status"} dir={sortDir} onClick={() => toggleSort("status")}>
-                {isAr ? "الحالة" : "Status"}
-              </SortBtn>
-              <SortBtn active={sortKey === "price"} dir={sortDir} onClick={() => toggleSort("price")}>
-                {isAr ? "السعر" : "Price"}
-              </SortBtn>
-              <SortBtn active={sortKey === "qty"} dir={sortDir} onClick={() => toggleSort("qty")}>
-                {isAr ? "العدد" : "Qty"}
-              </SortBtn>
+              <ColToggle on={showBranch} onClick={() => setShowBranch((v) => !v)}>
+                {isAr ? "الفرع" : "Branch"}
+              </ColToggle>
+              <ColToggle on={showTransfer} onClick={() => setShowTransfer((v) => !v)}>
+                {isAr ? "تحويل لفرع آخر" : "Transfer"}
+              </ColToggle>
+              {sortKey !== "none" && (
+                <SortBtn active dir={sortDir} onClick={() => setSortKey("none")}>
+                  {isAr ? "إلغاء الفرز" : "Clear sort"}
+                </SortBtn>
+              )}
             </div>
           )}
+          <button
+            onClick={() => setAuditOpen(true)}
+            className="px-3 py-1.5 rounded-md bg-sky-500/15 border border-sky-500/40 text-sky-400 text-xs font-bold flex items-center gap-1.5 hover:bg-sky-500/25"
+            title={isAr ? "جرد أولي للمواد" : "Initial stock audit"}
+          >
+            <ClipboardCheck className="size-3.5" />
+            {isAr ? "جرد أولي للمواد" : "Initial Audit"}
+          </button>
           {view === "export" && (
             <button
               onClick={exportCsv}
@@ -284,30 +422,68 @@ function InventoryPage() {
           <table className="w-full text-right border-collapse text-sm">
             <thead className="sticky top-0 bg-slate-950/80 backdrop-blur-md z-10">
               <tr className="border-b border-border">
-                <ITh className="w-32">{isAr ? "الباركود / الرمز" : "Barcode"}</ITh>
-                <ITh>{isAr ? "اسم المادة" : "Item Name"}</ITh>
-                <ITh className="w-28">{isAr ? "الفرع" : "Branch"}</ITh>
-                <ITh className="w-24">{isAr ? "الرصيد الحالي" : "Balance"}</ITh>
-                <ITh className="w-20">{isAr ? "الوحدة" : "Unit"}</ITh>
-                <ITh className="w-28">{isAr ? "سعر الشراء" : "Purchase"}</ITh>
-                <ITh className="w-28">{isAr ? "سعر البيع" : "Retail"}</ITh>
-                <ITh className="w-24">{isAr ? "الحالة" : "Status"}</ITh>
-                <ITh className="w-20">{isAr ? "تحويل" : "Transfer"}</ITh>
-                <ITh className="w-14" />
+                <SortTh sortKey="name" active={sortKey} dir={sortDir} onSort={toggleSort}>
+                  {isAr ? "اسم المادة / الدواء" : "Item Name"}
+                </SortTh>
+                <SortTh className="w-32" sortKey="cost" active={sortKey} dir={sortDir} onSort={toggleSort}>
+                  {isAr ? "سعر الشراء" : "Cost"}
+                </SortTh>
+                <SortTh className="w-32" sortKey="price" active={sortKey} dir={sortDir} onSort={toggleSort}>
+                  {isAr ? "سعر البيع" : "Selling"}
+                </SortTh>
+                <SortTh className="w-24" sortKey="expiry" active={sortKey} dir={sortDir} onSort={toggleSort}>
+                  {isAr ? "الإكسباير" : "Expiry"}
+                </SortTh>
+                <ITh className="w-20">{isAr ? "الموقع / الرف" : "Location"}</ITh>
+                <SortTh className="w-24" sortKey="velocity" active={sortKey} dir={sortDir} onSort={toggleSort}>
+                  {isAr ? "الصرف الشهري" : "Monthly"}
+                </SortTh>
+                <SortTh className="w-28" sortKey="qty" active={sortKey} dir={sortDir} onSort={toggleSort}>
+                  {isAr ? "الرصيد والوحدات" : "Balance"}
+                </SortTh>
+                <ITh className="w-28">
+                  <span className="flex items-center gap-1 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("minStock")}
+                      className={`hover:text-foreground ${sortKey === "minStock" ? "text-foreground" : ""}`}
+                    >
+                      {isAr ? "أدنى" : "Min"}
+                      {sortKey === "minStock" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                    </button>
+                    <span>/</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("maxStock")}
+                      className={`hover:text-foreground ${sortKey === "maxStock" ? "text-foreground" : ""}`}
+                    >
+                      {isAr ? "أعلى" : "Max"}
+                      {sortKey === "maxStock" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                    </button>
+                  </span>
+                </ITh>
+                <SortTh className="w-24" sortKey="risk" active={sortKey} dir={sortDir} onSort={toggleSort}>
+                  {isAr ? "درجة الخطورة" : "Risk"}
+                </SortTh>
+                <SortTh className="w-28" sortKey="status" active={sortKey} dir={sortDir} onSort={toggleSort}>
+                  {isAr ? "الحالة" : "Status"}
+                </SortTh>
+                {showBranch && <ITh className="w-24">{isAr ? "الفرع" : "Branch"}</ITh>}
+                {showTransfer && <ITh className="w-16 text-center">{isAr ? "تحويل" : "Transfer"}</ITh>}
+                <ITh className="w-24 text-center">{isAr ? "إجراءات" : "Actions"}</ITh>
               </tr>
-
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading && (
                 <tr>
-                  <td colSpan={10} className="text-center py-8 text-muted-foreground text-sm">
+                  <td colSpan={colCount} className="text-center py-8 text-muted-foreground text-sm">
                     {isAr ? "جاري التحميل..." : "Loading..."}
                   </td>
                 </tr>
               )}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center py-16 text-muted-foreground text-sm">
+                  <td colSpan={colCount} className="text-center py-16 text-muted-foreground text-sm">
                     {isAr
                       ? "لا توجد مواد بعد. أضف مواد من صفحة \"قائمة المواد\"."
                       : "No items yet."}
@@ -316,12 +492,24 @@ function InventoryPage() {
               )}
 
               {filtered.map((it) => {
-                const isLow = it.quantity_in_stock <= it.minimum_stock;
                 const flags = computeFlags(it, items, settings);
                 const tint = flags[0]?.color;
                 const active = it.id === selectedId;
-                const unitLabel =
-                  it.small_unit_name || (isAr ? "قطعة" : "Piece");
+                const packing = Math.max(1, Number(it.units_per_large) || 1);
+                const smallUnit = it.small_unit_name || (isAr ? "قطعة" : "Unit");
+                const largeUnit = it.large_unit_name || (isAr ? "علبة" : "Pack");
+                const smallCost = Number(it.small_unit_cost) || Number(it.purchase_price) || 0;
+                const largeCost = Number(it.large_unit_cost) || smallCost * packing;
+                const smallPrice = Number(it.small_unit_price) || Number(it.selling_price) || 0;
+                const largePrice = Number(it.large_unit_price) || smallPrice * packing;
+                const qty = it.quantity_in_stock || 0;
+                const largeQty = Math.floor(qty / packing);
+                const remainder = qty - largeQty * packing;
+                const risk = riskScore(it, items, settings);
+                const band = riskBand(risk);
+                const status = stockStatus(it);
+                const meta = STATUS_META[status];
+                const dte = daysToExpiry(it);
                 return (
                   <tr
                     key={it.id}
@@ -337,66 +525,152 @@ function InventoryPage() {
                           : undefined
                     }
                   >
-                    <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
-                      {it.barcode ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{it.trade_name}</div>
-                      <div className="text-[11px] text-muted-foreground font-mono">
+                    {/* 1 — Item name */}
+                    <td className="px-3 py-2">
+                      <div className="font-medium leading-tight">{it.trade_name}</div>
+                      <div className="text-[11px] text-muted-foreground font-mono leading-tight">
                         {it.scientific_name}
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-[11px] font-bold text-slate-800">
-                      {branches.find((b) => b.is_primary)?.name ?? "الفرع الرئيسي"}
+                    {/* 2 — Cost (stacked) */}
+                    <td className="px-3 py-2 font-mono text-[11px] leading-tight">
+                      <div className="font-bold text-foreground">
+                        {Math.round(smallCost).toLocaleString()}
+                        <span className="text-muted-foreground font-sans"> / {smallUnit}</span>
+                      </div>
+                      <div className="text-muted-foreground">
+                        {Math.round(largeCost).toLocaleString()}
+                        <span className="font-sans"> / {largeUnit}</span>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-emerald font-bold">
-                      {it.quantity_in_stock}
+                    {/* 3 — Selling price (stacked) */}
+                    <td className="px-3 py-2 font-mono text-[11px] leading-tight">
+                      <div className="font-bold text-emerald">
+                        {Math.round(smallPrice).toLocaleString()}
+                        <span className="text-muted-foreground font-sans"> / {smallUnit}</span>
+                      </div>
+                      <div className="text-muted-foreground">
+                        {Math.round(largePrice).toLocaleString()}
+                        <span className="font-sans"> / {largeUnit}</span>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-xs">{unitLabel}</td>
-
-                    <td className="px-4 py-3 font-mono text-xs">
-                      {Number(it.purchase_price).toLocaleString()}
+                    {/* 4 — Expiry */}
+                    <td className="px-3 py-2 font-mono text-[11px] leading-tight">
+                      <div className={dte < 0 ? "text-destructive font-bold" : dte <= 90 ? "text-amber-600 font-bold" : ""}>
+                        {it.expiry_date ?? "—"}
+                      </div>
+                      {Number.isFinite(dte) && (
+                        <div className="text-[10px] text-muted-foreground font-sans">
+                          {dte < 0
+                            ? isAr ? "منتهي" : "expired"
+                            : isAr ? `${dte} يوم` : `${dte} d`}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-4 py-3 font-mono">
-                      {Number(it.selling_price).toLocaleString()}
+                    {/* 5 — Shelf location */}
+                    <td className="px-3 py-2 text-[11px] text-muted-foreground">{it.location || "—"}</td>
+                    {/* 6 — Monthly consumption */}
+                    <td className="px-3 py-2 font-mono text-[11px] font-bold">
+                      {(consumption[it.id] ?? 0).toLocaleString()}
+                      <span className="font-sans text-[10px] text-muted-foreground"> /{isAr ? "شهر" : "mo"}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    {/* 7 — Balance (stacked dual units) */}
+                    <td className="px-3 py-2 font-mono text-[11px] leading-tight">
+                      <div className={`font-bold ${qty <= 0 ? "text-destructive" : "text-emerald"}`}>
+                        {qty.toLocaleString()}
+                        <span className="text-muted-foreground font-sans"> {smallUnit}</span>
+                      </div>
+                      <div className="text-muted-foreground">
+                        {largeQty.toLocaleString()}
+                        <span className="font-sans"> {largeUnit}</span>
+                        {remainder > 0 && <span className="font-sans"> + {remainder}</span>}
+                      </div>
+                    </td>
+                    {/* 7b — Min / Max thresholds */}
+                    <td className="px-3 py-2 font-mono text-[11px] leading-tight">
+                      {(() => {
+                        const minL = it.minimum_stock || 0;
+                        const maxL = it.maximum_stock || 0;
+                        const under = minL > 0 && qty < minL;
+                        const over = maxL > 0 && qty > maxL;
+                        return (
+                          <>
+                            <div className={under ? "font-bold text-amber-600" : "text-muted-foreground"}>
+                              <span className="font-sans">{isAr ? "أدنى" : "Min"}: </span>
+                              {minL.toLocaleString()}
+                              {under && (
+                                <span className="ml-1 font-sans text-[9px] px-1 rounded bg-amber-500/20 text-amber-600">
+                                  {isAr ? "نقص" : "low"}
+                                </span>
+                              )}
+                            </div>
+                            <div className={over ? "font-bold text-[#4A6B82]" : "text-muted-foreground"}>
+                              <span className="font-sans">{isAr ? "أعلى" : "Max"}: </span>
+                              {maxL ? maxL.toLocaleString() : "—"}
+                              {over && (
+                                <span className="ml-1 font-sans text-[9px] px-1 rounded bg-[#4A6B82]/20 text-[#4A6B82]">
+                                  {isAr ? "فائض" : "over"}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </td>
+                    {/* 8 — Risk level */}
+                    <td className="px-3 py-2">
+                      <span
+                        className="px-2 py-0.5 text-[10px] font-bold rounded"
+                        style={{ backgroundColor: `${band.color}22`, color: band.color }}
+                        title={`${isAr ? "المؤشر" : "Index"}: ${risk}`}
+                      >
+                        {isAr ? band.label : band.labelEn} · {risk}
+                      </span>
+                    </td>
+                    {/* 9 — Status badge */}
+                    <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
+                        <span
+                          className="px-2 py-0.5 text-[10px] font-bold rounded"
+                          style={{ backgroundColor: `${meta.color}22`, color: meta.color }}
+                        >
+                          {isAr ? meta.ar : meta.en}
+                        </span>
                         {flags.map((f) => (
                           <span
                             key={f.key}
-                            className="px-2 py-0.5 text-[10px] font-bold rounded"
+                            className="px-1.5 py-0.5 text-[10px] font-bold rounded"
                             style={{ backgroundColor: `${f.color}33`, color: f.color }}
                             title={f.label}
                           >
                             {f.label}
                           </span>
                         ))}
-                        {flags.length === 0 &&
-                          (isLow ? (
-                            <span className="px-2 py-0.5 bg-destructive/20 text-destructive text-[10px] font-bold rounded uppercase">
-                              {isAr ? "يحتاج طلب" : "Reorder"}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 bg-emerald/15 text-emerald text-[10px] font-bold rounded uppercase">
-                              {isAr ? "مستقر" : "OK"}
-                            </span>
-                          ))}
                       </div>
                     </td>
-                    <td className="px-2 py-3 text-center">
-                      <button
-                        title={isAr ? "تحويل بين الفروع" : "Transfer between branches"}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTransferItem(it);
-                        }}
-                        className="p-1.5 rounded-md hover:bg-sky-500/20 text-sky-600"
-                      >
-                        <ArrowLeftRight className="size-4" />
-                      </button>
-                    </td>
-                    <td className="px-2 py-3 text-center">
+                    {/* 10 — Branch (toggleable) */}
+                    {showBranch && (
+                      <td className="px-3 py-2 text-[11px] font-bold">
+                        {branches.find((b) => b.is_primary)?.name ?? (isAr ? "الفرع الرئيسي" : "Main")}
+                      </td>
+                    )}
+                    {/* 11 — Transfer (toggleable) */}
+                    {showTransfer && (
+                      <td className="px-2 py-2 text-center">
+                        <button
+                          title={isAr ? "تحويل لفرع آخر" : "Transfer to another branch"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTransferItem(it);
+                          }}
+                          className="p-1.5 rounded-md hover:bg-sky-500/20 text-sky-600"
+                        >
+                          <ArrowLeftRight className="size-4" />
+                        </button>
+                      </td>
+                    )}
+                    {/* 12 — Actions: basket + trash */}
+                    <td className="px-2 py-2 text-center whitespace-nowrap">
                       <button
                         title={isAr ? "أضف إلى سلة الطلبات" : "Add to basket"}
                         onClick={(e) => {
@@ -407,12 +681,22 @@ function InventoryPage() {
                       >
                         <ShoppingBasket className="size-4" />
                       </button>
+                      <button
+                        title={isAr ? "إرسال للسلة" : "Move to trash"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveToTrash(it);
+                        }}
+                        className="p-1.5 rounded-md hover:bg-destructive/15 text-destructive"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
                     </td>
-
                   </tr>
                 );
               })}
             </tbody>
+
           </table>
         </section>
         ) : (
@@ -456,6 +740,14 @@ function InventoryPage() {
           isAr={isAr}
           onClose={() => setStocktakeOpen(false)}
           onApply={applyStocktake}
+        />
+      )}
+
+      {auditOpen && (
+        <InitialStockAuditDialog
+          items={items}
+          onClose={() => setAuditOpen(false)}
+          onSaved={reload}
         />
       )}
 
@@ -601,6 +893,63 @@ function BranchTransferModal({
   );
 }
 
+
+function SortTh({
+  children,
+  className = "",
+  sortKey,
+  active,
+  dir,
+  onSort,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+  sortKey: Exclude<SortKey, "none">;
+  active: SortKey;
+  dir: "asc" | "desc";
+  onSort: (k: Exclude<SortKey, "none">) => void;
+}) {
+  const on = active === sortKey;
+  return (
+    <th className={`px-3 py-2 text-right ${className}`}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+          on ? "text-emerald" : "text-muted-foreground hover:text-emerald"
+        }`}
+      >
+        <span>{children}</span>
+        <span className="text-[9px] leading-none">{on ? (dir === "asc" ? "▲" : "▼") : "⇅"}</span>
+      </button>
+    </th>
+  );
+}
+
+function ColToggle({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-2 py-1.5 rounded-md border text-[11px] font-bold flex items-center gap-1 ${
+        on
+          ? "bg-emerald/15 border-emerald/40 text-emerald"
+          : "bg-secondary border-border text-muted-foreground"
+      }`}
+    >
+      {on ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+      {children}
+    </button>
+  );
+}
 
 function ITh({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
   return (

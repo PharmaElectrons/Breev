@@ -208,21 +208,51 @@ export class InventoryCountService {
   public async listSessions(
     request: Request,
     query: CountSessionListQuery,
-  ): Promise<{ readonly sessions: readonly CountSessionSummary[] }> {
+  ): Promise<{
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly sessions: readonly CountSessionSummary[];
+  }> {
     const context = await this.requireReadPermission(request);
     const client = await this.localDatabase.requirePool().connect();
     try {
-      const reads = await listCountSessions(
+      const page = await listCountSessions(
         client,
         context.pharmacyId,
         query.status,
+        query.status === "completed"
+          ? {
+              ...(query.cursor === undefined
+                ? {}
+                : { cursor: cursorParts(query.cursor) }),
+              limit: Number(query.limit ?? "25"),
+            }
+          : undefined,
       );
-      return {
-        sessions: await Promise.all(
-          reads.map(
-            async (read) => await this.sessionSummary(client, context, read),
-          ),
+      const userIds = [
+        ...new Set(
+          page.sessions.flatMap((read) => [
+            read.session.startedBy,
+            ...(read.session.completedBy === null
+              ? []
+              : [read.session.completedBy]),
+          ]),
         ),
+      ];
+      const names = await this.identity.resolveUserDisplayNames(
+        client,
+        context.pharmacyId,
+        userIds,
+      );
+      const sessions = page.sessions.map((read) => listSummary(read, names));
+      const last = page.sessions.at(-1)?.session;
+      return {
+        hasMore: page.hasMore,
+        nextCursor:
+          page.hasMore && last !== undefined
+            ? `${last.updatedAt}|${last.id}`
+            : null,
+        sessions,
       };
     } finally {
       client.release();
@@ -676,7 +706,7 @@ export class InventoryCountService {
   ): Promise<CountSessionSummary> {
     const context = await this.identity.requirePermission(
       request,
-      RECORD_PERMISSION,
+      APPROVE_PERMISSION,
     );
     return await this.executeCommand({
       commandName: COMMANDS.complete,
@@ -696,6 +726,17 @@ export class InventoryCountService {
           sessionId,
         );
         requireActiveSession(session, input.expectedVersion, sessionId);
+        const pendingRead = await readCountSession(
+          client,
+          context.pharmacyId,
+          sessionId,
+        );
+        if (
+          pendingRead !== undefined &&
+          hasPendingVariance(pendingRead.lines)
+        ) {
+          reject(409, "count-pending-variances", [], sessionId);
+        }
         await completeCountSession(client, {
           completedBy: context.actorId,
           pharmacyId: context.pharmacyId,
@@ -766,7 +807,8 @@ export class InventoryCountService {
         await this.identity.revalidateInventoryCount(
           client,
           input.context,
-          input.commandName === COMMANDS.apply
+          input.commandName === COMMANDS.apply ||
+            input.commandName === COMMANDS.complete
             ? APPROVE_PERMISSION
             : RECORD_PERMISSION,
         );
@@ -968,9 +1010,7 @@ export class InventoryCountService {
               year: read.session.numberYear,
             },
       pendingVarianceCount: String(
-        lines.filter(
-          (line) => line.status !== "applied" && line.currentVariance !== "0",
-        ).length,
+        lines.filter((line) => hasUnappliedObservedVariance(line)).length,
       ),
       startedAt: isoDateTime(read.session.startedAt),
       startedBy: person(read.session.startedBy, names),
@@ -1153,6 +1193,63 @@ async function readCountLineForCommand(
 ): Promise<CountLineRecord | undefined> {
   const result = await readCountSession(client, pharmacyId, sessionId);
   return result?.lines.find((line) => line.id === lineId);
+}
+
+function hasUnappliedObservedVariance(line: {
+  readonly application: unknown;
+  readonly varianceAtObservation: string;
+}): boolean {
+  return line.application === null && line.varianceAtObservation !== "0";
+}
+
+function pendingVarianceTotal(lines: CountSessionRead["lines"]): number {
+  return lines.filter((line) => hasUnappliedObservedVariance(line)).length;
+}
+
+function hasPendingVariance(lines: CountSessionRead["lines"]): boolean {
+  return pendingVarianceTotal(lines) > 0;
+}
+
+function cursorParts(cursor: string): {
+  readonly id: string;
+  readonly updatedAt: string;
+} {
+  const separator = cursor.lastIndexOf("|");
+  return {
+    id: cursor.slice(separator + 1),
+    updatedAt: cursor.slice(0, separator),
+  };
+}
+
+function listSummary(
+  read: CountSessionRead,
+  names: ReadonlyMap<string, string>,
+): CountSessionSummary {
+  return countSessionSummarySchema.parse({
+    completedAt:
+      read.session.completedAt === null
+        ? null
+        : isoDateTime(read.session.completedAt),
+    completedBy:
+      read.session.completedBy === null
+        ? null
+        : person(read.session.completedBy, names),
+    id: read.session.id,
+    lineCount: String(read.lines.length),
+    number:
+      read.session.numberValue === null || read.session.numberYear === null
+        ? null
+        : {
+            series: "C",
+            value: read.session.numberValue,
+            year: read.session.numberYear,
+          },
+    pendingVarianceCount: String(pendingVarianceTotal(read.lines)),
+    startedAt: isoDateTime(read.session.startedAt),
+    startedBy: person(read.session.startedBy, names),
+    status: read.session.status,
+    version: read.session.version,
+  });
 }
 
 function requireActiveSession(

@@ -1,0 +1,1 @@
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discount_pct numeric NOT NULL DEFAULT 0;

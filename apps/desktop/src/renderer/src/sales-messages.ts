@@ -2,6 +2,14 @@ import { SALES_DENIAL_CODES } from "@breev/contracts/local-rest";
 
 import type { Locale } from "./preferences";
 
+export function salesLoadMoreMessage(locale: Locale): string {
+  return locale === "ar" ? "عرض المزيد من النتائج" : "Load more results";
+}
+
+export function salesUpdatedLabel(locale: Locale): string {
+  return locale === "ar" ? "آخر تحديث" : "Updated";
+}
+
 export type SalesDenialCode = (typeof SALES_DENIAL_CODES)[number];
 
 export interface SalesCopy {
@@ -11,6 +19,7 @@ export interface SalesCopy {
   readonly description: string;
   readonly draftHeading: (createdAt: string) => string;
   readonly draftUnavailable: string;
+  readonly activeDraft: string;
   readonly draftsHeading: string;
   readonly itemColumn: string;
   readonly empty: string;
@@ -29,6 +38,7 @@ export interface SalesCopy {
   readonly searchResultCount: (count: number) => string;
   readonly searchUnavailable: string;
   readonly searching: string;
+  readonly selectDraftPrompt: string;
   readonly title: string;
   readonly versionLabel: (version: string) => string;
 }
@@ -38,6 +48,14 @@ const arabicDenials: Record<SalesDenialCode, string> = {
   "idempotency-conflict":
     "أُرسل الأمر نفسه ببيانات مختلفة. أعد تحميل المسودة وحاول مجدداً.",
   "sale-draft-not-found": "لم تعد مسودة البيع هذه موجودة.",
+  "sale-line-not-found": "لم يعد سطر البيع هذا موجوداً. أعد تحميل المسودة.",
+  "sale-product-unavailable": "المادة غير متاحة للبيع. ابحث عنها من جديد.",
+  "sale-unit-invalid": "لا يمكن استخدام هذه الوحدة مع المادة.",
+  "sale-quantity-invalid": "الكمية لا تتوافق مع تحويل الوحدة.",
+  "sale-quick-access-invalid": "إعداد الوصول السريع غير صالح.",
+  "sale-price-invalid": "السعر الجديد أو سبب تغييره غير صالح.",
+  "sale-discount-invalid": "الخصم يتجاوز المبلغ المتاح أو قيمته غير صحيحة.",
+  "sale-draft-inactive": "هذه المسودة غير نشطة. استأنفها قبل التعديل.",
   "version-conflict": "استُؤنفت هذه المسودة على جهاز آخر. أعد تحميل القائمة.",
 };
 
@@ -46,6 +64,16 @@ const englishDenials: Record<SalesDenialCode, string> = {
   "idempotency-conflict":
     "The same command was sent with different data. Reload the draft and try again.",
   "sale-draft-not-found": "This sale draft no longer exists.",
+  "sale-line-not-found": "This sale line no longer exists. Reload the draft.",
+  "sale-product-unavailable":
+    "This item is unavailable for sale. Search again.",
+  "sale-unit-invalid": "This unit cannot be used for the item.",
+  "sale-quantity-invalid": "The quantity cannot be converted to that unit.",
+  "sale-quick-access-invalid": "The quick-access settings are invalid.",
+  "sale-price-invalid": "The new price or its reason is invalid.",
+  "sale-discount-invalid":
+    "The discount is invalid or exceeds the available amount.",
+  "sale-draft-inactive": "This draft is inactive. Resume it before editing.",
   "version-conflict":
     "This draft was resumed on another device. Reload the list.",
 };
@@ -60,6 +88,7 @@ export const salesMessages: Record<Locale, SalesCopy> = {
     draftHeading: (createdAt) => `مسودة بيع — فُتحت ${createdAt}`,
     draftUnavailable:
       "تعذّر الوصول إلى مسودة البيع. تحقق من الاتصال وحاول مرة أخرى.",
+    activeDraft: "المسودة الحالية",
     draftsHeading: "مسودات البيع المفتوحة",
     itemColumn: "المادة",
     empty: "لا توجد مسودات بيع مفتوحة.",
@@ -78,6 +107,7 @@ export const salesMessages: Record<Locale, SalesCopy> = {
     searchResultCount: (count) => `عدد نتائج البحث: ${String(count)}`,
     searchUnavailable: "تعذّر إجراء البحث. تحقق من الاتصال وحاول مرة أخرى.",
     searching: "جارٍ البحث…",
+    selectDraftPrompt: "أنشئ مسودة جديدة أو اختر مسودة من القائمة للمتابعة.",
     title: "البيع",
     versionLabel: (version) => `الإصدار ${version}`,
   },
@@ -90,6 +120,7 @@ export const salesMessages: Record<Locale, SalesCopy> = {
     draftHeading: (createdAt) => `Sale draft — opened ${createdAt}`,
     draftUnavailable:
       "The sale draft is unavailable. Check the connection and try again.",
+    activeDraft: "Current draft",
     draftsHeading: "Open sale drafts",
     itemColumn: "Item",
     empty: "There are no open sale drafts.",
@@ -109,6 +140,8 @@ export const salesMessages: Record<Locale, SalesCopy> = {
     searchUnavailable:
       "The search is unavailable. Check the connection and try again.",
     searching: "Searching…",
+    selectDraftPrompt:
+      "Create a draft or choose one from the list to continue.",
     title: "Sales",
     versionLabel: (version) => `Version ${version}`,
   },

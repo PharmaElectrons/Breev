@@ -487,6 +487,157 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     expect(concurrent.map(({ status }) => status).sort()).toEqual([201, 409]);
   }, 60_000);
 
+  it("refuses completion while a non-zero variance is unapplied", async () => {
+    const pending = await createStockedProduct("Pending completion", [1]);
+    const pendingSession = await startSession();
+    const pendingLine = await recordLine(pendingSession, pending.product.id, [
+      inventoryEntry("3"),
+    ]);
+    const blocked = await request(
+      "POST",
+      countSessionCompletionPath(pendingSession.id),
+      {
+        expectedVersion: pendingLine.session.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(blocked.status, diagnostics(blocked)).toBe(409);
+    expect(blocked.body).toMatchObject({ code: "count-pending-variances" });
+    const stillActive = await request(
+      "GET",
+      countSessionPath(pendingSession.id),
+    );
+    expect(stillActive.status, diagnostics(stillActive)).toBe(200);
+    expect((stillActive.body as CountSession).status).toBe("active");
+    const applied = await applyLine(
+      pendingLine.session,
+      pendingLine.line,
+      "4",
+      "Apply before completion",
+      "Completion evidence",
+    );
+    const completed = await request(
+      "POST",
+      countSessionCompletionPath(pendingSession.id),
+      {
+        expectedVersion: applied.session.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(completed.status, diagnostics(completed)).toBe(200);
+    expect(completed.body).toMatchObject({ status: "completed" });
+
+    const matched = await createStockedProduct("Matched completion", [1]);
+    const matchedSession = await startSession();
+    const matchedLine = await recordLine(matchedSession, matched.product.id, [
+      inventoryEntry("4"),
+    ]);
+    const matchedCompletion = await request(
+      "POST",
+      countSessionCompletionPath(matchedSession.id),
+      {
+        expectedVersion: matchedLine.session.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(matchedCompletion.status, diagnostics(matchedCompletion)).toBe(200);
+    expect(matchedCompletion.body).toMatchObject({ status: "completed" });
+  }, 60_000);
+
+  it("blocks completion on an unapplied observed variance even after the live balance catches up", async () => {
+    const caughtUp = await createStockedProduct(
+      "Observed variance remains",
+      [1],
+    );
+    const caughtUpSession = await startSession();
+    const caughtUpLine = await recordLine(
+      caughtUpSession,
+      caughtUp.product.id,
+      [inventoryEntry("8")],
+    );
+    expect(caughtUpLine.line.varianceAtObservation).not.toBe("0");
+    expect(caughtUpLine.line.application).toBeNull();
+    await purchaseProduct(caughtUp.product, "1");
+    const caughtUpRead = await request(
+      "GET",
+      countSessionPath(caughtUpSession.id),
+    );
+    expect(caughtUpRead.status, diagnostics(caughtUpRead)).toBe(200);
+    const caughtUpBody = caughtUpRead.body as CountSession;
+    expect(caughtUpBody.lines[0]).toMatchObject({
+      application: null,
+      currentVariance: "0",
+      varianceAtObservation: caughtUpLine.line.varianceAtObservation,
+    });
+    expect(caughtUpBody.pendingVarianceCount).toBe("1");
+    const stillBlocked = await request(
+      "POST",
+      countSessionCompletionPath(caughtUpSession.id),
+      {
+        expectedVersion: caughtUpBody.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(stillBlocked.status, diagnostics(stillBlocked)).toBe(409);
+    expect(stillBlocked.body).toMatchObject({
+      code: "count-pending-variances",
+    });
+    expect(
+      (await request("GET", countSessionPath(caughtUpSession.id))).body,
+    ).toMatchObject({ status: "active" });
+
+    const zeroObserved = await createStockedProduct(
+      "Zero observed variance",
+      [1],
+    );
+    const zeroSession = await startSession();
+    const zeroLine = await recordLine(zeroSession, zeroObserved.product.id, [
+      inventoryEntry("4"),
+    ]);
+    expect(zeroLine.line.varianceAtObservation).toBe("0");
+    await purchaseProduct(zeroObserved.product, "1");
+    const zeroRead = await request("GET", countSessionPath(zeroSession.id));
+    expect(zeroRead.status, diagnostics(zeroRead)).toBe(200);
+    const zeroBody = zeroRead.body as CountSession;
+    expect(zeroBody.lines[0]?.varianceAtObservation).toBe("0");
+    expect(zeroBody.lines[0]?.currentVariance).not.toBe("0");
+    expect(zeroBody.pendingVarianceCount).toBe("0");
+    const completed = await request(
+      "POST",
+      countSessionCompletionPath(zeroSession.id),
+      {
+        expectedVersion: zeroBody.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(completed.status, diagnostics(completed)).toBe(200);
+    expect(completed.body).toMatchObject({ status: "completed" });
+  }, 60_000);
+
+  it("pages completed count sessions", async () => {
+    const firstPage = await request(
+      "GET",
+      "/inventory/count-sessions?status=completed&limit=1",
+    );
+    expect(firstPage.status, diagnostics(firstPage)).toBe(200);
+    const firstBody = firstPage.body as {
+      hasMore: boolean;
+      nextCursor: string | null;
+      sessions: CountSession[];
+    };
+    expect(firstBody.sessions).toHaveLength(1);
+    expect(firstBody.hasMore).toBe(true);
+    expect(firstBody.nextCursor).toEqual(expect.any(String));
+    const secondPage = await request(
+      "GET",
+      `/inventory/count-sessions?status=completed&limit=1&cursor=${encodeURIComponent(firstBody.nextCursor ?? "")}`,
+    );
+    expect(secondPage.status, diagnostics(secondPage)).toBe(200);
+    const secondBody = secondPage.body as { sessions: CountSession[] };
+    expect(secondBody.sessions).toHaveLength(1);
+    expect(secondBody.sessions[0]?.id).not.toBe(firstBody.sessions[0]?.id);
+  }, 60_000);
+
   it("5. protects completed sessions, lines, applications, movements, and journals from mutation", async () => {
     const fixture = await createStockedProduct("Append only", [1]);
     const session = await startSession();

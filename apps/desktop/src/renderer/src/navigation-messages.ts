@@ -10,6 +10,8 @@ interface ModuleCopy {
 interface NavigationCopy {
   readonly modules: Record<ModuleId, ModuleCopy>;
   readonly moduleNavigation: string;
+  readonly moduleScrollCue: string;
+  readonly moduleScrollHint: string;
   readonly unavailableBadge: string;
   readonly unavailableHeading: string;
   readonly unavailableLead: string;
@@ -27,6 +29,9 @@ interface NavigationCopy {
 export const navigationMessages: Record<Locale, NavigationCopy> = {
   ar: {
     moduleNavigation: "أقسام النظام",
+    moduleScrollCue: "‹",
+    moduleScrollHint:
+      "إذا لم يظهر أحد الأقسام، مرّر القائمة أفقيًا للعثور عليه.",
     unavailableBadge: "غير متاح بعد",
     unavailableHeading: "هذه الشاشة غير متاحة بعد",
     unavailableLead:
@@ -37,16 +42,12 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
         unavailableReason:
           "دفتر الحسابات والسندات وكشوف الحسابات غير متاحة بعد.",
       },
-      administration: {
-        label: "الموظفون والصلاحيات",
-        unavailableReason: "",
-      },
       basket: {
         label: "سلة الطلبات",
         unavailableReason: "",
       },
       dashboard: {
-        label: "القائمة الرئيسية",
+        label: "الرئيسية",
         unavailableReason: "",
       },
       inventory: {
@@ -82,13 +83,15 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
       },
       settings: {
         label: "الإعدادات",
-        unavailableReason:
-          "إعدادات الصيدلية والترخيص والأجهزة متاحة حالياً ضمن شاشة الموظفين والصلاحيات.",
+        unavailableReason: "",
       },
     },
   },
   en: {
     moduleNavigation: "Modules",
+    moduleScrollCue: "›",
+    moduleScrollHint:
+      "If a module is not visible, scroll horizontally to find it.",
     unavailableBadge: "Not available yet",
     unavailableHeading: "This screen is not available yet",
     unavailableLead:
@@ -99,16 +102,12 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
         unavailableReason:
           "The ledger, vouchers, and account statements are not available yet.",
       },
-      administration: {
-        label: "Employees & roles",
-        unavailableReason: "",
-      },
       basket: {
         label: "Order basket",
         unavailableReason: "",
       },
       dashboard: {
-        label: "Main dashboard",
+        label: "Home",
         unavailableReason: "",
       },
       inventory: {
@@ -146,8 +145,7 @@ export const navigationMessages: Record<Locale, NavigationCopy> = {
       },
       settings: {
         label: "Settings",
-        unavailableReason:
-          "Pharmacy settings, licensing, and terminals are reachable today from Employees & roles.",
+        unavailableReason: "",
       },
     },
   },

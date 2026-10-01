@@ -9,6 +9,7 @@ import {
   purchaseAdjustmentDraftsPath,
   purchaseAdjustmentPostingsPath,
   purchaseAdjustmentSummaryPath,
+  inventoryBatchStatusChangePath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
   purchaseReturnDraftPath,
@@ -155,18 +156,46 @@ test.describe.serial("read-only inventory review", () => {
     await login(OWNER_USERNAME, OWNER_PASSWORD);
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/inventory`);
+    await expect(page.locator("#inventory-title")).toHaveText(
+      "Inventory review",
+    );
+    await expect(page.getByText("Total inventory value")).toBeVisible();
+    await expect(page.getByText("Distinct items")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Inventory review" }),
-    ).toBeVisible();
+      page.locator(".inventory-metric[data-tone='accent']").first(),
+    ).toHaveCSS("color", "rgb(30, 42, 51)");
+    const settingsSummary = page.getByText("Column settings", { exact: true });
+    const exportButton = page.getByRole("button", {
+      name: "Export sensitive inventory data",
+    });
+    await expect(settingsSummary).toBeVisible();
+    await expect(exportButton).toBeVisible();
+    const settingsBox = await settingsSummary.boundingBox();
+    const exportBox = await exportButton.boundingBox();
+    expect(settingsBox?.height).toBe(exportBox?.height);
     const balanceHeader = page.getByRole("columnheader", {
       name: "Current balance",
     });
     const balanceButton = balanceHeader.getByRole("button");
+    await expect(
+      page.getByRole("columnheader", { name: "Item" }),
+    ).toHaveAttribute("aria-sort", "ascending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↕");
+    await expect(
+      page.getByRole("columnheader", { name: "Batches" }),
+    ).not.toHaveAttribute("aria-sort", /.+/u);
+    await expect(
+      page
+        .getByRole("columnheader", { name: "Batches" })
+        .locator(".inventory-sort-icon"),
+    ).toHaveText("↕");
     await balanceButton.focus();
     await pressKeyOnFocused(page, balanceButton, "Enter");
     await expect(balanceHeader).toHaveAttribute("aria-sort", "ascending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↑");
     await pressKeyOnFocused(page, balanceButton, "Enter");
     await expect(balanceHeader).toHaveAttribute("aria-sort", "descending");
+    await expect(balanceHeader.locator(".inventory-sort-icon")).toHaveText("↓");
     await expect(
       page
         .getByRole("status")
@@ -225,6 +254,35 @@ test.describe.serial("read-only inventory review", () => {
     await restorePreferences();
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/inventory`);
+    const search = page.getByRole("searchbox", {
+      name: "Search by item name or barcode",
+    });
+    await search.fill(product.displayName.slice(0, 7));
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await search.fill(product.barcodes[0]!.value);
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await search.fill("");
+    const reviewRow = page.locator("tbody tr:first-child");
+    await reviewRow.locator('td[data-column-field="balance"]').click();
+    await expect(reviewRow).toHaveAttribute("data-selected", "true");
+    const cartAction = reviewRow.getByRole("button", {
+      name: `Add ${product.displayName} to the order basket`,
+    });
+    await expect(cartAction).toHaveAttribute("title", "Add to order basket");
+    await expect(cartAction).toHaveText("");
+    await expect(page.locator(".inventory-selection")).toContainText(
+      product.displayName,
+    );
+    await expect(page.locator(".inventory-selection a")).toHaveAttribute(
+      "href",
+      `#/inventory/items/${product.id}/movements`,
+    );
+    await expect(page.locator(".inventory-selection")).toContainText(
+      "Current balance",
+    );
+    await reviewRow.focus();
+    await reviewRow.press("Enter");
+    await expect(reviewRow).toHaveAttribute("data-selected", "true");
     const itemLink = page.locator(
       "tbody tr:first-child td[data-column-field='item'] button.table-link",
     );
@@ -296,12 +354,34 @@ test.describe.serial("read-only inventory review", () => {
           "dir",
           locale === "ar" ? "rtl" : "ltr",
         );
-        await expect(
-          page.getByRole("heading", {
-            name: locale === "ar" ? "مراجعة المخزون" : "Inventory review",
-          }),
-        ).toBeVisible();
+        await expect(page.locator("#inventory-title")).toHaveText(
+          locale === "ar" ? "مراجعة المخزون" : "Inventory review",
+        );
         await assertInventoryRow(page, locale);
+        for (const viewport of [
+          { height: 900, width: 1440 },
+          { height: 800, width: 1280 },
+          { height: 800, width: 1100 },
+          { height: 768, width: 1024 },
+        ]) {
+          await page.setViewportSize(viewport);
+          await expect(page.locator(".inventory-search input")).toBeInViewport({
+            ratio: 1,
+          });
+          await expect(
+            page.getByRole("link", {
+              name: locale === "ar" ? "بدء جلسة جرد" : "Start count session",
+            }),
+          ).toBeInViewport({ ratio: 1 });
+          await expect
+            .poll(() =>
+              page.evaluate<boolean>(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+              ),
+            )
+            .toBe(true);
+        }
+        await page.setViewportSize({ height: 800, width: 1280 });
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -383,21 +463,485 @@ test.describe.serial("read-only inventory review", () => {
     await expect(page.getByText("Inventory export saved.")).toBeVisible();
     expect(
       await page
-        .evaluate(() =>
-          Boolean(
-            (globalThis as { __inventoryExport?: unknown }).__inventoryExport,
-          ),
+        .evaluate(
+          () =>
+            (globalThis as { __inventoryExport?: { format?: string } })
+              .__inventoryExport?.format,
         )
-        .catch(() => false),
-    ).toBe(true);
+        .catch(() => "missing"),
+    ).toBeUndefined();
+    await page.getByRole("button", { name: "Export inventory CSV" }).click();
+    await dialog.getByLabel("Password", { exact: true }).fill(OWNER_PASSWORD);
+    await dialog.getByRole("button", { name: "Confirm password" }).click();
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(
+            () =>
+              (globalThis as { __inventoryExport?: { format?: string } })
+                .__inventoryExport?.format,
+          ),
+      )
+      .toBe("csv");
 
     await login(MANAGER_USERNAME, MANAGER_PASSWORD);
     await page.reload();
     await expect(
       page.getByRole("button", { name: "Export sensitive inventory data" }),
     ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Export inventory CSV" }),
+    ).toHaveCount(0);
+  });
+
+  test("loads the shared item panel with inventory units, expiry, and coverage", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const expiryDate = "2029-06-15";
+    const created = await apiRequest(
+      "POST",
+      "/catalog/products",
+      catalogProduct({
+        barcode: "4815162342",
+        packageUnits: [
+          { baseUnitsPerPackage: "4", name: "Pack" },
+          { baseUnitsPerPackage: "20", name: "Box" },
+        ],
+        stockLevels: {
+          maximumLevel: "40",
+          minimumLevel: "8",
+          reorderPoint: null,
+        },
+        tradeName: "Panel Parcel Item",
+      }),
+    );
+    expect(created.status).toBe(201);
+    const item = created.body as Product;
+    await purchaseStock(item, "25", expiryDate, "PANEL-PARCEL");
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/inventory`);
+    const row = page.locator("tbody tr").filter({
+      hasText: "Panel Parcel Item",
+    });
+    await expect(row).toBeVisible();
+    const panel = page.locator("aside.purchase-item-panel");
+    await expect(panel.locator(".purchase-item-empty")).toBeVisible();
+    await row.locator("td[data-column-field='balance']").click();
+    await expect(row).toHaveAttribute("data-selected", "true");
+    await expect(panel.locator(".purchase-item-trade-name")).toHaveText(
+      item.displayName,
+    );
+    await expect(panel.locator(".purchase-item-barcode")).toHaveText(
+      "4815162342",
+    );
+    const cells = panel.locator(".purchase-fraction-cell");
+    await expect(cells.nth(0).locator(".purchase-fraction-label")).toHaveText(
+      "Box",
+    );
+    await expect(cells.nth(0).locator(".purchase-fraction-num")).toHaveText(
+      "1",
+    );
+    await expect(cells.nth(1).locator(".purchase-fraction-label")).toHaveText(
+      "Pack",
+    );
+    await expect(cells.nth(1).locator(".purchase-fraction-num")).toHaveText(
+      "1",
+    );
+    await expect(cells.nth(2).locator(".purchase-fraction-label")).toHaveText(
+      "Strip",
+    );
+    await expect(cells.nth(2).locator(".purchase-fraction-num")).toHaveText(
+      "1",
+    );
+    await expect(panel.locator(".purchase-fact-value").first()).toHaveText(
+      "1 Box = 20 Strip",
+    );
+    const wholesale = panel.locator(".money-amount");
+    await expect(wholesale).toHaveText("IQD 90.000");
+    await expect(wholesale).toHaveAttribute("dir", "ltr");
+    await expect(wholesale).toHaveCSS("white-space", "nowrap");
+    await expect(panel.locator(".stock-unit")).toHaveText("Strip");
+    await expect(panel.locator(".stock-min")).toContainText("8");
+    await expect(panel.locator(".stock-max")).toContainText("40");
+    const expiry = panel.locator(".purchase-fact-row").filter({
+      hasText: "Expiry",
+    });
+    await expect(expiry).toContainText(expiryDate);
+    await expect(expiry).toContainText(
+      `${String(daysUntil(expiryDate))} d left`,
+    );
+    await expect(panel.locator(".purchase-rate-control")).toContainText("0");
+    await expect(panel.locator(".purchase-rate-control")).toContainText(
+      "Strip",
+    );
+    await expect(
+      panel.locator(".purchase-fact-row").filter({
+        hasText: "Days of supply",
+      }),
+    ).toContainText("—");
+
+    await page.getByRole("button", { name: "Menu" }).click();
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    await expect(cells.nth(0).locator(".purchase-fraction-label")).toHaveText(
+      "Box",
+    );
+    await expect(cells.nth(1).locator(".purchase-fraction-label")).toHaveText(
+      "علبة",
+    );
+    await expect(cells.nth(2).locator(".purchase-fraction-label")).toHaveText(
+      "شريط",
+    );
+    await expect(panel.locator(".purchase-fact-value").first()).toHaveText(
+      "١ Box = ٢٠ شريط",
+    );
+    await expect(wholesale).toContainText("٩٠٫٠٠٠");
+    await expect(wholesale).toContainText("د.ع");
+    await expect(wholesale).not.toContainText("IQD");
+    await expect(wholesale).not.toHaveAttribute("dir", "ltr");
+    await expect(panel.locator(".stock-unit")).toHaveText("شريط");
+    await expect(panel.locator(".stock-min")).toContainText("٨");
+    await expect(panel.locator(".stock-max")).toContainText("٤٠");
+    await expect(panel.locator(".purchase-balance-total-text")).toContainText(
+      "٢٥ شريط",
+    );
+    await expect(panel.locator(".purchase-rate-control")).toContainText(
+      "٠ شريط",
+    );
+  });
+
+  test("finds an item when the barcode is typed with Arabic-Indic digits", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const barcode = "918273645";
+    const created = await apiRequest(
+      "POST",
+      "/catalog/products",
+      catalogProduct({
+        barcode,
+        tradeName: "Arabic Digit Item",
+      }),
+    );
+    expect(created.status).toBe(201);
+    await purchaseStock(created.body as Product, "1", "2029-06-15", "AR-DIGIT");
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/inventory`);
+    const search = page.getByRole("searchbox", {
+      name: "Search by item name or barcode",
+    });
+    await search.fill(toArabicIndicDigits(barcode));
+    const row = page
+      .locator("tbody tr")
+      .filter({ hasText: "Arabic Digit Item" });
+    await expect(row).toBeVisible();
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+  });
+
+  test("finds an inventory item past the first 100 catalog matches", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    for (let offset = 0; offset < 101; offset += 10) {
+      await Promise.all(
+        Array.from({ length: Math.min(10, 101 - offset) }, (_, index) => {
+          const number = offset + index;
+          return apiRequest(
+            "POST",
+            "/catalog/products",
+            catalogProduct({
+              barcode: `77${String(number).padStart(6, "0")}`,
+              tradeName: `Zulu Product kind ${String(number).padStart(3, "0")}`,
+            }),
+          ).then((response) => {
+            expect(response.status).toBe(201);
+          });
+        }),
+      );
+    }
+    const created = await apiRequest(
+      "POST",
+      "/catalog/products",
+      catalogProduct({
+        barcode: "760000101",
+        tradeName: "Zulu Parcel kept",
+      }),
+    );
+    expect(created.status).toBe(201);
+    await purchaseStock(
+      created.body as Product,
+      "1",
+      "2029-06-15",
+      "LATE-CATALOG",
+    );
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/inventory`);
+    await page
+      .getByRole("searchbox", { name: "Search by item name or barcode" })
+      .fill("zpk");
+    const row = page
+      .locator("tbody tr")
+      .filter({ hasText: "Zulu Parcel kept" });
+    await expect(row).toBeVisible();
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Zulu Product kind 100" }),
+    ).toBeVisible();
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Browser Inventory Item" }),
+    ).toHaveCount(0);
+    await expect(page.locator("tbody tr")).toHaveCount(102);
+  });
+
+  test("shows recalled and quarantined badges and sorts risk by medical priority", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const recalled = await stockNamedItem(
+      "Zebra Recalled Item",
+      "630000001",
+      "RECALL-STOCK",
+    );
+    const quarantined = await stockNamedItem(
+      "Alpha Quarantine Item",
+      "630000002",
+      "QUARANTINE-STOCK",
+    );
+    await changeBatchStatus(recalled.batchId, "recall");
+    await changeBatchStatus(quarantined.batchId, "quarantine");
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/inventory`);
+    const recalledRow = page.locator("tbody tr").filter({
+      hasText: "Zebra Recalled Item",
+    });
+    const quarantineRow = page.locator("tbody tr").filter({
+      hasText: "Alpha Quarantine Item",
+    });
+    await expect(
+      recalledRow.locator("[data-indicator='recalled']"),
+    ).toContainText("Recalled");
+    await expect(
+      quarantineRow.locator("[data-indicator='quarantined']"),
+    ).toContainText("Quarantined");
+
+    const statusHeader = page.getByRole("columnheader", { name: "Status" });
+    await statusHeader.getByRole("button").click();
+    await expect(statusHeader).toHaveAttribute("aria-sort", "ascending");
+    await expect
+      .poll(async () => riskOrder(page))
+      .toEqual([
+        "Zebra Recalled Item",
+        "Alpha Quarantine Item",
+        "Browser Inventory Item",
+      ]);
+  });
+
+  test("blocks count completion until the pending variance is applied", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const stocked = await stockNamedItem(
+      "Count Gate Item",
+      "424242",
+      "COUNT-GATE",
+      "4",
+    );
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/inventory/count`);
+    await page
+      .getByRole("button", { name: "Start count session", exact: true })
+      .click();
+    await expect(page.locator("#count-loop-title")).toBeVisible();
+    const item = page.locator("#count-item");
+    await item.fill(stocked.barcode);
+    await pressKeyOnFocused(page, item, "Enter");
+    const strip = page.locator('[data-count-field="unit:Strip"]');
+    await expect(strip).toBeFocused();
+    await strip.fill("3");
+    await pressKeyOnFocused(page, strip, "Enter");
+    await expect(item).toBeFocused();
+
+    const complete = page.locator("#count-complete");
+    await expect(complete).toBeDisabled();
+    await expect(page.locator("#count-complete-blocked")).toContainText(
+      "Apply 1 pending variances before completing this session.",
+    );
+
+    const row = page.locator("table.count-lines-table tbody tr").filter({
+      hasText: "Count Gate Item",
+    });
+    await row
+      .getByRole("button", { name: "Apply variance", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Apply variance" });
+    await dialog
+      .getByRole("textbox", { name: "Application reason", exact: true })
+      .fill("Shelf was one strip short");
+    await dialog
+      .getByRole("textbox", { name: "Evidence", exact: true })
+      .fill("Count sheet gate");
+    await dialog
+      .getByRole("button", { name: "Apply variance", exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+    await expect(complete).toBeEnabled();
+    await expect(page.locator("#count-complete-blocked")).toHaveCount(0);
+    await complete.click();
+    await expect(complete).toHaveText("Session completed.");
   });
 });
+
+function catalogProduct(input: {
+  readonly barcode: string;
+  readonly packageUnits?: readonly {
+    readonly baseUnitsPerPackage: string;
+    readonly name: string;
+  }[];
+  readonly stockLevels?: ProductCreateRequest["stockLevels"];
+  readonly tradeName: string;
+}): ProductCreateRequest {
+  const request = medicationRequest();
+  return {
+    ...request,
+    barcodes: [{ kind: "product", value: input.barcode }],
+    definition: {
+      fields: {
+        dosageForm: "tablet",
+        manufacturer: "Breev Labs",
+        strength: "500 mg",
+        tradeName: input.tradeName,
+      },
+      mode: "medication",
+    },
+    idempotencyKey: uuidV7(),
+    packaging: {
+      ...request.packaging,
+      packageUnits: [...(input.packageUnits ?? [])],
+    },
+    stockLevels: input.stockLevels ?? {
+      maximumLevel: null,
+      minimumLevel: null,
+      reorderPoint: null,
+    },
+  };
+}
+
+async function purchaseStock(
+  item: Product,
+  quantity: string,
+  expiryDate: string,
+  invoiceNumber: string,
+): Promise<string> {
+  const supplier = await createSupplier(`Inventory ${invoiceNumber}`);
+  const created = await apiRequest("POST", "/purchases/drafts", {
+    idempotencyKey: uuidV7(),
+    invoiceDate: "2026-06-15",
+    settlementContext: "debt",
+    supplierId: supplier.id,
+    supplierInvoiceNumber: invoiceNumber,
+  });
+  expect(created.status).toBe(201);
+  let draft = (created.body as { draft: PurchaseDraft }).draft;
+  const row = await apiRequest("POST", purchaseDraftRowsPath(draft.id), {
+    costFils: "1000",
+    enteredQuantity: quantity,
+    expectedVersion: draft.version,
+    expiryDate,
+    idempotencyKey: uuidV7(),
+    itemId: item.id,
+    lotNumber: invoiceNumber,
+    notes: null,
+    pricing: { method: "by-price", retailPriceFils: "999999" },
+    unit: { kind: "inventory-unit" },
+  });
+  expect(row.status).toBe(201);
+  draft = (row.body as { draft: PurchaseDraft }).draft;
+  const posted = await apiRequest("POST", purchaseDraftPostingsPath(draft.id), {
+    expectedVersion: draft.version,
+    idempotencyKey: uuidV7(),
+  });
+  expect(posted.status).toBe(201);
+  const batchId = (posted.body as PurchasePostResult).posted.rows[0]?.batchId;
+  if (batchId === undefined) throw new Error("Posted purchase had no batch");
+  return batchId;
+}
+
+async function stockNamedItem(
+  tradeName: string,
+  barcode: string,
+  invoiceNumber: string,
+  quantity = "6",
+): Promise<{ readonly barcode: string; readonly batchId: string }> {
+  const created = await apiRequest(
+    "POST",
+    "/catalog/products",
+    catalogProduct({ barcode, tradeName }),
+  );
+  expect(created.status).toBe(201);
+  const batchId = await purchaseStock(
+    created.body as Product,
+    quantity,
+    "2029-06-15",
+    invoiceNumber,
+  );
+  return { barcode, batchId };
+}
+
+async function changeBatchStatus(
+  batchId: string,
+  kind: "quarantine" | "recall",
+): Promise<void> {
+  const response = await apiRequest(
+    "POST",
+    inventoryBatchStatusChangePath(batchId),
+    {
+      evidence: `${kind} evidence for the inventory browser test`,
+      idempotencyKey: uuidV7(),
+      kind,
+      reason: `${kind} for the inventory browser test`,
+    },
+  );
+  expect(response.status).toBe(201);
+}
+
+async function riskOrder(page: Page): Promise<string[]> {
+  const wanted = [
+    "Zebra Recalled Item",
+    "Alpha Quarantine Item",
+    "Browser Inventory Item",
+  ];
+  const names = await page
+    .locator("tbody tr td[data-column-field='item']")
+    .allInnerTexts();
+  return names.flatMap((text) => {
+    const match = wanted.find((name) => text.includes(name));
+    return match === undefined ? [] : [match];
+  });
+}
+
+function daysUntil(isoDate: string): number {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const expiry = Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1);
+  const today = new Date();
+  const todayUtc = Date.UTC(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  return Math.round((expiry - todayUtc) / 86_400_000);
+}
+
+function toArabicIndicDigits(value: string): string {
+  return value.replace(/\d/gu, (digit) =>
+    String.fromCharCode(0x0660 + Number(digit)),
+  );
+}
 
 async function startRendererServer(
   apiOrigin: string,
@@ -604,8 +1148,10 @@ async function installDesktopFake(
           request: Parameters<BreevDesktopApi["saveInventoryExport"]>[0],
         ) => {
           assertExportKeys(request.bundle);
-          (globalThis as { __inventoryExport?: unknown }).__inventoryExport =
-            request.bundle;
+          (globalThis as { __inventoryExport?: unknown }).__inventoryExport = {
+            ...request.bundle,
+            format: request.format,
+          };
           return { status: "saved" as const };
         },
         submitDiagnostics: async () => ({ status: "unavailable" as const }),
@@ -651,12 +1197,14 @@ async function createManagerUser(pharmacyId: string): Promise<void> {
   expect(created.status).toBe(201);
 }
 
-async function createSupplier(): Promise<Supplier> {
+async function createSupplier(
+  name = "Inventory Browser Supplier",
+): Promise<Supplier> {
   const response = await apiRequest("POST", "/suppliers", {
     allowanceEffectiveFrom: "2026-01-01",
     defaultAllowancePercentage: "0",
     idempotencyKey: uuidV7(),
-    name: "Inventory Browser Supplier",
+    name,
     terms: "Net 30",
   });
   expect(response.status).toBe(201);
@@ -843,14 +1391,22 @@ async function assertInventoryRow(
         await row.locator("td[data-column-field='value']").innerText(),
       ),
     )
-    .toMatch(locale === "ar" ? /٢٫٠٠٠/u : /IQD\s*2\.000/u);
+    .toBe(locale === "ar" ? "٢٫٠٠٠ د.ع" : "IQD 2.000");
+  await expect(
+    row.locator("td[data-column-field='value'] .money-amount"),
+  ).toHaveCSS("white-space", "nowrap");
+  if (locale === "en") {
+    await expect(
+      row.locator("td[data-column-field='value'] .money-amount"),
+    ).toHaveAttribute("dir", "ltr");
+  }
   await expect
     .poll(async () =>
       normalizeBidiMarks(
         await row.locator("td[data-column-field='averageCost']").innerText(),
       ),
     )
-    .toMatch(locale === "ar" ? /١٫٠٠٠/u : /IQD\s*1\.000/u);
+    .toBe(locale === "ar" ? "١٫٠٠٠ د.ع" : "IQD 1.000");
   await expect
     .poll(async () =>
       normalizeBidiMarks(

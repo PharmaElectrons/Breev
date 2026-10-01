@@ -7,6 +7,7 @@ import {
   catalogDenialSchema,
   productBarcodeSuggestionResponseSchema,
   productSearchResponseSchema,
+  saleProductContextSchema,
   productSchema,
   type BarcodePrintHandoff,
   type CatalogMatchingApprovalRequest,
@@ -31,8 +32,10 @@ import {
   type ProductNameTemplateVersion,
   type ProductPackaging,
   type ProductPricing,
+  normalizeIndicDigits,
   type ProductSearchRequest,
   type ProductSearchResponse,
+  type SaleProductContext,
 } from "@breev/contracts/local-rest";
 import { Injectable } from "@nestjs/common";
 import type { Request } from "express";
@@ -222,6 +225,51 @@ export class CatalogService {
       "product-not-found",
       productId,
     );
+  }
+
+  public async readSaleContext(
+    request: Request,
+    productId: string,
+  ): Promise<Omit<SaleProductContext, "inventory"> | undefined> {
+    const context = await this.identity.requirePermission(
+      request,
+      CATALOG_SEARCH_PERMISSION,
+    );
+    const row = await selectProduct(
+      this.localDatabase.requirePool(),
+      context.pharmacyId,
+      productId,
+    );
+    if (row === undefined) return undefined;
+    const product = productView(row);
+    const units = await this.localDatabase.requirePool().query<{
+      id: string;
+      name: string;
+      ratio: string;
+    }>(
+      `select id, name, coalesce(base_units_per_package,1)::text as ratio
+       from catalog_product_units
+       where pharmacy_id=$1 and product_id=$2
+       order by ordinal`,
+      [context.pharmacyId, productId],
+    );
+    return saleProductContextSchema.omit({ inventory: true }).parse({
+      id: product.id,
+      displayName: product.displayName,
+      scientificName: product.scientificName,
+      currentRetailPriceFils: product.pricing.retailPriceFils,
+      inventoryUnitName: product.packaging.inventoryUnitName,
+      packageUnits: product.packaging.packageUnits,
+      eligibleUnits: units.rows.map((unit) => ({
+        unitId: unit.id,
+        unitName: unit.name,
+        baseUnitsPerUnit: unit.ratio,
+      })),
+      stockLevels: {
+        minimumLevel: product.stockLevels.minimumLevel,
+        maximumLevel: product.stockLevels.maximumLevel,
+      },
+    });
   }
 
   public async create(
@@ -581,6 +629,7 @@ export class CatalogService {
       request,
       CATALOG_SEARCH_PERMISSION,
     );
+    const query = normalizeIndicDigits(input.query);
     const exact = await this.localDatabase.requirePool().query<{
       barcode: string;
       kind: ProductBarcode["kind"];
@@ -591,7 +640,7 @@ export class CatalogService {
        from catalog_product_barcodes
        where pharmacy_id = $1 and barcode = $2 and removed_at is null
        limit 1`,
-      [context.pharmacyId, input.query],
+      [context.pharmacyId, query],
     );
     const barcode = exact.rows[0];
     if (barcode !== undefined) {
@@ -601,21 +650,25 @@ export class CatalogService {
         barcode.product_id,
       );
       if (product !== undefined && product.status === "active") {
+        const offset = Number(input.offset ?? "0");
         return productSearchResponseSchema.parse({
           hasMore: false,
           query: input.query,
           resultCount: 1,
-          results: [
-            {
-              matchedBarcode: {
-                kind: barcode.kind,
-                source: barcode.source,
-                value: barcode.barcode,
-              },
-              matchedField: "barcode",
-              product: productView(product),
-            },
-          ],
+          results:
+            offset === 0
+              ? [
+                  {
+                    matchedBarcode: {
+                      kind: barcode.kind,
+                      source: barcode.source,
+                      value: barcode.barcode,
+                    },
+                    matchedField: "barcode",
+                    product: productView(product),
+                  },
+                ]
+              : [],
         });
       }
     }
@@ -648,7 +701,8 @@ export class CatalogService {
       }
     }
     const limit = Number(input.limit ?? "50");
-    const selected = matches.slice(0, limit);
+    const offset = Number(input.offset ?? "0");
+    const selected = matches.slice(offset, offset + limit);
     const productRows =
       selected.length === 0
         ? []
@@ -675,7 +729,7 @@ export class CatalogService {
       };
     });
     return productSearchResponseSchema.parse({
-      hasMore: matches.length > results.length,
+      hasMore: matches.length > offset + results.length,
       query: input.query,
       resultCount: matches.length,
       results,

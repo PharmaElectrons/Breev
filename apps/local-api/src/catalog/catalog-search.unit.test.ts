@@ -30,6 +30,11 @@ describe("Catalog Product search", () => {
     expect(matchesOrderedProductName("Panadol Extra GSK", "xkr")).toBe(false);
   });
 
+  it("normalizes Arabic-Indic digits before matching", () => {
+    expect(normalizeProductSearchText("باركود ٥۰۰۱۲")).toBe("باركود 50012");
+    expect(matchesOrderedProductName("Item 50012", "٥۰۰۱۲")).toBe(true);
+  });
+
   it("normalizes case, whitespace, and simple punctuation identically", () => {
     expect(normalizeProductSearchText("  PANADOL---Extra,   GSK!  ")).toBe(
       "panadolextra gsk",

@@ -16,6 +16,7 @@ import {
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 import { useIdentityState } from "./identity-state-provider";
 import { inventoryMessages } from "./inventory-messages";
+import { MoneyAmount } from "./money-amount";
 import { usePreferences } from "./preferences-provider";
 import { formatCurrencyFromFils, formatNumber } from "./preferences";
 import { StateIndicator } from "./state-indicator";
@@ -103,13 +104,20 @@ export function BatchSafetyReview({
   if (review === null) {
     return (
       <section
-        className="inventory-workspace batch-safety-review"
+        className="inventory-workspace batch-safety-review inventory-detail-page"
         aria-labelledby="batch-review-title"
       >
-        <p>
-          <a href="#/inventory">{copy.safety.backToInventory}</a>
-        </p>
-        <h2 id="batch-review-title">{copy.safety.review}</h2>
+        <header className="inventory-detail-header">
+          <div className="inventory-detail-heading">
+            <a
+              className="inventory-chip inventory-chip-primary"
+              href="#/inventory"
+            >
+              {copy.safety.backToInventory}
+            </a>
+            <h2 id="batch-review-title">{copy.safety.review}</h2>
+          </div>
+        </header>
         {error === null && denial === null ? (
           <p role="status">{copy.loading}</p>
         ) : (
@@ -145,15 +153,19 @@ export function BatchSafetyReview({
 
   return (
     <section
-      className="inventory-workspace batch-safety-review"
+      className="inventory-workspace batch-safety-review inventory-detail-page"
       aria-labelledby="batch-review-title"
     >
-      <header className="batch-safety-review-heading">
-        <div>
-          <p>
-            <a href="#/inventory">{copy.safety.backToInventory}</a>
-          </p>
+      <header className="inventory-detail-header">
+        <div className="inventory-detail-heading">
+          <a
+            className="inventory-chip inventory-chip-primary"
+            href="#/inventory"
+          >
+            {copy.safety.backToInventory}
+          </a>
           <h2 id="batch-review-title">{copy.safety.review}</h2>
+          <p className="inventory-detail-note">{copy.safety.dispositionNote}</p>
         </div>
         {canManage ? (
           <button
@@ -166,34 +178,7 @@ export function BatchSafetyReview({
           </button>
         ) : null}
       </header>
-      <div className="batch-safety-review-controls">
-        <button
-          aria-label={copy.safety.previousMonth}
-          className="quiet-button"
-          type="button"
-          onClick={() => navigateMonth(review.month, -1)}
-        >
-          ← <span className="visually-hidden">{copy.safety.previousMonth}</span>
-        </button>
-        <label className="field-label">
-          <span>{copy.safety.reviewMonth}</span>
-          <input
-            type="month"
-            value={review.month}
-            onChange={(event) => navigateToMonth(event.target.value)}
-          />
-        </label>
-        <button
-          aria-label={copy.safety.nextMonth}
-          className="quiet-button"
-          type="button"
-          onClick={() => navigateMonth(review.month, 1)}
-        >
-          → <span className="visually-hidden">{copy.safety.nextMonth}</span>
-        </button>
-      </div>
       <p className="batch-safety-gate">{copy.safety.gate}</p>
-      <p>{copy.safety.dispositionNote}</p>
       {currentStatus.missedBusinessDates.length > 0 ? (
         <p className="batch-safety-missed-banner" role="alert">
           {copy.safety.missedRuns(
@@ -218,20 +203,53 @@ export function BatchSafetyReview({
         </p>
       )}
       <div
-        className="batch-safety-announcement"
+        className={
+          announcement === "" ? "visually-hidden" : "batch-safety-announcement"
+        }
         role="status"
         aria-live="polite"
       >
         {announcement}
       </div>
-      <p className="batch-safety-run-summary">
-        {copy.safety.runSummary(
-          review.runs.completedBusinessDates.length,
-          review.runs.missedBusinessDates.length,
-        )}
-      </p>
+      <div className="batch-safety-review-toolbar">
+        <div className="batch-safety-review-controls">
+          <button
+            aria-label={copy.safety.previousMonth}
+            className="quiet-button"
+            type="button"
+            onClick={() => navigateMonth(review.month, -1)}
+          >
+            ←{" "}
+            <span className="visually-hidden">{copy.safety.previousMonth}</span>
+          </button>
+          <label className="field-label">
+            <span>{copy.safety.reviewMonth}</span>
+            <input
+              type="month"
+              value={review.month}
+              onChange={(event) => navigateToMonth(event.target.value)}
+            />
+          </label>
+          <button
+            aria-label={copy.safety.nextMonth}
+            className="quiet-button"
+            type="button"
+            onClick={() => navigateMonth(review.month, 1)}
+          >
+            → <span className="visually-hidden">{copy.safety.nextMonth}</span>
+          </button>
+        </div>
+        <p className="batch-safety-run-summary">
+          {copy.safety.runSummary(
+            review.runs.completedBusinessDates.length,
+            review.runs.missedBusinessDates.length,
+          )}
+        </p>
+      </div>
       {review.rows.length === 0 ? (
-        <p role="status">{copy.safety.reviewEmpty}</p>
+        <p className="batch-safety-review-empty" role="status">
+          {copy.safety.reviewEmpty}
+        </p>
       ) : (
         <div className="batch-safety-review-table-scroll">
           <table className="batch-safety-review-table">
@@ -280,12 +298,13 @@ export function BatchSafetyReview({
                     {row.carryingAmountFils === null ? (
                       "—"
                     ) : (
-                      <bdi>
-                        {formatCurrencyFromFils(
+                      <MoneyAmount
+                        locale={locale}
+                        value={formatCurrencyFromFils(
                           BigInt(row.carryingAmountFils),
                           locale,
                         )}
-                      </bdi>
+                      />
                     )}
                   </td>
                 </tr>

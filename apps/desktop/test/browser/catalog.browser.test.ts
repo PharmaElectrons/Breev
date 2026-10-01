@@ -628,6 +628,73 @@ test.describe.serial("Product catalog screens", () => {
     await context.close();
   });
 
+  test("continues Catalog search beyond the first 50 matching products", async ({
+    browser,
+    page,
+  }) => {
+    let lastProduct: Product | undefined;
+    for (let index = 0; index < 52; index += 1) {
+      const request = sampleMedicationRequest(
+        `5000167${String(index).padStart(6, "0")}`,
+      );
+      const definition = request.definition;
+      if (definition.mode !== "medication") {
+        throw new Error("The Catalog search fixture must be a medication");
+      }
+      lastProduct = await createCatalogProduct(apiOrigin, credentials, {
+        ...request,
+        barcodes: [],
+        definition: {
+          mode: "medication",
+          fields: {
+            ...definition.fields,
+            tradeName: `Catalog Pageprobe ${String(index).padStart(2, "0")}`,
+          },
+        },
+      });
+    }
+
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products`);
+    const search = page.getByRole("searchbox", {
+      name: "Search Arabic name, English name, or barcode",
+    });
+    await search.fill("catalog pageprobe");
+
+    await expect(
+      page.getByRole("status").filter({ hasText: "Search results: 52" }),
+    ).toBeAttached();
+    const rows = page.locator(".catalog-rail-item");
+    await expect(rows).toHaveCount(50);
+    await page.getByRole("button", { name: "Load more results" }).click();
+    await expect(rows).toHaveCount(52);
+    expect(lastProduct).toBeDefined();
+    await expect(
+      page.locator(
+        `.catalog-rail-item[href="#/catalog/products/${lastProduct!.id}"]`,
+      ),
+    ).toBeVisible();
+
+    const arabicContext = await browser.newContext();
+    const arabicPage = await arabicContext.newPage();
+    await installDesktopFake(arabicPage, renderer.origin, {
+      locale: "ar",
+      theme: "light",
+    });
+    await arabicPage.goto(`${renderer.origin}#/catalog/products`);
+    await arabicPage.getByRole("searchbox").fill("catalog pageprobe");
+    const arabicRows = arabicPage.locator(".catalog-rail-item");
+    await expect(arabicRows).toHaveCount(50);
+    await arabicPage
+      .getByRole("button", { name: "عرض المزيد من النتائج" })
+      .click();
+    await expect(arabicRows).toHaveCount(52);
+    await arabicContext.close();
+  });
+
   test("Search failure retains scanner value and focus; barcode suggest, print, and matching work without a mouse", async ({
     page,
   }) => {
@@ -1158,21 +1225,17 @@ test.describe.serial("Product catalog screens", () => {
       "available",
     );
 
-    // A required Phase One surface that is not built says so rather than
-    // pretending to work.
-    await expect(
-      modules.getByRole("link", { name: /^Reports/ }),
-    ).toHaveAttribute("data-availability", "unavailable");
-
-    // The Clinic tab is outside project scope, and delivery, e-commerce,
-    // marketing, and external integration are deferred: none of them exists.
+    // Later accounting and reporting surfaces are quarantined until their
+    // milestones, alongside excluded and deferred prototype modules.
     for (const excluded of [
+      /accounts/i,
       /clinic/i,
       /عيادة/,
       /delivery/i,
       /commerce/i,
       /marketing/i,
       /external/i,
+      /reports/i,
     ]) {
       await expect(page.getByText(excluded)).toHaveCount(0);
     }
@@ -1194,8 +1257,9 @@ test.describe.serial("Product catalog screens", () => {
         });
         const page = await context.newPage();
         await installDesktopFake(page, renderer.origin, { locale, theme });
-        // Sales is built as of #58; Reports is still an unbuilt required surface.
-        await page.goto(`${renderer.origin}#/reports`);
+        // Sales is built as of #58; Patients remains an unbuilt required
+        // surface while later reporting stays out of the current shell.
+        await page.goto(`${renderer.origin}#/patients`);
 
         const heading = page.getByTestId("unavailable-surface");
         await expect(heading).toBeVisible();
@@ -1243,7 +1307,7 @@ test.describe.serial("Product catalog screens", () => {
     await expect(page.getByTestId("unavailable-surface")).toHaveCount(0);
 
     // The request lands on an allowed default instead.
-    await expect.poll(() => new URL(page.url()).hash).toBe("#/administration");
+    await expect.poll(() => new URL(page.url()).hash).toBe("#/dashboard");
   });
 
   test("A direct hash cannot bypass login", async ({ page }) => {
@@ -1281,18 +1345,22 @@ test.describe.serial("Product catalog screens", () => {
     await page.goto(`${renderer.origin}#/catalog/products`);
     await expect(page.getByTestId("shell-state")).toHaveText("Ready");
 
-    // Navigation is links, not buttons, so it does not disturb the header's
-    // diagnostic, language, and theme control order. Central submission is
-    // intentionally disabled by default (G-16), so it is absent here.
-    const buttons = page.locator(".preference-controls").getByRole("button");
+    // Navigation is links, not buttons. The ready connection check adds two
+    // controls ahead of the diagnostic, language, and theme controls.
+    await page.getByTestId("collapse-menu-trigger").click();
+    const dropdown = page.getByTestId("collapse-menu-dropdown");
+    const buttons = dropdown.getByRole("button");
     for (const [index, label] of [
+      "Check now",
+      "Verify Main device",
       "Export diagnostic package",
       "Contact support",
       "Switch to Arabic",
       "Use dark theme",
     ].entries()) {
-      await expect(buttons.nth(index)).toHaveAttribute("aria-label", label);
+      await expect(buttons.nth(index)).toHaveAccessibleName(label);
     }
+    await page.keyboard.press("Escape");
 
     const products = page
       .getByRole("navigation", { name: "Modules" })

@@ -34,12 +34,14 @@ describe("navigationModules", () => {
   it("never offers an excluded or deferred prototype module", () => {
     const ids = MODULE_DEFINITIONS.map((definition) => definition.id).join(" ");
     for (const forbidden of [
+      "accounts",
       "clinic",
       "delivery",
       "ecommerce",
       "marketing",
       "external",
       "integration",
+      "reports",
     ]) {
       expect(ids).not.toContain(forbidden);
     }
@@ -74,18 +76,19 @@ describe("navigationModules", () => {
     ).toContain("purchases");
   });
 
-  it("marks implemented workspaces available and unbuilt required surfaces unavailable", () => {
+  it("marks implemented workspaces available", () => {
     const modules = navigationModules(FREE_CORE_ACCESS);
     const availability = new Map(
       modules.map((module) => [module.id, module.availability]),
     );
     expect(availability.get("products")).toBe("available");
-    expect(availability.get("administration")).toBe("available");
+    expect(availability.get("settings")).toBe("available");
     expect(availability.get("dashboard")).toBe("available");
     expect(availability.get("sales")).toBe("available");
     expect(availability.get("purchases")).toBe("available");
     expect(availability.get("basket")).toBe("available");
-    expect(availability.get("reports")).toBe("unavailable");
+    expect(availability.has("reports")).toBe(false);
+    expect(availability.has("accounts")).toBe(false);
   });
 
   it("keeps the client prototype's module order", () => {
@@ -97,19 +100,16 @@ describe("navigationModules", () => {
       "products",
       "patients",
       "basket",
-      "reports",
-      "accounts",
-      "administration",
       "settings",
     ]);
   });
 });
 
 describe("moduleIdForHash", () => {
-  it("falls back to the administration workspace at the bare origin", () => {
-    expect(moduleIdForHash("")).toBe("administration");
-    expect(moduleIdForHash("#")).toBe("administration");
-    expect(moduleIdForHash("#/")).toBe("administration");
+  it("falls back to the dashboard workspace at the bare origin", () => {
+    expect(moduleIdForHash("")).toBe("dashboard");
+    expect(moduleIdForHash("#")).toBe("dashboard");
+    expect(moduleIdForHash("#/")).toBe("dashboard");
   });
 
   it("resolves the whole Catalog hash family", () => {
@@ -133,9 +133,14 @@ describe("moduleIdForHash", () => {
     ).toBe("inventory");
   });
 
-  it("resolves an unbuilt surface so a deep link explains itself", () => {
+  it("resolves an authorized unbuilt surface so a deep link explains itself", () => {
     expect(moduleIdForHash("#/sales")).toBe("sales");
-    expect(moduleIdForHash("#/reports")).toBe("reports");
+    expect(moduleIdForHash("#/patients")).toBe("patients");
+  });
+
+  it("sends quarantined accounting and report hashes to the default workspace", () => {
+    expect(moduleIdForHash("#/reports")).toBe("dashboard");
+    expect(moduleIdForHash("#/accounts")).toBe("dashboard");
   });
 
   it("resolves Ordered Items to the basket module", () => {
@@ -143,8 +148,8 @@ describe("moduleIdForHash", () => {
   });
 
   it("sends an unknown hash to the default workspace", () => {
-    expect(moduleIdForHash("#/clinic")).toBe("administration");
-    expect(moduleIdForHash("#/delivery")).toBe("administration");
+    expect(moduleIdForHash("#/clinic")).toBe("dashboard");
+    expect(moduleIdForHash("#/delivery")).toBe("dashboard");
   });
 });
 
@@ -152,7 +157,7 @@ describe("moduleImplemented", () => {
   it("does not consult permissions, because hiding is never enforcement", () => {
     expect(moduleImplemented("products")).toBe(true);
     expect(moduleImplemented("purchases")).toBe(true);
-    expect(moduleImplemented("administration")).toBe(true);
+    expect(moduleImplemented("settings")).toBe(true);
     expect(moduleImplemented("dashboard")).toBe(true);
     expect(moduleImplemented("sales")).toBe(true);
     expect(moduleImplemented("messages")).toBe(false);

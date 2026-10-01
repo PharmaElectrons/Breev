@@ -2,10 +2,16 @@ import { inventorySensitiveExportSchema } from "@breev/contracts/local-rest";
 import { describe, expect, it } from "vitest";
 
 import type { CatalogInventoryFacts } from "../catalog/catalog-inventory.js";
-import type { InventoryPosition } from "../inventory/inventory-review.js";
+import type {
+  InventoryPosition,
+  ProductMovement,
+} from "../inventory/inventory-review.js";
 import type { SupplierCostFact } from "../purchasing/purchasing-references.js";
 import { includeInReview } from "../inventory/inventory-item-view.js";
-import { inventoryExportItemView } from "./inventory-review.service.js";
+import {
+  inventoryExportItemView,
+  movementReference,
+} from "./inventory-review.service.js";
 
 const PHARMACY_ID = "01999f00-0000-7000-8000-000000000001";
 const PRODUCT_ID = "01999f00-0000-7000-8000-000000000002";
@@ -104,5 +110,73 @@ describe("inventory export item view", () => {
     expect(
       includeInReview({ ...archived, status: "merged" }, { balance: 2n }),
     ).toBe(false);
+  });
+});
+
+const MOVEMENT_ID = "01999f00-0000-7000-8000-000000000007";
+const ADJUSTMENT_ID = "01999f00-0000-7000-8000-000000000008";
+
+function movement(
+  sourceDocumentType: ProductMovement["sourceDocumentType"],
+  sourceDocumentId: string,
+): ProductMovement {
+  return {
+    batchId: BATCH_ID,
+    carryingAmountFils: 100n,
+    id: MOVEMENT_ID,
+    occurredAt: new Date("2026-09-10T12:00:00.000Z"),
+    productId: PRODUCT_ID,
+    quantity: 1n,
+    reason:
+      sourceDocumentType === "count-session"
+        ? "count-variance"
+        : sourceDocumentType === "purchase-adjustment"
+          ? "purchase-adjustment"
+          : sourceDocumentType === "purchase-return"
+            ? "purchase-return"
+            : "purchase-receipt",
+    sourceDocumentId,
+    sourceDocumentType,
+    sourceRowOrdinal: 1,
+    userId: USER_ID,
+  };
+}
+
+describe("movement reference drill-down", () => {
+  it("does not offer a document link when the source reference is missing", () => {
+    const reference = movementReference(
+      movement("purchase-adjustment", ADJUSTMENT_ID),
+      new Map(),
+      new Map(),
+      new Map(),
+      new Map(),
+    );
+
+    expect(reference.openable).toBe(false);
+    expect(reference.documentId).toBe(ADJUSTMENT_ID);
+  });
+
+  it("opens the originating purchase when the adjustment reference resolves", () => {
+    const reference = movementReference(
+      movement("purchase-adjustment", ADJUSTMENT_ID),
+      new Map(),
+      new Map([
+        [
+          ADJUSTMENT_ID,
+          {
+            number: { series: "P", value: "4", year: 2026 },
+            originalPurchaseId: PURCHASE_ID,
+            suffixValue: "1",
+            supplierNameSnapshot: "Example Supplier",
+          },
+        ],
+      ]),
+      new Map(),
+      new Map(),
+    );
+
+    expect(reference.openable).toBe(true);
+    expect(reference.documentId).toBe(PURCHASE_ID);
+    expect(reference.documentType).toBe("purchase-adjustment");
   });
 });

@@ -156,6 +156,7 @@ export async function searchProducts(
     productSearchPath({
       query: input.query,
       ...(input.limit === undefined ? {} : { limit: input.limit }),
+      ...(input.offset === undefined ? {} : { offset: input.offset }),
     }),
     productSearchContract.method,
     200,

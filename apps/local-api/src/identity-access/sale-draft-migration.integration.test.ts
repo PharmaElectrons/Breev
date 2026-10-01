@@ -131,7 +131,7 @@ describe.sequential("migration 0025: Sale Drafts", () => {
     }
   });
 
-  it("creates the exact minimal table, enum, permission, and default grants", async () => {
+  it("upgrades the minimal draft with lines, lifecycle states, permission, and default grants", async () => {
     const roleRevisionsBefore = await roleRevisions();
     const pharmacyRevisionBefore = await pharmacyRevision();
 
@@ -153,6 +153,7 @@ describe.sequential("migration 0025: Sale Drafts", () => {
       "updated_at",
       "updated_by",
       "device_id",
+      "invoice_discount_fils",
     ]);
     const constraints = await application.query<{ conname: string }>(
       `select conname from pg_constraint
@@ -168,7 +169,28 @@ describe.sequential("migration 0025: Sale Drafts", () => {
     const statuses = await application.query<{ status: string }>(
       "select unnest(enum_range(null::sale_draft_status))::text as status",
     );
-    expect(statuses.rows.map((row) => row.status)).toEqual(["active"]);
+    expect(statuses.rows.map((row) => row.status)).toEqual([
+      "active",
+      "suspended",
+      "discarded",
+    ]);
+    const lineColumns = await application.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'sale_draft_lines'
+       order by ordinal_position`,
+    );
+    expect(lineColumns.rows.map((row) => row.column_name)).toEqual(
+      expect.arrayContaining([
+        "draft_id",
+        "product_id",
+        "unit_id",
+        "quantity",
+        "unit_price_fils",
+        "line_discount_percentage",
+        "price_version",
+        "price_captured_at",
+      ]),
+    );
     const permission = await application.query<{ name: string }>(
       "select name from permission_definitions where name = 'sales.drafts.manage'",
     );
@@ -195,14 +217,16 @@ describe.sequential("migration 0025: Sale Drafts", () => {
       Object.fromEntries(
         Object.entries(roleRevisionsBefore).map(([roleKey, revision]) => [
           roleKey,
-          ["manager", "owner", "pharmacist", "sales_employee"].includes(roleKey)
-            ? String(BigInt(revision) + 1n)
-            : revision,
+          ["manager", "owner"].includes(roleKey)
+            ? String(BigInt(revision) + 4n)
+            : ["pharmacist", "sales_employee"].includes(roleKey)
+              ? String(BigInt(revision) + 1n)
+              : revision,
         ]),
       ),
     );
     expect(await pharmacyRevision()).toBe(
-      String(BigInt(pharmacyRevisionBefore) + 1n),
+      String(BigInt(pharmacyRevisionBefore) + 4n),
     );
 
     await runMigrations(application, databaseRoles.migrationUrl);

@@ -7,6 +7,8 @@ export default tseslint.config(
     ignores: [
       ".agents/**",
       ".scratch/**",
+      "breev-phase1-plan/**",
+      "scratch/**",
       ".turbo/**",
       "**/artifacts/**",
       "**/coverage/**",

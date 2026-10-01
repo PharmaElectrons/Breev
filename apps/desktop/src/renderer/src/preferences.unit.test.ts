@@ -35,6 +35,8 @@ describe("shell presentation preferences", () => {
       /IQD\s*1,234\.567/u,
     );
     expect(formatCurrencyFromFils(1_234_567n, "ar")).toContain("١٬٢٣٤٫٥٦٧");
+    expect(formatCurrencyFromFils(1_234_567n, "ar")).toContain("د.ع");
+    expect(formatCurrencyFromFils(1_234_567n, "ar")).not.toContain("IQD");
     expect(formatCurrencyFromFils(9_007_199_254_740_993_001n, "en")).toMatch(
       /9,007,199,254,740,993\.001/u,
     );

@@ -1,8 +1,13 @@
 import {
+  DESKTOP_ABORT_INVENTORY_EXPORT_CHANNEL,
+  DESKTOP_APPEND_INVENTORY_EXPORT_CHANNEL,
+  DESKTOP_BEGIN_INVENTORY_EXPORT_CHANNEL,
   DESKTOP_CANCEL_TERMINAL_PAIRING_CHANNEL,
   DESKTOP_COPY_IDENTIFIER_CHANNEL,
   DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL,
-  DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
+  DESKTOP_FINISH_INVENTORY_EXPORT_CHANNEL,
+  INVENTORY_EXPORT_CHUNK_BYTES,
+  MAXIMUM_INVENTORY_EXPORT_BYTES,
   DESKTOP_MANUAL_ENDPOINT_CHANNEL,
   DESKTOP_OPEN_SUPPORT_CHANNEL,
   DESKTOP_PAIRING_INVITATION_CHANNEL,
@@ -16,6 +21,12 @@ import {
   desktopCopyIdentifierResponseSchema,
   desktopExportDiagnosticsRequestSchema,
   desktopExportDiagnosticsResponseSchema,
+  desktopAbortInventoryExportRequestSchema,
+  desktopAppendInventoryExportRequestSchema,
+  desktopAppendInventoryExportResponseSchema,
+  desktopBeginInventoryExportRequestSchema,
+  desktopBeginInventoryExportResponseSchema,
+  desktopFinishInventoryExportRequestSchema,
   desktopSaveInventoryExportRequestSchema,
   desktopSaveInventoryExportResponseSchema,
   desktopManualEndpointRequestSchema,
@@ -34,6 +45,8 @@ import {
   terminalPairingStateResponseSchema,
   type BreevDesktopApi,
 } from "@breev/contracts/desktop-preload";
+
+import { serializeInventoryCsv } from "../main/inventory-export-csv.js";
 
 type Invoke = (channel: string, payload: unknown) => Promise<unknown>;
 
@@ -73,10 +86,50 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
     },
     saveInventoryExport: async (...arguments_: unknown[]) => {
       assertSingleArgument("saveInventoryExport", arguments_);
+      const request = desktopSaveInventoryExportRequestSchema.parse(
+        arguments_[0],
+      );
+      const began = desktopBeginInventoryExportResponseSchema.parse(
+        await invoke(
+          DESKTOP_BEGIN_INVENTORY_EXPORT_CHANNEL,
+          desktopBeginInventoryExportRequestSchema.parse({
+            locale: request.locale,
+            ...(request.format === undefined ? {} : { format: request.format }),
+          }),
+        ),
+      );
+      if (began.status !== "opened") return began;
+      const serialized =
+        request.format === "csv"
+          ? serializeInventoryCsv(request.bundle)
+          : JSON.stringify(request.bundle, null, 2) + "\n";
+      if (
+        Buffer.byteLength(serialized, "utf8") > MAXIMUM_INVENTORY_EXPORT_BYTES
+      ) {
+        await invoke(
+          DESKTOP_ABORT_INVENTORY_EXPORT_CHANNEL,
+          desktopAbortInventoryExportRequestSchema.parse({}),
+        );
+        return desktopSaveInventoryExportResponseSchema.parse({
+          status: "export-too-large",
+        });
+      }
+      for (const chunk of exportChunks(
+        serialized,
+        INVENTORY_EXPORT_CHUNK_BYTES,
+      )) {
+        const appended = desktopAppendInventoryExportResponseSchema.parse(
+          await invoke(
+            DESKTOP_APPEND_INVENTORY_EXPORT_CHANNEL,
+            desktopAppendInventoryExportRequestSchema.parse({ chunk }),
+          ),
+        );
+        if (appended.status !== "appended") return appended;
+      }
       return desktopSaveInventoryExportResponseSchema.parse(
         await invoke(
-          DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL,
-          desktopSaveInventoryExportRequestSchema.parse(arguments_[0]),
+          DESKTOP_FINISH_INVENTORY_EXPORT_CHANNEL,
+          desktopFinishInventoryExportRequestSchema.parse({}),
         ),
       );
     },
@@ -153,6 +206,25 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
       );
     },
   });
+}
+
+export function exportChunks(value: string, maximumBytes: number): string[] {
+  const buffer = Buffer.from(value, "utf8");
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < buffer.length) {
+    let end = Math.min(start + maximumBytes, buffer.length);
+    while (
+      end > start &&
+      end < buffer.length &&
+      (buffer[end]! & 0b1100_0000) === 0b1000_0000
+    ) {
+      end -= 1;
+    }
+    chunks.push(buffer.subarray(start, end).toString("utf8"));
+    start = end;
+  }
+  return chunks;
 }
 
 function assertNoArguments(name: string, arguments_: unknown[]): void {

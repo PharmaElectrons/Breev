@@ -44,7 +44,8 @@ import { SaleDraftService } from "./sales/sale-draft.service.js";
 import { PatientsController } from "./patients/patients.controller.js";
 import { PatientsService } from "./patients/patients.service.js";
 import { PatientsRepository } from "./patients/patients.repository.js";
-import { DevPatientAuthorization } from "./patients/patient-auth.dev.js";
+import { SaleQuickAccessController } from "./sales/sale-quick-access.controller.js";
+import { SaleQuickAccessService } from "./sales/sale-quick-access.service.js";
 
 @Module({
   controllers: [
@@ -62,6 +63,7 @@ import { DevPatientAuthorization } from "./patients/patient-auth.dev.js";
     RecoveryController,
     SaleDraftController,
     PatientsController,
+    SaleQuickAccessController,
   ],
   providers: [
     CatalogService,
@@ -93,10 +95,7 @@ import { DevPatientAuthorization } from "./patients/patient-auth.dev.js";
     SaleDraftService,
     PatientsService,
     PatientsRepository,
-    {
-      provide: "PatientAuthorizationPort",
-      useClass: DevPatientAuthorization,
-    },
+    SaleQuickAccessService,
   ],
 })
 export class AppModule {}

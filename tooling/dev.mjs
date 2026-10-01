@@ -30,7 +30,7 @@ const checkProc = spawn(process.execPath, [checkScript, `--role=${role}`], {
   env: { ...process.env, BREEV_DEVICE_ROLE: role },
 });
 
-checkProc.on("exit", (code) => {
+checkProc.on("exit", async (code) => {
   if (code !== 0) {
     process.exit(code ?? 1);
   }
@@ -69,20 +69,48 @@ checkProc.on("exit", (code) => {
   }
 
   // 3. Start local API and Desktop UI with Turbo.
+  // If the local API service is already running on the configured port,
+  // skip launching a second instance and start the Desktop UI directly.
+  const apiHost = mergedEnv.API_HOST || "127.0.0.1";
+  const apiPort = mergedEnv.API_PORT || "31310";
+  let isApiRunning = false;
+  if (role === "main") {
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        const response = await fetch(`http://${apiHost}:${apiPort}/health`, {
+          signal: AbortSignal.timeout(1000),
+        });
+        if (response.ok) {
+          const body = await response.json();
+          if (body.status === "healthy" || body.status === "degraded") {
+            isApiRunning = true;
+            console.log(
+              `[breev] Local API is already running on ${apiHost}:${apiPort} (${body.status}). Starting Desktop UI...`,
+            );
+            break;
+          }
+        }
+      } catch {
+        if (attempt < 4) {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+      }
+    }
+  }
+
+  const turboFilters = [];
+  if (role === "main" && !isApiRunning) {
+    turboFilters.push("--filter=@breev/local-api");
+  }
+  turboFilters.push("--filter=@breev/desktop");
+
   // Windows resolves pnpm to a .cmd shim, and Node refuses to spawn one
   // without a shell, so the launcher needs one there.
   const isWindows = process.platform === "win32";
   const npmCmd = isWindows ? "pnpm.cmd" : "pnpm";
   const turboProc = spawn(
     npmCmd,
-    [
-      "exec",
-      "turbo",
-      "run",
-      "start",
-      "--filter=@breev/local-api",
-      "--filter=@breev/desktop",
-    ],
+    ["exec", "turbo", "run", "start", ...turboFilters],
     {
       cwd: root,
       stdio: "inherit",

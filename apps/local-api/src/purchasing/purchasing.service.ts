@@ -18,6 +18,8 @@ import {
   type PurchaseDraftRow,
   type PurchaseDraftRowCommitRequest,
   type PurchaseDraftRowCommitResult,
+  type PurchaseDraftRowDiscardRequest,
+  type PurchaseDraftRowUpdateRequest,
   type PurchaseDraftCreateRequest,
   type PurchaseDraftDiscardRequest,
   type PurchaseDraftResult,
@@ -118,6 +120,8 @@ const COMMANDS = {
   draftUpdate: "purchase.draft.update",
   draftDiscard: "purchase.draft.discard",
   draftRowCommit: "purchase.draft.row.commit",
+  draftRowDiscard: "purchase.draft.row.discard",
+  draftRowUpdate: "purchase.draft.row.update",
   entryPreferencesUpdate: "purchase.entry-preferences.update",
   purchasePost: "purchase.post",
 } as const;
@@ -175,16 +179,77 @@ const DRAFT_SELECT = `select draft_row.id, draft_row.pharmacy_id,
 from purchase_drafts draft_row`;
 
 /** Snapshot-only by construction: neither query names a live master table. */
-export const POSTED_PURCHASE_LIST_SELECT = `select posted_row.id,
+export const POSTED_PURCHASE_LIST_SELECT = `with posted_records as (
+  select posted_row.id, posted_row.pharmacy_id,
+    posted_row.supplier_name_snapshot, posted_row.supplier_invoice_number,
+    posted_row.invoice_date, posted_row.settlement_context,
+    posted_row.primary_supplier_cost_fils::text,
+    posted_row.cost_after_discount_fils::text, posted_row.number_value::text,
+    posted_row.number_year, posted_row.posted_at,
+    (select count(*)::integer from posted_purchase_rows snapshot_row
+     where snapshot_row.pharmacy_id = posted_row.pharmacy_id
+       and snapshot_row.posted_purchase_id = posted_row.id) as item_count,
+    null::text as ref_number,
+    null::text as original_purchase_id,
+    (select count(*) > 0 from posted_purchase_adjustments adj_check
+     where adj_check.pharmacy_id = posted_row.pharmacy_id
+       and adj_check.original_purchase_id = posted_row.id) as has_adjustments,
+    'purchase' as row_kind
+  from posted_purchases posted_row
+  union all
+  select adj.id, adj.pharmacy_id,
+    adj.supplier_name_snapshot,
+    'A' || lpad(adj.suffix_value::text, 2, '0') || '-' || adj.supplier_invoice_number as supplier_invoice_number,
+    (select orig.invoice_date from posted_purchases orig
+     where orig.pharmacy_id = adj.pharmacy_id and orig.id = adj.original_purchase_id) as invoice_date,
+    (select orig.settlement_context from posted_purchases orig
+     where orig.pharmacy_id = adj.pharmacy_id and orig.id = adj.original_purchase_id) as settlement_context,
+    adj.primary_supplier_cost_delta_fils::text as primary_supplier_cost_fils,
+    adj.cost_after_discount_delta_fils::text as cost_after_discount_fils,
+    (select orig.number_value::text from posted_purchases orig
+     where orig.pharmacy_id = adj.pharmacy_id and orig.id = adj.original_purchase_id) as number_value,
+    (select orig.number_year from posted_purchases orig
+     where orig.pharmacy_id = adj.pharmacy_id and orig.id = adj.original_purchase_id) as number_year,
+    adj.posted_at,
+    (select count(*)::integer from posted_purchase_adjustment_rows adj_row
+     where adj_row.pharmacy_id = adj.pharmacy_id
+       and adj_row.adjustment_id = adj.id) as item_count,
+    adj.supplier_invoice_number as ref_number,
+    adj.original_purchase_id::text as original_purchase_id,
+    false as has_adjustments,
+    'adjustment' as row_kind
+  from posted_purchase_adjustments adj
+  union all
+  select ret.id, ret.pharmacy_id,
+    ret.supplier_name_snapshot,
+    'R-' || ret.number_value::text as supplier_invoice_number,
+    ret.original_invoice_date as invoice_date,
+    (select orig.settlement_context from posted_purchases orig
+     where orig.pharmacy_id = ret.pharmacy_id and orig.id = ret.original_purchase_id) as settlement_context,
+    (-ret.supplier_reduction_fils)::text as primary_supplier_cost_fils,
+    (-ret.supplier_reduction_fils)::text as cost_after_discount_fils,
+    ret.original_number_value::text as number_value,
+    ret.original_number_year as number_year,
+    ret.posted_at,
+    (select count(*)::integer from posted_purchase_return_rows ret_row
+     where ret_row.pharmacy_id = ret.pharmacy_id
+       and ret_row.purchase_return_id = ret.id) as item_count,
+    (select orig.supplier_invoice_number from posted_purchases orig
+     where orig.pharmacy_id = ret.pharmacy_id and orig.id = ret.original_purchase_id) as ref_number,
+    ret.original_purchase_id::text as original_purchase_id,
+    false as has_adjustments,
+    'return' as row_kind
+  from posted_purchase_returns ret
+)
+select posted_row.id, posted_row.pharmacy_id,
   posted_row.supplier_name_snapshot, posted_row.supplier_invoice_number,
   posted_row.invoice_date::text, posted_row.settlement_context,
-  posted_row.primary_supplier_cost_fils::text,
-  posted_row.cost_after_discount_fils::text, posted_row.number_value::text,
-  posted_row.number_year, posted_row.posted_at,
-  (select count(*)::integer from posted_purchase_rows snapshot_row
-   where snapshot_row.pharmacy_id = posted_row.pharmacy_id
-     and snapshot_row.posted_purchase_id = posted_row.id) as item_count
-from posted_purchases posted_row`;
+  posted_row.primary_supplier_cost_fils,
+  posted_row.cost_after_discount_fils, posted_row.number_value,
+  posted_row.number_year, posted_row.posted_at, posted_row.item_count,
+  posted_row.ref_number, posted_row.original_purchase_id,
+  posted_row.has_adjustments, posted_row.row_kind
+from posted_records posted_row`;
 
 export const POSTED_PURCHASE_DETAIL_SELECT = `with ordered_purchase as (
   select posted_row.*,
@@ -226,13 +291,17 @@ order by snapshot_row.ordinal`;
 
 interface PostedPurchaseListRow {
   cost_after_discount_fils: string;
+  has_adjustments?: boolean;
   id: string;
   invoice_date: string;
   item_count: number;
   number_value: string;
   number_year: number;
+  original_purchase_id?: string | null;
   posted_at: Date;
   primary_supplier_cost_fils: string;
+  ref_number?: string | null;
+  row_kind?: "purchase" | "adjustment" | "return";
   settlement_context: "cash" | "debt";
   supplier_invoice_number: string;
   supplier_name_snapshot: string;
@@ -738,6 +807,8 @@ function postedPurchaseOrder(
   switch (sort) {
     case "invoice-date":
       return `posted_row.invoice_date ${direction}, ${suffix}`;
+    case "posted-at":
+      return `posted_row.posted_at ${direction}, ${suffix}`;
     case "primary-cost":
       return `posted_row.primary_supplier_cost_fils ${direction}, ${suffix}`;
     case "supplier":
@@ -1442,6 +1513,7 @@ export class PurchasingService {
       );
       const costsVisible = costVisibility === "visible";
       const query = input.query || null;
+      const dateType = input.dateType ?? "invoice-date";
       const result = await client.query<PostedPurchaseListRow>(
         `${POSTED_PURCHASE_LIST_SELECT}
          where posted_row.pharmacy_id = $1
@@ -1449,11 +1521,26 @@ export class PurchasingService {
              or posted_row.supplier_name_snapshot ilike '%' || $2 || '%'
              or posted_row.supplier_invoice_number ilike '%' || $2 || '%'
              or ('P' || posted_row.number_value::text || '/'
-                 || posted_row.number_year::text) ilike '%' || $2 || '%')
-           and ($3::date is null or posted_row.invoice_date >= $3::date)
-           and ($4::date is null or posted_row.invoice_date <= $4::date)
+                 || posted_row.number_year::text) ilike '%' || $2 || '%'
+             or posted_row.ref_number ilike '%' || $2 || '%'
+             or posted_row.invoice_date::text ilike '%' || $2 || '%')
+           and (
+             case when $5::text = 'posted-at' then
+               ($3::date is null or (posted_row.posted_at at time zone 'UTC')::date >= $3::date)
+               and ($4::date is null or (posted_row.posted_at at time zone 'UTC')::date <= $4::date)
+             else
+               ($3::date is null or posted_row.invoice_date >= $3::date)
+               and ($4::date is null or posted_row.invoice_date <= $4::date)
+             end
+           )
          order by ${postedPurchaseOrder(input, costsVisible)}`,
-        [context.pharmacyId, query, input.from ?? null, input.to ?? null],
+        [
+          context.pharmacyId,
+          query,
+          input.from ?? null,
+          input.to ?? null,
+          dateType,
+        ],
       );
       return purchasePostedListResponseSchema.parse({
         costVisibility,
@@ -1461,6 +1548,7 @@ export class PurchasingService {
           costAfterDiscountFils: costsVisible
             ? row.cost_after_discount_fils
             : null,
+          hasAdjustments: Boolean(row.has_adjustments),
           id: row.id,
           invoiceDate: row.invoice_date,
           itemCount: row.item_count,
@@ -1469,10 +1557,13 @@ export class PurchasingService {
             value: row.number_value,
             year: row.number_year,
           },
+          originalPurchaseId: row.original_purchase_id ?? null,
           postedAt: row.posted_at.toISOString(),
           primarySupplierCostFils: costsVisible
             ? row.primary_supplier_cost_fils
             : null,
+          refNumber: row.ref_number || null,
+          rowKind: row.row_kind ?? "purchase",
           settlementContext: row.settlement_context,
           supplierInvoiceNumber: row.supplier_invoice_number,
           supplierNameSnapshot: row.supplier_name_snapshot,
@@ -1515,10 +1606,11 @@ export class PurchasingService {
         [context.pharmacyId, purchaseId],
       );
       const costsVisible = costVisibility === "visible";
+      const canManageCosts = context.permissions.includes(COST_PERMISSION);
       const canAdjust =
-        costsVisible && context.permissions.includes(ADJUSTMENT_PERMISSION);
+        canManageCosts && context.permissions.includes(ADJUSTMENT_PERMISSION);
       const canReturn =
-        costsVisible && context.permissions.includes(RETURN_PERMISSION);
+        canManageCosts && context.permissions.includes(RETURN_PERMISSION);
       const adjustmentResult = await client.query<{
         id: string;
         posted_at: Date;
@@ -1946,6 +2038,296 @@ export class PurchasingService {
           beforeState: {
             draftVersion: before!.version,
             rowCount: ordinal - 1,
+          },
+          targetId: draftId,
+          value,
+        };
+      },
+    });
+  }
+
+  public async updateDraftRow(
+    request: Request,
+    draftId: string,
+    rowId: string,
+    input: PurchaseDraftRowUpdateRequest,
+  ): Promise<PurchaseDraftRowCommitResult> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    return await this.executeCommand({
+      commandName: COMMANDS.draftRowUpdate,
+      context,
+      idempotencyKey: input.idempotencyKey,
+      parser: purchaseDraftRowCommitResultSchema,
+      permission: DRAFT_PERMISSION,
+      requestHash: canonicalRequestHash(COMMANDS.draftRowUpdate, {
+        draftId,
+        rowId,
+        input,
+      }),
+      responseStatus: 200,
+      targetId: draftId,
+      work: async (client) => {
+        const before = await lockDraft(client, context.pharmacyId, draftId);
+        requireEditableDraft(before, draftId, input.expectedVersion);
+        const existingRowResult = await client.query<{
+          id: string;
+          primary_supplier_cost_fils: string;
+          entered_quantity: string;
+          ordinal: number;
+        }>(
+          `select id, primary_supplier_cost_fils, entered_quantity, ordinal
+           from purchase_draft_rows
+           where pharmacy_id = $1 and draft_id = $2 and id = $3`,
+          [context.pharmacyId, draftId, rowId],
+        );
+        const existingRow = existingRowResult.rows[0];
+        if (existingRow === undefined) {
+          throw new PurchasingCommandRejected(
+            404,
+            "row-not-found",
+            [{ code: "invalid", path: ["rowId"] }],
+            rowId,
+          );
+        }
+        const product = await resolveCatalogPurchaseProduct(
+          client,
+          context.pharmacyId,
+          input.itemId,
+        );
+        if (product === undefined || product === null) {
+          throw new PurchasingCommandRejected(
+            product === undefined ? 404 : 409,
+            product === undefined ? "item-not-found" : "item-unavailable",
+            [{ code: "invalid", path: ["itemId"] }],
+            input.itemId,
+          );
+        }
+        const prepared = preparePurchaseRow(product, input);
+        if (!prepared.ok) {
+          const mapping = {
+            "cost-invalid": ["costFils"],
+            "money-overflow": ["costFils"],
+            "pricing-mode-conflict": ["pricing"],
+            "quantity-invalid": ["enteredQuantity"],
+            "unit-invalid": ["unit"],
+          } as const;
+          throw new PurchasingCommandRejected(
+            409,
+            prepared.problem === "quantity-invalid" ||
+              prepared.problem === "cost-invalid"
+              ? "body-invalid"
+              : prepared.problem,
+            [{ code: "invalid", path: [...mapping[prepared.problem]] }],
+            draftId,
+          );
+        }
+        const oldLineTotal =
+          BigInt(existingRow.primary_supplier_cost_fils) *
+          BigInt(existingRow.entered_quantity);
+        const newLineTotal =
+          BigInt(prepared.facts.costFils) *
+          BigInt(prepared.facts.enteredQuantity);
+        const newAllowanceBasis =
+          BigInt(before!.allowance_basis_fils) - oldLineTotal + newLineTotal;
+        if (
+          newAllowanceBasis < 0n ||
+          newAllowanceBasis > POSTGRES_BIGINT_MAXIMUM
+        ) {
+          throw new PurchasingCommandRejected(
+            409,
+            "money-overflow",
+            [{ code: "out-of-range", path: ["costFils"] }],
+            draftId,
+          );
+        }
+        await client.query(
+          `update purchase_draft_rows set
+             product_id = $4,
+             item_display_name = $5,
+             inventory_unit_name = $6,
+             entered_unit_kind = $7,
+             entered_package_unit_name = $8,
+             base_units_per_entered_unit = $9::bigint,
+             entered_quantity = $10::bigint,
+             inventory_unit_quantity = $11::bigint,
+             primary_supplier_cost_fils = $12::bigint,
+             pricing_method = $13,
+             retail_price_fils = $14::bigint,
+             margin_percentage = $15::numeric,
+             expiry_date = $16,
+             lot_number = $17,
+             notes = $18
+           where pharmacy_id = $1 and draft_id = $2 and id = $3`,
+          [
+            context.pharmacyId,
+            draftId,
+            rowId,
+            product.id,
+            product.displayName,
+            prepared.facts.inventoryUnitName,
+            prepared.facts.unit.kind,
+            prepared.facts.unit.kind === "package-unit"
+              ? prepared.facts.unit.packageUnitName
+              : null,
+            prepared.facts.baseUnitsPerEnteredUnit,
+            prepared.facts.enteredQuantity,
+            prepared.facts.inventoryUnitQuantity,
+            prepared.facts.costFils,
+            prepared.facts.pricingMethod,
+            prepared.facts.retailPriceFils,
+            prepared.facts.marginPercentage,
+            input.expiryDate,
+            input.lotNumber,
+            input.notes,
+          ],
+        );
+        await client.query(
+          `update purchase_drafts
+           set allowance_basis_fils = $3::bigint,
+               version = version + 1,
+               updated_at = statement_timestamp(),
+               updated_by = $4
+           where pharmacy_id = $1 and id = $2`,
+          [
+            context.pharmacyId,
+            draftId,
+            newAllowanceBasis.toString(),
+            context.actorId,
+          ],
+        );
+        const rowResult = await client.query<DraftRowRecord>(
+          `${DRAFT_ROW_SELECT}
+           where row_record.pharmacy_id = $1 and row_record.id = $2`,
+          [context.pharmacyId, rowId],
+        );
+        const rowRecord = rowResult.rows[0];
+        if (rowRecord === undefined)
+          throw new Error("The updated Purchase row disappeared");
+        const row = purchaseRowView(rowRecord);
+        const updatedDraft = draftView(
+          await requiredDraft(client, context.pharmacyId, draftId),
+        );
+        const value = purchaseDraftRowCommitResultSchema.parse({
+          draft: await draftDetail(client, context.pharmacyId, updatedDraft),
+          row,
+        });
+        return {
+          afterState: {
+            draftVersion: updatedDraft.version,
+            inventoryUnitQuantity: row.inventoryUnitQuantity,
+            itemId: row.itemId,
+            ordinal: row.ordinal,
+          },
+          beforeState: {
+            draftVersion: before!.version,
+            ordinal: existingRow.ordinal,
+          },
+          targetId: draftId,
+          value,
+        };
+      },
+    });
+  }
+
+  public async discardDraftRow(
+    request: Request,
+    draftId: string,
+    rowId: string,
+    input: PurchaseDraftRowDiscardRequest,
+  ): Promise<PurchaseDraftDetail> {
+    const context = await this.identity.requirePermission(
+      request,
+      DRAFT_PERMISSION,
+    );
+    return await this.executeCommand({
+      commandName: COMMANDS.draftRowDiscard,
+      context,
+      idempotencyKey: input.idempotencyKey,
+      parser: purchaseDraftDetailSchema,
+      permission: DRAFT_PERMISSION,
+      requestHash: canonicalRequestHash(COMMANDS.draftRowDiscard, {
+        draftId,
+        rowId,
+        input,
+      }),
+      responseStatus: 200,
+      targetId: draftId,
+      work: async (client) => {
+        const before = await lockDraft(client, context.pharmacyId, draftId);
+        requireEditableDraft(before, draftId, input.expectedVersion);
+        const existingRowResult = await client.query<{
+          id: string;
+          primary_supplier_cost_fils: string;
+          entered_quantity: string;
+          ordinal: number;
+        }>(
+          `select id, primary_supplier_cost_fils, entered_quantity, ordinal
+           from purchase_draft_rows
+           where pharmacy_id = $1 and draft_id = $2 and id = $3`,
+          [context.pharmacyId, draftId, rowId],
+        );
+        const existingRow = existingRowResult.rows[0];
+        if (existingRow === undefined) {
+          throw new PurchasingCommandRejected(
+            404,
+            "row-not-found",
+            [{ code: "invalid", path: ["rowId"] }],
+            rowId,
+          );
+        }
+        const oldLineTotal =
+          BigInt(existingRow.primary_supplier_cost_fils) *
+          BigInt(existingRow.entered_quantity);
+        const newAllowanceBasis =
+          BigInt(before!.allowance_basis_fils) - oldLineTotal;
+
+        await client.query(
+          `delete from purchase_draft_rows
+           where pharmacy_id = $1 and draft_id = $2 and id = $3`,
+          [context.pharmacyId, draftId, rowId],
+        );
+
+        await client.query(
+          `update purchase_draft_rows
+           set ordinal = ordinal - 1
+           where pharmacy_id = $1 and draft_id = $2 and ordinal > $3`,
+          [context.pharmacyId, draftId, existingRow.ordinal],
+        );
+
+        await client.query(
+          `update purchase_drafts
+           set allowance_basis_fils = $3::bigint,
+               version = version + 1,
+               updated_at = statement_timestamp(),
+               updated_by = $4
+           where pharmacy_id = $1 and id = $2`,
+          [
+            context.pharmacyId,
+            draftId,
+            (newAllowanceBasis < 0n ? 0n : newAllowanceBasis).toString(),
+            context.actorId,
+          ],
+        );
+
+        const updatedDraft = draftView(
+          await requiredDraft(client, context.pharmacyId, draftId),
+        );
+        const value = await draftDetail(
+          client,
+          context.pharmacyId,
+          updatedDraft,
+        );
+        return {
+          afterState: {
+            draftVersion: updatedDraft.version,
+            rowCount: value.rows.length,
+          },
+          beforeState: {
+            draftVersion: before!.version,
+            deletedOrdinal: existingRow.ordinal,
           },
           targetId: draftId,
           value,

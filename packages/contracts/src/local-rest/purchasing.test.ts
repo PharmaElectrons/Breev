@@ -182,7 +182,7 @@ describe("supplier and purchase draft contracts", () => {
   });
 
   it("has no supplier, draft, or posting hard-delete route", () => {
-    expect(PURCHASING_CONTRACTS).toHaveLength(31);
+    expect(PURCHASING_CONTRACTS).toHaveLength(33);
     expect(
       PURCHASING_CONTRACTS.map((contract) => contract.method),
     ).not.toContain("DELETE");
@@ -490,6 +490,23 @@ describe("supplier and purchase draft contracts", () => {
   });
 
   it("rejects transformed or unknown posted purchase search input", () => {
+    expect(
+      purchasePostedListRequestSchema.parse({
+        dateType: "posted-at",
+        direction: "descending",
+        from: "2026-01-01",
+        query: "INV-100",
+        sort: "posted-at",
+        to: "2026-12-31",
+      }),
+    ).toEqual({
+      dateType: "posted-at",
+      direction: "descending",
+      from: "2026-01-01",
+      query: "INV-100",
+      sort: "posted-at",
+      to: "2026-12-31",
+    });
     expect(
       purchasePostedListRequestSchema.parse({
         direction: "descending",

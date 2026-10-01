@@ -14,6 +14,16 @@ export const DESKTOP_EXPORT_DIAGNOSTICS_CHANNEL =
   "breev:desktop:export-diagnostics" as const;
 export const DESKTOP_SAVE_INVENTORY_EXPORT_CHANNEL =
   "breev:desktop:save-inventory-export" as const;
+export const DESKTOP_BEGIN_INVENTORY_EXPORT_CHANNEL =
+  "breev:desktop:begin-inventory-export" as const;
+export const DESKTOP_APPEND_INVENTORY_EXPORT_CHANNEL =
+  "breev:desktop:append-inventory-export" as const;
+export const DESKTOP_FINISH_INVENTORY_EXPORT_CHANNEL =
+  "breev:desktop:finish-inventory-export" as const;
+export const DESKTOP_ABORT_INVENTORY_EXPORT_CHANNEL =
+  "breev:desktop:abort-inventory-export" as const;
+export const MAXIMUM_INVENTORY_EXPORT_BYTES = 512 * 1024 * 1024;
+export const INVENTORY_EXPORT_CHUNK_BYTES = 512 * 1024;
 export const DESKTOP_MANUAL_ENDPOINT_CHANNEL =
   "breev:desktop:submit-manual-endpoint" as const;
 export const DESKTOP_OPEN_SUPPORT_CHANNEL =
@@ -236,16 +246,43 @@ export const desktopExportDiagnosticsResponseSchema = z.discriminatedUnion(
 
 export const desktopSaveInventoryExportRequestSchema = z.strictObject({
   bundle: inventorySensitiveExportSchema,
+  format: z.enum(["json", "csv"]).optional(),
   locale: z.enum(["ar", "en"]),
 });
 export const desktopSaveInventoryExportResponseSchema = z.discriminatedUnion(
   "status",
   [
     z.strictObject({ status: z.literal("cancelled") }),
+    z.strictObject({ status: z.literal("export-too-large") }),
     z.strictObject({ status: z.literal("failed") }),
     z.strictObject({ status: z.literal("saved") }),
   ],
 );
+export const desktopBeginInventoryExportRequestSchema = z.strictObject({
+  format: z.enum(["json", "csv"]).optional(),
+  locale: z.enum(["ar", "en"]),
+});
+export const desktopBeginInventoryExportResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.strictObject({ status: z.literal("cancelled") }),
+    z.strictObject({ status: z.literal("failed") }),
+    z.strictObject({ status: z.literal("opened") }),
+  ],
+);
+export const desktopAppendInventoryExportRequestSchema = z.strictObject({
+  chunk: z.string().min(1).max(INVENTORY_EXPORT_CHUNK_BYTES),
+});
+export const desktopAppendInventoryExportResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.strictObject({ status: z.literal("appended") }),
+    z.strictObject({ status: z.literal("export-too-large") }),
+    z.strictObject({ status: z.literal("failed") }),
+  ],
+);
+export const desktopFinishInventoryExportRequestSchema = z.strictObject({});
+export const desktopAbortInventoryExportRequestSchema = z.strictObject({});
 
 export const desktopOpenSupportRequestSchema = z.strictObject({
   incidentCode: z
@@ -400,6 +437,7 @@ export interface BreevDesktopApi {
   saveInventoryExport(request: {
     readonly locale: "ar" | "en";
     readonly bundle: InventorySensitiveExport;
+    readonly format?: "json" | "csv";
   }): Promise<DesktopSaveInventoryExportResponse>;
   getStartupConfig(): Promise<DesktopStartupConfig>;
   getTerminalPairingState(): Promise<TerminalPairingState>;
