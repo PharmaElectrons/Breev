@@ -211,6 +211,20 @@
       "when": 1790380800000,
       "tag": "0029_sale_price_override",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790467200000,
+      "tag": "0030_patient_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790553600000,
+      "tag": "0031_patient_permissions",
+      "breakpoints": true
     }
   ]
 }
