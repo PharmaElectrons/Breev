@@ -670,6 +670,16 @@ test.describe.serial("read-only inventory review", () => {
     await expect(
       page.getByRole("button", { name: "اختيار التاريخ", exact: true }),
     ).toHaveCount(4);
+    for (const control of await page.locator(".report-date-entry").all()) {
+      const field = await control
+        .locator("input:not([aria-hidden])")
+        .boundingBox();
+      const picker = await control.getByRole("button").boundingBox();
+      expect(picker!.x).toBeGreaterThanOrEqual(field!.x + field!.width - 32);
+      expect(picker!.x + picker!.width).toBeLessThanOrEqual(
+        field!.x + field!.width,
+      );
+    }
     await page
       .getByRole("button", { name: "اختيار التاريخ", exact: true })
       .first()

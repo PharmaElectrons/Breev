@@ -152,5 +152,52 @@
     "No hard fact ceiling; complete applicable historical aggregates and bounded pages.",
     "The packaged/browser builds include final product changes. The final two focus assertions change only test synchronization.",
     "Hosted run results are published in the PR and issue follow-up comments correlated to the remediation commit."
-  ]
+  ],
+  "finalRtlPlacementRefinement": [
+    {
+      "command": "pnpm --filter @breev/desktop exec tsc -p tsconfig.renderer.json --noEmit",
+      "exitCode": 0,
+      "seconds": 10.92
+    },
+    {
+      "command": "pnpm --filter @breev/desktop exec tsc -p tsconfig.node.json --noEmit",
+      "exitCode": 0,
+      "seconds": 2.85
+    },
+    {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "seconds": 8.02
+    },
+    {
+      "command": "pnpm --filter @breev/desktop exec playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts -g shows all seven read-only reports|normalizes Arabic report date",
+      "exitCode": 0,
+      "seconds": 110.02
+    },
+    {
+      "command": "pnpm package:desktop",
+      "exitCode": 0,
+      "seconds": 5.41
+    },
+    {
+      "command": "pnpm --filter @breev/desktop exec playwright test --config playwright.config.ts",
+      "exitCode": 0,
+      "seconds": 73.64
+    }
+  ],
+  "finalRtlStaticChecks": [
+    {
+      "command": "pnpm format:check",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm lint",
+      "exitCode": 0
+    }
+  ],
+  "priorHostedAttempt": {
+    "run": 36902346975,
+    "conclusion": "cancelled",
+    "reason": "Cancelled intentionally after final Arabic capture inspection found picker overlap; hosted verification is restarted on the final corrected head."
+  }
 }

@@ -47,7 +47,7 @@ export function ReportDateInput({
   );
   if (locale === "en") return input;
   return (
-    <span className="report-date-entry">
+    <span className="report-date-entry" dir="ltr">
       {input}
       <input
         ref={picker}
