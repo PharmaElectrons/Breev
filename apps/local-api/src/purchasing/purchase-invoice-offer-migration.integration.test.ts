@@ -27,7 +27,7 @@ import { runMigrations } from "../database-migrations.js";
 import { beginPostingIdempotency } from "../posting/idempotency.js";
 import { NO_INVOICE_OFFER_SNAPSHOT } from "./purchase-invoice-offer.js";
 
-describe.sequential("0030 invoice offer forward migration", () => {
+describe.sequential("0032 invoice offer forward migration", () => {
   let administrator: Pool;
   let application: Pool;
   let roles: SeparatedDatabaseRoles;
@@ -57,7 +57,7 @@ describe.sequential("0030 invoice offer forward migration", () => {
     const journal = JSON.parse(
       await readFile(path.join(folder, "meta/_journal.json"), "utf8"),
     ) as { entries: { idx: number; tag: string }[] };
-    const entries = journal.entries.filter((entry) => entry.idx <= 29);
+    const entries = journal.entries.filter((entry) => entry.idx <= 31);
     priorFolder = await mkdtemp(path.join(tmpdir(), "breev-pre-offer-"));
     await mkdir(path.join(priorFolder, "meta"));
     await writeFile(

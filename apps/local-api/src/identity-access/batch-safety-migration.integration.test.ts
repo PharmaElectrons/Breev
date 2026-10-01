@@ -140,13 +140,14 @@ describe.sequential("migration 0022: batch safety", () => {
     // Migration 0025 grants sales.drafts.manage to owner, manager,
     // pharmacist, and sales employee. Migrations 0027–0029 each grant another
     // permission to owner and manager between this baseline and migration head.
+    // Migration 0031 grants patient permissions to owner, manager, and pharmacist.
     expect(after.revisions).toEqual({
-      manager: String(BigInt(before.revisions.manager ?? "0") + 7n),
-      owner: String(BigInt(before.revisions.owner ?? "0") + 7n),
-      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 4n),
+      manager: String(BigInt(before.revisions.manager ?? "0") + 8n),
+      owner: String(BigInt(before.revisions.owner ?? "0") + 8n),
+      pharmacist: String(BigInt(before.revisions.pharmacist ?? "0") + 5n),
     });
     expect(after.pharmacyRevision).toBe(
-      String(BigInt(before.pharmacyRevision) + 7n),
+      String(BigInt(before.pharmacyRevision) + 8n),
     );
 
     await runMigrations(application, databaseRoles.migrationUrl);

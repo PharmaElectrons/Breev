@@ -41,6 +41,9 @@ import { RecoveryController } from "./recovery/recovery.controller.js";
 import { RestoreQuarantineService } from "./recovery/restore-quarantine.service.js";
 import { SaleDraftController } from "./sales/sale-draft.controller.js";
 import { SaleDraftService } from "./sales/sale-draft.service.js";
+import { PatientsController } from "./patients/patients.controller.js";
+import { PatientsService } from "./patients/patients.service.js";
+import { PatientsRepository } from "./patients/patients.repository.js";
 import { SaleQuickAccessController } from "./sales/sale-quick-access.controller.js";
 import { SaleQuickAccessService } from "./sales/sale-quick-access.service.js";
 
@@ -59,6 +62,7 @@ import { SaleQuickAccessService } from "./sales/sale-quick-access.service.js";
     PurchasingController,
     RecoveryController,
     SaleDraftController,
+    PatientsController,
     SaleQuickAccessController,
   ],
   providers: [
@@ -89,6 +93,8 @@ import { SaleQuickAccessService } from "./sales/sale-quick-access.service.js";
     RecoveryJobService,
     SettingsPostCommitService,
     SaleDraftService,
+    PatientsService,
+    PatientsRepository,
     SaleQuickAccessService,
   ],
 })

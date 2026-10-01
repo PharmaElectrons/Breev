@@ -241,7 +241,12 @@ describe.sequential(
               idempotencyKey: uuidV7(),
             },
           );
-          expect(completed.status, diagnostics(completed)).toBe(200);
+          expect(completed.status, diagnostics(completed)).toBe(403);
+          expect(completed.body).toMatchObject({
+            code: "permission-denied",
+            requiredPermission: "inventory.counts.approve",
+          });
+          await expectAudit(completed);
         }
         expect(roleKey).toMatch(
           /^(owner|manager|pharmacist|inventory_employee)$/u,
@@ -303,6 +308,60 @@ describe.sequential(
         fieldErrors: [{ rule: "inventory.count.evidence-required" }],
       });
     });
+
+    it("requires approve permission to complete a session with no pending variance", async () => {
+      await loginAs(actors.owner!);
+      const product = await createStockedProduct();
+      const session = await startSession();
+      const recorded = await request(
+        "POST",
+        countSessionLinesPath(session.id),
+        {
+          entries: [inventoryEntry("4")],
+          expectedVersion: session.version,
+          idempotencyKey: uuidV7(),
+          productId: product.id,
+        },
+      );
+      expect(recorded.status, diagnostics(recorded)).toBe(201);
+      const recordedBody = recorded.body as {
+        line: CountLine;
+        session: CountSession;
+      };
+      expect(recordedBody.line.varianceAtObservation).toBe("0");
+      expect(recordedBody.line.application).toBeNull();
+
+      await loginAs(actors.pharmacist!);
+      const denied = await request(
+        "POST",
+        countSessionCompletionPath(session.id),
+        {
+          expectedVersion: recordedBody.session.version,
+          idempotencyKey: uuidV7(),
+        },
+      );
+      expect(denied.status, diagnostics(denied)).toBe(403);
+      expect(denied.body).toMatchObject({
+        code: "permission-denied",
+        requiredPermission: "inventory.counts.approve",
+      });
+      await expectAudit(denied);
+      const stillActive = await request("GET", countSessionPath(session.id));
+      expect(stillActive.status, diagnostics(stillActive)).toBe(200);
+      expect((stillActive.body as CountSession).status).toBe("active");
+
+      await loginAs(actors.manager!);
+      const completed = await request(
+        "POST",
+        countSessionCompletionPath(session.id),
+        {
+          expectedVersion: recordedBody.session.version,
+          idempotencyKey: uuidV7(),
+        },
+      );
+      expect(completed.status, diagnostics(completed)).toBe(200);
+      expect(completed.body).toMatchObject({ status: "completed" });
+    }, 60_000);
 
     it("hides sensitive valuation fields and keeps approved step-up unrelated to count authority", async () => {
       await loginAs(actors.owner!);
