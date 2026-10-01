@@ -218,15 +218,15 @@ describe.sequential("migration 0025: Sale Drafts", () => {
         Object.entries(roleRevisionsBefore).map(([roleKey, revision]) => [
           roleKey,
           ["manager", "owner"].includes(roleKey)
-            ? String(BigInt(revision) + 5n)
+            ? String(BigInt(revision) + 4n)
             : ["pharmacist", "sales_employee"].includes(roleKey)
-              ? String(BigInt(revision) + (roleKey === "pharmacist" ? 2n : 1n))
+              ? String(BigInt(revision) + 1n)
               : revision,
         ]),
       ),
     );
     expect(await pharmacyRevision()).toBe(
-      String(BigInt(pharmacyRevisionBefore) + 5n),
+      String(BigInt(pharmacyRevisionBefore) + 4n),
     );
 
     await runMigrations(application, databaseRoles.migrationUrl);

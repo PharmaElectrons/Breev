@@ -105,15 +105,6 @@ jobs:
       - name: Verify renderer browser seam
         run: pnpm test:browser
 
-      - name: Upload Patient Profile accessibility evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          if-no-files-found: ignore
-          name: patient-profile-accessibility-evidence
-          path: test-results/desktop-browser
-          retention-days: 14
-
       - name: Package desktop for the Electron seam
         run: pnpm build && pnpm package:desktop
 

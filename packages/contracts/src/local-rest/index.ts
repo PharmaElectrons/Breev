@@ -1,5 +1,4 @@
 import { z } from "zod";
-import * as patientContracts from "./patients.js";
 
 export const LOCAL_API_VERSION = "18" as const;
 export const LOCAL_SCHEMA_VERSION = "18" as const;
@@ -121,11 +120,6 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "inventory.review",
   "inventory.valuation.view",
   "licensing.manage",
-  "patients.discounts.manage",
-  "patients.manage",
-  "patients.notes.manage",
-  "patients.notes.view",
-  "patients.view",
   "pharmacy.settings.manage",
   "purchases.adjustments.manage",
   "purchases.costs.view",
@@ -509,136 +503,6 @@ const identityOrEntitlementDenialSchema = z.union([
   identityDenialSchema,
   licensingDenialSchema,
 ]);
-
-export const LOCAL_SECURITY_DENIAL_CODES = [
-  "binding-invalid",
-  "binding-missing",
-  "body-invalid",
-  "cert-chain-invalid",
-  "cert-expired",
-  "cert-installation-mismatch",
-  "cert-not-yet-valid",
-  "cert-role-mismatch",
-  "content-type-not-allowed",
-  "cors-preflight-not-allowed",
-  "csrf-header-missing",
-  "device-revoked",
-  "host-not-allowed",
-  "mtls-cert-invalid",
-  "mtls-cert-missing",
-  "origin-not-allowed",
-  "rate-limit-exceeded",
-  "request-too-large",
-  "session-binding-invalid",
-  "tls-version-rejected",
-] as const;
-
-export const localSecurityDenialCodeSchema = z.enum(
-  LOCAL_SECURITY_DENIAL_CODES,
-);
-
-export const localSecurityDenialSchema = z.strictObject({
-  status: z.literal("denied"),
-  code: localSecurityDenialCodeSchema,
-  requestId: z.uuidv7(),
-});
-
-const patientLocalSecurityDenialResponses = {
-  413: localSecurityDenialSchema,
-  415: localSecurityDenialSchema,
-  421: localSecurityDenialSchema,
-  429: localSecurityDenialSchema,
-} as const;
-
-const patientReadDenialResponses = {
-  401: z.union([identityDenialSchema, localSecurityDenialSchema]),
-  403: z.union([
-    identityDenialSchema,
-    licensingDenialSchema,
-    localSecurityDenialSchema,
-  ]),
-  ...patientLocalSecurityDenialResponses,
-} as const;
-const patientValidationResponses = {
-  400: z.union([
-    patientContracts.patientValidationFailureSchema,
-    identityDenialSchema,
-    localSecurityDenialSchema,
-  ]),
-} as const;
-const patientMutationDenialResponses = {
-  ...patientValidationResponses,
-  ...patientReadDenialResponses,
-  404: z.union([patientContracts.patientNotFoundSchema, identityDenialSchema]),
-  409: identityDenialSchema,
-} as const;
-
-export const searchPatientsContract = {
-  method: "GET",
-  path: "/patients",
-  request: { query: patientContracts.searchPatientsQuerySchema },
-  responses: {
-    200: patientContracts.searchPatientsResponseSchema,
-    ...patientValidationResponses,
-    ...patientReadDenialResponses,
-  },
-} as const;
-export const createPatientContract = {
-  method: "POST",
-  path: "/patients",
-  request: { body: patientContracts.createPatientRequestSchema },
-  responses: {
-    201: patientContracts.patientProfileResponseSchema,
-    ...patientMutationDenialResponses,
-  },
-} as const;
-export const getPatientContract = {
-  method: "GET",
-  path: "/patients/:id",
-  responses: {
-    200: patientContracts.patientProfileResponseSchema,
-    ...patientValidationResponses,
-    ...patientReadDenialResponses,
-    404: z.union([
-      patientContracts.patientNotFoundSchema,
-      identityDenialSchema,
-    ]),
-  },
-} as const;
-export const updatePatientProfileContract = {
-  method: "PUT",
-  path: "/patients/:id",
-  request: { body: patientContracts.updatePatientRequestSchema },
-  responses: {
-    200: patientContracts.patientProfileResponseSchema,
-    ...patientMutationDenialResponses,
-    409: z.union([
-      patientContracts.patientVersionConflictSchema,
-      identityDenialSchema,
-    ]),
-  },
-} as const;
-export const listPatientWeightsContract = {
-  method: "GET",
-  path: "/patients/:id/weights",
-  request: { query: patientContracts.listPatientWeightsQuerySchema },
-  responses: {
-    200: patientContracts.listPatientWeightsResponseSchema,
-    ...patientValidationResponses,
-    ...patientReadDenialResponses,
-    404: z.union([
-      patientContracts.patientNotFoundSchema,
-      identityDenialSchema,
-    ]),
-  },
-} as const;
-export const PATIENTS_CONTRACTS = [
-  searchPatientsContract,
-  createPatientContract,
-  getPatientContract,
-  updatePatientProfileContract,
-  listPatientWeightsContract,
-] as const;
 
 export const identityStateContract = {
   method: "GET",
@@ -1302,6 +1166,39 @@ export const localHealthContract = {
     ]),
   },
 } as const;
+
+export const LOCAL_SECURITY_DENIAL_CODES = [
+  "binding-invalid",
+  "binding-missing",
+  "body-invalid",
+  "cert-chain-invalid",
+  "cert-expired",
+  "cert-installation-mismatch",
+  "cert-not-yet-valid",
+  "cert-role-mismatch",
+  "content-type-not-allowed",
+  "cors-preflight-not-allowed",
+  "csrf-header-missing",
+  "device-revoked",
+  "host-not-allowed",
+  "mtls-cert-invalid",
+  "mtls-cert-missing",
+  "origin-not-allowed",
+  "rate-limit-exceeded",
+  "request-too-large",
+  "session-binding-invalid",
+  "tls-version-rejected",
+] as const;
+
+export const localSecurityDenialCodeSchema = z.enum(
+  LOCAL_SECURITY_DENIAL_CODES,
+);
+
+export const localSecurityDenialSchema = z.strictObject({
+  status: z.literal("denied"),
+  code: localSecurityDenialCodeSchema,
+  requestId: z.uuidv7(),
+});
 
 const nonNegativeIntegerStringSchema = z.string().regex(/^(?:0|[1-9]\d*)$/u);
 
@@ -5280,8 +5177,7 @@ export const RENDERER_CONTRACTS: readonly RendererContract[] = [
   ...INVENTORY_CONTRACTS,
   ...PURCHASING_CONTRACTS,
   ...SALES_CONTRACTS,
-  ...PATIENTS_CONTRACTS,
-] as const;
+];
 export const DEVICE_CHANNEL_CONTRACTS = [
   ...TERMINAL_PAIRING_CONTRACTS,
 ] as const;
@@ -6047,5 +5943,3 @@ function throwOnVersionMismatch(payload: unknown): void {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
-export * from "./patients.js";
