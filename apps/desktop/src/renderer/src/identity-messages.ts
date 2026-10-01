@@ -164,6 +164,11 @@ const permissionLabels: Record<
       description: "إضافة وتعديل بيانات المرضى الأساسية.",
       name: "إدارة المرضى",
     },
+    "patients.notes.view": {
+      description:
+        "عرض الحالات المزمنة والأدوية المزمنة والحساسيات والملاحظات الصحية.",
+      name: "عرض ملاحظات المرضى الصحية",
+    },
     "patients.notes.manage": {
       description: "عرض وإضافة الملاحظات الصحية للمرضى.",
       name: "إدارة ملاحظات المرضى",
@@ -295,6 +300,11 @@ const permissionLabels: Record<
     "patients.manage": {
       description: "Add and edit basic patient profiles.",
       name: "Manage patients",
+    },
+    "patients.notes.view": {
+      description:
+        "View chronic conditions, chronic medicines, allergies, and other health notes.",
+      name: "View patient health notes",
     },
     "patients.notes.manage": {
       description: "View and add health notes to patient profiles.",

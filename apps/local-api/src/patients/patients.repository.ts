@@ -1,346 +1,310 @@
-import { Injectable } from "@nestjs/common";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { and, eq, sql } from "drizzle-orm";
-import type { Pool, PoolClient } from "pg";
 import type {
+  CreatePatientRequest,
   PatientProfileResponse,
   PatientWeightMeasurementResponse,
+  UpdatePatientRequest,
 } from "@breev/contracts/local-rest";
-import { LocalDatabaseService } from "../local-database.service.js";
-import {
-  patientAuditEvents,
-  patients,
-  patientWeightMeasurements,
-  type patientAuditActionEnum,
-  type patientAuditOutcomeEnum,
-} from "./patients-schema.js";
+import type { PoolClient } from "pg";
 
-type AuditAction = (typeof patientAuditActionEnum.enumValues)[number];
-type AuditOutcome = (typeof patientAuditOutcomeEnum.enumValues)[number];
-
-export interface AuditEventPayload {
-  readonly patientId: string;
-  readonly actorUserId: string;
-  readonly action: AuditAction;
-  readonly outcome: AuditOutcome;
-  readonly changes?: Record<string, unknown>;
+interface PatientRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly pharmacy_id: string;
+  readonly first_name: string;
+  readonly last_name: string;
+  readonly revision: string;
+  readonly created_at: Date | string;
+  readonly updated_at: Date | string;
+  readonly bmi: string | null;
 }
 
-function mapPatientRow(row: Record<string, unknown>): PatientProfileResponse {
-  const getStr = (key: string): string | null => {
-    const val = row[key];
-    return typeof val === "string" ? val : null;
-  };
-  const getArr = (key: string): string[] => {
-    const val = row[key];
-    return Array.isArray(val) ? (val as string[]) : [];
-  };
-  const toIso = (val: unknown): string => {
-    if (val instanceof Date) return val.toISOString();
-    if (typeof val === "string") return new Date(val).toISOString();
-    return new Date().toISOString();
-  };
-
-  return {
-    id: (row.id ?? row["id"]) as string,
-    firstName: (row.firstName ?? row["first_name"]) as string,
-    lastName: (row.lastName ?? row["last_name"]) as string,
-    phone: getStr("phone"),
-    dateOfBirth: getStr("dateOfBirth") ?? getStr("date_of_birth"),
-    gender: (row.gender ?? row["gender"] ?? null) as "male" | "female" | null,
-    heightCm: getStr("heightCm") ?? getStr("height_cm"),
-    discountPercent: getStr("discountPercent") ?? getStr("discount_percent"),
-    doNotDisturb: Boolean(row.doNotDisturb ?? row["do_not_disturb"] ?? false),
-    address: getStr("address"),
-    email: getStr("email"),
-    chronicConditions:
-      getArr("chronicConditions").length > 0
-        ? getArr("chronicConditions")
-        : getArr("chronic_conditions"),
-    chronicMedications:
-      getArr("chronicMedications").length > 0
-        ? getArr("chronicMedications")
-        : getArr("chronic_medications"),
-    interests:
-      getArr("interests").length > 0
-        ? getArr("interests")
-        : getArr("interests"),
-    allergies: getStr("allergies"),
-    smoking: getStr("smoking"),
-    sensitivities: getStr("sensitivities"),
-    otherNotes: getStr("otherNotes") ?? getStr("other_notes"),
-    createdAt: toIso(row.createdAt ?? row["created_at"]),
-    updatedAt: toIso(row.updatedAt ?? row["updated_at"]),
-    archivedAt:
-      row.archivedAt != null || row["archived_at"] != null
-        ? toIso(row.archivedAt ?? row["archived_at"])
-        : null,
-    bmi: getStr("bmi"),
-  };
+interface WeightRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly pharmacy_id: string;
+  readonly patient_id: string;
+  readonly weight_kg: string;
+  readonly measured_at: Date | string;
+  readonly created_at: Date | string;
+  readonly created_by_user_id: string;
 }
 
-function mapWeightRow(
-  row: Record<string, unknown>,
-): PatientWeightMeasurementResponse {
-  const toIso = (val: unknown): string => {
-    if (val instanceof Date) return val.toISOString();
-    if (typeof val === "string") return new Date(val).toISOString();
-    return new Date().toISOString();
-  };
-  return {
-    id: (row.id ?? row["id"]) as string,
-    patientId: (row.patientId ?? row["patient_id"]) as string,
-    weightKg: (row.weightKg ?? row["weight_kg"]) as string,
-    measuredAt: toIso(row.measuredAt ?? row["measured_at"]),
-    createdAt: toIso(row.createdAt ?? row["created_at"]),
-    createdByUserId: (row.createdByUserId ??
-      row["created_by_user_id"]) as string,
-  };
+function nullableString(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
 }
 
-@Injectable()
-export class PatientsRepository {
-  public constructor(private readonly localDatabase: LocalDatabaseService) {}
-
-  private getDb(client?: PoolClient | Pool) {
-    const pgClient = client ?? this.localDatabase.requirePool();
-    return drizzle({ client: pgClient });
+function isoInstant(value: unknown): string {
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error("Patient timestamp is invalid");
   }
+  return date.toISOString();
+}
 
+function mapPatient(row: PatientRow): PatientProfileResponse {
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    phone: nullableString(row.phone),
+    dateOfBirth: nullableString(row.date_of_birth),
+    gender: (row.gender as "male" | "female" | null) ?? null,
+    heightCm: nullableString(row.height_cm),
+    discountPercent: nullableString(row.discount_percent),
+    doNotDisturb: Boolean(row.do_not_disturb),
+    address: nullableString(row.address),
+    email: nullableString(row.email),
+    chronicConditions: Array.isArray(row.chronic_conditions)
+      ? (row.chronic_conditions as string[])
+      : [],
+    chronicMedications: Array.isArray(row.chronic_medications)
+      ? (row.chronic_medications as string[])
+      : [],
+    interests: Array.isArray(row.interests) ? (row.interests as string[]) : [],
+    allergies: nullableString(row.allergies),
+    smoking: nullableString(row.smoking),
+    sensitivities: nullableString(row.sensitivities),
+    otherNotes: nullableString(row.other_notes),
+    revision: String(row.revision),
+    createdAt: isoInstant(row.created_at),
+    updatedAt: isoInstant(row.updated_at),
+    bmi: nullableString(row.bmi),
+    bmiCategory: null,
+  };
+}
+
+function mapWeight(row: WeightRow): PatientWeightMeasurementResponse {
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    weightKg: row.weight_kg,
+    measuredAt: isoInstant(row.measured_at),
+    createdAt: isoInstant(row.created_at),
+    createdByUserId: row.created_by_user_id,
+  };
+}
+
+const patientReadSql = `
+  select p.*,
+         (
+           select round(w.weight_kg * 10000 / (p.height_cm * p.height_cm), 1)::text
+           from patient_weight_measurements w
+           where w.pharmacy_id = p.pharmacy_id
+             and w.patient_id = p.id
+           order by w.measured_at desc, w.id desc
+           limit 1
+         ) as bmi
+  from patients p
+  where p.pharmacy_id = $1 and p.id = $2`;
+
+export class PatientsRepository {
   public async getPatientById(
+    client: PoolClient,
+    pharmacyId: string,
     id: string,
-    client?: PoolClient,
+    lock = false,
   ): Promise<PatientProfileResponse | null> {
-    const db = this.getDb(client);
-
-    // We use raw SQL for BMI calculation as defined in D-05
-    const query = sql`
-      SELECT 
-        p.*,
-        (
-          SELECT (w.weight_kg / ((p.height_cm / 100) ^ 2))::numeric(4,1)
-          FROM patient_weight_measurements w
-          WHERE w.patient_id = p.id
-          ORDER BY w.measured_at DESC, w.id DESC
-          LIMIT 1
-        ) AS bmi
-      FROM patients p
-      WHERE p.id = ${id}
-    `;
-
-    const result = await db.execute(query);
-    if (result.rows.length === 0) return null;
-    return mapPatientRow(result.rows[0] as Record<string, unknown>);
+    const result = await client.query<PatientRow>(
+      `${patientReadSql}${lock ? " for update of p" : ""}`,
+      [pharmacyId, id],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : mapPatient(row);
   }
 
   public async searchPatients(
-    q: string | undefined,
+    client: PoolClient,
+    pharmacyId: string,
+    query: string | undefined,
     limit: number,
     offset: number,
-    client?: PoolClient,
-  ): Promise<{ items: PatientProfileResponse[]; total: number }> {
-    const db = this.getDb(client);
-
-    let whereClause = sql`p.archived_at IS NULL`;
-    if (q) {
-      const normalizedQuery = q.trim().replace(/\s+/g, " ");
-      if (normalizedQuery.length > 0) {
-        const likeQuery = `%${normalizedQuery}%`;
-        whereClause = sql`p.archived_at IS NULL AND (p.first_name ILIKE ${likeQuery} OR p.last_name ILIKE ${likeQuery} OR p.phone ILIKE ${likeQuery})`;
-      }
-    }
-
-    const countQuery = sql`SELECT COUNT(*)::int AS count FROM patients p WHERE ${whereClause}`;
-    const countResult = await db.execute(countQuery);
-    const total = (countResult.rows[0]?.count as number) ?? 0;
-
-    const dataQuery = sql`
-      SELECT p.*
-      FROM patients p
-      WHERE ${whereClause}
-      ORDER BY p.last_name ASC, p.first_name ASC, p.id ASC
-      LIMIT ${limit} OFFSET ${offset}
-    `;
-    const dataResult = await db.execute(dataQuery);
-
+  ): Promise<{
+    readonly items: PatientProfileResponse[];
+    readonly total: number;
+  }> {
+    const result = await client.query<{ readonly count: string }>(
+      `select count(*)::text as count from patients p
+       where p.pharmacy_id = $1 and (
+         $2::text is null or
+         strpos(lower(p.first_name), lower($2)) > 0 or
+         strpos(lower(p.last_name), lower($2)) > 0 or
+         strpos(lower(concat_ws(' ', p.first_name, p.last_name)), lower($2)) > 0 or
+         strpos(lower(coalesce(p.phone, '')), lower($2)) > 0
+       )`,
+      [pharmacyId, query ?? null],
+    );
+    const rows = await client.query<PatientRow>(
+      `select p.*,
+         (
+           select round(w.weight_kg * 10000 / (p.height_cm * p.height_cm), 1)::text
+           from patient_weight_measurements w
+           where w.pharmacy_id = p.pharmacy_id and w.patient_id = p.id
+           order by w.measured_at desc, w.id desc limit 1
+         ) as bmi
+       from patients p
+       where p.pharmacy_id = $1 and (
+         $2::text is null or
+         strpos(lower(p.first_name), lower($2)) > 0 or
+         strpos(lower(p.last_name), lower($2)) > 0 or
+         strpos(lower(concat_ws(' ', p.first_name, p.last_name)), lower($2)) > 0 or
+         strpos(lower(coalesce(p.phone, '')), lower($2)) > 0
+       )
+       order by lower(p.last_name), lower(p.first_name), p.created_at, p.id
+       limit $3 offset $4`,
+      [pharmacyId, query ?? null, limit, offset],
+    );
     return {
-      items: (dataResult.rows as Record<string, unknown>[]).map((r) =>
-        mapPatientRow(r),
-      ),
-      total,
+      items: rows.rows.map(mapPatient),
+      total: Number(result.rows[0]?.count ?? 0),
     };
   }
 
   public async createPatient(
-    data: Record<string, unknown>,
-    client?: PoolClient,
-  ): Promise<PatientProfileResponse | null> {
-    const db = this.getDb(client);
-    const result = await db
-      .insert(patients)
-      .values(data as typeof patients.$inferInsert)
-      .returning();
-    const row = result[0];
-    return row ? mapPatientRow(row as Record<string, unknown>) : null;
+    client: PoolClient,
+    pharmacyId: string,
+    input: CreatePatientRequest,
+  ): Promise<PatientProfileResponse> {
+    const result = await client.query<{ readonly id: string }>(
+      `insert into patients (
+         pharmacy_id, first_name, last_name, phone, date_of_birth, gender,
+         height_cm, address, email, chronic_conditions, chronic_medications,
+         interests, allergies, smoking, sensitivities, other_notes,
+         discount_percent, do_not_disturb
+       ) values (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+         $16, $17, $18
+       ) returning id`,
+      [
+        pharmacyId,
+        input.firstName.trim(),
+        input.lastName.trim(),
+        input.phone ?? null,
+        input.dateOfBirth ?? null,
+        input.gender ?? null,
+        input.heightCm ?? null,
+        input.address ?? null,
+        input.email ?? null,
+        input.chronicConditions ?? [],
+        input.chronicMedications ?? [],
+        input.interests ?? [],
+        input.allergies ?? null,
+        input.smoking ?? null,
+        input.sensitivities ?? null,
+        input.otherNotes ?? null,
+        input.discountPercent ?? null,
+        input.doNotDisturb ?? false,
+      ],
+    );
+    const id = result.rows[0]?.id;
+    if (id === undefined) throw new Error("Patient insert returned no id");
+    const patient = await this.getPatientById(client, pharmacyId, id);
+    if (patient === null) throw new Error("Patient insert could not be read");
+    return patient;
   }
 
   public async updatePatient(
+    client: PoolClient,
+    pharmacyId: string,
     id: string,
-    data: Record<string, unknown>,
-    expectedUpdatedAt: Date | string,
-    client?: PoolClient,
+    expectedRevision: string,
+    input: UpdatePatientRequest,
   ): Promise<PatientProfileResponse | null> {
-    const db = this.getDb(client);
-    const fields = { ...data };
-    delete fields.updatedAt;
-    const expectedIso = new Date(expectedUpdatedAt).toISOString();
-    const result = await db
-      .update(patients)
-      .set({
-        ...(fields as Partial<typeof patients.$inferInsert>),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(patients.id, id),
-          sql`date_trunc('millisecond', ${patients.updatedAt}) = date_trunc('millisecond', ${expectedIso}::timestamptz)`,
-        ),
-      )
-      .returning();
-    const row = result[0];
-    return row ? mapPatientRow(row as Record<string, unknown>) : null;
+    const columns: Readonly<Record<string, string>> = {
+      firstName: "first_name",
+      lastName: "last_name",
+      phone: "phone",
+      dateOfBirth: "date_of_birth",
+      gender: "gender",
+      heightCm: "height_cm",
+      address: "address",
+      email: "email",
+      chronicConditions: "chronic_conditions",
+      chronicMedications: "chronic_medications",
+      interests: "interests",
+      allergies: "allergies",
+      smoking: "smoking",
+      sensitivities: "sensitivities",
+      otherNotes: "other_notes",
+      discountPercent: "discount_percent",
+      doNotDisturb: "do_not_disturb",
+    };
+    const parameters: unknown[] = [pharmacyId, id, expectedRevision];
+    const assignments: string[] = [];
+    for (const [field, column] of Object.entries(columns)) {
+      if (!Object.hasOwn(input, field)) continue;
+      let value = input[field as keyof UpdatePatientRequest];
+      if (field === "firstName" || field === "lastName") {
+        value = typeof value === "string" ? value.trim() : value;
+      }
+      parameters.push(value);
+      assignments.push(`${column} = $${parameters.length}`);
+    }
+    // A measurement-only Save still advances the profile revision so every
+    // successful Save returns a new version and one coherent audit fact.
+    if (assignments.length === 0) assignments.push("id = id");
+    const updated = await client.query<{ readonly id: string }>(
+      `update patients set ${assignments.join(", ")}
+       where pharmacy_id = $1 and id = $2 and revision = $3::bigint
+       returning id`,
+      parameters,
+    );
+    if (updated.rowCount !== 1) return null;
+    return await this.getPatientById(client, pharmacyId, id);
   }
 
-  public async archivePatient(
-    id: string,
-    expectedUpdatedAt: Date | string,
-    client?: PoolClient,
-  ): Promise<PatientProfileResponse | null> {
-    const db = this.getDb(client);
-    const expectedIso = new Date(expectedUpdatedAt).toISOString();
-    const result = await db
-      .update(patients)
-      .set({
-        archivedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(patients.id, id),
-          sql`patients.archived_at IS NULL`,
-          sql`date_trunc('millisecond', ${patients.updatedAt}) = date_trunc('millisecond', ${expectedIso}::timestamptz)`,
-        ),
-      )
-      .returning();
-    const row = result[0];
-    return row ? mapPatientRow(row as Record<string, unknown>) : null;
-  }
-
-  public async restorePatient(
-    id: string,
-    expectedUpdatedAt: Date | string,
-    client?: PoolClient,
-  ): Promise<PatientProfileResponse | null> {
-    const db = this.getDb(client);
-    const expectedIso = new Date(expectedUpdatedAt).toISOString();
-    const result = await db
-      .update(patients)
-      .set({
-        archivedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(patients.id, id),
-          sql`patients.archived_at IS NOT NULL`,
-          sql`date_trunc('millisecond', ${patients.updatedAt}) = date_trunc('millisecond', ${expectedIso}::timestamptz)`,
-        ),
-      )
-      .returning();
-    const row = result[0];
-    return row ? mapPatientRow(row as Record<string, unknown>) : null;
-  }
-
-  public async insertWeight(
+  public async appendWeight(
+    client: PoolClient,
+    pharmacyId: string,
     patientId: string,
+    actorUserId: string,
     weightKg: string,
-    measuredAt: Date | string,
-    createdByUserId: string,
-    client?: PoolClient,
-  ): Promise<PatientWeightMeasurementResponse | null> {
-    const db = this.getDb(client);
-    const result = await db
-      .insert(patientWeightMeasurements)
-      .values({
-        patientId,
-        weightKg,
-        measuredAt: new Date(measuredAt),
-        createdByUserId,
-      })
-      .returning();
-    const row = result[0];
-    return row ? mapWeightRow(row as Record<string, unknown>) : null;
+    measuredAt: string,
+  ): Promise<PatientWeightMeasurementResponse> {
+    const result = await client.query<WeightRow>(
+      `insert into patient_weight_measurements (
+         pharmacy_id, patient_id, created_by_user_id, weight_kg, measured_at
+       ) values ($1, $2, $3, $4, $5::timestamptz)
+       returning *`,
+      [pharmacyId, patientId, actorUserId, weightKg, measuredAt],
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error("Weight insert returned no row");
+    return mapWeight(row);
   }
 
   public async listWeights(
+    client: PoolClient,
+    pharmacyId: string,
     patientId: string,
     limit: number,
     offset: number,
-    client?: PoolClient,
   ): Promise<{
-    items: PatientWeightMeasurementResponse[];
-    total: number;
-    bmi: string | null;
+    readonly items: PatientWeightMeasurementResponse[];
+    readonly total: number;
+    readonly bmi: string | null;
   }> {
-    const db = this.getDb(client);
-
-    const countQuery = sql`SELECT COUNT(*)::int AS count FROM patient_weight_measurements WHERE patient_id = ${patientId}`;
-    const countResult = await db.execute(countQuery);
-    const total = (countResult.rows[0]?.count as number) ?? 0;
-
-    const dataQuery = sql`
-      SELECT w.*
-      FROM patient_weight_measurements w
-      WHERE w.patient_id = ${patientId}
-      ORDER BY w.measured_at DESC, w.id DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `;
-    const dataResult = await db.execute(dataQuery);
-
-    const patientQuery = sql`SELECT (w.weight_kg / ((p.height_cm / 100) ^ 2))::numeric(4,1) AS bmi
-      FROM patients p
-      JOIN (
-        SELECT weight_kg
-        FROM patient_weight_measurements
-        WHERE patient_id = ${patientId}
-        ORDER BY measured_at DESC, id DESC
-        LIMIT 1
-      ) w ON true
-      WHERE p.id = ${patientId} AND p.height_cm IS NOT NULL AND p.height_cm > 0`;
-
-    const patientResult = await db.execute(patientQuery);
-    const bmi =
-      patientResult.rows.length > 0
-        ? (patientResult.rows[0]?.bmi as string)
-        : null;
-
+    const count = await client.query<{ readonly count: string }>(
+      `select count(*)::text as count from patient_weight_measurements
+       where pharmacy_id = $1 and patient_id = $2`,
+      [pharmacyId, patientId],
+    );
+    const rows = await client.query<WeightRow>(
+      `select * from patient_weight_measurements
+       where pharmacy_id = $1 and patient_id = $2
+       order by measured_at desc, id desc limit $3 offset $4`,
+      [pharmacyId, patientId, limit, offset],
+    );
+    const latest = await client.query<{ readonly bmi: string | null }>(
+      `select round(w.weight_kg * 10000 / (p.height_cm * p.height_cm), 1)::text as bmi
+       from patients p
+       join patient_weight_measurements w
+         on w.pharmacy_id = p.pharmacy_id and w.patient_id = p.id
+       where p.pharmacy_id = $1 and p.id = $2 and p.height_cm is not null
+       order by w.measured_at desc, w.id desc limit 1`,
+      [pharmacyId, patientId],
+    );
     return {
-      items: (dataResult.rows as Record<string, unknown>[]).map((r) =>
-        mapWeightRow(r),
-      ),
-      total,
-      bmi,
+      items: rows.rows.map(mapWeight),
+      total: Number(count.rows[0]?.count ?? 0),
+      bmi: latest.rows[0]?.bmi ?? null,
     };
-  }
-
-  public async insertAuditEvent(event: AuditEventPayload, client?: PoolClient) {
-    const db = this.getDb(client);
-    await db.insert(patientAuditEvents).values({
-      patientId: event.patientId,
-      actorUserId: event.actorUserId,
-      action: event.action,
-      outcome: event.outcome,
-      changes: event.changes,
-    });
   }
 }

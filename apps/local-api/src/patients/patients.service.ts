@@ -1,595 +1,638 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { LocalDatabaseService } from "../local-database.service.js";
-import { PatientsRepository } from "./patients.repository.js";
-import type {
-  PatientAuthorizationPort,
-  ActorContext,
-} from "./patient-auth.port.js";
+import { Injectable } from "@nestjs/common";
 import type {
   CreatePatientRequest,
+  ListPatientWeightsResponse,
+  PatientProfileResponse,
+  SearchPatientsResponse,
   UpdatePatientRequest,
-  UpdatePatientNotesRequest,
-  UpdatePatientDiscountRequest,
-  UpdatePatientDndRequest,
-  AddPatientWeightRequest,
 } from "@breev/contracts/local-rest";
+import { patientProfileResponseSchema } from "@breev/contracts/local-rest";
 import type { PoolClient } from "pg";
+
 import {
-  validatePatientCreate,
-  validatePatientUpdate,
-  validatePatientNotes,
-  validateWeightMeasurement,
-  normalizeSearchQuery,
-  type ValidationError,
-} from "./patient-validation.js";
+  IdentityAccessService,
+  type IdentityExecutionContext,
+} from "../identity-access/identity-access.service.js";
+import { hasPermission } from "../identity-access/authorization.js";
+import { LocalDatabaseService } from "../local-database.service.js";
+import { writePostingAudit } from "../posting/audit-writer.js";
 import {
-  parseExactWeight,
-  parseExactHeight,
+  canonicalRequestHash,
+  type JsonObject,
+} from "../posting/canonical-hash.js";
+import { runWholeCommandWithRetry } from "../posting/command-retry.js";
+import {
+  PostingIdempotencyConflict,
+  beginPostingIdempotency,
+  recordPostingResult,
+} from "../posting/idempotency.js";
+import { categorizeBmi } from "./patient-bmi.js";
+import {
+  ExactDecimalError,
   parseExactDiscount,
+  parseExactHeight,
+  parseExactWeight,
 } from "./patient-exact-decimal.js";
-import {
-  buildProfileChangeAudit,
-  buildNotesChangeAudit,
-  buildDeniedAudit,
-} from "./patient-audit-builder.js";
+import { normalizeSearchQuery } from "./patient-validation.js";
+import { PatientsRepository } from "./patients.repository.js";
 
-export class PatientAuthorizationError extends Error {
-  constructor(public readonly reason: string) {
-    super(reason);
-    this.name = "PatientAuthorizationError";
-  }
-}
+const CREATE_COMMAND = "patients.create";
+const SAVE_COMMAND = "patients.save";
+const NOTES_FIELDS = [
+  "allergies",
+  "smoking",
+  "sensitivities",
+  "otherNotes",
+  "chronicConditions",
+  "chronicMedications",
+] as const;
 
-export class PatientNotFoundError extends Error {
-  constructor() {
-    super("Patient not found");
-    this.name = "PatientNotFoundError";
-  }
-}
-
-export class PatientConflictError extends Error {
-  constructor() {
-    super("Patient conflict: Optimistic locking failed");
-    this.name = "PatientConflictError";
-  }
+export interface PatientFieldError {
+  readonly field: string;
+  readonly code: "invalid";
 }
 
 export class PatientValidationError extends Error {
-  constructor(public readonly errors: readonly ValidationError[]) {
-    super(
-      `Validation failed: ${errors.map((e) => `${e.field}: ${e.message}`).join(", ")}`,
-    );
+  public constructor(public readonly errors: readonly PatientFieldError[]) {
+    super("Patient request validation failed");
     this.name = "PatientValidationError";
   }
 }
 
-function resolveActorUserId(actor: ActorContext): string {
+export class PatientCommandError extends Error {
+  public constructor(
+    public readonly statusCode: 400 | 404 | 409,
+    public readonly body: unknown,
+  ) {
+    super("Patient command rejected");
+    this.name = "PatientCommandError";
+  }
+}
+
+interface StoredResponse {
+  readonly status: number;
+  readonly body: unknown;
+}
+
+function hasAnyNotesField(
+  input: CreatePatientRequest | UpdatePatientRequest,
+): boolean {
+  return NOTES_FIELDS.some((field) => Object.hasOwn(input, field));
+}
+
+function mayViewNotes(context: IdentityExecutionContext): boolean {
   return (
-    actor.userId ?? actor.deviceId ?? "00000000-0000-0000-0000-000000000000"
+    hasPermission(context.permissions, "patients.notes.view") ||
+    hasPermission(context.permissions, "patients.notes.manage")
   );
+}
+
+function profileProjection(
+  patient: PatientProfileResponse,
+  context: IdentityExecutionContext,
+): PatientProfileResponse {
+  const category = patient.bmi === null ? null : categorizeBmi(patient.bmi);
+  const withBmiCategory = {
+    ...patient,
+    bmiCategory: category === "unknown" ? null : category,
+  };
+  if (mayViewNotes(context)) return withBmiCategory;
+  const safe: Partial<PatientProfileResponse> = { ...withBmiCategory };
+  for (const field of NOTES_FIELDS) delete safe[field];
+  return safe as PatientProfileResponse;
+}
+
+function fieldsSupplied(
+  input: CreatePatientRequest | UpdatePatientRequest,
+): string[] {
+  return Object.keys(input).filter(
+    (key) => key !== "idempotencyKey" && key !== "expectedRevision",
+  );
+}
+
+function requiredSavePermissions(
+  input: CreatePatientRequest | UpdatePatientRequest,
+): readonly (
+  "patients.manage" | "patients.notes.manage" | "patients.discounts.manage"
+)[] {
+  const permissions: (
+    "patients.manage" | "patients.notes.manage" | "patients.discounts.manage"
+  )[] = ["patients.manage"];
+  if (hasAnyNotesField(input)) permissions.push("patients.notes.manage");
+  if (Object.hasOwn(input, "discountPercent")) {
+    permissions.push("patients.discounts.manage");
+  }
+  return permissions;
+}
+
+function validateExactFields(
+  input: CreatePatientRequest | UpdatePatientRequest,
+): void {
+  try {
+    if (input.heightCm !== undefined && input.heightCm !== null) {
+      parseExactHeight(input.heightCm);
+    }
+    if (input.discountPercent !== undefined && input.discountPercent !== null) {
+      parseExactDiscount(input.discountPercent);
+    }
+    if (input.weightMeasurement !== undefined) {
+      parseExactWeight(input.weightMeasurement.weightKg);
+    }
+  } catch (error) {
+    if (!(error instanceof ExactDecimalError)) throw error;
+    const field = error.message.startsWith("Height")
+      ? "heightCm"
+      : error.message.startsWith("Discount")
+        ? "discountPercent"
+        : "weightMeasurement.weightKg";
+    throw new PatientValidationError([{ field, code: "invalid" }]);
+  }
 }
 
 @Injectable()
 export class PatientsService {
-  constructor(
-    private readonly localDatabase: LocalDatabaseService,
+  public constructor(
+    private readonly database: LocalDatabaseService,
     private readonly repository: PatientsRepository,
-    @Inject("PatientAuthorizationPort")
-    private readonly authPort: PatientAuthorizationPort,
+    private readonly identity: IdentityAccessService,
   ) {}
 
-  private async withTransaction<T>(
-    work: (client: PoolClient) => Promise<T>,
-  ): Promise<T> {
-    const client = await this.localDatabase.requirePool().connect();
+  public async searchPatients(
+    context: IdentityExecutionContext,
+    query: string | undefined,
+    page: number,
+    limit: number,
+  ): Promise<SearchPatientsResponse> {
+    const normalizedQuery = normalizeSearchQuery(query) ?? undefined;
+    const client = await this.database.requirePool().connect();
     try {
-      await client.query("BEGIN");
-      const result = await work(client);
-      await client.query("COMMIT");
-      return result;
+      await client.query("begin");
+      const fresh = await this.identity.revalidatePatientOperation(
+        client,
+        context,
+        ["patients.view"],
+      );
+      const result = await this.repository.searchPatients(
+        client,
+        fresh.pharmacyId,
+        normalizedQuery,
+        limit,
+        (page - 1) * limit,
+      );
+      await this.auditRead(client, fresh, "patients.search", undefined, {
+        page,
+        queryPresent: normalizedQuery !== undefined,
+        resultCount: result.items.length,
+        total: result.total,
+      });
+      await client.query("commit");
+      return {
+        items: result.items.map((patient) => profileProjection(patient, fresh)),
+        total: result.total,
+        page,
+        limit,
+        totalPages: Math.ceil(result.total / limit),
+      };
     } catch (error) {
-      await client.query("ROLLBACK");
+      await client.query("rollback").catch(() => undefined);
       throw error;
     } finally {
       client.release();
     }
   }
 
-  public async searchPatients(
-    actor: ActorContext,
-    q: string | undefined,
-    page: number,
-    limit: number,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.view");
-    if (!authResult.allowed) {
-      // Security decision: return empty list on denial instead of 403
-      // Note: Search denial cannot be audited in patient_audit_events because it lacks a specific patient_id
-      return { items: [], total: 0, page, limit, totalPages: 0 };
-    }
-
-    const normalizedQ = normalizeSearchQuery(q) ?? undefined;
-    const offset = (page - 1) * limit;
-    const result = await this.repository.searchPatients(
-      normalizedQ,
-      limit,
-      offset,
-    );
-    return {
-      items: result.items,
-      total: result.total,
-      page,
-      limit,
-      totalPages: Math.ceil(result.total / limit),
-    };
-  }
-
-  public async getPatientById(actor: ActorContext, id: string) {
-    const authResult = this.authPort.check(actor, "patients.view");
-    if (!authResult.allowed) {
-      throw new PatientAuthorizationError(authResult.reason);
-    }
-
-    const patient = await this.repository.getPatientById(id);
-    if (!patient) {
-      throw new PatientNotFoundError();
-    }
-
-    // Optional fields masked if notes permission is not present
-    const notesAuthResult = this.authPort.check(actor, "patients.notes");
-    if (!notesAuthResult.allowed) {
-      // Audit view-notes denial
-      await this.withTransaction(async (client) => {
-        await this.repository.insertAuditEvent(
-          {
-            patientId: id,
-            actorUserId: resolveActorUserId(actor),
-            action: "view-notes",
-            outcome: "denied",
-            changes: buildDeniedAudit("patients.notes"),
-          },
-          client,
-        );
-      });
-
-      return {
-        ...patient,
-        allergies: undefined,
-        smoking: undefined,
-        sensitivities: undefined,
-        otherNotes: undefined,
-      };
-    }
-
-    return patient;
-  }
-
-  public async createPatient(actor: ActorContext, data: CreatePatientRequest) {
-    const authResult = this.authPort.check(actor, "patients.create");
-    if (!authResult.allowed) {
-      throw new PatientAuthorizationError(authResult.reason);
-    }
-
-    const validationErrors = validatePatientCreate(data);
-    if (validationErrors.length > 0) {
-      throw new PatientValidationError(validationErrors);
-    }
-    if (data.heightCm) {
-      parseExactHeight(data.heightCm);
-    }
-
-    return await this.withTransaction(async (client) => {
-      const patient = await this.repository.createPatient(data, client);
-      if (!patient) throw new PatientConflictError();
-      await this.repository.insertAuditEvent(
-        {
-          patientId: patient.id,
-          actorUserId: authResult.actorUserId,
-          action: "create",
-          outcome: "allowed",
-          changes: { created: true },
-        },
-        client,
-      );
-      return patient;
-    });
-  }
-
-  public async updatePatientProfile(
-    actor: ActorContext,
+  public async getPatientById(
+    context: IdentityExecutionContext,
     id: string,
-    data: UpdatePatientRequest,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.edit");
-    if (!authResult.allowed) {
-      // Audit denial
-      await this.withTransaction(async (client) => {
-        await this.repository.insertAuditEvent(
-          {
-            patientId: id,
-            actorUserId: resolveActorUserId(actor),
-            action: "edit-profile",
-            outcome: "denied",
-            changes: buildDeniedAudit("patients.edit"),
-          },
-          client,
-        );
-      });
-      throw new PatientAuthorizationError(authResult.reason);
-    }
-
-    const validationErrors = validatePatientUpdate(data);
-    if (validationErrors.length > 0) {
-      throw new PatientValidationError(validationErrors);
-    }
-    if (data.heightCm) {
-      parseExactHeight(data.heightCm);
-    }
-
-    return await this.withTransaction(async (client) => {
-      const before = await this.repository.getPatientById(id, client);
-      if (!before) {
-        throw new PatientNotFoundError();
-      }
-
-      const patient = await this.repository.updatePatient(
+  ): Promise<PatientProfileResponse> {
+    const client = await this.database.requirePool().connect();
+    try {
+      await client.query("begin");
+      const fresh = await this.identity.revalidatePatientOperation(
+        client,
+        context,
+        ["patients.view"],
+      );
+      const patient = await this.repository.getPatientById(
+        client,
+        fresh.pharmacyId,
         id,
-        data,
-        data.updatedAt,
-        client,
       );
-      if (!patient) {
-        throw new PatientConflictError();
+      if (patient === null) {
+        await this.auditRead(client, fresh, "patients.profile.read", id, {
+          outcome: "not-found",
+        });
+        await client.query("commit");
+        throw new PatientCommandError(404, { code: "patient-not-found" });
       }
-
-      const auditChanges = buildProfileChangeAudit(
-        before as unknown as Record<string, unknown>,
-        patient as unknown as Record<string, unknown>,
-      );
-
-      await this.repository.insertAuditEvent(
-        {
-          patientId: patient.id,
-          actorUserId: authResult.actorUserId,
-          action: "edit-profile",
-          outcome: "allowed",
-          changes: auditChanges,
-        },
-        client,
-      );
-
-      return patient;
-    });
-  }
-
-  public async updatePatientNotes(
-    actor: ActorContext,
-    id: string,
-    data: UpdatePatientNotesRequest,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.notes");
-    if (!authResult.allowed) {
-      await this.withTransaction(async (client) => {
-        await this.repository.insertAuditEvent(
-          {
-            patientId: id,
-            actorUserId: resolveActorUserId(actor),
-            action: "edit-notes",
-            outcome: "denied",
-            changes: buildDeniedAudit("patients.notes"),
-          },
-          client,
-        );
+      const projected = profileProjection(patient, fresh);
+      await this.auditRead(client, fresh, "patients.profile.read", id, {
+        notesIncluded: mayViewNotes(fresh),
       });
-      throw new PatientAuthorizationError(authResult.reason);
-    }
-
-    const validationErrors = validatePatientNotes(data);
-    if (validationErrors.length > 0) {
-      throw new PatientValidationError(validationErrors);
-    }
-
-    return await this.withTransaction(async (client) => {
-      const before = await this.repository.getPatientById(id, client);
-      if (!before) {
-        throw new PatientNotFoundError();
+      await client.query("commit");
+      return projected;
+    } catch (error) {
+      if (!(error instanceof PatientCommandError)) {
+        await client.query("rollback").catch(() => undefined);
       }
-
-      const patient = await this.repository.updatePatient(
-        id,
-        data,
-        data.updatedAt,
-        client,
-      );
-      if (!patient) {
-        throw new PatientConflictError();
-      }
-
-      const auditChanges = buildNotesChangeAudit(
-        before as unknown as Record<string, unknown>,
-        patient as unknown as Record<string, unknown>,
-      );
-
-      await this.repository.insertAuditEvent(
-        {
-          patientId: patient.id,
-          actorUserId: authResult.actorUserId,
-          action: "edit-notes",
-          outcome: "allowed",
-          changes: auditChanges,
-        },
-        client,
-      );
-
-      return patient;
-    });
-  }
-
-  public async updatePatientDiscount(
-    actor: ActorContext,
-    id: string,
-    data: UpdatePatientDiscountRequest,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.edit"); // Assuming discount is part of edit permission
-    if (!authResult.allowed) {
-      await this.withTransaction(async (client) => {
-        await this.repository.insertAuditEvent(
-          {
-            patientId: id,
-            actorUserId: resolveActorUserId(actor),
-            action: "edit-discount",
-            outcome: "denied",
-            changes: buildDeniedAudit("patients.edit"),
-          },
-          client,
-        );
-      });
-      throw new PatientAuthorizationError(authResult.reason);
+      throw error;
+    } finally {
+      client.release();
     }
-
-    if (data.discountPercent) {
-      parseExactDiscount(data.discountPercent);
-    }
-
-    return await this.withTransaction(async (client) => {
-      const patient = await this.repository.updatePatient(
-        id,
-        data,
-        data.updatedAt,
-        client,
-      );
-      if (!patient) {
-        throw new PatientConflictError();
-      }
-
-      await this.repository.insertAuditEvent(
-        {
-          patientId: patient.id,
-          actorUserId: authResult.actorUserId,
-          action: "edit-discount",
-          outcome: "allowed",
-          changes: { discountPercent: data.discountPercent },
-        },
-        client,
-      );
-
-      return patient;
-    });
-  }
-
-  public async updatePatientDnd(
-    actor: ActorContext,
-    id: string,
-    data: UpdatePatientDndRequest,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.edit");
-    if (!authResult.allowed) {
-      await this.withTransaction(async (client) => {
-        await this.repository.insertAuditEvent(
-          {
-            patientId: id,
-            actorUserId: resolveActorUserId(actor),
-            action: "edit-dnd",
-            outcome: "denied",
-            changes: buildDeniedAudit("patients.edit"),
-          },
-          client,
-        );
-      });
-      throw new PatientAuthorizationError(authResult.reason);
-    }
-
-    return await this.withTransaction(async (client) => {
-      const patient = await this.repository.updatePatient(
-        id,
-        data,
-        data.updatedAt,
-        client,
-      );
-      if (!patient) {
-        throw new PatientConflictError();
-      }
-
-      await this.repository.insertAuditEvent(
-        {
-          patientId: patient.id,
-          actorUserId: authResult.actorUserId,
-          action: "edit-dnd",
-          outcome: "allowed",
-          changes: { doNotDisturb: data.doNotDisturb },
-        },
-        client,
-      );
-
-      return patient;
-    });
-  }
-
-  public async addWeight(
-    actor: ActorContext,
-    patientId: string,
-    data: AddPatientWeightRequest,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.edit");
-    if (!authResult.allowed) {
-      await this.withTransaction(async (client) => {
-        await this.repository.insertAuditEvent(
-          {
-            patientId,
-            actorUserId: resolveActorUserId(actor),
-            action: "add-weight",
-            outcome: "denied",
-            changes: buildDeniedAudit("patients.edit"),
-          },
-          client,
-        );
-      });
-      throw new PatientAuthorizationError(authResult.reason);
-    }
-
-    const validationErrors = validateWeightMeasurement(data);
-    if (validationErrors.length > 0) {
-      throw new PatientValidationError(validationErrors);
-    }
-    parseExactWeight(data.weightKg);
-
-    return await this.withTransaction(async (client) => {
-      const weight = await this.repository.insertWeight(
-        patientId,
-        data.weightKg,
-        data.measuredAt,
-        authResult.actorUserId,
-        client,
-      );
-      if (!weight) throw new PatientConflictError();
-
-      await this.repository.insertAuditEvent(
-        {
-          patientId,
-          actorUserId: authResult.actorUserId,
-          action: "add-weight",
-          outcome: "allowed",
-          changes: { weightId: weight.id, weightKg: weight.weightKg },
-        },
-        client,
-      );
-
-      return weight;
-    });
   }
 
   public async listWeights(
-    actor: ActorContext,
+    context: IdentityExecutionContext,
     patientId: string,
     page: number,
     limit: number,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.view");
-    if (!authResult.allowed) {
-      throw new PatientAuthorizationError(authResult.reason);
+  ): Promise<ListPatientWeightsResponse> {
+    const client = await this.database.requirePool().connect();
+    try {
+      await client.query("begin");
+      const fresh = await this.identity.revalidatePatientOperation(
+        client,
+        context,
+        ["patients.view"],
+      );
+      const businessTimeZone = await this.identity.readPharmacyBusinessTimeZone(
+        client,
+        fresh.pharmacyId,
+      );
+      const patient = await this.repository.getPatientById(
+        client,
+        fresh.pharmacyId,
+        patientId,
+      );
+      if (patient === null) {
+        await this.auditRead(
+          client,
+          fresh,
+          "patients.weights.read",
+          patientId,
+          {
+            outcome: "not-found",
+          },
+        );
+        await client.query("commit");
+        throw new PatientCommandError(404, { code: "patient-not-found" });
+      }
+      const weights = await this.repository.listWeights(
+        client,
+        fresh.pharmacyId,
+        patientId,
+        limit,
+        (page - 1) * limit,
+      );
+      await this.auditRead(client, fresh, "patients.weights.read", patientId, {
+        page,
+        resultCount: weights.items.length,
+        total: weights.total,
+      });
+      await client.query("commit");
+      return {
+        ...weights,
+        businessTimeZone,
+        page,
+        limit,
+        totalPages: Math.ceil(weights.total / limit),
+      };
+    } catch (error) {
+      if (!(error instanceof PatientCommandError)) {
+        await client.query("rollback").catch(() => undefined);
+      }
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const offset = (page - 1) * limit;
-    const result = await this.repository.listWeights(patientId, limit, offset);
-    return {
-      items: result.items,
-      bmi: result.bmi,
-      total: result.total,
-      page,
-      limit,
-      totalPages: Math.ceil(result.total / limit),
-    };
   }
 
-  public async archivePatient(
-    actor: ActorContext,
-    id: string,
-    expectedUpdatedAt: string,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.edit");
-    if (!authResult.allowed) {
-      await this.withTransaction(async (client) => {
-        await this.repository.insertAuditEvent(
-          {
-            patientId: id,
-            actorUserId: resolveActorUserId(actor),
-            action: "archive",
-            outcome: "denied",
-          },
+  public async createPatient(
+    context: IdentityExecutionContext,
+    input: CreatePatientRequest,
+  ): Promise<PatientProfileResponse> {
+    validateExactFields(input);
+    const result = await this.executeCommand(
+      context,
+      CREATE_COMMAND,
+      input.idempotencyKey,
+      canonicalRequestHash(CREATE_COMMAND, input),
+      requiredSavePermissions(input),
+      201,
+      fieldsSupplied(input),
+      async (client, fresh) => {
+        const created = await this.repository.createPatient(
           client,
+          fresh.pharmacyId,
+          input,
         );
-      });
-      throw new PatientAuthorizationError(authResult.reason);
-    }
+        if (input.weightMeasurement !== undefined) {
+          await this.repository.appendWeight(
+            client,
+            fresh.pharmacyId,
+            created.id,
+            fresh.actorId,
+            input.weightMeasurement.weightKg,
+            input.weightMeasurement.measuredAt,
+          );
+        }
+        const patient =
+          input.weightMeasurement === undefined
+            ? created
+            : ((await this.repository.getPatientById(
+                client,
+                fresh.pharmacyId,
+                created.id,
+              )) ?? created);
+        const body = profileProjection(patient, fresh);
+        await this.auditMutation(
+          client,
+          fresh,
+          input.idempotencyKey,
+          "patients.create",
+          body.id,
+          { fields: fieldsSupplied(input) },
+          { revision: body.revision },
+        );
+        return { status: 201, body };
+      },
+    );
+    return result as PatientProfileResponse;
+  }
 
-    return await this.withTransaction(async (client) => {
-      const patient = await this.repository.archivePatient(
-        id,
-        expectedUpdatedAt,
-        client,
-      );
-      if (!patient) {
-        throw new PatientConflictError();
+  public async updatePatientProfile(
+    context: IdentityExecutionContext,
+    id: string,
+    input: UpdatePatientRequest,
+  ): Promise<PatientProfileResponse> {
+    validateExactFields(input);
+    const commandBody = { patientId: id, request: input };
+    const result = await this.executeCommand(
+      context,
+      SAVE_COMMAND,
+      input.idempotencyKey,
+      canonicalRequestHash(SAVE_COMMAND, commandBody),
+      requiredSavePermissions(input),
+      200,
+      fieldsSupplied(input),
+      async (client, fresh) => {
+        const before = await this.repository.getPatientById(
+          client,
+          fresh.pharmacyId,
+          id,
+          true,
+        );
+        if (before === null) {
+          await this.auditMutation(
+            client,
+            fresh,
+            input.idempotencyKey,
+            SAVE_COMMAND,
+            id,
+            undefined,
+            undefined,
+            "not-found",
+          );
+          return { status: 404, body: { code: "patient-not-found" } };
+        }
+        if (before.revision !== input.expectedRevision) {
+          const body = {
+            code: "version-conflict",
+            currentRevision: before.revision,
+          } as const;
+          await this.auditMutation(
+            client,
+            fresh,
+            input.idempotencyKey,
+            SAVE_COMMAND,
+            id,
+            { expectedRevision: input.expectedRevision },
+            { currentRevision: before.revision },
+            "version-conflict",
+          );
+          return { status: 409, body };
+        }
+        const updated = await this.repository.updatePatient(
+          client,
+          fresh.pharmacyId,
+          id,
+          input.expectedRevision,
+          input,
+        );
+        if (updated === null) {
+          throw new Error("Locked patient update unexpectedly missed its row");
+        }
+        if (input.weightMeasurement !== undefined) {
+          await this.repository.appendWeight(
+            client,
+            fresh.pharmacyId,
+            id,
+            fresh.actorId,
+            input.weightMeasurement.weightKg,
+            input.weightMeasurement.measuredAt,
+          );
+        }
+        const patient =
+          input.weightMeasurement === undefined
+            ? updated
+            : ((await this.repository.getPatientById(
+                client,
+                fresh.pharmacyId,
+                id,
+              )) ?? updated);
+        const body = profileProjection(patient, fresh);
+        await this.auditMutation(
+          client,
+          fresh,
+          input.idempotencyKey,
+          SAVE_COMMAND,
+          id,
+          { revision: before.revision },
+          { revision: body.revision, fields: fieldsSupplied(input) },
+        );
+        return { status: 200, body };
+      },
+      id,
+    );
+    return result as PatientProfileResponse;
+  }
+
+  private async executeCommand(
+    context: IdentityExecutionContext,
+    commandName: string,
+    idempotencyKey: string,
+    requestHash: Buffer,
+    permissions: readonly (
+      "patients.manage" | "patients.notes.manage" | "patients.discounts.manage"
+    )[],
+    successStatus: 200 | 201,
+    requestFields: readonly string[],
+    work: (
+      client: PoolClient,
+      context: IdentityExecutionContext,
+    ) => Promise<StoredResponse>,
+    targetId?: string,
+  ): Promise<unknown> {
+    const response = await runWholeCommandWithRetry(async () => {
+      const client = await this.database.requirePool().connect();
+      let transactionOpen = false;
+      try {
+        await client.query("begin");
+        transactionOpen = true;
+        const fresh = await this.identity.revalidatePatientOperation(
+          client,
+          context,
+          permissions,
+        );
+        let replay;
+        try {
+          replay = await beginPostingIdempotency(client, {
+            commandName,
+            idempotencyKey,
+            pharmacyId: fresh.pharmacyId,
+            requestHash,
+          });
+        } catch (error) {
+          if (!(error instanceof PostingIdempotencyConflict)) throw error;
+          const requestId = await this.auditMutation(
+            client,
+            fresh,
+            idempotencyKey,
+            commandName,
+            targetId,
+            undefined,
+            undefined,
+            "idempotency-conflict",
+          );
+          await client.query("commit");
+          transactionOpen = false;
+          return {
+            status: 409,
+            body: {
+              status: "denied",
+              code: "idempotency-conflict",
+              requestId,
+            },
+          } satisfies StoredResponse;
+        }
+        if (replay !== undefined) {
+          if (replay.responseStatus === successStatus) {
+            const storedProfile = patientProfileResponseSchema.parse(
+              replay.responseBody,
+            );
+            const publicProfile = patientProfileResponseSchema.parse(
+              profileProjection(storedProfile, fresh),
+            );
+            await this.auditMutation(
+              client,
+              fresh,
+              idempotencyKey,
+              "patients.profile.replay",
+              publicProfile.id,
+              undefined,
+              {
+                commandName,
+                fields: [...requestFields],
+                notesIncluded: mayViewNotes(fresh),
+              },
+              "allowed",
+            );
+            await client.query("commit");
+            transactionOpen = false;
+            return {
+              status: replay.responseStatus,
+              body: publicProfile,
+            } satisfies StoredResponse;
+          }
+          await client.query("commit");
+          transactionOpen = false;
+          return {
+            status: replay.responseStatus,
+            body: replay.responseBody,
+          } satisfies StoredResponse;
+        }
+
+        const result = await work(client, fresh);
+        const responseBody =
+          result.status === successStatus
+            ? patientProfileResponseSchema.parse(result.body)
+            : result.body;
+        await recordPostingResult(client, {
+          actorUserId: fresh.actorId,
+          commandName,
+          device: fresh,
+          idempotencyKey,
+          identitySessionId: fresh.sessionId,
+          pharmacyId: fresh.pharmacyId,
+          requestHash,
+          responseBody,
+          responseStatus: result.status,
+        });
+        await client.query("commit");
+        transactionOpen = false;
+        return { ...result, body: responseBody };
+      } catch (error) {
+        if (transactionOpen) {
+          await client.query("rollback").catch(() => undefined);
+        }
+        throw error;
+      } finally {
+        client.release();
       }
-
-      await this.repository.insertAuditEvent(
-        {
-          patientId: patient.id,
-          actorUserId: authResult.actorUserId,
-          action: "archive",
-          outcome: "allowed",
-          changes: { archivedAt: patient.archivedAt },
-        },
-        client,
+    });
+    if (response.status !== successStatus) {
+      throw new PatientCommandError(
+        response.status === 400 ||
+          response.status === 404 ||
+          response.status === 409
+          ? response.status
+          : 409,
+        response.body,
       );
+    }
+    return response.body;
+  }
 
-      return patient;
+  private async auditRead(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    action: string,
+    targetId: string | undefined,
+    afterState: JsonObject,
+  ): Promise<void> {
+    await writePostingAudit(client, {
+      action,
+      actorUserId: context.actorId,
+      afterState,
+      device: context,
+      identitySessionId: context.sessionId,
+      outcome: "allowed",
+      pharmacyId: context.pharmacyId,
+      ...(targetId === undefined ? {} : { targetId }),
     });
   }
 
-  public async restorePatient(
-    actor: ActorContext,
-    id: string,
-    expectedUpdatedAt: string,
-  ) {
-    const authResult = this.authPort.check(actor, "patients.edit");
-    if (!authResult.allowed) {
-      await this.withTransaction(async (client) => {
-        await this.repository.insertAuditEvent(
-          {
-            patientId: id,
-            actorUserId: resolveActorUserId(actor),
-            action: "restore",
-            outcome: "denied",
-          },
-          client,
-        );
-      });
-      throw new PatientAuthorizationError(authResult.reason);
-    }
-
-    return await this.withTransaction(async (client) => {
-      const patient = await this.repository.restorePatient(
-        id,
-        expectedUpdatedAt,
-        client,
-      );
-      if (!patient) {
-        throw new PatientConflictError();
-      }
-
-      await this.repository.insertAuditEvent(
-        {
-          patientId: patient.id,
-          actorUserId: authResult.actorUserId,
-          action: "restore",
-          outcome: "allowed",
-          changes: { restored: true },
-        },
-        client,
-      );
-
-      return patient;
+  private async auditMutation(
+    client: PoolClient,
+    context: IdentityExecutionContext,
+    correlationId: string,
+    action: string,
+    targetId: string | undefined,
+    beforeState: JsonObject | undefined,
+    afterState: JsonObject | undefined,
+    outcome = "committed",
+  ): Promise<string> {
+    return await writePostingAudit(client, {
+      action,
+      actorUserId: context.actorId,
+      ...(beforeState === undefined ? {} : { beforeState }),
+      ...(afterState === undefined ? {} : { afterState }),
+      correlationId,
+      device: context,
+      identitySessionId: context.sessionId,
+      outcome,
+      pharmacyId: context.pharmacyId,
+      ...(targetId === undefined ? {} : { targetId }),
     });
   }
 }

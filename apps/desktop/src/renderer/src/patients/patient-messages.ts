@@ -1,4 +1,4 @@
-import type { Locale } from "../preferences";
+import type { Locale } from "../preferences.js";
 
 export interface PatientCopy {
   readonly title: string;
@@ -8,6 +8,8 @@ export interface PatientCopy {
   readonly searchButton: string;
   readonly searchDenied: string;
   readonly searchUnavailable: string;
+  readonly searchResults: string;
+  readonly searchPagination: string;
   readonly emptyResults: string;
   readonly emptyList: string;
   readonly loading: string;
@@ -15,6 +17,15 @@ export interface PatientCopy {
   readonly save: string;
   readonly update: string;
   readonly cancel: string;
+  readonly saving: string;
+  readonly saved: string;
+  readonly saveUnavailable: string;
+  readonly profileNotFound: string;
+  readonly profileLoadError: string;
+  readonly loadingLatest: string;
+  readonly conflictReconciled: string;
+  readonly nameRequired: string;
+  readonly allergyRequired: string;
   readonly permissionDenied: string;
   readonly createHeading: string;
   readonly editHeading: string;
@@ -61,10 +72,26 @@ export interface PatientCopy {
   readonly removeItem: string;
   readonly unsavedChanges: string;
   readonly conflictError: string;
+  readonly idempotencyConflict: string;
+  readonly validationFailed: string;
+  readonly unknownSaveOutcome: string;
+  readonly retrySave: string;
+  readonly reloadLatest: string;
+  readonly discardChangesTitle: string;
+  readonly discardChangesMessage: string;
+  readonly keepEditing: string;
+  readonly discardChanges: string;
   readonly networkError: string;
   readonly retryAction: string;
   readonly recordedBy: string;
   readonly noWeightMeasurements: string;
+  readonly bmiNeedsHeight: string;
+  readonly bmiNeedsWeight: string;
+  readonly bmiAfterSave: string;
+  readonly weightHistoryLoadError: string;
+  readonly loadMoreWeights: string;
+  readonly loadingWeights: string;
+  readonly timeZoneUnavailable: string;
   readonly setHeightFirst: string;
   readonly page: string;
   readonly of: string;
@@ -85,11 +112,10 @@ export interface PatientCopy {
   readonly biometricsHeading: string;
   readonly identityHeading: string;
   readonly latestWeight: string;
-  readonly deletePatient: string;
-  readonly archiveConfirmTitle: string;
-  readonly archiveConfirmMessage: (name: string) => string;
-  readonly restorePatient: string;
-  readonly patientArchived: string;
+  readonly yes: string;
+  readonly no: string;
+  readonly dndEnabled: string;
+  readonly dndDisabled: string;
   readonly invalidWeightFormat: string;
   readonly invalidHeightFormat: string;
   readonly invalidDiscountFormat: string;
@@ -105,6 +131,8 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     searchButton: "بحث",
     searchDenied: "لا تملك صلاحية البحث في ملفات المرضى.",
     searchUnavailable: "تعذّر إجراء البحث. تحقق من الاتصال وحاول مرة أخرى.",
+    searchResults: "نتائج المرضى",
+    searchPagination: "صفحات نتائج البحث",
     emptyResults: "لا توجد نتائج مطابقة.",
     emptyList: "أنشئ أول ملف مريض.",
     loading: "جارٍ التحميل…",
@@ -112,6 +140,15 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     save: "حفظ",
     update: "تحديث",
     cancel: "إلغاء",
+    saving: "جارٍ حفظ الملف…",
+    saved: "تم حفظ الملف.",
+    saveUnavailable: "تعذّر حفظ الملف. تحقق من الاتصال ثم حاول مرة أخرى.",
+    profileNotFound: "لم يعد ملف المريض متاحاً.",
+    profileLoadError: "تعذّر تحميل ملف المريض.",
+    loadingLatest: "جارٍ تحميل النسخة الأحدث…",
+    conflictReconciled: "تم تحميل النسخة الأحدث. يمكنك حفظ تعديلاتك الآن.",
+    nameRequired: "الاسم الأول واسم العائلة مطلوبان.",
+    allergyRequired: "أضف نوع الحساسية أو وصفها قبل الحفظ.",
     permissionDenied: "لا تملك صلاحية الوصول إلى ملفات المرضى.",
     createHeading: "تسجيل مريض جديد",
     editHeading: "تعديل بيانات المريض",
@@ -142,7 +179,7 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     heightCm: "الطول (سم)",
     bmi: "BMI",
     addWeight: "حفظ",
-    weightMeasuredAt: "تاريخ القياس",
+    weightMeasuredAt: "تاريخ ووقت القياس",
     noHeight: "أدخل الطول أولاً",
     setHeight: "تحديد الطول",
     addCondition: "إضافة",
@@ -172,11 +209,29 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     unsavedChanges: "توجد تعديلات غير محفوظة. هل تريد المغادرة وتجاهلها؟",
     conflictError:
       "تم تعديل هذا السجل من جلسة أخرى. يرجى إعادة التحميل والمحاولة مجدداً.",
+    idempotencyConflict:
+      "تعارض مفتاح الحفظ مع طلب سابق. احتفظنا بالبيانات المدخلة؛ تحقق من نتيجة الحفظ السابق قبل بدء حفظ جديد.",
+    validationFailed: "تحقق من الحقول المحددة ثم حاول الحفظ مرة أخرى.",
+    unknownSaveOutcome:
+      "لم يصل تأكيد الحفظ. أعد المحاولة لإكمال التحقق بأمان قبل إجراء تغييرات أخرى.",
+    retrySave: "إعادة محاولة الحفظ",
+    reloadLatest: "تحميل آخر نسخة مع الاحتفاظ بتعديلاتي",
+    discardChangesTitle: "تجاهل التعديلات؟",
+    discardChangesMessage: "ستُفقد التعديلات التي لم تحفظها.",
+    keepEditing: "متابعة التعديل",
+    discardChanges: "تجاهل التعديلات",
     networkError:
       "تعذر الاتصال بالخادم. يرجى التحقق من الاتصال والمحاولة مجدداً.",
     retryAction: "إعادة المحاولة",
     recordedBy: "بواسطة",
     noWeightMeasurements: "لا توجد قياسات وزن مسجلة — أضف أول قياس وزن.",
+    bmiNeedsHeight: "أضف الطول لعرض مؤشر كتلة الجسم.",
+    bmiNeedsWeight: "أضف قياس وزن لعرض مؤشر كتلة الجسم.",
+    bmiAfterSave: "يظهر مؤشر كتلة الجسم بعد حفظ البيانات.",
+    weightHistoryLoadError: "تعذّر تحميل سجل الأوزان.",
+    loadMoreWeights: "عرض قياسات أقدم",
+    loadingWeights: "جارٍ تحميل القياسات…",
+    timeZoneUnavailable: "تعذّر عرض وقت القياس في المنطقة الزمنية للصيدلية.",
     setHeightFirst: "حدد الطول أولاً لعرض مؤشر كتلة الجسم.",
     page: "صفحة",
     of: "من",
@@ -197,12 +252,10 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     biometricsHeading: "القياسات الحيوية",
     identityHeading: "بيانات الهوية والاتصال",
     latestWeight: "آخر قيمة",
-    deletePatient: "حذف",
-    archiveConfirmTitle: "أرشفة ملف المريض",
-    archiveConfirmMessage: (name) =>
-      `هل أنت تأكد من أرشفة ملف المريض "${name}"؟ يمكن استعادة الملف لاحقاً.`,
-    restorePatient: "استعادة الملف",
-    patientArchived: "هذا الملف مؤرشف (تم حذفه).",
+    yes: "نعم",
+    no: "لا",
+    dndEnabled: "نعم",
+    dndDisabled: "لا",
     invalidWeightFormat:
       "الوزن يجب أن يكون رقماً بين 0.1 و 700.0 كجم (بحد أقصى منزلة عشرية واحدة)",
     invalidHeightFormat:
@@ -221,6 +274,8 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     searchDenied: "You do not have permission to search patient profiles.",
     searchUnavailable:
       "Search is unavailable. Check the connection and try again.",
+    searchResults: "Patient search results",
+    searchPagination: "Search result pages",
     emptyResults: "No patients found.",
     emptyList: "Create your first patient.",
     loading: "Loading…",
@@ -228,6 +283,17 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     save: "Save",
     update: "Update",
     cancel: "Cancel",
+    saving: "Saving profile…",
+    saved: "Profile saved.",
+    saveUnavailable:
+      "Profile could not be saved. Check the connection and retry.",
+    profileNotFound: "This patient profile is no longer available.",
+    profileLoadError: "Patient profile could not be loaded.",
+    loadingLatest: "Loading the latest version…",
+    conflictReconciled:
+      "Latest version loaded. Your changes are ready to save.",
+    nameRequired: "First and last name are required.",
+    allergyRequired: "Add an allergy type or description before saving.",
     permissionDenied: "You do not have permission to access patient profiles.",
     createHeading: "Register new patient",
     editHeading: "Edit patient",
@@ -258,7 +324,7 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     heightCm: "Height (cm)",
     bmi: "BMI",
     addWeight: "Save",
-    weightMeasuredAt: "Date",
+    weightMeasuredAt: "Date and time",
     noHeight: "Enter height first",
     setHeight: "Set height",
     addCondition: "Add",
@@ -288,12 +354,31 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     unsavedChanges: "You have unsaved changes. Do you want to discard them?",
     conflictError:
       "This record was modified in another session. Please reload and try again.",
+    idempotencyConflict:
+      "This save key conflicts with an earlier command. Your input is preserved; check the earlier save before starting a new one.",
+    validationFailed: "Check the marked fields and try saving again.",
+    unknownSaveOutcome:
+      "The save was not confirmed. Retry this save to safely check its result before making other changes.",
+    retrySave: "Retry save",
+    reloadLatest: "Load the latest version and keep my changes",
+    discardChangesTitle: "Discard changes?",
+    discardChangesMessage: "Unsaved changes will be lost.",
+    keepEditing: "Keep editing",
+    discardChanges: "Discard changes",
     networkError:
       "Unable to connect to the server. Please check connection and try again.",
     retryAction: "Retry",
     recordedBy: "Recorded by",
     noWeightMeasurements:
       "No weight measurements recorded — add the first weight.",
+    bmiNeedsHeight: "Add height to show BMI.",
+    bmiNeedsWeight: "Add a weight measurement to show BMI.",
+    bmiAfterSave: "BMI appears after the changes are saved.",
+    weightHistoryLoadError: "Weight history could not be loaded.",
+    loadMoreWeights: "Show older measurements",
+    loadingWeights: "Loading measurements…",
+    timeZoneUnavailable:
+      "The measurement time could not be shown in the pharmacy time zone.",
     setHeightFirst: "Set height first to calculate BMI.",
     page: "Page",
     of: "of",
@@ -314,12 +399,10 @@ export const patientMessages: Record<Locale, PatientCopy> = {
     biometricsHeading: "Biometrics",
     identityHeading: "Identity & Contact",
     latestWeight: "Latest",
-    deletePatient: "Archive",
-    archiveConfirmTitle: "Archive Patient Profile",
-    archiveConfirmMessage: (name) =>
-      `Are you sure you want to archive the profile for "${name}"? It can be restored later.`,
-    restorePatient: "Restore Profile",
-    patientArchived: "This profile is archived (deleted).",
+    yes: "Yes",
+    no: "No",
+    dndEnabled: "Yes",
+    dndDisabled: "No",
     invalidWeightFormat:
       "Weight must be a number between 0.1 and 700.0 kg (up to 1 decimal place)",
     invalidHeightFormat:

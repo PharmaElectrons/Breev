@@ -1,37 +1,77 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
+  CreatePatientRequest,
   PatientProfileResponse,
   PatientWeightMeasurementResponse,
+  UpdatePatientRequest,
 } from "@breev/contracts/local-rest";
-
-type PatientGender = "male" | "female";
+import { useCommittedFocus } from "../committed-focus";
+import {
+  formatCanonicalDecimal,
+  isValidPatientDiscount,
+  isValidPatientHeight,
+  isValidPatientWeight,
+} from "../lib/exact-decimal";
+import { directionForLocale } from "../preferences";
 import { usePreferences } from "../preferences-provider";
 import { patientMessages } from "./patient-messages";
 import {
   createPatient,
-  updatePatientProfile,
-  updatePatientNotes,
-  updatePatientDiscount,
-  updatePatientDnd,
-  addPatientWeight,
   getPatientProfile,
+  PatientsApiIdempotencyConflict,
+  newPatientIdempotencyKey,
+  PatientsApiDenied,
+  PatientsApiNotFound,
+  PatientsApiOutcomeUnknown,
+  PatientsApiValidationFailure,
+  PatientsApiVersionConflict,
+  updatePatientProfile,
 } from "./patient-api";
-import {
-  isValidPatientWeight,
-  isValidPatientHeight,
-  isValidPatientDiscount,
-} from "../lib/exact-decimal";
-import { BmiCard, InlineWeightInput } from "./weight-history";
+import { formatPatientDateTime } from "./patient-date-time";
 import { AllergyPicker } from "./allergy-picker";
+
+type PatientGender = "male" | "female";
+type PendingPatientCommand =
+  | { readonly kind: "create"; readonly body: CreatePatientRequest }
+  | {
+      readonly kind: "update";
+      readonly patientId: string;
+      readonly body: UpdatePatientRequest;
+    };
 
 export function ageFromDob(dob: string | null | undefined): number | null {
   if (!dob) return null;
-  const birth = new Date(dob);
-  if (Number.isNaN(birth.getTime())) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(dob);
+  if (
+    match?.[1] === undefined ||
+    match[2] === undefined ||
+    match[3] === undefined
+  )
+    return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const checkedDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    checkedDate.getUTCFullYear() !== year ||
+    checkedDate.getUTCMonth() !== month - 1 ||
+    checkedDate.getUTCDate() !== day
+  ) {
+    return null;
+  }
   const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+  let age = today.getFullYear() - year;
+  const currentMonth = today.getMonth() + 1;
+  if (
+    currentMonth < month ||
+    (currentMonth === month && today.getDate() < day)
+  ) {
     age--;
   }
   return age >= 0 ? age : null;
@@ -40,7 +80,7 @@ export function ageFromDob(dob: string | null | undefined): number | null {
 export function PatientForm({
   patient,
   weights = [],
-  onWeightAdded,
+  businessTimeZone = "",
   onSaved,
   onCancel,
   canManageNotes,
@@ -48,7 +88,7 @@ export function PatientForm({
 }: {
   readonly patient?: PatientProfileResponse | null | undefined;
   readonly weights?: readonly PatientWeightMeasurementResponse[] | undefined;
-  readonly onWeightAdded?: (() => Promise<void> | void) | undefined;
+  readonly businessTimeZone?: string | undefined;
   readonly onSaved: (patient: PatientProfileResponse) => void;
   readonly onCancel: () => void;
   readonly canManageNotes: boolean;
@@ -56,8 +96,8 @@ export function PatientForm({
 }) {
   const { locale } = usePreferences();
   const copy = patientMessages[locale];
-
-  const isEditing = Boolean(patient);
+  const isEditing = patient !== null && patient !== undefined;
+  const requestCommittedFocus = useCommittedFocus();
 
   const [firstName, setFirstName] = useState(patient?.firstName ?? "");
   const [lastName, setLastName] = useState(patient?.lastName ?? "");
@@ -70,378 +110,428 @@ export function PatientForm({
   const [dateOfBirth, setDateOfBirth] = useState(patient?.dateOfBirth ?? "");
   const [heightCm, setHeightCm] = useState(patient?.heightCm ?? "");
   const [discountPercent, setDiscountPercent] = useState(
-    patient?.discountPercent ?? "",
+    canManageDiscounts ? (patient?.discountPercent ?? "") : "",
   );
   const [doNotDisturb, setDoNotDisturb] = useState(
     patient?.doNotDisturb ?? false,
   );
   const [weightKg, setWeightKg] = useState("");
+  const [selectedHistoryId, setSelectedHistoryId] = useState("");
 
-  // Notes & clinical tags
-  const [otherNotes, setOtherNotes] = useState(patient?.otherNotes ?? "");
-  const [chronicConditions, setChronicConditions] = useState<string[]>(
-    patient?.chronicConditions ? [...patient.chronicConditions] : [],
-  );
+  const [chronicConditions, setChronicConditions] = useState<string[]>([
+    ...(patient?.chronicConditions ?? []),
+  ]);
   const [conditionsInput, setConditionsInput] = useState("");
-
-  const [chronicMedications, setChronicMedications] = useState<string[]>(
-    patient?.chronicMedications ? [...patient.chronicMedications] : [],
-  );
+  const [chronicMedications, setChronicMedications] = useState<string[]>([
+    ...(patient?.chronicMedications ?? []),
+  ]);
   const [medicationsInput, setMedicationsInput] = useState("");
-
-  const [interests, setInterests] = useState<string[]>(
-    patient?.interests ? [...patient.interests] : [],
-  );
+  const [interests, setInterests] = useState<string[]>([
+    ...(patient?.interests ?? []),
+  ]);
   const [interestsInput, setInterestsInput] = useState("");
 
-  // Lifestyle indicators
-  const initialIsSmoker = Boolean(
-    patient?.smoking &&
-    patient.smoking.trim().length > 0 &&
-    !patient.smoking.toLowerCase().includes("non"),
+  const [otherNotes, setOtherNotes] = useState(
+    canManageNotes ? (patient?.otherNotes ?? "") : "",
   );
-  const [isSmoker, setIsSmoker] = useState(initialIsSmoker);
-  const [smokingNotes, setSmokingNotes] = useState(patient?.smoking ?? "");
-
-  const initialAllergiesList = useMemo(() => {
-    if (!patient?.allergies) return [];
-    return patient.allergies
-      .split(/[,،]/)
-      .map((s) => s.trim())
-      .filter((s) => Boolean(s) && s !== copy.hasAllergy);
-  }, [patient?.allergies, copy.hasAllergy]);
-
-  const [hasAllergy, setHasAllergy] = useState(
-    Boolean(patient?.allergies) && patient?.allergies !== "none",
+  const [sensitivities, setSensitivities] = useState(
+    canManageNotes ? (patient?.sensitivities ?? "") : "",
   );
-  const [allergiesList, setAllergiesList] =
-    useState<string[]>(initialAllergiesList);
+  const [isSmoker, setIsSmoker] = useState(
+    canManageNotes && Boolean(patient?.smoking),
+  );
+  const [smokingNotes, setSmokingNotes] = useState(
+    canManageNotes ? (patient?.smoking ?? "") : "",
+  );
+  const initialAllergies = useMemo(
+    () =>
+      canManageNotes && patient?.allergies
+        ? patient.allergies
+            .split(/[,،]/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : [],
+    [canManageNotes, patient?.allergies],
+  );
+  const [hasAllergy, setHasAllergy] = useState(initialAllergies.length > 0);
+  const [allergies, setAllergies] = useState<string[]>(initialAllergies);
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formStatus, setFormStatus] = useState<string | null>(null);
+  const [invalidFields, setInvalidFields] = useState<readonly string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  const [requiresExactRetry, setRequiresExactRetry] = useState(false);
+  const [conflictNeedsReload, setConflictNeedsReload] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [expectedRevision, setExpectedRevision] = useState(
+    patient?.revision ?? "",
+  );
+  const pendingCommandRef = useRef<PendingPatientCommand | null>(null);
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const discardButtonRef = useRef<HTMLButtonElement>(null);
 
-  const markDirty = useCallback(() => setIsDirty(true), []);
-
+  const markDirty = useCallback(() => {
+    setIsDirty(true);
+    setInvalidFields([]);
+    setFormError(null);
+  }, []);
   const computedAge = useMemo(() => ageFromDob(dateOfBirth), [dateOfBirth]);
-
-  const previewBmi = useMemo(() => {
-    if (patient?.bmi) return patient.bmi;
-    const h = Number(heightCm) / 100;
-    const w = Number(weightKg);
-    if (h > 0 && w > 0) {
-      return (w / (h * h)).toFixed(1);
-    }
-    return null;
-  }, [patient?.bmi, heightCm, weightKg]);
-
-  const hasHeight = heightCm.trim().length > 0;
-  const isHeightValid = !hasHeight || isValidPatientHeight(heightCm.trim());
-
-  const hasWeight = weightKg.trim().length > 0;
-  const isWeightValid = !hasWeight || isValidPatientWeight(weightKg.trim());
-
-  const hasDiscount = discountPercent.trim().length > 0;
+  const normalizedHeight = heightCm.trim().replace(",", ".");
+  const normalizedWeight = weightKg.trim().replace(",", ".");
+  const normalizedDiscount = discountPercent.trim().replace(",", ".");
+  const hasHeight = normalizedHeight.length > 0;
+  const hasWeight = normalizedWeight.length > 0;
+  const hasDiscount = normalizedDiscount.length > 0;
+  const isHeightValid = !hasHeight || isValidPatientHeight(normalizedHeight);
+  const isWeightValid = !hasWeight || isValidPatientWeight(normalizedWeight);
   const isDiscountValid =
-    !hasDiscount || isValidPatientDiscount(discountPercent.trim());
+    !hasDiscount || isValidPatientDiscount(normalizedDiscount);
+  const selectedMeasurement = weights.find(
+    (measurement) => measurement.id === selectedHistoryId,
+  );
+  const selectedDateTime = selectedMeasurement
+    ? formatPatientDateTime(
+        selectedMeasurement.measuredAt,
+        locale,
+        businessTimeZone,
+      )
+    : null;
+  const requestDiscard = useCallback(() => {
+    if (submitting || requiresExactRetry || conflictNeedsReload) return;
+    if (!isDirty) {
+      onCancel();
+      return;
+    }
+    setConfirmDiscard(true);
+    requestCommittedFocus(() => keepEditingRef.current);
+  }, [
+    conflictNeedsReload,
+    isDirty,
+    onCancel,
+    requestCommittedFocus,
+    requiresExactRetry,
+    submitting,
+  ]);
 
-  // Handle escape key
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (!isDirty || window.confirm(copy.unsavedChanges)) {
-          onCancel();
-        }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || confirmDiscard) {
+        return;
       }
+      event.preventDefault();
+      requestDiscard();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDirty, onCancel, copy.unsavedChanges]);
+  }, [confirmDiscard, requestDiscard]);
 
-  const handleCancelClick = () => {
-    if (!isDirty || window.confirm(copy.unsavedChanges)) {
-      onCancel();
+  const handleDiscardDialogKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setConfirmDiscard(false);
+      requestCommittedFocus(() => cancelButtonRef.current);
+      return;
     }
-  };
-
-  const handleConditionsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setConditionsInput(e.target.value);
+    if (event.key !== "Tab") return;
+    const first = keepEditingRef.current;
+    const last = discardButtonRef.current;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
   };
 
   const handleConditionsKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>,
+    event: React.KeyboardEvent<HTMLInputElement>,
   ) => {
-    if (e.key === "Enter" && conditionsInput.trim()) {
-      e.preventDefault();
-      const val = conditionsInput.trim();
-      if (!chronicConditions.includes(val)) {
-        setChronicConditions([...chronicConditions, val]);
-      }
-      setConditionsInput("");
-      markDirty();
-    }
+    if (event.key !== "Enter" || !conditionsInput.trim()) return;
+    event.preventDefault();
+    setChronicConditions((current) =>
+      current.includes(conditionsInput.trim())
+        ? current
+        : [...current, conditionsInput.trim()],
+    );
+    setConditionsInput("");
+    markDirty();
   };
 
   const handleMedicationsKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>,
+    event: React.KeyboardEvent<HTMLInputElement>,
   ) => {
-    if (e.key === "Enter" && medicationsInput.trim()) {
-      e.preventDefault();
-      const val = medicationsInput.trim();
-      if (!chronicMedications.includes(val)) {
-        setChronicMedications([...chronicMedications, val]);
-      }
-      setMedicationsInput("");
-      markDirty();
-    }
+    if (event.key !== "Enter" || !medicationsInput.trim()) return;
+    event.preventDefault();
+    setChronicMedications((current) =>
+      current.includes(medicationsInput.trim())
+        ? current
+        : [...current, medicationsInput.trim()],
+    );
+    setMedicationsInput("");
+    markDirty();
   };
 
-  const handleInterestsKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && interestsInput.trim()) {
-      e.preventDefault();
-      const val = interestsInput.trim();
-      if (!interests.includes(val)) {
-        setInterests([...interests, val]);
-      }
-      setInterestsInput("");
-      markDirty();
-    }
+  const handleInterestsKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key !== "Enter" || !interestsInput.trim()) return;
+    event.preventDefault();
+    setInterests((current) =>
+      current.includes(interestsInput.trim())
+        ? current
+        : [...current, interestsInput.trim()],
+    );
+    setInterestsInput("");
+    markDirty();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firstName.trim() || !lastName.trim()) return;
+  const removeTag = (
+    remove: (update: (current: string[]) => string[]) => void,
+    fieldId: string,
+    value: string,
+  ) => {
+    remove((current) => current.filter((item) => item !== value));
+    markDirty();
+    requestCommittedFocus(() => document.getElementById(fieldId));
+  };
 
-    if (hasHeight && !isValidPatientHeight(heightCm.trim())) {
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!firstName.trim() || !lastName.trim()) {
+      setFormError(copy.nameRequired);
+      requestCommittedFocus(() =>
+        document.getElementById(
+          firstName.trim() ? "last-name-input" : "first-name-input",
+        ),
+      );
+      return;
+    }
+    if (hasHeight && !isHeightValid) {
       setFormError(copy.invalidHeightFormat);
       return;
     }
-
-    if (!isEditing && hasWeight && !isValidPatientWeight(weightKg.trim())) {
+    if (hasWeight && !isWeightValid) {
       setFormError(copy.invalidWeightFormat);
       return;
     }
-
-    if (
-      canManageDiscounts &&
-      hasDiscount &&
-      !isValidPatientDiscount(discountPercent.trim())
-    ) {
+    if (canManageDiscounts && hasDiscount && !isDiscountValid) {
       setFormError(copy.invalidDiscountFormat);
       return;
     }
+    if (canManageNotes && hasAllergy && allergies.length === 0) {
+      setFormError(copy.allergyRequired);
+      return;
+    }
+    if (conflictNeedsReload) return;
+    if (requiresExactRetry && pendingCommandRef.current === null) return;
 
     setFormError(null);
+    setFormStatus(copy.saving);
     setSubmitting(true);
-
     try {
-      const abort = new AbortController();
-
-      // Finalize tag inputs if anything was left typed
-      let finalConditions = [...chronicConditions];
-      if (conditionsInput.trim()) {
-        finalConditions = Array.from(
-          new Set([...finalConditions, conditionsInput.trim()]),
-        );
-      }
-
-      let finalMedications = [...chronicMedications];
-      if (medicationsInput.trim()) {
-        finalMedications = Array.from(
-          new Set([...finalMedications, medicationsInput.trim()]),
-        );
-      }
-
-      let finalInterests = [...interests];
-      if (interestsInput.trim()) {
-        finalInterests = Array.from(
-          new Set([...finalInterests, interestsInput.trim()]),
-        );
-      }
-
-      const allergyString = hasAllergy
-        ? allergiesList.length > 0
-          ? allergiesList.join("، ")
-          : copy.hasAllergy
-        : null;
-      const smokingString = isSmoker
-        ? smokingNotes.trim() || copy.isSmoker
-        : null;
-
-      if (!isEditing) {
-        // Create new patient
-        const created = await createPatient(abort.signal, {
+      let command = pendingCommandRef.current;
+      if (command === null) {
+        const commandFields = {
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           phone: phone.trim() || null,
           address: address.trim() || null,
           email: email.trim() || null,
-          gender: gender ?? null,
+          gender,
           dateOfBirth: dateOfBirth || null,
-          heightCm: heightCm.trim() || null,
-          chronicConditions: finalConditions,
-          chronicMedications: finalMedications,
-          interests: finalInterests,
-        });
-
-        let currentUpdatedAt = created.updatedAt;
-        let finalPatient = created;
-
-        // Apply initial weight if entered
-        if (weightKg.trim()) {
-          await addPatientWeight(abort.signal, created.id, {
-            weightKg: weightKg.trim(),
-            measuredAt: new Date().toISOString(),
-          });
-          finalPatient = await getPatientProfile(abort.signal, created.id);
-          currentUpdatedAt = finalPatient.updatedAt;
-        }
-
-        // Apply notes if provided and authorized
-        if (canManageNotes && (otherNotes || allergyString || smokingString)) {
-          const notesRes = await updatePatientNotes(abort.signal, created.id, {
-            allergies: allergyString,
-            smoking: smokingString,
-            sensitivities: null,
-            otherNotes: otherNotes.trim() || null,
-            updatedAt: currentUpdatedAt,
-          });
-          currentUpdatedAt = notesRes.updatedAt;
-          finalPatient = notesRes;
-        }
-
-        // Apply discount if provided and authorized
-        if (canManageDiscounts && discountPercent.trim()) {
-          const discountRes = await updatePatientDiscount(
-            abort.signal,
-            created.id,
-            {
-              discountPercent: discountPercent.trim() || null,
-              updatedAt: currentUpdatedAt,
-            },
-          );
-          currentUpdatedAt = discountRes.updatedAt;
-          finalPatient = discountRes;
-        }
-
-        // Apply DND if enabled
-        if (doNotDisturb) {
-          const dndRes = await updatePatientDnd(abort.signal, created.id, {
-            doNotDisturb: true,
-            updatedAt: currentUpdatedAt,
-          });
-          finalPatient = dndRes;
-        }
-
-        onSaved(finalPatient);
-      } else if (patient) {
-        // Update existing patient with optimistic concurrency
-        let currentUpdatedAt = patient.updatedAt;
-
-        const profileRes = await updatePatientProfile(
-          abort.signal,
-          patient.id,
-          {
-            firstName: firstName.trim(),
-            lastName: lastName.trim(),
-            phone: phone.trim() || null,
-            address: address.trim() || null,
-            email: email.trim() || null,
-            gender: gender ?? null,
-            dateOfBirth: dateOfBirth || null,
-            heightCm: heightCm.trim() || null,
-            chronicConditions: finalConditions,
-            chronicMedications: finalMedications,
-            interests: finalInterests,
-            updatedAt: currentUpdatedAt,
-          },
-        );
-        currentUpdatedAt = profileRes.updatedAt;
-        let finalPatient = profileRes;
-
-        if (canManageNotes) {
-          const notesRes = await updatePatientNotes(abort.signal, patient.id, {
-            allergies: allergyString,
-            smoking: smokingString,
-            sensitivities: patient.sensitivities ?? null,
-            otherNotes: otherNotes.trim() || null,
-            updatedAt: currentUpdatedAt,
-          });
-          currentUpdatedAt = notesRes.updatedAt;
-          finalPatient = notesRes;
-        }
-
-        if (canManageDiscounts) {
-          const discountRes = await updatePatientDiscount(
-            abort.signal,
-            patient.id,
-            {
-              discountPercent: discountPercent.trim() || null,
-              updatedAt: currentUpdatedAt,
-            },
-          );
-          currentUpdatedAt = discountRes.updatedAt;
-          finalPatient = discountRes;
-        }
-
-        const dndRes = await updatePatientDnd(abort.signal, patient.id, {
+          heightCm: normalizedHeight || null,
+          interests: Array.from(
+            new Set([
+              ...interests,
+              ...(interestsInput.trim() ? [interestsInput.trim()] : []),
+            ]),
+          ),
           doNotDisturb,
-          updatedAt: currentUpdatedAt,
-        });
-        finalPatient = dndRes;
+        };
+        const noteFields = canManageNotes
+          ? {
+              chronicConditions: Array.from(
+                new Set([
+                  ...chronicConditions,
+                  ...(conditionsInput.trim() ? [conditionsInput.trim()] : []),
+                ]),
+              ),
+              chronicMedications: Array.from(
+                new Set([
+                  ...chronicMedications,
+                  ...(medicationsInput.trim() ? [medicationsInput.trim()] : []),
+                ]),
+              ),
+              allergies: hasAllergy ? allergies.join(", ") : null,
+              smoking: isSmoker ? smokingNotes.trim() || copy.isSmoker : null,
+              sensitivities: sensitivities.trim() || null,
+              otherNotes: otherNotes.trim() || null,
+            }
+          : {};
+        const discountFields = canManageDiscounts
+          ? { discountPercent: normalizedDiscount || null }
+          : {};
+        const weightMeasurement = hasWeight
+          ? {
+              weightKg: normalizedWeight,
+              measuredAt: new Date().toISOString(),
+            }
+          : undefined;
+        const optionalMeasurement =
+          weightMeasurement === undefined ? {} : { weightMeasurement };
+        const idempotencyKey = newPatientIdempotencyKey();
 
-        onSaved(finalPatient);
+        const newCommand: PendingPatientCommand = patient
+          ? {
+              kind: "update",
+              patientId: patient.id,
+              body: {
+                ...commandFields,
+                ...noteFields,
+                ...discountFields,
+                ...optionalMeasurement,
+                expectedRevision,
+                idempotencyKey,
+              },
+            }
+          : {
+              kind: "create",
+              body: {
+                ...commandFields,
+                ...noteFields,
+                ...discountFields,
+                ...optionalMeasurement,
+                idempotencyKey,
+              },
+            };
+        pendingCommandRef.current = newCommand;
+        command = newCommand;
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("409") || msg.toLowerCase().includes("conflict")) {
-        setFormError(copy.conflictError);
+
+      const abort = new AbortController();
+      const saved =
+        command.kind === "create"
+          ? await createPatient(abort.signal, command.body)
+          : await updatePatientProfile(
+              abort.signal,
+              command.patientId,
+              command.body,
+            );
+      pendingCommandRef.current = null;
+      setRequiresExactRetry(false);
+      setConflictNeedsReload(false);
+      setFormStatus(copy.saved);
+      setIsDirty(false);
+      onSaved(saved);
+    } catch (error) {
+      if (error instanceof PatientsApiOutcomeUnknown) {
+        setRequiresExactRetry(true);
+        setFormError(null);
+        setFormStatus(copy.unknownSaveOutcome);
       } else {
-        setFormError(msg);
+        pendingCommandRef.current = null;
+        setRequiresExactRetry(false);
+        setFormStatus(null);
+        if (error instanceof PatientsApiVersionConflict) {
+          setConflictNeedsReload(true);
+          setFormError(copy.conflictError);
+        } else if (error instanceof PatientsApiIdempotencyConflict) {
+          setFormError(copy.idempotencyConflict);
+        } else if (error instanceof PatientsApiValidationFailure) {
+          setInvalidFields(error.fields);
+          setFormError(copy.validationFailed);
+        } else if (error instanceof PatientsApiDenied) {
+          setFormError(copy.permissionDenied);
+        } else if (error instanceof PatientsApiNotFound) {
+          setFormError(copy.profileNotFound);
+        } else {
+          setFormError(copy.saveUnavailable);
+        }
       }
     } finally {
       setSubmitting(false);
     }
   };
 
+  const reloadLatestRevision = async () => {
+    if (!patient) return;
+    setSubmitting(true);
+    setFormError(null);
+    setFormStatus(copy.loadingLatest);
+    try {
+      const latest = await getPatientProfile(
+        new AbortController().signal,
+        patient.id,
+      );
+      setExpectedRevision(latest.revision);
+      setConflictNeedsReload(false);
+      setFormStatus(copy.conflictReconciled);
+    } catch (error) {
+      setFormStatus(null);
+      setFormError(
+        error instanceof PatientsApiDenied
+          ? copy.permissionDenied
+          : error instanceof PatientsApiNotFound
+            ? copy.profileNotFound
+            : copy.profileLoadError,
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancelClick = () => requestDiscard();
+
+  const removeCondition = (value: string) =>
+    removeTag(setChronicConditions, "conditions-input", value);
+  const removeMedication = (value: string) =>
+    removeTag(setChronicMedications, "medications-input", value);
+  const removeInterest = (value: string) =>
+    removeTag(setInterests, "interests-input", value);
+
   return (
     <form
       onSubmit={handleSubmit}
       data-testid="patient-edit-form"
       className="patient-profile patient-editor"
-      dir="rtl"
+      dir={directionForLocale(locale)}
     >
-      {/* Top Header: Title + Actions (Prototype Layout) */}
       <div className="patient-profile-header">
         <h2 className="patient-profile-title">
           {isEditing
-            ? `${firstName || (patient?.firstName ?? "")} ${lastName || (patient?.lastName ?? "")}`.trim() ||
+            ? `${firstName || patient?.firstName || ""} ${lastName || patient?.lastName || ""}`.trim() ||
               copy.editHeading
             : copy.createHeading}
         </h2>
         <div className="patient-header-actions">
           <button
-            type="button"
-            data-testid="edit-patient-button"
-            className="btn-secondary"
-            onClick={() => {}}
-          >
-            {copy.editProfile}
-          </button>
-          <button
+            ref={cancelButtonRef}
             type="button"
             onClick={handleCancelClick}
+            disabled={submitting || requiresExactRetry || conflictNeedsReload}
             className="btn-secondary"
           >
             {copy.cancel}
           </button>
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || conflictNeedsReload}
             data-testid="save-patient-button"
             className="btn-primary"
           >
-            {submitting ? copy.loading : isEditing ? copy.update : copy.save}
+            {submitting
+              ? copy.loading
+              : requiresExactRetry
+                ? copy.retrySave
+                : isEditing
+                  ? copy.update
+                  : copy.save}
           </button>
         </div>
       </div>
@@ -449,501 +539,623 @@ export function PatientForm({
       {formError && (
         <div className="denial-alert" role="alert">
           {formError}
-        </div>
-      )}
-
-      {/* ROW 1: Identity level (12-column grid) */}
-      <div className="patient-grid-layout">
-        {/* Name (First + Last) */}
-        <div className="patient-field col-span-3">
-          <span className="patient-field-label">{copy.fullName} *</span>
-          <div style={{ display: "flex", gap: "0.25rem" }}>
-            <input
-              id="first-name-input"
-              data-testid="input-first-name"
-              required
-              placeholder={copy.firstName}
-              value={firstName}
-              onChange={(e) => {
-                setFirstName(e.target.value);
-                markDirty();
-              }}
-              className="patient-field-input"
-              style={{ flex: 1, minWidth: 0 }}
-            />
-            <input
-              id="last-name-input"
-              data-testid="input-last-name"
-              required
-              placeholder={copy.lastName}
-              value={lastName}
-              onChange={(e) => {
-                setLastName(e.target.value);
-                markDirty();
-              }}
-              className="patient-field-input"
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </div>
-        </div>
-
-        {/* Phone */}
-        <div className="patient-field col-span-2">
-          <label htmlFor="phone-input" className="patient-field-label">
-            {copy.phone}
-          </label>
-          <input
-            id="phone-input"
-            data-testid="input-phone"
-            value={phone}
-            onChange={(e) => {
-              setPhone(e.target.value);
-              markDirty();
-            }}
-            className="patient-field-input font-mono"
-          />
-        </div>
-
-        {/* Address */}
-        <div className="patient-field col-span-3">
-          <label htmlFor="address-input" className="patient-field-label">
-            {copy.address}
-          </label>
-          <input
-            id="address-input"
-            data-testid="input-address"
-            value={address}
-            onChange={(e) => {
-              setAddress(e.target.value);
-              markDirty();
-            }}
-            className="patient-field-input"
-          />
-        </div>
-
-        {/* Gender toggles */}
-        <div className="patient-field col-span-2">
-          <span className="patient-field-label">{copy.gender}</span>
-          <div className="gender-toggle-group">
+          {conflictNeedsReload && (
             <button
               type="button"
-              onClick={() => {
-                setGender(gender === "male" ? null : "male");
-                markDirty();
-              }}
-              className={`gender-toggle-btn ${gender === "male" ? "active" : ""}`}
+              className="btn-outline patient-conflict-reload"
+              onClick={() => void reloadLatestRevision()}
+              disabled={submitting}
             >
-              {copy.male}
+              {copy.reloadLatest}
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setGender(gender === "female" ? null : "female");
-                markDirty();
-              }}
-              className={`gender-toggle-btn ${gender === "female" ? "active" : ""}`}
-            >
-              {copy.female}
-            </button>
-          </div>
-        </div>
-
-        {/* DOB / Age */}
-        <div className="patient-field col-span-2">
-          <label htmlFor="dob-input" className="patient-field-label">
-            {copy.dateOfBirth} / {copy.age}
-          </label>
-          <div style={{ display: "flex", gap: "0.25rem" }}>
-            <input
-              id="dob-input"
-              type="date"
-              value={dateOfBirth}
-              onChange={(e) => {
-                setDateOfBirth(e.target.value);
-                markDirty();
-              }}
-              className="patient-field-input"
-              style={{ flex: 1, minWidth: 0 }}
-            />
-            <div className="patient-age-badge font-mono">
-              {computedAge !== null ? `${computedAge}` : "—"}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ROW 2: Biometrics level (12-column grid, items-end) */}
-      <div className="patient-grid-layout" style={{ alignItems: "flex-end" }}>
-        {/* Height (cm) */}
-        <div className="patient-field col-span-3">
-          <label htmlFor="height-input" className="patient-field-label">
-            {copy.heightCm}
-          </label>
-          <input
-            id="height-input"
-            data-testid="input-height"
-            type="text"
-            inputMode="decimal"
-            placeholder={copy.heightCm}
-            value={heightCm}
-            aria-invalid={!isHeightValid}
-            onChange={(e) => {
-              setHeightCm(e.target.value);
-              markDirty();
-            }}
-            className="patient-field-input font-mono"
-          />
-          {!isHeightValid && hasHeight && (
-            <div className="patient-field-error" role="alert">
-              {copy.invalidHeightFormat}
-            </div>
           )}
         </div>
+      )}
+      {formStatus && (
+        <p className="patient-form-status" role="status" aria-live="polite">
+          {formStatus}
+        </p>
+      )}
 
-        {/* Weight with inline history dropdown */}
-        {patient ? (
-          <InlineWeightInput
-            patientId={patient.id}
-            weights={weights}
-            onWeightAdded={onWeightAdded}
-            canManage={true}
-          />
-        ) : (
+      <fieldset
+        className="patient-form-fields"
+        disabled={submitting || requiresExactRetry}
+      >
+        <div className="patient-grid-layout">
+          <div className="patient-field col-span-3">
+            <span className="patient-field-label">{copy.fullName} *</span>
+            <div className="patient-name-fields">
+              <input
+                id="first-name-input"
+                data-testid="input-first-name"
+                required
+                maxLength={100}
+                aria-label={copy.firstName}
+                aria-invalid={invalidFields.includes("firstName") || undefined}
+                placeholder={copy.firstName}
+                value={firstName}
+                onChange={(event) => {
+                  setFirstName(event.target.value);
+                  markDirty();
+                }}
+                className="patient-field-input"
+              />
+              <input
+                id="last-name-input"
+                data-testid="input-last-name"
+                required
+                maxLength={100}
+                aria-label={copy.lastName}
+                aria-invalid={invalidFields.includes("lastName") || undefined}
+                placeholder={copy.lastName}
+                value={lastName}
+                onChange={(event) => {
+                  setLastName(event.target.value);
+                  markDirty();
+                }}
+                className="patient-field-input"
+              />
+            </div>
+          </div>
+
+          <div className="patient-field col-span-2">
+            <label htmlFor="phone-input" className="patient-field-label">
+              {copy.phone}
+            </label>
+            <input
+              id="phone-input"
+              data-testid="input-phone"
+              maxLength={20}
+              value={phone}
+              onChange={(event) => {
+                setPhone(event.target.value);
+                markDirty();
+              }}
+              className="patient-field-input font-mono"
+            />
+          </div>
+
+          <div className="patient-field col-span-3">
+            <label htmlFor="address-input" className="patient-field-label">
+              {copy.address}
+            </label>
+            <input
+              id="address-input"
+              data-testid="input-address"
+              maxLength={500}
+              value={address}
+              onChange={(event) => {
+                setAddress(event.target.value);
+                markDirty();
+              }}
+              className="patient-field-input"
+            />
+          </div>
+
+          <div className="patient-field col-span-2">
+            <span id="patient-gender-label" className="patient-field-label">
+              {copy.gender}
+            </span>
+            <div
+              className="gender-toggle-group"
+              role="group"
+              aria-labelledby="patient-gender-label"
+            >
+              <button
+                type="button"
+                aria-pressed={gender === "male"}
+                onClick={() => {
+                  setGender(gender === "male" ? null : "male");
+                  markDirty();
+                }}
+                className={`gender-toggle-btn ${gender === "male" ? "active" : ""}`}
+              >
+                {copy.male}
+              </button>
+              <button
+                type="button"
+                aria-pressed={gender === "female"}
+                onClick={() => {
+                  setGender(gender === "female" ? null : "female");
+                  markDirty();
+                }}
+                className={`gender-toggle-btn ${gender === "female" ? "active" : ""}`}
+              >
+                {copy.female}
+              </button>
+            </div>
+          </div>
+
+          <div className="patient-field col-span-2">
+            <label htmlFor="dob-input" className="patient-field-label">
+              {copy.dateOfBirth} / {copy.age}
+            </label>
+            <div className="patient-dob-row">
+              <input
+                id="dob-input"
+                type="date"
+                value={dateOfBirth}
+                onChange={(event) => {
+                  setDateOfBirth(event.target.value);
+                  markDirty();
+                }}
+                className="patient-field-input"
+              />
+              <span className="patient-age-badge font-mono">
+                {computedAge !== null ? `${computedAge}` : copy.notSet}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="patient-grid-layout">
+          <div className="patient-field col-span-3">
+            <label htmlFor="height-input" className="patient-field-label">
+              {copy.heightCm}
+            </label>
+            <input
+              id="height-input"
+              data-testid="input-height"
+              type="text"
+              inputMode="decimal"
+              aria-invalid={
+                !isHeightValid || invalidFields.includes("heightCm")
+              }
+              aria-describedby={
+                !isHeightValid ? "patient-height-error" : undefined
+              }
+              maxLength={7}
+              placeholder={copy.heightCm}
+              value={heightCm}
+              onChange={(event) => {
+                setHeightCm(event.target.value);
+                markDirty();
+              }}
+              className="patient-field-input font-mono"
+            />
+            {!isHeightValid && hasHeight && (
+              <p
+                id="patient-height-error"
+                className="patient-field-error"
+                role="alert"
+              >
+                {copy.invalidHeightFormat}
+              </p>
+            )}
+          </div>
+
           <div className="patient-field col-span-7">
             <label htmlFor="input-weight" className="patient-field-label">
               {copy.weightKg}
             </label>
             <div className="inline-weight-row">
+              <select
+                value={selectedHistoryId}
+                onChange={(event) => setSelectedHistoryId(event.target.value)}
+                className="patient-weight-select font-mono"
+                aria-label={copy.weightHistoryHeading}
+              >
+                <option value="">
+                  {copy.weightHistoryHeading} ({weights.length})
+                </option>
+                {weights.map((measurement) => {
+                  const dateTime = formatPatientDateTime(
+                    measurement.measuredAt,
+                    locale,
+                    businessTimeZone,
+                  );
+                  return (
+                    <option key={measurement.id} value={measurement.id}>
+                      {dateTime ?? copy.timeZoneUnavailable} —{" "}
+                      {formatCanonicalDecimal(measurement.weightKg)}{" "}
+                      {copy.weightKg}
+                    </option>
+                  );
+                })}
+              </select>
               <input
                 id="input-weight"
                 data-testid="input-weight"
                 type="text"
                 inputMode="decimal"
+                aria-label={copy.weightKg}
+                aria-invalid={
+                  !isWeightValid || invalidFields.includes("weightMeasurement")
+                }
+                aria-describedby={
+                  !isWeightValid ? "patient-weight-error" : undefined
+                }
+                maxLength={7}
                 value={weightKg}
-                aria-invalid={!isWeightValid}
-                onChange={(e) => {
-                  setWeightKg(e.target.value);
+                onChange={(event) => {
+                  setWeightKg(event.target.value);
                   markDirty();
                 }}
-                placeholder={copy.weightKg}
-                className="patient-field-input font-mono"
+                placeholder={`+ ${copy.weightKg}`}
+                className="patient-field-input patient-weight-input font-mono"
               />
             </div>
             {!isWeightValid && hasWeight && (
-              <div className="patient-field-error" role="alert">
+              <p
+                id="patient-weight-error"
+                className="patient-field-error"
+                role="alert"
+              >
                 {copy.invalidWeightFormat}
+              </p>
+            )}
+            {selectedMeasurement && (
+              <p className="patient-selected-weight-note" role="status">
+                {copy.selectedWeightDetails(
+                  selectedDateTime ?? copy.timeZoneUnavailable,
+                  formatCanonicalDecimal(selectedMeasurement.weightKg),
+                )}
+              </p>
+            )}
+          </div>
+
+          <div className="bmi-card col-span-2" aria-label={copy.bmi}>
+            <p className="bmi-card-label">{copy.bmi}</p>
+            <p className="bmi-card-category">{copy.bmiAfterSave}</p>
+          </div>
+        </div>
+
+        {(canManageDiscounts || email || isEditing) && (
+          <div className="patient-grid-layout">
+            {canManageDiscounts && (
+              <div className="patient-field col-span-3">
+                <label htmlFor="discount-input" className="patient-field-label">
+                  {copy.discountPercent} (%)
+                </label>
+                <input
+                  id="discount-input"
+                  data-testid="input-discount"
+                  type="text"
+                  inputMode="decimal"
+                  maxLength={6}
+                  aria-invalid={
+                    !isDiscountValid ||
+                    invalidFields.includes("discountPercent")
+                  }
+                  aria-describedby={
+                    !isDiscountValid ? "patient-discount-error" : undefined
+                  }
+                  placeholder="0.00"
+                  value={discountPercent}
+                  onChange={(event) => {
+                    setDiscountPercent(event.target.value);
+                    markDirty();
+                  }}
+                  className="patient-field-input font-mono"
+                />
+                {!isDiscountValid && hasDiscount && (
+                  <p
+                    id="patient-discount-error"
+                    className="patient-field-error"
+                    role="alert"
+                  >
+                    {copy.invalidDiscountFormat}
+                  </p>
+                )}
               </div>
             )}
+            <div className="patient-field col-span-4">
+              <label htmlFor="email-input" className="patient-field-label">
+                {copy.email}
+              </label>
+              <input
+                id="email-input"
+                type="email"
+                data-testid="input-email"
+                maxLength={254}
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  markDirty();
+                }}
+                className="patient-field-input"
+              />
+            </div>
           </div>
         )}
 
-        {/* BMI Card */}
-        <BmiCard patient={{ bmi: previewBmi, heightCm }} />
-      </div>
+        <div className="patient-grid-layout">
+          {canManageNotes && (
+            <>
+              <div className="patient-field col-span-4">
+                <label
+                  htmlFor="conditions-input"
+                  className="patient-field-label"
+                >
+                  {copy.chronicConditions}
+                </label>
+                <div className="tag-field-container">
+                  {chronicConditions.map((condition) => (
+                    <span key={condition} className="tag-chip tag-chip-rose">
+                      {condition}
+                      <button
+                        type="button"
+                        onClick={() => removeCondition(condition)}
+                        className="tag-chip-remove"
+                        aria-label={`${copy.removeItem} ${condition}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    id="conditions-input"
+                    data-testid="input-conditions"
+                    maxLength={200}
+                    value={conditionsInput}
+                    onChange={(event) => {
+                      setConditionsInput(event.target.value);
+                      markDirty();
+                    }}
+                    onKeyDown={handleConditionsKeyDown}
+                    placeholder={copy.addConditionPlaceholder}
+                    className="tag-field-input"
+                  />
+                </div>
+              </div>
 
-      {/* Secondary fields: Discount & Email if present or authorized */}
-      {(canManageDiscounts || email || isEditing) && (
-        <div className="patient-grid-layout" style={{ alignItems: "flex-end" }}>
-          {canManageDiscounts && (
-            <div className="patient-field col-span-3">
-              <label htmlFor="discount-input" className="patient-field-label">
-                {copy.discountPercent} (%)
-              </label>
+              <div className="patient-field col-span-4">
+                <label
+                  htmlFor="medications-input"
+                  className="patient-field-label"
+                >
+                  {copy.chronicMedications}
+                </label>
+                <div className="tag-field-container">
+                  {chronicMedications.map((medication) => (
+                    <span
+                      key={medication}
+                      className="tag-chip tag-chip-emerald"
+                    >
+                      {medication}
+                      <button
+                        type="button"
+                        onClick={() => removeMedication(medication)}
+                        className="tag-chip-remove"
+                        aria-label={`${copy.removeItem} ${medication}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    id="medications-input"
+                    maxLength={200}
+                    value={medicationsInput}
+                    onChange={(event) => {
+                      setMedicationsInput(event.target.value);
+                      markDirty();
+                    }}
+                    onKeyDown={handleMedicationsKeyDown}
+                    placeholder={copy.addMedicationPlaceholder}
+                    className="tag-field-input"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="patient-field col-span-4">
+            <label htmlFor="interests-input" className="patient-field-label">
+              {copy.interests}
+            </label>
+            <div className="tag-field-container">
+              {interests.map((interest) => (
+                <span key={interest} className="tag-chip tag-chip-amber">
+                  {interest}
+                  <button
+                    type="button"
+                    onClick={() => removeInterest(interest)}
+                    className="tag-chip-remove"
+                    aria-label={`${copy.removeItem} ${interest}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
               <input
-                id="discount-input"
-                data-testid="input-discount"
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={discountPercent}
-                aria-invalid={!isDiscountValid}
-                onChange={(e) => {
-                  setDiscountPercent(e.target.value);
+                id="interests-input"
+                maxLength={200}
+                value={interestsInput}
+                onChange={(event) => {
+                  setInterestsInput(event.target.value);
                   markDirty();
                 }}
-                className="patient-field-input font-mono"
+                onKeyDown={handleInterestsKeyDown}
+                placeholder={copy.addInterestPlaceholder}
+                className="tag-field-input"
               />
-              {!isDiscountValid && hasDiscount && (
-                <div className="patient-field-error" role="alert">
-                  {copy.invalidDiscountFormat}
-                </div>
-              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="patient-grid-layout patient-notes-row">
+          {canManageNotes && (
+            <div className="patient-field col-span-7">
+              <label htmlFor="notes-textarea" className="patient-field-label">
+                {copy.otherNotes}
+              </label>
+              <textarea
+                id="notes-textarea"
+                data-testid="input-notes"
+                maxLength={5000}
+                rows={3}
+                value={otherNotes}
+                onChange={(event) => {
+                  setOtherNotes(event.target.value);
+                  markDirty();
+                }}
+                className="patient-field-textarea"
+              />
+              <label
+                htmlFor="sensitivities-input"
+                className="patient-field-label"
+              >
+                {copy.sensitivities}
+              </label>
+              <textarea
+                id="sensitivities-input"
+                data-testid="input-sensitivities"
+                maxLength={2000}
+                rows={2}
+                value={sensitivities}
+                onChange={(event) => {
+                  setSensitivities(event.target.value);
+                  markDirty();
+                }}
+                className="patient-field-textarea"
+              />
             </div>
           )}
-          <div className="patient-field col-span-4">
-            <label htmlFor="email-input" className="patient-field-label">
-              {copy.email}
-            </label>
-            <input
-              id="email-input"
-              type="email"
-              data-testid="input-email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                markDirty();
-              }}
-              className="patient-field-input"
-            />
+
+          <div
+            className={`patient-field ${canManageNotes ? "col-span-5" : "col-span-12"}`}
+          >
+            <span className="patient-field-label">
+              {copy.lifestyleAndMedical}
+            </span>
+            <div className="prototype-toggle-row">
+              {canManageNotes && (
+                <button
+                  type="button"
+                  aria-pressed={isSmoker}
+                  onClick={() => {
+                    setIsSmoker((current) => !current);
+                    markDirty();
+                  }}
+                  className={`patient-toggle-btn ${isSmoker ? "active" : ""}`}
+                >
+                  <span>{copy.isSmoker}</span>
+                  <span
+                    className={`patient-toggle-track ${isSmoker ? "active" : ""}`}
+                    aria-hidden="true"
+                  >
+                    <span className="patient-toggle-thumb" />
+                  </span>
+                </button>
+              )}
+
+              <label
+                className={`patient-toggle-btn ${doNotDisturb ? "active" : ""}`}
+              >
+                <span>{copy.dnd}</span>
+                <input
+                  data-testid="input-dnd"
+                  type="checkbox"
+                  role="switch"
+                  aria-label={copy.dnd}
+                  checked={doNotDisturb}
+                  onChange={(event) => {
+                    setDoNotDisturb(event.target.checked);
+                    markDirty();
+                  }}
+                  className="patient-toggle-input"
+                />
+                <span
+                  className={`patient-toggle-track ${doNotDisturb ? "active" : ""}`}
+                  aria-hidden="true"
+                >
+                  <span className="patient-toggle-thumb" />
+                </span>
+              </label>
+
+              {canManageNotes && (
+                <button
+                  type="button"
+                  data-testid="input-allergy-toggle"
+                  aria-pressed={hasAllergy}
+                  onClick={() => {
+                    setHasAllergy((current) => !current);
+                    markDirty();
+                  }}
+                  className={`patient-toggle-btn ${hasAllergy ? "active" : ""}`}
+                >
+                  <span>{copy.hasAllergy}</span>
+                  <span
+                    className={`patient-toggle-track ${hasAllergy ? "active" : ""}`}
+                    aria-hidden="true"
+                  >
+                    <span className="patient-toggle-thumb" />
+                  </span>
+                </button>
+              )}
+            </div>
+
+            {canManageNotes && isSmoker && (
+              <div className="patient-smoking-details">
+                <label htmlFor="smoking-input" className="patient-field-label">
+                  {copy.smoking}
+                </label>
+                <input
+                  id="smoking-input"
+                  maxLength={500}
+                  value={smokingNotes}
+                  onChange={(event) => {
+                    setSmokingNotes(event.target.value);
+                    markDirty();
+                  }}
+                  placeholder={copy.smoking}
+                  className="patient-field-input patient-subfield-input"
+                />
+              </div>
+            )}
+
+            {canManageNotes && hasAllergy && (
+              <AllergyPicker
+                value={allergies}
+                onChange={(next) => {
+                  setAllergies(next);
+                  markDirty();
+                }}
+                disabled={submitting || requiresExactRetry}
+              />
+            )}
+          </div>
+        </div>
+      </fieldset>
+
+      {confirmDiscard && (
+        <div className="patient-dialog-backdrop">
+          <div
+            className="patient-discard-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="patient-discard-title"
+            aria-describedby="patient-discard-description"
+            onKeyDown={handleDiscardDialogKeyDown}
+          >
+            <h3 id="patient-discard-title">{copy.discardChangesTitle}</h3>
+            <p id="patient-discard-description">{copy.discardChangesMessage}</p>
+            <div className="patient-dialog-actions">
+              <button
+                ref={keepEditingRef}
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setConfirmDiscard(false);
+                  requestCommittedFocus(() => cancelButtonRef.current);
+                }}
+              >
+                {copy.keepEditing}
+              </button>
+              <button
+                ref={discardButtonRef}
+                id="discard-patient-changes"
+                type="button"
+                className="btn-destructive"
+                onClick={onCancel}
+              >
+                {copy.discardChanges}
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      {/* ROW 3: Tags (3 equal columns: col-span-4 each) */}
-      <div className="patient-grid-layout">
-        {/* Chronic Conditions (Rose Tone) */}
-        <div className="patient-field col-span-4">
-          <label htmlFor="conditions-input" className="patient-field-label">
-            {copy.chronicConditions}
-          </label>
-          <div className="tag-field-container">
-            {chronicConditions.map((cond, idx) => (
-              <span key={`${cond}-${idx}`} className="tag-chip tag-chip-rose">
-                {cond}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setChronicConditions(
-                      chronicConditions.filter((_, i) => i !== idx),
-                    );
-                    markDirty();
-                  }}
-                  className="tag-chip-remove"
-                  aria-label={`${copy.removeItem} ${cond}`}
-                >
-                  ✕
-                </button>
-              </span>
-            ))}
-            <input
-              id="conditions-input"
-              data-testid="input-conditions"
-              value={conditionsInput}
-              onChange={handleConditionsChange}
-              onKeyDown={handleConditionsKeyDown}
-              placeholder={copy.addConditionPlaceholder}
-              className="tag-field-input"
-            />
-          </div>
-        </div>
-
-        {/* Chronic Medications (Emerald Tone) */}
-        <div className="patient-field col-span-4">
-          <label htmlFor="medications-input" className="patient-field-label">
-            {copy.chronicMedications}
-          </label>
-          <div className="tag-field-container">
-            {chronicMedications.map((med, idx) => (
-              <span key={`${med}-${idx}`} className="tag-chip tag-chip-emerald">
-                {med}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setChronicMedications(
-                      chronicMedications.filter((_, i) => i !== idx),
-                    );
-                    markDirty();
-                  }}
-                  className="tag-chip-remove"
-                  aria-label={`${copy.removeItem} ${med}`}
-                >
-                  ✕
-                </button>
-              </span>
-            ))}
-            <input
-              id="medications-input"
-              value={medicationsInput}
-              onChange={(e) => {
-                setMedicationsInput(e.target.value);
-                markDirty();
-              }}
-              onKeyDown={handleMedicationsKeyDown}
-              placeholder={copy.addMedicationPlaceholder}
-              className="tag-field-input"
-            />
-          </div>
-        </div>
-
-        {/* Interests (Amber Tone) */}
-        <div className="patient-field col-span-4">
-          <label htmlFor="interests-input" className="patient-field-label">
-            {copy.interests}
-          </label>
-          <div className="tag-field-container">
-            {interests.map((interest, idx) => (
-              <span
-                key={`${interest}-${idx}`}
-                className="tag-chip tag-chip-amber"
-              >
-                {interest}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInterests(interests.filter((_, i) => i !== idx));
-                    markDirty();
-                  }}
-                  className="tag-chip-remove"
-                  aria-label={`${copy.removeItem} ${interest}`}
-                >
-                  ✕
-                </button>
-              </span>
-            ))}
-            <input
-              id="interests-input"
-              value={interestsInput}
-              onChange={(e) => {
-                setInterestsInput(e.target.value);
-                markDirty();
-              }}
-              onKeyDown={handleInterestsKeyDown}
-              placeholder={copy.addInterestPlaceholder}
-              className="tag-field-input"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* ROW 4: Notes + Lifestyle / Medical Toggles (12-column grid, items-start) */}
-      <div className="patient-grid-layout" style={{ alignItems: "flex-start" }}>
-        {/* Notes (Authorized via patients.notes.manage) */}
-        {canManageNotes && (
-          <div className="patient-field col-span-7">
-            <label htmlFor="notes-textarea" className="patient-field-label">
-              {copy.otherNotes}
-            </label>
-            <textarea
-              id="notes-textarea"
-              data-testid="input-notes"
-              rows={3}
-              value={otherNotes}
-              onChange={(e) => {
-                setOtherNotes(e.target.value);
-                markDirty();
-              }}
-              className="patient-field-textarea"
-            />
-          </div>
-        )}
-
-        {/* Lifestyle & Medical Indicators (col-span-5) */}
-        <div
-          className={`patient-field ${canManageNotes ? "col-span-5" : "col-span-12"}`}
-        >
-          <span className="patient-field-label">
-            {copy.lifestyleAndMedical}
-          </span>
-          <div className="prototype-toggle-row">
-            {/* Smoker Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsSmoker(!isSmoker);
-                markDirty();
-              }}
-              className={`patient-toggle-btn ${isSmoker ? "active" : ""}`}
-            >
-              <span>{copy.isSmoker}</span>
-              <span
-                className={`patient-toggle-track ${isSmoker ? "active" : ""}`}
-              >
-                <span
-                  className="patient-toggle-thumb"
-                  style={{
-                    insetInlineStart: isSmoker ? "1.125rem" : "0.125rem",
-                  }}
-                />
-              </span>
-            </button>
-
-            {/* DND Toggle */}
-            <label
-              className={`patient-toggle-btn ${doNotDisturb ? "active" : ""}`}
-              style={{ cursor: "pointer", position: "relative" }}
-            >
-              <span style={{ pointerEvents: "none" }}>{copy.dnd}</span>
-              <input
-                data-testid="input-dnd"
-                type="checkbox"
-                checked={doNotDisturb}
-                onChange={(e) => {
-                  setDoNotDisturb(e.target.checked);
-                  markDirty();
-                }}
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  opacity: 0,
-                  cursor: "pointer",
-                  zIndex: 1,
-                }}
-              />
-              <span
-                className={`patient-toggle-track ${doNotDisturb ? "active" : ""}`}
-                style={{ pointerEvents: "none" }}
-              >
-                <span
-                  className="patient-toggle-thumb"
-                  style={{
-                    insetInlineStart: doNotDisturb ? "1.125rem" : "0.125rem",
-                  }}
-                />
-              </span>
-            </label>
-
-            {/* Allergy Toggle */}
-            <button
-              type="button"
-              data-testid="input-allergy-toggle"
-              onClick={() => {
-                const next = !hasAllergy;
-                setHasAllergy(next);
-                markDirty();
-              }}
-              className={`patient-toggle-btn ${hasAllergy ? "active" : ""}`}
-            >
-              <span>{copy.hasAllergy}</span>
-              <span
-                className={`patient-toggle-track ${hasAllergy ? "active" : ""}`}
-              >
-                <span
-                  className="patient-toggle-thumb"
-                  style={{
-                    insetInlineStart: hasAllergy ? "1.125rem" : "0.125rem",
-                  }}
-                />
-              </span>
-            </button>
-          </div>
-
-          {/* Smoking Details (if smoker) */}
-          {isSmoker && (
-            <div className="patient-smoking-details">
-              <input
-                value={smokingNotes}
-                onChange={(e) => {
-                  setSmokingNotes(e.target.value);
-                  markDirty();
-                }}
-                placeholder={copy.smoking}
-                className="patient-field-input patient-subfield-input"
-              />
-            </div>
-          )}
-
-          {/* Allergy Picker */}
-          {hasAllergy && (
-            <AllergyPicker
-              value={allergiesList}
-              onChange={(newList) => {
-                setAllergiesList(newList);
-                markDirty();
-              }}
-            />
-          )}
-        </div>
-      </div>
     </form>
   );
 }

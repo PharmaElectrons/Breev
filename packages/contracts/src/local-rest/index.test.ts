@@ -425,6 +425,7 @@ describe("local REST health contract", () => {
       "patients.discounts.manage",
       "patients.manage",
       "patients.notes.manage",
+      "patients.notes.view",
       "patients.view",
       "pharmacy.settings.manage",
       "purchases.adjustments.manage",

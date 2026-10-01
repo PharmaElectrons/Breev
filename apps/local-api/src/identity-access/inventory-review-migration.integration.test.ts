@@ -159,16 +159,17 @@ describe.sequential("migration 0021: inventory review", () => {
     ]);
     // Migration 0025 grants sales.drafts.manage to owner, manager, and
     // pharmacist among these roles. Migrations 0027–0029 each grant another
-    // permission to owner and manager before migration head.
+    // permission to owner and manager before migration head. Migration 0031
+    // adds patient permissions to owner, manager, and pharmacist.
     expect(first.revisions).toEqual({
       accountant: "2",
       inventory_employee: "4",
-      manager: "9",
-      owner: "11",
-      pharmacist: "6",
+      manager: "10",
+      owner: "12",
+      pharmacist: "7",
       purchasing_employee: "5",
     });
-    expect(first.pharmacyRevision).toBe("11");
+    expect(first.pharmacyRevision).toBe("12");
 
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshot()).toEqual(first);

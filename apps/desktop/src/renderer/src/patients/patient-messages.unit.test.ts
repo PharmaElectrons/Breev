@@ -30,6 +30,8 @@ describe("patient translations", () => {
       expect(copy.otherNotes).not.toBe("");
       expect(copy.discountPercent).not.toBe("");
       expect(copy.dnd).not.toBe("");
+      expect(copy.yes).not.toBe("");
+      expect(copy.no).not.toBe("");
       expect(copy.chronicConditions).not.toBe("");
       expect(copy.chronicMedications).not.toBe("");
       expect(copy.interests).not.toBe("");
@@ -42,6 +44,7 @@ describe("patient translations", () => {
       expect(copy.smoking).not.toBe("");
       expect(copy.allergies).not.toBe("");
       expect(copy.conflictError).not.toBe("");
+      expect(copy.idempotencyConflict).not.toBe("");
       expect(copy.patientDirectory).not.toBe("");
       expect(copy.invalidWeightFormat).not.toBe("");
       expect(copy.invalidHeightFormat).not.toBe("");

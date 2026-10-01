@@ -2,88 +2,77 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   HttpException,
   Param,
-  Patch,
   Post,
+  Put,
   Query,
   Req,
 } from "@nestjs/common";
 import type { Request } from "express";
 import {
-  createPatientRequestSchema,
-  updatePatientRequestSchema,
-  updatePatientNotesRequestSchema,
-  updatePatientDiscountRequestSchema,
-  updatePatientDndRequestSchema,
-  addPatientWeightRequestSchema,
-  searchPatientsQuerySchema,
-  listPatientWeightsQuerySchema,
-  BREEV_CSRF_HEADER,
-  BREEV_CSRF_VALUE,
-  searchPatientsContract,
   createPatientContract,
+  createPatientRequestSchema,
   getPatientContract,
-  updatePatientProfileContract,
-  updatePatientNotesContract,
-  updatePatientDiscountContract,
-  updatePatientDndContract,
   listPatientWeightsContract,
-  addPatientWeightContract,
-  archivePatientContract,
-  archivePatientRequestSchema,
-  restorePatientContract,
-  restorePatientRequestSchema,
+  listPatientWeightsQuerySchema,
+  patientIdSchema,
+  searchPatientsContract,
+  searchPatientsQuerySchema,
+  updatePatientProfileContract,
+  updatePatientRequestSchema,
 } from "@breev/contracts/local-rest";
-import {
-  PatientsService,
-  PatientConflictError,
-  PatientNotFoundError,
-  PatientValidationError,
-} from "./patients.service.js";
-import { ExactDecimalError } from "./patient-exact-decimal.js";
-import { categorizeBmi } from "./patient-bmi.js";
-import {
-  IdentityAccessService,
-  IdentityAccessDenied,
-} from "../identity-access/identity-access.service.js";
 import { translateIdentityDenial } from "../identity-access/identity-access.controller.js";
-import type { ActorContext } from "./patient-auth.port.js";
+import { IdentityAccessService } from "../identity-access/identity-access.service.js";
+import {
+  PatientCommandError,
+  PatientValidationError,
+  PatientsService,
+} from "./patients.service.js";
+
+interface ParseFailure {
+  readonly success: false;
+  readonly error: {
+    readonly issues: readonly {
+      readonly path: readonly unknown[];
+    }[];
+  };
+}
+
+interface ParseSuccess<T> {
+  readonly success: true;
+  readonly data: T;
+}
+
+interface RuntimeSchema<T> {
+  safeParse(value: unknown): ParseSuccess<T> | ParseFailure;
+}
+
+function parseOrThrow<T>(schema: RuntimeSchema<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (result.success) return result.data;
+  const fields = new Set(
+    result.error.issues.map((issue) => String(issue.path[0] ?? "body")),
+  );
+  throw new PatientValidationError(
+    [...fields].map((field) => ({ field, code: "invalid" as const })),
+  );
+}
 
 async function translatePatientErrors<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await translateIdentityDenial(work);
   } catch (error) {
-    if (error instanceof PatientConflictError) {
+    if (error instanceof PatientCommandError) {
       throw new HttpException(
-        { code: "patient-conflict", message: error.message },
-        409,
-      );
-    }
-    if (error instanceof PatientNotFoundError) {
-      throw new HttpException(
-        { code: "patient-not-found", message: error.message },
-        404,
+        error.body as Record<string, unknown>,
+        error.statusCode,
       );
     }
     if (error instanceof PatientValidationError) {
       throw new HttpException(
-        {
-          code: "validation-failed",
-          message: error.message,
-          errors: error.errors,
-        },
-        400,
-      );
-    }
-    if (error instanceof ExactDecimalError) {
-      throw new HttpException(
-        {
-          code: "invalid-decimal",
-          message: error.message,
-        },
+        { code: "validation-failed", errors: error.errors },
         400,
       );
     }
@@ -91,26 +80,20 @@ async function translatePatientErrors<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-function parseOrThrow<T>(
-  schema: { parse: (val: unknown) => T },
-  data: unknown,
-): T {
-  try {
-    return schema.parse(data);
-  } catch (error) {
-    throw new HttpException(
-      {
-        code: "invalid-payload",
-        message: error instanceof Error ? error.message : "Validation failed",
-      },
-      400,
-    );
-  }
+function includesAnyNotesField(value: Record<string, unknown>): boolean {
+  return [
+    "allergies",
+    "smoking",
+    "sensitivities",
+    "otherNotes",
+    "chronicConditions",
+    "chronicMedications",
+  ].some((field) => Object.hasOwn(value, field));
 }
 
 @Controller()
 export class PatientsController {
-  constructor(
+  public constructor(
     private readonly service: PatientsService,
     private readonly identity: IdentityAccessService,
   ) {}
@@ -120,185 +103,95 @@ export class PatientsController {
     @Req() request: Request,
     @Query() rawQuery: unknown,
   ) {
-    const query = parseOrThrow(searchPatientsQuerySchema, rawQuery);
-    try {
+    return await translatePatientErrors(async () => {
       const context = await this.identity.requirePermission(
         request,
         "patients.view",
       );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
+      const query = parseOrThrow(searchPatientsQuerySchema, rawQuery);
       return await this.service.searchPatients(
-        actor,
+        context,
         query.q,
         query.page,
         query.limit,
       );
-    } catch (error) {
-      if (error instanceof IdentityAccessDenied) {
-        // Zero-leakage: return empty list on denial instead of 403
-        return {
-          items: [],
-          total: 0,
-          page: query.page,
-          limit: query.limit,
-          totalPages: 0,
-        };
-      }
-      throw error;
-    }
+    });
   }
 
   @Post(createPatientContract.path)
   @HttpCode(201)
   public async createPatient(
     @Req() request: Request,
-    @Headers(BREEV_CSRF_HEADER) csrf: string | undefined,
     @Body() rawBody: unknown,
   ) {
     return await translatePatientErrors(async () => {
-      if (csrf !== BREEV_CSRF_VALUE) {
-        throw new HttpException({ code: "csrf-rejected" }, 403);
-      }
-      const context = await this.identity.requirePermission(
+      let context = await this.identity.requirePermission(
         request,
         "patients.manage",
       );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
       const body = parseOrThrow(createPatientRequestSchema, rawBody);
-
-      return await this.service.createPatient(actor, body);
+      if (includesAnyNotesField(body)) {
+        context = await this.identity.requirePermission(
+          request,
+          "patients.notes.manage",
+        );
+      }
+      if (Object.hasOwn(body, "discountPercent")) {
+        context = await this.identity.requirePermission(
+          request,
+          "patients.discounts.manage",
+        );
+      }
+      return await this.service.createPatient(context, body);
     });
   }
 
   @Get(getPatientContract.path)
-  public async getPatient(@Req() request: Request, @Param("id") id: string) {
+  public async getPatient(@Req() request: Request, @Param("id") rawId: string) {
     return await translatePatientErrors(async () => {
       const context = await this.identity.requirePermission(
         request,
         "patients.view",
       );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
-      const patient = await this.service.getPatientById(actor, id);
-      return {
-        ...patient,
-        bmiCategory: categorizeBmi(patient.bmi),
-      };
+      const id = parseOrThrow(patientIdSchema, rawId);
+      return await this.service.getPatientById(context, id);
     });
   }
 
-  @Patch(updatePatientProfileContract.path)
+  @Put(updatePatientProfileContract.path)
+  @HttpCode(200)
   public async updatePatientProfile(
     @Req() request: Request,
-    @Headers(BREEV_CSRF_HEADER) csrf: string | undefined,
-    @Param("id") id: string,
+    @Param("id") rawId: string,
     @Body() rawBody: unknown,
   ) {
     return await translatePatientErrors(async () => {
-      if (csrf !== BREEV_CSRF_VALUE) {
-        throw new HttpException({ code: "csrf-rejected" }, 403);
-      }
-      const context = await this.identity.requirePermission(
+      let context = await this.identity.requirePermission(
         request,
         "patients.manage",
       );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
+      const id = parseOrThrow(patientIdSchema, rawId);
       const body = parseOrThrow(updatePatientRequestSchema, rawBody);
-
-      return await this.service.updatePatientProfile(actor, id, body);
-    });
-  }
-
-  @Patch(updatePatientNotesContract.path)
-  public async updatePatientNotes(
-    @Req() request: Request,
-    @Headers(BREEV_CSRF_HEADER) csrf: string | undefined,
-    @Param("id") id: string,
-    @Body() rawBody: unknown,
-  ) {
-    return await translatePatientErrors(async () => {
-      if (csrf !== BREEV_CSRF_VALUE) {
-        throw new HttpException({ code: "csrf-rejected" }, 403);
+      if (includesAnyNotesField(body)) {
+        context = await this.identity.requirePermission(
+          request,
+          "patients.notes.manage",
+        );
       }
-      const context = await this.identity.requirePermission(
-        request,
-        "patients.notes.manage",
-      );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
-      const body = parseOrThrow(updatePatientNotesRequestSchema, rawBody);
-
-      return await this.service.updatePatientNotes(actor, id, body);
-    });
-  }
-
-  @Patch(updatePatientDiscountContract.path)
-  public async updatePatientDiscount(
-    @Req() request: Request,
-    @Headers(BREEV_CSRF_HEADER) csrf: string | undefined,
-    @Param("id") id: string,
-    @Body() rawBody: unknown,
-  ) {
-    return await translatePatientErrors(async () => {
-      if (csrf !== BREEV_CSRF_VALUE) {
-        throw new HttpException({ code: "csrf-rejected" }, 403);
+      if (Object.hasOwn(body, "discountPercent")) {
+        context = await this.identity.requirePermission(
+          request,
+          "patients.discounts.manage",
+        );
       }
-      const context = await this.identity.requirePermission(
-        request,
-        "patients.discounts.manage",
-      );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
-      const body = parseOrThrow(updatePatientDiscountRequestSchema, rawBody);
-
-      return await this.service.updatePatientDiscount(actor, id, body);
-    });
-  }
-
-  @Patch(updatePatientDndContract.path)
-  public async updatePatientDnd(
-    @Req() request: Request,
-    @Headers(BREEV_CSRF_HEADER) csrf: string | undefined,
-    @Param("id") id: string,
-    @Body() rawBody: unknown,
-  ) {
-    return await translatePatientErrors(async () => {
-      if (csrf !== BREEV_CSRF_VALUE) {
-        throw new HttpException({ code: "csrf-rejected" }, 403);
-      }
-      const context = await this.identity.requirePermission(
-        request,
-        "patients.manage",
-      );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
-      const body = parseOrThrow(updatePatientDndRequestSchema, rawBody);
-
-      return await this.service.updatePatientDnd(actor, id, body);
+      return await this.service.updatePatientProfile(context, id, body);
     });
   }
 
   @Get(listPatientWeightsContract.path)
   public async listWeights(
     @Req() request: Request,
-    @Param("id") id: string,
+    @Param("id") rawId: string,
     @Query() rawQuery: unknown,
   ) {
     return await translatePatientErrors(async () => {
@@ -306,89 +199,14 @@ export class PatientsController {
         request,
         "patients.view",
       );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
+      const id = parseOrThrow(patientIdSchema, rawId);
       const query = parseOrThrow(listPatientWeightsQuerySchema, rawQuery);
-
-      return await this.service.listWeights(actor, id, query.page, query.limit);
-    });
-  }
-
-  @Post(addPatientWeightContract.path)
-  @HttpCode(201)
-  public async addWeight(
-    @Req() request: Request,
-    @Headers(BREEV_CSRF_HEADER) csrf: string | undefined,
-    @Param("id") id: string,
-    @Body() rawBody: unknown,
-  ) {
-    return await translatePatientErrors(async () => {
-      if (csrf !== BREEV_CSRF_VALUE) {
-        throw new HttpException({ code: "csrf-rejected" }, 403);
-      }
-      const context = await this.identity.requirePermission(
-        request,
-        "patients.manage",
+      return await this.service.listWeights(
+        context,
+        id,
+        query.page,
+        query.limit,
       );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
-      const body = parseOrThrow(addPatientWeightRequestSchema, rawBody);
-
-      return await this.service.addWeight(actor, id, body);
-    });
-  }
-
-  @Patch(archivePatientContract.path)
-  public async archivePatient(
-    @Req() request: Request,
-    @Headers(BREEV_CSRF_HEADER) csrf: string | undefined,
-    @Param("id") id: string,
-    @Body() rawBody: unknown,
-  ) {
-    return await translatePatientErrors(async () => {
-      if (csrf !== BREEV_CSRF_VALUE) {
-        throw new HttpException({ code: "csrf-rejected" }, 403);
-      }
-      const context = await this.identity.requirePermission(
-        request,
-        "patients.manage",
-      );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
-      const body = parseOrThrow(archivePatientRequestSchema, rawBody);
-
-      return await this.service.archivePatient(actor, id, body.updatedAt);
-    });
-  }
-
-  @Patch(restorePatientContract.path)
-  public async restorePatient(
-    @Req() request: Request,
-    @Headers(BREEV_CSRF_HEADER) csrf: string | undefined,
-    @Param("id") id: string,
-    @Body() rawBody: unknown,
-  ) {
-    return await translatePatientErrors(async () => {
-      if (csrf !== BREEV_CSRF_VALUE) {
-        throw new HttpException({ code: "csrf-rejected" }, 403);
-      }
-      const context = await this.identity.requirePermission(
-        request,
-        "patients.manage",
-      );
-      const actor: ActorContext = {
-        deviceId: context.deviceId,
-        userId: context.actorId,
-      };
-      const body = parseOrThrow(restorePatientRequestSchema, rawBody);
-
-      return await this.service.restorePatient(actor, id, body.updatedAt);
     });
   }
 }

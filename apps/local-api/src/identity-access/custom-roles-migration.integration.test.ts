@@ -315,6 +315,16 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
         },
         {
           granted_by: ownerId,
+          permission_name: "patients.notes.view",
+          role_id: managerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "patients.notes.view",
+          role_id: ownerRoleId,
+        },
+        {
+          granted_by: ownerId,
           permission_name: "patients.view",
           role_id: managerRoleId,
         },

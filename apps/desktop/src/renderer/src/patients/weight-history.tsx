@@ -1,180 +1,272 @@
-import React, { useState } from "react";
+import { useRef, useState } from "react";
 import type {
   PatientProfileResponse,
   PatientWeightMeasurementResponse,
+  UpdatePatientRequest,
 } from "@breev/contracts/local-rest";
 import {
   formatCanonicalDecimal,
   isValidPatientWeight,
 } from "../lib/exact-decimal";
-import { categorizeBmi } from "../lib/patient-bmi";
 import { usePreferences } from "../preferences-provider";
 import { patientMessages } from "./patient-messages";
-import { addPatientWeight } from "./patient-api";
+import { formatPatientDateTime } from "./patient-date-time";
+import {
+  newPatientIdempotencyKey,
+  PatientsApiDenied,
+  PatientsApiIdempotencyConflict,
+  PatientsApiOutcomeUnknown,
+  PatientsApiValidationFailure,
+  PatientsApiVersionConflict,
+  updatePatientProfile,
+} from "./patient-api";
+
+type WeightAppendCommand = {
+  readonly request: UpdatePatientRequest;
+};
 
 export function BmiCard({
   patient,
 }: {
-  readonly patient: Pick<PatientProfileResponse, "bmi" | "heightCm">;
+  readonly patient: Pick<
+    PatientProfileResponse,
+    "bmi" | "bmiCategory" | "heightCm"
+  >;
 }) {
   const { locale } = usePreferences();
   const copy = patientMessages[locale];
-
-  const bmiVal = patient.bmi ? formatCanonicalDecimal(patient.bmi) : null;
-  const bmiCat = patient.bmi ? categorizeBmi(patient.bmi) : null;
-  const bmiCatLabel =
-    bmiCat && bmiCat !== "unknown" ? copy.bmiCategory(bmiCat) : null;
+  const value = patient.bmi ? formatCanonicalDecimal(patient.bmi) : null;
+  const category = patient.bmiCategory
+    ? copy.bmiCategory(patient.bmiCategory)
+    : null;
+  const emptyMessage = patient.heightCm
+    ? copy.bmiNeedsWeight
+    : copy.bmiNeedsHeight;
 
   return (
     <div className="bmi-card col-span-2">
       <p className="bmi-card-label">{copy.bmi}</p>
       <p className="bmi-card-value" data-testid="view-bmi">
-        {bmiVal
-          ? `${bmiVal}${bmiCatLabel ? ` (${bmiCatLabel})` : ""}`
-          : copy.notSet}
+        {value ? `${value}${category ? ` (${category})` : ""}` : emptyMessage}
       </p>
-      {bmiCatLabel && <p className="bmi-card-category">{bmiCatLabel}</p>}
+      {category && <p className="bmi-card-category">{category}</p>}
     </div>
   );
 }
 
 export function InlineWeightInput({
-  patientId,
+  patient,
   weights,
   onWeightAdded,
+  onConflict,
   canManage,
+  businessTimeZone,
 }: {
-  readonly patientId?: string | undefined;
+  readonly patient: Pick<PatientProfileResponse, "id" | "revision">;
   readonly weights: readonly PatientWeightMeasurementResponse[];
-  readonly onWeightAdded?: (() => Promise<void> | void) | undefined;
+  readonly onWeightAdded: () => Promise<void> | void;
+  readonly onConflict: () => Promise<void> | void;
   readonly canManage: boolean;
+  readonly businessTimeZone: string;
 }) {
   const { locale } = usePreferences();
   const copy = patientMessages[locale];
-
   const [weightKg, setWeightKg] = useState("");
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string>("");
+  const [selectedHistoryId, setSelectedHistoryId] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [requiresExactRetry, setRequiresExactRetry] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const pendingCommandRef = useRef<WeightAppendCommand | null>(null);
 
+  const normalizedWeight = weightKg.trim().replace(",", ".");
+  const hasInput = normalizedWeight.length > 0;
+  const isInputValid = !hasInput || isValidPatientWeight(normalizedWeight);
   const latestWeight = weights[0]
     ? formatCanonicalDecimal(weights[0].weightKg)
     : null;
+  const selectedMeasurement = weights.find(
+    (measurement) => measurement.id === selectedHistoryId,
+  );
+  const selectedDateTime = selectedMeasurement
+    ? formatPatientDateTime(
+        selectedMeasurement.measuredAt,
+        locale,
+        businessTimeZone,
+      )
+    : null;
 
-  const normalizedWeight = weightKg.trim().replace(",", ".");
-  const hasInput = weightKg.trim().length > 0;
-  const isInputValid = !hasInput || isValidPatientWeight(normalizedWeight);
-
-  const selectedMeasurement = weights.find((w) => w.id === selectedHistoryId);
-
-  const handleSave = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!hasInput || !patientId || !canManage) return;
-
-    if (!isValidPatientWeight(normalizedWeight)) {
-      setError(copy.invalidWeightFormat);
-      return;
-    }
-
+  const handleSave = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    if (!hasInput || !isInputValid || !canManage || submitting) return;
     setError(null);
+    setStatus(null);
     setSubmitting(true);
+
     try {
-      const abort = new AbortController();
-      await addPatientWeight(abort.signal, patientId, {
-        weightKg: normalizedWeight,
-        measuredAt: new Date().toISOString(),
-      });
+      let command = pendingCommandRef.current;
+      if (command === null) {
+        command = {
+          request: {
+            weightMeasurement: {
+              weightKg: normalizedWeight,
+              measuredAt: new Date().toISOString(),
+            },
+            expectedRevision: patient.revision,
+            idempotencyKey: newPatientIdempotencyKey(),
+          },
+        };
+        pendingCommandRef.current = command;
+      }
+
+      await updatePatientProfile(
+        new AbortController().signal,
+        patient.id,
+        command.request,
+      );
+      pendingCommandRef.current = null;
+      setRequiresExactRetry(false);
       setWeightKg("");
-      await onWeightAdded?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setSelectedHistoryId("");
+      setStatus(copy.saved);
+      await onWeightAdded();
+    } catch (requestError) {
+      if (requestError instanceof PatientsApiOutcomeUnknown) {
+        setRequiresExactRetry(true);
+        setStatus(copy.unknownSaveOutcome);
+      } else {
+        pendingCommandRef.current = null;
+        setRequiresExactRetry(false);
+        if (requestError instanceof PatientsApiVersionConflict) {
+          setError(copy.conflictError);
+          await onConflict();
+        } else if (requestError instanceof PatientsApiIdempotencyConflict) {
+          setError(copy.idempotencyConflict);
+        } else if (requestError instanceof PatientsApiValidationFailure) {
+          setError(copy.invalidWeightFormat);
+        } else if (requestError instanceof PatientsApiDenied) {
+          setError(copy.permissionDenied);
+        } else {
+          setError(copy.saveUnavailable);
+        }
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="patient-field col-span-7">
+    <form
+      className="patient-field col-span-7"
+      onSubmit={(event) => void handleSave(event)}
+    >
       <label htmlFor="weight-input" className="patient-field-label">
-        {copy.weightKg} — {copy.latestWeight}: {latestWeight ?? copy.notSet}{" "}
-        {latestWeight ? copy.weightKg : ""}
+        {copy.weightKg} — {copy.latestWeight}: {latestWeight ?? copy.notSet}
+        {latestWeight ? ` ${copy.weightKg}` : ""}
       </label>
       <div className="inline-weight-row">
         <select
           value={selectedHistoryId}
-          onChange={(e) => setSelectedHistoryId(e.target.value)}
+          onChange={(event) => setSelectedHistoryId(event.target.value)}
           className="patient-weight-select font-mono"
-          title={copy.weightHistoryHeading}
           aria-label={copy.weightHistoryHeading}
         >
           <option value="">
-            📋 {copy.weightHistoryHeading} ({weights.length})
+            {copy.weightHistoryHeading} ({weights.length})
           </option>
-          {weights.map((w) => (
-            <option key={w.id} value={w.id}>
-              {new Date(w.measuredAt).toLocaleDateString(locale)} —{" "}
-              {formatCanonicalDecimal(w.weightKg)} {copy.weightKg}
-            </option>
-          ))}
+          {weights.map((measurement) => {
+            const dateTime = formatPatientDateTime(
+              measurement.measuredAt,
+              locale,
+              businessTimeZone,
+            );
+            return (
+              <option key={measurement.id} value={measurement.id}>
+                {dateTime ?? copy.timeZoneUnavailable} —{" "}
+                {formatCanonicalDecimal(measurement.weightKg)} {copy.weightKg}
+              </option>
+            );
+          })}
         </select>
         <input
           id="weight-input"
           type="text"
           inputMode="decimal"
           value={weightKg}
-          onChange={(e) => {
-            setWeightKg(e.target.value);
-            if (error) setError(null);
+          onChange={(event) => {
+            setWeightKg(event.target.value);
+            setError(null);
           }}
           placeholder={`+ ${copy.weightKg}`}
           data-testid="input-weight"
           aria-label={copy.weightKg}
           aria-invalid={!isInputValid}
-          disabled={!canManage || submitting}
+          aria-describedby={
+            !isInputValid ? "patient-inline-weight-error" : undefined
+          }
+          disabled={!canManage || submitting || requiresExactRetry}
           className="patient-field-input patient-weight-input font-mono"
         />
         {canManage && (
           <button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={submitting || !hasInput || !isInputValid || !patientId}
+            type="submit"
+            disabled={submitting || !hasInput || !isInputValid}
             data-testid="add-weight-button"
             className="btn-primary patient-weight-save-btn"
           >
-            {submitting ? copy.loading : copy.save}
+            {submitting
+              ? copy.loading
+              : requiresExactRetry
+                ? copy.retrySave
+                : copy.addWeight}
           </button>
         )}
       </div>
       {selectedMeasurement && (
-        <div className="patient-selected-weight-note font-mono">
+        <p className="patient-selected-weight-note" role="status">
           {copy.selectedWeightDetails(
-            new Date(selectedMeasurement.measuredAt).toLocaleDateString(locale),
+            selectedDateTime ?? copy.timeZoneUnavailable,
             formatCanonicalDecimal(selectedMeasurement.weightKg),
           )}
-        </div>
+        </p>
       )}
       {!isInputValid && hasInput && (
-        <div className="patient-field-error" role="alert">
+        <p
+          id="patient-inline-weight-error"
+          className="patient-field-error"
+          role="alert"
+        >
           {copy.invalidWeightFormat}
-        </div>
+        </p>
       )}
       {error && (
-        <div
-          className="denial-alert"
-          role="alert"
-          style={{ marginTop: "0.25rem" }}
-        >
+        <p className="denial-alert" role="alert">
           {error}
-        </div>
+        </p>
       )}
-    </div>
+      {status && (
+        <p className="patient-form-status" role="status" aria-live="polite">
+          {status}
+        </p>
+      )}
+    </form>
   );
 }
 
 export function WeightHistorySection({
   weights,
+  businessTimeZone,
+  hasMore,
+  loadingMore,
+  loadError,
+  onLoadMore,
 }: {
   readonly weights: readonly PatientWeightMeasurementResponse[];
+  readonly businessTimeZone: string;
+  readonly hasMore: boolean;
+  readonly loadingMore: boolean;
+  readonly loadError: boolean;
+  readonly onLoadMore: () => void;
 }) {
   const { locale } = usePreferences();
   const copy = patientMessages[locale];
@@ -185,39 +277,24 @@ export function WeightHistorySection({
       aria-labelledby="weight-history-heading"
     >
       <div className="patient-section-header">
-        <h3 id="weight-history-heading" style={{ margin: 0 }}>
+        <h3 id="weight-history-heading" className="patient-history-title">
           {copy.weightHistoryHeading}
         </h3>
-        {weights.length > 0 && (
-          <span
-            style={{
-              fontFamily: "var(--font-family-mono)",
-              fontSize: "0.75rem",
-              color: "var(--muted-foreground)",
-            }}
-          >
-            {copy.latestWeight}: {formatCanonicalDecimal(weights[0]?.weightKg)}{" "}
-            {copy.weightKg}
-          </span>
-        )}
+        <span className="patient-history-latest">
+          {copy.latestWeight}:{" "}
+          {weights[0]
+            ? formatCanonicalDecimal(weights[0].weightKg)
+            : copy.notSet}
+          {weights[0] ? ` ${copy.weightKg}` : ""}
+        </span>
       </div>
 
-      {/* Weight History Table (Append-only, strictly no edit/delete buttons) */}
-      <div style={{ overflowX: "auto" }}>
+      <div className="patient-history-scroll">
         <table
           className="weight-history-table"
           data-testid="weight-history-table"
         >
-          <caption
-            style={{
-              textAlign: "start",
-              padding: "0.25rem 0",
-              color: "var(--muted-foreground)",
-              fontSize: "0.6875rem",
-            }}
-          >
-            {copy.weightHistoryHeading}
-          </caption>
+          <caption>{copy.weightHistoryHeading}</caption>
           <thead>
             <tr>
               <th scope="col">{copy.weightMeasuredAt}</th>
@@ -227,37 +304,59 @@ export function WeightHistorySection({
           <tbody>
             {weights.length === 0 ? (
               <tr>
-                <td
-                  colSpan={2}
-                  style={{
-                    textAlign: "center",
-                    color: "var(--muted-foreground)",
-                    padding: "1.5rem",
-                  }}
-                >
+                <td colSpan={2} className="patient-history-empty">
                   {copy.noWeightMeasurements}
                 </td>
               </tr>
             ) : (
-              weights.map((w) => (
-                <tr key={w.id}>
-                  <td style={{ fontFamily: "var(--font-family-mono)" }}>
-                    {new Date(w.measuredAt).toLocaleString(locale)}
-                  </td>
-                  <td
-                    style={{
-                      fontFamily: "var(--font-family-mono)",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {formatCanonicalDecimal(w.weightKg)}
-                  </td>
-                </tr>
-              ))
+              weights.map((measurement) => {
+                const dateTime = formatPatientDateTime(
+                  measurement.measuredAt,
+                  locale,
+                  businessTimeZone,
+                );
+                return (
+                  <tr key={measurement.id}>
+                    <td>
+                      {dateTime ? (
+                        <time dateTime={measurement.measuredAt}>
+                          {dateTime}
+                        </time>
+                      ) : (
+                        copy.timeZoneUnavailable
+                      )}
+                    </td>
+                    <td>{formatCanonicalDecimal(measurement.weightKg)}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
+
+      {loadError && (
+        <div className="patient-history-load-error" role="alert">
+          <p>{copy.weightHistoryLoadError}</p>
+          <button type="button" className="btn-outline" onClick={onLoadMore}>
+            {copy.retryAction}
+          </button>
+        </div>
+      )}
+      {loadingMore && (
+        <p className="patient-form-status" role="status" aria-live="polite">
+          {copy.loadingWeights}
+        </p>
+      )}
+      {hasMore && !loadingMore && !loadError && (
+        <button
+          type="button"
+          className="btn-outline patient-load-more-weights"
+          onClick={onLoadMore}
+        >
+          {copy.loadMoreWeights}
+        </button>
+      )}
     </section>
   );
 }

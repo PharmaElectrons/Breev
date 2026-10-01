@@ -1,8 +1,9 @@
 insert into permission_definitions (name)
-values 
+values
   ('patients.discounts.manage'),
   ('patients.manage'),
   ('patients.notes.manage'),
+  ('patients.notes.view'),
   ('patients.view')
 on conflict (name) do nothing;
 --> statement-breakpoint
@@ -32,10 +33,11 @@ with eligible_roles as (
          permission.name, eligible_role.granted_by
   from eligible_roles eligible_role
   cross join (
-    values 
+    values
       ('patients.discounts.manage'),
       ('patients.manage'),
       ('patients.notes.manage'),
+      ('patients.notes.view'),
       ('patients.view')
   ) as permission(name)
   on conflict (role_id, permission_name) do nothing
