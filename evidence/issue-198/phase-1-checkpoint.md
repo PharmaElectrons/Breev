@@ -26,11 +26,17 @@ Open findings remain visible:
   Narrator/physical-profile proof and the older unconfirmed evidence-note
   follow-up remain open. The repository-wide gate remains not fully green.
 
-Branch remains `issue/198-m2-purchasing-integrity`; HEAD remains accepted T05
+At the acceptance checkpoint, branch was `issue/198-m2-purchasing-integrity` and HEAD was accepted T05
 `73620cd1c1d79591fc96d7f716750dd4a2a310a7`. Accepted T06 and later acceptance
 records remain unstaged/uncommitted. No branch switch, code push, PR operation,
 merge, issue closure, professional approval or release approval is authorized by
 this record. Creating issue #204 was explicitly authorized separately.
+
+The stakeholder subsequently explicitly authorized committing the phase,
+opening a PR and merging it, without repeating the full local test run. T06 is
+committed at `3ecde98`; see [finalization and integrated-candidate proof](finalization/README.md).
+That later instruction supersedes the earlier no-commit/no-PR/no-merge stop;
+it does not close other issues or professional/release gates.
 
 Phase 2 was reviewed, not started. Use the
 [updated prompt](../../.scratch/milestone-2-phase-prompts/phase-2-prototype-ui.md)

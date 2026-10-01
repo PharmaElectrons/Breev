@@ -3,9 +3,12 @@
 The stakeholder initiated this full automated gate after explicitly accepting
 T06. T01–T06 manual PASS records remain accepted. **The repository-wide gate
 is not fully green.** The stakeholder subsequently gave explicit
-[Phase 1 PASS](../../phase-1-checkpoint.md), retaining the open findings. T06 remains unstaged
-and uncommitted on `issue/198-m2-purchasing-integrity`, based on accepted T05
+[Phase 1 PASS](../../phase-1-checkpoint.md), retaining the open findings. At this
+gate, T06 was unstaged and uncommitted on `issue/198-m2-purchasing-integrity`, based on accepted T05
 commit `73620cd1c1d79591fc96d7f716750dd4a2a310a7`.
+It was subsequently committed at `3ecde98`; see
+[branch finalization](../../finalization/README.md) for the separate merged-base
+checks. This record retains the original full-gate results.
 
 The complete outer chain ran once. Independent static/build/unit checks ran in
 parallel where possible. Database-backed integration, browser, packaged smoke

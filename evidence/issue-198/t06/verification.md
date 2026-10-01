@@ -1,7 +1,9 @@
 # T06 focused verification
 
 Implementation based on accepted T05 local commit, 1 October 2026. T06 received
-explicit stakeholder manual PASS on that date and remains uncommitted. This
+explicit stakeholder manual PASS on that date. It was subsequently committed at
+`3ecde98`; [finalization](../finalization/README.md) records the necessary
+post-integration checks. This
 record contains focused inner-loop verification. The stakeholder later initiated
 the consolidated full outer gate; its [separate report](full-gate/report.md)
 records the complete run, affected retries and unresolved findings. It is not a

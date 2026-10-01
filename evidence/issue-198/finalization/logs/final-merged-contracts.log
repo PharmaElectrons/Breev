@@ -1,0 +1,34 @@
+$ vitest run
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/packages/contracts
+
+ ❯ src/local-rest/index.test.ts (88 tests | 1 failed) 321ms
+     × publishes the migrated schema version and an unchanged REST surface 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/local-rest/index.test.ts > local REST health contract > publishes the migrated schema version and an unchanged REST surface
+AssertionError: expected '19' to be '18' // Object.is equality
+
+Expected: "18"
+Received: "19"
+
+ ❯ src/local-rest/index.test.ts:407:31
+    405| describe("local REST health contract", () => {
+    406|   it("publishes the migrated schema version and an unchanged REST surf…
+    407|     expect(LOCAL_API_VERSION).toBe("18");
+       |                               ^
+    408|     expect(LOCAL_SCHEMA_VERSION).toBe("18");
+    409|     expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 10 passed (11)
+      Tests  1 failed | 223 passed (224)
+   Start at  18:59:01
+   Duration  3.44s (transform 3.30s, setup 0ms, import 10.10s, tests 1.11s, environment 3ms)
+
+P:\Projects\PharmaElectrons\packages\contracts:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @breev/contracts@0.0.0 test:unit: `vitest run`
+Exit status 1

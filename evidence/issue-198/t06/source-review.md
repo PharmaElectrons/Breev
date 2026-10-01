@@ -2,7 +2,8 @@
 
 Base: accepted T05 local commit `73620cd1c1d79591fc96d7f716750dd4a2a310a7`.
 T06 received explicit stakeholder manual PASS on 1 October 2026. It remains
-uncommitted. The later-initiated [full automated gate](full-gate/report.md) ran on
+committed at `3ecde98` in the later-authorized [finalization](../finalization/README.md).
+The later-initiated [full automated gate](full-gate/report.md) ran on
 that date with classified open findings. The stakeholder subsequently gave
 explicit [Phase 1 PASS](../phase-1-checkpoint.md); those findings remain open.
 

@@ -176,11 +176,16 @@ Purchase-posting PostgreSQL and all executed Purchasing browser cases passed, in
 Returns; packaged panel and correction checks passed across four variants.
 The repository gate remains not fully green: host limitations, packaged Sales
 accessibility and Purchase preview-cell visibility remain open. T06 remains
-uncommitted. The stakeholder subsequently gave explicit
+committed at `3ecde98`. The stakeholder subsequently gave explicit
 [Phase 1 PASS](../evidence/issue-198/phase-1-checkpoint.md), with Sales accessibility
 tracked separately in [#204](https://github.com/PharmaElectrons/Breev/issues/204)
 and Purchase preview clipping carried into Phase 2. This does not promote the
 complete family to proven, turn the repository gate green or close G-01/G-02/G-16.
+The later-authorized [Phase 1 finalization](../evidence/issue-198/finalization/README.md)
+integrates the current `dev` journal by retaining its Patient migrations and
+appending the unchanged offer SQL as `0032`. REST/schema version 19 identifies
+the combined schema; focused forward-migration/role/contract/browser proof is
+recorded separately, without rewriting historical gate results.
 
 ## Windows payload optimization evidence
 

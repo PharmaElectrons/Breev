@@ -6,8 +6,10 @@ Stakeholder instruction: “it is a PASS, what is next? do not start next, just
 report me, and make this pass”. This records separate T06 manual acceptance;
 it does not infer acceptance from Inspector Resume or automated checks.
 
-T01–T06 now have accepted manual checkpoints. T06 remains unstaged and
-uncommitted. The stakeholder later initiated the consolidated automated T06 /
+T01–T06 now have accepted manual checkpoints. T06 was then unstaged and
+uncommitted; it was subsequently committed at `3ecde98` during explicitly
+authorized [branch finalization](../finalization/README.md).
+The stakeholder later initiated the consolidated automated T06 /
 Phase 1 gate: “do the automated full one, and i will approve the phase after it”.
 That gate ran on 1 October 2026; the [result and open findings](full-gate/report.md)
 are recorded separately. The repository-wide gate is not fully green.
