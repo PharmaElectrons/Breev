@@ -156,27 +156,6 @@ const permissionLabels: Record<
       description: "إضافة الأصناف إلى سلة الطلبات وتعديلها وإزالتها.",
       name: "إدارة سلة الطلبات",
     },
-    "patients.discounts.manage": {
-      description: "إدارة الخصومات للمرضى.",
-      name: "إدارة الخصومات",
-    },
-    "patients.manage": {
-      description: "إضافة وتعديل بيانات المرضى الأساسية.",
-      name: "إدارة المرضى",
-    },
-    "patients.notes.view": {
-      description:
-        "عرض الحالات المزمنة والأدوية المزمنة والحساسيات والملاحظات الصحية.",
-      name: "عرض ملاحظات المرضى الصحية",
-    },
-    "patients.notes.manage": {
-      description: "عرض وإضافة الملاحظات الصحية للمرضى.",
-      name: "إدارة ملاحظات المرضى",
-    },
-    "patients.view": {
-      description: "البحث عن المرضى وعرض ملفاتهم الأساسية.",
-      name: "عرض ملفات المرضى",
-    },
     "inventory.reorder.confirm": {
       description: "تأكيد الطلبات وإعادة البنود المطلوبة إلى السلة.",
       name: "تأكيد الطلبات",
@@ -292,27 +271,6 @@ const permissionLabels: Record<
     "inventory.reorder.manage": {
       description: "Add, update, and remove items in the order basket.",
       name: "Manage the order basket",
-    },
-    "patients.discounts.manage": {
-      description: "Manage discount rates for patients.",
-      name: "Manage patient discounts",
-    },
-    "patients.manage": {
-      description: "Add and edit basic patient profiles.",
-      name: "Manage patients",
-    },
-    "patients.notes.view": {
-      description:
-        "View chronic conditions, chronic medicines, allergies, and other health notes.",
-      name: "View patient health notes",
-    },
-    "patients.notes.manage": {
-      description: "View and add health notes to patient profiles.",
-      name: "Manage patient notes",
-    },
-    "patients.view": {
-      description: "Search for patients and view their basic profiles.",
-      name: "View patient profiles",
     },
     "inventory.reorder.confirm": {
       description: "Confirm orders and return ordered items to the basket.",
@@ -489,7 +447,6 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "devices-licensing": "الأجهزة والترخيص",
       products: "الأصناف",
       sales: "المبيعات",
-      patients: "المرضى",
       purchasing: "المشتريات والموردون",
       inventory: "المخزون",
     },
@@ -614,7 +571,6 @@ export const identityMessages: Record<Locale, IdentityCopy> = {
       "devices-licensing": "Devices and licensing",
       products: "Products",
       sales: "Sales",
-      patients: "Patients",
       purchasing: "Purchasing and suppliers",
       inventory: "Inventory",
     },

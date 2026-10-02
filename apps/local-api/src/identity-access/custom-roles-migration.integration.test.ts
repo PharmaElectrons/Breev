@@ -54,7 +54,7 @@ interface RoleSnapshot {
  * or identity revisions.
  */
 describe.sequential("migration 0011: custom roles upgrade", () => {
-  const EXPECTED_IDENTITY_REVISION_DELTA = 15n;
+  const EXPECTED_IDENTITY_REVISION_DELTA = 16n;
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -182,9 +182,9 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
       const after = rolesAfter.find((role) => role.id === before.id);
       expect(after?.revision, before.role_key ?? before.id).toBe(
         before.role_key === "owner"
-          ? String(BigInt(before.revision) + 14n)
+          ? String(BigInt(before.revision) + 15n)
           : before.role_key === "manager"
-            ? String(BigInt(before.revision) + 11n)
+            ? String(BigInt(before.revision) + 12n)
             : before.revision,
       );
     }
@@ -285,56 +285,6 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
         {
           granted_by: ownerId,
           permission_name: "inventory.valuation.view",
-          role_id: ownerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.discounts.manage",
-          role_id: managerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.discounts.manage",
-          role_id: ownerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.manage",
-          role_id: managerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.manage",
-          role_id: ownerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.notes.manage",
-          role_id: managerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.notes.manage",
-          role_id: ownerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.notes.view",
-          role_id: managerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.notes.view",
-          role_id: ownerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.view",
-          role_id: managerRoleId,
-        },
-        {
-          granted_by: ownerId,
-          permission_name: "patients.view",
           role_id: ownerRoleId,
         },
         {

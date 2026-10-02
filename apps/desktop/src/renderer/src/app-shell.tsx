@@ -19,7 +19,6 @@ import { logoutIdentity } from "./identity-api";
 import { BasketRouteView } from "./basket-screen";
 import { SalesRouteView } from "./sales-screen";
 import { InventoryRouteView } from "./inventory-screen";
-import { PatientsRouteView } from "./patients-screen";
 import { messages } from "./messages";
 import { ModuleNavigation } from "./module-navigation";
 import { NavbarCollapseMenu } from "./navbar-collapse-menu";
@@ -442,8 +441,6 @@ export function AppShell({
             />
           ) : activeModuleId === "sales" ? (
             <SalesRouteView baseUrl={localApiOrigin} hash={currentHash} />
-          ) : activeModuleId === "patients" ? (
-            <PatientsRouteView baseUrl={localApiOrigin} hash={currentHash} />
           ) : activeModuleId === "basket" ? (
             <BasketRouteView
               baseUrl={localApiOrigin}

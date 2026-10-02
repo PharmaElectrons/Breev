@@ -246,6 +246,13 @@
       "when": 1790899200000,
       "tag": "0034_catalog_manual_state_colour_hex",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790985600000,
+      "tag": "0035_revert_patient_profiles",
+      "breakpoints": true
     }
   ]
 }

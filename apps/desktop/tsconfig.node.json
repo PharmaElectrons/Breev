@@ -16,8 +16,6 @@
     "scripts/**/*.mjs",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
-    "src/renderer/src/preferences.ts",
-    "src/renderer/src/patients/patient-messages.ts",
     "test/**/*.ts",
     "vitest.config.ts"
   ]
