@@ -529,6 +529,13 @@ export class IdentityAccessService {
         [pharmacyId, ownerId],
       );
       await client.query(
+        `insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by)
+         select $1, role_row.id, permission_name.name, $2 from pharmacy_roles role_row
+         cross join (values ('sales.drawer_balance.view'), ('sales.wholesale_price.view')) permission_name(name)
+         where role_row.pharmacy_id=$1 and role_row.role_key='manager'`,
+        [pharmacyId, ownerId],
+      );
+      await client.query(
         `insert into role_permission_grants (
            pharmacy_id, role_id, permission_name, granted_by
          )
@@ -2970,6 +2977,23 @@ export class IdentityAccessService {
       client,
       expected,
       "draft.price.override",
+    );
+  }
+
+  public async revalidateSaleMisc(
+    client: PoolClient,
+    expected: IdentityExecutionContext,
+  ): Promise<IdentityExecutionContext> {
+    await this.lockIdentity(client, expected.pharmacyId);
+    await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "sales.drafts.manage",
+    );
+    return await this.requirePermissionInTransaction(
+      client,
+      expected,
+      "sales.misc.manage",
     );
   }
 

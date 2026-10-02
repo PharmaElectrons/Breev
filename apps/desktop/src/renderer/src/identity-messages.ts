@@ -197,6 +197,14 @@ const permissionLabels: Record<
       description: "فتح مسودات البيع واستئنافها وعرض المفتوح منها.",
       name: "إدارة مسودات البيع",
     },
+    "sales.drawer_balance.view": {
+      name: "عرض رصيد صندوق الموظف",
+      description: "عرض رصيد صندوقك النقدي الحالي أثناء البيع.",
+    },
+    "sales.wholesale_price.view": {
+      name: "عرض سعر الجملة",
+      description: "عرض سعر الجملة في تفاصيل المادة فقط.",
+    },
     "sales.misc.manage": {
       description: "إضافة مادة أو خدمة متفرقة إلى مسودة البيع دون حركة مخزون.",
       name: "إضافة مواد بيع متفرقة",
@@ -313,6 +321,15 @@ const permissionLabels: Record<
     "sales.drafts.manage": {
       description: "Open and resume sale drafts and list the open ones.",
       name: "Manage sale drafts",
+    },
+    "sales.drawer_balance.view": {
+      name: "View employee drawer balance",
+      description:
+        "View your current employee cash drawer balance during a sale.",
+    },
+    "sales.wholesale_price.view": {
+      name: "View wholesale price",
+      description: "View wholesale prices only in item details.",
     },
     "sales.misc.manage": {
       description:

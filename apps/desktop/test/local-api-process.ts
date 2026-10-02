@@ -13,6 +13,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
  */
 
 const MAX_TAIL_BYTES = 4_096;
+/** Fresh browser database schemas run migrations before the API can bind. */
+export const COLD_LOCAL_API_READY_TIMEOUT_MS = 60_000;
 
 interface ProcessDiagnostics {
   errorMessage: string | undefined;

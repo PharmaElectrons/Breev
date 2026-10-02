@@ -93,8 +93,10 @@ describe("identity authorization", () => {
       "purchases.posted.view",
       "purchases.returns.manage",
       "sales.drafts.manage",
+      "sales.drawer_balance.view",
       "sales.misc.manage",
       "sales.quick_access.manage",
+      "sales.wholesale_price.view",
       "sales.invoice.reverse",
       "sales.return.post",
       "suppliers.manage",
@@ -129,8 +131,10 @@ describe("identity authorization", () => {
       "purchases.posted.view",
       "purchases.returns.manage",
       "sales.drafts.manage",
+      "sales.drawer_balance.view",
       "sales.misc.manage",
       "sales.quick_access.manage",
+      "sales.wholesale_price.view",
       "suppliers.manage",
     ]);
     for (const permission of IMPLEMENTED_PERMISSION_NAMES) {

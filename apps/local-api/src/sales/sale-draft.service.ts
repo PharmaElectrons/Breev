@@ -12,6 +12,7 @@ import {
   saleDraftDiscardContract,
   saleDraftSchema,
   saleProductContextSchema,
+  saleDrawerBalanceSchema,
   saleProductSearchResponseSchema,
   salesDenialSchema,
   type CatalogFieldError,
@@ -27,6 +28,7 @@ import {
   type SaleProductSearchResponse,
   type SaleProductContext,
   type SalesDenial,
+  type SaleDrawerBalance,
 } from "@breev/contracts/local-rest";
 import { Injectable, Logger } from "@nestjs/common";
 import type { Request } from "express";
@@ -53,6 +55,7 @@ import { LocalDatabaseService } from "../local-database.service.js";
 import { businessDateOf, daysBetween } from "../inventory/business-date.js";
 import { readNearExpiryDays } from "../inventory/inventory-persistence.js";
 import { readInventoryPositions } from "../inventory/inventory-review.js";
+import { consumptionRatePer30Days } from "../inventory/inventory-risk.js";
 import { writePostingAudit } from "../posting/audit-writer.js";
 import {
   canonicalRequestHash,
@@ -74,6 +77,10 @@ import {
   type SaleDraftRecord,
   type SaleDraftStatus,
 } from "./sale-draft-persistence.js";
+import {
+  saleQuantityAfterUnitChange,
+  saleUnitPriceFils,
+} from "./sale-draft-arithmetic.js";
 
 const MANAGE_PERMISSION = "sales.drafts.manage" as const;
 const MISC_PERMISSION = "sales.misc.manage" as const;
@@ -205,6 +212,18 @@ export class SaleDraftService {
           { productIds: [productId] },
         );
         const maximum = product.stockLevels.maximumLevel;
+        const now = new Date();
+        const consumption = position?.movements ?? [];
+        const thumbnail = await client.query<{ thumbnail: string }>(
+          `select tile.value->>'thumbnailDataUrl' as thumbnail
+           from sale_quick_access_settings settings,
+             jsonb_array_elements(settings.categories) with ordinality category(value, position),
+             jsonb_array_elements(category.value->'tiles') with ordinality tile(value, position)
+           where settings.pharmacy_id=$1 and tile.value->>'productId'=$2
+             and tile.value->>'thumbnailDataUrl' is not null
+           order by category.position, tile.position limit 1`,
+          [context.pharmacyId, productId],
+        );
         const surplus =
           position === undefined || maximum === null
             ? null
@@ -213,7 +232,25 @@ export class SaleDraftService {
               : 0n;
         return saleProductContextSchema.parse({
           ...product,
+          thumbnailDataUrl: thumbnail.rows[0]?.thumbnail ?? null,
           inventory: {
+            consumptionAverages: {
+              oneMonth: consumptionRatePer30Days(
+                consumption,
+                now,
+                1,
+              ).toString(),
+              twoMonths: consumptionRatePer30Days(
+                consumption,
+                now,
+                2,
+              ).toString(),
+              threeMonths: consumptionRatePer30Days(
+                consumption,
+                now,
+                3,
+              ).toString(),
+            },
             onHandBaseUnits: position?.balance.toString() ?? null,
             estimatedSurplusBaseUnits: surplus?.toString() ?? null,
             batches:
@@ -251,6 +288,25 @@ export class SaleDraftService {
     } finally {
       client.release();
     }
+  }
+
+  public async readDrawerBalance(request: Request): Promise<SaleDrawerBalance> {
+    await this.identity.requirePermission(request, MANAGE_PERMISSION);
+    const context = await this.identity.requirePermission(
+      request,
+      "sales.drawer_balance.view",
+    );
+    const result = await this.localDatabase
+      .requirePool()
+      .query<{ balance: string }>(
+        `select coalesce(sum(debit_fils-credit_fils),0)::text as balance
+       from accounting_journal_lines
+       where pharmacy_id=$1 and drawer_user_id=$2 and account_code='cash'`,
+        [context.pharmacyId, context.actorId],
+      );
+    return saleDrawerBalanceSchema.parse({
+      balanceFils: result.rows[0]?.balance ?? "0",
+    });
   }
 
   public async createDraft(
@@ -421,6 +477,7 @@ export class SaleDraftService {
           pharmacyId: row.pharmacyId,
           draftId,
           ...input,
+          costFils: input.costFils ?? "0",
         });
       },
     );
@@ -482,32 +539,21 @@ export class SaleDraftService {
             [{ code: "invalid", path: ["unitId"] }],
             draftId,
           );
-        const oldBaseQuantity =
-          BigInt(line.quantity) * BigInt(line.baseUnitsPerUnit);
         const nextRatio = BigInt(selected.baseUnitsPerUnit);
         const quantity =
           input.quantity ??
           (input.unitId === undefined
             ? line.quantity
-            : oldBaseQuantity % nextRatio === 0n
-              ? (oldBaseQuantity / nextRatio).toString()
-              : "0");
-        if (BigInt(quantity) < 1n || BigInt(quantity) > BIGINT_MAX)
+            : (saleQuantityAfterUnitChange({
+                quantity: line.quantity,
+                currentBaseUnitsPerUnit: line.baseUnitsPerUnit,
+                nextBaseUnitsPerUnit: selected.baseUnitsPerUnit,
+              }) ?? "0"));
+        if (BigInt(quantity) < 1n || BigInt(quantity) * nextRatio > BIGINT_MAX)
           reject(
             400,
             "sale-quantity-invalid",
             [{ code: "invalid", path: ["quantity"] }],
-            draftId,
-          );
-        if (
-          input.unitId !== undefined &&
-          input.quantity === undefined &&
-          oldBaseQuantity % nextRatio !== 0n
-        )
-          reject(
-            400,
-            "sale-quantity-invalid",
-            [{ code: "invalid", path: ["unitId"] }],
             draftId,
           );
         const unitChanged =
@@ -515,9 +561,12 @@ export class SaleDraftService {
         const unitPrice =
           line.priceSource === "manual" && !unitChanged
             ? BigInt(line.unitPriceFils)
-            : roundHalfUp(
-                BigInt(line.capturedRetailPriceFils) * nextRatio,
-                BigInt(line.capturedUnitRatio),
+            : BigInt(
+                saleUnitPriceFils({
+                  capturedRetailPriceFils: line.capturedRetailPriceFils,
+                  capturedUnitRatio: line.capturedUnitRatio,
+                  nextUnitRatio: nextRatio.toString(),
+                }) ?? (BIGINT_MAX + 1n).toString(),
               );
         if (unitPrice > BIGINT_MAX)
           reject(400, "sale-quantity-invalid", [], draftId);
@@ -773,17 +822,15 @@ export class SaleDraftService {
         const nextDiscount = BigInt(
           options.invoiceDiscountFils ?? row.invoiceDiscountFils,
         );
-        const nextSubtotal = subtotal(nextLines);
         const nextGross = nextLines.reduce(
           (sum, line) =>
             sum + BigInt(line.quantity) * BigInt(line.unitPriceFils),
           0n,
         );
-        if (
-          nextDiscount > nextSubtotal ||
-          nextSubtotal > BIGINT_MAX ||
-          nextGross > BIGINT_MAX
-        )
+        if (nextGross > BIGINT_MAX)
+          reject(400, "sale-price-invalid", [], draftId);
+        const nextSubtotal = subtotal(nextLines);
+        if (nextDiscount > nextSubtotal || nextSubtotal > BIGINT_MAX)
           reject(400, "sale-discount-invalid", [], draftId);
         const updated = await touchSaleDraft(client, {
           deviceId,
@@ -879,6 +926,8 @@ export class SaleDraftService {
     );
     if (action === COMMANDS.linePriceOverride)
       await this.identity.requirePermission(request, PRICE_OVERRIDE_PERMISSION);
+    if (action === COMMANDS.miscLineAdd)
+      await this.identity.requirePermission(request, MISC_PERMISSION);
     const client = await this.localDatabase.requirePool().connect();
     try {
       const requestId = await writePostingAudit(client, {
@@ -910,6 +959,8 @@ export class SaleDraftService {
             client,
             input.context,
           );
+        else if (input.commandName === COMMANDS.miscLineAdd)
+          await this.identity.revalidateSaleMisc(client, input.context);
         else await this.identity.revalidateSaleDrafts(client, input.context);
         let replay: PostingCommandReplay | undefined;
         try {

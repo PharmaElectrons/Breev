@@ -31,6 +31,8 @@ import {
   saleProductSearchPath,
   saleProductContextPath,
   saleProductContextContract,
+  saleDrawerBalanceContract,
+  saleDrawerBalancePath,
   saleQuickAccessPath,
   saleQuickAccessReadContract,
   saleQuickAccessReplaceContract,
@@ -48,6 +50,7 @@ import {
   type SaleQuickAccess,
   type SaleQuickAccessReplaceRequest,
   type SalesDenial,
+  type SaleDrawerBalance,
 } from "@breev/contracts/local-rest";
 
 import { IdentityApiDenied } from "./identity-api";
@@ -66,6 +69,13 @@ export class SalesApiDenied extends Error {
   ) {
     super(denial.code);
     this.name = "SalesApiDenied";
+  }
+}
+
+export class SalesRequestTooLarge extends Error {
+  public constructor() {
+    super("Sales request exceeds the local API body limit");
+    this.name = "SalesRequestTooLarge";
   }
 }
 
@@ -99,6 +109,18 @@ export async function readSaleProductContext(
     saleProductContextContract.method,
     200,
     saleProductContextContract.responses[200],
+  );
+}
+
+export async function readSaleDrawerBalance(
+  baseUrl: string,
+): Promise<SaleDrawerBalance> {
+  return await requestJson(
+    baseUrl,
+    saleDrawerBalancePath(),
+    saleDrawerBalanceContract.method,
+    200,
+    saleDrawerBalanceContract.responses[200],
   );
 }
 
@@ -377,6 +399,12 @@ async function denialFromResponse(response: Response): Promise<Error> {
   const sales = salesDenialSchema.safeParse(payload);
   if (sales.success) {
     return new SalesApiDenied(response.status, sales.data);
+  }
+  if (
+    response.status === 413 &&
+    saleQuickAccessReplaceContract.responses[413].safeParse(payload).success
+  ) {
+    return new SalesRequestTooLarge();
   }
   const identity = identityDenialSchema.safeParse(payload);
   if (identity.success)

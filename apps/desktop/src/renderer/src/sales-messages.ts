@@ -55,6 +55,17 @@ export interface SalesCopy {
   readonly selectedItemPreview: string;
   readonly title: string;
   readonly versionLabel: (version: string) => string;
+  readonly miscNameLabel: string;
+  readonly miscUnitLabel: string;
+  readonly miscQuantityLabel: string;
+  readonly miscPriceLabel: string;
+  readonly miscCostLabel: string;
+  readonly miscSubmitButton: string;
+  readonly miscValidationMessage: string;
+  readonly miscPriceTooLargeMessage: string;
+  readonly miscCostTooLargeMessage: string;
+  readonly scanAddButton: string;
+  readonly createNewItemButton: string;
 }
 
 const arabicDenials: Record<SalesDenialCode, string> = {
@@ -140,6 +151,17 @@ export const salesMessages: Record<Locale, SalesCopy> = {
     selectedItemPreview: "معاينة المادة المحددة",
     title: "البيع",
     versionLabel: (version) => `الإصدار ${version}`,
+    miscNameLabel: "الاسم",
+    miscUnitLabel: "الوحدة",
+    miscQuantityLabel: "الكمية",
+    miscPriceLabel: "سعر الوحدة (د.ع)",
+    miscCostLabel: "التكلفة (د.ع)",
+    miscSubmitButton: "إضافة إلى الفاتورة",
+    miscValidationMessage: "تحقق من الاسم والوحدة والكمية والسعر والتكلفة.",
+    miscPriceTooLargeMessage: "السعر كبير جداً.",
+    miscCostTooLargeMessage: "التكلفة كبيرة جداً.",
+    scanAddButton: "إضافة",
+    createNewItemButton: "إنشاء مادة جديدة",
   },
   en: {
     activeDraft: "Current draft",
@@ -191,5 +213,16 @@ export const salesMessages: Record<Locale, SalesCopy> = {
     selectedItemPreview: "Selected item preview",
     title: "Sales",
     versionLabel: (version) => `Version ${version}`,
+    miscNameLabel: "Name",
+    miscUnitLabel: "Unit",
+    miscQuantityLabel: "Quantity",
+    miscPriceLabel: "Unit price (IQD)",
+    miscCostLabel: "Cost (IQD)",
+    miscSubmitButton: "Add to sale",
+    miscValidationMessage: "Check the name, unit, quantity, price, and cost.",
+    miscPriceTooLargeMessage: "Price is too large.",
+    miscCostTooLargeMessage: "Cost is too large.",
+    scanAddButton: "Add",
+    createNewItemButton: "Create new item",
   },
 };

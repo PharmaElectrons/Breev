@@ -48,13 +48,15 @@ interface RoleSnapshot {
  * The migrations must keep every role id and user assignment exactly as they
  * found them. The built-in manager receives role administration in 0011. The
  * owner receives the live purchasing permissions in 0012, 0018, 0019, and
- * 0020, and built-in roles receive patient permissions in 0031. Each touched
- * role revision advances once per migration. Later table grants, including
- * 0033's supplier-link grant to breev_app, do not change pharmacy role grants
- * or identity revisions.
+ * 0020, and built-in roles receive patient permissions in 0031. Migration
+ * 0035 advances owner and manager revisions while removing those grants; 0037
+ * adds the sensitive sales grants to owner and manager. Each touched role
+ * revision advances once per migration. Later table grants, including 0033's
+ * supplier-link grant to breev_app, do not change pharmacy role grants or
+ * identity revisions.
  */
 describe.sequential("migration 0011: custom roles upgrade", () => {
-  const EXPECTED_IDENTITY_REVISION_DELTA = 16n;
+  const EXPECTED_IDENTITY_REVISION_DELTA = 17n;
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -182,9 +184,9 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
       const after = rolesAfter.find((role) => role.id === before.id);
       expect(after?.revision, before.role_key ?? before.id).toBe(
         before.role_key === "owner"
-          ? String(BigInt(before.revision) + 15n)
+          ? String(BigInt(before.revision) + 16n)
           : before.role_key === "manager"
-            ? String(BigInt(before.revision) + 12n)
+            ? String(BigInt(before.revision) + 13n)
             : before.revision,
       );
     }
@@ -192,6 +194,14 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     expect(await snapshotGrants()).toEqual(
       [
         ...grantsBefore,
+        ...["sales.drawer_balance.view", "sales.wholesale_price.view"].flatMap(
+          (permission_name) =>
+            [ownerRoleId, managerRoleId].map((role_id) => ({
+              granted_by: ownerId,
+              permission_name,
+              role_id,
+            })),
+        ),
         {
           granted_by: ownerId,
           permission_name: "draft.price.override",

@@ -25,6 +25,51 @@ describe("inventory risk calculations", () => {
     ).toBe(4n);
   });
 
+  it.each([1, 2, 3] as const)(
+    "calculates the trailing %i-month rate using only eligible movements in the window",
+    (months) => {
+      const windowStart = new Date(
+        now.getTime() - months * 30 * 24 * 60 * 60 * 1_000,
+      );
+
+      expect(
+        consumptionRatePer30Days(
+          [
+            { occurredAt: windowStart, quantity: -2n },
+            {
+              occurredAt: new Date(windowStart.getTime() + 1),
+              quantity: -3n,
+            },
+            {
+              occurredAt: new Date(windowStart.getTime() - 1),
+              quantity: -100n,
+            },
+            {
+              occurredAt: new Date(now.getTime() + 1),
+              quantity: -1_000n,
+            },
+            {
+              occurredAt: new Date(windowStart.getTime() + 1_000),
+              quantity: -50n,
+              reason: "purchase-return",
+            },
+            {
+              occurredAt: new Date(windowStart.getTime() + 2_000),
+              quantity: -70n,
+              reason: "purchase-adjustment",
+            },
+            {
+              occurredAt: new Date(windowStart.getTime() + 3_000),
+              quantity: 500n,
+            },
+          ],
+          now,
+          months,
+        ),
+      ).toBe(({ 1: 5n, 2: 3n, 3: 2n } as const)[months]);
+    },
+  );
+
   it("emits all applicable indicators without using floating point", () => {
     expect(
       riskIndicators({

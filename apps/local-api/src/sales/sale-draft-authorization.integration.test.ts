@@ -4,10 +4,23 @@ import {
   IMPLEMENTED_PERMISSION_NAMES,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
-  saleDraftPath,
+  saleDrawerBalancePath,
+  saleDraftClearPath,
+  saleDraftDiscardsPath,
+  saleDraftDiscountPath,
+  saleDraftLineChangesPath,
   saleDraftLinePriceOverridePath,
+  saleDraftLineRemovalsPath,
+  saleDraftLinesPath,
+  saleDraftMiscLinesPath,
+  saleDraftPath,
+  saleDraftResumptionsPath,
+  saleDraftSuspensionsPath,
   saleDraftsPath,
+  saleProductContextPath,
   saleQuickAccessPath,
+  type Product,
+  type ProductCreateRequest,
   type SaleDraft,
 } from "@breev/contracts/local-rest";
 import {
@@ -83,6 +96,11 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
   const actors = {
     customAllowed: actor("custom-allowed"),
     customDenied: actor("custom-denied"),
+    customDrawerAllowed: actor("custom-drawer-allowed"),
+    customDrawerOnly: actor("custom-drawer-only"),
+    customDrawerPeer: actor("custom-drawer-peer"),
+    customWholesaleAllowed: actor("custom-wholesale-allowed"),
+    manager: actor("manager"),
     owner: { password: OWNER_PASSWORD, username: OWNER_USERNAME },
     salesEmployee: actor("sales-employee"),
   } as const;
@@ -121,10 +139,28 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
       "catalog.item.search",
     ]);
     const allowedRole = await createRole("Sale Draft allowed", [
+      "catalog.item.search",
       "sales.drafts.manage",
+    ]);
+    const drawerAllowedRole = await createRole("Sale drawer allowed", [
+      "sales.drafts.manage",
+      "sales.drawer_balance.view",
+    ]);
+    const drawerOnlyRole = await createRole("Sale drawer only", [
+      "sales.drawer_balance.view",
+    ]);
+    const wholesaleAllowedRole = await createRole("Sale wholesale allowed", [
+      "catalog.item.search",
+      "sales.drafts.manage",
+      "sales.wholesale_price.view",
     ]);
     await createUser(actors.customDenied, deniedRole);
     await createUser(actors.customAllowed, allowedRole);
+    await createUser(actors.customDrawerAllowed, drawerAllowedRole);
+    await createUser(actors.customDrawerPeer, drawerAllowedRole);
+    await createUser(actors.customDrawerOnly, drawerOnlyRole);
+    await createUser(actors.customWholesaleAllowed, wholesaleAllowedRole);
+    await createUser(actors.manager, await roleIdFor("manager"));
     await createUser(actors.salesEmployee, await roleIdFor("sales_employee"));
   }, 180_000);
 
@@ -134,7 +170,7 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
     await postgres?.stop().catch(() => undefined);
   });
 
-  it("allows the built-in sales employee and a custom role with the exact grant", async () => {
+  it("allows the built-in sales employee and a custom role with Sale access", async () => {
     for (const actorToTest of [actors.salesEmployee, actors.customAllowed]) {
       const login = await loginAs(actorToTest);
       expect(login.status, diagnostics(login)).toBe(200);
@@ -169,6 +205,68 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
     expect((await request("GET", saleQuickAccessPath())).body).toEqual(
       original.body,
     );
+  });
+
+  it("requires both Sale access and drawer-balance permission", async () => {
+    for (const actorToTest of [actors.owner, actors.manager]) {
+      await loginAs(actorToTest);
+      const allowed = await request("GET", saleDrawerBalancePath());
+      expect(allowed.status, diagnostics(allowed)).toBe(200);
+      expect(allowed.body).toEqual({ balanceFils: "0" });
+    }
+
+    for (const actorToTest of [actors.customAllowed, actors.salesEmployee]) {
+      await loginAs(actorToTest);
+      const denied = await request("GET", saleDrawerBalancePath());
+      expect(denied.status, diagnostics(denied)).toBe(403);
+      await expectIdentityAudit(denied, "sales.drawer_balance.view");
+    }
+
+    await loginAs(actors.customDrawerOnly);
+    const missingSalePermission = await request("GET", saleDrawerBalancePath());
+    expect(
+      missingSalePermission.status,
+      diagnostics(missingSalePermission),
+    ).toBe(403);
+    await expectIdentityAudit(missingSalePermission, "sales.drafts.manage");
+  });
+
+  it("returns only the authenticated employee's assigned cash balance", async () => {
+    await loginAs(actors.owner);
+    await insertBalancedDrawerJournal();
+
+    await loginAs(actors.customDrawerAllowed);
+    const drawerBalance = await request("GET", saleDrawerBalancePath());
+    expect(drawerBalance.status, diagnostics(drawerBalance)).toBe(200);
+    expect(drawerBalance.body).toEqual({ balanceFils: "12500" });
+
+    await loginAs(actors.customDrawerPeer);
+    const peerBalance = await request("GET", saleDrawerBalancePath());
+    expect(peerBalance.status, diagnostics(peerBalance)).toBe(200);
+    expect(peerBalance.body).toEqual({ balanceFils: "7000" });
+  });
+
+  it("returns wholesale price only to a role with the exact view grant", async () => {
+    await loginAs(actors.owner);
+    const product = await createProduct("Sale context permission item");
+
+    for (const actorToTest of [
+      actors.owner,
+      actors.manager,
+      actors.customWholesaleAllowed,
+    ]) {
+      await loginAs(actorToTest);
+      const allowed = await request("GET", saleProductContextPath(product.id));
+      expect(allowed.status, diagnostics(allowed)).toBe(200);
+      expect(allowed.body).toMatchObject({ wholesalePriceFils: "90000" });
+    }
+
+    for (const actorToTest of [actors.customAllowed, actors.salesEmployee]) {
+      await loginAs(actorToTest);
+      const visible = await request("GET", saleProductContextPath(product.id));
+      expect(visible.status, diagnostics(visible)).toBe(200);
+      expect(visible.body).toMatchObject({ wholesalePriceFils: null });
+    }
   });
 
   it("denies a Sales cashier a manual price override before touching the draft", async () => {
@@ -207,6 +305,116 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
       await expectIdentityAudit(response, "sales.drafts.manage");
       expect(await draftSnapshot(draft.id)).toEqual(before);
     }
+  });
+
+  it("denies draft mutations to a role without Sale access before changing the draft", async () => {
+    await loginAs(actors.owner);
+    const product = await createProduct("Denied draft mutation item");
+    const draft = await createDraft();
+    const added = await request("POST", saleDraftLinesPath(draft.id), {
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+      productId: product.id,
+    });
+    expect(added.status, diagnostics(added)).toBe(200);
+    const draftWithLine = added.body as SaleDraft;
+    const lineId = String(draftWithLine.lines[0]?.id ?? "");
+    expect(lineId).not.toBe("");
+    const before = await draftSnapshot(draft.id);
+    const expectedVersion = draftWithLine.version;
+
+    await loginAs(actors.customDenied);
+    const deniedCommands = [
+      {
+        body: { expectedVersion, idempotencyKey: uuidV7() },
+        route: saleDraftResumptionsPath(draft.id),
+      },
+      {
+        body: {
+          expectedVersion,
+          idempotencyKey: uuidV7(),
+          productId: product.id,
+        },
+        route: saleDraftLinesPath(draft.id),
+      },
+      {
+        body: {
+          displayName: "Delivery service",
+          expectedVersion,
+          idempotencyKey: uuidV7(),
+          quantity: "1",
+          unitName: "service",
+          unitPriceFils: "1000",
+        },
+        route: saleDraftMiscLinesPath(draft.id),
+      },
+      {
+        body: {
+          expectedVersion,
+          idempotencyKey: uuidV7(),
+          quantity: "2",
+        },
+        route: saleDraftLineChangesPath(draft.id, lineId),
+      },
+      {
+        body: {
+          expectedVersion,
+          idempotencyKey: uuidV7(),
+          unitPriceFils: "90000",
+          reason: "Manager approved",
+        },
+        route: saleDraftLinePriceOverridePath(draft.id, lineId),
+      },
+      {
+        body: { expectedVersion, idempotencyKey: uuidV7() },
+        route: saleDraftLineRemovalsPath(draft.id, lineId),
+      },
+      {
+        body: {
+          expectedVersion,
+          idempotencyKey: uuidV7(),
+          invoiceDiscountFils: "0",
+        },
+        route: saleDraftDiscountPath(draft.id),
+      },
+      {
+        body: { expectedVersion, idempotencyKey: uuidV7() },
+        route: saleDraftClearPath(draft.id),
+      },
+      {
+        body: { expectedVersion, idempotencyKey: uuidV7() },
+        route: saleDraftSuspensionsPath(draft.id),
+      },
+      {
+        body: { expectedVersion, idempotencyKey: uuidV7() },
+        route: saleDraftDiscardsPath(draft.id),
+      },
+    ];
+
+    for (const command of deniedCommands) {
+      const denied = await request("POST", command.route, command.body);
+      expect(denied.status, diagnostics(denied)).toBe(403);
+      await expectIdentityAudit(denied, "sales.drafts.manage");
+      expect(await draftSnapshot(draft.id)).toEqual(before);
+    }
+  });
+
+  it("requires misc-line permission even when the request body is malformed", async () => {
+    await loginAs(actors.owner);
+    const draft = await createDraft();
+    const before = await draftSnapshot(draft.id);
+
+    await loginAs(actors.customAllowed);
+    const denied = await request("POST", saleDraftMiscLinesPath(draft.id), {
+      displayName: "Delivery service",
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+      unitName: "service",
+      unitPriceFils: "1000",
+    });
+    expect(denied.status, diagnostics(denied)).toBe(403);
+    await expectIdentityAudit(denied, "sales.misc.manage");
+    expect(await draftSnapshot(draft.id)).toEqual(before);
   });
 
   it("keeps tenant, revoked-session, wrong-device, and absent-device denials outside the draft", async () => {
@@ -321,12 +529,118 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
     return response.body as SaleDraft;
   }
 
+  async function createProduct(tradeName: string): Promise<Product> {
+    const response = await request(
+      "POST",
+      "/catalog/products",
+      productRequest(tradeName),
+    );
+    expect(response.status, diagnostics(response)).toBe(201);
+    return response.body as Product;
+  }
+
+  async function insertBalancedDrawerJournal(): Promise<void> {
+    const ownerId = await userIdFor(actors.owner.username);
+    const cashierId = await userIdFor(actors.customDrawerAllowed.username);
+    const peerId = await userIdFor(actors.customDrawerPeer.username);
+    const client = await administrator.connect();
+    try {
+      await client.query("begin");
+      const entry = await client.query<{ id: string }>(
+        `insert into accounting_journal_entries (
+           pharmacy_id, template_id, template_version, posted_by
+         ) values ($1, 'purchase.invoice', 1, $2)
+         returning id`,
+        [pharmacyId, ownerId],
+      );
+      const entryId = entry.rows[0]?.id;
+      if (entryId === undefined) {
+        throw new Error("Drawer balance journal entry was not created");
+      }
+
+      const lines = [
+        {
+          accountCode: "cash",
+          creditFils: "0",
+          debitFils: "12500",
+          drawerUserId: cashierId,
+        },
+        {
+          accountCode: "inventory",
+          creditFils: "12500",
+          debitFils: "0",
+          drawerUserId: null,
+        },
+        {
+          accountCode: "cash",
+          creditFils: "0",
+          debitFils: "7000",
+          drawerUserId: peerId,
+        },
+        {
+          accountCode: "inventory",
+          creditFils: "7000",
+          debitFils: "0",
+          drawerUserId: null,
+        },
+        {
+          accountCode: "cash",
+          creditFils: "0",
+          debitFils: "45000",
+          drawerUserId: null,
+        },
+        {
+          accountCode: "inventory",
+          creditFils: "45000",
+          debitFils: "0",
+          drawerUserId: null,
+        },
+      ] as const;
+      for (const [index, line] of lines.entries()) {
+        await client.query(
+          `insert into accounting_journal_lines (
+             pharmacy_id, entry_id, ordinal, account_code, drawer_user_id,
+             debit_fils, credit_fils
+           ) values ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            pharmacyId,
+            entryId,
+            index + 1,
+            line.accountCode,
+            line.drawerUserId,
+            line.debitFils,
+            line.creditFils,
+          ],
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function userIdFor(username: string): Promise<string> {
+    const result = await administrator.query<{ id: string }>(
+      `select id from identity_users where pharmacy_id = $1 and username = $2`,
+      [pharmacyId, username],
+    );
+    const userId = result.rows[0]?.id;
+    if (userId === undefined) {
+      throw new Error(`Test user ${username} was not created`);
+    }
+    return userId;
+  }
+
   async function draftSnapshot(draftId: string): Promise<{
     readonly auditFacts: string;
     readonly commandResults: string;
+    readonly lines: string;
     readonly raw: RawDraft | undefined;
   }> {
-    const [raw, auditFacts, commandResults] = await Promise.all([
+    const [raw, auditFacts, commandResults, lines] = await Promise.all([
       administrator.query<RawDraft>(
         `select id, pharmacy_id, status::text, version::text, created_at::text,
                 created_by, updated_at::text, updated_by, device_id
@@ -343,10 +657,16 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
          where pharmacy_id = $1 and command_name like 'sale.draft.%'`,
         [pharmacyId],
       ),
+      administrator.query<Record<string, unknown>>(
+        `select * from sale_draft_lines
+         where pharmacy_id = $1 and draft_id = $2 order by ordinal`,
+        [pharmacyId, draftId],
+      ),
     ]);
     return {
       auditFacts: auditFacts.rows[0]?.count ?? "",
       commandResults: commandResults.rows[0]?.count ?? "",
+      lines: JSON.stringify(lines.rows),
       raw: raw.rows[0],
     };
   }
@@ -471,6 +791,52 @@ function actor(name: string): Actor {
   return {
     password: `sale draft authorization ${name} password stays in this test`,
     username: `sale.draft.authorization.${name}`,
+  };
+}
+
+function productRequest(tradeName: string): ProductCreateRequest {
+  return {
+    arabicSearchName: "دواء للبيع",
+    barcodes: [
+      { kind: "product", value: randomBytes(6).toString("hex").slice(0, 13) },
+    ],
+    category: "Pain relief",
+    definition: {
+      fields: {
+        dosageForm: "tablet",
+        manufacturer: "Breev Labs",
+        strength: "500 mg",
+        tradeName,
+      },
+      mode: "medication",
+    },
+    idempotencyKey: uuidV7(),
+    instructions: {
+      foodTiming: "after-food",
+      usesPerDay: 3,
+      usesPerMonth: null,
+      usesPerWeek: null,
+    },
+    packaging: {
+      defaultUnits: {
+        count: { kind: "package-unit", packageUnitName: "Pack" },
+        purchase: { kind: "package-unit", packageUnitName: "Pack" },
+        sale: { kind: "inventory-unit" },
+      },
+      inventoryUnitName: "Strip",
+      packageUnits: [{ baseUnitsPerPackage: "4", name: "Pack" }],
+      thirdUnit: null,
+    },
+    pricing: {
+      method: "by-price",
+      retailPriceFils: "100000",
+      wholesalePriceFils: "90000",
+    },
+    scientificName: "Paracetamol",
+    supplierIds: [],
+    sharing: { aiSharingAllowed: false, externallyVisible: true },
+    stateColours: { coldStorageRequired: false, manual: "#0000ff" },
+    stockLevels: { maximumLevel: "60", minimumLevel: "10", reorderPoint: "20" },
   };
 }
 

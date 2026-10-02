@@ -12,6 +12,7 @@ import {
   saleDraftLineChangesPath,
   saleDraftLinePriceOverridePath,
   saleDraftDiscountPath,
+  saleDraftClearPath,
   saleDraftSuspensionsPath,
   saleDraftDiscardsPath,
   saleDraftResumptionsPath,
@@ -20,6 +21,7 @@ import {
   saleProductContextPath,
   saleProductContextContract,
   saleQuickAccessPath,
+  DEFAULT_SALE_PANEL_SETTINGS,
   type SaleQuickAccess,
   type Product,
   type ProductCreateRequest,
@@ -31,6 +33,7 @@ import {
 } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
 import { Pool } from "pg";
@@ -336,9 +339,10 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
     });
   }, 60_000);
 
-  it("8. saves sale lines and totals across API restart, with exact idempotent edits", async () => {
+  it("8. suspends and preserves catalog lines and discounts across API restart", async () => {
     const draft = await createDraft();
     const product = await createProduct("Durable sale line");
+    const effectsBefore = await salePostingEffectCounts();
     const addBody = {
       productId: product.id,
       expectedVersion: draft.version,
@@ -363,6 +367,7 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       await request("POST", saleDraftLinesPath(draft.id), addBody),
     ).toEqual(addedResponse);
     expect((await readDraft(draft.id)).lines).toHaveLength(1);
+    expect(await salePostingEffectCounts()).toEqual(effectsBefore);
 
     const line = added.lines[0];
     if (line === undefined) throw new Error("Sale line missing");
@@ -384,6 +389,7 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       discountFils: "30000",
       totalFils: "270000",
     });
+    expect(await salePostingEffectCounts()).toEqual(effectsBefore);
     const discountedResponse = await request(
       "POST",
       saleDraftDiscountPath(draft.id),
@@ -403,8 +409,27 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       invoiceDiscountFils: "5000",
       totalFils: "265000",
     });
+    expect(await salePostingEffectCounts()).toEqual(effectsBefore);
+
+    const suspendedResponse = await request(
+      "POST",
+      saleDraftSuspensionsPath(draft.id),
+      {
+        expectedVersion: discounted.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(suspendedResponse.status, diagnostics(suspendedResponse)).toBe(200);
+    const suspended = suspendedResponse.body as SaleDraft;
+    expect(suspended).toMatchObject({
+      status: "suspended",
+      invoiceDiscountFils: "5000",
+      lines: discounted.lines,
+      totals: discounted.totals,
+    });
 
     const before = await readDraft(draft.id);
+    expect(before).toEqual(suspended);
     const exited = new Promise<void>((resolve) =>
       api.once("exit", () => resolve()),
     );
@@ -414,21 +439,120 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
     await waitForHealth(apiOrigin, () => apiOutput);
     expect(await readDraft(draft.id)).toEqual(before);
     expect(await listDrafts()).toContainEqual(before);
+
+    const resumed = await resumeDraft(draft.id, {
+      expectedVersion: suspended.version,
+      idempotencyKey: uuidV7(),
+    });
+    expect(resumed).toMatchObject({
+      status: "active",
+      invoiceDiscountFils: "5000",
+      lines: suspended.lines,
+      totals: suspended.totals,
+    });
+    expect(await salePostingEffectCounts()).toEqual(effectsBefore);
   }, 60_000);
 
-  it("adds a miscellaneous line without a catalog or inventory link", async () => {
+  it("clears a populated draft once, resetting discounts and replaying idempotently", async () => {
     const draft = await createDraft();
-    const response = await request("POST", saleDraftMiscLinesPath(draft.id), {
-      displayName: "Delivery service",
-      unitName: "service",
-      quantity: "2",
-      unitPriceFils: "12500",
+    const product = await createProduct("Clear sale line");
+    const addedResponse = await request("POST", saleDraftLinesPath(draft.id), {
+      productId: product.id,
       expectedVersion: draft.version,
       idempotencyKey: uuidV7(),
     });
-    expect(response.status, diagnostics(response)).toBe(200);
-    const added = response.body as SaleDraft;
-    expect(added.lines[0]).toMatchObject({
+    expect(addedResponse.status, diagnostics(addedResponse)).toBe(200);
+    const added = addedResponse.body as SaleDraft;
+    const line = added.lines[0];
+    if (line === undefined) throw new Error("Sale line missing");
+
+    const changedResponse = await request(
+      "POST",
+      saleDraftLineChangesPath(draft.id, line.id),
+      {
+        expectedVersion: added.version,
+        idempotencyKey: uuidV7(),
+        quantity: "2",
+        lineDiscountPercentage: "10",
+      },
+    );
+    expect(changedResponse.status, diagnostics(changedResponse)).toBe(200);
+    const changed = changedResponse.body as SaleDraft;
+    const discountedResponse = await request(
+      "POST",
+      saleDraftDiscountPath(draft.id),
+      {
+        expectedVersion: changed.version,
+        idempotencyKey: uuidV7(),
+        invoiceDiscountFils: "5000",
+      },
+    );
+    expect(discountedResponse.status, diagnostics(discountedResponse)).toBe(
+      200,
+    );
+    const discounted = discountedResponse.body as SaleDraft;
+    expect(discounted.invoiceDiscountFils).toBe("5000");
+    expect(discounted.lines[0]?.discountFils).toBe("20000");
+
+    const clearBody = {
+      expectedVersion: discounted.version,
+      idempotencyKey: uuidV7(),
+    };
+    const clearedResponse = await request(
+      "POST",
+      saleDraftClearPath(draft.id),
+      clearBody,
+    );
+    expect(clearedResponse.status, diagnostics(clearedResponse)).toBe(200);
+    const cleared = clearedResponse.body as SaleDraft;
+    expect(cleared).toMatchObject({
+      status: "active",
+      invoiceDiscountFils: "0",
+      lines: [],
+      totals: {
+        grossFils: "0",
+        lineDiscountFils: "0",
+        invoiceDiscountFils: "0",
+        totalFils: "0",
+      },
+      version: String(BigInt(discounted.version) + 1n),
+    });
+    expect(
+      await request("POST", saleDraftClearPath(draft.id), clearBody),
+    ).toEqual(clearedResponse);
+    expect(await readDraft(draft.id)).toEqual(cleared);
+  }, 60_000);
+
+  it("persists optional miscellaneous cost without stock or journal effects", async () => {
+    const draft = await createDraft();
+    const effectsBefore = await administrator.query<{
+      inventoryMovementCount: string;
+      journalEntryCount: string;
+      journalLineCount: string;
+    }>(
+      `select
+         (select count(*)::text from inventory_movements where pharmacy_id=$1) as "inventoryMovementCount",
+         (select count(*)::text from accounting_journal_entries where pharmacy_id=$1) as "journalEntryCount",
+         (select count(*)::text from accounting_journal_lines where pharmacy_id=$1) as "journalLineCount"`,
+      [pharmacyId],
+    );
+    const defaultCostResponse = await request(
+      "POST",
+      saleDraftMiscLinesPath(draft.id),
+      {
+        displayName: "Delivery service",
+        unitName: "service",
+        quantity: "2",
+        unitPriceFils: "12500",
+        expectedVersion: draft.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(defaultCostResponse.status, diagnostics(defaultCostResponse)).toBe(
+      200,
+    );
+    const defaultCostDraft = defaultCostResponse.body as SaleDraft;
+    expect(defaultCostDraft.lines[0]).toMatchObject({
       kind: "misc",
       productId: null,
       unitId: null,
@@ -438,16 +562,67 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       totalFils: "25000",
       priceSource: "misc",
     });
-    expect(added.totals.totalFils).toBe("25000");
-    const row = await administrator.query<{
+
+    const enteredCostResponse = await request(
+      "POST",
+      saleDraftMiscLinesPath(draft.id),
+      {
+        displayName: "Courier service",
+        unitName: "service",
+        quantity: "1",
+        unitPriceFils: "30000",
+        costFils: "8500",
+        expectedVersion: defaultCostDraft.version,
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(enteredCostResponse.status, diagnostics(enteredCostResponse)).toBe(
+      200,
+    );
+    const added = enteredCostResponse.body as SaleDraft;
+    expect(added.lines).toHaveLength(2);
+    expect(added.totals.totalFils).toBe("55000");
+
+    const exited = new Promise<void>((resolve) =>
+      api.once("exit", () => resolve()),
+    );
+    api.kill("SIGKILL");
+    await exited;
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    expect(await readDraft(draft.id)).toEqual(added);
+
+    const rows = await administrator.query<{
+      display_name: string;
       product_id: string | null;
       cost_fils: string;
     }>(
-      "select product_id, cost_fils::text from sale_draft_lines where draft_id=$1",
-      [draft.id],
+      `select display_name, product_id, cost_fils::text
+       from sale_draft_lines where pharmacy_id=$1 and draft_id=$2
+       order by ordinal`,
+      [pharmacyId, draft.id],
     );
-    expect(row.rows).toEqual([{ product_id: null, cost_fils: "0" }]);
-    expect(await readDraft(draft.id)).toEqual(added);
+    expect(rows.rows).toEqual([
+      {
+        display_name: "Delivery service",
+        product_id: null,
+        cost_fils: "0",
+      },
+      {
+        display_name: "Courier service",
+        product_id: null,
+        cost_fils: "8500",
+      },
+    ]);
+    const effectsAfter = await administrator.query(
+      `select
+         (select count(*)::text from inventory_movements where pharmacy_id=$1) as "inventoryMovementCount",
+         (select count(*)::text from accounting_journal_entries where pharmacy_id=$1) as "journalEntryCount",
+         (select count(*)::text from accounting_journal_lines where pharmacy_id=$1) as "journalLineCount"`,
+      [pharmacyId],
+    );
+    expect(effectsAfter.rows).toEqual(effectsBefore.rows);
+
     const line = added.lines[0];
     if (line === undefined) throw new Error("Misc line missing");
     const changed = await request(
@@ -460,8 +635,31 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       },
     );
     expect(changed.status, diagnostics(changed)).toBe(200);
-    expect((changed.body as SaleDraft).totals.totalFils).toBe("37500");
+    expect((changed.body as SaleDraft).totals.totalFils).toBe("67500");
   }, 60_000);
+
+  it("rejects an overflowing line total atomically and replays the denial", async () => {
+    const draft = await createDraft();
+    const input = {
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+      displayName: "Overflowing service",
+      unitName: "Service",
+      quantity: "2",
+      unitPriceFils: "9223372036854775807",
+    };
+    const rejected = await request(
+      "POST",
+      saleDraftMiscLinesPath(draft.id),
+      input,
+    );
+    expect(rejected.status, diagnostics(rejected)).toBe(400);
+    expect(rejected.body).toMatchObject({ code: "sale-price-invalid" });
+    expect(
+      await request("POST", saleDraftMiscLinesPath(draft.id), input),
+    ).toEqual(rejected);
+    expect(await readDraft(draft.id)).toEqual(draft);
+  });
 
   it("adds a configured package unit at its captured retail conversion in one revision", async () => {
     const draft = await createDraft();
@@ -703,6 +901,7 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       id: product.id,
       displayName: product.displayName,
       currentRetailPriceFils: product.pricing.retailPriceFils,
+      currentRetailUnitName: "Strip",
       inventoryUnitName: "Strip",
       inventory: {
         onHandBaseUnits: null,
@@ -713,7 +912,9 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
     expect(
       saleProductContextContract.responses[200].parse(context.body),
     ).toEqual(context.body);
-    expect(JSON.stringify(context.body)).not.toContain("wholesalePriceFils");
+    expect(context.body).toMatchObject({
+      wholesalePriceFils: product.pricing.wholesalePriceFils,
+    });
     expect(JSON.stringify(context.body)).not.toContain("costFils");
   });
 
@@ -797,7 +998,7 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       ],
     });
     expect(context.inventory.batches).toHaveLength(2);
-    expect(JSON.stringify(context)).not.toMatch(/cost|valuat|wholesale/i);
+    expect(JSON.stringify(context)).not.toMatch(/cost|valuat/i);
   });
 
   it("requires Sale permission to read product context", async () => {
@@ -832,7 +1033,11 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
     const empty = await request("GET", saleQuickAccessPath());
     expect(empty.status, diagnostics(empty)).toBe(200);
     const initial = empty.body as SaleQuickAccess;
-    expect(initial).toEqual({ version: "1", categories: [] });
+    expect(initial).toEqual({
+      version: "1",
+      categories: [],
+      panelSettings: DEFAULT_SALE_PANEL_SETTINGS,
+    });
 
     const product = await createProduct("Quick access package");
     const units = await administrator.query<{ id: string }>(
@@ -927,7 +1132,116 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       categories: [],
     });
     expect(cleared.status, diagnostics(cleared)).toBe(200);
-    expect(cleared.body).toEqual({ version: "3", categories: [] });
+    expect(cleared.body).toEqual({
+      version: "3",
+      categories: [],
+      panelSettings: DEFAULT_SALE_PANEL_SETTINGS,
+    });
+  }, 60_000);
+
+  it("persists panel preferences and local item thumbnails across restart with idempotent versioned settings", async () => {
+    const current = (await request("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    const product = await createProduct("Panel preferences image");
+    const unit = await administrator.query<{ id: string }>(
+      "select sale_default_unit_id as id from catalog_products where pharmacy_id=$1 and id=$2",
+      [pharmacyId, product.id],
+    );
+    const thumbnailDataUrl = `data:image/png;base64,${readFileSync(new URL("./test-fixtures/thumbnail.png", import.meta.url)).toString("base64")}`;
+    expect(thumbnailDataUrl.length).toBeGreaterThan(30_000);
+    const input = {
+      expectedVersion: current.version,
+      idempotencyKey: uuidV7(),
+      panelSettings: {
+        visibleFields: ["scientificName", "consumption", "thumbnail"] as const,
+        consumptionMonths: 2,
+        showDrawerBalance: false,
+      },
+      categories: [
+        {
+          name: "Configured",
+          tiles: [
+            {
+              productId: product.id,
+              unitId: unit.rows[0]!.id,
+              thumbnailDataUrl,
+            },
+          ],
+        },
+      ],
+    };
+    const saved = await request("POST", saleQuickAccessPath(), input);
+    expect(saved.status, diagnostics(saved)).toBe(200);
+    expect(saved.body).toMatchObject({
+      panelSettings: input.panelSettings,
+      categories: [{ tiles: [{ thumbnailDataUrl }] }],
+    });
+    const replay = await request("POST", saleQuickAccessPath(), input);
+    expect(replay.body).toEqual(saved.body);
+    const stale = await request("POST", saleQuickAccessPath(), {
+      ...input,
+      idempotencyKey: uuidV7(),
+    });
+    expect(stale.status).toBe(409);
+    await stopProcess(api);
+    apiOutput = "";
+    api = startApi();
+    await waitForHealth(apiOrigin, () => apiOutput);
+    expect((await request("GET", saleQuickAccessPath())).body).toEqual(
+      saved.body,
+    );
+    const oversized = await request("POST", saleQuickAccessPath(), {
+      ...input,
+      expectedVersion: (saved.body as SaleQuickAccess).version,
+      idempotencyKey: uuidV7(),
+      categories: [
+        {
+          name: "Too large",
+          tiles: Array.from(
+            { length: 30 },
+            () => input.categories[0]!.tiles[0]!,
+          ),
+        },
+      ],
+    });
+    expect(oversized.status).toBe(413);
+    expect(oversized.body).toMatchObject({ code: "request-too-large" });
+    expect((await request("GET", saleQuickAccessPath())).body).toEqual(
+      saved.body,
+    );
+    const context = await request("GET", saleProductContextPath(product.id));
+    expect(context.status, diagnostics(context)).toBe(200);
+    expect(context.body).toMatchObject({
+      thumbnailDataUrl,
+      inventory: {
+        consumptionAverages: {
+          oneMonth: "0",
+          twoMonths: "0",
+          threeMonths: "0",
+        },
+      },
+    });
+    const invalid = await request("POST", saleQuickAccessPath(), {
+      ...input,
+      expectedVersion: (saved.body as SaleQuickAccess).version,
+      idempotencyKey: uuidV7(),
+      categories: [
+        {
+          name: "Configured",
+          tiles: [
+            {
+              productId: product.id,
+              unitId: unit.rows[0]!.id,
+              thumbnailDataUrl: "https://example.com/product.png",
+            },
+          ],
+        },
+      ],
+    });
+    expect(invalid.status).toBe(400);
+    expect((await request("GET", saleQuickAccessPath())).body).toEqual(
+      saved.body,
+    );
   }, 60_000);
 
   async function createDraft(): Promise<SaleDraft> {
@@ -961,6 +1275,27 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
     const response = await request("GET", saleDraftPath(draftId));
     expect(response.status, diagnostics(response)).toBe(200);
     return response.body as SaleDraft;
+  }
+
+  async function salePostingEffectCounts(): Promise<{
+    readonly inventoryMovementCount: string;
+    readonly journalEntryCount: string;
+    readonly journalLineCount: string;
+  }> {
+    const result = await administrator.query<{
+      inventoryMovementCount: string;
+      journalEntryCount: string;
+      journalLineCount: string;
+    }>(
+      `select
+         (select count(*)::text from inventory_movements where pharmacy_id=$1) as "inventoryMovementCount",
+         (select count(*)::text from accounting_journal_entries where pharmacy_id=$1) as "journalEntryCount",
+         (select count(*)::text from accounting_journal_lines where pharmacy_id=$1) as "journalLineCount"`,
+      [pharmacyId],
+    );
+    const counts = result.rows[0];
+    if (counts === undefined) throw new Error("Sale posting counts missing");
+    return counts;
   }
 
   async function assertDraftUntouched(

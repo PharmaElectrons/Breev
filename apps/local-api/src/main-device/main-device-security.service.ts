@@ -4,16 +4,19 @@ import {
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
   RENDERER_CONTRACTS,
+  SALE_QUICK_ACCESS_REPLACE_MAX_BODY_BYTES,
   localProofEvidenceSuccessSchema,
   localProofMutationContract,
   localProofMutationSuccessSchema,
   localSecurityDenialSchema,
+  saleQuickAccessReplaceContract,
   type LocalProofEvidenceSuccess,
   type LocalProofMutationSuccess,
   type LocalSecurityDenial,
   type LocalSecurityDenialCode,
 } from "@breev/contracts/local-rest";
 import { HttpException, Injectable } from "@nestjs/common";
+import { json } from "express";
 import { timingSafeEqual } from "node:crypto";
 import type {
   ErrorRequestHandler,
@@ -384,6 +387,34 @@ export function createMainRequestBodyErrorMiddleware(
   };
 }
 
+export function mainRequestBodyLimit(method: string, path: string): number {
+  return method === saleQuickAccessReplaceContract.method &&
+    path === saleQuickAccessReplaceContract.path
+    ? SALE_QUICK_ACCESS_REPLACE_MAX_BODY_BYTES
+    : MAX_REQUEST_BYTES;
+}
+
+export function createMainRequestBodyParser(): RequestHandler {
+  const defaultParser = json({
+    limit: MAX_REQUEST_BYTES,
+    strict: true,
+    type: "application/json",
+  });
+  const quickAccessParser = json({
+    limit: SALE_QUICK_ACCESS_REPLACE_MAX_BODY_BYTES,
+    strict: true,
+    type: "application/json",
+  });
+  return (request, response, next) => {
+    const parser =
+      mainRequestBodyLimit(request.method, request.path) ===
+      SALE_QUICK_ACCESS_REPLACE_MAX_BODY_BYTES
+        ? quickAccessParser
+        : defaultParser;
+    parser(request, response, next);
+  };
+}
+
 async function protectRequest(
   request: Request,
   response: Response,
@@ -467,9 +498,10 @@ async function protectRequest(
     return;
   }
   const contentLength = request.get("content-length");
+  const maxRequestBytes = mainRequestBodyLimit(request.method, request.path);
   if (
     contentLength !== undefined &&
-    (!/^\d+$/u.test(contentLength) || Number(contentLength) > MAX_REQUEST_BYTES)
+    (!/^\d+$/u.test(contentLength) || Number(contentLength) > maxRequestBytes)
   ) {
     await sendDenial(
       response,

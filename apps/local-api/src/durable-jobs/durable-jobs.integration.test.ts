@@ -26,6 +26,19 @@ import { CrashTestHarness } from "./test-helpers/crash-test-harness.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
+function expectAbruptExit(exit: {
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+}): void {
+  if (process.platform === "win32") {
+    // A child that self-sends SIGKILL is terminated with code 1 on Windows.
+    expect(exit).toEqual({ code: 1, signal: null });
+    return;
+  }
+
+  expect(exit).toEqual({ code: null, signal: "SIGKILL" });
+}
+
 describe.sequential("DurableJobsService integration & resilience proof", () => {
   let postgres: StartedPostgreSqlContainer;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -353,9 +366,16 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
         targetQueue: queueName,
       });
 
-      // 3. Crashing worker claims job and is terminated by SIGKILL
+      // 3. Confirm the worker reached the intended crash point before exit.
+      await crashingWorker.waitForEvent(
+        (event) =>
+          event.type === "crashing" &&
+          event.point === "after-claim" &&
+          event.idempotencyKey === idempotencyKey,
+        15_000,
+      );
       const exitResult = await crashingWorker.waitForExit(15_000);
-      expect(exitResult.signal).toBe("SIGKILL");
+      expectAbruptExit(exitResult);
 
       // Verify no side-effects or outcomes were written before crash
       const preRecoveryEffects = await getExternalEffects(
@@ -415,9 +435,16 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
         targetQueue: queueName,
       });
 
-      // 3. Worker executes external effect and terminates with SIGKILL
+      // 3. Confirm the external effect preceded the intended crash point.
+      await crashingWorker.waitForEvent(
+        (event) =>
+          event.type === "crashing" &&
+          event.point === "after-external-success" &&
+          event.idempotencyKey === idempotencyKey,
+        15_000,
+      );
       const exitResult = await crashingWorker.waitForExit(15_000);
-      expect(exitResult.signal).toBe("SIGKILL");
+      expectAbruptExit(exitResult);
 
       // Verify external effect was executed, but outcome table is still empty
       const midEffects = await getExternalEffects(pool(), idempotencyKey);
@@ -475,9 +502,16 @@ describe.sequential("DurableJobsService integration & resilience proof", () => {
         targetQueue: queueName,
       });
 
-      // 3. Worker crashes with SIGKILL right before outcome recording
+      // 3. Confirm the worker reached the intended crash point before exit.
+      await crashingWorker.waitForEvent(
+        (event) =>
+          event.type === "crashing" &&
+          event.point === "before-outcome-recording" &&
+          event.idempotencyKey === idempotencyKey,
+        15_000,
+      );
       const exitResult = await crashingWorker.waitForExit(15_000);
-      expect(exitResult.signal).toBe("SIGKILL");
+      expectAbruptExit(exitResult);
 
       // Verify external effect was recorded, outcome was not recorded
       const midEffects = await getExternalEffects(pool(), idempotencyKey);

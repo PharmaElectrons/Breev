@@ -24,6 +24,7 @@ import {
 } from "./database-roles.js";
 import { evidencePath } from "./browser/evidence-path.js";
 import {
+  COLD_LOCAL_API_READY_TIMEOUT_MS,
   spawnLocalApiProcess,
   stopProcess,
   waitForHealth,
@@ -83,7 +84,16 @@ test("the packaged desktop enforces its outer security and health seams", async 
   );
 
   try {
-    await waitForHealth(apiOrigin, "healthy", api);
+    const readinessStartedAt = Date.now();
+    await waitForHealth(
+      apiOrigin,
+      "healthy",
+      api,
+      COLD_LOCAL_API_READY_TIMEOUT_MS,
+    );
+    console.log(
+      `[test readiness] desktop-smoke health cold local API healthy in ${String(Date.now() - readinessStartedAt)} ms`,
+    );
     proxy = await startHealthProxy(apiOrigin);
     const executablePath = packagedExecutablePath();
     await access(executablePath);
@@ -240,7 +250,16 @@ test("the packaged desktop commits through its bound Main session offline and af
   );
 
   try {
-    await waitForHealth(apiOrigin, "healthy", api);
+    const readinessStartedAt = Date.now();
+    await waitForHealth(
+      apiOrigin,
+      "healthy",
+      api,
+      COLD_LOCAL_API_READY_TIMEOUT_MS,
+    );
+    console.log(
+      `[test readiness] desktop-smoke offline cold local API healthy in ${String(Date.now() - readinessStartedAt)} ms`,
+    );
     const executablePath = packagedExecutablePath();
     await access(executablePath);
     desktop = spawn(

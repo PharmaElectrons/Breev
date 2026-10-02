@@ -40,6 +40,7 @@ import {
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
 import {
+  COLD_LOCAL_API_READY_TIMEOUT_MS,
   spawnLocalApiProcess,
   stopProcess,
   waitForHealth,
@@ -124,7 +125,16 @@ test.describe.serial("reorder basket and Ordered Items", () => {
     apiPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${String(apiPort)}`;
     api = startApi(apiPort);
-    await waitForHealth(apiOrigin, "healthy", api);
+    const readinessStartedAt = Date.now();
+    await waitForHealth(
+      apiOrigin,
+      "healthy",
+      api,
+      COLD_LOCAL_API_READY_TIMEOUT_MS,
+    );
+    console.info(
+      `[test readiness] basket cold local API healthy in ${String(Date.now() - readinessStartedAt)} ms`,
+    );
 
     const bootstrap = await apiRequest("POST", "/identity/bootstrap", {
       owner: {

@@ -33,8 +33,10 @@ export interface InventoryRiskInput {
 export function consumptionRatePer30Days(
   movements: readonly InventoryRiskMovement[],
   now: Date,
+  months: 1 | 2 | 3 = 3,
 ): bigint {
-  const windowStart = now.getTime() - 90 * 24 * 60 * 60 * 1_000;
+  const windowDays = months * 30;
+  const windowStart = now.getTime() - windowDays * 24 * 60 * 60 * 1_000;
   const consumed = movements.reduce((total, movement) => {
     if (
       movement.occurredAt.getTime() < windowStart ||
@@ -47,7 +49,7 @@ export function consumptionRatePer30Days(
     }
     return total - movement.quantity;
   }, 0n);
-  return divideFilsRounded(consumed * 30n, 90n);
+  return divideFilsRounded(consumed * 30n, BigInt(windowDays));
 }
 
 export function riskIndicators(

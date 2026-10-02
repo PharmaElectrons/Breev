@@ -42,6 +42,19 @@ import { catchUp, evaluateBusinessDate } from "./inventory-safety-evaluator.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 
+function expectAbruptExit(exit: {
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+}): void {
+  if (process.platform === "win32") {
+    // A child that self-sends SIGKILL is terminated with code 1 on Windows.
+    expect(exit).toEqual({ code: 1, signal: null });
+    return;
+  }
+
+  expect(exit).toEqual({ code: null, signal: "SIGKILL" });
+}
+
 describe.sequential("inventory batch safety PostgreSQL seam", () => {
   let administrator: Pool;
   let application: Pool;
@@ -528,7 +541,7 @@ describe.sequential("inventory batch safety PostgreSQL seam", () => {
               (event) => event.type === "crashing",
             );
             expect(crashing.point).toBe(scenario.point);
-            expect((await child.waitForExit()).signal).toBe("SIGKILL");
+            expectAbruptExit(await child.waitForExit());
             await delay(3_000);
             await durableJobs.supervise(INVENTORY_BATCH_SAFETY_QUEUE);
             await durableJobs.work<InventorySafetyJobPayload>(

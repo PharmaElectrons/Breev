@@ -8,17 +8,30 @@ import {
   productArchivePath,
   reorderBasketPath,
   reorderItemsPath,
+  saleDraftDiscountPath,
+  saleDraftLineChangesPath,
+  saleDraftLinesPath,
   saleDraftPath,
   saleDraftMiscLinesPath,
   saleDraftLinePriceOverridePath,
   saleDraftsPath,
+  saleDrawerBalancePath,
   saleProductSearchPath,
+  saleQuickAccessPath,
   type Product,
   type ProductCreateRequest,
   type ReorderItem,
   type SaleDraft,
+  type SaleQuickAccess,
+  type SaleQuickAccessReplaceRequest,
 } from "@breev/contracts/local-rest";
-import { expect, test, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -51,6 +64,7 @@ const SELLER_USERNAME = "sales.browser.seller";
 const SELLER_PASSWORD = "sales browser seller password stays in this test";
 const NO_BASKET_USERNAME = "sales.browser.nobasket";
 const NO_BASKET_PASSWORD = "sales browser no basket password stays here";
+const ownedBrowserContexts = new Set<BrowserContext>();
 
 interface Credentials {
   readonly deviceId: string;
@@ -142,6 +156,11 @@ test.describe.serial("sale drafts and the reorder row action", () => {
   });
 
   test.afterAll(async () => {
+    await Promise.all(
+      [...ownedBrowserContexts].map((context) =>
+        context.close().catch(() => undefined),
+      ),
+    );
     await closeServer(renderer?.server);
     await stopProcess(api);
     await administrator?.end().catch(() => undefined);
@@ -168,9 +187,9 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     ).toHaveValue(draftId);
     const before = await apiRequest("GET", saleDraftPath(draftId));
     expect(before.status).toBe(200);
-    const beforeVersion = await page
-      .locator("[data-sale-draft-version]")
-      .textContent();
+    const beforeVersion = await selectedDraftVersion(page).getAttribute(
+      "data-sale-draft-version",
+    );
 
     await search.fill("panadol gs");
     await expect(
@@ -193,8 +212,9 @@ test.describe.serial("sale drafts and the reorder row action", () => {
 
     const after = await apiRequest("GET", saleDraftPath(draftId));
     expect(after.body).toEqual(before.body);
-    expect(await page.locator("[data-sale-draft-version]").textContent()).toBe(
-      beforeVersion,
+    await expect(selectedDraftVersion(page)).toHaveAttribute(
+      "data-sale-draft-version",
+      beforeVersion ?? "",
     );
 
     const basket = await apiRequest("GET", reorderBasketPath());
@@ -245,11 +265,30 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     const scan = page.locator("#sale-draft-scan");
     await scan.fill(panadol.barcodes[0]!.value);
     await scan.press("Enter");
+    await expect(scan).toBeFocused();
+    await expect(scan).toHaveValue("");
     await expect(
-      page.locator(`[data-sale-line-add="${panadol.id}"]`),
-    ).toBeVisible();
-    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
-      before.body,
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toContainText(panadol.displayName);
+
+    const scannedDraft = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    expect(scannedDraft.lines).toHaveLength(1);
+    expect(scannedDraft.lines[0]!.productId).toBe(panadol.id);
+    expect(scannedDraft.lines[0]!.kind).toBe("catalog");
+    expect(scannedDraft.lines[0]!.quantity).toBe("1");
+    expect(scannedDraft.lines[0]!.unitPriceFils).toBe("100000");
+    expect(scannedDraft.totals.totalFils).toBe("100000");
+    expect(BigInt(scannedDraft.version)).toBe(
+      BigInt((before.body as SaleDraft).version) + 1n,
+    );
+    await expect(selectedDraftVersion(page)).toBeVisible();
+    await expect(selectedDraftVersion(page)).toHaveAttribute(
+      "data-sale-draft-version",
+      scannedDraft.version,
     );
   });
 
@@ -262,18 +301,22 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     expect(open).toHaveLength(1);
     const draft = open[0]!;
 
-    const context = await browser.newContext({
-      viewport: { height: 768, width: 1280 },
-    });
+    const context = trackBrowserContext(
+      await browser.newContext({
+        viewport: { height: 768, width: 1280 },
+      }),
+    );
     const page = await context.newPage();
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/sales/drafts/${draft.id}`);
 
     // Durable draft state is the server's; the query was transient and is gone.
     await expect(page.locator("#sale-draft-search")).toHaveValue("");
-    await expect(
-      page.locator(`[data-sale-draft-version="${draft.version}"]`),
-    ).toBeVisible();
+    await expect(selectedDraftVersion(page)).toBeVisible();
+    await expect(selectedDraftVersion(page)).toHaveAttribute(
+      "data-sale-draft-version",
+      draft.version,
+    );
 
     await page.goto(`${renderer.origin}#/sales`);
     const select = page.locator('[data-sale-draft-control="select"]');
@@ -306,9 +349,11 @@ test.describe.serial("sale drafts and the reorder row action", () => {
 
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/sales/drafts/${draft.id}`);
-    await expect(
-      page.locator(`[data-sale-draft-version="${draft.version}"]`),
-    ).toBeVisible();
+    await expect(selectedDraftVersion(page)).toBeVisible();
+    await expect(selectedDraftVersion(page)).toHaveAttribute(
+      "data-sale-draft-version",
+      draft.version,
+    );
   });
 
   test("keeps the draft and adds exactly once when the basket call cannot reach the API", async ({
@@ -437,19 +482,21 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     for (const locale of ["en", "ar"] as const) {
       for (const theme of ["light", "dark"] as const) {
         for (const viewport of viewports) {
-          const context = await browser.newContext({
-            ...(locale === "en" &&
-            theme === "light" &&
-            viewport.name === "1280x800"
-              ? {
-                  recordVideo: {
-                    dir: path.dirname(videoPath),
-                    size: { height: viewport.height, width: viewport.width },
-                  },
-                }
-              : {}),
-            viewport: { height: viewport.height, width: viewport.width },
-          });
+          const context = trackBrowserContext(
+            await browser.newContext({
+              ...(locale === "en" &&
+              theme === "light" &&
+              viewport.name === "1280x800"
+                ? {
+                    recordVideo: {
+                      dir: path.dirname(videoPath),
+                      size: { height: viewport.height, width: viewport.width },
+                    },
+                  }
+                : {}),
+              viewport: { height: viewport.height, width: viewport.width },
+            }),
+          );
           const page = await context.newPage();
           await installDesktopFake(page, renderer.origin, locale, theme);
           await page.goto(`${renderer.origin}#/sales`);
@@ -616,7 +663,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
       page.locator(`[data-sale-basket-add="${lastProduct!.id}"]`),
     ).toBeVisible();
 
-    const arabicContext = await browser.newContext();
+    const arabicContext = trackBrowserContext(await browser.newContext());
     const arabicPage = await arabicContext.newPage();
     await login(SELLER_USERNAME, SELLER_PASSWORD);
     await installDesktopFake(arabicPage, renderer.origin, "ar", "light");
@@ -830,7 +877,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await expect(page.locator(".sales-item-context")).toBeVisible();
     await expect(page.locator(".sales-item-context")).toContainText(
-      "No stock movement recorded",
+      "No stock record",
     );
     const calculator = page.getByRole("region", { name: "Calculator" });
     await calculator.getByRole("textbox", { name: "Calculator" }).fill("2");
@@ -954,9 +1001,11 @@ test.describe.serial("sale drafts and the reorder row action", () => {
       page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
     ).toHaveCount(1);
 
-    const arabicContext = await browser.newContext({
-      viewport: { width: 1878, height: 1002 },
-    });
+    const arabicContext = trackBrowserContext(
+      await browser.newContext({
+        viewport: { width: 1878, height: 1002 },
+      }),
+    );
     const arabicPage = await arabicContext.newPage();
     await installDesktopFake(arabicPage, renderer.origin, "ar", "light");
     await arabicPage.goto(`${renderer.origin}#/sales/drafts/${draftId}`);
@@ -993,6 +1042,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await form.getByLabel("Unit", { exact: true }).fill("service");
     await form.getByLabel("Quantity").fill("2");
     await form.getByLabel("Unit price (IQD)").fill("12.5");
+    await form.getByLabel("Cost (IQD)").fill("8.25");
     await form.getByRole("button", { name: "Add to sale" }).click();
     await expect
       .poll(
@@ -1008,6 +1058,38 @@ test.describe.serial("sale drafts and the reorder row action", () => {
       productId: null,
       totalFils: "25000",
     });
+
+    const costResult = await administrator.query<{ cost_fils: string }>(
+      "select cost_fils::text from sale_draft_lines where draft_id = $1 and line_kind = 'misc' order by ordinal asc limit 1",
+      [draftId],
+    );
+    expect(costResult.rows[0]?.cost_fils).toBe("8250");
+
+    // Optional empty cost defaults to 0
+    await page.locator("[data-sale-misc-open]").click();
+    await form.getByLabel("Name").fill("Packaging fee");
+    await form.getByLabel("Unit", { exact: true }).fill("pack");
+    await form.getByLabel("Quantity").fill("1");
+    await form.getByLabel("Unit price (IQD)").fill("3.0");
+    // Leave Cost (IQD) empty
+    await form.getByRole("button", { name: "Add to sale" }).click();
+    await expect
+      .poll(
+        async () =>
+          ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+            .lines.length,
+      )
+      .toBe(2);
+
+    const emptyCostResult = await administrator.query<{ cost_fils: string }>(
+      "select cost_fils::text from sale_draft_lines where draft_id = $1 and line_kind = 'misc' order by ordinal desc limit 1",
+      [draftId],
+    );
+    expect(emptyCostResult.rows[0]?.cost_fils).toBe("0");
+
+    const twoLinesDraft = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+
     await login(SELLER_USERNAME, SELLER_PASSWORD);
     await page.reload();
     await expect(page.locator("[data-sale-misc-open]")).toHaveCount(0);
@@ -1016,12 +1098,12 @@ test.describe.serial("sale drafts and the reorder row action", () => {
       unitName: "service",
       quantity: "1",
       unitPriceFils: "1000",
-      expectedVersion: added.version,
+      expectedVersion: twoLinesDraft.version,
       idempotencyKey: uuidV7(),
     });
     expect(denied.status).toBe(403);
     expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
-      added,
+      twoLinesDraft,
     );
   });
 
@@ -1033,7 +1115,16 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await page.goto(`${renderer.origin}#/sales`);
     const draftId = await openFreshDraft(page);
     await page.locator("#sale-draft-search").fill("Panadol Extra");
-    await page.locator(`[data-sale-line-add="${panadol.id}"]`).click();
+    const addPanadol = page.locator(`[data-sale-line-add="${panadol.id}"]`);
+    await expect(addPanadol).toBeVisible();
+    await addPanadol.click();
+    await expect
+      .poll(async () =>
+        (
+          (await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft
+        ).lines.map((line) => line.productId),
+      )
+      .toEqual([panadol.id]);
     await expect
       .poll(
         async () =>
@@ -1123,7 +1214,16 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await page.goto(`${renderer.origin}#/sales`);
     const draftId = await openFreshDraft(page);
     await page.locator("#sale-draft-search").fill("Panadol Extra");
-    await page.locator(`[data-sale-line-add="${panadol.id}"]`).click();
+    const addPanadol = page.locator(`[data-sale-line-add="${panadol.id}"]`);
+    await expect(addPanadol).toBeVisible();
+    await addPanadol.click();
+    await expect
+      .poll(async () =>
+        (
+          (await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft
+        ).lines.map((line) => line.productId),
+      )
+      .toEqual([panadol.id]);
     const invoice = page.locator(`[data-sale-invoice="${draftId}"]`);
     const editor = invoice.locator(".sales-line-editor");
     await expect(editor.getByLabel("Quantity")).toHaveValue("1");
@@ -1205,13 +1305,13 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     const unitId = await pin.getByLabel("Selling unit").inputValue();
     await pin.getByRole("button", { name: "Save pin" }).click();
     await expect(page.locator("#sale-quick-links-panel")).toBeHidden();
-    await page.locator("[data-sale-quick-toggle]").click();
+    await page.getByRole("button", { name: "Quick Links" }).click();
     await expect(
       page.locator(`[data-sale-quick-add="${panadol.id}"]`),
     ).toBeVisible();
     await login(SELLER_USERNAME, SELLER_PASSWORD);
     await page.reload();
-    await page.locator("[data-sale-quick-toggle]").click();
+    await page.getByRole("button", { name: "Quick Links" }).click();
     await expect(
       page.getByRole("button", { name: /Pin to quick access/ }),
     ).toHaveCount(0);
@@ -1232,41 +1332,64 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     ).toHaveCount(1);
   });
 
-  test("opens Product creation from an unknown scan and returns to the unchanged draft", async ({
+  test("creates from an unknown scan with its barcode and preserves the existing draft line", async ({
     page,
   }) => {
     await login(OWNER_USERNAME, OWNER_PASSWORD);
     await installDesktopFake(page, renderer.origin, "en", "light");
     await page.goto(`${renderer.origin}#/sales`);
     const draftId = await openFreshDraft(page);
+    await page.locator("#sale-draft-search").fill("Panadol Extra");
+    await page.locator(`[data-sale-line-add="${panadol.id}"]`).click();
+    await expect
+      .poll(async () =>
+        (
+          (await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft
+        ).lines.map((line) => line.productId),
+      )
+      .toEqual([panadol.id]);
+    await expect(
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+    const before = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    expect(before.lines.map((line) => line.productId)).toEqual([panadol.id]);
+
     const scan = page.locator("#sale-draft-scan");
     await scan.fill("9876543210012");
     await scan.press("Enter");
-    const create = page.getByRole("button", { name: "Create new item" });
-    await expect(create).toBeVisible();
-    await create.click();
     const dialog = page.getByRole("dialog", { name: "Create new item" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(dialog).toHaveCount(0);
     await expect(scan).toHaveValue("9876543210012");
-    expect(
-      ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
-        .lines,
-    ).toHaveLength(0);
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      before,
+    );
 
-    await create.click();
+    // Re-submit the same unknown scan, then verify ProductForm carries it into
+    // the barcode list before completing product creation.
+    await scan.press("Enter");
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText("9876543210012", { exact: true }),
+    ).toBeVisible();
     await dialog.getByLabel("Trade name").fill("Quick Sale Item");
     await dialog.getByRole("button", { name: "Continue" }).click();
+    await expect(dialog.getByLabel("Inventory Unit (base unit)")).toBeVisible();
     await dialog.getByLabel("Inventory Unit (base unit)").fill("Piece");
     await dialog.getByLabel("Retail price (fils)").fill("120000");
     await dialog.getByLabel("Uses per day").fill("1");
     await dialog.getByLabel("Food timing").selectOption("after-food");
     await dialog.getByRole("button", { name: "Create product" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.locator("#sale-draft-search")).toHaveValue(
-      "Quick Sale Item",
-    );
+
+    // New item is attached automatically without replacing the existing line.
+    await expect(
+      page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
+    ).toHaveCount(2);
+    await expect(scan).toBeFocused();
+
     const found = await apiRequest(
       "GET",
       `${saleProductSearchPath()}?query=Quick%20Sale%20Item`,
@@ -1276,15 +1399,233 @@ test.describe.serial("sale drafts and the reorder row action", () => {
       (found.body as { results: { product: { id: string } }[] }).results[0]
         ?.product.id,
     );
-    await page.locator(`[data-sale-line-add="${productId}"]`).click();
+    const barcodeMatch = await apiRequest(
+      "GET",
+      `${saleProductSearchPath()}?query=9876543210012`,
+    );
+    expect(
+      (
+        barcodeMatch.body as {
+          results: { matchedField: string; product: { id: string } }[];
+        }
+      ).results,
+    ).toContainEqual({
+      matchedField: "barcode",
+      product: expect.objectContaining({ id: productId }),
+    });
+    const after = (await apiRequest("GET", saleDraftPath(draftId)))
+      .body as SaleDraft;
+    expect(after.lines.map((line) => line.productId)).toEqual([
+      panadol.id,
+      productId,
+    ]);
+    expect(after.lines[0]).toEqual(before.lines[0]);
+  });
+
+  test("an unknown barcode matching another product name opens creation instead of adding that product", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const scannedBarcode = "9876543210999";
+    const nameMatchedProduct = await createProduct(scannedBarcode);
+    const nameSearch = await apiRequest(
+      "GET",
+      `${saleProductSearchPath()}?query=${scannedBarcode}`,
+    );
+    expect(
+      (
+        nameSearch.body as {
+          results: { matchedField: string; product: { id: string } }[];
+        }
+      ).results,
+    ).toContainEqual({
+      matchedField: "english-name",
+      product: expect.objectContaining({ id: nameMatchedProduct.id }),
+    });
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    const draftId = await openFreshDraft(page);
+    await page.locator("#sale-draft-search").fill("Panadol Extra");
+    await page.locator(`[data-sale-line-add="${panadol.id}"]`).click();
+    await expect
+      .poll(async () =>
+        (
+          (await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft
+        ).lines.map((line) => line.productId),
+      )
+      .toEqual([panadol.id]);
+    const before = await apiRequest("GET", saleDraftPath(draftId));
+
+    const scan = page.locator("#sale-draft-scan");
+    await scan.fill(scannedBarcode);
+    await scan.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "Create new item" });
+    await expect(dialog).toBeVisible();
     await expect(
       page.locator(`[data-sale-invoice="${draftId}"] [data-sale-line-id]`),
     ).toHaveCount(1);
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      before.body,
+    );
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    expect((await apiRequest("GET", saleDraftPath(draftId))).body).toEqual(
+      before.body,
+    );
+  });
+
+  test("Clear cancel preserves a populated draft and confirmation clears it in one version", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const initial = await createPopulatedDraft(panadol.id);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales/drafts/${initial.id}`);
+    const invoice = page.locator(`[data-sale-invoice="${initial.id}"]`);
+    await expect(invoice.locator("[data-sale-line-id]")).toHaveCount(1);
+    expect(initial.invoiceDiscountFils).toBe("1000");
+    expect(initial.lines[0]?.lineDiscountPercentage).toBe("10");
+
+    await invoice.getByRole("button", { name: "Clear invoice" }).click();
+    const confirmation = page.getByRole("group", {
+      name: /This removes every line and discount/u,
+    });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirmation).toHaveCount(0);
+    expect((await apiRequest("GET", saleDraftPath(initial.id))).body).toEqual(
+      initial,
+    );
+
+    await invoice.getByRole("button", { name: "Clear invoice" }).click();
+    await page
+      .getByRole("group", { name: /This removes every line and discount/u })
+      .getByRole("button", { name: "Clear invoice" })
+      .click();
+    await expect
+      .poll(
+        async () => (await apiRequest("GET", saleDraftPath(initial.id))).body,
+      )
+      .toMatchObject({
+        invoiceDiscountFils: "0",
+        lines: [],
+        status: "active",
+      });
+    const cleared = (await apiRequest("GET", saleDraftPath(initial.id)))
+      .body as SaleDraft;
+    expect(BigInt(cleared.version)).toBe(BigInt(initial.version) + 1n);
+    expect(cleared.totals.lineDiscountFils).toBe("0");
+  });
+
+  test("confirming New keeps the populated server draft and opens a separate draft", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const original = await createPopulatedDraft(panadol.id);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales/drafts/${original.id}`);
+    await expect(
+      page.locator(`[data-sale-invoice="${original.id}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+
+    await page.locator('[data-sale-draft-control="new"]').click();
+    const confirmation = page.getByRole("group", {
+      name: "Confirm new sale draft",
+    });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Open new draft" }).click();
+
+    await expect.poll(() => currentDraftId(page)).not.toBe(original.id);
+    const newDraftId = await currentDraftId(page);
+    expect(newDraftId).not.toBe(original.id);
+    await expect(
+      page.locator(`[data-sale-invoice="${newDraftId}"] [data-sale-line-id]`),
+    ).toHaveCount(0);
+    expect((await apiRequest("GET", saleDraftPath(original.id))).body).toEqual(
+      original,
+    );
+    const opened = (await apiRequest("GET", saleDraftPath(newDraftId)))
+      .body as SaleDraft;
+    expect(opened.status).toBe("active");
+    expect(opened.lines).toEqual([]);
+    expect(opened.invoiceDiscountFils).toBe("0");
+  });
+
+  test("Delete cancel preserves a populated draft and confirmation discards it", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const original = await createPopulatedDraft(panadol.id);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales/drafts/${original.id}`);
+    await expect(
+      page.locator(`[data-sale-invoice="${original.id}"] [data-sale-line-id]`),
+    ).toHaveCount(1);
+
+    const footer = page.locator(".sales-action-footer");
+    await footer.getByRole("button", { name: "Delete" }).click();
+    let confirmation = page.getByRole("group", { name: "Confirm delete" });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirmation).toHaveCount(0);
+    expect((await apiRequest("GET", saleDraftPath(original.id))).body).toEqual(
+      original,
+    );
+
+    await footer.getByRole("button", { name: "Delete" }).click();
+    confirmation = page.getByRole("group", { name: "Confirm delete" });
+    await confirmation.getByRole("button", { name: "Confirm delete" }).click();
+    await expect
+      .poll(
+        async () =>
+          (
+            (await apiRequest("GET", saleDraftPath(original.id)))
+              .body as SaleDraft
+          ).status,
+      )
+      .toBe("discarded");
+    const discarded = (await apiRequest("GET", saleDraftPath(original.id)))
+      .body as SaleDraft;
+    expect(BigInt(discarded.version)).toBe(BigInt(original.version) + 1n);
+    expect(discarded.lines).toEqual(original.lines);
+    expect(discarded.invoiceDiscountFils).toBe(original.invoiceDiscountFils);
+  });
+
+  test("Enter or Add on empty Pick Item search reliably opens ProductForm before debounced search completes", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    const draftId = await openFreshDraft(page);
+    const search = page.locator("#sale-draft-search");
+    const dialog = page.getByRole("dialog", { name: "Create new item" });
+
+    // Enter on empty query opens ProductForm
+    await search.fill("");
+    await search.press("Enter");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // Enter before debounced search completes on unknown query
+    await search.fill("Unregistered Quick Med 99");
+    await search.press("Enter");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // Add button on unknown query
+    await search.fill("Another Unknown Med 88");
+    await page.locator("[data-sale-entry-add]").click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+
     expect(
-      (
-        (await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft
-      ).lines.map((line) => line.productId),
-    ).toEqual([productId]);
+      ((await apiRequest("GET", saleDraftPath(draftId))).body as SaleDraft)
+        .lines,
+    ).toHaveLength(0);
   });
 
   test("navigates open drafts without resuming, then pauses, edits, and discards one", async ({
@@ -1345,6 +1686,963 @@ test.describe.serial("sale drafts and the reorder row action", () => {
       ((await apiRequest("GET", saleDraftPath(first.id))).body as SaleDraft)
         .status,
     ).toBe("discarded");
+  });
+
+  test("presentation settings persist across reload with consumption months, fields, and drawer balance", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+
+    // Open quick access panel if not already open
+    const quickToggle = page.getByRole("button", { name: "Quick Links" });
+    if (await page.locator("#sale-quick-links-panel").isHidden()) {
+      await quickToggle.click();
+    }
+    await expect(page.locator("#sale-quick-links-panel")).toBeVisible();
+
+    // Trigger presentation settings modal
+    const settingsBtn = page
+      .locator("[data-sale-presentation-settings-trigger]:visible")
+      .first();
+    await expect(settingsBtn).toBeVisible();
+    await settingsBtn.click();
+
+    const dialog = page.getByRole("dialog", {
+      name: "POS Presentation Settings",
+    });
+    await expect(dialog).toBeVisible();
+    const closeButton = dialog.getByRole("button", { name: "Close" });
+    const saveButton = dialog.getByRole("button", { name: "Save settings" });
+    await expect(closeButton).toBeInViewport({ ratio: 1 });
+    await expect(saveButton).toBeInViewport({ ratio: 1 });
+    await expect(dialog).toBeFocused();
+    expect(
+      (
+        await new AxeBuilder({ page })
+          .include(".sales-presentation-dialog")
+          .analyze()
+      ).violations,
+    ).toEqual([]);
+    await saveButton.focus();
+    await pressKeyOnFocused(page, saveButton, "Tab");
+    await expect(closeButton).toBeFocused();
+
+    // This tab contains the item fields and drawer settings.
+    await dialog.getByRole("button", { name: "Item Panel Fields" }).click();
+
+    // Select 1 month consumption
+    const radio1Month = dialog
+      .locator('input[type="radio"][name="consumptionMonths"]')
+      .first();
+    await radio1Month.check();
+    await expect(radio1Month).toBeChecked();
+
+    // Uncheck "Wholesale Price" field
+    const wholesaleCheckbox = dialog.getByLabel(
+      "Wholesale price (when permitted)",
+    );
+    if (await wholesaleCheckbox.isChecked()) {
+      await wholesaleCheckbox.uncheck();
+    }
+    await expect(wholesaleCheckbox).not.toBeChecked();
+
+    // Toggle drawer balance
+    const drawerCheckbox = dialog.getByLabel(
+      "Show cash drawer balance in the sales interface",
+    );
+    if (!(await drawerCheckbox.isChecked())) await drawerCheckbox.check();
+    await expect(drawerCheckbox).toBeChecked();
+
+    await page.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sales-presentation-fields-en-light.png",
+      ),
+    });
+
+    await page.evaluate('document.documentElement.style.fontSize = "200%"');
+    const settingsBody = dialog.locator(".sales-presentation-scroll-content");
+    await expect(settingsBody).toHaveCSS("overflow-y", "auto");
+    await expect(
+      dialog.locator(".sales-presentation-close-btn"),
+    ).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeInViewport(
+      { ratio: 1 },
+    );
+    await expect(saveButton).toBeInViewport({ ratio: 1 });
+    await drawerCheckbox.scrollIntoViewIfNeeded();
+    await expect(drawerCheckbox).toBeInViewport({ ratio: 1 });
+    await expect(dialog.locator(".sales-presentation-footer")).toBeVisible();
+    await dialog.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sales-presentation-fields-en-light-200-percent.png",
+      ),
+    });
+    await page.evaluate('document.documentElement.style.fontSize = ""');
+
+    // Save
+    await dialog.locator(".sales-presentation-save-btn").click();
+    await expect(dialog).toBeHidden();
+
+    // Verify on server via API
+    await expect
+      .poll(async () => {
+        const res = await apiRequest("GET", saleQuickAccessPath());
+        return (res.body as SaleQuickAccess).panelSettings;
+      })
+      .toMatchObject({
+        consumptionMonths: 1,
+        showDrawerBalance: true,
+      });
+
+    // Reload page and verify settings persisted in UI
+    await page.reload();
+    if (await page.locator("#sale-quick-links-panel").isHidden()) {
+      await quickToggle.click();
+    }
+    await page
+      .locator("[data-sale-presentation-settings-trigger]:visible")
+      .first()
+      .click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Item Panel Fields" }).click();
+
+    await expect(
+      dialog.locator('input[type="radio"][name="consumptionMonths"]').first(),
+    ).toBeChecked();
+    await expect(
+      dialog.getByLabel("Wholesale price (when permitted)"),
+    ).not.toBeChecked();
+    await expect(
+      dialog.getByLabel("Show cash drawer balance in the sales interface"),
+    ).toBeChecked();
+
+    await dialog.locator(".sales-presentation-cancel-btn").click();
+    await expect(dialog).toBeHidden();
+    await expect(settingsBtn).toBeFocused();
+  });
+
+  test("presentation settings dialog supports both locales and themes with focus and accessibility", async ({
+    browser,
+  }) => {
+    test.setTimeout(180_000);
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = trackBrowserContext(
+          await browser.newContext({
+            viewport: { height: 800, width: 1280 },
+          }),
+        );
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/sales`);
+        await expect(page.locator("html")).toHaveAttribute("lang", locale);
+        await expect(page.locator("html")).toHaveAttribute(
+          "dir",
+          locale === "ar" ? "rtl" : "ltr",
+        );
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        await openFreshDraft(page);
+        const quickToggle = page.getByRole("button", {
+          name: locale === "ar" ? "روابط سريعة" : "Quick Links",
+        });
+        if (await page.locator("#sale-quick-links-panel").isHidden()) {
+          await quickToggle.click();
+        }
+        const settingsTrigger = page
+          .locator("[data-sale-presentation-settings-trigger]:visible")
+          .first();
+        await settingsTrigger.click();
+
+        const dialog = page.getByRole("dialog");
+        const title = dialog.locator(".sales-presentation-title");
+        const closeButton = dialog.locator(".sales-presentation-close-btn");
+        const saveButton = dialog.locator(".sales-presentation-save-btn");
+        const fieldsTab = dialog.locator(".sales-presentation-tab-btn").first();
+        await expect(dialog).toBeVisible();
+        await expect(closeButton).toBeInViewport({ ratio: 1 });
+        await expect(saveButton).toBeInViewport({ ratio: 1 });
+        await expect(dialog).toBeFocused();
+        await expect(title).toBeVisible();
+        await expect(closeButton).toBeVisible();
+        await expect(saveButton).toBeVisible();
+        await expect(fieldsTab).toBeVisible();
+        await expect(dialog.locator("nav")).toHaveAttribute(
+          "aria-label",
+          (await title.innerText()).trim(),
+        );
+        if (locale === "en") {
+          await expect(title).toHaveText("POS Presentation Settings");
+          await expect(closeButton).toHaveAccessibleName("Close");
+          await expect(saveButton).toHaveText("Save settings");
+          await expect(fieldsTab).toHaveText("Item Panel Fields");
+        } else {
+          await expect(title).toHaveText(/[\u0600-\u06ff]/u);
+          await expect(closeButton).toHaveAccessibleName(/[\u0600-\u06ff]/u);
+          await expect(saveButton).toHaveText(/[\u0600-\u06ff]/u);
+          await expect(fieldsTab).toHaveText(/[\u0600-\u06ff]/u);
+        }
+        expect(
+          (
+            await new AxeBuilder({ page })
+              .include(".sales-presentation-dialog")
+              .analyze()
+          ).violations,
+        ).toEqual([]);
+        await page.screenshot({
+          path: evidencePath(
+            "issue-62",
+            "workspace",
+            `sales-presentation-modal-${locale}-${theme}.png`,
+          ),
+        });
+
+        await saveButton.focus();
+        await pressKeyOnFocused(page, saveButton, "Tab");
+        await expect(closeButton).toBeFocused();
+        await closeButton.click();
+        await expect(dialog).toHaveCount(0);
+        await expect(settingsTrigger).toBeFocused();
+        await context.close();
+      }
+    }
+  });
+
+  test("retries an unconfirmed settings save with the same command after the server committed it", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const initial = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    const expectedWholesaleVisible =
+      !initial.panelSettings.visibleFields.includes("wholesalePrice");
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+    const quickToggle = page.getByRole("button", { name: "Quick Links" });
+    if (await page.locator("#sale-quick-links-panel").isHidden()) {
+      await quickToggle.click();
+    }
+    await expect(page.locator("#sale-quick-links-panel")).toBeVisible();
+    await page
+      .locator("[data-sale-presentation-settings-trigger]:visible")
+      .first()
+      .click();
+
+    const dialog = page.getByRole("dialog", {
+      name: "POS Presentation Settings",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Item Panel Fields" }).click();
+    const wholesaleCheckbox = dialog.getByLabel(
+      "Wholesale price (when permitted)",
+    );
+    if (expectedWholesaleVisible) {
+      await wholesaleCheckbox.check();
+    } else {
+      await wholesaleCheckbox.uncheck();
+    }
+
+    const payloads: unknown[] = [];
+    const upstreamStatuses: number[] = [];
+    await page.route(
+      (url) => url.pathname === saleQuickAccessPath(),
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        payloads.push(route.request().postDataJSON());
+        const upstream = await route.fetch();
+        upstreamStatuses.push(upstream.status());
+        if (payloads.length === 1) {
+          // The API committed, but the renderer loses its response.
+          await route.abort("failed");
+          return;
+        }
+        await route.fulfill({ response: upstream });
+      },
+    );
+
+    await dialog.locator(".sales-presentation-save-btn").click();
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "Quick access save is unconfirmed. Retry it.",
+    );
+    const save = dialog.getByRole("button", { name: "Save settings" });
+    await expect(dialog.getByRole("button", { name: "Close" })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await expect(save).toBeEnabled();
+    await expect(dialog).toBeFocused();
+    await pressKeyOnFocused(page, dialog, "Escape");
+    await expect(dialog).toBeVisible();
+    await expect(wholesaleCheckbox).toBeDisabled();
+    await expect(
+      dialog.locator('input[type="radio"][name="consumptionMonths"]').first(),
+    ).toBeDisabled();
+    await expect(
+      dialog.getByLabel("Show cash drawer balance in the sales interface"),
+    ).toBeDisabled();
+    await dialog
+      .getByRole("button", { name: "Quick-Access Categories" })
+      .click();
+    await expect(
+      dialog.getByPlaceholder("New category name..."),
+    ).toBeDisabled();
+    await expect(save).toBeEnabled();
+    expect(payloads).toHaveLength(1);
+    expect(upstreamStatuses).toEqual([200]);
+    await page.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sales-presentation-unconfirmed-retry-en-light.png",
+      ),
+    });
+
+    const committedOnce = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    expect(BigInt(committedOnce.version)).toBe(BigInt(initial.version) + 1n);
+    expect(
+      committedOnce.panelSettings.visibleFields.includes("wholesalePrice"),
+    ).toBe(expectedWholesaleVisible);
+
+    await save.click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => payloads.length).toBe(2);
+    expect(payloads[1]).toEqual(payloads[0]);
+    expect(upstreamStatuses).toEqual([200, 200]);
+    const retried = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    expect(BigInt(retried.version)).toBe(BigInt(initial.version) + 1n);
+    expect(retried.panelSettings.visibleFields.includes("wholesalePrice")).toBe(
+      expectedWholesaleVisible,
+    );
+    await page.unroute((url) => url.pathname === saleQuickAccessPath());
+  });
+
+  test("keeps settings editable after the API rejects an oversized save", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const initial = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    const targetWholesaleVisible =
+      !initial.panelSettings.visibleFields.includes("wholesalePrice");
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+    const quickToggle = page.getByRole("button", { name: "Quick Links" });
+    if (await page.locator("#sale-quick-links-panel").isHidden()) {
+      await quickToggle.click();
+    }
+    await page
+      .locator("[data-sale-presentation-settings-trigger]:visible")
+      .first()
+      .click();
+
+    const dialog = page.getByRole("dialog", {
+      name: "POS Presentation Settings",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Item Panel Fields" }).click();
+    const wholesaleCheckbox = dialog.getByLabel(
+      "Wholesale price (when permitted)",
+    );
+    if (targetWholesaleVisible) {
+      await wholesaleCheckbox.check();
+    } else {
+      await wholesaleCheckbox.uncheck();
+    }
+
+    const payloads: unknown[] = [];
+    await page.route(
+      (url) => url.pathname === saleQuickAccessPath(),
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        payloads.push(route.request().postDataJSON());
+        await route.fulfill({
+          status: 413,
+          contentType: "application/json",
+          body: JSON.stringify({
+            status: "denied",
+            code: "request-too-large",
+            requestId: uuidV7(),
+          }),
+        });
+      },
+    );
+
+    await dialog.getByRole("button", { name: "Save settings" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "Quick-access settings and images exceed 1 MB. Remove some images or use smaller files.",
+    );
+    await expect(dialog).toBeVisible();
+    await expect(wholesaleCheckbox).toBeEnabled();
+    await expect(wholesaleCheckbox).toBeChecked({
+      checked: targetWholesaleVisible,
+    });
+    await expect(
+      dialog.getByRole("button", { name: "Save settings" }),
+    ).toBeEnabled();
+    expect(payloads).toHaveLength(1);
+
+    const after = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    expect(after.version).toBe(initial.version);
+    expect(after.panelSettings).toEqual(initial.panelSettings);
+    await page.unroute((url) => url.pathname === saleQuickAccessPath());
+  });
+
+  test("a quick-access version conflict reloads server settings before another save", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const initial = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    const initialWholesaleVisible =
+      initial.panelSettings.visibleFields.includes("wholesalePrice");
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+    const quickToggle = page.getByRole("button", { name: "Quick Links" });
+    if (await page.locator("#sale-quick-links-panel").isHidden()) {
+      await quickToggle.click();
+    }
+    await page
+      .locator("[data-sale-presentation-settings-trigger]:visible")
+      .first()
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "POS Presentation Settings",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Item Panel Fields" }).click();
+    const wholesaleCheckbox = dialog.getByLabel(
+      "Wholesale price (when permitted)",
+    );
+    if (initialWholesaleVisible) {
+      await wholesaleCheckbox.uncheck();
+    } else {
+      await wholesaleCheckbox.check();
+    }
+
+    const outsideChange = await apiRequest("POST", saleQuickAccessPath(), {
+      expectedVersion: initial.version,
+      idempotencyKey: uuidV7(),
+      categories: toQuickAccessWriteCategories(initial.categories),
+      panelSettings: {
+        ...initial.panelSettings,
+        showDrawerBalance: !initial.panelSettings.showDrawerBalance,
+      },
+    });
+    expect(outsideChange.status).toBe(200);
+    const serverChanged = outsideChange.body as SaleQuickAccess;
+    expect(BigInt(serverChanged.version)).toBe(BigInt(initial.version) + 1n);
+
+    const requests: unknown[] = [];
+    await page.route(
+      (url) => url.pathname === saleQuickAccessPath(),
+      async (route) => {
+        if (route.request().method() === "POST") {
+          requests.push(route.request().postDataJSON());
+        }
+        await route.continue();
+      },
+    );
+    await dialog.getByRole("button", { name: "Save settings" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "Quick access changed elsewhere. Review it and retry your edit.",
+    );
+    if (initialWholesaleVisible) {
+      await expect(wholesaleCheckbox).toBeChecked();
+    } else {
+      await expect(wholesaleCheckbox).not.toBeChecked();
+    }
+    await expect(
+      dialog.getByLabel("Show cash drawer balance in the sales interface"),
+    ).toBeChecked({ checked: !initial.panelSettings.showDrawerBalance });
+
+    if (initialWholesaleVisible) {
+      await wholesaleCheckbox.uncheck();
+    } else {
+      await wholesaleCheckbox.check();
+    }
+    await dialog.getByRole("button", { name: "Save settings" }).click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => requests.length).toBe(2);
+
+    const firstRequest = requests[0] as {
+      expectedVersion: string;
+      idempotencyKey: string;
+    };
+    const secondRequest = requests[1] as {
+      expectedVersion: string;
+      idempotencyKey: string;
+    };
+    expect(firstRequest.expectedVersion).toBe(initial.version);
+    expect(secondRequest.expectedVersion).toBe(serverChanged.version);
+    expect(secondRequest.idempotencyKey).not.toBe(firstRequest.idempotencyKey);
+    const saved = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    expect(BigInt(saved.version)).toBe(BigInt(initial.version) + 2n);
+    expect(saved.panelSettings.showDrawerBalance).toBe(
+      !initial.panelSettings.showDrawerBalance,
+    );
+    expect(saved.panelSettings.visibleFields.includes("wholesalePrice")).toBe(
+      !initialWholesaleVisible,
+    );
+    await page.unroute((url) => url.pathname === saleQuickAccessPath());
+  });
+
+  test("settings stay open with unsaved fields when refresh fails after a version conflict", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const initial = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    const initialWholesaleVisible =
+      initial.panelSettings.visibleFields.includes("wholesalePrice");
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+    if (await page.locator("#sale-quick-links-panel").isHidden()) {
+      await page.getByRole("button", { name: "Quick Links" }).click();
+    }
+    await page
+      .locator("[data-sale-presentation-settings-trigger]:visible")
+      .first()
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "POS Presentation Settings",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Item Panel Fields" }).click();
+    const wholesaleCheckbox = dialog.getByLabel(
+      "Wholesale price (when permitted)",
+    );
+    if (initialWholesaleVisible) {
+      await wholesaleCheckbox.uncheck();
+    } else {
+      await wholesaleCheckbox.check();
+    }
+
+    const outsideChange = await apiRequest("POST", saleQuickAccessPath(), {
+      expectedVersion: initial.version,
+      idempotencyKey: uuidV7(),
+      categories: toQuickAccessWriteCategories(initial.categories),
+      panelSettings: {
+        ...initial.panelSettings,
+        showDrawerBalance: !initial.panelSettings.showDrawerBalance,
+      },
+    });
+    expect(outsideChange.status).toBe(200);
+
+    let failRefresh = false;
+    let refreshFailed = false;
+    await page.route(
+      (url) => url.pathname === saleQuickAccessPath(),
+      async (route) => {
+        if (
+          failRefresh &&
+          !refreshFailed &&
+          route.request().method() === "GET"
+        ) {
+          refreshFailed = true;
+          await route.abort("failed");
+          return;
+        }
+        await route.continue();
+      },
+    );
+    failRefresh = true;
+    await dialog.getByRole("button", { name: "Save settings" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "Quick access changed elsewhere. Review it and retry your edit.",
+    );
+    expect(refreshFailed).toBe(true);
+    await expect(dialog).toBeVisible();
+    if (initialWholesaleVisible) {
+      await expect(wholesaleCheckbox).not.toBeChecked();
+    } else {
+      await expect(wholesaleCheckbox).toBeChecked();
+    }
+    await expect(
+      dialog.getByRole("button", { name: "Save settings" }),
+    ).toBeEnabled();
+    await page.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sales-presentation-conflict-refresh-failed-en-light.png",
+      ),
+    });
+    await page.unroute((url) => url.pathname === saleQuickAccessPath());
+  });
+
+  test("manager can add, rename, reorder, delete quick access categories and tiles with thumbnail persistence", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const initialQuickAccess = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    const resetQuickAccess = await apiRequest("POST", saleQuickAccessPath(), {
+      expectedVersion: initialQuickAccess.version,
+      idempotencyKey: uuidV7(),
+      categories: [],
+      panelSettings: initialQuickAccess.panelSettings,
+    });
+    expect(resetQuickAccess.status).toBe(200);
+    expect((resetQuickAccess.body as SaleQuickAccess).categories).toEqual([]);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+
+    // Pin Panadol to category "Painkillers"
+    await page.locator("#sale-draft-search").fill("Panadol Extra");
+    await page
+      .getByRole("button", { name: /Pin to quick access: Panadol Extra/ })
+      .click();
+    const pin = page.locator(".sales-quick-pin-form");
+    await expect(pin).toBeVisible();
+    await pin.getByLabel("Category").fill("Painkillers");
+    await pin.getByRole("button", { name: "Save pin" }).click();
+    await expect(page.locator("#sale-quick-links-panel")).toBeHidden();
+
+    // Open quick links panel and trigger presentation settings
+    await page.getByRole("button", { name: "Quick Links" }).click();
+    await expect(page.locator("#sale-quick-links-panel")).toBeVisible();
+    await page
+      .locator("[data-sale-presentation-settings-trigger]:visible")
+      .first()
+      .click();
+
+    const dialog = page.getByRole("dialog", {
+      name: "POS Presentation Settings",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("button", { name: "Quick-Access Categories" })
+      .click();
+
+    // Add a second category "Vitamins"
+    const addCatInput = dialog.getByPlaceholder("New category name...");
+    await addCatInput.fill("Vitamins");
+    await dialog.getByRole("button", { name: "Add category" }).click();
+
+    // Verify 2 categories exist
+    const catCards = dialog.locator(".sales-presentation-cat-card");
+    await expect(catCards).toHaveCount(2);
+
+    // Rename first category ("Painkillers" -> "Analgesics")
+    const firstCatInput = catCards
+      .first()
+      .locator(".sales-presentation-cat-name-input");
+    await firstCatInput.fill("Analgesics");
+
+    // Move first category down
+    const moveDownBtn = catCards
+      .first()
+      .locator('button[title="Move category down"]');
+    await moveDownBtn.click();
+
+    // Upload the real >30 KB PNG fixture through FileReader and the bounded
+    // quick-access command body allowance.
+    const testPngBuffer = await readFile(
+      path.resolve(
+        import.meta.dirname,
+        "../../../local-api/src/sales/test-fixtures/thumbnail.png",
+      ),
+    );
+    expect(testPngBuffer.byteLength).toBeGreaterThan(30_000);
+    const fileInput = dialog.locator('input[type="file"]').first();
+    await fileInput.setInputFiles({
+      name: "sample.png",
+      mimeType: "image/png",
+      buffer: testPngBuffer,
+    });
+
+    // Verify thumbnail preview renders
+    await expect(
+      dialog.locator(".sales-presentation-tile-thumb img"),
+    ).toBeVisible();
+    await page.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sales-presentation-quick-access-en-light.png",
+      ),
+    });
+
+    // Save settings
+    await dialog.locator(".sales-presentation-save-btn").click();
+    await expect(dialog).toBeHidden();
+
+    // Verify persisted via API
+    await expect
+      .poll(async () => {
+        const res = await apiRequest("GET", saleQuickAccessPath());
+        return (res.body as SaleQuickAccess).categories.map((c) => c.name);
+      })
+      .toEqual(["Vitamins", "Analgesics"]);
+
+    const serverQuick = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    const analgesicsCat = serverQuick.categories.find(
+      (c) => c.name === "Analgesics",
+    );
+    expect(analgesicsCat?.tiles[0]?.thumbnailDataUrl).toContain(
+      "data:image/png;base64,",
+    );
+    expect(
+      analgesicsCat?.tiles[0]?.thumbnailDataUrl?.length ?? 0,
+    ).toBeGreaterThan(40_000);
+
+    // Reload page and check thumbnail renders on quick access tile
+    await page.reload();
+    if (await page.locator("#sale-quick-links-panel").isHidden()) {
+      await page.getByRole("button", { name: "Quick Links" }).click();
+    }
+    await expect(page.locator(".sales-quick-tile-thumbnail")).toBeVisible();
+    await page.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sales-quick-access-panel-en-light.png",
+      ),
+    });
+
+    // Delete the empty "Vitamins" category in presentation settings
+    await page
+      .locator("[data-sale-presentation-settings-trigger]:visible")
+      .first()
+      .click();
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("button", { name: "Quick-Access Categories" })
+      .click();
+    const deleteBtn = dialog
+      .locator(".sales-presentation-cat-card")
+      .first()
+      .getByRole("button", { name: "Delete category: Vitamins" });
+    await deleteBtn.click();
+    await expect(dialog.locator(".sales-presentation-cat-card")).toHaveCount(1);
+    await dialog.locator(".sales-presentation-save-btn").click();
+    await expect(dialog).toBeHidden();
+  });
+
+  test("an owner with the drawer permission sees their balance on an empty draft", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const quickAccess = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    if (!quickAccess.panelSettings.showDrawerBalance) {
+      const updated = await apiRequest("POST", saleQuickAccessPath(), {
+        expectedVersion: quickAccess.version,
+        idempotencyKey: uuidV7(),
+        categories: toQuickAccessWriteCategories(quickAccess.categories),
+        panelSettings: {
+          ...quickAccess.panelSettings,
+          showDrawerBalance: true,
+        },
+      });
+      expect(updated.status).toBe(200);
+    }
+
+    const created = await apiRequest("POST", saleDraftsPath(), {
+      idempotencyKey: uuidV7(),
+    });
+    expect(created.status).toBe(201);
+    const draft = created.body as SaleDraft;
+    expect(draft.lines).toEqual([]);
+
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    let drawerRequests = 0;
+    await page.route(
+      (url) => url.pathname === saleDrawerBalancePath(),
+      async (route) => {
+        drawerRequests++;
+        await route.continue();
+      },
+    );
+    await page.goto(`${renderer.origin}#/sales/drafts/${draft.id}`);
+
+    const balance = page.locator("[data-sales-drawer-balance]");
+    await expect(balance).toBeVisible();
+    await expect(balance.locator(".sales-drawer-balance-value")).toContainText(
+      "0",
+    );
+    await expect(page.locator(".sales-calculator")).toBeVisible();
+    const serverBalance = await apiRequest("GET", saleDrawerBalancePath());
+    expect(serverBalance.status).toBe(200);
+    expect(serverBalance.body).toMatchObject({ balanceFils: "0" });
+    await expect.poll(() => drawerRequests).toBeGreaterThan(0);
+    await page.screenshot({
+      path: evidencePath(
+        "issue-62",
+        "workspace",
+        "sales-empty-draft-drawer-en-light.png",
+      ),
+    });
+  });
+
+  test("seller without sales.drawer_balance.view permission does not trigger drawer balance network request", async ({
+    page,
+  }) => {
+    // Ensure drawer balance is enabled in panel settings
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const currentQuick = (await apiRequest("GET", saleQuickAccessPath()))
+      .body as SaleQuickAccess;
+    await apiRequest("POST", saleQuickAccessPath(), {
+      expectedVersion: currentQuick.version,
+      idempotencyKey: uuidV7(),
+      categories: toQuickAccessWriteCategories(currentQuick.categories),
+      panelSettings: {
+        ...currentQuick.panelSettings,
+        showDrawerBalance: true,
+      },
+    });
+
+    // Log in as seller who lacks sales.drawer_balance.view
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+
+    let drawerBalanceRequests = 0;
+    await page.route(
+      (url) => url.pathname === saleDrawerBalancePath(),
+      (route) => {
+        drawerBalanceRequests++;
+        return route.continue();
+      },
+    );
+
+    await page.goto(`${renderer.origin}#/sales`);
+    await openFreshDraft(page);
+
+    // Calculator is visible, but drawer balance badge is NOT rendered
+    await expect(
+      page.getByRole("region", { name: "Calculator" }),
+    ).toBeVisible();
+    await expect(page.locator("[data-sales-drawer-balance]")).toHaveCount(0);
+
+    // Verify zero network requests were dispatched to /sales/drawer-balance
+    expect(drawerBalanceRequests).toBe(0);
+  });
+
+  test("selected item panel, calculator, and row actions fit four locale and theme combinations", async ({
+    browser,
+  }) => {
+    test.setTimeout(180_000);
+    await login(SELLER_USERNAME, SELLER_PASSWORD);
+    const draft = await createPopulatedDraft(panadol.id);
+
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = trackBrowserContext(
+          await browser.newContext({
+            viewport: { height: 800, width: 1280 },
+          }),
+        );
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/sales/drafts/${draft.id}`);
+
+        const invoice = page.locator(`[data-sale-invoice="${draft.id}"]`);
+        const lineRow = invoice.locator("[data-sale-line-id]").first();
+        await expect(lineRow).toBeVisible();
+        const itemPanel = page.locator(".sales-item-panel");
+        await expect(itemPanel).toBeVisible();
+        const scrollBody = itemPanel.locator(".sales-item-scroll-body");
+        const itemDetailsLabel = await itemPanel.getAttribute("aria-label");
+        expect(itemDetailsLabel).toBeTruthy();
+        await expect(scrollBody).toHaveAttribute("role", "group");
+        await expect(scrollBody).toHaveAttribute(
+          "aria-label",
+          itemDetailsLabel ?? "",
+        );
+        await expect(scrollBody).toHaveAttribute("tabindex", "0");
+        await scrollBody.evaluate((element) => {
+          element.scrollTop = 0;
+        });
+        await scrollBody.focus();
+        await expect(scrollBody).toBeFocused();
+        await expect(scrollBody).toHaveCSS("outline-style", "solid");
+        const scrollMetrics = await scrollBody.evaluate((element) => ({
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+        }));
+        if (scrollMetrics.scrollHeight > scrollMetrics.clientHeight) {
+          await pressKeyOnFocused(page, scrollBody, "PageDown");
+          await expect
+            .poll(async () =>
+              scrollBody.evaluate((element) => element.scrollTop),
+            )
+            .toBeGreaterThan(0);
+          await scrollBody.evaluate((element) => {
+            element.scrollTop = 0;
+          });
+          await expect
+            .poll(async () =>
+              scrollBody.evaluate((element) => element.scrollTop),
+            )
+            .toBe(0);
+        }
+        await page.locator(".sales-draft-context").evaluate((element) => {
+          element.scrollTop = 0;
+        });
+        await expect(itemPanel.locator(".sales-item-header")).toBeInViewport();
+        await expect(
+          itemPanel.locator(".sales-item-display-name"),
+        ).toContainText(panadol.scientificName ?? panadol.displayName);
+        await expect(
+          itemPanel.locator(".sales-item-balance-section"),
+        ).toBeVisible();
+        await expect(itemPanel.locator(".sales-item-fact-sheet")).toBeVisible();
+        await expect(
+          itemPanel.locator(".sales-item-batches-section"),
+        ).toBeVisible();
+
+        const calculator = page.locator(".sales-calculator");
+        const removeLine = lineRow.locator(".sales-col-actions button");
+        await expect(calculator).toBeInViewport();
+        await expect(removeLine).toBeInViewport();
+        await expect(lineRow).toBeInViewport();
+
+        const aiSlot = page.locator(
+          '.sales-ai-recommendations-slot[data-slot="ai-recommendations"]',
+        );
+        await expect(aiSlot).toBeHidden();
+        expect(
+          (
+            await new AxeBuilder({ page })
+              .include(".sales-item-panel")
+              .include(".sales-calculator")
+              .include(`[data-sale-invoice="${draft.id}"]`)
+              .analyze()
+          ).violations,
+        ).toEqual([]);
+        await page.screenshot({
+          path: evidencePath(
+            "issue-62",
+            "workspace",
+            `sales-item-panel-1280x800-${locale}-${theme}.png`,
+          ),
+          fullPage: true,
+        });
+        await context.close();
+      }
+    }
   });
 });
 
@@ -1477,6 +2775,47 @@ async function createProduct(tradeName: string): Promise<Product> {
   );
   expect(response.status).toBe(201);
   return response.body as Product;
+}
+
+async function createPopulatedDraft(productId: string): Promise<SaleDraft> {
+  const created = await apiRequest("POST", saleDraftsPath(), {
+    idempotencyKey: uuidV7(),
+  });
+  expect(created.status).toBe(201);
+  const draft = created.body as SaleDraft;
+
+  const added = await apiRequest("POST", saleDraftLinesPath(draft.id), {
+    expectedVersion: draft.version,
+    idempotencyKey: uuidV7(),
+    productId,
+  });
+  expect(added.status).toBe(200);
+  const withLine = added.body as SaleDraft;
+  const line = withLine.lines[0];
+  expect(line).toBeDefined();
+
+  const discountedLine = await apiRequest(
+    "POST",
+    saleDraftLineChangesPath(draft.id, line!.id),
+    {
+      expectedVersion: withLine.version,
+      idempotencyKey: uuidV7(),
+      lineDiscountPercentage: "10",
+    },
+  );
+  expect(discountedLine.status).toBe(200);
+  const lineDiscount = discountedLine.body as SaleDraft;
+  const invoiceDiscount = await apiRequest(
+    "POST",
+    saleDraftDiscountPath(draft.id),
+    {
+      expectedVersion: lineDiscount.version,
+      idempotencyKey: uuidV7(),
+      invoiceDiscountFils: "1000",
+    },
+  );
+  expect(invoiceDiscount.status).toBe(200);
+  return invoiceDiscount.body as SaleDraft;
 }
 
 async function archiveProduct(product: Product): Promise<void> {
@@ -1747,6 +3086,31 @@ async function listen(server: Server): Promise<number> {
 async function closeServer(server: Server | undefined): Promise<void> {
   if (server === undefined) return;
   await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
+function selectedDraftVersion(page: Page): Locator {
+  return page.locator(".sales-draft-tray [data-sale-draft-version]");
+}
+
+function toQuickAccessWriteCategories(
+  categories: SaleQuickAccess["categories"],
+): SaleQuickAccessReplaceRequest["categories"] {
+  return categories.map((category) => ({
+    name: category.name,
+    tiles: category.tiles.map((tile) => ({
+      productId: tile.productId,
+      unitId: tile.unitId,
+      ...(tile.thumbnailDataUrl === null
+        ? {}
+        : { thumbnailDataUrl: tile.thumbnailDataUrl }),
+    })),
+  }));
+}
+
+function trackBrowserContext(context: BrowserContext): BrowserContext {
+  ownedBrowserContexts.add(context);
+  context.on("close", () => ownedBrowserContexts.delete(context));
+  return context;
 }
 
 async function reservePort(): Promise<number> {

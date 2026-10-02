@@ -1,0 +1,34 @@
+/**
+ * Scoped styles for POS quick-creation slice (#62)
+ * Strictly isolated under .sales-screen to guarantee zero global style bleed.
+ */
+
+.sales-screen .sales-scan-add-btn {
+  min-block-size: 2.4rem;
+  padding-inline: 0.85rem;
+  border: 1px solid var(--primary, #059669);
+  border-radius: 0.45rem;
+  background: var(--primary, #059669);
+  color: var(--primary-foreground, #ffffff);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sales-screen .sales-scan-add-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.sales-screen .sales-scan-add-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sales-screen .sales-ai-recommendations-slot {
+  display: none !important;
+}

@@ -1,5 +1,6 @@
 import type { SaleDraftLine } from "@breev/contracts/local-rest";
 import type { PoolClient } from "pg";
+import { saleLineDiscountFils } from "./sale-draft-arithmetic.js";
 
 export interface SaleLineRecord {
   readonly id: string;
@@ -179,6 +180,7 @@ export async function addMiscSaleLine(
     readonly unitName: string;
     readonly quantity: string;
     readonly unitPriceFils: string;
+    readonly costFils?: string;
   },
 ): Promise<void> {
   await client.query(
@@ -187,7 +189,7 @@ export async function addMiscSaleLine(
        base_units_per_unit, eligible_units, quantity,
        captured_retail_price_fils, captured_unit_ratio, unit_price_fils,
        cost_fils, price_source, ordinal
-     ) values ($1,$2,'misc',$3,$4,1,'[]'::jsonb,$5,$6,1,$6,0,'misc',
+     ) values ($1,$2,'misc',$3,$4,1,'[]'::jsonb,$5,$6,1,$6,$7,'misc',
        (select coalesce(max(ordinal), 0) + 1 from sale_draft_lines
         where pharmacy_id = $1 and draft_id = $2))`,
     [
@@ -197,6 +199,7 @@ export async function addMiscSaleLine(
       input.unitName,
       input.quantity,
       input.unitPriceFils,
+      input.costFils ?? "0",
     ],
   );
 }
@@ -296,7 +299,13 @@ export async function clearSaleLines(
 
 export function lineView(line: SaleLineRecord): SaleDraftLine {
   const gross = BigInt(line.quantity) * BigInt(line.unitPriceFils);
-  const discount = (gross * BigInt(line.lineDiscountPercentage) + 50n) / 100n;
+  const discountFils = saleLineDiscountFils({
+    grossFils: gross.toString(),
+    discountPercentage: line.lineDiscountPercentage,
+  });
+  if (discountFils === undefined)
+    throw new Error("Invalid Sale Draft line amounts");
+  const discount = BigInt(discountFils);
   return {
     id: line.id,
     kind: line.kind,

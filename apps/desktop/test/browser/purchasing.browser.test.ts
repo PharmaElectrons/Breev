@@ -2772,6 +2772,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await expect(panel.locator('[data-panel-field="balance"]')).toHaveCount(
           0,
         );
+        await expect(panel).toHaveCSS("opacity", "1");
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
