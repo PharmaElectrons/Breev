@@ -4,8 +4,14 @@ import {
   purchaseAdjustmentSnapshotRowSchema,
   purchaseAdjustmentSummarySchema,
   postedPurchaseAdjustmentSchema,
+  postedPurchaseAdjustmentDetailSchema,
   purchasingDenialSchema,
+  purchaseInvoiceOfferInputSchema,
+  purchaseInvoiceOfferSnapshotSchema,
+  type PurchaseInvoiceOfferInput,
+  type PurchaseInvoiceOfferSnapshot,
   type PostedPurchaseAdjustment,
+  type PostedPurchaseAdjustmentDetail,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentDraftCreateRequest,
   type PurchaseAdjustmentDraftDiscardRequest,
@@ -25,6 +31,7 @@ import type { PoolClient } from "pg";
 import {
   applyPurchaseAdjustmentSettlementEffects,
   postPurchaseAdjustmentJournal,
+  readSupplierPayableContributions,
 } from "../accounting/accounting-persistence.js";
 import { applyPurchasePriceUpdate } from "../catalog/catalog-purchase-price-update.js";
 import { resolveCatalogPurchaseProduct } from "../catalog/catalog-purchase.js";
@@ -35,6 +42,7 @@ import {
 import {
   applyPurchaseAdjustmentToValuation,
   receiveBatch,
+  readPurchaseAdjustmentConfirmationBatches,
   recordPurchaseAdjustmentMovement,
   recordPurchaseAdjustmentValueEffect,
   resolveReceiptClassRuleSet,
@@ -73,8 +81,14 @@ import {
   extractPurchaseAdjustmentDelta,
   type PurchaseAdjustmentRowSnapshot as DomainRow,
 } from "./purchase-adjustment-delta.js";
+import { purchaseAdjustmentConfirmationHash } from "./purchase-adjustment-confirmation.js";
 import { preparePurchaseRow } from "./purchase-row.js";
+import { postedPurchaseWarnings } from "./purchase-duplicates.js";
 import { PurchasingDenied } from "./purchasing.service.js";
+import {
+  calculateInvoiceOffer,
+  calculatePurchaseCostsWithOffer,
+} from "./purchase-invoice-offer.js";
 
 const ADJUSTMENT_PERMISSION = "purchases.adjustments.manage";
 const COST_PERMISSION = "purchases.costs.view";
@@ -91,6 +105,9 @@ type AdjustmentCommandValue =
   PurchaseAdjustmentDraft | PurchaseAdjustmentPostResult;
 
 interface OriginalHeaderRow {
+  invoice_offer: PurchaseInvoiceOfferSnapshot;
+  allowance_fils: string;
+  cost_after_discount_fils: string;
   allowance_percentage_snapshot: string;
   invoice_date: string;
   number_value: string;
@@ -123,7 +140,12 @@ interface SnapshotRowRecord {
   retail_price_fils: string;
 }
 
-interface AdjustmentDraftHeaderRow extends OriginalHeaderRow {
+interface AdjustmentDraftHeaderRow extends Omit<
+  OriginalHeaderRow,
+  "invoice_offer"
+> {
+  invoice_offer: PurchaseInvoiceOfferInput;
+  offer_rule_version: 1;
   created_at: Date;
   evidence: string | null;
   id: string;
@@ -159,8 +181,8 @@ class PurchaseAdjustmentCommandRejected extends Error {
 }
 
 interface CommandSuccess<T extends AdjustmentCommandValue> {
-  readonly afterState: Record<string, boolean | number | string | null>;
-  readonly beforeState?: Record<string, boolean | number | string | null>;
+  readonly afterState: JsonObject;
+  readonly beforeState?: JsonObject;
   readonly targetId: string;
   readonly value: T;
 }
@@ -224,8 +246,8 @@ export class PurchaseAdjustmentsService {
              pharmacy_id, original_purchase_id, supplier_id,
              supplier_name_snapshot, supplier_invoice_number, invoice_date,
              settlement_context, allowance_percentage_snapshot, reason,
-             evidence, created_by, updated_by
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+             evidence, created_by, updated_by, invoice_offer, offer_rule_version
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12::jsonb, $13)
            returning id`,
           [
             context.pharmacyId,
@@ -239,6 +261,8 @@ export class PurchaseAdjustmentsService {
             input.reason,
             input.evidence,
             context.actorId,
+            JSON.stringify(current.invoiceOffer.input),
+            current.invoiceOffer.ruleVersion,
           ],
         );
         const draftId = inserted.rows[0]?.id;
@@ -295,6 +319,7 @@ export class PurchaseAdjustmentsService {
       readonly rows: readonly PurchaseAdjustmentDraftRowInput[];
       readonly supplierId: string;
       readonly supplierInvoiceNumber: string;
+      readonly invoiceOffer: PurchaseInvoiceOfferInput;
     },
   ): Promise<PurchaseAdjustmentDraft> {
     const context = await this.requireContext(request);
@@ -360,17 +385,20 @@ export class PurchaseAdjustmentsService {
            set supplier_id = $3, supplier_name_snapshot = $4,
                supplier_invoice_number = $5, reason = $6, evidence = $7,
                version = version + 1, updated_at = statement_timestamp(),
-               updated_by = $8
+               updated_by = $8, invoice_offer = $9::jsonb
            where pharmacy_id = $1 and id = $2`,
           [
             context.pharmacyId,
             draftId,
             supplier.id,
-            supplier.name,
+            supplier.id === priorView.supplierId
+              ? priorView.supplierNameSnapshot
+              : supplier.name,
             input.supplierInvoiceNumber,
             input.reason,
             input.evidence,
             context.actorId,
+            JSON.stringify(input.invoiceOffer),
           ],
         );
         const updatedHeader = (
@@ -456,6 +484,14 @@ export class PurchaseAdjustmentsService {
       );
       const header = await lockDraftHeader(client, context.pharmacyId, draftId);
       requireEditableDraft(header, draftId, header?.version ?? "0");
+      // Serialize the corrected original while collecting its header/rows;
+      // another draft's Post must not produce a mixed confirmation snapshot.
+      await readOriginalHeader(
+        client,
+        context.pharmacyId,
+        header!.original_purchase_id,
+        true,
+      );
       const calculated = await calculateSummary(
         client,
         context.pharmacyId,
@@ -464,9 +500,16 @@ export class PurchaseAdjustmentsService {
       assertMeaningfulChange(calculated);
       await validateSummaryBatches(client, context.pharmacyId, calculated);
       await validateSummaryValuation(client, context.pharmacyId, calculated);
+      // Validation holds the batch locks. Recalculate under those locks so a
+      // movement racing the initial read cannot create a mixed-state preview.
+      const confirmed = await calculateSummary(
+        client,
+        context.pharmacyId,
+        header!,
+      );
       await client.query("commit");
       transactionOpen = false;
-      return calculated.summary;
+      return confirmed.summary;
     } catch (error) {
       if (transactionOpen)
         await client.query("rollback").catch(() => undefined);
@@ -523,7 +566,6 @@ export class PurchaseAdjustmentsService {
           context.pharmacyId,
           header!,
         );
-        assertMeaningfulChange(calculated);
         if (calculated.summary.confirmationHash !== input.confirmationHash) {
           reject(
             409,
@@ -538,6 +580,7 @@ export class PurchaseAdjustmentsService {
             draftId,
           );
         }
+        assertMeaningfulChange(calculated);
 
         assertLockStageProgression("draft", "number-sequence");
         const allocation = await allocateDocumentNumber(
@@ -561,6 +604,25 @@ export class PurchaseAdjustmentsService {
 
         assertLockStageProgression("number-sequence", "batch-stock");
         await validateSummaryBatches(client, context.pharmacyId, calculated);
+        const lockedSummary = await calculateSummary(
+          client,
+          context.pharmacyId,
+          header!,
+        );
+        if (lockedSummary.summary.confirmationHash !== input.confirmationHash) {
+          reject(
+            409,
+            "adjustment-summary-stale",
+            [
+              {
+                code: "invalid",
+                path: ["confirmationHash"],
+                rule: "purchase.adjustment.summary-stale",
+              },
+            ],
+            draftId,
+          );
+        }
 
         const supplierEffects = calculated.summary.supplierEffects.map(
           (effect) => ({
@@ -595,10 +657,12 @@ export class PurchaseAdjustmentsService {
              reason, evidence, quantity_delta,
              primary_supplier_cost_delta_fils, allowance_delta_fils,
              cost_after_discount_delta_fils, header_changes,
-             journal_entry_id, posted_at, posted_by
+             journal_entry_id, posted_at, posted_by,
+             offer_before_snapshot, offer_after_snapshot, offer_delta_fils
            ) values (
              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::bigint,
-             $11::bigint, $12::bigint, $13::bigint, $14::jsonb, $15, $16, $17
+             $11::bigint, $12::bigint, $13::bigint, $14::jsonb, $15, $16, $17,
+             $18::jsonb, $19::jsonb, $20::bigint
            ) returning id`,
           [
             context.pharmacyId,
@@ -618,6 +682,9 @@ export class PurchaseAdjustmentsService {
             journal.entryId,
             postedAt,
             context.actorId,
+            JSON.stringify(calculated.summary.offerComparison.before),
+            JSON.stringify(calculated.summary.offerComparison.after),
+            calculated.summary.offerDeltaFils,
           ],
         );
         const adjustmentId = inserted.rows[0]?.id;
@@ -713,6 +780,8 @@ export class PurchaseAdjustmentsService {
           pharmacyId: context.pharmacyId,
         });
         const posted = postedPurchaseAdjustmentSchema.parse({
+          offerComparison: calculated.summary.offerComparison,
+          offerDeltaFils: calculated.summary.offerDeltaFils,
           allowanceDeltaFils: calculated.summary.allowanceDeltaFils,
           costAfterDiscountDeltaFils:
             calculated.summary.costAfterDiscountDeltaFils,
@@ -743,6 +812,18 @@ export class PurchaseAdjustmentsService {
         });
         return {
           afterState: {
+            reason: header!.reason,
+            evidence: header!.evidence,
+            draftVersion: header!.version,
+            confirmationHash: calculated.summary.confirmationHash,
+            offerComparison: calculated.summary.offerComparison,
+            offerDeltaFils: calculated.summary.offerDeltaFils,
+            headerComparison: calculated.summary.headerComparison,
+            rowDeltas: postedDeltas,
+            supplierEffects: calculated.summary.supplierEffects,
+            allowanceDeltaFils: calculated.summary.allowanceDeltaFils,
+            costAfterDiscountDeltaFils:
+              calculated.summary.costAfterDiscountDeltaFils,
             numberSuffix: allocation.value.toString(),
             primarySupplierCostDeltaFils:
               calculated.summary.primarySupplierCostDeltaFils,
@@ -760,7 +841,7 @@ export class PurchaseAdjustmentsService {
   public async readPostedAdjustment(
     request: Request,
     adjustmentId: string,
-  ): Promise<PostedPurchaseAdjustment> {
+  ): Promise<PostedPurchaseAdjustmentDetail> {
     await this.identity.requirePermission(request, POSTED_PERMISSION);
     await this.identity.requirePermission(request, COST_PERMISSION);
     const client = await this.localDatabase.requirePool().connect();
@@ -1056,7 +1137,8 @@ async function readOriginalHeader(
     `select supplier_id, supplier_name_snapshot, supplier_invoice_number,
             invoice_date::text, settlement_context,
             allowance_percentage_snapshot::text,
-            primary_supplier_cost_fils::text, number_value::text, number_year
+            primary_supplier_cost_fils::text, allowance_fils::text,
+            cost_after_discount_fils::text, number_value::text, number_year, invoice_offer
      from posted_purchases
      where pharmacy_id = $1 and id = $2${lock ? " for update" : ""}`,
     [pharmacyId, purchaseId],
@@ -1095,6 +1177,8 @@ async function readCurrentCorrectedState(
     supplierInvoiceNumber: string;
     supplierNameSnapshot: string;
   };
+  correctionVersion: string;
+  invoiceOffer: PurchaseInvoiceOfferSnapshot;
   rows: PurchaseAdjustmentSnapshotRow[];
 }> {
   const originalRows = await readOriginalRows(client, pharmacyId, purchaseId);
@@ -1122,11 +1206,13 @@ async function readCurrentCorrectedState(
       );
   }
   const latest = await client.query<{
+    offer_after_snapshot: PurchaseInvoiceOfferSnapshot;
+    correction_version: string;
     supplier_id: string;
     supplier_invoice_number: string;
     supplier_name_snapshot: string;
   }>(
-    `select supplier_id, supplier_name_snapshot, supplier_invoice_number
+    `select suffix_value::text as correction_version, supplier_id, supplier_name_snapshot, supplier_invoice_number, offer_after_snapshot
      from posted_purchase_adjustments
      where pharmacy_id = $1 and original_purchase_id = $2
      order by suffix_value desc limit 1`,
@@ -1134,6 +1220,12 @@ async function readCurrentCorrectedState(
   );
   const header = latest.rows[0];
   return {
+    correctionVersion: header?.correction_version ?? "0",
+    invoiceOffer: purchaseInvoiceOfferSnapshotSchema.parse(
+      header === undefined
+        ? original.invoice_offer
+        : header.offer_after_snapshot,
+    ),
     header:
       header === undefined
         ? {
@@ -1170,6 +1262,7 @@ function draftHeaderSelect(): string {
     draft.invoice_date::text, draft.settlement_context,
     draft.allowance_percentage_snapshot::text, draft.reason, draft.evidence,
     draft.status, draft.version::text, draft.created_at, draft.updated_at,
+    draft.invoice_offer, draft.offer_rule_version,
     original.number_value::text, original.number_year,
     original.primary_supplier_cost_fils::text
   from purchase_adjustment_drafts draft
@@ -1213,6 +1306,8 @@ async function readDraftView(
   const row = result.rows[0];
   if (row === undefined) throw new Error("Purchase Adjustment Draft not found");
   return purchaseAdjustmentDraftSchema.parse({
+    invoiceOffer: purchaseInvoiceOfferInputSchema.parse(row.invoice_offer),
+    offerRuleVersion: row.offer_rule_version,
     allowancePercentageSnapshot: normalizeDecimal(
       row.allowance_percentage_snapshot,
     ),
@@ -1346,7 +1441,10 @@ async function normalizeDraftRow(
       JSON.stringify(prior.unit) !== JSON.stringify(input.unit) ||
       prior.expiryDate !== input.expiryDate ||
       prior.lotNumber !== input.lotNumber ||
-      prior.notes !== input.notes)
+      prior.notes !== input.notes ||
+      prior.pricingMethod !== input.pricing.method ||
+      (input.pricing.method === "by-percentage" &&
+        prior.marginPercentage !== input.pricing.marginPercentage))
   ) {
     reject(400, "body-invalid", [
       {
@@ -1377,6 +1475,19 @@ async function normalizeDraftRow(
       [{ code: "invalid", path: ["rows", ordinal - 1, "itemId"] }],
     );
   }
+  if (
+    prior !== undefined &&
+    prior.costFils === input.costFils &&
+    prior.enteredQuantity === input.enteredQuantity &&
+    (input.pricing.method === "by-percentage" ||
+      prior.retailPriceFils === input.pricing.retailPriceFils)
+  ) {
+    // Header/evidence saves must not reinterpret unchanged historical rows
+    // through current master units or pricing. Protected fields and current
+    // Product availability were checked above; actual row edits still use
+    // the existing validation below.
+    return { ...draftRowSnapshot(prior), ordinal };
+  }
   const prepared = preparePurchaseRow(product, input);
   if (!prepared.ok) {
     const code =
@@ -1388,6 +1499,16 @@ async function normalizeDraftRow(
             ? "unit-invalid"
             : "body-invalid";
     reject(409, code, [{ code: "invalid", path: ["rows", ordinal - 1] }]);
+  }
+  if (
+    prior !== undefined &&
+    (prepared.facts.baseUnitsPerEnteredUnit !== prior.baseUnitsPerEnteredUnit ||
+      prepared.facts.inventoryUnitName !== prior.inventoryUnitName ||
+      product.id !== prior.itemId)
+  ) {
+    reject(409, "unit-invalid", [
+      { code: "invalid", path: ["rows", ordinal - 1, "unit"] },
+    ]);
   }
   if (prior === undefined) {
     const rules = await resolveReceiptClassRuleSet(client, pharmacyId);
@@ -1429,7 +1550,12 @@ async function normalizeDraftRow(
     ordinal,
     originalRowId: prior?.originalRowId ?? null,
     pricingMethod: prepared.facts.pricingMethod,
-    retailPriceFils: prepared.facts.retailPriceFils,
+    retailPriceFils:
+      prior !== undefined &&
+      prior.pricingMethod === "by-percentage" &&
+      prior.costFils === input.costFils
+        ? prior.retailPriceFils
+        : prepared.facts.retailPriceFils,
     unit: prepared.facts.unit,
   };
 }
@@ -1461,6 +1587,7 @@ async function calculateSummary(
   pharmacyId: string,
   draftHeader: AdjustmentDraftHeaderRow,
 ): Promise<CalculatedSummary> {
+  await resolveActiveSupplier(client, pharmacyId, draftHeader.supplier_id);
   const original = await readOriginalHeader(
     client,
     pharmacyId,
@@ -1548,6 +1675,39 @@ async function calculateSummary(
   });
   if (!outcome.ok)
     throw new Error(`Adjustment Delta failed: ${outcome.problem}`);
+  const costs =
+    draftRows.length === 0
+      ? null
+      : calculatePurchaseCostsWithOffer(
+          draftRows.map((row) => ({
+            enteredQuantity: BigInt(row.enteredQuantity),
+            primarySupplierCostFils: BigInt(row.costFils),
+          })),
+          normalizeDecimal(original.allowance_percentage_snapshot),
+          draftHeader.invoice_offer,
+          draftHeader.offer_rule_version,
+        );
+  if (costs !== null && !costs.ok)
+    reject(400, "body-invalid", [
+      { code: "out-of-range", path: ["invoiceOffer"] },
+    ]);
+  const offer = costs?.ok
+    ? { ok: true as const, snapshot: costs.invoiceOffer }
+    : calculateInvoiceOffer(
+        draftHeader.invoice_offer,
+        draftHeader.offer_rule_version,
+        0n,
+        0n,
+        [],
+      );
+  if (!offer.ok)
+    reject(400, "body-invalid", [
+      { code: "out-of-range", path: ["invoiceOffer"] },
+    ]);
+  const netDelta =
+    outcome.delta.costAfterDiscountDeltaFils -
+    BigInt(offer.snapshot.offerFils) +
+    BigInt(original.invoice_offer.offerFils);
   const currentMap = new Map(current.rows.map((row) => [row.lineageId, row]));
   const draftMap = new Map(draftSnapshots.map((row) => [row.lineageId, row]));
   const rowDeltas = outcome.delta.rowDeltas
@@ -1573,10 +1733,29 @@ async function calculateSummary(
         row.primarySupplierCostDeltaFils !== "0",
     );
   const headerChanges = displayHeaderChanges(current.header, draftHeader);
-  const currentGross =
-    BigInt(original.primary_supplier_cost_fils) + BigInt(prior.primary_delta);
-  const desiredGross =
-    currentGross + outcome.delta.primarySupplierCostDeltaFils;
+  for (const delta of rowDeltas) {
+    if (
+      delta.after !== null &&
+      delta.changes.some((change) => change.field === "retail-price")
+    ) {
+      const product = await resolveCatalogPurchaseProduct(
+        client,
+        pharmacyId,
+        delta.after.itemId,
+      );
+      if (product === undefined || product === null)
+        reject(409, "item-unavailable");
+      if (product.pricing.method !== delta.after.pricingMethod)
+        reject(409, "pricing-mode-conflict");
+    }
+  }
+  const duplicates = await postedPurchaseWarnings(
+    client,
+    pharmacyId,
+    draftHeader.supplier_id,
+    draftHeader.supplier_invoice_number,
+    draftHeader.original_purchase_id,
+  );
   const supplierEffects =
     original.settlement_context === "cash"
       ? []
@@ -1591,29 +1770,89 @@ async function calculateSummary(
                 supplierNameSnapshot: draftHeader.supplier_name_snapshot,
               },
             ]
-        : [
-            {
-              deltaFils: (-currentGross).toString(),
-              supplierId: current.header.supplierId,
-              supplierNameSnapshot: current.header.supplierNameSnapshot,
-            },
-            {
-              deltaFils: desiredGross.toString(),
-              supplierId: draftHeader.supplier_id,
-              supplierNameSnapshot: draftHeader.supplier_name_snapshot,
-            },
-          ].filter((effect) => effect.deltaFils !== "0");
+        : await supplierCorrectionEffects(
+            client,
+            pharmacyId,
+            draftHeader,
+            outcome.delta.primarySupplierCostDeltaFils,
+          );
   const base = {
+    offerComparison: { before: current.invoiceOffer, after: offer.snapshot },
+    offerDeltaFils: (
+      BigInt(offer.snapshot.offerFils) - BigInt(current.invoiceOffer.offerFils)
+    ).toString(),
+    totalsComparison: {
+      before: {
+        offerFils: current.invoiceOffer.offerFils,
+        primarySupplierCostFils: (
+          BigInt(original.primary_supplier_cost_fils) +
+          BigInt(prior.primary_delta)
+        ).toString(),
+        allowanceFils: (
+          BigInt(original.allowance_fils) + BigInt(prior.allowance_delta)
+        ).toString(),
+        costAfterDiscountFils: (
+          BigInt(original.cost_after_discount_fils) + BigInt(prior.net_delta)
+        ).toString(),
+      },
+      after: {
+        offerFils: offer.snapshot.offerFils,
+        primarySupplierCostFils: (
+          BigInt(original.primary_supplier_cost_fils) +
+          BigInt(prior.primary_delta) +
+          outcome.delta.primarySupplierCostDeltaFils
+        ).toString(),
+        allowanceFils: (
+          BigInt(original.allowance_fils) +
+          BigInt(prior.allowance_delta) +
+          outcome.delta.allowanceDeltaFils
+        ).toString(),
+        costAfterDiscountFils: (
+          BigInt(original.cost_after_discount_fils) +
+          BigInt(prior.net_delta) +
+          netDelta
+        ).toString(),
+      },
+    },
     allowanceDeltaFils: outcome.delta.allowanceDeltaFils.toString(),
-    costAfterDiscountDeltaFils:
-      outcome.delta.costAfterDiscountDeltaFils.toString(),
+    costAfterDiscountDeltaFils: netDelta.toString(),
     draftId: draftHeader.id,
     draftVersion: draftHeader.version,
+    evidence: draftHeader.evidence,
+    headerComparison: {
+      before: {
+        supplierId: current.header.supplierId,
+        supplierNameSnapshot: current.header.supplierNameSnapshot,
+        supplierInvoiceNumber: current.header.supplierInvoiceNumber,
+      },
+      after: {
+        supplierId: draftHeader.supplier_id,
+        supplierNameSnapshot: draftHeader.supplier_name_snapshot,
+        supplierInvoiceNumber: draftHeader.supplier_invoice_number,
+      },
+    },
     headerChanges,
     primarySupplierCostDeltaFils:
       outcome.delta.primarySupplierCostDeltaFils.toString(),
     quantityDelta: outcome.delta.quantityDelta.toString(),
+    reason: draftHeader.reason,
+    warnings:
+      duplicates.length === 0
+        ? []
+        : [
+            {
+              code: "duplicate-supplier-invoice-number" as const,
+              existingPostingIds: duplicates,
+              operationalRule: "warn-open-decision" as const,
+            },
+          ],
     rowDeltas,
+    rowTotals: draftSnapshots.map((row) => ({
+      lineageId: row.lineageId,
+      primarySupplierCostFils: (
+        BigInt(row.enteredQuantity) * BigInt(row.costFils)
+      ).toString(),
+    })),
     stockEffects: rowDeltas
       .filter(
         (row) =>
@@ -1629,10 +1868,47 @@ async function calculateSummary(
       })),
     supplierEffects,
   };
-  const confirmationHash = canonicalRequestHash(
-    "purchase.adjustment.summary",
-    base as JsonObject,
-  ).toString("hex");
+  const inventory = await readPurchaseAdjustmentConfirmationBatches(
+    client,
+    pharmacyId,
+    base.stockEffects.flatMap((effect) =>
+      effect.batchId === null ? [] : [effect.batchId],
+    ),
+  );
+  const confirmationHash = purchaseAdjustmentConfirmationHash({
+    pharmacyId,
+    draft: {
+      id: draftHeader.id,
+      version: draftHeader.version,
+      originalPurchaseId: draftHeader.original_purchase_id,
+      invoiceDate: draftHeader.invoice_date,
+      settlementContext: draftHeader.settlement_context,
+      allowancePercentageSnapshot: normalizeDecimal(
+        draftHeader.allowance_percentage_snapshot,
+      ),
+      invoiceOffer: draftHeader.invoice_offer,
+      offerRuleVersion: draftHeader.offer_rule_version,
+      reason: draftHeader.reason,
+      evidence: draftHeader.evidence,
+      supplierId: draftHeader.supplier_id,
+      supplierNameSnapshot: draftHeader.supplier_name_snapshot,
+      supplierInvoiceNumber: draftHeader.supplier_invoice_number,
+    },
+    savedRows: draftSnapshots,
+    original: {
+      id: draftHeader.original_purchase_id,
+      ...original,
+      rows: originalRows as unknown as JsonObject[],
+    },
+    current: {
+      correctionVersion: current.correctionVersion,
+      invoiceOffer: current.invoiceOffer,
+      header: current.header,
+      rows: current.rows as unknown as JsonObject[],
+    },
+    inventory,
+    preview: base,
+  });
   return {
     currentHeader: {
       supplierId: current.header.supplierId,
@@ -1647,6 +1923,64 @@ async function calculateSummary(
       confirmationHash,
     }),
   };
+}
+
+async function supplierCorrectionEffects(
+  client: PoolClient,
+  pharmacyId: string,
+  header: AdjustmentDraftHeaderRow,
+  costDeltaFils: bigint,
+): Promise<PurchaseAdjustmentSummary["supplierEffects"]> {
+  // Transfer this Purchase's remaining liability, never the supplier's global
+  // balance or the original gross before linked Returns. Names remain snapshots.
+  const family = await client.query<{
+    journal_entry_id: string;
+    supplier_id: string;
+    supplier_name_snapshot: string;
+  }>(
+    `select journal_entry_id, supplier_id, supplier_name_snapshot from (
+       select id, posted_at, journal_entry_id, supplier_id, supplier_name_snapshot
+       from posted_purchases where pharmacy_id = $1 and id = $2
+       union all
+       select id, posted_at, journal_entry_id, supplier_id, supplier_name_snapshot
+       from posted_purchase_adjustments
+       where pharmacy_id = $1 and original_purchase_id = $2
+       union all
+       select id, posted_at, journal_entry_id, supplier_id, supplier_name_snapshot
+       from posted_purchase_returns
+       where pharmacy_id = $1 and original_purchase_id = $2
+     ) documents order by posted_at, id`,
+    [pharmacyId, header.original_purchase_id],
+  );
+  const names = new Map(
+    family.rows.map((row) => [row.supplier_id, row.supplier_name_snapshot]),
+  );
+  const contributions = await readSupplierPayableContributions(
+    client,
+    pharmacyId,
+    family.rows.map((row) => row.journal_entry_id),
+  );
+  const effects = contributions
+    .filter((row) => row.supplierId !== header.supplier_id)
+    .map((row) => {
+      const name = names.get(row.supplierId);
+      if (name === undefined)
+        throw new Error("Purchase Supplier snapshot missing");
+      return {
+        supplierId: row.supplierId,
+        supplierNameSnapshot: name,
+        deltaFils: (-row.balanceFils).toString(),
+      };
+    });
+  effects.push({
+    supplierId: header.supplier_id,
+    supplierNameSnapshot: header.supplier_name_snapshot,
+    deltaFils: contributions
+      .filter((row) => row.supplierId !== header.supplier_id)
+      .reduce((sum, row) => sum + row.balanceFils, costDeltaFils)
+      .toString(),
+  });
+  return effects.filter((effect) => effect.deltaFils !== "0");
 }
 
 function domainRow(row: PurchaseAdjustmentSnapshotRow): DomainRow {
@@ -1673,6 +2007,8 @@ function draftRowSnapshot(
 function assertMeaningfulChange(calculated: CalculatedSummary): void {
   if (
     calculated.summary.headerChanges.length === 0 &&
+    JSON.stringify(calculated.summary.offerComparison.before.input) ===
+      JSON.stringify(calculated.summary.offerComparison.after.input) &&
     calculated.summary.rowDeltas.every(
       (row) =>
         row.changes.length === 0 &&
@@ -1934,16 +2270,19 @@ function displayRowChanges(
   return changes;
 }
 
-function draftAuditState(
-  draft: PurchaseAdjustmentDraft,
-): Record<string, string | number | null> {
+function draftAuditState(draft: PurchaseAdjustmentDraft): JsonObject {
   return {
+    invoiceOffer: draft.invoiceOffer,
+    offerRuleVersion: draft.offerRuleVersion,
     evidence: draft.evidence,
     originalPurchaseId: draft.originalPurchaseId,
     reason: draft.reason,
     rowCount: draft.rows.length,
     status: draft.status,
     supplierId: draft.supplierId,
+    supplierInvoiceNumber: draft.supplierInvoiceNumber,
+    supplierNameSnapshot: draft.supplierNameSnapshot,
+    rows: draft.rows.map(draftRowSnapshot),
     version: draft.version,
   };
 }
@@ -1975,8 +2314,11 @@ async function readPostedAdjustmentView(
   client: PoolClient,
   pharmacyId: string,
   adjustmentId: string,
-): Promise<PostedPurchaseAdjustment | undefined> {
+): Promise<PostedPurchaseAdjustmentDetail | undefined> {
   const header = await client.query<{
+    offer_before_snapshot: PurchaseInvoiceOfferSnapshot;
+    offer_after_snapshot: PurchaseInvoiceOfferSnapshot;
+    offer_delta_fils: string;
     allowance_delta_fils: string;
     cost_after_discount_delta_fils: string;
     draft_id: string;
@@ -1997,8 +2339,12 @@ async function readPostedAdjustmentView(
     supplier_invoice_number: string;
     supplier_name_snapshot: string;
     template_version: number;
+    before_supplier_id: string;
+    before_supplier_name: string;
+    before_invoice_number: string;
   }>(
     `select adjustment.id, adjustment.draft_id,
+            adjustment.offer_before_snapshot, adjustment.offer_after_snapshot, adjustment.offer_delta_fils::text,
             adjustment.original_purchase_id, adjustment.suffix_value::text,
             adjustment.supplier_id, adjustment.supplier_name_snapshot,
             adjustment.supplier_invoice_number, adjustment.reason,
@@ -2009,7 +2355,10 @@ async function readPostedAdjustmentView(
             adjustment.header_changes, adjustment.journal_entry_id,
             adjustment.posted_at, adjustment.posted_by,
             original.number_value::text, original.number_year,
-            journal.template_version
+            journal.template_version,
+            coalesce(previous.supplier_id, original.supplier_id) as before_supplier_id,
+            coalesce(previous.supplier_name_snapshot, original.supplier_name_snapshot) as before_supplier_name,
+            coalesce(previous.supplier_invoice_number, original.supplier_invoice_number) as before_invoice_number
      from posted_purchase_adjustments adjustment
      join posted_purchases original
        on original.id = adjustment.original_purchase_id
@@ -2017,6 +2366,14 @@ async function readPostedAdjustmentView(
      join accounting_journal_entries journal
        on journal.id = adjustment.journal_entry_id
       and journal.pharmacy_id = adjustment.pharmacy_id
+     left join lateral (
+       select supplier_id, supplier_name_snapshot, supplier_invoice_number
+       from posted_purchase_adjustments
+       where pharmacy_id = adjustment.pharmacy_id
+         and original_purchase_id = adjustment.original_purchase_id
+         and suffix_value < adjustment.suffix_value
+       order by suffix_value desc limit 1
+     ) previous on true
      where adjustment.pharmacy_id = $1 and adjustment.id = $2`,
     [pharmacyId, adjustmentId],
   );
@@ -2053,11 +2410,28 @@ async function readPostedAdjustmentView(
      where pharmacy_id = $1 and entry_id = $2 order by ordinal`,
     [pharmacyId, row.journal_entry_id],
   );
-  return postedPurchaseAdjustmentSchema.parse({
+  return postedPurchaseAdjustmentDetailSchema.parse({
+    offerComparison: {
+      before: row.offer_before_snapshot,
+      after: row.offer_after_snapshot,
+    },
+    offerDeltaFils: row.offer_delta_fils,
     allowanceDeltaFils: row.allowance_delta_fils,
     costAfterDiscountDeltaFils: row.cost_after_discount_delta_fils,
     draftId: row.draft_id,
     evidence: row.evidence,
+    headerComparison: {
+      before: {
+        supplierId: row.before_supplier_id,
+        supplierNameSnapshot: row.before_supplier_name,
+        supplierInvoiceNumber: row.before_invoice_number,
+      },
+      after: {
+        supplierId: row.supplier_id,
+        supplierNameSnapshot: row.supplier_name_snapshot,
+        supplierInvoiceNumber: row.supplier_invoice_number,
+      },
+    },
     headerChanges: row.header_changes,
     id: row.id,
     journal: {

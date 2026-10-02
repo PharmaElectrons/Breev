@@ -1,0 +1,231 @@
+$ turbo run test:unit && pnpm test:boundaries && pnpm test:dev-launcher && pnpm test:release-tooling
+• turbo 2.10.11
+
+   • Packages in scope: @breev/contracts, @breev/desktop, @breev/local-api
+   • Running test:unit in 3 packages
+   • Remote caching disabled
+
+@breev/contracts:test:unit: cache miss, executing 8e8d01f0a0a3e584
+@breev/contracts:build: cache hit, replaying logs c6eaeb201a7ffa82
+@breev/contracts:build: $ tsc -p tsconfig.build.json
+@breev/local-api:test:unit: cache miss, executing 7880d5c38cee1f3a
+@breev/desktop:test:unit: cache miss, executing 32681b1729763985
+@breev/contracts:test:unit: $ vitest run
+@breev/local-api:test:unit: $ vitest run --config vitest.unit.config.ts
+@breev/desktop:test:unit: $ vitest run --config vitest.config.ts
+@breev/contracts:test:unit: 
+@breev/contracts:test:unit:  RUN  v4.1.11 P:/Projects/PharmaElectrons/packages/contracts
+@breev/contracts:test:unit: 
+@breev/local-api:test:unit: 
+@breev/local-api:test:unit:  RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+@breev/local-api:test:unit: 
+@breev/desktop:test:unit: 
+@breev/desktop:test:unit:  RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/desktop
+@breev/desktop:test:unit: 
+@breev/local-api:test:unit:  ✓ windows/postgresql-runtime.unit.test.mjs (2 tests) 55ms
+@breev/contracts:test:unit:  ✓ src/local-rest/inventory-reorder.test.ts (4 tests) 215ms
+@breev/contracts:test:unit:  ✓ src/local-rest/inventory.test.ts (8 tests) 263ms
+@breev/contracts:test:unit:  ✓ src/local-rest/registries.test.ts (7 tests) 79ms
+@breev/contracts:test:unit:  ✓ src/local-rest/sales.test.ts (6 tests) 70ms
+@breev/contracts:test:unit:  ✓ src/local-rest/purchasing.test.ts (37 tests) 170ms
+@breev/contracts:test:unit:  ✓ src/desktop-preload/index.test.ts (40 tests) 220ms
+@breev/contracts:test:unit:  ✓ src/local-rest/index.test.ts (88 tests) 737ms
+@breev/desktop:test:unit:  ✓ src/main/diagnostics.unit.test.ts (9 tests) 983ms
+@breev/desktop:test:unit:      ✓ continuously caps the fatal breadcrumb sink  639ms
+@breev/local-api:test:unit:  ✓ src/identity-access/password.unit.test.ts (3 tests) 882ms
+@breev/local-api:test:unit:      ✓ stores a salted Argon2id PHC value with the selected OWASP parameters  412ms
+@breev/local-api:test:unit:      ✓ verifies Unicode passwords without reducing their input  309ms
+@breev/desktop:test:unit:  ✓ src/main/pairing-transcript.unit.test.ts (16 tests) 800ms
+@breev/desktop:test:unit:      ✓ rejects a request whose signature was made by another key  357ms
+@breev/desktop:test:unit:  ✓ src/main/terminal-binding.unit.test.ts (17 tests) 468ms
+@breev/contracts:test:unit:  ✓ src/local-rest/product-name.test.ts (23 tests) 20ms
+@breev/local-api:test:unit:  ✓ src/posting/money.unit.test.ts (187 tests) 219ms
+@breev/local-api:test:unit:  ✓ src/devices/pairing-csr.unit.test.ts (9 tests) 562ms
+@breev/contracts:test:unit:  ✓ src/local-rest/inventory-count.test.ts (3 tests) 47ms
+@breev/contracts:test:unit: 
+@breev/contracts:test:unit:  Test Files  9 passed (9)
+@breev/contracts:test:unit:       Tests  216 passed (216)
+@breev/contracts:test:unit:    Start at  14:41:15
+@breev/contracts:test:unit:    Duration  6.36s (transform 11.56s, setup 0ms, import 21.25s, tests 1.82s, environment 2ms)
+@breev/contracts:test:unit: 
+@breev/desktop:test:unit:  ✓ src/main/pairing-trust.unit.test.ts (15 tests) 812ms
+@breev/local-api:test:unit:  ✓ src/devices/discovery-publisher.unit.test.ts (1 test) 186ms
+@breev/desktop:test:unit:  ✓ src/main/terminal-runtime.unit.test.ts (8 tests) 1441ms
+@breev/desktop:test:unit:      ✓ refuses to boot a paired terminal whose key store has gone  504ms
+@breev/desktop:test:unit:      ✓ starts paired and stops listening to the network once bound  581ms
+@breev/local-api:test:unit:  ✓ src/devices/pairing-domain.unit.test.ts (44 tests) 4453ms
+@breev/local-api:test:unit:      ✓ allows exactly permitted-minus-one terminals for a licence permitting 10000  806ms
+@breev/local-api:test:unit:      ✓ allows exactly permitted-minus-one terminals for a licence permitting 10001  575ms
+@breev/local-api:test:unit:      ✓ allows exactly permitted-minus-one terminals for a licence permitting 50000  2913ms
+@breev/local-api:test:unit:  ✓ src/catalog/catalog-packaging.unit.test.ts (14 tests) 417ms
+@breev/local-api:test:unit:      ✓ keeps the base balance whole for arbitrary counts and ratios  395ms
+@breev/desktop:test:unit:  ✓ src/main/terminal-role.unit.test.ts (31 tests) 181ms
+@breev/local-api:test:unit:  ✓ src/pharmacy-ca/cng-addon.unit.test.ts (1 test) 163ms
+@breev/local-api:test:unit:  ✓ src/purchasing/purchase-invoice-offer.unit.test.ts (15 tests) 177ms
+@breev/desktop:test:unit:  ✓ src/main/terminal-bridge.unit.test.ts (21 tests) 277ms
+@breev/local-api:test:unit: [Nest] 20208  - 10/01/2026, 2:41:26 PM     LOG [RestoreQuarantineService] Restore Quarantine verified and cleared
+@breev/local-api:test:unit:  ✓ src/recovery/recovery.unit.test.ts (23 tests) 865ms
+@breev/local-api:test:unit: [Nest] 20208  - 10/01/2026, 2:41:26 PM   ERROR [RestoreQuarantineService] Restore Quarantine verification failed: licence_time_verification: Clock rollback detected: the newest restored record (2026-10-02T11:41:26.741Z) is ahead of the current time (2026-10-01T11:41:26.741Z)
+@breev/local-api:test:unit:        ✓ publishes the archived segment durably and leaves no temporary file  383ms
+@breev/local-api:test:unit:        ✓ accepts an identical retry and rejects a different segment under the same name  330ms
+@breev/local-api:test:unit: [Nest] 20208  - 10/01/2026, 2:41:26 PM   ERROR [RestoreQuarantineService] Restore Quarantine verification failed: main_device_security_verification: relation does not exist; device_identity_verification: relation does not exist; licence_time_verification: relation does not exist
+@breev/local-api:test:unit:  ✓ src/main-device/main-device-binding.unit.test.ts (4 tests) 149ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/home-screen.unit.test.ts (31 tests) 1902ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-receipt-rules.unit.test.ts (11 tests) 19ms
+@breev/local-api:test:unit:  ✓ src/inventory/business-date.unit.test.ts (5 tests) 65ms
+@breev/local-api:test:unit:  ✓ src/catalog/catalog-pricing.unit.test.ts (12 tests) 120ms
+@breev/desktop:test:unit:  ✓ src/main/security.unit.test.ts (52 tests) 222ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-count.unit.test.ts (5 tests) 71ms
+@breev/local-api:test:unit:  ✓ src/posting/outbox.unit.test.ts (12 tests) 17ms
+@breev/local-api:test:unit:  ✓ src/purchasing/purchase-adjustment-confirmation.unit.test.ts (38 tests) 117ms
+@breev/desktop:test:unit:  ✓ src/main/exported-file.unit.test.ts (2 tests) 101ms
+@breev/local-api:test:unit:  ✓ src/licensing/entitlement.unit.test.ts (4 tests) 11ms
+@breev/local-api:test:unit:  ✓ src/licensing/offline-licence.unit.test.ts (23 tests) 119ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/purchasing-api.unit.test.ts (11 tests) 187ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/purchase-item-details.unit.test.ts (7 tests) 259ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-reorder.unit.test.ts (7 tests) 26ms
+@breev/desktop:test:unit:  ✓ src/main/diagnostic-bundle.unit.test.ts (6 tests) 1324ms
+@breev/desktop:test:unit:      ✓ writes only the strict bundle shape through an atomic staging file  506ms
+@breev/desktop:test:unit:      ✓ rejects unknown fields and canaries without damaging an existing file  310ms
+@breev/desktop:test:unit:      ✓ omits raw installer errors while preserving its failure stage  412ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-fefo.unit.test.ts (4 tests) 47ms
+@breev/local-api:test:unit:  ✓ src/posting/lock-order.unit.test.ts (52 tests) 33ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/preferences.unit.test.ts (4 tests) 77ms
+@breev/local-api:test:unit:  ✓ src/accounting/purchase-posting-template.unit.test.ts (14 tests) 36ms
+@breev/local-api:test:unit:  ✓ src/identity-access/authorization.unit.test.ts (11 tests) 33ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/role-editor.unit.test.ts (17 tests) 324ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/local-api.unit.test.ts (6 tests) 166ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/navbar-collapse-menu.unit.test.ts (8 tests) 238ms
+@breev/local-api:test:unit:  ❯ src/pharmacy-ca/pharmacy-ca-crypto.unit.test.ts (12 tests | 12 skipped) 10735ms
+@breev/local-api:test:unit:      ↓ builds a valid X.509 v3 self-signed CA certificate with installation identity
+@breev/local-api:test:unit:      ↓ builds a server certificate with breev-server role and validates against CA
+@breev/local-api:test:unit:      ↓ binds pharmacy, device, type, licence, and serial into the subject names
+@breev/local-api:test:unit:      ↓ builds a device certificate with breev-device role and validates against CA
+@breev/local-api:test:unit:      ↓ assigns a unique positive serial to every certificate
+@breev/local-api:test:unit:      ↓ encodes repeated positive 128-bit serials canonically
+@breev/local-api:test:unit:      ↓ rejects expired certificates with cert-expired
+@breev/local-api:test:unit:      ↓ rejects role mismatches (server cert as device)
+@breev/local-api:test:unit:      ↓ rejects installation identity mismatch
+@breev/local-api:test:unit:      ↓ rejects certificates signed by a foreign CA
+@breev/local-api:test:unit:      ↓ completes a full mutual TLS 1.3 handshake with client certificate authentication
+@breev/local-api:test:unit:        ↓ proves the CA key export fails
+@breev/local-api:test:unit:  ✓ src/devices/pairing-endpoint.unit.test.ts (15 tests) 29ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/settings-screen.unit.test.ts (10 tests) 486ms
+@breev/local-api:test:unit:  ✓ src/purchasing/purchase-adjustment-delta.unit.test.ts (14 tests) 24ms
+@breev/local-api:test:unit:  ✓ src/posting/command-retry.unit.test.ts (19 tests) 48ms
+@breev/desktop:test:unit:  ✓ src/main/pairing-invitation.unit.test.ts (51 tests) 131ms
+@breev/local-api:test:unit:  ✓ src/posting/canonical-hash.unit.test.ts (20 tests) 25ms
+@breev/local-api:test:unit:  ✓ src/database-migrations.unit.test.ts (1 test) 19ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/inventory-api.unit.test.ts (4 tests) 201ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/navigation.unit.test.ts (19 tests) 23ms
+@breev/desktop:test:unit:  ✓ electron-builder.config.unit.test.ts (4 tests) 130ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-valuation.unit.test.ts (12 tests) 18ms
+@breev/local-api:test:unit:  ✓ src/purchasing/purchase-costs.unit.test.ts (10 tests) 18ms
+@breev/local-api:test:unit:  ✓ src/database-connection.unit.test.ts (9 tests) 61ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/module-navigation.unit.test.ts (5 tests) 58ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/status-icon.unit.test.ts (16 tests) 63ms
+@breev/local-api:test:unit:  ✓ src/licensing/dev-licence-generator.unit.test.ts (1 test) 17ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-item-view.unit.test.ts (1 test) 16ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/purchasing-messages.unit.test.ts (4 tests) 120ms
+@breev/local-api:test:unit:  ✓ windows/lifecycle.unit.test.ts (9 tests) 15ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/error-boundary.unit.test.ts (6 tests) 87ms
+@breev/local-api:test:unit:  ✓ src/purchasing/purchase-price-capture.unit.test.ts (8 tests) 16ms
+@breev/local-api:test:unit:  ✓ src/purchasing/purchase-row.unit.test.ts (7 tests) 15ms
+@breev/desktop:test:unit:  ✓ src/preload/api.unit.test.ts (27 tests) 62ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-review.unit.test.ts (7 tests) 16ms
+@breev/desktop:test:unit:  ✓ renderer-data-boundaries.unit.test.ts (7 tests) 83ms
+@breev/local-api:test:unit:  ✓ src/licensing/trusted-time.unit.test.ts (4 tests) 9ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/suppliers-workspace.unit.test.ts (2 tests) 120ms
+@breev/local-api:test:unit:  ✓ src/purchasing/purchasing-domain.unit.test.ts (3 tests) 51ms
+@breev/local-api:test:unit:  ✓ src/reporting/inventory-review.service.unit.test.ts (4 tests) 18ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/purchase-return-workflow.unit.test.ts (2 tests) 32ms
+@breev/local-api:test:unit:  ✓ src/accounting/purchase-adjustment-posting-template.unit.test.ts (3 tests) 12ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-eligibility.unit.test.ts (3 tests) 12ms
+@breev/local-api:test:unit:  ✓ src/main-device/renderer-mutation-parity.unit.test.ts (4 tests) 58ms
+@breev/local-api:test:unit:  ✓ src/inventory/inventory-risk.unit.test.ts (4 tests) 13ms
+@breev/local-api:test:unit:  ✓ src/catalog/catalog-search.unit.test.ts (9 tests) 12ms
+@breev/desktop:test:unit:  ✓ src/main/terminal-discovery.unit.test.ts (13 tests) 29ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/catalog-messages.unit.test.ts (10 tests) 18ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/purchase-adjustment-workflow.unit.test.ts (7 tests) 500ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/product-form.unit.test.ts (28 tests) 28ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/user-management-panel.unit.test.ts (2 tests) 28ms
+@breev/local-api:test:unit:  ✓ src/pharmacy-ca/terminal-socket-registry.unit.test.ts (5 tests) 11ms
+@breev/local-api:test:unit:  ✓ src/accounting/count-variance-posting-template.unit.test.ts (3 tests) 11ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/pairing-format.unit.test.ts (7 tests) 13ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/inventory-preferences-save.unit.test.ts (4 tests) 24ms
+@breev/local-api:test:unit:  ✓ src/purchasing/purchase-return.unit.test.ts (3 tests) 9ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/permission-catalogue.unit.test.ts (5 tests) 24ms
+@breev/desktop:test:unit:  ✓ src/main/central-diagnostics.unit.test.ts (4 tests) 20ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/components/ui/tabs.unit.test.ts (2 tests) 118ms
+@breev/local-api:test:unit:  ✓ src/accounting/purchase-return-posting-template.unit.test.ts (1 test) 9ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/purchase-invoice-offer-money.unit.test.ts (12 tests) 13ms
+@breev/desktop:test:unit:  ✓ src/main/pairing-client.unit.test.ts (41 tests) 23ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/panel-unit-label.unit.test.ts (6 tests) 48ms
+@breev/desktop:test:unit:  ✓ windows/installer.unit.test.ts (11 tests) 16ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/terminal-pairing.unit.test.ts (14 tests) 23ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/count-entry.unit.test.ts (4 tests) 14ms
+@breev/desktop:test:unit:  ✓ src/main/diagnostic-redaction.unit.test.ts (13 tests) 18ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/inventory-messages.unit.test.ts (2 tests) 20ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/devices-messages.unit.test.ts (7 tests) 15ms
+@breev/local-api:test:unit:  ✓ src/purchasing/posted-purchase-review.unit.test.ts (1 test) 9ms
+@breev/local-api:test:unit:  ✓ windows/payload-inventory.unit.test.mjs (3 tests) 24731ms
+@breev/local-api:test:unit:      ✓ rejects missing/extra files and malformed path inventories  1396ms
+@breev/local-api:test:unit:      ✓ runs the actual PowerShell verifier without service or data mutations  23078ms
+@breev/local-api:test:unit: 
+@breev/local-api:test:unit: ⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+@breev/local-api:test:unit: 
+@breev/local-api:test:unit:  FAIL  src/pharmacy-ca/pharmacy-ca-crypto.unit.test.ts > Pharmacy CA Cryptography and Validation Seam
+@breev/local-api:test:unit: 
+@breev/local-api:test:unit: Error: Command failed: powershell -NoProfile -NonInteractive -Command 
+@breev/local-api:test:unit:     $ErrorActionPreference = 'Stop'
+@breev/local-api:test:unit:     $params = New-Object System.Security.Cryptography.CngKeyCreationParameters
+@breev/local-api:test:unit:     $params.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
+@breev/local-api:test:unit:     $params.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey
+@breev/local-api:test:unit:     $params.Provider = [System.Security.Cryptography.CngProvider]::new('Microsoft Software Key Storage Provider')
+@breev/local-api:test:unit:     $prop = New-Object System.Security.Cryptography.CngProperty('Length', [BitConverter]::GetBytes([int]2048), [System.Security.Cryptography.CngPropertyOptions]::None)
+@breev/local-api:test:unit:     $params.Parameters.Add($prop)
+@breev/local-api:test:unit:     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+@breev/local-api:test:unit:     $descriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor("D:P(A;;GA;;;" + $sid + ")")
+@breev/local-api:test:unit:     $descriptorBytes = New-Object byte[] $descriptor.BinaryLength
+@breev/local-api:test:unit:     $descriptor.GetBinaryForm($descriptorBytes, 0)
+@breev/local-api:test:unit:     $securityProperty = New-Object System.Security.Cryptography.CngProperty('Security Descr', $descriptorBytes, [System.Security.Cryptography.CngPropertyOptions]4)
+@breev/local-api:test:unit:     $params.Parameters.Add($securityProperty)
+@breev/local-api:test:unit:     $key = [System.Security.Cryptography.CngKey]::Create([System.Security.Cryptography.CngAlgorithm]::Rsa, 'test-ca-01a0f744-e07c-77c3-91f3-0689a2bfa85e', $params)
+@breev/local-api:test:unit:     $rsa = New-Object System.Security.Cryptography.RSACng($key)
+@breev/local-api:test:unit:     $p = $rsa.ExportParameters($false)
+@breev/local-api:test:unit:     $mod = [Convert]::ToBase64String($p.Modulus)
+@breev/local-api:test:unit:     $exp = [Convert]::ToBase64String($p.Exponent)
+@breev/local-api:test:unit:     $rsa.Dispose()
+@breev/local-api:test:unit:     $key.Dispose()
+@breev/local-api:test:unit:     Write-Output "$mod`n$exp`n$sid"
+@breev/local-api:test:unit:   
+@breev/local-api:test:unit: Exception calling "Create" with "3" argument(s): "Access denied.
+@breev/local-api:test:unit: "
+@breev/local-api:test:unit: At line:15 char:5
+@breev/local-api:test:unit: +     $key = [System.Security.Cryptography.CngKey]::Create([System.Secu ...
+@breev/local-api:test:unit: +     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+@breev/local-api:test:unit:     + CategoryInfo          : NotSpecified: (:) [], ParentContainsErrorRecordException
+@breev/local-api:test:unit:     + FullyQualifiedErrorId : CryptographicException
+@breev/local-api:test:unit:  
+@breev/local-api:test:unit: 
+@breev/local-api:test:unit: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+@breev/local-api:test:unit: 
+@breev/local-api:test:unit:  Test Files  1 failed | 52 passed (53)
+@breev/local-api:test:unit:       Tests  684 passed | 12 skipped (696)
+@breev/local-api:test:unit:    Start at  14:41:16
+@breev/local-api:test:unit:    Duration  27.39s (transform 27.15s, setup 0ms, import 53.46s, tests 44.88s, environment 17ms)
+@breev/local-api:test:unit: 
+@breev/local-api:test:unit: [ELIFECYCLE] Command failed with exit code 1.
+@breev/desktop:test:unit:  ✓ src/renderer/src/inventory-item-panel.unit.test.ts (4 tests) 29ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/purchasing-draft-filter.unit.test.ts (5 tests) 12ms
+@breev/desktop:test:unit:  ✓ src/renderer/src/sales-messages.unit.test.ts (2 tests) 16ms
+@breev/desktop:test:unit:  ✓ purchase-adjustment-actions.unit.test.ts (1 test) 12ms
+@breev/local-api#test:unit:  ERROR  command (P:\Projects\PharmaElectrons\apps\local-api) C:\Users\moata\AppData\Roaming\npm\pnpm.cmd run test:unit exited (1)
+
+ Tasks:    2 successful, 4 total
+Cached:    1 cached, 4 total
+  Time:    31.063s 
+Failed:    @breev/local-api#test:unit
+
+ ERROR  run failed: command  exited (1)
+[ELIFECYCLE] Command failed with exit code 1.

@@ -75,26 +75,21 @@ checkProc.on("exit", async (code) => {
   const apiPort = mergedEnv.API_PORT || "31310";
   let isApiRunning = false;
   if (role === "main") {
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      try {
-        const response = await fetch(`http://${apiHost}:${apiPort}/health`, {
-          signal: AbortSignal.timeout(1000),
-        });
-        if (response.ok) {
-          const body = await response.json();
-          if (body.status === "healthy" || body.status === "degraded") {
-            isApiRunning = true;
-            console.log(
-              `[breev] Local API is already running on ${apiHost}:${apiPort} (${body.status}). Starting Desktop UI...`,
-            );
-            break;
-          }
-        }
-      } catch {
-        if (attempt < 4) {
-          await new Promise((resolve) => setTimeout(resolve, 800));
+    try {
+      const response = await fetch(`http://${apiHost}:${apiPort}/health`, {
+        signal: AbortSignal.timeout(500),
+      });
+      if (response.ok) {
+        const body = await response.json();
+        if (body.status === "healthy" || body.status === "degraded") {
+          isApiRunning = true;
+          console.log(
+            `[breev] Local API is already running on ${apiHost}:${apiPort} (${body.status}). Starting Desktop UI...`,
+          );
         }
       }
+    } catch {
+      // Local API is not running; launcher will start it with Desktop UI
     }
   }
 

@@ -1,0 +1,9 @@
+
+Running 1 test using 1 worker
+
+
+
+(node:4400) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/1] test\browser\purchasing.browser.test.ts:3543:3 › Supplier and Purchase Draft screens › renders explicit denied and recoverable unavailable register states
+  1 passed (10.4s)

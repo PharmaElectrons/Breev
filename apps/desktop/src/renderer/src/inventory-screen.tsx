@@ -791,7 +791,10 @@ function InventoryScreen({
             {copy.columns.balance}:{" "}
             {formatNumber(BigInt(selectedItem.balance), locale)}
           </span>
-          <span>{copy.stateColours[selectedItem.stateColour.effective]}</span>
+          <span>
+            {selectedItem.stateColour.manual ??
+              copy.stateColours[selectedItem.stateColour.automatic]}
+          </span>
           <a href={`#/inventory/items/${selectedItem.productId}/movements`}>
             {copy.movement.title}
           </a>
@@ -1158,7 +1161,7 @@ function InventoryStatusBadges({
   readonly copy: InventoryCopy;
   readonly item: InventoryItem;
 }): React.JSX.Element {
-  const colourLabel = copy.stateColours[item.stateColour.effective];
+  const colourLabel = copy.stateColours[item.stateColour.automatic];
   const ordered = STATUS_RISK_PRIORITY.filter((indicator) =>
     item.riskIndicators.includes(indicator),
   );
@@ -1168,7 +1171,8 @@ function InventoryStatusBadges({
       <span className="inventory-status-badges">
         <StateIndicator
           assistiveLabel={colourLabel}
-          colour={item.stateColour.effective}
+          colour={item.stateColour.automatic}
+          customColour={item.stateColour.manual ?? undefined}
           kind="state"
           label={statusMeaning(colourLabel)}
         />
@@ -1223,7 +1227,7 @@ function inventoryRowStatus(item: InventoryItem): string {
   if (
     item.riskIndicators.includes("expired") ||
     item.riskIndicators.includes("out-of-stock") ||
-    item.stateColour.effective === "red"
+    item.stateColour.automatic === "red"
   )
     return "critical";
   if (item.riskIndicators.includes("expiring-soon")) return "expiring";
@@ -1234,7 +1238,7 @@ function inventoryRowStatus(item: InventoryItem): string {
     return "reorder";
   if (
     item.riskIndicators.includes("above-maximum") ||
-    item.stateColour.effective === "purple"
+    item.stateColour.automatic === "purple"
   )
     return "over-maximum";
   return "stable";

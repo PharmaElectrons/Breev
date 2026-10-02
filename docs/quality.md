@@ -52,6 +52,8 @@ These client-stated examples are acceptance tests, not negotiable targets.
 
 Core sales, purchasing, counting, corrections, patient flows, reports, dialogs, receipts, and exports target WCAG 2.2 AA. Use WCAG2ICT where it applies. These flows require semantic names, roles, and values. They also require meaningful DOM and focus order independent of visual RTL, visible focus, keyboard operation without timing-specific keystrokes, status that does not rely on color, announced validation and asynchronous status, reduced motion, and readable output.
 
+Ordinary user messages show a localized explanation and a recovery action. Raw diagnostic codes, request/audit UUIDs, and correlation references remain hidden by default; optional Support details may provide a copyable reference. Preserve internal correlation and audit. This presentation rule follows the stakeholder's [30 September 2026 decision](../evidence/issue-198/followups.md) and applies to later tasks across modules.
+
 The provisional measurable targets are normal-text contrast ≥4.5:1, large-text contrast ≥3:1, 200% text resizing without loss of critical content or function, and pointer targets ≥24×24 CSS pixels. Primary cashier controls target 44×44 where the layout permits. Validate Arabic with RTL and English with LTR in both themes. Exercise rapid scanning, slow responses, restart, offline operation, validation, denial, and dialogs. Test with real Windows Narrator. Confirm function shortcuts through user observation and conflict testing. The old F1 through F4 and F12 proposal is not a requirement.
 
 ## Performance targets

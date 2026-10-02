@@ -1,0 +1,58 @@
+
+Running 1 test using 1 worker
+
+
+
+(node:7332) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/1] test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements
+test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements
+T06 reference interaction en/light sample 1
+
+1	
+					—	
+⚙
+
+[
+  { field: 'item', focused: true },
+  { field: 'quantity', focused: false },
+  { field: 'cost', focused: false },
+  { field: 'selling-price', focused: false },
+  { field: 'expiry', focused: false }
+]
+
+  1) test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+
+    Error: expect(locator).toBeFocused() failed
+
+    Locator:  locator('.purchase-entry-row [data-enter-field="quantity"]')
+    Expected: focused
+    Received: inactive
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeFocused" with timeout 10000ms
+      - waiting for locator('.purchase-entry-row [data-enter-field="quantity"]')
+        23 × locator resolved to <input min="1" value="1" type="number" aria-label="Quantity" data-enter-field="quantity" class="purchase-stepper-input w-full"/>
+           - unexpected value "inactive"
+
+
+      313 |         await expect(page.locator("#purchase-item-suggestions-listbox")).toBeHidden();
+      314 |         const barcodeStart = performance.now(); await item.fill("5012345678949"); await item.press("Enter");
+    > 315 |         try { await expect(qty).toBeFocused(); } catch (error) {
+          |                                 ^
+      316 |           await page.screenshot({ path: path.join(resultDir, `focus-failure-${locale}-${theme}-${sample}.png`), fullPage: true });
+      317 |           console.log(await page.locator(".purchase-entry-row").innerText());
+      318 |           console.log(await page.locator(".purchase-entry-row [data-enter-field]").evaluateAll(elements => elements.map(element => ({ field: element.getAttribute("data-enter-field"), focused: element === element.ownerDocument.activeElement }))));
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:315:33
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+
+  1 failed
+    test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 M2 reference-volume"

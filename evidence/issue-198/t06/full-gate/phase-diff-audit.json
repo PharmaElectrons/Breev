@@ -1,0 +1,79 @@
+{
+  "base": "ac1916c",
+  "head": "73620cd1c1d79591fc96d7f716750dd4a2a310a7",
+  "functionChecks": [
+    {
+      "name": "focusField",
+      "unchanged": true
+    },
+    {
+      "name": "closeSuggestions",
+      "unchanged": true
+    },
+    {
+      "name": "attachProduct",
+      "unchanged": true
+    },
+    {
+      "name": "handleRowKeyDown",
+      "unchanged": true
+    },
+    {
+      "name": "handleItemChange",
+      "unchanged": true
+    },
+    {
+      "name": "handleItemKeyDown",
+      "unchanged": true
+    },
+    {
+      "name": "resolveItemAndAdvance",
+      "unchanged": true
+    },
+    {
+      "name": "focusNext",
+      "unchanged": true
+    },
+    {
+      "name": "onFieldEnter",
+      "unchanged": true
+    },
+    {
+      "name": "commitRow",
+      "unchanged": true
+    },
+    {
+      "name": "resetLine",
+      "unchanged": true
+    },
+    {
+      "name": "renderEditor",
+      "unchanged": true
+    },
+    {
+      "name": "QuickProductDialog",
+      "unchanged": true
+    }
+  ],
+  "quickProductUnchanged": true,
+  "boundaryChecks": [
+    {
+      "name": "apps/desktop/src/main",
+      "unchanged": true
+    },
+    {
+      "name": "apps/desktop/src/preload",
+      "unchanged": true
+    },
+    {
+      "name": "apps/desktop/electron.vite.config.ts",
+      "unchanged": true
+    },
+    {
+      "name": "apps/desktop/src/renderer/src/product-form.tsx",
+      "unchanged": true
+    }
+  ],
+  "roleModifyingStatementsIn0030": 0,
+  "requiredRoleRevisionIncrementIn0030": 0
+}

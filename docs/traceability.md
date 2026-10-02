@@ -24,7 +24,7 @@ Every business-requirement area of the governing scope maps to one owning docume
 | §3.1 login, users, permissions, attendance | Mandatory login, role set, configurable permissions, audit of sensitive changes, optional manual attendance; one role per user, role-owned permissions, and pharmacy custom roles per the stakeholder clarification of 3 September 2026 (see reconciliations) | `product.md`; `domain.md` (identity/authorization) |
 | §3.2–§3.3 plans, feature control, Super Admin | Per-pharmacy licensing, hidden disabled features, founder grants, device counts, expiry behavior, Super Admin minimum; the owner licence panel is an owner decision (see reconciliations) | `product.md`; expiry rule pending in `open-decisions.md` |
 | §3.4 dashboard and alerts | Summaries, sortable item-summary fields, unified notification center; installation and system identifiers per the stakeholder decision of 3 September 2026 | `product.md` |
-| §4 item definition, search, packaging, pricing | Two naming modes, Arabic name, ordered sequential search with acceptance example, base/sub units, third unit (days/dosage only), By Price / By Percentage, margin-on-selling-price, rounding, colors, movement history, barcode actions, daily matching | `domain.md` (catalog and pricing rules); `workflows.md` |
+| §4 item definition, search, packaging, pricing | Two naming modes, Arabic name, category autocomplete and add, ordered sequential search with acceptance example, base/sub units, third unit (days/dosage only), By Price / By Percentage, margin-on-selling-price, rounding, optional custom hex highlight and automatic state colors, movement history, barcode actions, daily matching; Product batch and movement facts are Inventory-owned, read-only, and permission-gated, with no fabricated Catalog balance | `domain.md` (catalog and pricing rules); `product.md`; `workflows.md` |
 | §5 sales and POS | Full POS flow, suspend/preserve/confirm, quick patient and item creation, patient context, controls and calculator, saved-invoice viewing with returns-only correction, panel fields, drawer balance, expired/damaged approval flow, quick access, reorder from sales | `workflows.md` (Sell and settle); `domain.md` (settlement, write-off) |
 | §6 purchases, suppliers, OCR | Entry order and keyboard flow, allowance snapshots, dual cost values, Purchase Invoice Adjustment (Delta) with A-numbered identifiers and conflict blocking, purchase returns, no deletion, OCR as reviewed draft | `domain.md`; `workflows.md`; `product.md` (OCR boundary) |
 | §7 inventory, stocktaking, reorder | Read-only inventory with approved columns, owner-only export, quick stocktake with unit combinations, reorder basket (max − current) and Ordered Items | `domain.md`; `workflows.md` (Count) |
@@ -72,6 +72,11 @@ Where sources conflict or the engineering baseline deliberately differs, this ta
 | Issue #142 requests client diagnostics, crash recovery, and support contact while G-08/G-14/G-16 leave external reporting approval open | The local desktop implementation is the settled offline slice: layered localized error containment, closed privacy-safe breadcrumbs, strict allowlisted atomic export through an Electron-owned Save dialog, and a Main-owned configured OS support handoff. Central submission remains disabled by default, appears only after authentication when Main reports the manual capability, and requires an explicit confirmation. This does not approve a provider, region, retention period, notice, or production telemetry activation; those decisions remain in `open-decisions.md`. |
 | Stakeholder decision of 23 September 2026, issue #62 | Sale Draft list/read/resume requires `sales.drafts.manage` and is pharmacy-scoped. Creator and device do not restrict access; an authorized user may act from a device that passes authentication and device-trust checks. Automatic selection on Sales entry remains open. See `domain.md` Sales rules, `workflows.md` Sell and settle, `open-decisions.md` Automatic Sale Draft selection, and issues #58 and #62. |
 | Issue #62 and the stakeholder's 24 September 2026 Sale screenshot and funding confirmation | The confirmed Milestone 3 funding permits implementation of #62's pre-posting durable Sale Draft and cashier workspace. The screenshot guides layout only. Catalog and permissioned misc lines, exact discounts/totals, suspend/resume, manager quick access, reasoned price override, and inventory-backed item balance/batch/expiry context use local API authority; reorder-basket actions remain separate. Checkout, patient/clinical controls, messaging, and employee drawer data are not implied by the screenshot. The drawer depends on #65; duplicate-scan behavior remains open under G-03. See `today/62-plan.md` and `evidence/issue-62/README.md` for implementation state and test evidence. |
+| Stakeholder Sales layout and action decisions of 26 September 2026 | The compact draft widget keeps explicit selection and server-ordered active/suspended drafts. The Sales picker exposes an existing barcode with retail price through the same permissioned search; scan, Quick Links, invoice rows, and the seven-action footer remain within the cashier workspace. Cash/Save posting, completed-invoice Search/Print, and linked Return retain G-01/G-02/G-03 and their owning Sales, Cash Box, Accounting, and Patient dependencies. Disabled actions are not evidence that a financial flow exists. See `today/2026-09-26-plan.md` and its phased tracker for delivery state. |
+| Stakeholder Products workspace decision of 27 September 2026 | Use a compact rail and edit-ready selected card with two-step creation and persistent card actions. Add bounded movement history using the existing `inventory.review` read permission and API valuation redaction; Archive and Merge remain confirmed historical actions. The screenshots guide composition only: Product still has no writable stock or expiry, no hard delete, and no packet/unit redesign in this slice. Preserve the existing server-backed Catalog contracts and route authority. See `today/2026-09-27-plan.md` and its phased tracker. |
+
+| Product supplier-link clarification of 28 September 2026 | Links are informational many-to-many references with no preferred supplier, price, availability, or purchase-entry suggestion. `catalog.item.manage` controls minimal supplier option reads and product links; `suppliers.manage` still controls supplier profiles. Only active suppliers may be newly linked; existing archived links remain visible and removable. Product merges union/deduplicate links on the survivor, supplier merges transfer/deduplicate active Product links, and inactive Product records preserve historical links. Purchases continue selecting suppliers and recording invoice costs independently. G-02 lot/expiry policy remains open. See `requirements/client-chat.md`, `product.md`, and `domain.md`. |
+| Product category and color control decision of 28 September 2026 | Product category is editable with autocomplete and an add action; values remain Product attributes and enter future suggestions after a Product using them is saved. Manual highlight accepts any optional six-digit hex color; automatic inventory status remains authoritative. See `requirements/client-chat.md`, `product.md`, and `domain.md`. |
 
 ## Visual evidence register
 
@@ -90,6 +95,102 @@ The stakeholder's 6 September 2026 clarification identifies `design/prototype/sr
 **Unresolved (visual evidence only, no written basis):** patient CRM metric cards (LTV, average invoice, visit count) on p18; a configurable commission-percentage field on the sales-analysis report (p27); column show/hide/reorder in the sales grid (written scope grants column configuration to purchasing only); add-to-basket from report rows (p26 — written scope names sales and inventory only); report grouping taxonomies such as "by family" (p39). None of these is a requirement; implementing one needs client confirmation or a change request.
 
 The final unified visual PDF (including the quick-stocktake design) remains a pending client delivery in [`open-decisions.md`](open-decisions.md). When received it may refine appearance, but it adds no scope and cannot override written requirements.
+
+## M2 Adjustment confirmation remediation evidence
+
+The stakeholder initiated Phase 1 on 30 September 2026 through the Purchasing
+integrity prompt. Its first bounded task binds saved Adjustment facts to preview
+and Post. The [T01 candidate record](../evidence/issue-198/t01/README.md) traces
+scope §6.3 and M2-P04's version/hash, exact evidence, atomic retry, and audit proof.
+The [M2 evidence map](milestone-2-scope-and-evidence-map.md) retains the full
+Adjustment family's defect status and pending manual/later-task gates; this
+record does not approve G-01/G-02 or expand the funded milestone. T01 received
+explicit manual PASS on 30 September 2026. The stakeholder's same-day
+[follow-up](../evidence/issue-198/followups.md) requires diagnostic request/audit
+references to be hidden by default in ordinary errors, with clear localized
+recovery and retained internal audit/support evidence. Purchasing remediation
+and later owning module tasks must carry that presentation requirement forward;
+the enduring presentation rule is in [quality](quality.md#usability-and-accessibility).
+
+The [T02 candidate record](../evidence/issue-198/t02/README.md) traces the next
+bounded scope §6.3/M2-P04 slice: readable immutable header comparisons, stable-ID
+Supplier/invoice corrections, protected facts, exact Delta/audit paths and linked
+Return payable integrity. Its separate manual checkpoint received stakeholder
+PASS on 30 September 2026, followed by explicit confirmation that the manual
+tests were finished; see [manual results](../evidence/issue-198/t02/manual-results.md).
+The earlier evidence-note report remains an unresolved follow-up. The
+[T02 local exit gate](../evidence/issue-198/t02/pre-commit-gate.md) records the
+accepted commit's proof and precise host/prerequisite limitations. Existing
+duplicate-number and Return accounting defaults retain their unapproved status;
+this implementation does not close G-01/G-02 or the remaining Adjustment family.
+
+The [accepted T03 slice](../evidence/issue-198/t03/README.md) continues M2-P04 with
+filtered immutable Purchase navigation, explicit save/keep/discard controls,
+server-owned gross/allowance/discounted comparisons, truthful unavailable values,
+and the stakeholder's localized diagnostic presentation rule. Its separate
+[checkpoint](../evidence/issue-198/t03/manual-results.md) received stakeholder PASS
+on 30 September 2026 based on agent verification. It does not promote this
+requirement family to proven or close G-01/G-02. Purchase row/Quick Product behavior and later milestone exclusions
+remain unchanged.
+
+The T03 [visual verification](../evidence/issue-198/t03/prototype-fidelity.md)
+compares a source-rendered prototype modal with current captures and records
+scoped corrections to its geometry, typography and icon. This accepted bounded
+evidence does not replace broader phase gates.
+
+The stakeholder subsequently authorized #198 T04 to use documented defaults
+that can change later. The [source review](../evidence/issue-198/t04/source-review.md)
+traces the brief's independent invoice offer, prototype amount/percentage forms,
+gross valuation/liability boundaries, and missing two-discount approval.
+[Working defaults](../evidence/issue-198/t04/working-defaults.md) record exact
+version 1 arithmetic and correction behavior. The candidate implements M2-P02
+through draft, restart, Post, immutable review and linked Adjustment with a
+forward migration that preserves retained facts and original command payloads.
+This instruction permits implementation under recorded defaults; it does not
+approve accountant/legal policy, close G-01, promote M2-P02 to proven, or accept
+the separate T04 checkpoint. The stakeholder subsequently accepted T04 on
+1 October 2026 with “IT IS A PASS”; the [checkpoint](../evidence/issue-198/t04/manual-checkpoint.md)
+records that later decision. The [full local gate](../evidence/issue-198/t04/pre-commit-gate.md)
+ran once and records bounded request/expectation fixture maintenance, final
+affected proof and CNG/Docker/Windows harness limits. G-01 and the complete
+requirement family remain open. T05 follows the focused T04 commit.
+
+The accepted #198 T05 implementation addresses M2-P03's omitted saved row facts
+and document navigation, with its [ownership/source matrix](../evidence/issue-198/t05/source-review.md),
+[targeted verification](../evidence/issue-198/t05/verification.md) and
+[separate stakeholder PASS](../evidence/issue-198/t05/manual-checkpoint.md).
+The continuation completed the [T05 local pre-commit gate](../evidence/issue-198/t05/pre-commit-gate.md)
+with explicitly classified host limitations before its focused local commit.
+The reported evidence-only save
+failure after master edits was repaired with affected-scope API/browser proof.
+It exposes already-retained notes, pricing and stock references, preserves
+cost/margin redaction, and validates intentional draft Product/unit correction.
+Wholesale remains a current Product-panel fact under #49 and scope §4.4.
+No historical master-data backfill or professional policy approval is implied.
+
+The #198 T06 implementation addresses scope §4.4/#49 and M2-P03's
+Purchasing item-details surface through narrow Catalog/Inventory/Purchasing
+server projections. Its [field ownership review](../evidence/issue-198/t06/source-review.md)
+separates live exact stock, configured batch safety, current prices and saved
+row costs from unavailable later Reporting values. [Focused verification](../evidence/issue-198/t06/verification.md)
+and [prototype/isolation review](../evidence/issue-198/t06/prototype-fidelity.md)
+are bounded evidence. [Separate T06 manual acceptance](../evidence/issue-198/t06/manual-checkpoint.md)
+was explicitly PASS on 1 October 2026. The stakeholder later initiated the
+[consolidated full automated gate](../evidence/issue-198/t06/full-gate/report.md).
+Purchase-posting PostgreSQL and all executed Purchasing browser cases passed, including
+Returns; packaged panel and correction checks passed across four variants.
+The repository gate remains not fully green: host limitations, packaged Sales
+accessibility and Purchase preview-cell visibility remain open. T06 remains
+committed at `3ecde98`. The stakeholder subsequently gave explicit
+[Phase 1 PASS](../evidence/issue-198/phase-1-checkpoint.md), with Sales accessibility
+tracked separately in [#204](https://github.com/PharmaElectrons/Breev/issues/204)
+and Purchase preview clipping carried into Phase 2. This does not promote the
+complete family to proven, turn the repository gate green or close G-01/G-02/G-16.
+The later-authorized [Phase 1 finalization](../evidence/issue-198/finalization/README.md)
+integrates the current `dev` journal by retaining its Patient migrations and
+appending the unchanged offer SQL as `0032`. REST/schema version 19 identifies
+the combined schema; focused forward-migration/role/contract/browser proof is
+recorded separately, without rewriting historical gate results.
 
 ## Windows payload optimization evidence
 

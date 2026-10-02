@@ -19,6 +19,7 @@ function facts(
 ): PurchaseInvoiceJournalFacts {
   return {
     allowanceFils: 4_000n,
+    invoiceOfferFils: 0n,
     costAfterDiscountFils: 156_000n,
     primarySupplierCostFils: 160_000n,
     settlementContext: "debt",
@@ -105,6 +106,7 @@ describe("renderPurchaseInvoiceJournal", () => {
       return {
         costAfterDiscountFils: costs.costs.costAfterDiscountFils,
         lines: renderPurchaseInvoiceJournal({
+          invoiceOfferFils: 0n,
           allowanceFils: costs.costs.allowanceFils,
           costAfterDiscountFils: costs.costs.costAfterDiscountFils,
           primarySupplierCostFils: costs.costs.primarySupplierCostFils,
@@ -133,6 +135,7 @@ describe("renderPurchaseInvoiceJournal", () => {
       const costs = calculatePurchaseCosts(invoice, percentage);
       if (!costs.ok) throw new Error(costs.problem);
       return renderPurchaseInvoiceJournal({
+        invoiceOfferFils: 0n,
         allowanceFils: costs.costs.allowanceFils,
         costAfterDiscountFils: costs.costs.costAfterDiscountFils,
         primarySupplierCostFils: costs.costs.primarySupplierCostFils,
@@ -162,6 +165,7 @@ describe("renderPurchaseInvoiceJournal", () => {
       if (!costs.ok) throw new Error(costs.problem);
       for (const settlementContext of ["cash", "debt"] as const) {
         const lines = renderPurchaseInvoiceJournal({
+          invoiceOfferFils: 0n,
           allowanceFils: costs.costs.allowanceFils,
           costAfterDiscountFils: costs.costs.costAfterDiscountFils,
           primarySupplierCostFils: costs.costs.primarySupplierCostFils,
@@ -191,6 +195,28 @@ describe("renderPurchaseInvoiceJournal", () => {
     });
     expect(journal.lines).toHaveLength(2);
   });
+  it.each(["cash", "debt"] as const)(
+    "keeps %s journal amounts gross when the independent invoice offer changes",
+    (settlementContext) => {
+      expect(
+        renderPurchaseInvoiceJournal(
+          facts({
+            settlementContext,
+            invoiceOfferFils: 50000n,
+            costAfterDiscountFils: 106000n,
+          }),
+        ),
+      ).toEqual(renderPurchaseInvoiceJournal(facts({ settlementContext })));
+      expect(() =>
+        renderPurchaseInvoiceJournal(facts({ invoiceOfferFils: 1n })),
+      ).toThrow("add up");
+      expect(() =>
+        renderPurchaseInvoiceJournal(
+          facts({ invoiceOfferFils: -1n, costAfterDiscountFils: 156001n }),
+        ),
+      ).toThrow();
+    },
+  );
 
   it("refuses facts whose two cost values do not reconcile", () => {
     expect(() =>

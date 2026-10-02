@@ -24,6 +24,7 @@ import { usePreferences } from "./preferences-provider";
  * pharmacy's saved entry preferences allow the panel to show.
  */
 export interface PurchaseItemSelection {
+  readonly preferencesRevision?: string | null;
   readonly fields?: PurchaseEntryPreferences["detailsPanelFields"];
   readonly product: Product;
   readonly expiryDate?: string | null;

@@ -5,6 +5,7 @@ import {
   attendanceEventRequestSchema,
   catalogDenialCodeSchema,
   catalogDenialSchema,
+  catalogSupplierOptionsContract,
   catalogMatchingApprovalRequestSchema,
   catalogMatchingBatchOpenRequestSchema,
   productBarcodeAddRequestSchema,
@@ -404,8 +405,8 @@ describe("identity role contracts", () => {
 
 describe("local REST health contract", () => {
   it("publishes the migrated schema version and an unchanged REST surface", () => {
-    expect(LOCAL_API_VERSION).toBe("18");
-    expect(LOCAL_SCHEMA_VERSION).toBe("18");
+    expect(LOCAL_API_VERSION).toBe("19");
+    expect(LOCAL_SCHEMA_VERSION).toBe("19");
     expect(IMPLEMENTED_PERMISSION_NAMES).toEqual([
       "attendance.record",
       "catalog.item.manage",
@@ -929,8 +930,9 @@ const PRODUCT_ATTRIBUTES = {
   packaging: PRODUCT_PACKAGING,
   pricing: PRODUCT_PRICING,
   scientificName: "Paracetamol",
+  supplierIds: [],
   sharing: { externallyVisible: true, aiSharingAllowed: false },
-  stateColours: { manual: "red", coldStorageRequired: false },
+  stateColours: { manual: "#ff0000", coldStorageRequired: false },
   stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
 } as const;
 
@@ -973,6 +975,42 @@ describe("catalog product contracts", () => {
 
     const merge = { ...archive, survivorProductId: SURVIVOR_PRODUCT_ID };
     expect(productMergeRequestSchema.parse(merge)).toEqual(merge);
+  });
+
+  it("requires supplier IDs as a unique set and exposes only supplier option labels", () => {
+    const create = { ...PRODUCT_ATTRIBUTES, idempotencyKey: COMMAND_ID };
+    expect(
+      productCreateRequestSchema.safeParse({
+        ...create,
+        supplierIds: [COMMAND_ID, COMMAND_ID],
+      }).success,
+    ).toBe(false);
+    expect(
+      productCreateRequestSchema.safeParse(
+        Object.fromEntries(
+          Object.entries(create).filter(([key]) => key !== "supplierIds"),
+        ),
+      ).success,
+    ).toBe(false);
+
+    const options = catalogSupplierOptionsContract.responses[200];
+    expect(
+      options.safeParse({
+        suppliers: [{ id: COMMAND_ID, name: "Supplier", status: "active" }],
+      }).success,
+    ).toBe(true);
+    expect(
+      options.safeParse({
+        suppliers: [
+          {
+            id: COMMAND_ID,
+            name: "Supplier",
+            status: "active",
+            terms: "not part of Catalog options",
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("makes free-text entry of the generated name impossible on every request", () => {
@@ -1126,7 +1164,7 @@ describe("catalog product contracts", () => {
         /delete|remove|purge|cleanup|repair|destroy/u,
       );
     }
-    expect(CATALOG_CONTRACTS).toHaveLength(12);
+    expect(CATALOG_CONTRACTS).toHaveLength(13);
     expect(Object.keys(productSchema.shape)).not.toContain("deleted");
     expect(Object.keys(productSchema.shape)).not.toContain("deletedAt");
   });

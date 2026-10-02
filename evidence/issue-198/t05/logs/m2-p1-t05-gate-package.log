@@ -1,0 +1,3 @@
+$ pnpm --filter @breev/desktop package
+$ node scripts/package.mjs
+Packaging app for platform win32 x64 using electron v43.4.1

@@ -1,0 +1,130 @@
+{
+  "preservedEvidenceFilesVerifiedBeforeRecordUpdates": 1933,
+  "originalPackageBackupFiles": 75,
+  "indexEmpty": true,
+  "historicalFilesStillExact": 1928,
+  "checks": "All source changes since gate start are the two bounded test repairs and traceability update; authorized acceptance documentation updates are excluded from the final historical hash comparison.",
+  "head": "73620cd1c1d79591fc96d7f716750dd4a2a310a7",
+  "retainedListeners": [
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5556,
+      "OwningProcess": 19956
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5555,
+      "OwningProcess": 12876
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5554,
+      "OwningProcess": 21436
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5553,
+      "OwningProcess": 1596
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5551,
+      "OwningProcess": 18688
+    }
+  ],
+  "originalWorkingSourceChecks": [
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchase-item-details.tsx"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchase-row-entry.tsx"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchasing-api.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchasing-api.unit.test.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchasing-messages.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchasing-screen.tsx"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/use-startup-connection.ts"
+    },
+    {
+      "unchanged": false,
+      "path": "apps/desktop/test/acceptance/milestone-2.acceptance.test.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/test/browser/purchasing.browser.test.ts"
+    },
+    {
+      "unchanged": false,
+      "path": "apps/local-api/src/purchasing/purchase-posting.integration.test.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/local-api/src/purchasing/purchasing.controller.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/local-api/src/purchasing/purchasing.service.ts"
+    },
+    {
+      "unchanged": false,
+      "path": "docs/traceability.md"
+    },
+    {
+      "unchanged": true,
+      "path": "packages/contracts/src/local-rest/index.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "packages/contracts/src/local-rest/purchasing.test.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "tooling/dev.mjs"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchasing-item-details.css"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchasing-item-details.tsx"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/desktop/src/renderer/src/purchasing-item-details.unit.test.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/local-api/src/catalog/catalog-purchase-panel.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/local-api/src/inventory/inventory-purchase-panel.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "apps/local-api/src/inventory/inventory-purchase-panel.unit.test.ts"
+    },
+    {
+      "unchanged": true,
+      "path": "packages/contracts/src/local-rest/purchase-item-details.test.ts"
+    }
+  ],
+  "branch": "issue/198-m2-purchasing-integrity"
+}

@@ -1,0 +1,41 @@
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > creates an audited supplier with append-only effective-dated allowance
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > copies the invoice-date allowance and never changes the draft snapshot later
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > warns for the same supplier number, allows saving, and ignores another supplier
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > rejects a stale version and keeps the committed header
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > survives an API restart with its version and header intact
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > commits exact rows once, resolves concurrent versions, resumes after restart, and keeps active rows editable
+ ✓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > T05 corrects a draft Product and unit atomically with exact conversion, versions, retries and restart 2733ms
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > archives or merges suppliers without rewriting existing draft references
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > requires explicit discard confirmation and never exposes hard delete
+ ↓ src/purchasing/purchasing.integration.test.ts > Supplier and Purchase Draft PostgreSQL seam > default-denies both supplier and draft commands and audits the denials
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a debt purchase atomically with document, snapshots, batch, movement, gross WAC, gross AP, and a balanced journal
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T05 searches stable posted numbers and keeps complete row snapshots unchanged after master edits 1887ms
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts a cash purchase that changes only the Cash Box balance, never a supplier payable
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > replays an idempotent retry, rejects a conflicting payload, and lets exactly one of two concurrent keys post
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts two different drafts concurrently with distinct numbers and conserved WAC
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > warns but still posts a duplicate supplier invoice number
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > keeps the draft and names the row rule when receipt evidence is missing
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > changes Cost After Discount but never gross WAC or AP when only the allowance percentage differs
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > enforces a balanced journal at commit even bypassing the application
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back a forced database failure after number allocation, leaving an audited unissued gap a retry reuses and issues
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back every earlier write when the final idempotency result cannot be recorded
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts only Purchase Adjustment Deltas, preserves the original, numbers A01/A02, replays once, serializes, and blocks consumed stock
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > binds Adjustment evidence/version/hash across concurrent edits, API restart, lost-response retries, and immutable audit
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > requires a new Adjustment confirmation when authoritative batch stock changes after preview
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rolls back Adjustment confirmation posting at every write stage and recovers the same attempt
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > posts PR returns with independent values, conservation, idempotency, contention safety, immutable proof, and bidirectional links
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > corrects supplier identities and invoice numbers with immutable before/after headers, balanced transfers and current duplicate warnings
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > rejects protected row/header changes and unavailable suppliers without changing the saved copy, and revalidates a supplier at Post
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > keeps percentage pricing and conversion protected while showing the exact cost-derived retail Delta
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > transfers only the remaining Purchase payable after Returns and binds later Returns to the corrected Supplier
+ ↓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T04 persists versioned offers across restart, binds correction review, and preserves gross accounting and immutable history
+ ✓ src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T05 redacts saved row discounts and margin by setting and permission without losing non-cost facts 423ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed | 29 skipped (32)
+   Start at  13:03:22
+   Duration  16.26s (transform 364ms, setup 0ms, import 2.17s, tests 13.56s, environment 0ms)
+

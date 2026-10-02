@@ -1,0 +1,2 @@
+$ node tooling/boundaries/prove.mjs
+Deliberate boundary violations failed as expected.

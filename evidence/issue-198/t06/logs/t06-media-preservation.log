@@ -1,0 +1,7 @@
+Method invocation failed because [System.IO.Path] does not contain a method named 'GetRelativePath'.
+At P:\Projects\PharmaElectrons\.scratch\runtime\t06-restore-media.ps1:20 char:9
++         $taskRelative = [IO.Path]::GetRelativePath($taskWorkspace, $t ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : MethodNotFound
+ 

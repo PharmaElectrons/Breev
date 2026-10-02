@@ -240,6 +240,7 @@ describe.sequential("pharmacy settings post-commit crash battery", () => {
     // The fork died at the handler door, before it had even read the envelope,
     // which is what separates this point from the one before outcome recording.
     expect(crashing.pharmacyId).toBeNull();
+    worker.kill();
     expect((await worker.waitForExit()).signal).toBe("SIGKILL");
 
     // The claim is durable and nothing else happened.
@@ -271,6 +272,7 @@ describe.sequential("pharmacy settings post-commit crash battery", () => {
     );
     expect(crashing.point).toBe("after-external-success");
     expect(crashing.pharmacyId).toBe(pharmacyId);
+    worker.kill();
     expect((await worker.waitForExit()).signal).toBe("SIGKILL");
 
     // The outcome committed; the job runtime never learned the work succeeded.
@@ -306,6 +308,7 @@ describe.sequential("pharmacy settings post-commit crash battery", () => {
     // The envelope had been read and checked, so the kill landed between the
     // verification and the one durable effect rather than at the handler door.
     expect(crashing.pharmacyId).toBe(pharmacyId);
+    worker.kill();
     expect((await worker.waitForExit()).signal).toBe("SIGKILL");
 
     const abandoned = await jobRow(posted.jobId);
@@ -400,13 +403,21 @@ describe.sequential("pharmacy settings post-commit crash battery", () => {
    */
   async function recoverAbandonedJob(jobId: string): Promise<void> {
     await delay(LEASE_EXPIRY_WAIT_MS);
-    await durableJobs.supervise(SETTINGS_POST_COMMIT_QUEUE);
-
-    const returned = await jobRow(jobId);
-    expect(["created", "retry"]).toContain(returned.state);
-
-    await waitUntilClaimable(jobId);
-    await startApi();
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      // pg-boss rate-limits its maintenance pass per queue. If an automatic
+      // pass ran just before the lease expired, this explicit pass can return
+      // without requeuing the job; keep supervising until that pass observes
+      // the expired lease instead of asserting on the transient active row.
+      await durableJobs.supervise(SETTINGS_POST_COMMIT_QUEUE);
+      const recovered = await jobRow(jobId);
+      if (recovered.ready && ["created", "retry"].includes(recovered.state)) {
+        await startApi();
+        return;
+      }
+      await delay(100);
+    }
+    throw new Error(`The abandoned job ${jobId} never became claimable`);
   }
 
   /**

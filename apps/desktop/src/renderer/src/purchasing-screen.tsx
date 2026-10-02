@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   PurchaseDraft,
+  PurchaseInvoiceOfferInput,
   PurchaseDraftDetail,
   PurchaseDraftResult,
   PurchasePostResult,
   PurchasingDenial,
   Supplier,
 } from "@breev/contracts/local-rest";
-import {
-  PurchaseItemPanel,
-  type PurchaseItemSelection,
-} from "./purchase-item-details";
+import type { PurchaseItemSelection } from "./purchase-item-details";
+import { PurchasingItemPanel } from "./purchasing-item-details";
 import { PurchaseRowEntry } from "./purchase-row-entry";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import { formatFilsToIqd } from "./product-record";
@@ -36,6 +35,7 @@ import { PostedPurchaseReview } from "./posted-purchase-review";
 import { SuppliersWorkspace } from "./suppliers-workspace";
 import { useCommittedFocus } from "./committed-focus";
 import { filterPurchaseDrafts } from "./purchasing-draft-filter";
+import { PurchaseInvoiceOfferFields } from "./purchase-invoice-offer-fields";
 
 const today = (): string => {
   const date = new Date();
@@ -92,6 +92,13 @@ export function PurchasingRouteView({
   const [discarding, setDiscarding] = useState(false);
 
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
+  const [invoiceOffer, setInvoiceOffer] = useState<PurchaseInvoiceOfferInput>({
+    mode: "none",
+    value: "0",
+  });
+  const offerDirty =
+    activeDraft !== null &&
+    JSON.stringify(invoiceOffer) !== JSON.stringify(activeDraft.invoiceOffer);
   const [supplierId, setSupplierId] = useState("");
   const [isSupplierOpen, setIsSupplierOpen] = useState(false);
   const [supplierSearchText, setSupplierSearchText] = useState("");
@@ -175,6 +182,7 @@ export function PurchasingRouteView({
           return;
         }
         setActiveDraft(detail);
+        setInvoiceOffer(detail.invoiceOffer);
         setSupplierInvoiceNumber(detail.supplierInvoiceNumber);
         setSupplierId(detail.supplierId);
         setSettlementContext(detail.settlementContext);
@@ -216,6 +224,11 @@ export function PurchasingRouteView({
   });
 
   async function showDraft(draft: PurchaseDraft): Promise<void> {
+    if (offerDirty) {
+      setView("invoice");
+      setError(copy.invoiceOfferSave);
+      return;
+    }
     setView("invoice");
     clearPendingPurchasePost(purchasePostAddress());
 
@@ -223,6 +236,7 @@ export function PurchasingRouteView({
     try {
       const detail = await requestPurchaseDraft(baseUrl, draft.id);
       setActiveDraft(detail);
+      setInvoiceOffer(detail.invoiceOffer);
       setSupplierInvoiceNumber(detail.supplierInvoiceNumber);
       setSupplierId(detail.supplierId);
       setSupplierSearchText(detail.supplierNameSnapshot);
@@ -240,6 +254,11 @@ export function PurchasingRouteView({
   }
 
   function newDraft(): void {
+    if (offerDirty) {
+      setView("invoice");
+      setError(copy.invoiceOfferSave);
+      return;
+    }
     setView("invoice");
     resetDraftFields();
     setPostedPurchase(null);
@@ -250,6 +269,7 @@ export function PurchasingRouteView({
     clearPendingPurchasePost(purchasePostAddress());
     draftCommandAttempt.current = null;
     setActiveDraft(null);
+    setInvoiceOffer({ mode: "none", value: "0" });
     setSupplierInvoiceNumber("");
     setSupplierId("");
     setSupplierSearchText("");
@@ -264,6 +284,11 @@ export function PurchasingRouteView({
   }
 
   async function requestPost(): Promise<void> {
+    if (draftSavingRef.current) return;
+    if (offerDirty) {
+      setError(copy.invoiceOfferSave);
+      return;
+    }
     if (activeDraft === null || posting || activeDraft.rows.length === 0)
       return;
     const attempt = rememberPurchasePost(
@@ -300,6 +325,7 @@ export function PurchasingRouteView({
           try {
             const latest = await requestPurchaseDraft(baseUrl, attempt.draftId);
             setActiveDraft(latest);
+            setInvoiceOffer(latest.invoiceOffer);
             setSupplierInvoiceNumber(latest.supplierInvoiceNumber);
             setSupplierId(latest.supplierId);
             setSettlementContext(latest.settlementContext);
@@ -357,6 +383,7 @@ export function PurchasingRouteView({
     setDraftSaving(true);
     try {
       const header = {
+        invoiceOffer,
         invoiceDate: effectiveInvoiceDate,
         settlementContext: effectiveSettlementContext,
         supplierId: effectiveSupplierId,
@@ -386,6 +413,7 @@ export function PurchasingRouteView({
       draftCommandAttempt.current = null;
       const detail = await requestPurchaseDraft(baseUrl, result.draft.id);
       setActiveDraft(detail);
+      setInvoiceOffer(detail.invoiceOffer);
       clearPendingPurchasePost(purchasePostAddress());
       setPostDenial(null);
       setWarning(result.warnings.length > 0);
@@ -401,6 +429,13 @@ export function PurchasingRouteView({
       return detail;
     } catch (caught) {
       setError(copy.error);
+      if (
+        caught instanceof PurchasingApiDenied &&
+        caught.denial.fieldErrors.some(
+          (field) => field.path[0] === "invoiceOffer",
+        )
+      )
+        setError(copy.invoiceOfferInvalid);
       if (
         caught instanceof PurchasingApiDenied &&
         (caught.denial.code === "supplier-archived" ||
@@ -1020,7 +1055,7 @@ export function PurchasingRouteView({
           ) : null}
         </form>
 
-        <PurchaseItemPanel
+        <PurchasingItemPanel
           baseUrl={baseUrl}
           hidden={!canManageDrafts || view !== "invoice"}
           selection={itemSelection}
@@ -1081,7 +1116,7 @@ export function PurchasingRouteView({
                 draft={activeDraft}
                 onPost={requestPost}
                 postDenial={postDenial}
-                posting={posting}
+                posting={posting || draftSaving}
                 onItemSelectionChanged={setItemSelection}
                 onDraftChanged={(nextDraft) => {
                   clearPendingPurchasePost(purchasePostAddress());
@@ -1097,6 +1132,69 @@ export function PurchasingRouteView({
             )}
 
             <footer className="purchase-footer">
+              <div className="purchase-totals purchase-invoice-offer">
+                <div className="purchase-total">
+                  <span>{copy.gross}</span>
+                  <output>
+                    <bdi>
+                      {activeDraft === null
+                        ? "—"
+                        : formatFilsToIqd(activeDraft.review.grossFils, locale)}
+                    </bdi>
+                  </output>
+                </div>
+                <div className="purchase-total">
+                  <span>{copy.allowanceAmount}</span>
+                  <output>
+                    <bdi>
+                      {activeDraft === null
+                        ? "—"
+                        : formatFilsToIqd(
+                            activeDraft.review.allowanceFils,
+                            locale,
+                          )}
+                    </bdi>
+                  </output>
+                </div>
+                <PurchaseInvoiceOfferFields
+                  value={invoiceOffer}
+                  onChange={(next) => {
+                    setInvoiceOffer(next);
+                    clearPendingPurchasePost(purchasePostAddress());
+                    setPostDenial(null);
+                  }}
+                  disabled={
+                    activeDraft === null ||
+                    activeDraft.rows.length === 0 ||
+                    draftSaving ||
+                    posting
+                  }
+                />
+                <div className="purchase-total">
+                  <span>{copy.invoiceOffer}</span>
+                  <output>
+                    <bdi>
+                      {activeDraft === null || offerDirty
+                        ? "—"
+                        : formatFilsToIqd(
+                            activeDraft.review.invoiceOffer.offerFils,
+                            locale,
+                          )}
+                    </bdi>
+                  </output>
+                </div>
+                <div className="purchase-total purchase-grand-total">
+                  <span>{copy.costAfterDiscount}</span>
+                  <output>
+                    <bdi>
+                      {activeDraft === null || offerDirty
+                        ? "—"
+                        : formatFilsToIqd(activeDraft.review.netFils, locale)}
+                    </bdi>
+                  </output>
+                </div>
+              </div>
+              {offerDirty ? <p role="status">{copy.invoiceOfferSave}</p> : null}
               {activeDraft === null ? null : (
                 <dl
                   className="purchase-snapshot"
@@ -1447,6 +1545,17 @@ export function PurchasingRouteView({
       <div id="purchase-posted-view" hidden={view !== "posted"}>
         <PostedPurchaseReview
           baseUrl={baseUrl}
+          onNewInvoice={
+            canManageDrafts &&
+            activeDraft === null &&
+            supplierInvoiceNumber === "" &&
+            supplierId === "" &&
+            supplierSearchText === "" &&
+            invoiceDate === today() &&
+            settlementContext === "cash"
+              ? newDraft
+              : undefined
+          }
           inline={true}
           open={view === "posted"}
           onClose={() => {
@@ -1601,6 +1710,15 @@ function PostedPurchaseResult({
           <dt>{copy.costAfterDiscount}</dt>
           <dd>
             <bdi>{formatFilsToIqd(posted.costAfterDiscountFils, locale)}</bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.invoiceOffer}</dt>
+          <dd>
+            <bdi>{formatFilsToIqd(posted.invoiceOffer.offerFils, locale)}</bdi>
+            {posted.invoiceOffer.input.mode === "percentage"
+              ? ` (${posted.invoiceOffer.input.value}%)`
+              : null}
           </dd>
         </div>
         <div>

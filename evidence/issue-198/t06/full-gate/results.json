@@ -1,0 +1,705 @@
+[
+  {
+    "started": "2026-10-01T16:58:18.589212+03:00",
+    "exit": 0,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\format-write.log",
+    "name": "format-write",
+    "arguments": [
+      "format:write",
+      "--ignore-path",
+      ".gitignore",
+      "--ignore-path",
+      ".prettierignore",
+      "--ignore-path",
+      "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\protected.ignore"
+    ],
+    "seconds": 21.69
+  },
+  {
+    "arguments": [
+      "format:check",
+      "--ignore-path",
+      ".gitignore",
+      "--ignore-path",
+      ".prettierignore",
+      "--ignore-path",
+      "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\protected.ignore"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\format-check.log",
+    "name": "format-check",
+    "started": "2026-10-01T16:58:52.2727412+03:00",
+    "exit": 0,
+    "seconds": 15.1
+  },
+  {
+    "exit": 0,
+    "seconds": 26.76,
+    "name": "lint",
+    "arguments": [
+      "lint"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\lint.log",
+    "started": "2026-10-01T16:59:13.1466172+03:00"
+  },
+  {
+    "exit": 0,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\build.log",
+    "arguments": [
+      "build"
+    ],
+    "started": "2026-10-01T16:59:15.1437674+03:00",
+    "seconds": 26.81,
+    "name": "build"
+  },
+  {
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\typecheck.log",
+    "seconds": 65.37,
+    "exit": 0,
+    "started": "2026-10-01T16:59:59.1819572+03:00",
+    "name": "typecheck",
+    "arguments": [
+      "typecheck"
+    ]
+  },
+  {
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\unit.log",
+    "name": "unit",
+    "started": "2026-10-01T17:00:01.9286305+03:00",
+    "exit": 1,
+    "arguments": [
+      "test:unit"
+    ],
+    "seconds": 54.97
+  },
+  {
+    "exit": 1,
+    "arguments": [
+      "run",
+      "test:integration",
+      "--env-mode=loose"
+    ],
+    "started": "2026-10-01T17:00:05.7069317+03:00",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\integration.log",
+    "seconds": 477.13,
+    "name": "integration"
+  },
+  {
+    "arguments": [
+      "package:desktop"
+    ],
+    "exit": 0,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\package.log",
+    "seconds": 56.32,
+    "started": "2026-10-01T17:00:09.3272999+03:00",
+    "name": "package"
+  },
+  {
+    "seconds": 8.01,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\payload-unit-affected-retry.log",
+    "started": "2026-10-01T17:02:09.5207322+03:00",
+    "exit": 0,
+    "arguments": [
+      "--filter",
+      "@breev/local-api",
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.unit.config.ts",
+      "windows/payload-inventory.unit.test.mjs"
+    ],
+    "name": "payload-unit-affected-retry"
+  },
+  {
+    "name": "desktop-unit",
+    "seconds": 24.45,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\desktop-unit.log",
+    "started": "2026-10-01T17:02:32.6828286+03:00",
+    "exit": 0,
+    "arguments": [
+      "test:desktop:unit"
+    ]
+  },
+  {
+    "exit": 0,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\tooling-tests.log",
+    "seconds": 4.03,
+    "arguments": [
+      "exec",
+      "node",
+      "--test",
+      "tooling/dev-launcher.test.mjs",
+      "tooling/release/verify-version.test.mjs"
+    ],
+    "started": "2026-10-01T17:02:34.9836813+03:00",
+    "name": "tooling-tests"
+  },
+  {
+    "started": "2026-10-01T17:02:38.8245939+03:00",
+    "arguments": [
+      "test:boundaries"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\boundaries-proof.log",
+    "name": "boundaries-proof",
+    "seconds": 8.93,
+    "exit": 0
+  },
+  {
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\postgres-affected-file-retry.log",
+    "exit": 0,
+    "seconds": 41.62,
+    "arguments": [
+      "--filter",
+      "@breev/local-api",
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.config.ts",
+      "src/purchasing/purchase-posting.integration.test.ts",
+      "--reporter=verbose"
+    ],
+    "started": "2026-10-01T17:10:10.7913556+03:00",
+    "name": "postgres-affected-file-retry"
+  },
+  {
+    "started": "2026-10-01T17:10:12.8003136+03:00",
+    "exit": 0,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\test-fixture-typecheck.log",
+    "name": "test-fixture-typecheck",
+    "seconds": 17.88,
+    "arguments": [
+      "--filter",
+      "@breev/local-api",
+      "typecheck"
+    ]
+  },
+  {
+    "started": "2026-10-01T17:10:15.4957541+03:00",
+    "exit": 0,
+    "arguments": [
+      "exec",
+      "eslint",
+      "apps/local-api/src/purchasing/purchase-posting.integration.test.ts"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\test-fixture-lint-format.log",
+    "name": "test-fixture-lint-format",
+    "seconds": 4.61
+  },
+  {
+    "started": "2026-10-01T17:11:05.6821274+03:00",
+    "seconds": 829.5,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\browser.log",
+    "exit": 1,
+    "name": "browser",
+    "arguments": [
+      "test:browser"
+    ]
+  },
+  {
+    "arguments": [
+      "exec",
+      "prettier",
+      "--check",
+      "apps/local-api/src/purchasing/purchase-posting.integration.test.ts"
+    ],
+    "name": "test-fixture-format-check",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\test-fixture-format-check.log",
+    "started": "2026-10-01T17:15:44.8021121+03:00",
+    "seconds": 3.0,
+    "exit": 0
+  },
+  {
+    "seconds": 38.69,
+    "exit": 0,
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.config.ts"
+    ],
+    "name": "smoke",
+    "started": "2026-10-01T17:25:15.0933505+03:00",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\smoke.log"
+  },
+  {
+    "exit": 1,
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "test:acceptance:m2"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-acceptance.log",
+    "started": "2026-10-01T17:26:58.1503472+03:00",
+    "seconds": 148.37,
+    "name": "packaged-acceptance"
+  },
+  {
+    "exit": 1,
+    "seconds": 152.3,
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "test:acceptance:m2"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-acceptance-affected-sequence-retry.log",
+    "name": "packaged-acceptance-affected-sequence-retry",
+    "started": "2026-10-01T17:31:40.370433+03:00"
+  },
+  {
+    "name": "acceptance-test-typecheck",
+    "exit": 0,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-test-typecheck.log",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "tsc",
+      "-p",
+      "tsconfig.node.json",
+      "--noEmit"
+    ],
+    "seconds": 6.03,
+    "started": "2026-10-01T17:31:42.6001778+03:00"
+  },
+  {
+    "arguments": [
+      "exec",
+      "eslint",
+      "apps/desktop/test/acceptance/milestone-2.acceptance.test.ts"
+    ],
+    "exit": 0,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-test-lint.log",
+    "name": "acceptance-test-lint",
+    "seconds": 4.17,
+    "started": "2026-10-01T17:31:45.0859353+03:00"
+  },
+  {
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "-g",
+      "milestone 2 acceptance · en · light"
+    ],
+    "started": "2026-10-01T17:34:53.8074356+03:00",
+    "name": "packaged-en-light-affected-retry",
+    "seconds": 39.76,
+    "exit": 1,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-en-light-affected-retry.log"
+  },
+  {
+    "name": "acceptance-test-typecheck-final",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-test-typecheck-final.log",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "tsc",
+      "-p",
+      "tsconfig.node.json",
+      "--noEmit"
+    ],
+    "seconds": 5.31,
+    "started": "2026-10-01T17:34:55.9121225+03:00",
+    "exit": 0
+  },
+  {
+    "exit": 0,
+    "seconds": 3.75,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-test-lint-final.log",
+    "arguments": [
+      "exec",
+      "eslint",
+      "apps/desktop/test/acceptance/milestone-2.acceptance.test.ts"
+    ],
+    "name": "acceptance-test-lint-final",
+    "started": "2026-10-01T17:34:58.1354351+03:00"
+  },
+  {
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "-g",
+      "milestone 2 acceptance · en · light"
+    ],
+    "seconds": 37.07,
+    "exit": 1,
+    "started": "2026-10-01T17:37:52.2207968+03:00",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-en-light-cells-retry.log",
+    "name": "packaged-en-light-cells-retry"
+  },
+  {
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-en-light-facts-retry.log",
+    "started": "2026-10-01T17:40:16.3203399+03:00",
+    "seconds": 36.62,
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "-g",
+      "milestone 2 acceptance · en · light"
+    ],
+    "name": "packaged-en-light-facts-retry",
+    "exit": 1
+  },
+  {
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "-g",
+      "milestone 2 acceptance · en · light.*clause 3"
+    ],
+    "exit": 1,
+    "seconds": 25.05,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-delta-centering-diagnostic.log",
+    "name": "packaged-delta-centering-diagnostic",
+    "started": "2026-10-01T17:44:59.6386082+03:00"
+  },
+  {
+    "started": "2026-10-01T17:47:35.0782087+03:00",
+    "exit": 1,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-en-light-semantic-facts.log",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "-g",
+      "milestone 2 acceptance · en · light"
+    ],
+    "seconds": 30.02,
+    "name": "packaged-en-light-semantic-facts"
+  },
+  {
+    "started": "2026-10-01T17:49:41.0691127+03:00",
+    "exit": 1,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-en-light-sequence-final.log",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "-g",
+      "milestone 2 acceptance · en · light"
+    ],
+    "seconds": 27.52,
+    "name": "packaged-en-light-sequence-final"
+  },
+  {
+    "seconds": 36.17,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-en-light-ready-supplier.log",
+    "name": "packaged-en-light-ready-supplier",
+    "exit": 1,
+    "started": "2026-10-01T17:52:40.1783809+03:00",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "-g",
+      "milestone 2 acceptance · en · light"
+    ]
+  },
+  {
+    "name": "packaged-phase-core",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-phase-core.log",
+    "started": "2026-10-01T17:55:41.9750446+03:00",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "--grep-invert",
+      "reorder from sales"
+    ],
+    "seconds": 171.41,
+    "exit": 1
+  },
+  {
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "tsc",
+      "-p",
+      "tsconfig.node.json",
+      "--noEmit"
+    ],
+    "started": "2026-10-01T17:55:43.8888227+03:00",
+    "name": "acceptance-test-typecheck-verified",
+    "exit": 0,
+    "seconds": 6.32,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-test-typecheck-verified.log"
+  },
+  {
+    "seconds": 4.77,
+    "arguments": [
+      "exec",
+      "eslint",
+      "apps/desktop/test/acceptance/milestone-2.acceptance.test.ts"
+    ],
+    "started": "2026-10-01T17:55:46.1833733+03:00",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-test-lint-verified.log",
+    "name": "acceptance-test-lint-verified",
+    "exit": 0
+  },
+  {
+    "name": "acceptance-test-format-verified",
+    "arguments": [
+      "exec",
+      "prettier",
+      "--check",
+      "apps/desktop/test/acceptance/milestone-2.acceptance.test.ts"
+    ],
+    "started": "2026-10-01T17:55:49.1773672+03:00",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-test-format-verified.log",
+    "exit": 0,
+    "seconds": 2.58
+  },
+  {
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "--grep",
+      "clause 3|clause 4|adjustment scenario|scope.*item-details|units scenario"
+    ],
+    "exit": 1,
+    "name": "packaged-purchasing-affected-cases",
+    "seconds": 131.97,
+    "started": "2026-10-01T18:05:44.450104+03:00",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-purchasing-affected-cases.log"
+  },
+  {
+    "exit": 1,
+    "seconds": 125.47,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-correction-panel-units-retry.log",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "--grep",
+      "clause 3|adjustment scenario|scope.*item-details|units scenario"
+    ],
+    "name": "packaged-correction-panel-units-retry",
+    "started": "2026-10-01T18:08:53.1359682+03:00"
+  },
+  {
+    "seconds": 2.37,
+    "arguments": [
+      "exec",
+      "prettier",
+      "--check",
+      "apps/desktop/test/acceptance/milestone-2.acceptance.test.ts"
+    ],
+    "name": "acceptance-format-current",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-format-current.log",
+    "exit": 1,
+    "started": "2026-10-01T18:09:36.7677712+03:00"
+  },
+  {
+    "name": "acceptance-types-current",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-types-current.log",
+    "exit": 0,
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "tsc",
+      "-p",
+      "tsconfig.node.json",
+      "--noEmit"
+    ],
+    "seconds": 7.29,
+    "started": "2026-10-01T18:09:39.4060526+03:00"
+  },
+  {
+    "seconds": 4.62,
+    "exit": 0,
+    "started": "2026-10-01T18:09:42.8659502+03:00",
+    "name": "acceptance-lint-current",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "eslint",
+      "test/acceptance/milestone-2.acceptance.test.ts"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-lint-current.log"
+  },
+  {
+    "exit": 1,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-panel-units-isolated.log",
+    "seconds": 95.5,
+    "name": "packaged-panel-units-isolated",
+    "started": "2026-10-01T18:12:15.6967731+03:00",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "--grep",
+      "scope.*item-details|units scenario"
+    ]
+  },
+  {
+    "exit": 1,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-panel-units-copy-retry.log",
+    "name": "packaged-panel-units-copy-retry",
+    "seconds": 118.95,
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "--grep",
+      "scope.*item-details|units scenario"
+    ],
+    "started": "2026-10-01T18:15:22.0079918+03:00"
+  },
+  {
+    "name": "acceptance-source-format-final",
+    "arguments": [
+      "exec",
+      "prettier",
+      "--write",
+      "apps/desktop/test/acceptance/milestone-2.acceptance.test.ts",
+      "apps/local-api/src/purchasing/purchase-posting.integration.test.ts"
+    ],
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-source-format-final.log",
+    "seconds": 1.64,
+    "exit": 0,
+    "started": "2026-10-01T18:18:54.504524+03:00"
+  },
+  {
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\packaged-units-visibility-final.log",
+    "seconds": 97.01,
+    "name": "packaged-units-visibility-final",
+    "started": "2026-10-01T18:18:58.3742747+03:00",
+    "exit": 1,
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.acceptance.config.ts",
+      "--grep",
+      "units scenario"
+    ]
+  },
+  {
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-source-types-final.log",
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "tsc",
+      "-p",
+      "tsconfig.node.json",
+      "--noEmit"
+    ],
+    "name": "acceptance-source-types-final",
+    "seconds": 6.35,
+    "exit": 0,
+    "started": "2026-10-01T18:19:25.9763766+03:00"
+  },
+  {
+    "arguments": [
+      "--filter",
+      "@breev/desktop",
+      "exec",
+      "eslint",
+      "test/acceptance/milestone-2.acceptance.test.ts"
+    ],
+    "started": "2026-10-01T18:19:28.6861881+03:00",
+    "seconds": 4.87,
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-source-lint-final.log",
+    "name": "acceptance-source-lint-final",
+    "exit": 0
+  },
+  {
+    "exit": 0,
+    "seconds": 3.36,
+    "arguments": [
+      "exec",
+      "prettier",
+      "--check",
+      "apps/desktop/test/acceptance/milestone-2.acceptance.test.ts",
+      "apps/local-api/src/purchasing/purchase-posting.integration.test.ts"
+    ],
+    "started": "2026-10-01T18:19:31.3766599+03:00",
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\acceptance-source-format-check-final.log",
+    "name": "acceptance-source-format-check-final"
+  },
+  {
+    "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\evidence-format-check-final.log",
+    "arguments": [
+      "exec",
+      "prettier",
+      "--check",
+      "docs/traceability.md",
+      "evidence/issue-198/followups.md",
+      "evidence/issue-198/t06/README.md",
+      "evidence/issue-198/t06/manual-checkpoint.md",
+      "evidence/issue-198/t06/verification.md",
+      "evidence/issue-198/t06/source-review.md",
+      "evidence/issue-198/t06/full-gate/report.md",
+      "evidence/issue-198/t06/full-gate/results.json",
+      "evidence/issue-198/t06/full-gate/packaged-capture-manifest.json"
+    ],
+    "exit": 0,
+    "seconds": 0.91,
+    "name": "evidence-format-check-final",
+    "started": "2026-10-01T18:26:27.3975858+03:00"
+  }
+]

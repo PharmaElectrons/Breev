@@ -1,0 +1,50 @@
+
+Running 4 tests using 1 worker
+
+
+
+(node:16772) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/4] test\browser\purchasing.browser.test.ts:2207:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light
+  1) test\browser\purchasing.browser.test.ts:2207:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light 
+
+    Error: expect(locator).toBeFocused() failed
+
+    Locator: locator('.purchase-entry-row [data-enter-field="quantity"]')
+    Expected: focused
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeFocused" with timeout 10000ms
+      - waiting for locator('.purchase-entry-row [data-enter-field="quantity"]')
+        - locator resolved to <input min="1" disabled value="1" type="number" aria-label="Quantity" data-enter-field="quantity" class="purchase-stepper-input w-full"/>
+        4 × unexpected value "inactive"
+          - locator resolved to <input min="1" value="1" type="number" aria-label="Quantity" data-enter-field="quantity" class="purchase-stepper-input w-full"/>
+        - unexpected value "inactive"
+
+
+      2424 |           await item.fill(barcode);
+      2425 |           await item.press("Enter");
+    > 2426 |           await expect(quantity).toBeFocused();
+           |                                  ^
+      2427 |         };
+      2428 |         const balance = panel.locator(".purchase-balance-total-text").first();
+      2429 |         await select(`T06ZERO-${suffix}`);
+        at select (P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:2426:34)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:2615:9
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-689a8-non-blocking-entry-en-light\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-689a8-non-blocking-entry-en-light\error-context.md
+
+
+[2/4] test\browser\purchasing.browser.test.ts:2207:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en dark
+[3/4] test\browser\purchasing.browser.test.ts:2207:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar light
+[4/4] test\browser\purchasing.browser.test.ts:2207:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar dark
+  1 failed
+    test\browser\purchasing.browser.test.ts:2207:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light 
+  3 did not run
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 authoritative"

@@ -1,0 +1,327 @@
+$ pnpm build && pnpm --filter @breev/desktop test:browser
+$ turbo run build
+• turbo 2.10.11
+
+   • Packages in scope: @breev/contracts, @breev/desktop, @breev/local-api
+   • Running build in 3 packages
+   • Remote caching disabled
+
+@breev/contracts:build: cache hit, replaying logs c6eaeb201a7ffa82
+@breev/contracts:build: $ tsc -p tsconfig.build.json
+@breev/desktop:build: cache hit, replaying logs 25852534be30bced
+@breev/desktop:build: $ node scripts/build.mjs
+@breev/desktop:build: vite v7.3.6 building ssr environment for production...
+@breev/desktop:build: transforming...
+@breev/desktop:build: ✓ 235 modules transformed.
+@breev/desktop:build: rendering chunks...
+@breev/desktop:build: out/main/index.js  670.91 kB
+@breev/desktop:build: ✓ built in 2.87s
+@breev/desktop:build: vite v7.3.6 building ssr environment for production...
+@breev/desktop:build: transforming...
+@breev/desktop:build: ✓ 84 modules transformed.
+@breev/desktop:build: rendering chunks...
+@breev/desktop:build: out/preload/index.cjs  248.55 kB
+@breev/desktop:build: ✓ built in 684ms
+@breev/desktop:build: vite v7.3.6 building client environment for production...
+@breev/desktop:build: transforming...
+@breev/desktop:build: ✓ 2775 modules transformed.
+@breev/desktop:build: rendering chunks...
+@breev/desktop:build: ../../out/renderer/index.html                                                        0.71 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-400-normal-CFZh1unN.woff       17.51 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-700-normal-Cl4F7CZR.woff       17.78 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-500-normal-BletK1Hp.woff       18.64 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-600-normal-Dk5eISD_.woff       18.88 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-400-normal-Bo5KPYvw.woff2      19.16 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-700-normal-BzSf6GNr.woff2      19.50 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-500-normal-Cd6jVIg7.woff2      20.09 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-latin-600-normal-KrqB56Mw.woff2      20.50 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-400-normal-V6pRDFza.woff2            21.17 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-500-normal-BWZEU5yA.woff2            21.83 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-600-normal-C8RAYTDA.woff2            21.86 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-400-normal-6-qcROiO.woff             27.50 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-600-normal-BfsvjouI.woff             28.18 kB
+@breev/desktop:build: ../../out/renderer/assets/jetbrains-mono-latin-500-normal-CJOVTJB7.woff             28.21 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-400-normal-CyU-ddYS.woff2     42.85 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-400-normal-EA1o-u_Q.woff      44.14 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-700-normal-DrtBj6UE.woff2     44.28 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-700-normal-9rXc6cUL.woff      44.36 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-500-normal-C4MQITzh.woff2     45.30 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-600-normal-0pRdybE_.woff2     45.69 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-600-normal-MJZ0liF5.woff      46.78 kB
+@breev/desktop:build: ../../out/renderer/assets/ibm-plex-sans-arabic-arabic-500-normal-DPXcppbm.woff      46.92 kB
+@breev/desktop:build: ../../out/renderer/assets/index-C6sfBQ4E.css                                       322.00 kB
+@breev/desktop:build: ../../out/renderer/assets/index-BgCzd9Vt.js                                      2,441.56 kB
+@breev/desktop:build: ✓ built in 10.59s
+@breev/local-api:build: cache hit, replaying logs d186e321e949832c
+@breev/local-api:build: $ tsc -p tsconfig.build.json
+
+ Tasks:    3 successful, 3 total
+Cached:    3 cached, 3 total
+  Time:    1.126s >>> FULL TURBO
+
+$ playwright test --config playwright.browser.config.ts
+
+Running 155 tests using 1 worker
+
+(node:16012) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+
+[1/155] test\browser\basket.browser.test.ts:199:3 › reorder basket and Ordered Items › adds product A from the grid by keyboard without changing grid rows
+[2/155] test\browser\basket.browser.test.ts:274:3 › reorder basket and Ordered Items › shows live basket facts, warnings, captions, and validation focus
+[3/155] test\browser\basket.browser.test.ts:392:3 › reorder basket and Ordered Items › confirms, returns, and refuses a zero-quantity order
+[4/155] test\browser\basket.browser.test.ts:451:3 › reorder basket and Ordered Items › renders archived rows, removes a basket row, and offers only return for an archived ordered row
+[5/155] test\browser\basket.browser.test.ts:588:3 › reorder basket and Ordered Items › keeps a failed edit visible for retry and survives API restart with committed rows
+[6/155] test\browser\basket.browser.test.ts:680:3 › reorder basket and Ordered Items › enforces employee and custom-role denials in the renderer and API
+[7/155] test\browser\basket.browser.test.ts:754:3 › reorder basket and Ordered Items › covers Arabic and English RTL/LTR themes, accessibility, logical order, and video evidence
+[8/155] test\browser\batch-safety.browser.test.ts:126:3 › batch safety renderer › previews FEFO with a near-expiry warning and expired block
+[9/155] test\browser\batch-safety.browser.test.ts:163:3 › batch safety renderer › runs review now, quarantines a batch, and preserves focus
+[10/155] test\browser\batch-safety.browser.test.ts:206:3 › batch safety renderer › corrects expiry through Step-Up and retains original history
+[11/155] test\browser\batch-safety.browser.test.ts:247:3 › batch safety renderer › covers keyboard, forced-colors, Arabic/English, and both themes
+[12/155] test\browser\batch-safety.browser.test.ts:338:3 › batch safety renderer › hides actions from a manager without permission and refuses forged POST
+[13/155] test\browser\catalog.browser.test.ts:451:3 › Product catalog screens › Keyboard-only entry of a full medication, start to submit — no mouse
+[14/155] test\browser\catalog.browser.test.ts:574:3 › Product catalog screens › Instant English, Arabic, and scanner search announces counts in both directions and themes
+[15/155] test\browser\catalog.browser.test.ts:631:3 › Product catalog screens › continues Catalog search beyond the first 50 matching products
+[16/155] test\browser\catalog.browser.test.ts:698:3 › Product catalog screens › Search failure retains scanner value and focus; barcode suggest, print, and matching work without a mouse
+[17/155] test\browser\catalog.browser.test.ts:767:3 › Product catalog screens › Keyboard-only entry of a full general item
+[18/155] test\browser\catalog.browser.test.ts:840:3 › Product catalog screens › Validation failure keeps the entered value and keeps focus on the failing field
+[19/155] test\browser\catalog.browser.test.ts:885:3 › Product catalog screens › Keyboard packaging and percentage pricing use the real API
+[20/155] test\browser\catalog.browser.test.ts:943:3 › Product catalog screens › Invalid package ratio keeps its value and focus
+[21/155] test\browser\catalog.browser.test.ts:966:3 › Product catalog screens › Mode switching displays confirmation dialog with abandoned fields
+[22/155] test\browser\catalog.browser.test.ts:1019:3 › Product catalog screens › The Arabic search name appears below the English name and never inside it
+[23/155] test\browser\catalog.browser.test.ts:1050:3 › Product catalog screens › The display name is not reachable as an editable control by keyboard
+[24/155] test\browser\catalog.browser.test.ts:1073:3 › Product catalog screens › The inventory balance renders read-only and is announced as read-only to assistive technology
+[25/155] test\browser\catalog.browser.test.ts:1100:3 › Product catalog screens › Archive and merge actions work on referenced products without delete
+[26/155] test\browser\catalog.browser.test.ts:1129:3 › Product catalog screens › All screens pass Arabic/RTL + English/LTR in both light and dark themes (WCAG 2.2 AA)
+[27/155] test\browser\catalog.browser.test.ts:1203:3 › Product catalog screens › The module bar offers Phase One surfaces only, and never an excluded or deferred one
+[28/155] test\browser\catalog.browser.test.ts:1250:3 › Product catalog screens › An unbuilt surface is honest about itself in both locales and themes
+[29/155] test\browser\catalog.browser.test.ts:1292:3 › Product catalog screens › A direct hash cannot mount a surface the pharmacy is not entitled to
+[30/155] test\browser\catalog.browser.test.ts:1313:3 › Product catalog screens › A direct hash cannot bypass login
+[31/155] test\browser\catalog.browser.test.ts:1338:3 › Product catalog screens › The module bar is reachable by keyboard and never disturbs the shell button order
+[32/155] test\browser\count-session.browser.test.ts:190:3 › durable count sessions › records a scanner-first mixed-unit loop with keyboard only
+[33/155] test\browser\count-session.browser.test.ts:268:3 › durable count sessions › keeps focus and entered values for count validation failures
+[34/155] test\browser\count-session.browser.test.ts:306:3 › durable count sessions › offers mouse and keyboard count search suggestions while keeping barcode Enter
+[35/155] test\browser\count-session.browser.test.ts:340:3 › durable count sessions › applies a variance and drills from movement history into the session review
+[36/155] test\browser\count-session.browser.test.ts:428:3 › durable count sessions › reports stale balances and refuses a blocked-stock variance
+[37/155] test\browser\count-session.browser.test.ts:543:3 › durable count sessions › restarts the API and resumes the durable session with its lines
+[38/155] test\browser\count-session.browser.test.ts:568:3 › durable count sessions › enforces record-only and approval boundaries at the renderer and API
+[39/155] test\browser\count-session.browser.test.ts:608:3 › durable count sessions › covers Arabic and English RTL/LTR themes, accessibility, and the loop video
+[40/155] test\browser\devices-pairing.browser.test.ts:116:3 › Main pairing screen › pairs a terminal over the LAN channel with the digits both screens compare
+  1) test\browser\devices-pairing.browser.test.ts:116:3 › Main pairing screen › pairs a terminal over the LAN channel with the digits both screens compare 
+
+    Error: Could not find a working container runtime strategy
+
+       95 |   test.beforeAll(async () => {
+       96 |     await mkdir(evidenceDirectory(), { recursive: true });
+    >  97 |     postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+          |                ^
+       98 |     databaseRoles = await createSeparatedDatabaseRoles(postgres);
+       99 |     credentials = createMainDeviceCredentials();
+      100 |     apiPort = await reservePort();
+        at getContainerRuntimeClient (P:\Projects\PharmaElectrons\node_modules\.pnpm\testcontainers@12.1.0_supports-color@7.2.0\node_modules\testcontainers\build\container-runtime\clients\client.js:67:11)
+        at PostgreSqlContainer.start (P:\Projects\PharmaElectrons\node_modules\.pnpm\testcontainers@12.1.0_supports-color@7.2.0\node_modules\testcontainers\build\generic-container\generic-container.js:62:24)
+        at PostgreSqlContainer.start (P:\Projects\PharmaElectrons\node_modules\.pnpm\@testcontainers+postgresql@12.1.0_supports-color@7.2.0\node_modules\@testcontainers\postgresql\build\postgresql-container.js:119:47)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\devices-pairing.browser.test.ts:97:16
+
+    Error Context: ..\..\test-results\desktop-browser\devices-pairing.browser-Ma-eafad-digits-both-screens-compare\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\devices-pairing.browser-Ma-eafad-digits-both-screens-compare\error-context.md
+
+
+[41/155] test\browser\devices-pairing.browser.test.ts:237:3 › Main pairing screen › names an unanswered command and stops acting on data it cannot refresh
+[42/155] test\browser\devices-pairing.browser.test.ts:301:3 › Main pairing screen › shows the devices section only to a user who has been granted devices.pair
+[43/155] test\browser\devices-pairing.browser.test.ts:365:3 › Main pairing screen › revokes a terminal and frees its seat only after a second user approves
+[44/155] test\browser\devices-pairing.browser.test.ts:443:3 › Main pairing screen › cancels a session as a fingerprint mismatch and says so in both locales
+[45/155] test\browser\devices-pairing.browser.test.ts:484:3 › Main pairing screen › shows an expired session and refuses a seat the licence does not permit
+(node:7560) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[46/155] test\browser\inventory.browser.test.ts:153:3 › read-only inventory review › sorts and changes visibility by keyboard while preserving table semantics
+[47/155] test\browser\inventory.browser.test.ts:250:3 › read-only inventory review › opens movement history and the originating purchase, then restores focus
+[48/155] test\browser\inventory.browser.test.ts:315:3 › read-only inventory review › pairs state colour with text and an icon, including forced colours
+[49/155] test\browser\inventory.browser.test.ts:340:3 › read-only inventory review › renders Arabic RTL and English LTR evidence in both themes
+[50/155] test\browser\inventory.browser.test.ts:425:3 › read-only inventory review › shows a recoverable API-down state and owner-only export
+[51/155] test\browser\inventory.browser.test.ts:497:3 › read-only inventory review › loads the shared item panel with inventory units, expiry, and coverage
+[52/155] test\browser\inventory.browser.test.ts:615:3 › read-only inventory review › finds an item when the barcode is typed with Arabic-Indic digits
+[53/155] test\browser\inventory.browser.test.ts:644:3 › read-only inventory review › finds an inventory item past the first 100 catalog matches
+[54/155] test\browser\inventory.browser.test.ts:700:3 › read-only inventory review › shows recalled and quarantined badges and sorts risk by medical priority
+[55/155] test\browser\inventory.browser.test.ts:744:3 › read-only inventory review › blocks count completion until the pending variance is applied
+[56/155] test\browser\licence-generator.browser.test.ts:70:1 › guards the signing key and emits a licence accepted by Breev
+[57/155] test\browser\licensing-ui.browser.test.ts:46:3 › offline licence feature hiding › keeps Free Core visible and adds only signed paid capabilities
+[58/155] test\browser\licensing-ui.browser.test.ts:198:3 › offline licence feature hiding › shows and copies installation identifiers without clipping in English or Arabic
+[59/155] test\browser\licensing-ui.browser.test.ts:287:3 › offline licence feature hiding › shows the owner the licence dates, days left, plan versus founder grants, and refuses new pairing during grace
+[60/155] test\browser\licensing-ui.browser.test.ts:416:3 › offline licence feature hiding › hides licence renewal without licensing management permission
+[61/155] test\browser\purchasing.browser.test.ts:232:3 › Supplier and Purchase Draft screens › enters the header keyboard-first, warns without blocking, and resumes after restart
+[62/155] test\browser\purchasing.browser.test.ts:385:3 › Supplier and Purchase Draft screens › enters durable rows by scanner and Enter, quick-creates a Product, and follows persisted column order
+[63/155] test\browser\purchasing.browser.test.ts:739:3 › Supplier and Purchase Draft screens › is accessible in Arabic RTL and English LTR in both themes
+[64/155] test\browser\purchasing.browser.test.ts:975:3 › Supplier and Purchase Draft screens › switches to suppliers and back without losing either form
+[65/155] test\browser\purchasing.browser.test.ts:1009:3 › Supplier and Purchase Draft screens › quarantines later accounting, report, OCR, and legal-print surfaces
+[66/155] test\browser\purchasing.browser.test.ts:1108:3 › Supplier and Purchase Draft screens › contains wide and narrow layouts without document overflow
+[67/155] test\browser\purchasing.browser.test.ts:1159:3 › Supplier and Purchase Draft screens › keeps connection details reachable and hides unentitled OCR
+[68/155] test\browser\purchasing.browser.test.ts:1185:3 › Supplier and Purchase Draft screens › retries an uncertain draft creation without creating a duplicate
+[69/155] test\browser\purchasing.browser.test.ts:1217:3 › Supplier and Purchase Draft screens › posts only from the explicit action and shows the immutable server result
+[70/155] test\browser\purchasing.browser.test.ts:1252:3 › Supplier and Purchase Draft screens › replays the same posting after a timeout and renderer reload exactly once
+[71/155] test\browser\purchasing.browser.test.ts:1323:7 › Supplier and Purchase Draft screens › binds Adjustment confirmation to saved evidence and recovers stale/restart/timeout attempts en light
+[72/155] test\browser\purchasing.browser.test.ts:1323:7 › Supplier and Purchase Draft screens › binds Adjustment confirmation to saved evidence and recovers stale/restart/timeout attempts en dark
+[73/155] test\browser\purchasing.browser.test.ts:1323:7 › Supplier and Purchase Draft screens › binds Adjustment confirmation to saved evidence and recovers stale/restart/timeout attempts ar light
+[74/155] test\browser\purchasing.browser.test.ts:1323:7 › Supplier and Purchase Draft screens › binds Adjustment confirmation to saved evidence and recovers stale/restart/timeout attempts ar dark
+[75/155] test\browser\purchasing.browser.test.ts:1634:7 › Supplier and Purchase Draft screens › T05 complete saved rows and preserved filtered navigation en light
+[76/155] test\browser\purchasing.browser.test.ts:2086:7 › Supplier and Purchase Draft screens › T04 saves independent invoice offers and immutable corrections en light
+[77/155] test\browser\purchasing.browser.test.ts:1634:7 › Supplier and Purchase Draft screens › T05 complete saved rows and preserved filtered navigation en dark
+[78/155] test\browser\purchasing.browser.test.ts:2086:7 › Supplier and Purchase Draft screens › T04 saves independent invoice offers and immutable corrections en dark
+[79/155] test\browser\purchasing.browser.test.ts:1634:7 › Supplier and Purchase Draft screens › T05 complete saved rows and preserved filtered navigation ar light
+[80/155] test\browser\purchasing.browser.test.ts:2086:7 › Supplier and Purchase Draft screens › T04 saves independent invoice offers and immutable corrections ar light
+[81/155] test\browser\purchasing.browser.test.ts:1634:7 › Supplier and Purchase Draft screens › T05 complete saved rows and preserved filtered navigation ar dark
+[82/155] test\browser\purchasing.browser.test.ts:2086:7 › Supplier and Purchase Draft screens › T04 saves independent invoice offers and immutable corrections ar dark
+[83/155] test\browser\purchasing.browser.test.ts:2294:7 › Supplier and Purchase Draft screens › corrects Adjustment supplier and invoice headers with immutable navigation en light
+[84/155] test\browser\purchasing.browser.test.ts:2294:7 › Supplier and Purchase Draft screens › corrects Adjustment supplier and invoice headers with immutable navigation en dark
+[85/155] test\browser\purchasing.browser.test.ts:2294:7 › Supplier and Purchase Draft screens › corrects Adjustment supplier and invoice headers with immutable navigation ar light
+[86/155] test\browser\purchasing.browser.test.ts:2294:7 › Supplier and Purchase Draft screens › corrects Adjustment supplier and invoice headers with immutable navigation ar dark
+[87/155] test\browser\purchasing.browser.test.ts:2508:3 › Supplier and Purchase Draft screens › protects percentage Adjustment pricing and shows the derived retail correction
+[88/155] test\browser\purchasing.browser.test.ts:2590:7 › Supplier and Purchase Draft screens › Adjustment controls preserve filtered navigation, dirty work and exact totals en light
+[89/155] test\browser\purchasing.browser.test.ts:2590:7 › Supplier and Purchase Draft screens › Adjustment controls preserve filtered navigation, dirty work and exact totals en dark
+[90/155] test\browser\purchasing.browser.test.ts:2590:7 › Supplier and Purchase Draft screens › Adjustment controls preserve filtered navigation, dirty work and exact totals ar light
+[91/155] test\browser\purchasing.browser.test.ts:2590:7 › Supplier and Purchase Draft screens › Adjustment controls preserve filtered navigation, dirty work and exact totals ar dark
+[92/155] test\browser\purchasing.browser.test.ts:3026:3 › Supplier and Purchase Draft screens › manual T03 Adjustment controls and totals in a disposable pharmacy
+[93/155] test\browser\purchasing.browser.test.ts:3132:3 › Supplier and Purchase Draft screens › manual T02 Adjustment reasons and protected fields in a disposable pharmacy
+[94/155] test\browser\purchasing.browser.test.ts:3220:3 › Supplier and Purchase Draft screens › manual T01 Adjustment checkpoint in a disposable pharmacy
+[95/155] test\browser\purchasing.browser.test.ts:3253:3 › Supplier and Purchase Draft screens › searches and reviews immutable purchases entirely by keyboard
+[96/155] test\browser\purchasing.browser.test.ts:3543:3 › Supplier and Purchase Draft screens › renders explicit denied and recoverable unavailable register states
+  2) test\browser\purchasing.browser.test.ts:3543:3 › Supplier and Purchase Draft screens › renders explicit denied and recoverable unavailable register states 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('#purchase-posted-view').getByRole('alert')
+    Expected substring: "The local API is unavailable."
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toContainText" with timeout 10000ms
+      - waiting for locator('#purchase-posted-view').getByRole('alert')
+
+
+      3560 |     failNextPostedListResponse = true;
+      3561 |     await postedInvoicesTab(page).click();
+    > 3562 |     await expect(dialog.getByRole("alert")).toContainText(
+           |                                             ^
+      3563 |       "The local API is unavailable.",
+      3564 |     );
+      3565 |     await dialog.getByRole("button", { name: "Retry" }).click();
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:3562:45
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cfe6e-unavailable-register-states\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cfe6e-unavailable-register-states\error-context.md
+
+
+[97/155] test\browser\purchasing.browser.test.ts:3571:3 › Supplier and Purchase Draft screens › keeps posted-review-only roles out of the purchase draft workspace
+[98/155] test\browser\purchasing.browser.test.ts:3615:3 › Supplier and Purchase Draft screens › captures bilingual list and detail evidence in both themes
+[99/155] test\browser\purchasing.browser.test.ts:3732:3 › Supplier and Purchase Draft screens › keeps a rejected draft and focuses the named receipt-rule field
+[100/155] test\browser\purchasing.browser.test.ts:3761:3 › Supplier and Purchase Draft screens › allows correcting a missing expiry inline on the draft row and posting successfully
+[101/155] test\browser\purchasing.browser.test.ts:3805:3 › Supplier and Purchase Draft screens › allows deleting a draft row and re-sequencing the remaining rows
+[102/155] test\browser\purchasing.browser.test.ts:3824:3 › Supplier and Purchase Draft screens › preserves an invalid Supplier header and returns focus for correction
+[103/155] test\browser\purchasing.browser.test.ts:3874:3 › Supplier and Purchase Draft screens › keeps the item panel in view on an invoice longer than the window
+[104/155] test\browser\purchasing.browser.test.ts:3964:3 › Supplier and Purchase Draft screens › brings a refused Purchase Return into view and gives it focus
+[105/155] test\browser\purchasing.browser.test.ts:4076:3 › Supplier and Purchase Draft screens › brings a blocked Delta refusal into view and gives it focus
+[106/155] test\browser\purchasing.browser.test.ts:4166:3 › Supplier and Purchase Draft screens › prints the purchase snapshot as an A4 document in Arabic and English
+(node:17600) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[107/155] test\browser\sales.browser.test.ts:151:3 › sale drafts and the reorder row action › opens a draft, finds the item by keyboard, and baskets it without touching the draft
+[108/155] test\browser\sales.browser.test.ts:206:3 › sale drafts and the reorder row action › resumes the same draft after a renderer restart with an empty search box
+[109/155] test\browser\sales.browser.test.ts:242:3 › sale drafts and the reorder row action › resumes the identical draft after the local API restarts
+[110/155] test\browser\sales.browser.test.ts:264:3 › sale drafts and the reorder row action › keeps the draft and adds exactly once when the basket call cannot reach the API
+[111/155] test\browser\sales.browser.test.ts:309:3 › sale drafts and the reorder row action › explains an item archived after the search and resolves it
+[112/155] test\browser\sales.browser.test.ts:345:3 › sale drafts and the reorder row action › hides the row action without the basket permission and leaves the draft untouched
+[113/155] test\browser\sales.browser.test.ts:370:3 › sale drafts and the reorder row action › covers Arabic and English RTL/LTR themes, accessibility, and keyboard evidence
+[114/155] test\browser\sales.browser.test.ts:564:3 › sale drafts and the reorder row action › continues Sales search beyond the first 50 matching products
+[115/155] test\browser\sales.browser.test.ts:610:3 › sale drafts and the reorder row action › keeps a failed draft-list read unknown and offers reload
+[116/155] test\browser\sales.browser.test.ts:652:3 › sale drafts and the reorder row action › retries an uncertain New command with its original idempotency key
+[117/155] test\browser\sales.browser.test.ts:717:3 › sale drafts and the reorder row action › recovers a draft read in place after a temporary API failure
+[118/155] test\browser\sales.browser.test.ts:756:3 › sale drafts and the reorder row action › does not leave old actionable products after a search failure
+[119/155] test\browser\sales.browser.test.ts:788:3 › sale drafts and the reorder row action › adds a product to the sale invoice and keeps it after reopening the draft
+[120/155] test\browser\sales.browser.test.ts:933:3 › sale drafts and the reorder row action › Quick Add saves a misc line for the owner and denies the sales role
+[121/155] test\browser\sales.browser.test.ts:978:3 › sale drafts and the reorder row action › records an authorized price override and keeps it after reopening
+[122/155] test\browser\sales.browser.test.ts:1042:3 › sale drafts and the reorder row action › a manager pin persists and a sales tile adds its configured catalog unit
+[123/155] test\browser\sales.browser.test.ts:1083:3 › sale drafts and the reorder row action › opens Product creation from an unknown scan and returns to the unchanged draft
+[124/155] test\browser\shell-navigation.browser.test.ts:327:3 › Shell Header and Navbar Stability Across Tabs › preserves 100% identical header, brand, navbar, and controls dimensions across all tabs
+test\browser\shell-navigation.browser.test.ts:327:3 › Shell Header and Navbar Stability Across Tabs › preserves 100% identical header, brand, navbar, and controls dimensions across all tabs
+[Tab: Dashboard] Measured: {
+  header: '1280x60 @ (0, 0)',
+  brandWidth: 271.890625,
+  nav: 'width=699.53125 @ x=338.046875',
+  endWidth: 176.25
+}
+
+[Tab: Sales] Measured: {
+  header: '1280x60 @ (0, 0)',
+  brandWidth: 271.890625,
+  nav: 'width=699.53125 @ x=338.046875',
+  endWidth: 176.25
+}
+
+[Tab: Purchases] Measured: {
+  header: '1280x60 @ (0, 0)',
+  brandWidth: 271.890625,
+  nav: 'width=699.53125 @ x=338.046875',
+  endWidth: 176.25
+}
+
+[Tab: Inventory] Measured: {
+  header: '1280x60 @ (0, 0)',
+  brandWidth: 271.890625,
+  nav: 'width=699.53125 @ x=338.046875',
+  endWidth: 176.25
+}
+
+[Tab: Settings] Measured: {
+  header: '1280x60 @ (0, 0)',
+  brandWidth: 271.890625,
+  nav: 'width=699.53125 @ x=338.046875',
+  endWidth: 176.25
+}
+
+[125/155] test\browser\shell.browser.test.ts:119:3 › bilingual desktop shell › the real local API reaches the English light Ready shell
+[126/155] test\browser\shell.browser.test.ts:132:3 › bilingual desktop shell › API loss never creates a fallback and recovers automatically
+[127/155] test\browser\shell.browser.test.ts:155:3 › bilingual desktop shell › version mismatch and the typed repair signal remain distinct
+[128/155] test\browser\shell.browser.test.ts:179:3 › bilingual desktop shell › all seven states pass the locale and theme matrix
+[129/155] test\browser\shell.browser.test.ts:281:3 › bilingual desktop shell › RTL mirrors visually without changing keyboard focus order
+[130/155] test\browser\shell.browser.test.ts:344:3 › bilingual desktop shell › 200% text and minimum targets preserve shell content
+[131/155] test\browser\shell.browser.test.ts:370:3 › bilingual desktop shell › bootstraps the pharmacy through the real API with keyboard-only English light interaction
+[132/155] test\browser\shell.browser.test.ts:439:3 › bilingual desktop shell › shows generic login denial and Arabic dark authenticated states
+[133/155] test\browser\shell.browser.test.ts:558:3 › bilingual desktop shell › requires explicit confirmation for manually enabled central diagnostics
+[134/155] test\browser\shell.browser.test.ts:589:3 › bilingual desktop shell › hides unlicensed paid functions while Free Core survives expiry in both locales and themes
+[135/155] test\browser\shell.browser.test.ts:731:3 › bilingual desktop shell › requires Step-Up to create a default-deny user and enforces denial through the API
+[136/155] test\browser\shell.browser.test.ts:835:3 › bilingual desktop shell › edits a display name and rotates credentials with keyboard-safe controls
+[137/155] test\browser\shell.browser.test.ts:962:3 › bilingual desktop shell › reassigns a user's role with keyboard controls and handles last-owner denial
+[138/155] test\browser\shell.browser.test.ts:1064:3 › bilingual desktop shell › creates a custom role with only the chosen permissions and assigns it by name in both locales
+[139/155] test\browser\shell.browser.test.ts:1247:3 › bilingual desktop shell › custom-role user sees exactly its grants and cannot manage identities
+[140/155] test\browser\shell.browser.test.ts:1310:3 › bilingual desktop shell › Step-Up cancellation returns focus to role actions
+[141/155] test\browser\shell.browser.test.ts:1372:3 › bilingual desktop shell › wrong Step-Up password keeps the role permission draft
+[142/155] test\browser\shell.browser.test.ts:1420:3 › bilingual desktop shell › a role version conflict reloads server truth
+[143/155] test\browser\shell.browser.test.ts:1470:3 › bilingual desktop shell › role counts and checked states reflect each role
+[144/155] test\browser\shell.browser.test.ts:1537:3 › bilingual desktop shell › role editor remains usable at 1024 by 768 and 200 percent text
+[145/155] test\browser\shell.browser.test.ts:1578:3 › bilingual desktop shell › role editor and permission summary never expose raw permission ids
+[146/155] test\browser\shell.browser.test.ts:1622:3 › bilingual desktop shell › configures attendance and roles with Step-Up, then presents a locked login generically
+[147/155] test\browser\shell.browser.test.ts:1714:3 › bilingual desktop shell › surfaces session expiry and removes attendance when its setting is disabled
+[148/155] test\browser\shell.browser.test.ts:1796:3 › bilingual desktop shell › a plain browser cannot mutate through form, fetch, forged headers, or rebound DNS
+[149/155] test\browser\terminal-pairing.browser.test.ts:75:3 › terminal pairing screen › shows a distinct screen for every stage before a certificate exists
+[150/155] test\browser\terminal-pairing.browser.test.ts:134:3 › terminal pairing screen › shows the same twelve confirmation digits in four groups in both locales
+[151/155] test\browser\terminal-pairing.browser.test.ts:158:3 › terminal pairing screen › gives every pairing failure its own explanation and its honest next step
+[152/155] test\browser\terminal-pairing.browser.test.ts:223:3 › terminal pairing screen › translates every pairing failure into Arabic as well
+[153/155] test\browser\terminal-pairing.browser.test.ts:248:3 › terminal pairing screen › accepts a scanned invitation from the keyboard and refuses anything else
+[154/155] test\browser\terminal-pairing.browser.test.ts:282:3 › terminal pairing screen › lets a discovered address fill the manual form without replacing the invitation
+[155/155] test\browser\terminal-pairing.browser.test.ts:335:3 › terminal pairing screen › blocks a paired terminal when the LAN drops and recovers without a datastore
+  2 failed
+    test\browser\devices-pairing.browser.test.ts:116:3 › Main pairing screen › pairs a terminal over the LAN channel with the digits both screens compare 
+    test\browser\purchasing.browser.test.ts:3543:3 › Supplier and Purchase Draft screens › renders explicit denied and recoverable unavailable register states 
+  3 skipped
+  15 did not run
+  135 passed (10.8m)
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @breev/desktop@0.0.0 test:browser: `playwright test --config playwright.browser.config.ts`
+Exit status 1
+[ELIFECYCLE] Command failed with exit code 1.

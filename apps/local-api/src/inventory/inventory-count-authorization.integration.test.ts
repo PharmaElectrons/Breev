@@ -616,6 +616,7 @@ describe.sequential(
       expect(created.status, diagnostics(created)).toBe(201);
       const product = created.body as Product;
       const draftResponse = await request("POST", "/purchases/drafts", {
+        invoiceOffer: { mode: "none", value: "0" },
         idempotencyKey: uuidV7(),
         invoiceDate: "2026-06-15",
         settlementContext: "debt",
@@ -830,8 +831,9 @@ function productRequest(): ProductCreateRequest {
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
-    stateColours: { coldStorageRequired: false, manual: "blue" },
+    stateColours: { coldStorageRequired: false, manual: "#0000ff" },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }

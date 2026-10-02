@@ -1,0 +1,44 @@
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+
+ ❯ src/purchasing/purchase-posting.integration.test.ts (24 tests | 1 failed | 22 skipped) 5351ms
+     × T06 reconciles exact live balance, configured expiry, zero/missing values and frozen cost references 97ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/purchasing/purchase-posting.integration.test.ts > Purchase posting PostgreSQL seam > T06 reconciles exact live balance, configured expiry, zero/missing values and frozen cost references
+AssertionError: expected [ { name: 'Strip', quantity: '0' } ] to deeply equal [ …(2) ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "name": "Pack",
+-     "quantity": "0",
+-   },
+-   {
+      "name": "Strip",
+      "quantity": "0",
+    },
+  ]
+
+ ❯ src/purchasing/purchase-posting.integration.test.ts:3970:39
+    3968|       },
+    3969|     });
+    3970|     expect(zero.inventory?.breakdown).toEqual([
+       |                                       ^
+    3971|       { name: "Pack", quantity: "0" },
+    3972|       { name: "Strip", quantity: "0" },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 22 skipped (24)
+   Start at  15:23:37
+   Duration  7.00s (transform 312ms, setup 0ms, import 1.40s, tests 5.35s, environment 0ms)
+
+undefined
+P:\Projects\PharmaElectrons\apps\local-api:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run --config vitest.config.ts src/purchasing/purchase-posting.integration.test.ts -t T06

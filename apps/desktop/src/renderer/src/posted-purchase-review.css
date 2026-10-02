@@ -1,0 +1,49 @@
+:is(.purchasing-workspace, .posted-purchase-dialog) .posted-review-filters {
+  position: relative;
+  font-size: 0.75rem;
+}
+
+:is(.purchasing-workspace, .posted-purchase-dialog)
+  .posted-review-filter-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+:is(.purchasing-workspace, .posted-purchase-dialog)
+  .posted-review-filter-fields
+  label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+:is(.purchasing-workspace, .posted-purchase-dialog)
+  .posted-review-filter-fields
+  input,
+:is(.purchasing-workspace, .posted-purchase-dialog)
+  .posted-review-filter-fields
+  select {
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--control-border);
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.5rem;
+}
+
+:is(.purchasing-workspace, .posted-purchase-dialog) .posted-row-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+
+:is(.purchasing-workspace, .posted-purchase-dialog) .posted-row-snapshots dd {
+  overflow-wrap: anywhere;
+}
+
+:is(.purchasing-workspace, .posted-purchase-dialog)
+  .proto-table-row[data-selected="true"] {
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+}

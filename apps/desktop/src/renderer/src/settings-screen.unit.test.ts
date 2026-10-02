@@ -340,9 +340,9 @@ describe("SettingsRouteView", () => {
           checkNow: vi.fn(),
           deviceProof: "committed",
           handshake: {
-            apiVersion: "18",
+            apiVersion: "19",
             database: "available",
-            schemaVersion: "18",
+            schemaVersion: "19",
             status: "healthy",
           },
           lastCheckedAt: new Date("2026-09-23T12:00:00Z"),

@@ -1,8 +1,44 @@
-import { useEffect, useRef, useState } from "react";
+/*!
+ * FilePen SVG paths from lucide-react 0.575.0, matching the prototype icon.
+ * ISC License
+ * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2026 as
+ * part of Feather (MIT). All other copyright (c) for Lucide are held by
+ * Lucide Contributors 2026.
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ *
+ * The MIT License (MIT) (for portions derived from Feather)
+ * Copyright (c) 2013-2026 Cole Bemis
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   PURCHASE_ADJUSTMENT_REASONS,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentReason,
+  type PurchaseAdjustmentPostRequest,
   type PurchaseAdjustmentSummary,
   type PurchasePostedDetail,
   type Supplier,
@@ -19,150 +55,21 @@ import {
   updatePurchaseAdjustmentDraft,
 } from "./purchasing-api";
 import { useCommittedFocus } from "./committed-focus";
+import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
+import { PurchaseAdjustmentHeaderComparisonTable } from "./purchase-adjustment-header-comparison";
+import { formatAdjustmentFils } from "./purchase-adjustment-money";
+import { PurchasingSupportDetails } from "./purchasing-support-details";
+import { PurchaseInvoiceOfferFields } from "./purchase-invoice-offer-fields";
 import {
   getAdjustmentReasonLabel,
   getPurchasingDenialMessage,
+  purchasingMessages,
+  purchaseAdjustmentMessages,
 } from "./purchasing-messages";
 
 type Stage = "start" | "unfinished" | "edit" | "summary" | "posted";
-
-const text = {
-  en: {
-    actions: "Actions",
-    addEvidence: "Evidence or note (optional)",
-    adjustmentDraftBadge: "Purchase invoice adjustment draft",
-    adjustmentReasonPlaceholder: "Adjustment reason",
-    adjustmentSubtitleAlert: "Draft adjustment",
-    afterDiscount: "After discount",
-    back: "Back to original invoice",
-    blocked:
-      "This Delta is not valid against current stock. Resolve it through a stock count, a Purchase Return, or another correction, then retry.",
-    cancel: "Cancel",
-    cancelAdjustment: "Cancel",
-    confirm: "Confirm and post Delta",
-    continue: "Continue draft",
-    cost: "Primary supplier cost (fils)",
-    costAfter: "Cost after",
-    costBefore: "Cost before",
-    date: "Date",
-    delete: "Delete draft",
-    deltaSummarySubtitle: "Purchase invoice adjustment",
-    deltaSummaryTitle: "Difference and impact",
-    difference: "Difference and impact",
-    discardQuestion:
-      "This adjustment is unfinished. Continue it or delete the draft before leaving.",
-    discountAmount: "Disc amount",
-    discountPercentage: "Disc %",
-    editInvoice: "Edit Invoice",
-    evidence: "Reason evidence",
-    expenses: "Invoice expenses",
-    expiry: "Expiry",
-    invoice: "Supplier invoice number",
-    iqd: "IQD",
-    item: "Item",
-    itemSearchHint: "Search to add item…",
-    margin: "Margin %",
-    netDeltaPosted: "Net posted delta:",
-    newInvoice: "New invoice",
-    next: "Next <",
-    originalInvoiceBadge: "Original: Purchase invoice #",
-    posted: "Adjustment posted",
-    previous: "Previous >",
-    qtyAfter: "Qty after",
-    qtyBefore: "Qty before",
-    qtyDelta: "Qty delta",
-    quantity: "Quantity",
-    reason: "Reason",
-    reasonAuditPlaceholder: "Adjustment reason (recorded in audit log)",
-    remainingTotal: "Remaining total",
-    remove: "Remove line",
-    retail: "Retail price (fils)",
-    returned: "Returned",
-    returnInvoice: "Purchase return",
-    returnTotal: "Total returned",
-    saveReview: "Save and review Delta",
-    searchInvoice: "Search invoice",
-    special: "Special price",
-    start: "Create adjustment copy",
-    supplier: "Supplier",
-    title: "Purchase Invoice Adjustment",
-    total: "Total",
-    totalCost: "Total cost",
-    unchanged: "Unchanged lines create no stock or value effects.",
-    unfinished:
-      "An unfinished adjustment draft already exists for this invoice.",
-    unit: "Unit",
-    valueDelta: "Value delta",
-  },
-  ar: {
-    actions: "إجراءات",
-    addEvidence: "دليل السبب أو ملاحظة (اختياري)",
-    adjustmentDraftBadge: "مسودة تعديل فاتورة شراء",
-    adjustmentReasonPlaceholder: "سبب التعديل",
-    adjustmentSubtitleAlert: "مسودة تعديل",
-    afterDiscount: "بعد الخصم",
-    back: "العودة إلى الفاتورة الأصلية",
-    blocked:
-      "هذا الفرق غير صالح مقابل المخزون الحالي. عالجه بجرد المخزون أو مردود شراء أو تصحيح آخر، ثم أعد المحاولة.",
-    cancel: "إلغاء",
-    cancelAdjustment: "إلغاء التعديل",
-    confirm: "تأكيد وحفظ التعديل",
-    continue: "متابعة المسودة",
-    cost: "الكلفة",
-    costAfter: "الكلفة بعد",
-    costBefore: "الكلفة قبل",
-    date: "التاريخ",
-    delete: "حذف المسودة",
-    deltaSummarySubtitle: "تعديل فاتورة شراء",
-    deltaSummaryTitle: "ملخص الفروقات",
-    difference: "ملخص الفروقات",
-    discardQuestion:
-      "هذا التعديل غير مكتمل. تابع المسودة أو احذفها قبل المغادرة.",
-    discountAmount: "خصم مبلغ",
-    discountPercentage: "خصم %",
-    editInvoice: "تعديل الفاتورة",
-    evidence: "دليل السبب",
-    expenses: "إضافة مصاريف للفاتورة",
-    expiry: "الإكسباير",
-    invoice: "رقم الفاتورة",
-    iqd: "د.ع",
-    item: "اسم المادة",
-    itemSearchHint: "ابحث لإضافة مادة…",
-    margin: "الربح %",
-    netDeltaPosted: "صافي الفرق المرحّل:",
-    newInvoice: "فاتورة جديدة",
-    next: "التالية <",
-    originalInvoiceBadge: "الأصل: فاتورة شراء رقم",
-    posted: "تم حفظ التعديل",
-    previous: "السابقة >",
-    qtyAfter: "الكمية بعد",
-    qtyBefore: "الكمية قبل",
-    qtyDelta: "فرق الكمية",
-    quantity: "كمية",
-    reason: "السبب",
-    reasonAuditPlaceholder: "سبب التعديل (يُسجّل في سجل المراجعة)",
-    remainingTotal: "الإجمالي الباقي",
-    remove: "حذف السطر",
-    retail: "سعر البيع",
-    returned: "الراجع",
-    returnInvoice: "إرجاع الفاتورة",
-    returnTotal: "إجمالي الراجع",
-    saveReview: "حفظ ومراجعة الفرق",
-    searchInvoice: "بحث عن فاتورة",
-    special: "سعر خاص",
-    start: "إنشاء نسخة التعديل",
-    supplier: "المورد",
-    title: "تعديل فاتورة شراء",
-    total: "الإجمالي",
-    totalCost: "مجموع الكلفة",
-    unchanged: "الأسطر التي لم تتغير لا تنشئ حركة مخزون أو أثر قيمة.",
-    unfinished: "توجد مسودة تعديل غير مكتملة لهذه الفاتورة.",
-    unit: "الوحدة",
-    valueDelta: "فرق القيمة",
-  },
-} as const;
 
 export function PurchaseAdjustmentWorkflow({
   baseUrl,
@@ -171,6 +78,11 @@ export function PurchaseAdjustmentWorkflow({
   onBack,
   onDraftActive,
   onPosted,
+  navigation,
+  onNavigate,
+  onSearch,
+  onReturn,
+  onNewInvoice,
 }: {
   readonly baseUrl: string;
   readonly detail: PurchasePostedDetail;
@@ -178,9 +90,14 @@ export function PurchaseAdjustmentWorkflow({
   readonly onBack: () => void;
   readonly onDraftActive: (active: boolean) => void;
   readonly onPosted: (purchaseId: string) => Promise<void>;
+  readonly navigation: PurchasePostedDetail["navigation"];
+  readonly onNavigate: (direction: "previous" | "next") => void;
+  readonly onSearch: () => void;
+  readonly onReturn: () => void;
+  readonly onNewInvoice?: (() => void) | undefined;
 }): React.JSX.Element {
   const { locale } = usePreferences();
-  const copy = text[locale];
+  const copy = purchaseAdjustmentMessages[locale];
   const [stage, setStage] = useState<Stage>(
     detail.activeAdjustmentDrafts.length > 0 ? "unfinished" : "start",
   );
@@ -198,8 +115,21 @@ export function PurchaseAdjustmentWorkflow({
     readonly tracking?: string | undefined;
   } | null>(null);
   const [leaveWarning, setLeaveWarning] = useState(false);
+  const [deleteOnly, setDeleteOnly] = useState(false);
+  const [savedDraft, setSavedDraft] = useState<PurchaseAdjustmentDraft | null>(
+    null,
+  );
+  const pendingLeave = useRef<() => void>(onBack);
+  const leaveOpener = useRef<HTMLElement | null>(null);
+  const warningRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
   const [postedNumber, setPostedNumber] = useState("");
-  const errorRef = useRef<HTMLParagraphElement>(null);
+  const [previewCurrent, setPreviewCurrent] = useState(false);
+  const [reloadRequired, setReloadRequired] = useState(false);
+  const [postUncertain, setPostUncertain] = useState(false);
+  const postAttempt = useRef<PurchaseAdjustmentPostRequest | null>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
   const requestFocus = useCommittedFocus();
 
   const originalNumberDisplay =
@@ -218,7 +148,7 @@ export function PurchaseAdjustmentWorkflow({
   }, [detail.activeAdjustmentDrafts.length, onDraftActive]);
 
   useEffect(() => {
-    if (leaveRequest > 0) setLeaveWarning(true);
+    if (leaveRequest > 0) leave();
   }, [leaveRequest]);
 
   /**
@@ -235,6 +165,40 @@ export function PurchaseAdjustmentWorkflow({
   function handleError(caught: unknown): void {
     if (
       caught instanceof PurchasingApiDenied &&
+      caught.denial.fieldErrors.some(
+        (field) => field.path[0] === "invoiceOffer",
+      )
+    ) {
+      refuse(
+        purchasingMessages[locale].invoiceOfferInvalid,
+        caught.denial.requestId,
+      );
+      return;
+    }
+    if (
+      caught instanceof IdentityApiDenied &&
+      caught.denial.code.startsWith("session-")
+    ) {
+      refuse(copy.sessionEnded, caught.denial.requestId);
+      return;
+    }
+    if (
+      caught instanceof IdentityApiDenied ||
+      caught instanceof LicensingApiDenied
+    ) {
+      refuse(copy.authorityDenied, caught.denial.requestId);
+      return;
+    }
+    if (
+      caught instanceof PurchasingApiDenied &&
+      (caught.denial.code === "version-conflict" ||
+        caught.denial.code === "adjustment-summary-stale")
+    ) {
+      setPreviewCurrent(false);
+      setReloadRequired(true);
+    }
+    if (
+      caught instanceof PurchasingApiDenied &&
       caught.denial.code === "adjustment-batch-conflict"
     ) {
       refuse(copy.blocked, caught.denial.requestId);
@@ -247,12 +211,49 @@ export function PurchaseAdjustmentWorkflow({
       );
       return;
     }
-    refuse(String(caught));
+    refuse(copy.unavailableRequest);
+  }
+
+  function invalidatePreview(): void {
+    setPreviewCurrent(false);
+    postAttempt.current = null;
+  }
+
+  function editDraft(next: PurchaseAdjustmentDraft): void {
+    invalidatePreview();
+    setDraft(next);
+  }
+
+  function editEvidence(value: string): void {
+    invalidatePreview();
+    setEvidence(value);
+  }
+
+  async function reloadSavedDraft(): Promise<void> {
+    if (draft === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const loaded = await requestPurchaseAdjustmentDraft(baseUrl, draft.id);
+      setDraft(loaded);
+      setSavedDraft(loaded);
+      setReason(loaded.reason);
+      setEvidence(loaded.evidence ?? "");
+      setSummary(null);
+      invalidatePreview();
+      setReloadRequired(false);
+      setStage("edit");
+    } catch (caught) {
+      handleError(caught);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function createDraft(
     overrideReason?: PurchaseAdjustmentReason,
   ): Promise<PurchaseAdjustmentDraft | null> {
+    if (busy) return null;
     const chosenReason = overrideReason ?? reason ?? "quantity error";
     setBusy(true);
     setError(null);
@@ -263,6 +264,9 @@ export function PurchaseAdjustmentWorkflow({
         reason: chosenReason,
       });
       setDraft(created);
+      setSavedDraft(created);
+      setReason(created.reason);
+      setEvidence(created.evidence ?? "");
       onDraftActive(true);
       setStage("edit");
       return created;
@@ -282,6 +286,7 @@ export function PurchaseAdjustmentWorkflow({
     try {
       const loaded = await requestPurchaseAdjustmentDraft(baseUrl, active.id);
       setDraft(loaded);
+      setSavedDraft(loaded);
       onDraftActive(true);
       setReason(loaded.reason);
       setEvidence(loaded.evidence ?? "");
@@ -296,7 +301,11 @@ export function PurchaseAdjustmentWorkflow({
   async function discardDraft(): Promise<void> {
     const activeId = draft?.id ?? detail.activeAdjustmentDrafts[0]?.id;
     const version = draft?.version ?? detail.activeAdjustmentDrafts[0]?.version;
-    if (activeId === undefined || version === undefined) return;
+    if (activeId === undefined || version === undefined) {
+      setLeaveWarning(false);
+      pendingLeave.current();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -307,7 +316,8 @@ export function PurchaseAdjustmentWorkflow({
       });
       await onPosted(detail.id);
       onDraftActive(false);
-      onBack();
+      setLeaveWarning(false);
+      pendingLeave.current();
     } catch (caught) {
       handleError(caught);
     } finally {
@@ -315,7 +325,8 @@ export function PurchaseAdjustmentWorkflow({
     }
   }
 
-  async function saveAndReview(): Promise<void> {
+  async function saveAndReview(review = true): Promise<void> {
+    if (busy || postUncertain || reloadRequired) return;
     let currentDraft = draft;
     if (currentDraft === null) {
       // In stage === "start", clicking save directly creates draft first
@@ -324,6 +335,7 @@ export function PurchaseAdjustmentWorkflow({
     }
     setBusy(true);
     setError(null);
+    invalidatePreview();
     try {
       const updated = await updatePurchaseAdjustmentDraft(
         baseUrl,
@@ -353,11 +365,35 @@ export function PurchaseAdjustmentWorkflow({
           })),
           supplierId: currentDraft.supplierId,
           supplierInvoiceNumber: currentDraft.supplierInvoiceNumber,
+          invoiceOffer: currentDraft.invoiceOffer,
         },
       );
       setDraft(updated);
-      setSummary(await requestPurchaseAdjustmentSummary(baseUrl, updated.id));
+      setSavedDraft(updated);
+      setReason(updated.reason);
+      setEvidence(updated.evidence ?? "");
+      if (!review) {
+        setLeaveWarning(false);
+        onDraftActive(false);
+        await onPosted(detail.id);
+        pendingLeave.current();
+        return;
+      }
+      const reviewed = await requestPurchaseAdjustmentSummary(
+        baseUrl,
+        updated.id,
+      );
+      setSummary(reviewed);
+      setPreviewCurrent(
+        reviewed.draftId === updated.id &&
+          reviewed.draftVersion === updated.version,
+      );
       setStage("summary");
+      requestFocus(() =>
+        summaryRef.current?.querySelector<HTMLElement>(
+          'button[data-adjustment-action="close-summary"]',
+        ),
+      );
     } catch (caught) {
       handleError(caught);
     } finally {
@@ -366,105 +402,269 @@ export function PurchaseAdjustmentWorkflow({
   }
 
   async function post(): Promise<void> {
-    if (draft === null || summary === null) return;
+    if (
+      busy ||
+      draft === null ||
+      summary === null ||
+      !previewCurrent ||
+      summary.draftId !== draft.id ||
+      summary.draftVersion !== draft.version
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
-      const result = await postPurchaseAdjustment(baseUrl, draft.id, {
+      const attempt = postAttempt.current ?? {
         confirmationHash: summary.confirmationHash,
-        expectedVersion: draft.version,
+        expectedVersion: summary.draftVersion,
         idempotencyKey: newPurchasingIdempotencyKey(),
-      });
+      };
+      postAttempt.current = attempt;
+      const result = await postPurchaseAdjustment(baseUrl, draft.id, attempt);
+      postAttempt.current = null;
+      setPostUncertain(false);
       setPostedNumber(formatAdjustmentNumber(result.posted.number));
       setStage("posted");
       onDraftActive(false);
-      await onPosted(detail.id);
+      // Refresh failure cannot make an acknowledged Post uncertain.
+      await onPosted(detail.id).catch(handleError);
     } catch (caught) {
-      handleError(caught);
+      if (
+        caught instanceof PurchasingApiDenied ||
+        caught instanceof IdentityApiDenied ||
+        caught instanceof LicensingApiDenied
+      ) {
+        postAttempt.current = null;
+        setPostUncertain(false);
+        setPreviewCurrent(false);
+        handleError(caught);
+      } else {
+        setPostUncertain(true);
+        refuse(copy.retryPost);
+      }
     } finally {
       setBusy(false);
     }
   }
 
-  function leave(): void {
-    if (stage === "unfinished" || stage === "edit" || stage === "summary") {
+  function leave(destination: () => void = onBack, deleting = false): void {
+    if (busy || postUncertain) return;
+    if (stage === "posted") {
+      destination();
+      return;
+    }
+    pendingLeave.current = destination;
+    leaveOpener.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    if (
+      draft !== null ||
+      stage === "unfinished" ||
+      reason !== "quantity error" ||
+      evidence !== ""
+    ) {
+      setDeleteOnly(deleting);
       setLeaveWarning(true);
+      requestFocus(() =>
+        warningRef.current?.querySelector<HTMLElement>("button"),
+      );
     } else {
-      onBack();
+      destination();
     }
   }
 
-  // Calculate draft grand total cost in fils
-  const draftGrandTotalFils = draft
-    ? draft.rows.reduce((acc, row) => {
-        try {
-          const qty = BigInt(row.enteredQuantity || "0");
-          const cost = BigInt(row.costFils || "0");
-          return acc + qty * cost;
-        } catch {
-          return acc;
-        }
-      }, 0n)
-    : detail.rows.reduce((acc, row) => {
-        try {
-          const qty = BigInt(row.enteredQuantity || "0");
-          const cost = BigInt(row.primarySupplierCostFils || "0");
-          return acc + qty * cost;
-        } catch {
-          return acc;
-        }
-      }, 0n);
+  function dismissWarning(): void {
+    setLeaveWarning(false);
+    requestFocus(() => leaveOpener.current);
+  }
+
+  function closeSummary(): void {
+    setStage("edit");
+    requestFocus(() => saveRef.current);
+  }
+
+  function modalKeys(event: KeyboardEvent<HTMLElement>): void {
+    const modal = leaveWarning
+      ? warningRef.current
+      : stage === "summary"
+        ? summaryRef.current
+        : null;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (busy || postUncertain) return;
+      if (leaveWarning) dismissWarning();
+      else if (stage === "summary") closeSummary();
+      else leave();
+    } else if (event.key === "Tab" && modal !== null) {
+      const targets = [
+        ...modal.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]',
+        ),
+      ].filter((target) => target.getClientRects().length > 0);
+      const first = targets[0];
+      const last = targets.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
+  }
+
+  const dirty =
+    draft === null
+      ? reason !== "quantity error" || evidence !== ""
+      : savedDraft === null ||
+        JSON.stringify(draft) !== JSON.stringify(savedDraft) ||
+        reason !== savedDraft.reason ||
+        (evidence.trim() || null) !== savedDraft.evidence;
+  const reviewedTotals = previewCurrent
+    ? summary?.totalsComparison.after
+    : null;
+  const displayMoney = (value: string | null | undefined) =>
+    value == null
+      ? draft === null
+        ? copy.unavailable
+        : copy.calculate
+      : formatAdjustmentFils(value, locale);
 
   const draftSupplierName =
     suppliers.find((s) => s.id === (draft?.supplierId ?? detail.supplierId))
       ?.name ?? detail.supplierNameSnapshot;
 
+  if (!detail.canAdjust) {
+    return (
+      <section className="purchase-adjustment" aria-label={copy.title}>
+        <p className="form-error" role="alert">
+          {copy.authorityDenied}
+        </p>
+        <button type="button" className="quiet-button" onClick={onBack}>
+          {copy.back}
+        </button>
+      </section>
+    );
+  }
+
   return (
-    <section className="purchase-adjustment" aria-labelledby="adjustment-title">
+    <section
+      className="purchase-adjustment"
+      aria-labelledby="adjustment-title"
+      onKeyDownCapture={modalKeys}
+      aria-busy={busy}
+    >
       {/* Accessible Title */}
       <h3 id="adjustment-title" className="visually-hidden">
         {copy.title}
       </h3>
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {busy
+          ? copy.saving
+          : draft !== null
+            ? dirty
+              ? copy.dirty
+              : copy.saved
+            : ""}
+      </p>
 
-      {error === null ? null : (
-        <p className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
+      {error === null || stage === "summary" || leaveWarning ? null : (
+        <div className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
           <span>{error.message}</span>
           {error.tracking ? (
-            <small className="form-error-tracking">{error.tracking}</small>
+            <PurchasingSupportDetails reference={error.tracking} />
           ) : null}
-        </p>
+        </div>
       )}
+      {reloadRequired && stage !== "summary" ? (
+        <button
+          type="button"
+          className="quiet-button"
+          disabled={busy}
+          onClick={() => void reloadSavedDraft()}
+        >
+          {copy.reloadDraft}
+        </button>
+      ) : null}
 
       {leaveWarning ? (
-        <div
-          className="adjustment-warning"
-          role="alertdialog"
-          aria-label={copy.discardQuestion}
-          aria-modal="true"
-        >
-          <p>{copy.discardQuestion}</p>
-          <div className="adjustment-actions">
-            <button
-              type="button"
-              className="quiet-button"
-              autoFocus
-              onClick={() => setLeaveWarning(false)}
-            >
-              {copy.continue}
-            </button>
-            <button
-              type="button"
-              className="danger-button"
-              onClick={() => void discardDraft()}
-            >
-              {copy.delete}
-            </button>
+        <div className="delta-summary-backdrop" role="presentation">
+          <div
+            className="adjustment-warning"
+            ref={warningRef}
+            role="alertdialog"
+            aria-label={deleteOnly ? copy.discardOnly : copy.discardQuestion}
+            aria-modal="true"
+          >
+            <p>{deleteOnly ? copy.discardOnly : copy.discardQuestion}</p>
+            <p>{dirty ? copy.dirty : copy.saved}</p>
+            {error === null ? null : (
+              <div
+                className="form-error"
+                role="alert"
+                ref={errorRef}
+                tabIndex={-1}
+              >
+                <span>{error.message}</span>
+                {error.tracking ? (
+                  <PurchasingSupportDetails reference={error.tracking} />
+                ) : null}
+              </div>
+            )}
+            <div className="adjustment-actions">
+              <button
+                type="button"
+                className="quiet-button"
+                disabled={busy}
+                data-adjustment-action="continue-editing"
+                onClick={dismissWarning}
+              >
+                {copy.continue}
+              </button>
+              {!deleteOnly && !dirty ? (
+                <button
+                  type="button"
+                  className="quiet-button"
+                  disabled={busy}
+                  data-adjustment-action="keep-leave"
+                  onClick={() => {
+                    setLeaveWarning(false);
+                    onDraftActive(false);
+                    pendingLeave.current();
+                  }}
+                >
+                  {copy.keepLeave}
+                </button>
+              ) : null}
+              {!deleteOnly && stage !== "unfinished" ? (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={busy || reloadRequired || postUncertain}
+                  data-adjustment-action="save-leave"
+                  onClick={() => void saveAndReview(false)}
+                >
+                  {copy.saveLeave}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="danger-button"
+                disabled={busy || postUncertain}
+                data-adjustment-action="discard-leave"
+                onClick={() => void discardDraft()}
+              >
+                {copy.delete}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
 
       {stage === "unfinished" ? (
-        <div className="adjustment-warning" role="alert">
+        <div className="adjustment-warning" role="alert" inert={leaveWarning}>
           <p>{copy.unfinished}</p>
           <div className="adjustment-actions">
             <button
@@ -477,8 +677,16 @@ export function PurchaseAdjustmentWorkflow({
             </button>
             <button
               type="button"
+              className="quiet-button"
+              disabled={busy}
+              onClick={() => leave()}
+            >
+              {copy.back}
+            </button>
+            <button
+              type="button"
               className="danger-button"
-              onClick={() => void discardDraft()}
+              onClick={() => leave(onBack, true)}
               disabled={busy}
             >
               {copy.delete}
@@ -519,9 +727,12 @@ export function PurchaseAdjustmentWorkflow({
             </button>
           </div>
         </div>
-      ) : (
+      ) : stage === "unfinished" ? null : (
         /* Main In-Place Adjustment View (Screenshots 3, 4, 5) */
-        <div className="posted-purchase-review">
+        <div
+          className="posted-purchase-review"
+          inert={leaveWarning || stage === "summary"}
+        >
           {/* Top Adjustment Banner */}
           <div className="adjustment-draft-banner">
             <span className="adjustment-banner-badge-orange">
@@ -531,7 +742,8 @@ export function PurchaseAdjustmentWorkflow({
             <button
               type="button"
               className="adjustment-banner-badge-blue"
-              onClick={leave}
+              disabled={busy || postUncertain}
+              onClick={() => leave()}
               title={copy.back}
             >
               {copy.originalInvoiceBadge} {cleanOriginalNumber}
@@ -551,10 +763,12 @@ export function PurchaseAdjustmentWorkflow({
                     aria-label={copy.reason}
                     className="adjustment-banner-reason-select"
                     required
+                    disabled={busy || postUncertain}
                     value={reason}
-                    onChange={(event) =>
-                      setReason(event.target.value as PurchaseAdjustmentReason)
-                    }
+                    onChange={(event) => {
+                      invalidatePreview();
+                      setReason(event.target.value as PurchaseAdjustmentReason);
+                    }}
                   >
                     {PURCHASE_ADJUSTMENT_REASONS.map((value) => (
                       <option key={value} value={value}>
@@ -577,32 +791,41 @@ export function PurchaseAdjustmentWorkflow({
             ) : (
               <>
                 <div className="adjustment-banner-reason-wrap">
+                  <select
+                    className="adjustment-banner-reason-select"
+                    aria-label={copy.reason}
+                    disabled={busy || postUncertain}
+                    value={reason}
+                    onChange={(event) => {
+                      invalidatePreview();
+                      setReason(event.target.value as PurchaseAdjustmentReason);
+                    }}
+                  >
+                    {PURCHASE_ADJUSTMENT_REASONS.map((value) => (
+                      <option key={value} value={value}>
+                        {getAdjustmentReasonLabel(value, locale)}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     type="text"
                     className="adjustment-banner-reason-input"
-                    aria-label={copy.reason}
-                    placeholder={copy.adjustmentReasonPlaceholder}
-                    value={
-                      evidence ||
-                      (reason ? getAdjustmentReasonLabel(reason, locale) : "")
-                    }
-                    onChange={(event) => setEvidence(event.target.value)}
+                    aria-label={copy.evidence}
+                    placeholder={copy.addEvidence}
+                    disabled={busy || postUncertain}
+                    value={evidence}
+                    onChange={(event) => editEvidence(event.target.value)}
                   />
                 </div>
                 <div className="adjustment-banner-actions">
                   <button
                     type="button"
                     className="purchase-return-button"
-                    onClick={leave}
+                    disabled={busy || postUncertain || !detail.canReturn}
+                    data-adjustment-action="return"
+                    onClick={() => leave(onReturn)}
                   >
                     <span>↩️</span> {copy.returnInvoice}
-                  </button>
-                  <button
-                    type="button"
-                    className="purchase-adjust-button"
-                    disabled
-                  >
-                    <span>📝</span> {copy.editInvoice}
                   </button>
                 </div>
               </>
@@ -631,25 +854,72 @@ export function PurchaseAdjustmentWorkflow({
             </div>
             <div className="adjustment-metadata-field">
               <span className="adjustment-metadata-label">{copy.invoice}:</span>
-              <bdi className="adjustment-metadata-value font-mono">
-                {nextSuffix}-{cleanOriginalNumber}
-              </bdi>
+              {draft === null ? (
+                <bdi className="adjustment-metadata-value font-mono">
+                  {detail.supplierInvoiceNumber}
+                </bdi>
+              ) : (
+                <input
+                  className="adjustment-header-input"
+                  aria-label={copy.invoice}
+                  value={draft.supplierInvoiceNumber}
+                  maxLength={120}
+                  disabled={busy || postUncertain}
+                  onChange={(event) =>
+                    editDraft({
+                      ...draft,
+                      supplierInvoiceNumber: event.target.value,
+                    })
+                  }
+                />
+              )}
             </div>
             <div className="adjustment-metadata-field">
               <span className="adjustment-metadata-label">
                 {copy.supplier}:
               </span>
-              <strong className="adjustment-metadata-value">
-                {draftSupplierName}
-              </strong>
+              {draft === null ? (
+                <strong className="adjustment-metadata-value">
+                  {draftSupplierName}
+                </strong>
+              ) : (
+                <select
+                  className="adjustment-header-input"
+                  aria-label={copy.supplier}
+                  value={draft.supplierId}
+                  disabled={busy || postUncertain}
+                  onChange={(event) =>
+                    editDraft({
+                      ...draft,
+                      supplierId: event.target.value,
+                      supplierNameSnapshot:
+                        suppliers.find(
+                          (supplier) => supplier.id === event.target.value,
+                        )?.name ?? draft.supplierNameSnapshot,
+                    })
+                  }
+                >
+                  {suppliers.some(
+                    (supplier) => supplier.id === draft.supplierId,
+                  ) ? null : (
+                    <option value={draft.supplierId}>
+                      {draft.supplierNameSnapshot}
+                    </option>
+                  )}
+                  {suppliers
+                    .filter((supplier) => supplier.status === "active")
+                    .map((supplier) => (
+                      <option key={supplier.id} value={supplier.id}>
+                        {supplier.id === draft.supplierId
+                          ? draft.supplierNameSnapshot
+                          : supplier.name}
+                      </option>
+                    ))}
+                </select>
+              )}
             </div>
             <div className="adjustment-metadata-search">
-              <input
-                type="search"
-                disabled
-                placeholder={copy.itemSearchHint}
-                aria-label={copy.itemSearchHint}
-              />
+              <p id="adjustment-protected-fields">{copy.protectedFields}</p>
             </div>
           </div>
 
@@ -684,9 +954,11 @@ export function PurchaseAdjustmentWorkflow({
               <tbody>
                 {draft
                   ? draft.rows.map((row, index) => {
-                      const lineTotalFils =
-                        BigInt(row.enteredQuantity || "0") *
-                        BigInt(row.costFils || "0");
+                      const lineTotalFils = previewCurrent
+                        ? summary?.rowTotals.find(
+                            (total) => total.lineageId === row.lineageId,
+                          )?.primarySupplierCostFils
+                        : null;
                       const unitName =
                         row.unit.kind === "package-unit"
                           ? row.unit.packageUnitName
@@ -704,10 +976,11 @@ export function PurchaseAdjustmentWorkflow({
                           <td>
                             <input
                               aria-label={`${copy.quantity} ${row.itemDisplayName}`}
+                              disabled={busy || postUncertain}
                               inputMode="numeric"
                               value={row.enteredQuantity}
                               onChange={(event) =>
-                                setDraft({
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.map((candidate) =>
                                     candidate.lineageId === row.lineageId
@@ -721,17 +994,18 @@ export function PurchaseAdjustmentWorkflow({
                               }
                             />
                           </td>
-                          <td>0</td>
+                          <td>{copy.unavailable}</td>
                           <td>
                             <bdi>{unitName}</bdi>
                           </td>
                           <td>
                             <input
                               aria-label={`${copy.cost} ${row.itemDisplayName}`}
+                              disabled={busy || postUncertain}
                               inputMode="numeric"
                               value={row.costFils}
                               onChange={(event) =>
-                                setDraft({
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.map((candidate) =>
                                     candidate.lineageId === row.lineageId
@@ -749,39 +1023,33 @@ export function PurchaseAdjustmentWorkflow({
                             <input
                               type="text"
                               placeholder="YYYY-MM-DD"
+                              aria-label={`${copy.expiry} ${row.itemDisplayName}`}
+                              aria-describedby="adjustment-protected-fields"
+                              readOnly
                               value={row.expiryDate ?? ""}
-                              onChange={(event) =>
-                                setDraft({
-                                  ...draft,
-                                  rows: draft.rows.map((candidate) =>
-                                    candidate.lineageId === row.lineageId
-                                      ? {
-                                          ...candidate,
-                                          expiryDate:
-                                            event.target.value.trim() === ""
-                                              ? null
-                                              : event.target.value.trim(),
-                                        }
-                                      : candidate,
-                                  ),
-                                })
-                              }
                             />
+                            {row.lotNumber === null ? null : (
+                              <small>
+                                {copy.lot}: <bdi>{row.lotNumber}</bdi>
+                              </small>
+                            )}
                           </td>
                           <td>
                             <bdi>
                               {row.marginPercentage
                                 ? `${row.marginPercentage}%`
-                                : "0%"}
+                                : copy.unavailable}
                             </bdi>
                           </td>
                           <td>
                             <input
                               aria-label={`${copy.retail} ${row.itemDisplayName}`}
+                              disabled={busy || postUncertain}
+                              readOnly={row.pricingMethod === "by-percentage"}
                               inputMode="numeric"
                               value={row.retailPriceFils}
                               onChange={(event) =>
-                                setDraft({
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.map((candidate) =>
                                     candidate.lineageId === row.lineageId
@@ -795,13 +1063,10 @@ export function PurchaseAdjustmentWorkflow({
                               }
                             />
                           </td>
-                          <td>0</td>
+                          <td>{copy.unavailable}</td>
                           <td>
                             <bdi className="font-mono">
-                              {formatFilsToIqd(
-                                lineTotalFils.toString(),
-                                locale,
-                              )}
+                              {displayMoney(lineTotalFils)}
                             </bdi>
                           </td>
                           <td>
@@ -809,15 +1074,18 @@ export function PurchaseAdjustmentWorkflow({
                               type="button"
                               className="quiet-button"
                               aria-label={`${copy.remove} ${row.itemDisplayName}`}
-                              onClick={() =>
-                                setDraft({
+                              data-adjustment-action="remove-row"
+                              disabled={busy || postUncertain}
+                              onClick={() => {
+                                editDraft({
                                   ...draft,
                                   rows: draft.rows.filter(
                                     (candidate) =>
                                       candidate.lineageId !== row.lineageId,
                                   ),
-                                })
-                              }
+                                });
+                                requestFocus(() => saveRef.current);
+                              }}
                             >
                               ✕
                             </button>
@@ -826,9 +1094,6 @@ export function PurchaseAdjustmentWorkflow({
                       );
                     })
                   : detail.rows.map((row, index) => {
-                      const lineTotalFils =
-                        BigInt(row.enteredQuantity || "0") *
-                        BigInt(row.primarySupplierCostFils || "0");
                       const unitName =
                         row.unit.kind === "package-unit"
                           ? row.unit.packageUnitName
@@ -848,15 +1113,10 @@ export function PurchaseAdjustmentWorkflow({
                               aria-label={`${copy.quantity} ${row.itemDisplayName}`}
                               inputMode="numeric"
                               value={row.enteredQuantity}
-                              onFocus={() => {
-                                void createDraft();
-                              }}
-                              onChange={() => {
-                                void createDraft();
-                              }}
+                              readOnly
                             />
                           </td>
-                          <td>0</td>
+                          <td>{copy.unavailable}</td>
                           <td>
                             <bdi>{unitName}</bdi>
                           </td>
@@ -864,13 +1124,10 @@ export function PurchaseAdjustmentWorkflow({
                             <input
                               aria-label={`${copy.cost} ${row.itemDisplayName}`}
                               inputMode="numeric"
-                              value={row.primarySupplierCostFils ?? "0"}
-                              onFocus={() => {
-                                void createDraft();
-                              }}
-                              onChange={() => {
-                                void createDraft();
-                              }}
+                              value={
+                                row.primarySupplierCostFils ?? copy.unavailable
+                              }
+                              readOnly
                             />
                           </td>
                           <td>
@@ -878,47 +1135,32 @@ export function PurchaseAdjustmentWorkflow({
                               type="text"
                               placeholder="YYYY-MM-DD"
                               value={row.expiryDate ?? ""}
-                              onFocus={() => {
-                                void createDraft();
-                              }}
-                              onChange={() => {
-                                void createDraft();
-                              }}
+                              aria-label={`${copy.expiry} ${row.itemDisplayName}`}
+                              aria-describedby="adjustment-protected-fields"
+                              readOnly
                             />
+                            {row.lotNumber === null ? null : (
+                              <small>
+                                {copy.lot}: <bdi>{row.lotNumber}</bdi>
+                              </small>
+                            )}
                           </td>
-                          <td>0%</td>
+                          <td>{copy.unavailable}</td>
                           <td>
                             <input
                               aria-label={`${copy.retail} ${row.itemDisplayName}`}
                               inputMode="numeric"
                               value={row.retailPriceFils}
-                              onFocus={() => {
-                                void createDraft();
-                              }}
-                              onChange={() => {
-                                void createDraft();
-                              }}
+                              readOnly
                             />
                           </td>
-                          <td>0</td>
+                          <td>{copy.unavailable}</td>
                           <td>
                             <bdi className="font-mono">
-                              {formatFilsToIqd(
-                                lineTotalFils.toString(),
-                                locale,
-                              )}
+                              {displayMoney(row.linePrimarySupplierCostFils)}
                             </bdi>
                           </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="quiet-button"
-                              aria-label={`${copy.remove} ${row.itemDisplayName}`}
-                              onClick={() => void createDraft()}
-                            >
-                              ✕
-                            </button>
-                          </td>
+                          <td />
                         </tr>
                       );
                     })}
@@ -935,38 +1177,73 @@ export function PurchaseAdjustmentWorkflow({
                 </span>
                 <strong>
                   <bdi className="font-mono">
-                    {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
+                    {displayMoney(
+                      draft === null
+                        ? detail.primarySupplierCostFils
+                        : reviewedTotals?.primarySupplierCostFils,
+                    )}
                   </bdi>
                 </strong>
               </div>
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
-                  {copy.expenses}:
+                  {purchasingMessages[locale].invoiceOffer}:
                 </span>
-                <bdi className="font-mono">0</bdi>
+                <bdi className="font-mono">
+                  {displayMoney(
+                    draft === null
+                      ? detail.invoiceOffer?.offerFils
+                      : reviewedTotals?.offerFils,
+                  )}
+                </bdi>
               </div>
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
                   {copy.discountPercentage}:
                 </span>
-                <bdi className="font-mono">0</bdi>
+                <bdi className="font-mono">
+                  {draft?.allowancePercentageSnapshot ??
+                    detail.allowancePercentageSnapshot ??
+                    copy.unavailable}
+                </bdi>
               </div>
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
                   {copy.discountAmount}:
                 </span>
-                <bdi className="font-mono">0</bdi>
+                <bdi className="font-mono">
+                  {displayMoney(
+                    draft === null
+                      ? detail.allowanceFils
+                      : reviewedTotals?.allowanceFils,
+                  )}
+                </bdi>
               </div>
             </div>
 
             <div className="adjustment-totals-group">
+              {draft === null ? null : (
+                <div className="purchase-invoice-offer adjustment-offer-inputs">
+                  <PurchaseInvoiceOfferFields
+                    value={draft.invoiceOffer}
+                    onChange={(invoiceOffer) =>
+                      editDraft({ ...draft, invoiceOffer })
+                    }
+                    disabled={busy || postUncertain}
+                  />
+                </div>
+              )}
               <div className="adjustment-totals-item">
                 <span className="adjustment-metadata-label">
                   {copy.afterDiscount}:
                 </span>
                 <strong>
                   <bdi className="font-mono">
-                    {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
+                    {displayMoney(
+                      draft === null
+                        ? detail.costAfterDiscountFils
+                        : reviewedTotals?.costAfterDiscountFils,
+                    )}
                   </bdi>
                 </strong>
               </div>
@@ -976,7 +1253,11 @@ export function PurchaseAdjustmentWorkflow({
                 </span>
                 <strong className="adjustment-totals-grand">
                   <bdi>
-                    {formatFilsToIqd(draftGrandTotalFils.toString(), locale)}
+                    {displayMoney(
+                      previewCurrent
+                        ? summary?.primarySupplierCostDeltaFils
+                        : null,
+                    )}
                   </bdi>
                 </strong>
               </div>
@@ -984,7 +1265,11 @@ export function PurchaseAdjustmentWorkflow({
                 <span className="adjustment-metadata-label">
                   {copy.returnTotal}:
                 </span>
-                <bdi className="font-mono">{formatFilsToIqd("0", locale)}</bdi>
+                <bdi className="font-mono">
+                  {displayMoney(
+                    previewCurrent ? summary?.costAfterDiscountDeltaFils : null,
+                  )}
+                </bdi>
               </div>
             </div>
           </div>
@@ -996,37 +1281,51 @@ export function PurchaseAdjustmentWorkflow({
                 <button
                   type="button"
                   className="adjustment-toolbar-btn"
-                  onClick={leave}
+                  disabled={
+                    busy || postUncertain || navigation.previousId === null
+                  }
+                  data-adjustment-action="previous"
+                  onClick={() => leave(() => onNavigate("previous"))}
                 >
                   {copy.previous}
                 </button>
                 <button
                   type="button"
                   className="adjustment-toolbar-btn"
-                  onClick={leave}
+                  disabled={busy || postUncertain || navigation.nextId === null}
+                  data-adjustment-action="next"
+                  onClick={() => leave(() => onNavigate("next"))}
                 >
                   {copy.next}
                 </button>
                 <button
                   type="button"
                   className="adjustment-toolbar-btn"
-                  onClick={leave}
+                  disabled={busy || postUncertain}
+                  data-adjustment-action="search"
+                  onClick={() => leave(onSearch)}
                 >
                   🔍 {copy.searchInvoice}
                 </button>
-                <button
-                  type="button"
-                  className="adjustment-toolbar-btn"
-                  onClick={leave}
-                >
-                  + {copy.newInvoice}
-                </button>
+                {onNewInvoice === undefined ? null : (
+                  <button
+                    type="button"
+                    className="adjustment-toolbar-btn"
+                    disabled={busy || postUncertain}
+                    data-adjustment-action="new-invoice"
+                    onClick={() => leave(onNewInvoice)}
+                  >
+                    + {copy.newInvoice}
+                  </button>
+                )}
               </div>
               <div className="adjustment-bottom-toolbar-group">
                 <button
                   type="button"
                   className="adjustment-toolbar-btn adjustment-toolbar-btn-danger"
-                  onClick={leave}
+                  disabled={busy || postUncertain}
+                  data-adjustment-action="cancel-adjustment"
+                  onClick={() => leave(onBack, true)}
                 >
                   🗑️ {copy.cancelAdjustment}
                 </button>
@@ -1037,15 +1336,18 @@ export function PurchaseAdjustmentWorkflow({
               <button
                 type="button"
                 className="quiet-button"
-                disabled={busy}
-                onClick={leave}
+                disabled={busy || postUncertain}
+                data-adjustment-action="back"
+                onClick={() => leave()}
               >
                 {copy.back}
               </button>
               <button
                 type="button"
                 className="primary-button purchase-save-draft-btn"
-                disabled={busy}
+                ref={saveRef}
+                data-adjustment-action="save-review"
+                disabled={busy || postUncertain || reloadRequired}
                 onClick={() => void saveAndReview()}
               >
                 <span>💾</span> {copy.saveReview}
@@ -1060,6 +1362,8 @@ export function PurchaseAdjustmentWorkflow({
         <div className="delta-summary-backdrop" role="presentation">
           <div
             className="delta-summary-dialog"
+            inert={leaveWarning}
+            ref={summaryRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="delta-summary-title"
@@ -1067,9 +1371,20 @@ export function PurchaseAdjustmentWorkflow({
             {/* Header */}
             <div className="delta-summary-header">
               <h3 id="delta-summary-title" className="delta-summary-title">
-                <span className="delta-summary-icon" aria-hidden="true">
-                  📝
-                </span>
+                <svg
+                  className="delta-summary-icon"
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34" />
+                  <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+                  <path d="M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z" />
+                </svg>
                 <span>{copy.difference}</span>
               </h3>
               <span className="delta-summary-badge">
@@ -1085,101 +1400,245 @@ export function PurchaseAdjustmentWorkflow({
               aria-label={copy.difference}
               tabIndex={0}
             >
-              <table className="delta-summary-table">
+              <PurchaseAdjustmentHeaderComparisonTable
+                comparison={summary.headerComparison}
+              />
+              <table
+                className="delta-summary-table"
+                data-adjustment-totals="comparison"
+              >
                 <thead>
                   <tr>
-                    <th scope="col">{copy.item}</th>
-                    <th scope="col">{copy.qtyBefore}</th>
-                    <th scope="col">{copy.qtyAfter}</th>
-                    <th scope="col">{copy.qtyDelta}</th>
-                    <th scope="col">{copy.costBefore}</th>
-                    <th scope="col">{copy.costAfter}</th>
+                    <th scope="col">{copy.total}</th>
+                    <th scope="col">{copy.before}</th>
+                    <th scope="col">{copy.after}</th>
                     <th scope="col">{copy.valueDelta}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.rowDeltas.map((row) => {
-                    const itemName =
-                      row.after?.itemDisplayName ??
-                      row.before?.itemDisplayName ??
-                      copy.item;
-                    const beforeQty = row.before?.enteredQuantity ?? "0";
-                    const afterQty = row.after?.enteredQuantity ?? "0";
-                    const qtyDeltaNum = Number(row.quantityDelta);
-                    const formattedQtyDelta =
-                      qtyDeltaNum > 0
-                        ? `+${row.quantityDelta}`
-                        : `${row.quantityDelta}`;
-                    const costBeforeFils = row.before?.costFils ?? "0";
-                    const costAfterFils = row.after?.costFils ?? "0";
-                    const costDeltaFils = row.primarySupplierCostDeltaFils;
-                    const isPositiveCost =
-                      BigInt(costDeltaFils.replace(/^-/u, "") || "0") > 0n &&
-                      !costDeltaFils.startsWith("-");
-
-                    return (
-                      <tr key={row.lineageId}>
-                        <th scope="row">
-                          <span className="purchase-item-name-pill">
-                            {itemName}
-                          </span>
-                        </th>
-                        <td>
-                          <bdi>{beforeQty}</bdi>
-                        </td>
-                        <td>
-                          <bdi>{afterQty}</bdi>
-                        </td>
-                        <td>
-                          {/* Hidden text preserves compatibility with test assertion "4 → 8 (4)" */}
-                          <span className="visually-hidden">
-                            {beforeQty} → {afterQty} ({row.quantityDelta})
-                          </span>
-                          <bdi
-                            className={
-                              qtyDeltaNum > 0
-                                ? "delta-positive"
-                                : qtyDeltaNum < 0
-                                  ? "delta-negative"
-                                  : ""
-                            }
-                          >
-                            {formattedQtyDelta}
-                          </bdi>
-                        </td>
-                        <td>
-                          <bdi>{formatFilsToIqd(costBeforeFils, locale)}</bdi>
-                        </td>
-                        <td>
-                          <bdi>{formatFilsToIqd(costAfterFils, locale)}</bdi>
-                        </td>
-                        <td>
-                          <bdi
-                            className={
-                              isPositiveCost
-                                ? "delta-positive"
-                                : costDeltaFils.startsWith("-")
-                                  ? "delta-negative"
-                                  : ""
-                            }
-                          >
-                            {formatFilsToIqd(costDeltaFils, locale)}
-                          </bdi>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {(
+                    [
+                      [
+                        "primarySupplierCostFils",
+                        copy.totalCost,
+                        summary.primarySupplierCostDeltaFils,
+                      ],
+                      [
+                        "allowanceFils",
+                        copy.discountAmount,
+                        summary.allowanceDeltaFils,
+                      ],
+                      [
+                        "offerFils",
+                        purchasingMessages[locale].invoiceOffer,
+                        summary.offerDeltaFils,
+                      ],
+                      [
+                        "costAfterDiscountFils",
+                        copy.afterDiscount,
+                        summary.costAfterDiscountDeltaFils,
+                      ],
+                    ] as const
+                  ).map(([field, label, delta]) => (
+                    <tr key={field}>
+                      <th scope="row">{label}</th>
+                      <td>
+                        <bdi>
+                          {formatAdjustmentFils(
+                            summary.totalsComparison.before[field],
+                            locale,
+                          )}
+                        </bdi>
+                      </td>
+                      <td>
+                        <bdi>
+                          {formatAdjustmentFils(
+                            summary.totalsComparison.after[field],
+                            locale,
+                          )}
+                        </bdi>
+                      </td>
+                      <td>
+                        <bdi>{formatAdjustmentFils(delta, locale)}</bdi>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
+              {summary.warnings.length > 0 ? (
+                <p role="status" className="adjustment-warning">
+                  {purchasingMessages[locale].duplicate}{" "}
+                  {purchasingMessages[locale].openDecision}
+                </p>
+              ) : null}
+              <div>
+                <p>{copy.stockImpact}</p>
+                {summary.stockEffects.length === 0 ? (
+                  <p>{copy.noStockImpact}</p>
+                ) : (
+                  <ul className="adjustment-supplier-effects">
+                    {summary.stockEffects.map((effect, index) => (
+                      <li key={`${effect.itemId}-${index}`}>
+                        {effect.itemDisplayName}: {copy.qtyDelta}{" "}
+                        <bdi>{effect.quantityDelta}</bdi>; {copy.valueDelta}{" "}
+                        <bdi>
+                          {formatAdjustmentFils(
+                            effect.primarySupplierCostDeltaFils,
+                            locale,
+                          )}
+                        </bdi>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {summary.supplierEffects.length > 0 ? (
+                <div>
+                  <p>{copy.supplierImpact}</p>
+                  <ul className="adjustment-supplier-effects">
+                    {summary.supplierEffects.map((effect) => (
+                      <li key={effect.supplierId}>
+                        {effect.supplierNameSnapshot}:{" "}
+                        <bdi>
+                          {formatAdjustmentFils(effect.deltaFils, locale)}
+                        </bdi>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p>{copy.noSupplierImpact}</p>
+              )}
+              {summary.rowDeltas.length === 0 ? (
+                <p>{copy.unchanged}</p>
+              ) : (
+                <table className="delta-summary-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{copy.item}</th>
+                      <th scope="col">{copy.qtyBefore}</th>
+                      <th scope="col">{copy.qtyAfter}</th>
+                      <th scope="col">{copy.qtyDelta}</th>
+                      <th scope="col">{copy.costBefore}</th>
+                      <th scope="col">{copy.costAfter}</th>
+                      <th scope="col">{copy.valueDelta}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.rowDeltas.map((row) => {
+                      const itemName =
+                        row.after?.itemDisplayName ??
+                        row.before?.itemDisplayName ??
+                        copy.item;
+                      const beforeQty = row.before?.enteredQuantity ?? "0";
+                      const afterQty = row.after?.enteredQuantity ?? "0";
+                      const qtyDeltaNum = BigInt(row.quantityDelta);
+                      const formattedQtyDelta =
+                        qtyDeltaNum > 0n
+                          ? `+${row.quantityDelta}`
+                          : `${row.quantityDelta}`;
+                      const costBeforeFils = row.before?.costFils ?? "0";
+                      const costAfterFils = row.after?.costFils ?? "0";
+                      const costDeltaFils = row.primarySupplierCostDeltaFils;
+                      const isPositiveCost =
+                        BigInt(costDeltaFils.replace(/^-/u, "") || "0") > 0n &&
+                        !costDeltaFils.startsWith("-");
+
+                      return (
+                        <tr key={row.lineageId}>
+                          <th scope="row">
+                            <span>{itemName}</span>
+                            {row.changes.some(
+                              (change) => change.field === "retail-price",
+                            ) ? (
+                              <p>
+                                {purchasingMessages[locale].sellingPrice}:{" "}
+                                <bdi>
+                                  {formatFilsToIqd(
+                                    row.before?.retailPriceFils ?? "0",
+                                    locale,
+                                  )}
+                                </bdi>{" "}
+                                →{" "}
+                                <bdi>
+                                  {formatFilsToIqd(
+                                    row.after?.retailPriceFils ?? "0",
+                                    locale,
+                                  )}
+                                </bdi>
+                              </p>
+                            ) : null}
+                          </th>
+                          <td>
+                            <bdi>{beforeQty}</bdi>
+                          </td>
+                          <td>
+                            <bdi>{afterQty}</bdi>
+                          </td>
+                          <td>
+                            {/* Accessible quantity comparison includes the signed movement. */}
+                            <span className="visually-hidden">
+                              {beforeQty} → {afterQty} ({row.quantityDelta})
+                            </span>
+                            <bdi
+                              className={
+                                qtyDeltaNum > 0n
+                                  ? "delta-positive"
+                                  : qtyDeltaNum < 0n
+                                    ? "delta-negative"
+                                    : ""
+                              }
+                            >
+                              {formattedQtyDelta}
+                            </bdi>
+                          </td>
+                          <td>
+                            <bdi>{formatFilsToIqd(costBeforeFils, locale)}</bdi>
+                          </td>
+                          <td>
+                            <bdi>{formatFilsToIqd(costAfterFils, locale)}</bdi>
+                          </td>
+                          <td>
+                            <bdi
+                              className={
+                                isPositiveCost
+                                  ? "delta-positive"
+                                  : costDeltaFils.startsWith("-")
+                                    ? "delta-negative"
+                                    : ""
+                              }
+                            >
+                              {formatAdjustmentFils(costDeltaFils, locale)}
+                            </bdi>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             {/* Footer */}
             <div className="delta-summary-footer">
+              {error === null ? null : (
+                <div
+                  className="form-error"
+                  role="alert"
+                  ref={errorRef}
+                  tabIndex={-1}
+                >
+                  <span>{error.message}</span>
+                  {error.tracking ? (
+                    <PurchasingSupportDetails reference={error.tracking} />
+                  ) : null}
+                </div>
+              )}
               <div className="delta-summary-net">
                 <span>{copy.netDeltaPosted}</span>
                 <span className="delta-summary-grand-total">
                   <bdi>
-                    {formatFilsToIqd(
+                    {formatAdjustmentFils(
                       summary.primarySupplierCostDeltaFils,
                       locale,
                     )}
@@ -1191,26 +1650,53 @@ export function PurchaseAdjustmentWorkflow({
                 <input
                   type="text"
                   className="delta-summary-reason-input"
-                  placeholder={copy.reasonAuditPlaceholder}
-                  aria-label={copy.reasonAuditPlaceholder}
+                  placeholder={copy.addEvidence}
+                  aria-label={copy.evidence}
                   value={evidence}
-                  onChange={(event) => setEvidence(event.target.value)}
+                  disabled={busy || postUncertain}
+                  onChange={(event) => editEvidence(event.target.value)}
                 />
               </div>
+
+              <p>{getAdjustmentReasonLabel(summary.reason, locale)}</p>
+              {!previewCurrent ? (
+                <p role="status">{copy.previewChanged}</p>
+              ) : null}
 
               <div className="delta-summary-actions">
                 <button
                   type="button"
                   className="quiet-button"
-                  disabled={busy}
-                  onClick={() => setStage("edit")}
+                  data-adjustment-action="close-summary"
+                  disabled={busy || postUncertain}
+                  onClick={closeSummary}
                 >
                   {copy.cancel}
                 </button>
+                {reloadRequired ? (
+                  <button
+                    type="button"
+                    className="quiet-button"
+                    disabled={busy}
+                    onClick={() => void reloadSavedDraft()}
+                  >
+                    {copy.reloadDraft}
+                  </button>
+                ) : !previewCurrent ? (
+                  <button
+                    type="button"
+                    className="quiet-button"
+                    disabled={busy || postUncertain}
+                    onClick={() => void saveAndReview()}
+                  >
+                    {copy.saveReview}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="primary-button"
-                  disabled={busy}
+                  data-adjustment-action="confirm"
+                  disabled={busy || !previewCurrent}
                   onClick={() => void post()}
                 >
                   {copy.confirm}

@@ -1,0 +1,32 @@
+
+Running 1 test using 1 worker
+
+
+
+(node:21796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/1] test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements
+  1) test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+
+    error: column "kind" is of type catalog_unit_kind but expression is of type text
+
+      252 |         'purchase_default_unit_id', seed.package_unit_id))).*
+      253 |         from catalog_products source cross join t06_reference_products seed where source.id = $1`, [purchaseProduct.id]);
+    > 254 |       await admin.query(`insert into catalog_product_units (id, pharmacy_id, product_id, kind, name, ordinal, base_units_per_package)
+          |       ^
+      255 |         select inventory_unit_id, p.pharmacy_id, product_id, 'inventory', 'Strip', 0, null from t06_reference_products seed join catalog_products p on p.id = seed.product_id
+      256 |         union all select package_unit_id, p.pharmacy_id, product_id, 'package', 'Pack', 1, 4 from t06_reference_products seed join catalog_products p on p.id = seed.product_id`);
+      257 |       await admin.query(`insert into suppliers select (jsonb_populate_record(null::suppliers,
+        at P:\Projects\PharmaElectrons\node_modules\.pnpm\pg-pool@3.14.0_pg@8.23.0\node_modules\pg-pool\index.js:45:11
+        at P:\Projects\PharmaElectrons\apps\desktop\test\browser\purchasing.browser.test.ts:254:7
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+    Error Context: ..\..\test-results\desktop-browser\purchasing.browser-Supplie-cb081-me-interaction-measurements\error-context.md
+
+
+  1 failed
+    test\browser\purchasing.browser.test.ts:235:3 › Supplier and Purchase Draft screens › T06 M2 reference-volume interaction measurements 
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.browser.config.ts test/browser/purchasing.browser.test.ts -g "T06 M2 reference-volume"

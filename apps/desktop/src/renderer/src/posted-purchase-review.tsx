@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
-  PostedPurchaseAdjustment,
+  PostedPurchaseAdjustmentDetail,
   PostedPurchaseReturn,
   Product,
   PurchasePostedDetail,
@@ -22,6 +22,9 @@ import {
   requestSupplier,
 } from "./purchasing-api";
 import { PurchaseAdjustmentWorkflow } from "./purchase-adjustment-workflow";
+import { formatAdjustmentFils } from "./purchase-adjustment-money";
+import { purchaseResultNavigation } from "./purchase-result-navigation";
+import { PurchaseAdjustmentHeaderComparisonTable } from "./purchase-adjustment-header-comparison";
 import { PurchaseReturnWorkflow } from "./purchase-return-workflow";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import {
@@ -30,6 +33,7 @@ import {
 } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
+import "./posted-purchase-review.css";
 
 type CorrectionKind = "adjustment" | "return";
 type CurrentRecord =
@@ -97,6 +101,7 @@ export function PostedPurchaseReview({
   baseUrl,
   inline = false,
   onClose,
+  onNewInvoice,
   open,
   returnHash = "#/purchases",
 }: {
@@ -104,6 +109,7 @@ export function PostedPurchaseReview({
   readonly baseUrl: string;
   readonly inline?: boolean;
   readonly onClose: () => void;
+  readonly onNewInvoice?: (() => void) | undefined;
   readonly open: boolean;
   readonly returnHash?: string;
 }): React.JSX.Element {
@@ -112,16 +118,22 @@ export function PostedPurchaseReview({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const containerRef = useRef<HTMLElement | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const listScroll = useRef({ left: 0, top: 0 });
+  const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(
+    null,
+  );
   const detailOpenerRef = useRef<HTMLElement | null>(null);
   const drilldownOpenerRef = useRef<HTMLElement | null>(null);
   const correctionOpenerRef = useRef<HTMLElement | null>(null);
   const postedAdjustmentOpenerRef = useRef<HTMLElement | null>(null);
   const postedReturnOpenerRef = useRef<HTMLElement | null>(null);
   const requestCommittedFocus = useCommittedFocus();
+  const listRequest = useRef(0);
   const [list, setList] = useState<PurchasePostedListResponse | null>(null);
   const [detail, setDetail] = useState<PurchasePostedDetail | null>(null);
   const [postedAdjustment, setPostedAdjustment] =
-    useState<PostedPurchaseAdjustment | null>(null);
+    useState<PostedPurchaseAdjustmentDetail | null>(null);
   const [postedReturn, setPostedReturn] = useState<PostedPurchaseReturn | null>(
     null,
   );
@@ -138,24 +150,33 @@ export function PostedPurchaseReview({
   const [denial, setDenial] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [query, setQuery] = useState("");
+  const [rowFactsOpen, setRowFactsOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<PurchasePostedListRequest>({
+    dateType: "posted-at",
+    direction: "descending",
+    sort: "posted-at",
+  });
+
+  useLayoutEffect(() => {
+    const container = listScrollRef.current;
+    if (container === null) return;
+    container.scrollTop = listScroll.current.top;
+    container.scrollLeft = listScroll.current.left;
+  }, [detail, currentRecord, correction, postedAdjustment, postedReturn, list]);
 
   useEffect(() => {
-    if (!open || detail !== null) return;
+    if (!open || detail !== null || list !== null) return;
 
     const timer = setTimeout(
       () => {
-        void loadList({
-          dateType: "posted-at",
-          direction: "descending",
-          ...(query.trim() === "" ? {} : { query: query.trim() }),
-          sort: "posted-at",
-        });
+        void loadList(currentFilter());
       },
       query.trim() !== "" ? 250 : 0,
     );
 
     return () => clearTimeout(timer);
-  }, [baseUrl, detail, open, query]);
+  }, [baseUrl, detail, filters, list, open, query]);
 
   useEffect(() => {
     if (inline) {
@@ -175,7 +196,7 @@ export function PostedPurchaseReview({
             ? postedPurchaseAddress(window.location.hash)
             : { correction: null, id: address.id };
         if (addressed === null) {
-          queueMicrotask(() => searchRef.current?.focus());
+          requestCommittedFocus(() => searchRef.current);
         } else {
           void loadDetail(addressed.id, undefined, addressed.correction);
         }
@@ -200,7 +221,7 @@ export function PostedPurchaseReview({
           ? postedPurchaseAddress(window.location.hash)
           : { correction: null, id: address.id };
       if (addressed === null) {
-        queueMicrotask(() => searchRef.current?.focus());
+        requestCommittedFocus(() => searchRef.current);
       } else {
         void loadDetail(addressed.id, undefined, addressed.correction);
       }
@@ -210,15 +231,26 @@ export function PostedPurchaseReview({
   }, [address, baseUrl, inline, open, returnHash]);
 
   async function loadList(input: PurchasePostedListRequest): Promise<void> {
+    const request = ++listRequest.current;
+    if (
+      input.from !== undefined &&
+      input.to !== undefined &&
+      input.from > input.to
+    ) {
+      setError(copy.dateRangeInvalid);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     setDenial(null);
     try {
-      setList(await requestPostedPurchases(baseUrl, input));
+      const result = await requestPostedPurchases(baseUrl, input);
+      if (request === listRequest.current) setList(result);
     } catch (caught) {
-      handleFailure(caught);
+      if (request === listRequest.current) handleFailure(caught);
     } finally {
-      setLoading(false);
+      if (request === listRequest.current) setLoading(false);
     }
   }
 
@@ -233,7 +265,12 @@ export function PostedPurchaseReview({
     setDenial(null);
     setAnnouncement("");
     try {
+      if (list === null) {
+        ++listRequest.current;
+        setList(await requestPostedPurchases(baseUrl, currentFilter()));
+      }
       setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+      setSelectedPurchaseId(purchaseId);
       setPostedAdjustment(null);
       setPostedReturn(null);
       setCurrentRecord(null);
@@ -256,12 +293,12 @@ export function PostedPurchaseReview({
 
   function handleFailure(caught: unknown): void {
     if (caught instanceof IdentityApiDenied) {
-      setDenial(`${copy.reviewPermissionDenied} ${caught.denial.requestId}`);
+      setDenial(copy.reviewPermissionDenied);
     } else if (
       caught instanceof PurchasingApiDenied ||
       caught instanceof CatalogApiDenied
     ) {
-      setDenial(`${copy.reviewDenied} ${caught.denial.requestId}`);
+      setDenial(copy.reviewDenied);
     } else {
       setError(copy.reviewUnavailable);
     }
@@ -272,12 +309,42 @@ export function PostedPurchaseReview({
     setDetail(null);
     setCurrentRecord(null);
     setCorrection(null);
+    setAdjustmentDraftActive(false);
+    setReturnDraftActive(false);
     window.history.replaceState(null, "", returnHash);
     if (address !== undefined) {
       dialogRef.current?.close();
       return;
     }
-    focusAfterRender(opener);
+    if (selectedPurchaseId !== null) {
+      requestCommittedFocus(
+        () =>
+          containerRef.current?.querySelector<HTMLElement>(
+            `[data-review-focus="posted-${selectedPurchaseId}"]`,
+          ) ?? opener,
+      );
+    } else {
+      focusAfterRender(opener);
+    }
+  }
+
+  function currentFilter(): PurchasePostedListRequest {
+    return {
+      ...filters,
+      ...(query.trim() === "" ? {} : { query: query.trim() }),
+    };
+  }
+
+  function changeFilters(next: PurchasePostedListRequest): void {
+    ++listRequest.current;
+    setFilters(next);
+    setList(null);
+    listScroll.current = { left: 0, top: 0 };
+  }
+
+  function searchPurchases(): void {
+    backToList();
+    requestCommittedFocus(() => searchRef.current);
   }
 
   function closeDrilldown(): void {
@@ -381,9 +448,9 @@ export function PostedPurchaseReview({
     focusAfterRender(opener);
   }
 
-  function openCorrection(kind: CorrectionKind, opener: HTMLElement): void {
+  function openCorrection(kind: CorrectionKind, opener?: HTMLElement): void {
     if (detail === null) return;
-    correctionOpenerRef.current = opener;
+    correctionOpenerRef.current = opener ?? null;
     setCorrection(kind);
     window.location.hash = `#/purchases/posted/${detail.id}/${kind}`;
   }
@@ -391,11 +458,17 @@ export function PostedPurchaseReview({
   function closeCorrection(): void {
     if (detail === null) return;
     const opener = correctionOpenerRef.current;
+    const focusKey =
+      opener?.dataset.reviewFocus ?? `${correction}-${detail.id}`;
     setCorrection(null);
     setAdjustmentDraftActive(false);
     setReturnDraftActive(false);
     window.history.replaceState(null, "", `#/purchases/posted/${detail.id}`);
-    focusAfterRender(opener);
+    requestCommittedFocus(() =>
+      containerRef.current?.querySelector<HTMLElement>(
+        `[data-review-focus="${focusKey}"]`,
+      ),
+    );
   }
 
   // Focus returns to the opener in the same commit that renders the view it
@@ -425,8 +498,8 @@ export function PostedPurchaseReview({
     if (detail === null) return;
     const id =
       directionToUse === "previous"
-        ? detail.navigation.previousId
-        : detail.navigation.nextId;
+        ? purchaseResultNavigation(list, detail.id).previousId
+        : purchaseResultNavigation(list, detail.id).nextId;
     if (id === null) {
       setAnnouncement(
         directionToUse === "previous"
@@ -494,7 +567,11 @@ export function PostedPurchaseReview({
           <button
             type="button"
             className="quiet-button"
-            onClick={() => void loadList({})}
+            onClick={() =>
+              void (detail === null
+                ? loadList(currentFilter())
+                : loadDetail(detail.id))
+            }
           >
             {copy.retry}
           </button>
@@ -506,7 +583,11 @@ export function PostedPurchaseReview({
           <button
             type="button"
             className="quiet-button"
-            onClick={() => void loadList({})}
+            onClick={() =>
+              void (detail === null
+                ? loadList(currentFilter())
+                : loadDetail(detail.id))
+            }
           >
             {copy.retry}
           </button>
@@ -534,13 +615,20 @@ export function PostedPurchaseReview({
         >
           {correction === "adjustment" ? (
             <PurchaseAdjustmentWorkflow
+              key={detail.id}
               baseUrl={baseUrl}
               detail={detail}
+              navigation={purchaseResultNavigation(list, detail.id)}
+              onNavigate={navigate}
+              onSearch={searchPurchases}
+              onNewInvoice={onNewInvoice}
+              onReturn={() => openCorrection("return")}
               leaveRequest={adjustmentLeaveRequest}
               onBack={closeCorrection}
               onDraftActive={setAdjustmentDraftActive}
               onPosted={async (purchaseId) => {
                 setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+                await loadList(currentFilter());
               }}
             />
           ) : (
@@ -552,6 +640,7 @@ export function PostedPurchaseReview({
               onDraftActive={setReturnDraftActive}
               onPosted={async (purchaseId) => {
                 setDetail(await requestPostedPurchase(baseUrl, purchaseId));
+                await loadList(currentFilter());
               }}
             />
           )}
@@ -560,7 +649,12 @@ export function PostedPurchaseReview({
         <CurrentRecordView record={currentRecord} onBack={closeDrilldown} />
       ) : detail !== null ? (
         <PostedPurchaseDetailView
-          detail={detail}
+          rowFactsOpen={rowFactsOpen}
+          onRowFactsToggle={setRowFactsOpen}
+          detail={{
+            ...detail,
+            navigation: purchaseResultNavigation(list, detail.id),
+          }}
           navigate={navigate}
           onBack={backToList}
           onCorrection={openCorrection}
@@ -575,19 +669,14 @@ export function PostedPurchaseReview({
         />
       ) : (
         <section
-          aria-label={copy.postedPurchaseRegister}
+          aria-label={copy.postedPurchaseResults}
           className="proto-posted-purchase-section"
         >
           <form
             className="proto-posted-toolbar"
             onSubmit={(event) => {
               event.preventDefault();
-              void loadList({
-                dateType: "posted-at",
-                direction: "descending",
-                ...(query.trim() === "" ? {} : { query: query.trim() }),
-                sort: "posted-at",
-              });
+              void loadList(currentFilter());
             }}
           >
             <div className="proto-toolbar-start">
@@ -599,7 +688,12 @@ export function PostedPurchaseReview({
                   aria-label={copy.searchPosted}
                   value={query}
                   placeholder={copy.searchPostedHint}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    ++listRequest.current;
+                    setList(null);
+                    listScroll.current = { left: 0, top: 0 };
+                    setQuery(event.target.value);
+                  }}
                 />
               </div>
               <span className="proto-count-badge">
@@ -609,6 +703,99 @@ export function PostedPurchaseReview({
             <div className="proto-toolbar-hint">
               <span>{copy.doubleClickHint}</span>
             </div>
+            <details
+              className="posted-review-filters"
+              open={filtersOpen}
+              onToggle={(event) => setFiltersOpen(event.currentTarget.open)}
+            >
+              <summary>{copy.reviewFilters}</summary>
+              <div className="posted-review-filter-fields">
+                <label>
+                  {copy.dateType}
+                  <select
+                    aria-label={copy.dateType}
+                    value={filters.dateType}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        dateType: event.target.value as
+                          "invoice-date" | "posted-at",
+                      })
+                    }
+                  >
+                    <option value="posted-at">{copy.postingDate}</option>
+                    <option value="invoice-date">{copy.invoiceDate}</option>
+                  </select>
+                </label>
+                <label>
+                  {copy.fromDate}
+                  <input
+                    type="date"
+                    value={filters.from ?? ""}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        from: event.target.value || undefined,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  {copy.toDate}
+                  <input
+                    type="date"
+                    value={filters.to ?? ""}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        to: event.target.value || undefined,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  {copy.sortBy}
+                  <select
+                    aria-label={copy.sortBy}
+                    value={filters.sort}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        sort: event.target
+                          .value as PurchasePostedListRequest["sort"],
+                      })
+                    }
+                  >
+                    <option value="posted-at">{copy.postingDate}</option>
+                    <option value="invoice-date">{copy.invoiceDate}</option>
+                    <option value="number">{copy.documentNumber}</option>
+                    <option value="supplier">{copy.supplier}</option>
+                    {costsVisible ? (
+                      <option value="primary-cost">
+                        {copy.primarySupplierCost}
+                      </option>
+                    ) : null}
+                  </select>
+                </label>
+                <label>
+                  {copy.sortDirection}
+                  <select
+                    aria-label={copy.sortDirection}
+                    value={filters.direction}
+                    onChange={(event) =>
+                      changeFilters({
+                        ...filters,
+                        direction: event.target.value as
+                          "ascending" | "descending",
+                      })
+                    }
+                  >
+                    <option value="ascending">{copy.ascending}</option>
+                    <option value="descending">{copy.descending}</option>
+                  </select>
+                </label>
+              </div>
+            </details>
           </form>
 
           {list?.costVisibility === "hidden-by-permission" ? (
@@ -618,7 +805,14 @@ export function PostedPurchaseReview({
           ) : null}
 
           <div
+            ref={listScrollRef}
             className="proto-table-wrap"
+            onScroll={(event) => {
+              listScroll.current = {
+                left: event.currentTarget.scrollLeft,
+                top: event.currentTarget.scrollTop,
+              };
+            }}
             role="group"
             aria-label={copy.scrollPosted}
             tabIndex={0}
@@ -679,6 +873,8 @@ export function PostedPurchaseReview({
                         key={purchase.id}
                         tabIndex={0}
                         className="proto-table-row"
+                        data-selected={selectedPurchaseId === purchase.id}
+                        data-review-focus={`posted-row-${purchase.id}`}
                         onDoubleClick={(event) => {
                           handleRowOpen(purchase, event.currentTarget);
                         }}
@@ -972,6 +1168,8 @@ export function PostedPurchaseReview({
 
 function PostedPurchaseDetailView({
   detail,
+  rowFactsOpen,
+  onRowFactsToggle,
   navigate,
   onBack,
   onCorrection,
@@ -981,6 +1179,8 @@ function PostedPurchaseDetailView({
   onSupplier,
 }: {
   readonly detail: PurchasePostedDetail;
+  readonly rowFactsOpen: boolean;
+  readonly onRowFactsToggle: (open: boolean) => void;
   readonly navigate: (direction: "next" | "previous") => void;
   readonly onBack: () => void;
   readonly onCorrection: (kind: CorrectionKind, opener: HTMLElement) => void;
@@ -1005,7 +1205,7 @@ function PostedPurchaseDetailView({
             data-review-focus={`adjustment-${detail.id}`}
             onClick={(event) => onCorrection("adjustment", event.currentTarget)}
           >
-            <span>📝</span> {copy.editInvoice}
+            <span aria-hidden="true">📝</span> {copy.editInvoice}
           </button>
         ) : null}
         {detail.canReturn ? (
@@ -1015,7 +1215,7 @@ function PostedPurchaseDetailView({
             data-review-focus={`return-${detail.id}`}
             onClick={(event) => onCorrection("return", event.currentTarget)}
           >
-            <span>↩️</span> {copy.returnInvoice}
+            <span aria-hidden="true">↩️</span> {copy.returnInvoice}
           </button>
         ) : null}
         <button type="button" className="quiet-button" onClick={onBack}>
@@ -1100,7 +1300,7 @@ function PostedPurchaseDetailView({
                                 adjustment.primarySupplierCostDeltaFils,
                                 locale,
                               )
-                            : `0 ${copy.iqd}`}
+                            : copy.unavailable}
                         </bdi>
                       </td>
                       <td>
@@ -1176,6 +1376,19 @@ function PostedPurchaseDetailView({
         ) : null}
         {costsVisible ? (
           <div>
+            <dt>{copy.invoiceOffer}</dt>
+            <dd>
+              <bdi>
+                {formatFilsToIqd(detail.invoiceOffer!.offerFils, locale)}
+              </bdi>
+              {detail.invoiceOffer!.input.mode === "percentage"
+                ? ` (${detail.invoiceOffer!.input.value}%)`
+                : null}
+            </dd>
+          </div>
+        ) : null}
+        {costsVisible ? (
+          <div>
             <dt>{copy.snapshot}</dt>
             <dd>{detail.allowancePercentageSnapshot}%</dd>
           </div>
@@ -1226,7 +1439,15 @@ function PostedPurchaseDetailView({
             {detail.rows.map((row) => (
               <tr key={row.id}>
                 <th scope="row">{row.ordinal}</th>
-                <td>{row.itemDisplayName}</td>
+                <td>
+                  {row.itemDisplayName}
+                  {row.notes !== null ? (
+                    <p className="posted-row-notes">
+                      <strong>{copy.notes}: </strong>
+                      {row.notes}
+                    </p>
+                  ) : null}
+                </td>
                 <td>
                   <bdi>{row.inventoryUnitQuantity}</bdi>
                 </td>
@@ -1273,6 +1494,132 @@ function PostedPurchaseDetailView({
           </tbody>
         </table>
       </div>
+      <details
+        className="posted-purchase-audit-details posted-row-snapshots"
+        open={rowFactsOpen}
+        onToggle={(event) => onRowFactsToggle(event.currentTarget.open)}
+      >
+        <summary>{copy.savedRowFacts}</summary>
+        <dl className="posted-purchase-totals">
+          <div>
+            <dt>{copy.documentIdentity}</dt>
+            <dd>
+              <bdi>{detail.id}</bdi>
+            </dd>
+          </div>
+          <div>
+            <dt>{copy.postedBy}</dt>
+            <dd>
+              <bdi>{detail.postedBy}</bdi>
+            </dd>
+          </div>
+        </dl>
+        {detail.rows.map((row) => (
+          <section
+            key={row.id}
+            aria-label={`${copy.savedRowFacts} ${row.ordinal}`}
+          >
+            <h4>
+              {row.ordinal}. {row.itemDisplayName}
+            </h4>
+            <dl className="posted-purchase-totals">
+              <div>
+                <dt>{copy.rowIdentity}</dt>
+                <dd>
+                  <bdi>{row.id}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.itemIdentity}</dt>
+                <dd>
+                  <bdi>{row.itemId}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.enteredQuantity}</dt>
+                <dd>
+                  <bdi>{row.enteredQuantity}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.rowUnit}</dt>
+                <dd>
+                  {row.unit.kind === "inventory-unit"
+                    ? row.inventoryUnitName
+                    : row.unit.packageUnitName}
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.baseUnitsPerEnteredUnit}</dt>
+                <dd>
+                  <bdi>{row.baseUnitsPerEnteredUnit}</bdi>{" "}
+                  {row.inventoryUnitName}
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.pricingMethod}</dt>
+                <dd>
+                  {row.pricingMethod === "by-price"
+                    ? copy.byPrice
+                    : copy.byPercentage}
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.priceCapture}</dt>
+                <dd>
+                  {row.priceCapture === "by-price-propagated"
+                    ? copy.pricePropagated
+                    : copy.priceCalculated}
+                </dd>
+              </div>
+              {costsVisible ? (
+                <>
+                  <div>
+                    <dt>{copy.enteredUnitCost}</dt>
+                    <dd>
+                      <bdi>
+                        {formatFilsToIqd(row.primarySupplierCostFils, locale)}
+                      </bdi>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.allowanceAmount}</dt>
+                    <dd>
+                      <bdi>{formatFilsToIqd(row.allowanceFils, locale)}</bdi>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.invoiceOffer}</dt>
+                    <dd>
+                      <bdi>{formatFilsToIqd(row.offerFils, locale)}</bdi>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{copy.margin}</dt>
+                    <dd>
+                      {row.marginPercentage === null
+                        ? copy.notApplicable
+                        : `${row.marginPercentage}%`}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
+              <div>
+                <dt>{copy.batchId}</dt>
+                <dd>
+                  <bdi>{row.batchId}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.movementId}</dt>
+                <dd>
+                  <bdi>{row.movementId}</bdi>
+                </dd>
+              </div>
+            </dl>
+          </section>
+        ))}
+      </details>
       {detail.returns.length > 0 ? (
         <section
           className="posted-return-links"
@@ -1374,7 +1721,7 @@ function PostedAdjustmentView({
   adjustment,
   onBack,
 }: {
-  readonly adjustment: PostedPurchaseAdjustment;
+  readonly adjustment: PostedPurchaseAdjustmentDetail;
   readonly onBack: () => void;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -1392,6 +1739,10 @@ function PostedAdjustmentView({
         {getAdjustmentReasonLabel(adjustment.reason, locale)} ·{" "}
         {formatTimestamp(adjustment.postedAt, locale)}
       </p>
+      {adjustment.evidence === null ? null : <p>{adjustment.evidence}</p>}
+      <PurchaseAdjustmentHeaderComparisonTable
+        comparison={adjustment.headerComparison}
+      />
       <dl className="posted-purchase-totals">
         <div>
           <dt>{copy.quantity}</dt>
@@ -1400,9 +1751,54 @@ function PostedAdjustmentView({
           </dd>
         </div>
         <div>
-          <dt>{copy.primarySupplierCost}</dt>
+          <dt>{copy.primarySupplierCostDelta}</dt>
           <dd>
-            <bdi>{adjustment.primarySupplierCostDeltaFils}</bdi> {copy.fils}
+            <bdi>
+              {formatAdjustmentFils(
+                adjustment.primarySupplierCostDeltaFils,
+                locale,
+              )}
+            </bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.allowanceDelta}</dt>
+          <dd>
+            <bdi>
+              {formatAdjustmentFils(adjustment.allowanceDeltaFils, locale)}
+            </bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.costAfterDiscountDelta}</dt>
+          <dd>
+            <bdi>
+              {formatAdjustmentFils(
+                adjustment.costAfterDiscountDeltaFils,
+                locale,
+              )}
+            </bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.invoiceOffer}</dt>
+          <dd>
+            <bdi>
+              {formatAdjustmentFils(
+                adjustment.offerComparison.before.offerFils,
+                locale,
+              )}
+            </bdi>{" "}
+            →{" "}
+            <bdi>
+              {formatAdjustmentFils(
+                adjustment.offerComparison.after.offerFils,
+                locale,
+              )}
+            </bdi>{" "}
+            (
+            <bdi>{formatAdjustmentFils(adjustment.offerDeltaFils, locale)}</bdi>
+            )
           </dd>
         </div>
       </dl>
@@ -1412,6 +1808,23 @@ function PostedAdjustmentView({
             {row.after?.itemDisplayName ?? row.before?.itemDisplayName}:{" "}
             {row.before?.enteredQuantity ?? "0"} →{" "}
             {row.after?.enteredQuantity ?? "0"} ({row.quantityDelta})
+            <p>
+              {copy.primarySupplierCost}:{" "}
+              <bdi>{formatFilsToIqd(row.before?.costFils ?? "0", locale)}</bdi>{" "}
+              → <bdi>{formatFilsToIqd(row.after?.costFils ?? "0", locale)}</bdi>
+            </p>
+            {row.changes.some((change) => change.field === "retail-price") ? (
+              <p>
+                {copy.sellingPrice}:{" "}
+                <bdi>
+                  {formatFilsToIqd(row.before?.retailPriceFils ?? "0", locale)}
+                </bdi>{" "}
+                →{" "}
+                <bdi>
+                  {formatFilsToIqd(row.after?.retailPriceFils ?? "0", locale)}
+                </bdi>
+              </p>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -1641,6 +2054,14 @@ function PurchaseSnapshotPrint({
               <dt>{copy.allowanceAmount}</dt>
               <dd>
                 <bdi>{formatFilsToIqd(detail.allowanceFils, locale)}</bdi>
+              </dd>
+            </div>
+            <div className="purchase-snapshot-print-total">
+              <dt>{copy.invoiceOffer}</dt>
+              <dd>
+                <bdi>
+                  {formatFilsToIqd(detail.invoiceOffer!.offerFils, locale)}
+                </bdi>
               </dd>
             </div>
             <div className="purchase-snapshot-print-total">

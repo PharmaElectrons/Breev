@@ -16,6 +16,7 @@ import {
   type CatalogDenial,
   type CatalogDenialCode,
   type CatalogFieldError,
+  type CatalogSupplierOption,
   type Product,
   type ProductBarcode,
   type ProductBarcodeAddRequest,
@@ -27,6 +28,7 @@ import {
   type ProductCreateRequest,
   type ProductDefinition,
   type ProductEditRequest,
+  type ProductManualStateColour,
   type ProductMergeRequest,
   type InventoryCapableUnit,
   type ProductNameTemplateVersion,
@@ -69,6 +71,15 @@ import {
   type CatalogPricingProblemCode,
 } from "./catalog-pricing.js";
 import { matchesOrderedProductName } from "./catalog-search.js";
+import {
+  normalizeSupplierIds,
+  replaceProductSupplierLinks,
+  unionProductSupplierLinks,
+} from "./catalog-supplier-links.js";
+import {
+  catalogSupplierSelectionsAreValid,
+  listCatalogSupplierOptions,
+} from "../purchasing/catalog-supplier-access.js";
 
 const CATALOG_PERMISSION = "catalog.item.manage";
 const CATALOG_SEARCH_PERMISSION = "catalog.item.search";
@@ -108,8 +119,7 @@ interface ProductRow {
   readonly general_type_of_use: string | null;
   readonly id: string;
   readonly inventory_unit_name: string;
-  readonly manual_state_colour:
-    "blue" | "green" | "grey" | "orange" | "purple" | "red" | "yellow" | null;
+  readonly manual_state_colour: ProductManualStateColour | null;
   readonly medication_dosage_form: string | null;
   readonly medication_manufacturer: string | null;
   readonly medication_strength: string | null;
@@ -131,6 +141,7 @@ interface ProductRow {
   readonly revision: string;
   readonly reorder_point: string | null;
   readonly scientific_name: string | null;
+  readonly supplier_ids: string[];
   readonly status: "active" | "archived" | "merged";
   readonly third_unit_name: string | null;
   readonly count_default_kind: "inventory" | "package";
@@ -204,6 +215,23 @@ export class CatalogService {
       [context.pharmacyId],
     );
     return { products: result.rows.map(productView) };
+  }
+
+  public async supplierOptions(
+    request: Request,
+  ): Promise<{ suppliers: CatalogSupplierOption[] }> {
+    const context = await this.identity.requirePermission(
+      request,
+      CATALOG_PERMISSION,
+    );
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      return {
+        suppliers: await listCatalogSupplierOptions(client, context.pharmacyId),
+      };
+    } finally {
+      client.release();
+    }
   }
 
   public async read(request: Request, productId: string): Promise<Product> {
@@ -280,7 +308,9 @@ export class CatalogService {
       request,
       CATALOG_PERMISSION,
     );
-    const requestHash = canonicalRequestHash(COMMANDS.create, input);
+    const supplierIds = normalizeSupplierIds(input.supplierIds);
+    const normalizedInput = { ...input, supplierIds };
+    const requestHash = canonicalRequestHash(COMMANDS.create, normalizedInput);
     return await this.executeCommand({
       commandName: COMMANDS.create,
       context,
@@ -290,6 +320,18 @@ export class CatalogService {
       responseSchema: productSchema,
       work: async (client) => {
         const validated = validateCatalogAttributes(input);
+        if (
+          !(await catalogSupplierSelectionsAreValid(
+            client,
+            context.pharmacyId,
+            supplierIds,
+            [],
+          ))
+        ) {
+          throw new CatalogCommandRejected(400, "body-invalid", [
+            { code: "invalid", path: ["supplierIds"] },
+          ]);
+        }
         await ensureBarcodesAvailable(
           client,
           context.pharmacyId,
@@ -356,6 +398,12 @@ export class CatalogService {
           packagingIds,
         );
         await replaceBarcodes(client, context, productId, input.barcodes);
+        await replaceProductSupplierLinks(client, {
+          actorId: context.actorId,
+          pharmacyId: context.pharmacyId,
+          productId,
+          supplierIds,
+        });
         const product = await requiredProduct(
           client,
           context.pharmacyId,
@@ -379,8 +427,10 @@ export class CatalogService {
       request,
       CATALOG_PERMISSION,
     );
+    const supplierIds = normalizeSupplierIds(input.supplierIds);
+    const normalizedInput = { ...input, supplierIds };
     const requestHash = canonicalRequestHash(COMMANDS.edit, {
-      input,
+      input: normalizedInput,
       productId,
     });
     return await this.executeCommand({
@@ -395,6 +445,21 @@ export class CatalogService {
         const before = await lockProduct(client, context.pharmacyId, productId);
         requireEditable(before, productId, input.expectedRevision);
         const validated = validateCatalogAttributes(input);
+        if (
+          !(await catalogSupplierSelectionsAreValid(
+            client,
+            context.pharmacyId,
+            supplierIds,
+            before.supplier_ids,
+          ))
+        ) {
+          throw new CatalogCommandRejected(
+            400,
+            "body-invalid",
+            [{ code: "invalid", path: ["supplierIds"] }],
+            productId,
+          );
+        }
         await ensureBarcodesAvailable(
           client,
           context.pharmacyId,
@@ -481,6 +546,12 @@ export class CatalogService {
           packagingIds,
         );
         await replaceBarcodes(client, context, productId, input.barcodes);
+        await replaceProductSupplierLinks(client, {
+          actorId: context.actorId,
+          pharmacyId: context.pharmacyId,
+          productId,
+          supplierIds,
+        });
         const after = await requiredProduct(
           client,
           context.pharmacyId,
@@ -593,6 +664,21 @@ export class CatalogService {
             input.survivorProductId,
           );
         }
+        const supplierLinksChanged = await unionProductSupplierLinks(client, {
+          actorId: context.actorId,
+          pharmacyId: context.pharmacyId,
+          sourceProductId: productId,
+          survivorProductId: survivor.id,
+        });
+        if (supplierLinksChanged) {
+          await client.query(
+            `update catalog_products
+             set revision = revision + 1,
+                 updated_at = statement_timestamp(), updated_by = $3
+             where pharmacy_id = $1 and id = $2 and status = 'active'`,
+            [context.pharmacyId, survivor.id, context.actorId],
+          );
+        }
         await client.query(
           `update catalog_products
            set status = 'merged', merged_into_product_id = $3,
@@ -611,9 +697,22 @@ export class CatalogService {
           context.pharmacyId,
           productId,
         );
+        const survivorAfter = await requiredProduct(
+          client,
+          context.pharmacyId,
+          survivor.id,
+        );
         return {
-          afterState: productAuditState(after),
-          beforeState: productAuditState(before!),
+          afterState: {
+            ...productAuditState(after),
+            survivorProductId: survivor.id,
+            survivorSupplierIds: survivorAfter.supplier_ids.join(","),
+          },
+          beforeState: {
+            ...productAuditState(before!),
+            survivorProductId: survivor.id,
+            survivorSupplierIds: survivor.supplier_ids.join(","),
+          },
           response: productView(after),
           targetId: after.id,
         };
@@ -1656,6 +1755,7 @@ function productView(row: ProductRow): Product {
     pricing: pricingView(row),
     revision: row.revision,
     scientificName: row.scientific_name,
+    supplierIds: normalizeSupplierIds(row.supplier_ids),
     sharing: {
       aiSharingAllowed: row.ai_sharing_allowed,
       externallyVisible: row.externally_visible,
@@ -1724,6 +1824,7 @@ function productAuditState(
     nameTemplateVersion: row.name_template_version,
     revision: row.revision,
     status: row.status,
+    supplierIds: row.supplier_ids.join(","),
   };
 }
 
@@ -2151,6 +2252,15 @@ const PRODUCT_SELECT = `select product_row.id,
        product_row.status,
        product_row.merged_into_product_id,
        product_row.revision::text,
+       (
+         select coalesce(
+           array_agg(supplier_link.supplier_id::text order by supplier_link.supplier_id),
+           '{}'::text[]
+         )
+         from catalog_product_suppliers supplier_link
+         where supplier_link.product_id = product_row.id
+           and supplier_link.pharmacy_id = product_row.pharmacy_id
+       ) as supplier_ids,
        product_row.created_at,
        product_row.pricing_method,
        product_row.retail_price_fils::text as retail_price_fils,

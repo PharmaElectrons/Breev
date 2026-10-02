@@ -15,6 +15,10 @@ import {
   suggestProductBarcode,
 } from "./catalog-api";
 import { catalogMessages } from "./catalog-messages";
+import { ProductMovementHistory } from "./product-movement-history";
+import { ProductInventoryBatches } from "./product-inventory-batches";
+import { ProductSupplierLinks } from "./product-supplier-links";
+import { useIdentityState } from "./identity-state-provider";
 import { usePreferences } from "./preferences-provider";
 
 function formatBigIntWithCommas(n: bigint): string {
@@ -84,6 +88,7 @@ export function ProductRecord({
   product,
 }: ProductRecordProps): React.JSX.Element {
   const { locale } = usePreferences();
+  const { state: identityState } = useIdentityState();
   const copy = catalogMessages[locale];
   const mergeInputId = useId();
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -103,7 +108,10 @@ export function ProductRecord({
 
   const isArchived = product.status === "archived";
   const isMerged = product.status === "merged";
-  const canModify = !isArchived && !isMerged;
+  const canManageCatalog =
+    identityState?.state === "authenticated" &&
+    identityState.allowedPermissions.includes("catalog.item.manage");
+  const canModify = canManageCatalog && !isArchived && !isMerged;
 
   const barcodeError = (failure: unknown): string =>
     failure instanceof CatalogApiDenied
@@ -235,7 +243,10 @@ export function ProductRecord({
   };
 
   return (
-    <div className="identity-region" aria-label={copy.record.title}>
+    <div
+      className="identity-region catalog-panel"
+      aria-label={copy.record.title}
+    >
       {/* Error Banner */}
       {errorBanner !== null ? (
         <div aria-live="polite" className="denial-alert mb-4" role="alert">
@@ -257,7 +268,7 @@ export function ProductRecord({
         </div>
       ) : null}
 
-      <article className="identity-card p-5 max-w-4xl w-full mx-auto space-y-5 animate-reveal">
+      <article className="identity-card catalog-record-card p-5 w-full mx-auto animate-reveal">
         {/* Record Header */}
         <header className="border-b border-[color:var(--border)] pb-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -287,44 +298,6 @@ export function ProductRecord({
                 >
                   {product.arabicSearchName}
                 </p>
-              ) : null}
-            </div>
-
-            {/* Action buttons (No Delete action!) */}
-            <div className="flex flex-wrap gap-2">
-              {onBack ? (
-                <button className="quiet-button" type="button" onClick={onBack}>
-                  {copy.list.title}
-                </button>
-              ) : null}
-
-              {canModify && onEdit ? (
-                <button
-                  className="quiet-button"
-                  type="button"
-                  onClick={() => onEdit(product)}
-                >
-                  {copy.actions.edit}
-                </button>
-              ) : null}
-
-              {canModify ? (
-                <>
-                  <button
-                    className="quiet-button"
-                    type="button"
-                    onClick={() => setShowArchiveDialog(true)}
-                  >
-                    {copy.actions.archive}
-                  </button>
-                  <button
-                    className="quiet-button"
-                    type="button"
-                    onClick={() => setShowMergeDialog(true)}
-                  >
-                    {copy.actions.merge}
-                  </button>
-                </>
               ) : null}
             </div>
           </div>
@@ -404,32 +377,6 @@ export function ProductRecord({
                 </dd>
               </div>
             </dl>
-          </section>
-
-          {/* Read-Only Inventory Balance Section */}
-          <section
-            aria-label={copy.inventory.readOnlyAssistiveText}
-            className="space-y-2 p-3 rounded-lg border border-[color:var(--border)]"
-            role="region"
-          >
-            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              {copy.inventory.title}
-            </h3>
-            <div className="space-y-2">
-              <div
-                aria-label={copy.inventory.title}
-                aria-readonly="true"
-                className="text-sm italic"
-                data-testid="inventory-balance-readonly"
-                role="textbox"
-                tabIndex={0}
-              >
-                {copy.inventory.emptyState}
-              </div>
-              <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded border border-[color:var(--control-border)]">
-                {copy.inventory.readOnlyAssistiveText}
-              </span>
-            </div>
           </section>
         </div>
 
@@ -968,9 +915,20 @@ export function ProductRecord({
             <ul className="space-y-1 text-sm list-none p-0">
               <li>
                 <strong>{copy.stateColours.manualColor}:</strong>{" "}
-                {product.stateColours.manual
-                  ? copy.stateColours.colors[product.stateColours.manual]
-                  : copy.stateColours.manualColorNone}
+                {product.stateColours.manual ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden="true"
+                      className="size-3 rounded-sm border border-[color:var(--border)]"
+                      style={{
+                        backgroundColor: product.stateColours.manual,
+                      }}
+                    />
+                    <bdi>{product.stateColours.manual.toUpperCase()}</bdi>
+                  </span>
+                ) : (
+                  copy.stateColours.manualColorNone
+                )}
               </li>
               <li>
                 <strong>{copy.stateColours.coldStorageRequired}:</strong>{" "}
@@ -979,6 +937,58 @@ export function ProductRecord({
             </ul>
           </section>
         </div>
+
+        {canManageCatalog ? (
+          <ProductSupplierLinks
+            baseUrl={baseUrl}
+            editable={false}
+            supplierIds={product.supplierIds}
+          />
+        ) : null}
+
+        <ProductInventoryBatches
+          baseUrl={baseUrl}
+          productId={product.id}
+          unitName={product.packaging.inventoryUnitName}
+        />
+        <ProductMovementHistory baseUrl={baseUrl} productId={product.id} />
+
+        <footer className="catalog-card-footer catalog-record-footer">
+          {onBack ? (
+            <button className="quiet-button" type="button" onClick={onBack}>
+              {copy.list.title}
+            </button>
+          ) : null}
+
+          {canModify && onEdit ? (
+            <button
+              className="quiet-button"
+              type="button"
+              onClick={() => onEdit(product)}
+            >
+              {copy.actions.edit}
+            </button>
+          ) : null}
+
+          {canModify ? (
+            <>
+              <button
+                className="quiet-button"
+                type="button"
+                onClick={() => setShowArchiveDialog(true)}
+              >
+                {copy.actions.archive}
+              </button>
+              <button
+                className="quiet-button"
+                type="button"
+                onClick={() => setShowMergeDialog(true)}
+              >
+                {copy.actions.merge}
+              </button>
+            </>
+          ) : null}
+        </footer>
       </article>
 
       {/* Archive Confirmation Dialog */}

@@ -17,6 +17,7 @@ import {
 } from "./startup-state";
 
 const HEALTH_POLL_INTERVAL_MS = 1_000;
+const INITIAL_CONNECTING_MAX_RETRIES = 3;
 
 const PAIRING_FAILED_UNEXPECTED: TerminalPairingState = {
   candidates: [],
@@ -61,6 +62,8 @@ export function useStartupConnection(): StartupConnection {
     let deviceRole: DesktopDeviceRole = "main";
     let localApiOrigin: string | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let hasConnected = false;
+    let initialRetries = 0;
 
     const scheduleNextCheck = (): void => {
       timer = setTimeout(() => {
@@ -104,6 +107,8 @@ export function useStartupConnection(): StartupConnection {
         if (!active) {
           return;
         }
+        hasConnected = true;
+        initialRetries = 0;
         const nextState = stateFromHealth(response);
         setState(nextState);
         setHandshake(response.status === "healthy" ? response : null);
@@ -111,8 +116,18 @@ export function useStartupConnection(): StartupConnection {
         if (!active) {
           return;
         }
-        setState(stateFromStartupFailure(error));
-        setHandshake(null);
+        if (
+          !hasConnected &&
+          initialRetries < INITIAL_CONNECTING_MAX_RETRIES &&
+          error instanceof TypeError
+        ) {
+          initialRetries += 1;
+          setState("connecting");
+          setHandshake(null);
+        } else {
+          setState(stateFromStartupFailure(error));
+          setHandshake(null);
+        }
       } finally {
         checkInFlight = false;
         if (active) {
