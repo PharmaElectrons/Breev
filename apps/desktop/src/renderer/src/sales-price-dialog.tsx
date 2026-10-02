@@ -1,5 +1,5 @@
 import type { SaleDraftLine } from "@breev/contracts/local-rest";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { formatCurrencyFromFils } from "./preferences";
 import type { Locale } from "./preferences";
@@ -45,9 +45,6 @@ export function SalePriceDialog({
   const [reason, setReason] = useState("");
   const [validation, setValidation] = useState<string | null>(null);
   const dialog = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    dialog.current?.focus();
-  }, []);
   const ar = locale === "ar";
 
   return (
@@ -60,7 +57,39 @@ export function SalePriceDialog({
         role="dialog"
         tabIndex={-1}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && !busy && !pending) onCancel();
+          if (event.key === "Escape" && !busy && !pending) {
+            event.preventDefault();
+            onCancel();
+            return;
+          }
+          if (event.key !== "Tab") return;
+          const focusable = Array.from(
+            dialog.current?.querySelectorAll<HTMLElement>(
+              'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+            ) ?? [],
+          ).filter(
+            (element) =>
+              element.getClientRects().length > 0 &&
+              getComputedStyle(element).visibility !== "hidden",
+          );
+          if (focusable.length === 0) {
+            event.preventDefault();
+            dialog.current?.focus();
+            return;
+          }
+          const activeIndex = focusable.indexOf(
+            document.activeElement as HTMLElement,
+          );
+          if (event.shiftKey && activeIndex <= 0) {
+            event.preventDefault();
+            focusable[focusable.length - 1]?.focus();
+          } else if (
+            !event.shiftKey &&
+            (activeIndex === -1 || activeIndex === focusable.length - 1)
+          ) {
+            event.preventDefault();
+            focusable[0]?.focus();
+          }
         }}
       >
         <h3>{ar ? "تغيير سعر السطر" : "Change line price"}</h3>

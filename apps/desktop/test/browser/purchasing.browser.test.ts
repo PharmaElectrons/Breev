@@ -833,9 +833,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await item.fill("5901234123457");
     await item.press("Enter");
     await expect(quickDialog).toBeVisible();
-    await quickDialog.getByLabel("Trade name *").fill("Quick Purchase Product");
-    await quickDialog.getByLabel("Inventory Unit (base unit) *").fill("Piece");
-    await quickDialog.getByLabel("Retail price (fils) *").fill("250000");
+    await quickDialog.getByLabel("Trade name").fill("Quick Purchase Product");
+    await quickDialog.getByRole("button", { name: "Continue" }).click();
+    await quickDialog.getByLabel("Inventory Unit (base unit)").fill("Piece");
+    await quickDialog.getByLabel("Retail price (fils)").fill("250000");
     await quickDialog.getByRole("button", { name: "Create product" }).click();
     await expect(quickDialog).toBeHidden();
     await expect(item).toBeFocused();
@@ -5451,8 +5452,9 @@ function medicationRequest(
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
-    stateColours: { coldStorageRequired: false, manual: "blue" },
+    stateColours: { coldStorageRequired: false, manual: "#0000ff" },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }

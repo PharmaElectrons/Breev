@@ -19,6 +19,7 @@ import { requestProduct, searchProducts } from "./catalog-api";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
 import { formatFilsToIqd } from "./product-record";
 import { ProductForm } from "./product-form";
+import { calculateRetailPricePreview } from "./product-pricing";
 import { useCommittedFocus } from "./committed-focus";
 import { PurchaseRowIdentityEditor } from "./purchase-row-identity-editor";
 import type { PurchaseItemSelection } from "./purchase-item-details";
@@ -1730,7 +1731,7 @@ export function PurchaseRowEntry({
                               onChange={(event) => {
                                 setMarginPercentage(event.target.value);
                                 setRetailPriceFils(
-                                  calculatePurchaseRetailPreview(
+                                  calculateRetailPricePreview(
                                     costFils,
                                     event.target.value,
                                     product.pricing.method === "by-percentage"
@@ -2005,7 +2006,7 @@ export function PurchaseRowEntry({
               setCostFils(event.target.value);
               if (product?.pricing.method === "by-percentage")
                 setRetailPriceFils(
-                  calculatePurchaseRetailPreview(
+                  calculateRetailPricePreview(
                     event.target.value,
                     marginPercentage,
                     product.pricing.rounding,
@@ -2079,9 +2080,7 @@ export function PurchaseRowEntry({
             type="number"
             min={0}
             value={editCostFils}
-            onChange={(e) => {
-              setEditCostFils(e.target.value);
-            }}
+            onChange={(e) => setEditCostFils(e.target.value)}
             onKeyDown={(e) => handleEditKeyDown(row, e)}
           />
         );
@@ -2569,38 +2568,6 @@ function isPositiveInteger(value: string): boolean {
 function isUnsignedInteger(value: string): boolean {
   return /^(?:0|[1-9][0-9]*)$/u.test(value);
 }
-export function calculatePurchaseRetailPreview(
-  cost: string,
-  margin: string,
-  rounding: "nearest-1000-iqd" | "nearest-250-iqd" | "nearest-500-iqd" | "off",
-): string {
-  if (
-    !isUnsignedInteger(cost) ||
-    !/^(?:0|[1-9][0-9]?)(?:\.[0-9]{1,6})?$/u.test(margin)
-  )
-    return "0";
-  const [whole = "0", fraction = ""] = margin.split(".");
-  const scaled = BigInt(`${whole}${fraction.padEnd(6, "0")}`);
-  const hundred = 100_000_000n;
-  if (scaled >= hundred) return "0";
-  const multiple =
-    rounding === "off"
-      ? 1n
-      : rounding === "nearest-250-iqd"
-        ? 250_000n
-        : rounding === "nearest-500-iqd"
-          ? 500_000n
-          : 1_000_000n;
-  const numerator = BigInt(cost) * hundred;
-  const denominator = (hundred - scaled) * multiple;
-  const quotient = numerator / denominator;
-  const remainder = numerator % denominator;
-  return (
-    (quotient + (remainder * 2n >= denominator ? 1n : 0n)) *
-    multiple
-  ).toString();
-}
-
 export function formatPurchaseDefaultUnit(
   product: Product,
   locale: "ar" | "en" = "en",

@@ -678,10 +678,24 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       id: product.id,
       displayName: product.displayName,
       arabicSearchName: product.arabicSearchName,
+      barcodeValue: product.barcodes[0]?.value,
       retailPriceFils: product.pricing.retailPriceFils,
     });
     expect(JSON.stringify(response.body)).not.toContain("wholesalePriceFils");
     expect(JSON.stringify(response.body)).not.toContain("costFils");
+
+    const barcode = product.barcodes[0]?.value;
+    expect(barcode).toBeDefined();
+    const barcodeResponse = await request(
+      "GET",
+      `${saleProductSearchPath()}?query=${encodeURIComponent(barcode!)}`,
+    );
+    expect(barcodeResponse.status, diagnostics(barcodeResponse)).toBe(200);
+    expect(barcodeResponse.body).toMatchObject({
+      results: [
+        { matchedField: "barcode", product: { barcodeValue: barcode } },
+      ],
+    });
 
     const context = await request("GET", saleProductContextPath(product.id));
     expect(context.status, diagnostics(context)).toBe(200);
@@ -1107,8 +1121,9 @@ function productRequest(tradeName: string): ProductCreateRequest {
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
-    stateColours: { coldStorageRequired: false, manual: "blue" },
+    stateColours: { coldStorageRequired: false, manual: "#0000ff" },
     stockLevels: { maximumLevel: "60", minimumLevel: "10", reorderPoint: "20" },
   };
 }

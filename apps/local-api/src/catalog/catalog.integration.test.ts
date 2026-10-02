@@ -245,6 +245,141 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
     expect(rejected.body).toMatchObject({ code: "body-invalid" });
   });
 
+  it("persists unordered supplier links through audited Product commands and retains archived links", async () => {
+    const firstSupplierResponse = await request("POST", "/suppliers", {
+      allowanceEffectiveFrom: "2026-01-01",
+      defaultAllowancePercentage: "0",
+      idempotencyKey: createUuidV7(),
+      name: "Catalog Supplier A",
+      terms: "Terms stay outside Catalog",
+    });
+    const secondSupplierResponse = await request("POST", "/suppliers", {
+      allowanceEffectiveFrom: "2026-01-01",
+      defaultAllowancePercentage: "0",
+      idempotencyKey: createUuidV7(),
+      name: "Catalog Supplier B",
+      terms: null,
+    });
+    expect(
+      firstSupplierResponse.status,
+      failureContext([firstSupplierResponse]),
+    ).toBe(201);
+    expect(
+      secondSupplierResponse.status,
+      failureContext([secondSupplierResponse]),
+    ).toBe(201);
+    const firstSupplier = firstSupplierResponse.body as { id: string };
+    const secondSupplier = secondSupplierResponse.body as { id: string };
+
+    const options = await request("GET", "/catalog/supplier-options");
+    expect(options.status, failureContext([options])).toBe(200);
+    expect(options.body?.suppliers).toEqual(
+      expect.arrayContaining([
+        { id: firstSupplier.id, name: "Catalog Supplier A", status: "active" },
+        { id: secondSupplier.id, name: "Catalog Supplier B", status: "active" },
+      ]),
+    );
+    expect(options.body?.suppliers).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ terms: expect.anything() }),
+      ]),
+    );
+
+    const created = await request("POST", "/catalog/products", {
+      ...medicationRequest("Supplier Linked Product", []),
+      supplierIds: [firstSupplier.id],
+    });
+    expect(created.status, failureContext([created])).toBe(201);
+    const product = created.body as unknown as Product;
+    expect(product.supplierIds).toEqual([firstSupplier.id]);
+
+    const edit = {
+      ...medicationRequest("Supplier Linked Product", []),
+      expectedRevision: product.revision,
+      idempotencyKey: createUuidV7(),
+      supplierIds: [secondSupplier.id, firstSupplier.id],
+    };
+    const updated = await request("PUT", productPath(product.id), edit);
+    expect(updated.status, failureContext([updated])).toBe(200);
+    const orderedSupplierIds = [firstSupplier.id, secondSupplier.id].sort();
+    expect(updated.body?.supplierIds).toEqual(orderedSupplierIds);
+    expect(
+      await request("PUT", productPath(product.id), {
+        ...edit,
+        supplierIds: [...orderedSupplierIds].reverse(),
+      }),
+    ).toEqual(updated);
+
+    const archived = await request(
+      "POST",
+      `/suppliers/${firstSupplier.id}/archivals`,
+      {
+        expectedRevision: (firstSupplierResponse.body as { revision: string })
+          .revision,
+        idempotencyKey: createUuidV7(),
+      },
+    );
+    expect(archived.status, failureContext([archived])).toBe(201);
+    const retainedEdit = await request("PUT", productPath(product.id), {
+      ...medicationRequest("Supplier Linked Product", []),
+      expectedRevision: String(updated.body?.revision),
+      idempotencyKey: createUuidV7(),
+      supplierIds: orderedSupplierIds,
+    });
+    expect(retainedEdit.status, failureContext([retainedEdit])).toBe(200);
+    expect(retainedEdit.body?.supplierIds).toEqual(orderedSupplierIds);
+    const archivedOption = (
+      (await request("GET", "/catalog/supplier-options")).body?.suppliers as {
+        id: string;
+        status: string;
+      }[]
+    ).find(({ id }) => id === firstSupplier.id);
+    expect(archivedOption?.status).toBe("archived");
+
+    const inactiveSelection = await request("POST", "/catalog/products", {
+      ...medicationRequest("Inactive Supplier Rejected", []),
+      supplierIds: [firstSupplier.id],
+    });
+    expect(inactiveSelection).toMatchObject({
+      status: 400,
+      body: { code: "body-invalid", fieldErrors: [{ path: ["supplierIds"] }] },
+    });
+    const staleEdit = await request("PUT", productPath(product.id), {
+      ...medicationRequest("Supplier Linked Product", []),
+      expectedRevision: product.revision,
+      idempotencyKey: createUuidV7(),
+      supplierIds: orderedSupplierIds,
+    });
+    expect(staleEdit).toMatchObject({
+      status: 409,
+      body: { code: "version-conflict" },
+    });
+
+    const editAudit = await administrator.query<{
+      after_state: { supplierIds?: string } | null;
+    }>(
+      `select after_state
+       from posting_audit_records
+       where action = 'catalog.product.edit' and target_id = $1
+         and outcome = 'committed'
+       order by occurred_at desc, id desc limit 1`,
+      [product.id],
+    );
+    expect(editAudit.rows[0]?.after_state).toMatchObject({
+      supplierIds: orderedSupplierIds.join(","),
+    });
+    const persisted = await administrator.query<{ supplier_id: string }>(
+      `select supplier_id
+       from catalog_product_suppliers
+       where pharmacy_id = $1 and product_id = $2
+       order by supplier_id`,
+      [pharmacyId, product.id],
+    );
+    expect(persisted.rows.map(({ supplier_id }) => supplier_id)).toEqual(
+      orderedSupplierIds,
+    );
+  });
+
   it("searches ordered subsequences and barcodes, suggests and prints an internal code, and keeps daily matching eligible across restart and day boundaries", async () => {
     const searchable = await request(
       "POST",
@@ -1157,10 +1292,38 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
   });
 
   it("merges a referenced Product, redirects future references, and keeps history readable", async () => {
-    const source = await createdProduct(medicationRequest("Merge Source", []));
-    const survivor = await createdProduct(
-      medicationRequest("Merge Survivor", ["7290010000001"]),
-    );
+    const sourceSupplierResponse = await request("POST", "/suppliers", {
+      allowanceEffectiveFrom: "2026-01-01",
+      defaultAllowancePercentage: "0",
+      idempotencyKey: createUuidV7(),
+      name: "Merge Source Supplier",
+      terms: null,
+    });
+    const survivorSupplierResponse = await request("POST", "/suppliers", {
+      allowanceEffectiveFrom: "2026-01-01",
+      defaultAllowancePercentage: "0",
+      idempotencyKey: createUuidV7(),
+      name: "Merge Survivor Supplier",
+      terms: null,
+    });
+    expect(
+      sourceSupplierResponse.status,
+      failureContext([sourceSupplierResponse]),
+    ).toBe(201);
+    expect(
+      survivorSupplierResponse.status,
+      failureContext([survivorSupplierResponse]),
+    ).toBe(201);
+    const sourceSupplierId = String(sourceSupplierResponse.body?.id);
+    const survivorSupplierId = String(survivorSupplierResponse.body?.id);
+    const source = await createdProduct({
+      ...medicationRequest("Merge Source", []),
+      supplierIds: [sourceSupplierId],
+    });
+    const survivor = await createdProduct({
+      ...medicationRequest("Merge Survivor", ["7290010000001"]),
+      supplierIds: [survivorSupplierId],
+    });
     const historical = await insertSnapshot(source.id);
 
     const merged = await request("POST", productMergePath(source.id), {
@@ -1190,8 +1353,14 @@ describe.sequential("Catalog PostgreSQL and HTTP seam", () => {
         displayName: "Merge Source 500 mg tablet GSK",
         id: source.id,
         mergedIntoProductId: survivor.id,
+        supplierIds: [sourceSupplierId],
         status: "merged",
       },
+    });
+    const survivorAfterMerge = await request("GET", productPath(survivor.id));
+    expect(survivorAfterMerge.body).toMatchObject({
+      revision: "2",
+      supplierIds: [sourceSupplierId, survivorSupplierId].sort(),
     });
   });
 
@@ -1475,8 +1644,9 @@ function medicationRequest(
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
-    stateColours: { coldStorageRequired: false, manual: "blue" },
+    stateColours: { coldStorageRequired: false, manual: "#0000ff" },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }
@@ -1520,6 +1690,7 @@ function generalItemRequest(company: string): ProductCreateRequest {
       wholesalePriceFils: null,
     },
     scientificName: null,
+    supplierIds: [],
     sharing: { aiSharingAllowed: true, externallyVisible: false },
     stateColours: { coldStorageRequired: false, manual: null },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },

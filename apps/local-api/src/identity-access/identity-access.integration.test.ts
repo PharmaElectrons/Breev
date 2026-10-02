@@ -2471,6 +2471,33 @@ describe.sequential("identity/access PostgreSQL seam", () => {
     );
     expect(activeSessions.rows[0]?.count).toBe("1");
 
+    // Transaction timestamps can predate a session created by a login that
+    // waited on the identity lock. A replaced row must never outrank the live
+    // session solely because its created_at is later.
+    const skewedReplacedSessions = await administrator.query(
+      `update identity_sessions
+       set created_at = statement_timestamp() + interval '2 hours',
+           expires_at = statement_timestamp() + interval '14 hours'
+       where revoked_at is not null
+         and revocation_reason = 'replaced'
+         and device_id = $1`,
+      [credentials.deviceId],
+    );
+    expect(skewedReplacedSessions.rowCount).toBeGreaterThan(0);
+    expect(await request(credentials, "GET", "/identity/state")).toMatchObject({
+      status: 200,
+      body: { state: "authenticated", user: { id: managerId } },
+    });
+    await administrator.query(
+      `update identity_sessions
+       set created_at = statement_timestamp() - interval '2 hours',
+           expires_at = statement_timestamp() + interval '10 hours'
+       where revoked_at is not null
+         and revocation_reason = 'replaced'
+         and device_id = $1`,
+      [credentials.deviceId],
+    );
+
     await administrator.query(
       `update identity_sessions
        set expires_at = created_at + interval '1 millisecond'

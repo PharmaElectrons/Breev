@@ -1000,6 +1000,7 @@ function medicationRequest(tradeName: string): ProductCreateRequest {
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: null },
     stockLevels: { maximumLevel: "30", minimumLevel: "20", reorderPoint: "17" },

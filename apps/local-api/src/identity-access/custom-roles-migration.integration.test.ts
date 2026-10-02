@@ -46,11 +46,15 @@ interface RoleSnapshot {
  * A pharmacy that bootstrapped before 0011, upgraded through it.
  *
  * The migrations must keep every role id and user assignment exactly as they
- * found them. The built-in manager receives role administration in 0011 and
- * the owner receives the live purchasing permissions in 0012, 0018, 0019, and 0020, with
- * each touched role revision advanced once per migration.
+ * found them. The built-in manager receives role administration in 0011. The
+ * owner receives the live purchasing permissions in 0012, 0018, 0019, and
+ * 0020, and built-in roles receive patient permissions in 0031. Each touched
+ * role revision advances once per migration. Later table grants, including
+ * 0033's supplier-link grant to breev_app, do not change pharmacy role grants
+ * or identity revisions.
  */
 describe.sequential("migration 0011: custom roles upgrade", () => {
+  const EXPECTED_IDENTITY_REVISION_DELTA = 15n;
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -395,7 +399,9 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
         },
       ].sort(compareGrants),
     );
-    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 15n));
+    expect(await pharmacyRevision()).toBe(
+      String(BigInt(revisionBefore) + EXPECTED_IDENTITY_REVISION_DELTA),
+    );
 
     const actions = await application.query<{ name: string }>(
       `select name from step_up_action_definitions
@@ -414,7 +420,9 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     // Running the migrations again changes nothing more.
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshotRoles()).toEqual(rolesAfter);
-    expect(await pharmacyRevision()).toBe(String(BigInt(revisionBefore) + 15n));
+    expect(await pharmacyRevision()).toBe(
+      String(BigInt(revisionBefore) + EXPECTED_IDENTITY_REVISION_DELTA),
+    );
   }, 120_000);
 
   it("enforces one identity per role, unique custom names, and the owner floor in PostgreSQL", async () => {

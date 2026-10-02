@@ -232,6 +232,20 @@
       "when": 1790726400000,
       "tag": "0032_purchase_invoice_offer",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790812800000,
+      "tag": "0033_catalog_product_suppliers",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790899200000,
+      "tag": "0034_catalog_manual_state_colour_hex",
+      "breakpoints": true
     }
   ]
 }

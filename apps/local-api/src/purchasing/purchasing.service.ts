@@ -61,6 +61,7 @@ import {
   toBaseUnits,
   type UnitReference,
 } from "../catalog/catalog-packaging.js";
+import { transferActiveProductSupplierLinks } from "../catalog/catalog-supplier-links.js";
 import { applyPurchasePriceUpdate } from "../catalog/catalog-purchase-price-update.js";
 import {
   resolveCatalogPurchaseProduct,
@@ -1440,6 +1441,15 @@ export class PurchasingService {
             [],
             input.survivorSupplierId,
           );
+        const transferredProductIds = await transferActiveProductSupplierLinks(
+          client,
+          {
+            actorId: context.actorId,
+            pharmacyId: context.pharmacyId,
+            sourceSupplierId: supplierId,
+            survivorSupplierId: survivor.id,
+          },
+        );
         await client.query(
           `update suppliers set status = 'merged', merged_into_supplier_id = $3,
              revision = revision + 1, updated_at = statement_timestamp(), updated_by = $4
@@ -1455,7 +1465,10 @@ export class PurchasingService {
           await requiredSupplier(client, context.pharmacyId, supplierId),
         );
         return {
-          afterState: supplierAuditState(after),
+          afterState: {
+            ...supplierAuditState(after),
+            transferredProductIds: transferredProductIds.join(","),
+          },
           beforeState: supplierAuditState(supplierView(before!)),
           targetId: supplierId,
           value: after,

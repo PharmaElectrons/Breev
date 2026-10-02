@@ -160,15 +160,19 @@ export class SaleDraftService {
       hasMore: result.hasMore,
       query: result.query,
       resultCount: result.resultCount,
-      results: result.results.map(({ matchedField, product }) => ({
-        matchedField,
-        product: {
-          id: product.id,
-          displayName: product.displayName,
-          arabicSearchName: product.arabicSearchName,
-          retailPriceFils: product.pricing.retailPriceFils,
-        },
-      })),
+      results: result.results.map(
+        ({ matchedBarcode, matchedField, product }) => ({
+          matchedField,
+          product: {
+            id: product.id,
+            displayName: product.displayName,
+            arabicSearchName: product.arabicSearchName,
+            barcodeValue:
+              matchedBarcode?.value ?? product.barcodes[0]?.value ?? null,
+            retailPriceFils: product.pricing.retailPriceFils,
+          },
+        }),
+      ),
     });
   }
 

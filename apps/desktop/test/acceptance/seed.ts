@@ -341,6 +341,7 @@ async function createProduct(
       wholesalePriceFils: null,
     },
     scientificName: options.scientificName ?? options.tradeName,
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: null },
     stockLevels: options.stockLevels ?? {

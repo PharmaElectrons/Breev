@@ -4683,8 +4683,9 @@ function medicationRequest(
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
-    stateColours: { coldStorageRequired, manual: "blue" },
+    stateColours: { coldStorageRequired, manual: "#0000ff" },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
 }

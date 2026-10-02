@@ -9,6 +9,7 @@ import {
   catalogMatchingApprovalPath,
   catalogMatchingBatchOpenContract,
   catalogMatchingBatchSchema,
+  catalogSupplierOptionsContract,
   productBarcodeAddContract,
   productBarcodeAddPath,
   productBarcodePrintContract,
@@ -34,6 +35,7 @@ import {
   type CatalogMatchingApprovalRequest,
   type CatalogMatchingBatch,
   type CatalogMatchingBatchOpenRequest,
+  type CatalogSupplierOption,
   type Product,
   type ProductBarcodeAddRequest,
   type ProductBarcodePrintRequest,
@@ -72,6 +74,18 @@ export async function requestProductList(
     productListContract.method,
     200,
     productListContract.responses[200],
+  );
+}
+
+export async function requestCatalogSupplierOptions(
+  baseUrl: string,
+): Promise<{ suppliers: CatalogSupplierOption[] }> {
+  return await requestJson(
+    baseUrl,
+    catalogSupplierOptionsContract.path,
+    catalogSupplierOptionsContract.method,
+    200,
+    catalogSupplierOptionsContract.responses[200],
   );
 }
 
