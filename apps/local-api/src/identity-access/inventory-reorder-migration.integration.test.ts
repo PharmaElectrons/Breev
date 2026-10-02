@@ -350,12 +350,12 @@ describe.sequential("migration 0024: inventory reorder basket", () => {
  * explicit in the expected revision deltas.
  */
 const LATER_ROLE_REVISION_INCREMENTS: Readonly<Record<string, bigint>> = {
-  owner: 4n,
-  manager: 4n,
-  pharmacist: 1n,
+  owner: 6n,
+  manager: 6n,
+  pharmacist: 2n,
   sales_employee: 1n,
 };
-const LATER_PHARMACY_REVISIONS = 4n;
+const LATER_PHARMACY_REVISIONS = 6n;
 
 function expectRevisionDelta(
   before: DatabaseSnapshot,
