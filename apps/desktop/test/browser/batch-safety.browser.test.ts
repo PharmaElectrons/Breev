@@ -230,7 +230,13 @@ test.describe.serial("batch safety renderer", () => {
     await stepUp.getByRole("button", { name: "Confirm password" }).click();
     await expect(action).toBeFocused();
     await row.getByText("Full history").click();
-    await expect(row).toContainText(nearExpiry);
+    await expect(row).toContainText(
+      new Intl.DateTimeFormat("en-IQ", {
+        calendar: "gregory",
+        dateStyle: "medium",
+        timeZone: "UTC",
+      }).format(new Date(`${nearExpiry}T00:00:00.000Z`)),
+    );
     await expect(row).toContainText("Corrected");
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({

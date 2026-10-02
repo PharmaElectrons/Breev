@@ -10,7 +10,7 @@ import {
   serverPathToFormKey,
   stepNumericText,
 } from "./product-form";
-import { formatDefaultUnit, formatFilsToIqd } from "./product-record";
+import { formatDefaultUnit } from "./product-record";
 
 describe("Product form and name generation", () => {
   describe("composeProductDisplayName - medication mode", () => {
@@ -428,36 +428,6 @@ describe("Product form and name generation", () => {
         wholesalePriceFils: null,
       });
       expect(payload).not.toHaveProperty("retailPriceFils");
-    });
-  });
-
-  describe("formatFilsToIqd", () => {
-    it("formats exact thousands of fils without fractional remainder", () => {
-      expect(formatFilsToIqd("80000", "en")).toBe("80 IQD");
-      expect(formatFilsToIqd("100000", "en")).toBe("100 IQD");
-      expect(formatFilsToIqd("0", "en")).toBe("0 IQD");
-    });
-
-    it("formats fractional fils with trimmed decimals without float arithmetic", () => {
-      expect(formatFilsToIqd("80250", "en")).toBe("80.25 IQD");
-      expect(formatFilsToIqd("80500", "en")).toBe("80.5 IQD");
-      expect(formatFilsToIqd("80001", "en")).toBe("80.001 IQD");
-      expect(formatFilsToIqd("250", "en")).toBe("0.25 IQD");
-    });
-
-    it("formats Arabic locale with د.ع currency symbol", () => {
-      expect(formatFilsToIqd("80000", "ar")).toBe("٨٠ د.ع");
-      expect(formatFilsToIqd("80250", "ar")).toBe("٨٠٫٢٥ د.ع");
-    });
-
-    it("groups large numbers with commas", () => {
-      expect(formatFilsToIqd("1000000000", "en")).toBe("1,000,000 IQD");
-    });
-
-    it("returns dash for null, empty, or invalid input", () => {
-      expect(formatFilsToIqd(null)).toBe("—");
-      expect(formatFilsToIqd("")).toBe("—");
-      expect(formatFilsToIqd("invalid")).toBe("—");
     });
   });
 

@@ -1,6 +1,8 @@
+import { formatDateOnly } from "./preferences";
 import type {
   IdentityDenial,
   InventoryDenial,
+  InventoryBatch,
   InventoryBatchSafetyReview,
   InventoryBatchSafetyStatus,
   LicensingDenial,
@@ -37,9 +39,27 @@ export function BatchSafetyReview({
   const { state: identity } = useIdentityState();
   const [review, setReview] = useState<InventoryBatchSafetyReview | null>(null);
   const [status, setStatus] = useState<InventoryBatchSafetyStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [errorKey, setError] = useState<
+    "unavailable" | "reviewUnavailable" | "noPreview" | "jobUnavailable" | null
+  >(null);
+  const error = errorKey === null ? null : copy.safety[errorKey];
   const [denial, setDenial] = useState<ReviewDenial | null>(null);
-  const [announcement, setAnnouncement] = useState("");
+  const [announcementState, setAnnouncement] = useState<
+    | { kind: "recall" | "quarantine"; status: InventoryBatch["status"] }
+    | {
+        kind: "message";
+        key: "correctionSaved" | "previewResult" | "runQueued";
+      }
+    | null
+  >(null);
+  const announcement =
+    announcementState === null
+      ? ""
+      : announcementState.kind === "message"
+        ? copy.safety[announcementState.key]
+        : copy.safety[announcementState.kind] +
+          " — " +
+          copy.safety.statusLabels[announcementState.status];
   const [busy, setBusy] = useState(false);
   const canManage =
     identity?.state === "authenticated" &&
@@ -64,10 +84,10 @@ export function BatchSafetyReview({
       ) {
         setDenial(caught.denial);
       } else {
-        setError(copy.safety.reviewUnavailable);
+        setError("reviewUnavailable");
       }
     }
-  }, [baseUrl, copy.safety.reviewUnavailable, month]);
+  }, [baseUrl, month]);
 
   useEffect(() => {
     void load();
@@ -80,7 +100,7 @@ export function BatchSafetyReview({
     try {
       const nextStatus = await triggerBatchSafetyRun(baseUrl);
       setStatus(nextStatus);
-      setAnnouncement(copy.safety.runQueued);
+      setAnnouncement({ kind: "message", key: "runQueued" });
       for (let attempt = 0; attempt < 4; attempt += 1) {
         await load();
         if (attempt < 3) await delay(150);
@@ -90,11 +110,11 @@ export function BatchSafetyReview({
         setDenial(caught.denial);
         setError(
           caught.denial.code === "job-runtime-unavailable"
-            ? copy.safety.jobUnavailable
-            : copy.safety.reviewUnavailable,
+            ? "jobUnavailable"
+            : "reviewUnavailable",
         );
       } else {
-        setError(copy.safety.reviewUnavailable);
+        setError("reviewUnavailable");
       }
     } finally {
       setBusy(false);
@@ -123,7 +143,7 @@ export function BatchSafetyReview({
         ) : (
           <>
             <p className="denial-alert" role="alert">
-              {error ?? copy.permissionDenied + " " + denial?.requestId}
+              {error ?? copy.permissionDenied}
             </p>
             <button
               className="quiet-button"
@@ -199,7 +219,7 @@ export function BatchSafetyReview({
       )}
       {denial === null ? null : (
         <p className="denial-alert" role="alert">
-          {copy.permissionDenied} {denial.requestId}
+          {copy.permissionDenied}
         </p>
       )}
       <div
@@ -275,7 +295,9 @@ export function BatchSafetyReview({
                     <bdi>{row.batch.lotNumber ?? row.batch.batchId}</bdi>
                   </td>
                   <td>
-                    <bdi>{row.batch.effectiveExpiryDate ?? "—"}</bdi>
+                    <bdi>
+                      {formatDateOnly(row.batch.effectiveExpiryDate, locale)}
+                    </bdi>
                   </td>
                   <td>
                     <StateIndicator
@@ -289,7 +311,9 @@ export function BatchSafetyReview({
                     />
                   </td>
                   <td>
-                    <bdi>{row.detectedOnBusinessDate}</bdi>
+                    <bdi>
+                      {formatDateOnly(row.detectedOnBusinessDate, locale)}
+                    </bdi>
                   </td>
                   <td>
                     <bdi>{formatNumber(BigInt(row.daysBlocked), locale)}</bdi>

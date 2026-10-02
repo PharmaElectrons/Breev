@@ -1,3 +1,5 @@
+import { normalizeNumericInput } from "./numeric-input";
+import { unitDisplayName } from "../../shared/unit-display";
 import type { SaleDraftLine } from "@breev/contracts/local-rest";
 import { useRef, useState } from "react";
 
@@ -13,7 +15,7 @@ function asIqd(fils: string): string {
 }
 
 function toFils(value: string): string | null {
-  const normalized = value.trim();
+  const normalized = normalizeNumericInput(value.trim(), true);
   if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(normalized)) return null;
   const [whole = "0", fraction = ""] = normalized.split(".");
   const fils = BigInt(whole) * 1_000n + BigInt(fraction.padEnd(3, "0"));
@@ -94,7 +96,7 @@ export function SalePriceDialog({
       >
         <h3>{ar ? "تغيير سعر السطر" : "Change line price"}</h3>
         <strong>
-          {line.displayName} · {line.unitName}
+          {line.displayName} · {unitDisplayName(line.unitName, locale)}
         </strong>
         <p>
           {ar ? "السعر المحفوظ" : "Saved price"}:{" "}

@@ -1,12 +1,21 @@
+import {
+  countFailure,
+  countNoticeText,
+  type CountNotice,
+} from "./count-notice";
+import {
+  useInventoryTimeZone,
+  formatInventoryTimestamp,
+} from "./inventory-time";
 import type { CountLine, CountSession } from "@breev/contracts/local-rest";
 import { useEffect, useRef, useState } from "react";
 
 import { useCommittedFocus } from "./committed-focus";
 import { CountEntryLabel, CountMeasure } from "./count-entry-label";
-import { InventoryApiDenied, readCountSession } from "./inventory-api";
+import { readCountSession } from "./inventory-api";
 import { inventoryMessages } from "./inventory-messages";
 import { panelUnitLabel } from "./panel-unit-label";
-import { formatDateTime, formatNumber } from "./preferences";
+import { formatNumber } from "./preferences";
 import { usePreferences } from "./preferences-provider";
 
 export function CountSessionReview({
@@ -23,12 +32,15 @@ export function CountSessionReview({
   readonly returnHash?: string;
 }): React.JSX.Element {
   const { locale } = usePreferences();
+  const timeZone = useInventoryTimeZone(baseUrl, open);
   const copy = inventoryMessages[locale].count;
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const requestCommittedFocus = useCommittedFocus();
   const [session, setSession] = useState<CountSession | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [errorState, setError] = useState<CountNotice | null>(null);
+  const error =
+    errorState === null ? null : countNoticeText(errorState, locale);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -43,19 +55,12 @@ export function CountSessionReview({
       const sessionId =
         address?.id ?? countSessionIdFromHash(window.location.hash);
       if (sessionId === null) {
-        setError(copy.unavailable);
+        setError({ kind: "message", key: "unavailable" });
       } else {
         void readCountSession(baseUrl, sessionId)
           .then(setSession)
           .catch((caught: unknown) => {
-            setError(
-              caught instanceof InventoryApiDenied &&
-                caught.denial.code in copy.denialMessages
-                ? copy.denialMessages[
-                    caught.denial.code as keyof typeof copy.denialMessages
-                  ]
-                : copy.unavailable,
-            );
+            setError(countFailure(caught));
           });
       }
       requestCommittedFocus(() =>
@@ -66,7 +71,7 @@ export function CountSessionReview({
     } else if (!open && dialog?.open) {
       dialog.close();
     }
-  }, [address, baseUrl, copy, open, requestCommittedFocus]);
+  }, [address, baseUrl, open, requestCommittedFocus]);
 
   function handleDialogClose(): void {
     if (
@@ -133,7 +138,13 @@ export function CountSessionReview({
             <div>
               <dt>{copy.startedAt}</dt>
               <dd>
-                <bdi>{formatDateTime(new Date(session.startedAt), locale)}</bdi>
+                <bdi>
+                  {formatInventoryTimestamp(
+                    session.startedAt,
+                    locale,
+                    timeZone,
+                  )}
+                </bdi>
               </dd>
             </div>
             <div>
@@ -162,6 +173,7 @@ export function CountSessionReview({
                     key={line.id}
                     line={line}
                     locale={locale}
+                    timeZone={timeZone}
                   />
                 ))}
               </tbody>
@@ -177,10 +189,12 @@ function CountReviewLine({
   copy,
   line,
   locale,
+  timeZone,
 }: {
   readonly copy: typeof inventoryMessages.en.count;
   readonly line: CountLine;
   readonly locale: "ar" | "en";
+  readonly timeZone: string | null;
 }): React.JSX.Element {
   const application = line.application;
   const after = application?.balanceAfter ?? line.countedQuantity;
@@ -190,7 +204,11 @@ function CountReviewLine({
       <tr>
         <th scope="row">{line.itemDisplayName}</th>
         <td>
-          <CountEntryLabel label={line.enteredLabel} locale={locale} />
+          <CountEntryLabel
+            entries={line.entries}
+            inventoryUnitName={line.inventoryUnitName}
+            locale={locale}
+          />
         </td>
         <td>
           <bdi>{formatNumber(BigInt(line.countedQuantity), locale)}</bdi>{" "}
@@ -244,7 +262,11 @@ function CountReviewLine({
                 <dd>
                   {application.appliedBy.displayName} ·{" "}
                   <bdi>
-                    {formatDateTime(new Date(application.appliedAt), locale)}
+                    {formatInventoryTimestamp(
+                      application.appliedAt,
+                      locale,
+                      timeZone,
+                    )}
                   </bdi>
                 </dd>
               </div>

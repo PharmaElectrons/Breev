@@ -1,3 +1,12 @@
+import {
+  countFailure,
+  countNoticeText,
+  type CountNotice,
+} from "./count-notice";
+import {
+  useInventoryTimeZone,
+  formatInventoryTimestamp,
+} from "./inventory-time";
 import type {
   CountLine,
   CountSession,
@@ -29,7 +38,7 @@ import {
 import { panelUnitLabel } from "./panel-unit-label";
 import { inventoryMessages } from "./inventory-messages";
 import { usePreferences } from "./preferences-provider";
-import { formatDateTime, formatNumber } from "./preferences";
+import { formatNumber } from "./preferences";
 
 export function CountSessionScreen({
   baseUrl,
@@ -81,6 +90,7 @@ function CountSessionStart({
   readonly checkNow: () => Promise<void>;
 }): React.JSX.Element {
   const { locale } = usePreferences();
+  const timeZone = useInventoryTimeZone(baseUrl);
   const copy = inventoryMessages[locale].count;
   const requestCommittedFocus = useCommittedFocus();
   const attemptRef = useRef<ReturnType<typeof inventoryCommandAttempt> | null>(
@@ -93,7 +103,9 @@ function CountSessionStart({
   const [completedCursor, setCompletedCursor] = useState<string | null>(null);
   const [completedHasMore, setCompletedHasMore] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorState, setError] = useState<CountNotice | null>(null);
+  const error =
+    errorState === null ? null : countNoticeText(errorState, locale);
   const sequence = useRef(0);
 
   const load = useCallback(async (): Promise<void> => {
@@ -111,9 +123,9 @@ function CountSessionStart({
       setCompletedCursor(completedResult.nextCursor);
     } catch (caught) {
       if (sequence.current !== current) return;
-      setError(countError(caught, copy));
+      setError(countFailure(caught));
     }
-  }, [baseUrl, copy]);
+  }, [baseUrl]);
 
   useEffect(() => {
     void load();
@@ -147,7 +159,7 @@ function CountSessionStart({
       setCompletedCursor(page.nextCursor);
     } catch (caught) {
       if (sequence.current !== current) return;
-      setError(countError(caught, copy));
+      setError(countFailure(caught));
     } finally {
       if (sequence.current === current) setBusy(false);
     }
@@ -166,7 +178,7 @@ function CountSessionStart({
       });
       window.location.hash = `#/inventory/count/${session.id}`;
     } catch (caught) {
-      setError(countError(caught, copy));
+      setError(countFailure(caught));
     } finally {
       setBusy(false);
     }
@@ -229,6 +241,7 @@ function CountSessionStart({
             copy={copy}
             headingId="count-active-sessions"
             locale={locale}
+            timeZone={timeZone}
             sessions={active}
             title={copy.activeSessions}
             empty={copy.noActiveSessions}
@@ -243,6 +256,7 @@ function CountSessionStart({
             headingId="count-completed-sessions"
             hasMore={completedHasMore}
             locale={locale}
+            timeZone={timeZone}
             sessions={completed}
             title={copy.completedSessions}
             empty={copy.noCompletedSessions}
@@ -269,6 +283,7 @@ function SessionSummaryList({
   onResume,
   sessions,
   title,
+  timeZone,
 }: {
   readonly canOpen: boolean;
   readonly canRecord: boolean;
@@ -281,6 +296,7 @@ function SessionSummaryList({
   readonly onResume: (id: string) => void;
   readonly sessions: CountSessionSummary[];
   readonly title: string;
+  readonly timeZone: string | null;
 }): React.JSX.Element {
   return (
     <section className="count-session-list" aria-labelledby={headingId}>
@@ -299,8 +315,12 @@ function SessionSummaryList({
                 </strong>
                 <span>
                   {copy.startedAt}{" "}
-                  {formatDateTime(new Date(session.startedAt), locale)} ·{" "}
-                  {session.startedBy.displayName}
+                  {formatInventoryTimestamp(
+                    session.startedAt,
+                    locale,
+                    timeZone,
+                  )}{" "}
+                  · {session.startedBy.displayName}
                 </span>
                 <span>
                   {copy.lineCount}:{" "}
@@ -348,6 +368,7 @@ function CountSessionLoop({
   readonly sessionId: string;
 }): React.JSX.Element {
   const { locale } = usePreferences();
+  const timeZone = useInventoryTimeZone(baseUrl);
   const copy = inventoryMessages[locale].count;
   const requestCommittedFocus = useCommittedFocus();
   const [session, setSession] = useState<CountSession | null>(null);
@@ -362,8 +383,13 @@ function CountSessionLoop({
   const [inventoryBalances, setInventoryBalances] = useState<
     ReadonlyMap<string, string>
   >(new Map());
-  const [error, setError] = useState<string | null>(null);
-  const [announcement, setAnnouncement] = useState("");
+  const [errorState, setError] = useState<CountNotice | null>(null);
+  const error =
+    errorState === null ? null : countNoticeText(errorState, locale);
+  const [announcementState, setAnnouncement] = useState<CountNotice | null>(
+    null,
+  );
+  const announcement = countNoticeText(announcementState, locale);
   const [busy, setBusy] = useState(false);
   const [applyLine, setApplyLine] = useState<CountLine | null>(null);
   const [blockedProductId, setBlockedProductId] = useState<string | null>(null);
@@ -383,10 +409,10 @@ function CountSessionLoop({
       return next;
     } catch (caught) {
       if (sequence.current !== current) return null;
-      setError(countError(caught, copy));
+      setError(countFailure(caught));
       return null;
     }
-  }, [baseUrl, copy, sessionId]);
+  }, [baseUrl, sessionId]);
 
   useEffect(() => {
     void loadSession();
@@ -466,7 +492,7 @@ function CountSessionLoop({
     setSuggestions([]);
     setHighlightedSuggestion(-1);
     if (product.status !== "active") {
-      setError(copy.archivedItem);
+      setError({ kind: "message", key: "archivedItem" });
       focusItem();
       return;
     }
@@ -484,7 +510,7 @@ function CountSessionLoop({
   async function resolveItem(): Promise<void> {
     const query = itemQuery.trim();
     if (query === "") {
-      setError(copy.itemRequired);
+      setError({ kind: "message", key: "itemRequired" });
       focusItem();
       return;
     }
@@ -509,14 +535,14 @@ function CountSessionLoop({
       );
       const product = exactBarcode?.product ?? result.results[0]?.product;
       if (product === undefined) {
-        setError(copy.itemNotFound);
+        setError({ kind: "message", key: "itemNotFound" });
         focusItem();
         return;
       }
       selectItem(product);
     } catch (caught) {
       if (sequence.current !== current) return;
-      setError(countError(caught, copy));
+      setError(countFailure(caught));
       focusItem();
     } finally {
       if (sequence.current === current) setBusy(false);
@@ -526,17 +552,17 @@ function CountSessionLoop({
   async function saveLine(): Promise<void> {
     if (!canRecord || busy) return;
     if (selectedProduct === null || preview === null) {
-      setError(copy.itemRequired);
+      setError({ kind: "message", key: "itemRequired" });
       focusItem();
       return;
     }
     if (preview.invalidField !== null) {
-      setError(copy.validationEntryInteger);
+      setError({ kind: "message", key: "validationEntryInteger" });
       focusUnit(preview.invalidField);
       return;
     }
     if (!preview.hasValue) {
-      setError(copy.validationEntryRequired);
+      setError({ kind: "message", key: "validationEntryRequired" });
       focusUnit(
         countUnitKey(
           selectedProduct.packaging.defaultUnits.count,
@@ -567,18 +593,7 @@ function CountSessionLoop({
         idempotencyKey: attempt.idempotencyKey,
       });
       if (sequence.current !== current) return;
-      setAnnouncement(
-        copy.savedAnnouncement(
-          result.line.itemDisplayName,
-          result.line.countedQuantity,
-          panelUnitLabel(
-            result.line.inventoryUnitName,
-            BigInt(result.line.countedQuantity),
-            locale,
-          ),
-          formatSignedNumber(BigInt(result.line.varianceAtObservation), locale),
-        ),
-      );
+      setAnnouncement({ kind: "saved", line: result.line });
       setSelectedProduct(null);
       setItemQuery("");
       setFields({});
@@ -598,15 +613,16 @@ function CountSessionLoop({
         setAnnouncement(
           caught instanceof InventoryApiDenied &&
             caught.denial.code === "count-balance-changed"
-            ? copy.balanceChanged(
-                refreshedLine?.currentBalance ?? selectedBalance ?? "—",
-              )
-            : countError(caught, copy),
+            ? {
+                kind: "balance",
+                value: refreshedLine?.currentBalance ?? selectedBalance ?? "—",
+              }
+            : countFailure(caught),
         );
         setBusy(false);
         requestCommittedFocus(() => countFieldTarget(activeFieldKey));
       } else if (caught instanceof InventoryApiDenied) {
-        setError(countError(caught, copy));
+        setError(countFailure(caught));
         const fieldIndex = caught.denial.fieldErrors[0]?.path[1];
         const entryUnit =
           caught.denial.fieldErrors[0]?.path[0] === "entries" &&
@@ -624,7 +640,7 @@ function CountSessionLoop({
           focusUnit(entryUnit.key);
         }
       } else {
-        setError(countError(caught, copy));
+        setError(countFailure(caught));
         focusItem();
       }
     } finally {
@@ -681,7 +697,7 @@ function CountSessionLoop({
       });
       if (sequence.current !== current) return;
       setApplyLine(null);
-      setAnnouncement(copy.applicationSaved);
+      setAnnouncement({ kind: "message", key: "applicationSaved" });
       await loadSession();
       setBusy(false);
       requestCommittedFocus(() => document.getElementById("count-item"));
@@ -695,10 +711,11 @@ function CountSessionLoop({
         setAnnouncement(
           caught instanceof InventoryApiDenied &&
             caught.denial.code === "count-balance-changed"
-            ? copy.balanceChanged(
-                refreshedLine?.currentBalance ?? line.currentBalance,
-              )
-            : countError(caught, copy),
+            ? {
+                kind: "balance",
+                value: refreshedLine?.currentBalance ?? line.currentBalance,
+              }
+            : countFailure(caught),
         );
         setApplyLine(null);
         setBusy(false);
@@ -710,7 +727,7 @@ function CountSessionLoop({
         ) {
           setBlockedProductId(line.productId);
         }
-        setError(countError(caught, copy));
+        setError(countFailure(caught));
       }
     } finally {
       if (sequence.current === current) setBusy(false);
@@ -742,14 +759,14 @@ function CountSessionLoop({
         idempotencyKey: attempt.idempotencyKey,
       });
       if (sequence.current !== current) return;
-      setAnnouncement(copy.completed);
+      setAnnouncement({ kind: "message", key: "completed" });
       await loadSession();
       setBusy(false);
       requestCommittedFocus(() => opener);
     } catch (caught) {
       if (sequence.current !== current) return;
       if (isRefetchableCountConflict(caught)) await loadSession();
-      setError(countError(caught, copy));
+      setError(countFailure(caught));
       requestCommittedFocus(() => opener);
     } finally {
       if (sequence.current === current) setBusy(false);
@@ -790,7 +807,7 @@ function CountSessionLoop({
               ? ""
               : `C${session.number.value}/${session.number.year} · `}
             {copy.startedAt}{" "}
-            {formatDateTime(new Date(session.startedAt), locale)} ·{" "}
+            {formatInventoryTimestamp(session.startedAt, locale, timeZone)} ·{" "}
             {session.startedBy.displayName}
           </p>
         </div>
@@ -1053,7 +1070,8 @@ function CountCaption({
     <p className="count-live-caption" aria-live="polite">
       {visible.length === 0 ? (
         <>
-          <bdi>0</bdi> {panelUnitLabel(packaging.inventoryUnitName, 0n, locale)}
+          <bdi>{formatNumber(0, locale)}</bdi>{" "}
+          {panelUnitLabel(packaging.inventoryUnitName, 0n, locale)}
         </>
       ) : (
         visible.map(({ quantity, unit }, index) => (
@@ -1147,17 +1165,18 @@ function CountLinesTable({
               <tr key={line.id}>
                 <th scope="row">{line.itemDisplayName}</th>
                 <td>
-                  <CountEntryLabel label={line.enteredLabel} locale={locale} />
+                  <CountEntryLabel
+                    entries={line.entries}
+                    inventoryUnitName={line.inventoryUnitName}
+                    locale={locale}
+                  />
                   {BigInt(line.blockedQuantityAtObservation) > 0n ? (
                     <small className="count-blocked-note">
                       {" "}
                       ·{" "}
-                      <CountEntryLabel
-                        label={copy.includesBlocked(
-                          line.blockedQuantityAtObservation,
-                        )}
-                        locale={locale}
-                      />
+                      {copy.includesBlocked(
+                        formatNumber(line.blockedQuantityAtObservation, locale),
+                      )}
                     </small>
                   ) : null}
                   <br />
@@ -1417,18 +1436,4 @@ function isRefetchableCountConflict(caught: unknown): boolean {
       caught.denial.code === "count-balance-changed" ||
       caught.denial.code === "count-variance-already-applied")
   );
-}
-
-function countError(
-  caught: unknown,
-  copy: typeof inventoryMessages.en.count,
-): string {
-  if (caught instanceof InventoryApiDenied) {
-    return (
-      copy.denialMessages[
-        caught.denial.code as keyof typeof copy.denialMessages
-      ] ?? copy.unavailable
-    );
-  }
-  return copy.unavailable;
 }

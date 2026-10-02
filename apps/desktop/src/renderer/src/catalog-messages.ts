@@ -13,6 +13,14 @@ import type {
 import type { Locale } from "./preferences";
 
 export interface CatalogCopy {
+  readonly errors: {
+    readonly dismiss: string;
+    readonly title: string;
+    readonly unavailable: Record<
+      "load" | "save" | "barcode" | "print" | "archive" | "merge" | "matching",
+      string
+    >;
+  };
   readonly actions: {
     readonly archive: string;
     readonly archiveConfirmSubmit: string;
@@ -185,6 +193,7 @@ export interface CatalogCopy {
     readonly wholesalePricePlaceholder: string;
   };
   readonly record: {
+    readonly classificationBarcodes: string;
     readonly defaultUnits: string;
     readonly id: string;
     readonly inventoryUnit: string;
@@ -237,6 +246,20 @@ export interface CatalogCopy {
 
 export const catalogMessages: Record<Locale, CatalogCopy> = {
   ar: {
+    errors: {
+      dismiss: "إغلاق رسالة الخطأ",
+      title: "تعذر إكمال العملية",
+      unavailable: {
+        load: "تعذر تحميل الأصناف. تحقق من اتصال الخادم المحلي وأعد المحاولة.",
+        save: "تعذر حفظ الصنف. بقيت بياناتك المدخلة؛ أعد المحاولة.",
+        barcode: "تعذر تحديث الباركود. أعد المحاولة.",
+        print: "تعذر طباعة الباركود. تحقق من الطابعة وأعد المحاولة.",
+        archive: "تعذرت أرشفة الصنف. أعد المحاولة.",
+        merge: "تعذر دمج الصنف. تحقق من الصنف الهدف وأعد المحاولة.",
+        matching: "تعذر إكمال مطابقة الأصناف. أعد المحاولة.",
+      },
+    },
+
     actions: {
       archive: "أرشفة المنتج",
       archiveConfirmSubmit: "تأكيد الأرشفة",
@@ -493,6 +516,7 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       wholesalePricePlaceholder: "مثال: 85000 (أي 85 د.ع)",
     },
     record: {
+      classificationBarcodes: "التصنيف وأرقام الباركود",
       defaultUnits: "الافتراضيات للواجهات",
       id: "معرّف المنتج",
       inventoryUnit: "وحدة المخزون",
@@ -558,6 +582,20 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
     },
   },
   en: {
+    errors: {
+      dismiss: "Dismiss error",
+      title: "Unable to complete the action",
+      unavailable: {
+        load: "Unable to load items. Check the local server connection and try again.",
+        save: "Unable to save the item. Your entries are retained; try again.",
+        barcode: "Unable to update the barcode. Try again.",
+        print: "Unable to print the barcode. Check the printer and try again.",
+        archive: "Unable to archive the item. Try again.",
+        merge: "Unable to merge the item. Check the target item and try again.",
+        matching: "Unable to complete item matching. Try again.",
+      },
+    },
+
     actions: {
       archive: "Archive product",
       archiveConfirmSubmit: "Confirm archive",
@@ -798,6 +836,7 @@ export const catalogMessages: Record<Locale, CatalogCopy> = {
       wholesalePricePlaceholder: "e.g. 85000 (85 IQD)",
     },
     record: {
+      classificationBarcodes: "Classification and barcodes",
       defaultUnits: "Interface Defaults",
       id: "Product ID",
       inventoryUnit: "Inventory Unit",

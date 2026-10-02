@@ -232,6 +232,75 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await postgres?.stop().catch(() => undefined);
   });
 
+  test("localization: Purchase rows retain fils and canonical requests in both languages", async ({
+    browser,
+  }) => {
+    const output = path.resolve(
+      import.meta.dirname,
+      "../../../../evidence/issue-202/captures",
+    );
+    await mkdir(output, { recursive: true });
+    for (const locale of ["en", "ar"] as const) {
+      const page = await browser.newPage();
+      await installDesktopFake(
+        page,
+        renderer.origin,
+        locale,
+        locale === "ar" ? "dark" : "light",
+      );
+      const saved = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/purchases\/drafts\/[^/]+\/rows$/u.test(
+            new URL(response.url()).pathname,
+          ),
+      );
+      await createPurchaseWithOneRow(
+        page,
+        renderer.origin,
+        supplierId,
+        "LOCALIZED-FILS-" + locale,
+        "2028-02-29",
+        locale,
+        { quantity: "٢", cost: "٨٠٠٠٠٠", selling: "۱۲۳۴۵۶۷" },
+      );
+      const response = await saved;
+      expect(response.status()).toBe(201);
+      expect(response.request().postDataJSON()).toMatchObject({
+        costFils: "800000",
+        enteredQuantity: "2",
+        pricing: { method: "by-price", retailPriceFils: "1234567" },
+        expiryDate: "2028-02-29",
+        unit: { kind: "package-unit", packageUnitName: "Pack" },
+      });
+      const row = page.locator(".purchase-row-table tbody tr").first();
+      await expect(row).toContainText(locale === "ar" ? "٨٠٠٬٠٠٠" : "800,000");
+      await expect(row).toContainText(
+        locale === "ar" ? "١٬٢٣٤٬٥٦٧" : "1,234,567",
+      );
+      await expect(row).toContainText(
+        locale === "ar" ? /٢٩.*٠٢.*٢٠٢٨/u : "Feb 29, 2028",
+      );
+      await expect(
+        page.getByRole("columnheader", {
+          name:
+            locale === "ar" ? "الكلفة الأساسية (فلس)" : "Primary cost (fils)",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("textbox", {
+          name: locale === "ar" ? "سعر البيع (فلس)" : "Selling price (fils)",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: path.join(output, "purchase-fils-" + locale + ".png"),
+      });
+      await page.close();
+    }
+  });
+
   test("T06 M2 reference-volume interaction measurements", async ({ page }) => {
     test.skip(
       process.env.BREEV_T06_REFERENCE_VOLUME !== "1",
@@ -666,16 +735,16 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       name: "Item / Barcode",
       exact: true,
     });
-    const quantity = page.getByRole("spinbutton", {
+    const quantity = page.getByRole("textbox", {
       name: "Quantity",
       exact: true,
     });
-    const cost = page.getByRole("spinbutton", {
-      name: "Primary cost",
+    const cost = page.getByRole("textbox", {
+      name: "Primary cost (fils)",
       exact: true,
     });
-    const sellingPrice = page.getByRole("spinbutton", {
-      name: "Selling price",
+    const sellingPrice = page.getByRole("textbox", {
+      name: "Selling price (fils)",
       exact: true,
     });
     const expiry = page.getByRole("textbox", {
@@ -774,7 +843,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.getByRole("button", { name: "Post purchase" }),
     ).toBeEnabled();
-    await expect(page.locator(".purchase-review")).toContainText("160000");
+    await expect(page.locator(".purchase-review")).toContainText("160,000");
     await expect(page.locator(".purchase-row-table tbody tr")).toHaveCount(2);
 
     // The base-unit preview is the last column, and it carries the scenario the
@@ -852,7 +921,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
 
     const settings = page.locator(".purchase-entry-settings");
     await settings.locator("summary").click();
-    const sellingSetting = settings.locator("li", { hasText: "Selling price" });
+    const sellingSetting = settings.locator("li", {
+      hasText: "Selling price (fils)",
+    });
     await sellingSetting.getByRole("checkbox").uncheck();
     await settings
       .getByRole("button", { name: "Move earlier: Expiry" })
@@ -872,7 +943,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       "Quantity",
       "Item / Barcode",
       "Expiry",
-      "Primary cost",
+      "Primary cost (fils)",
       "Inventory Units",
       "Actions",
     ]);
@@ -944,8 +1015,8 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(page.locator(".purchase-row-table thead th")).toHaveText([
       "#",
       "Quantity",
-      "Primary cost",
-      "Selling price",
+      "Primary cost (fils)",
+      "Selling price (fils)",
       "Expiry",
       "Item / Barcode",
       "Inventory Units",
@@ -1089,7 +1160,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         const committedBaseUnits = page.locator(
           '.purchase-row-table tbody tr:not(.purchase-entry-row) [data-column-field="inventory-units"]',
         );
-        const expectedBaseUnits = locale === "ar" ? "4 أشرطة" : "4 Strip";
+        const expectedBaseUnits = locale === "ar" ? "٤ أشرطة" : "4 Strip";
         await expect(entryBaseUnits).toHaveText(expectedBaseUnits);
         await expect(itemPanel).toBeVisible();
         // The first three viewports use the narrow band layout below 80rem;
@@ -1215,7 +1286,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           .getByRole("button", { name: new RegExp(unitsInvoice) })
           .click();
         await expect(committedBaseUnits.last()).toHaveText(
-          locale === "ar" ? "4 أشرطة" : "4 Strip",
+          locale === "ar" ? "٤ أشرطة" : "4 Strip",
         );
         for (const viewport of [
           { height: 768, width: 1024 },
@@ -2647,6 +2718,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await expect(
           panel.locator('[data-panel-field="average-cost"]'),
         ).toContainText(locale === "ar" ? "١٢٫٧٢٧" : "12.727");
+        await expect(panel).toHaveCSS("opacity", "1");
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -2772,6 +2844,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await expect(panel.locator('[data-panel-field="balance"]')).toHaveCount(
           0,
         );
+        await expect(panel).toHaveCSS("opacity", "1");
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -2826,6 +2899,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           0,
         );
         await expect(panel).not.toContainText("019c0000");
+        await expect(panel).toHaveCSS("opacity", "1");
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -2903,7 +2977,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         );
         await headerSave.click();
         await expect(page.locator(".purchase-invoice-offer")).toContainText(
-          locale === "en" ? "148 IQD" : "١٤٨",
+          locale === "en" ? "IQD 148.000" : "١٤٨٫٠٠٠",
         );
         await stopProcess(api);
         api = startApi(apiPort, databaseRoles, credentials);
@@ -2920,12 +2994,18 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           .getByRole("button")
           .first()
           .click();
+        await expect(
+          page.getByLabel(
+            locale === "en" ? "Supplier invoice number" : "رقم فاتورة المورد",
+            { exact: true },
+          ),
+        ).toBeFocused();
         await expect(percent).toHaveValue("5");
         await amount.fill("4");
         await expect(percent).toHaveValue("0");
         await headerSave.click();
         await expect(page.locator(".purchase-invoice-offer")).toContainText(
-          locale === "en" ? "152 IQD" : "١٥٢",
+          locale === "en" ? "IQD 152.000" : "١٥٢٫٠٠٠",
         );
         await amount.fill("157");
         await headerSave.click();
@@ -3024,6 +3104,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           exact: true,
         });
         await expect(confirm).toBeInViewport();
+        await expect(confirm).toBeEnabled();
+        await expect(dialog).toHaveCSS("opacity", "1");
+        await expect(confirm).toHaveCSS("opacity", "1");
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -3179,7 +3262,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           if (index === 0) {
             await expect(dialog).toContainText("Al-Nahrain Medical");
             await expect(dialog).toContainText(
-              locale === "en" ? "−320 IQD" : "−٣٢٠ د.ع",
+              locale === "en" ? "IQD -320.000" : "-٣٢٠٫٠٠٠ د.ع",
             );
           } else
             await expect(dialog.getByRole("status")).toContainText(
@@ -3353,9 +3436,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       .fill("100000");
     await review.getByRole("button", { name: "Save and review Delta" }).click();
     const summary = review.locator(".delta-summary-dialog");
-    await expect(summary).toContainText("100 IQD");
-    await expect(summary).toContainText("125 IQD");
-    await expect(summary).toContainText("80 IQD");
+    await expect(summary).toContainText("IQD 100.000");
+    await expect(summary).toContainText("IQD 125.000");
+    await expect(summary).toContainText("IQD 80.000");
     await expect(
       summary.getByRole("button", { name: "Confirm and post Delta" }),
     ).toBeEnabled();
@@ -3498,10 +3581,10 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         const modal = adjustment.getByRole("dialog");
         const totals = modal.locator('[data-adjustment-totals="comparison"]');
         await expect(totals).toContainText(
-          locale === "en" ? "624 IQD" : "٦٢٤ د.ع",
+          locale === "en" ? "IQD 624.000" : "٦٢٤٫٠٠٠ د.ع",
         );
         await expect(totals).toContainText(
-          locale === "en" ? "312 IQD" : "٣١٢ د.ع",
+          locale === "en" ? "IQD 312.000" : "٣١٢٫٠٠٠ د.ع",
         );
         await expect(modal).toContainText(
           locale === "en"
@@ -3728,7 +3811,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           adjustment
             .getByRole("dialog")
             .locator('[data-adjustment-totals="comparison"]'),
-        ).toContainText(locale === "en" ? "0 IQD" : "٠ د.ع");
+        ).toContainText(locale === "en" ? "IQD 0.000" : "٠٫٠٠٠ د.ع");
         await page.keyboard.press("Escape");
         await action("cancel-adjustment").click();
         await action("discard-leave").click();
@@ -4574,7 +4657,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     await expect(
       page.getByText("Row updated and saved durably."),
     ).toBeVisible();
-    await expect(expiryCell).toContainText("2029-06-30");
+    await expect(expiryCell).toContainText("Jun 30, 2029");
 
     await page.getByRole("button", { name: "Post purchase" }).click();
     const receipt = page.locator(".posted-purchase-result");
@@ -5010,7 +5093,9 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
       await expect(sheet).toContainText(number);
       await expect(sheet).toContainText("Al-Nahrain Medical");
       await expect(sheet).toContainText("BROWSER-REVIEW-A");
-      await expect(sheet).toContainText("2026-09-08");
+      await expect(sheet).toContainText(
+        locale === "ar" ? /٨.*٠٩.*٢٠٢٦/u : "Sep 8, 2026",
+      );
       await expect(sheet).toContainText(supplierCost);
       await expect(sheet).toContainText(allowance);
       await expect(sheet).toContainText(afterAllowance);
@@ -5187,29 +5272,30 @@ async function createPurchaseWithOneRow(
   invoiceNumber: string,
   expiryDate: string,
   locale: "ar" | "en" = "en",
+  entry = { quantity: "2", cost: "80000", selling: "120000" },
 ): Promise<void> {
   const labels =
     locale === "ar"
       ? {
-          cost: "الكلفة الأساسية",
+          cost: "الكلفة الأساسية (فلس)",
           expiry: "تاريخ الانتهاء",
           invoice: "رقم فاتورة المورد",
           item: "الصنف / الباركود",
           quantity: "الكمية",
           save: "حفظ المسودة",
           saved: "تم حفظ المسودة بشكل دائم.",
-          sellingPrice: "سعر البيع",
+          sellingPrice: "سعر البيع (فلس)",
           supplier: "اسم المورد",
         }
       : {
-          cost: "Primary cost",
+          cost: "Primary cost (fils)",
           expiry: "Expiry",
           invoice: "Supplier invoice number",
           item: "Item / Barcode",
           quantity: "Quantity",
           save: "Save draft",
           saved: "Draft saved and durable.",
-          sellingPrice: "Selling price",
+          sellingPrice: "Selling price (fils)",
           supplier: "Supplier",
         };
   await page.goto(`${rendererOrigin}#/purchases`);
@@ -5233,11 +5319,11 @@ async function createPurchaseWithOneRow(
   const expiry = page.getByLabel(labels.expiry, { exact: true });
   await item.fill("5012345678949");
   await item.press("Enter");
-  await quantity.fill("2");
+  await quantity.fill(entry.quantity);
   await quantity.press("Enter");
-  await cost.fill("80000");
+  await cost.fill(entry.cost);
   await cost.press("Enter");
-  await sellingPrice.fill("120000");
+  await sellingPrice.fill(entry.selling);
   await sellingPrice.press("Enter");
   if (expiryDate !== "") await expiry.fill(expiryDate);
   await expiry.press("Enter");

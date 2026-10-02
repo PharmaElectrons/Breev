@@ -1,9 +1,12 @@
+import { normalizeNumericInput, stepIntegerInput } from "./numeric-input";
+import { unitDisplayName } from "../../shared/unit-display";
 import type { SaleDraft, SaleDraftLine } from "@breev/contracts/local-rest";
 import { useEffect, useState } from "react";
 
 import {
   formatCurrencyFromFils,
   formatNumber,
+  formatPercentage,
   type Locale,
 } from "./preferences";
 import { saleLineEditValues, type SaleLineEdit } from "./sales-line-drafts";
@@ -120,7 +123,7 @@ function currency(fils: string, locale: Locale): string {
 }
 
 function parseIqd(input: string): string | null {
-  const normalized = input.trim();
+  const normalized = normalizeNumericInput(input.trim(), true);
   if (normalized.length === 0) return null;
   if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(normalized)) return null;
   const [whole = "0", fraction = ""] = normalized.split(".");
@@ -183,7 +186,9 @@ function LineEditor({
   readonly onRemove: () => void;
 }): React.JSX.Element {
   const copy = invoiceCopy[locale];
-  const { quantity, unitId, lineDiscountPercentage: percentage } = edit;
+  const quantity = normalizeNumericInput(edit.quantity);
+  const unitId = edit.unitId;
+  const percentage = normalizeNumericInput(edit.lineDiscountPercentage);
 
   return (
     <form
@@ -219,12 +224,12 @@ function LineEditor({
           >
             {line.eligibleUnits.map((unit) => (
               <option key={unit.unitId} value={unit.unitId}>
-                {unit.unitName}
+                {unitDisplayName(unit.unitName, locale)}
               </option>
             ))}
           </select>
         ) : (
-          <span>{line.unitName}</span>
+          <span>{unitDisplayName(line.unitName, locale)}</span>
         )}
       </label>
       <label>
@@ -234,8 +239,19 @@ function LineEditor({
           inputMode="numeric"
           min="1"
           required
-          type="number"
-          value={quantity}
+          type="text"
+          value={edit.quantity}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+            event.preventDefault();
+            const next = stepIntegerInput(
+              edit.quantity,
+              event.key === "ArrowUp" ? 1 : -1,
+              1n,
+              undefined,
+            );
+            if (next !== null) onEdit({ ...edit, quantity: next });
+          }}
           onChange={(event) =>
             onEdit({ ...edit, quantity: event.target.value })
           }
@@ -249,8 +265,20 @@ function LineEditor({
           max="100"
           min="0"
           required
-          type="number"
-          value={percentage}
+          type="text"
+          value={edit.lineDiscountPercentage}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+            event.preventDefault();
+            const next = stepIntegerInput(
+              edit.lineDiscountPercentage,
+              event.key === "ArrowUp" ? 1 : -1,
+              0n,
+              100n,
+            );
+            if (next !== null)
+              onEdit({ ...edit, lineDiscountPercentage: next });
+          }}
           onChange={(event) =>
             onEdit({ ...edit, lineDiscountPercentage: event.target.value })
           }
@@ -314,8 +342,8 @@ export function SalesInvoiceView({
           {draft.lines.length > 0 && isCollapsed ? (
             <span className="sales-invoice-heading-pill">
               {locale === "ar"
-                ? `${draft.lines.length} مواد · ${currency(draft.totals.totalFils, locale)}`
-                : `${draft.lines.length} items · ${currency(draft.totals.totalFils, locale)}`}
+                ? `${formatNumber(draft.lines.length, locale)} مواد · ${currency(draft.totals.totalFils, locale)}`
+                : `${formatNumber(draft.lines.length, locale)} items · ${currency(draft.totals.totalFils, locale)}`}
             </span>
           ) : null}
         </div>
@@ -435,7 +463,7 @@ export function SalesInvoiceView({
                     </td>
                     <td className="sales-col-unit">
                       <span className="sales-line-unit-badge">
-                        {line.unitName}
+                        {unitDisplayName(line.unitName, locale)}
                       </span>
                     </td>
                     <td
@@ -496,11 +524,10 @@ export function SalesInvoiceView({
                         {hasDiscount ? (
                           <span className="sales-line-discount-tag">
                             -
-                            {formatNumber(
-                              BigInt(line.lineDiscountPercentage),
+                            {formatPercentage(
+                              line.lineDiscountPercentage,
                               locale,
                             )}
-                            %
                           </span>
                         ) : null}
                       </div>

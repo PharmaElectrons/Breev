@@ -1,3 +1,4 @@
+import { formatNumber, type Locale } from "./preferences";
 import type {
   IdentityDenial,
   IdentityRole,
@@ -49,6 +50,7 @@ export function RoleEditor({
   busy,
   copy,
   currentUserRoleId,
+  locale,
   getLastDenial,
   initialCreating = false,
   onChanged,
@@ -58,6 +60,7 @@ export function RoleEditor({
   run,
 }: {
   readonly baseUrl: string;
+  readonly locale: Locale;
   readonly beginStepUp: (
     action: StepUpAction,
     subjectId: string | undefined,
@@ -303,6 +306,7 @@ export function RoleEditor({
               </form>
             ) : null}
             <PermissionGroups
+              locale={locale}
               copy={copy}
               granted={draft}
               groups={groups}
@@ -399,6 +403,7 @@ export function RoleEditor({
                 <input autoFocus maxLength={64} name="name" required />
               </label>
               <PermissionGroups
+                locale={locale}
                 copy={copy}
                 granted={newRoleGrants}
                 groups={groups}
@@ -440,6 +445,7 @@ export function RoleEditor({
 }
 
 function PermissionGroups({
+  locale,
   copy,
   granted,
   groups,
@@ -448,6 +454,7 @@ function PermissionGroups({
   onToggle,
 }: {
   readonly copy: IdentityCopy;
+  readonly locale: Locale;
   readonly granted: readonly string[];
   readonly groups: readonly PermissionGroup[];
   readonly idPrefix: string;
@@ -490,7 +497,8 @@ function PermissionGroups({
               >
                 <span>{copy.permissionGroups[group.id]}</span>
                 <span className="permission-subtab-badge">
-                  {grantedCount}/{group.permissions.length}
+                  {formatNumber(grantedCount, locale)}/
+                  {formatNumber(group.permissions.length, locale)}
                 </span>
               </TabsTrigger>
             );

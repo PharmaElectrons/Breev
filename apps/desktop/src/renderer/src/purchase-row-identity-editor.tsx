@@ -1,3 +1,5 @@
+import { unitDisplayName } from "../../shared/unit-display";
+import { formatNumber } from "./preferences";
 import { useEffect, useRef, useState } from "react";
 import type { Product, PurchaseDraftDetail } from "@breev/contracts/local-rest";
 import { requestProduct, searchProducts } from "./catalog-api";
@@ -133,12 +135,16 @@ export function PurchaseRowIdentityEditor({
           }}
         >
           <option value="inventory-unit">
-            {product?.packaging.inventoryUnitName ?? row.inventoryUnitName}
+            {unitDisplayName(
+              product?.packaging.inventoryUnitName ?? row.inventoryUnitName,
+              locale,
+            )}
           </option>
           {product?.packaging.packageUnits.map((entry) => (
             <option key={entry.name} value={`package:${entry.name}`}>
-              {entry.name} ({entry.baseUnitsPerPackage}{" "}
-              {product.packaging.inventoryUnitName})
+              {unitDisplayName(entry.name, locale)} (
+              {formatNumber(entry.baseUnitsPerPackage, locale)}{" "}
+              {unitDisplayName(product.packaging.inventoryUnitName, locale)})
             </option>
           ))}
         </select>

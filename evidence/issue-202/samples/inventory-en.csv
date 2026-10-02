@@ -1,0 +1,4 @@
+﻿"Pharmacy ID","Exported at (UTC)","Product ID","Item","Status","Balance (inventory units)","Value (fils)","Average unit cost (fils)","Minimum level","Maximum level","Reorder point","Batch count","Supplier count"
+"01990abc-1234-7123-8123-123456789abe","2026-10-01T22:05:06.000Z","01990abc-1234-7123-8123-123456789abd","دواء ""Pack of 10"", sample
+Second line","Active","9007199254740993001","1234567","1234567","","10000","5","0","0"
+"01990abc-1234-7123-8123-123456789abe","2026-10-01T22:05:06.000Z","01990abc-1234-7123-8123-123456789abf","'=1+2","Archived","'-2","","","","","","0","0"

@@ -1,3 +1,4 @@
+import { formatWorkstationClock } from "./preferences";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -477,13 +478,14 @@ function PurchaseClock({
     return () => window.clearInterval(timer);
   }, []);
   return (
-    <time className="purchase-clock" dateTime={now.toISOString()}>
-      <span>
-        {new Intl.DateTimeFormat("en-GB", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(now)}
-      </span>
+    <time
+      className="purchase-clock"
+      dateTime={now.toISOString()}
+      aria-label={
+        locale === "ar" ? "تاريخ ووقت هذا الجهاز" : "Workstation date and time"
+      }
+    >
+      <span>{formatWorkstationClock(now, locale)}</span>
       <span>
         {new Intl.DateTimeFormat(locale === "ar" ? "ar-IQ" : "en-GB", {
           dateStyle: "medium",

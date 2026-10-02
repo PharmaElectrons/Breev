@@ -41,6 +41,10 @@ function createMockProps(
 ) {
   return {
     baseUrl: "http://127.0.0.1:4000",
+    locale:
+      overrides.copy === identityMessages.ar
+        ? ("ar" as const)
+        : ("en" as const),
     beginStepUp: vi.fn(async () => {}),
     busy: false,
     copy: identityMessages.en,
@@ -120,13 +124,13 @@ describe("RoleEditor unit tests", () => {
 
       // Badges
       expect(markup).toContain(
-        '<span class="permission-subtab-badge">2/3</span>',
+        '<span class="permission-subtab-badge">٢/٣</span>',
       );
       expect(markup).toContain(
-        '<span class="permission-subtab-badge">0/1</span>',
+        '<span class="permission-subtab-badge">٠/١</span>',
       );
       expect(markup).toContain(
-        '<span class="permission-subtab-badge">1/2</span>',
+        '<span class="permission-subtab-badge">١/٢</span>',
       );
     });
 

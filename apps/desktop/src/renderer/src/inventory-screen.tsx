@@ -1,3 +1,9 @@
+import { formatDateOnly } from "./preferences";
+import { generatedReferenceDisplay } from "../../shared/generated-reference-display";
+import {
+  useInventoryTimeZone,
+  formatInventoryTimestamp,
+} from "./inventory-time";
 import {
   INVENTORY_COLUMN_FIELDS,
   normalizeIndicDigits,
@@ -44,12 +50,7 @@ import { licensingMessages } from "./licensing-messages";
 import { MoneyAmount } from "./money-amount";
 import { panelUnitLabel } from "./panel-unit-label";
 import { usePreferences } from "./preferences-provider";
-import {
-  formatCurrencyFromFils,
-  formatDate,
-  formatNumber,
-  formatTime,
-} from "./preferences";
+import { formatCurrencyFromFils, formatNumber } from "./preferences";
 import { PostedPurchaseReview } from "./posted-purchase-review";
 import { CountSessionReview } from "./count-session-review";
 import { CountSessionScreen } from "./count-session-screen";
@@ -1114,7 +1115,7 @@ function InventoryCell({
     case "batches":
       return <bdi>{formatNumber(BigInt(item.batches.count), locale)}</bdi>;
     case "expiry":
-      return <bdi>{item.batches.earliestExpiry ?? "—"}</bdi>;
+      return <bdi>{formatDateOnly(item.batches.earliestExpiry, locale)}</bdi>;
     case "levels":
       return <bdi>{levelText(item, locale)}</bdi>;
     case "reorderPoint":
@@ -1365,6 +1366,7 @@ export function InventoryMovements({
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = inventoryMessages[locale];
+  const timeZone = useInventoryTimeZone(baseUrl);
   const [response, setResponse] = useState<Awaited<
     ReturnType<typeof requestInventoryMovements>
   > | null>(null);
@@ -1453,7 +1455,12 @@ export function InventoryMovements({
             </thead>
             <tbody>
               {response.movements.map((movement) => {
-                const referenceLabel = movement.reference.label;
+                const referenceLabel = generatedReferenceDisplay(
+                  movement.reference,
+                  locale,
+                  (n) => formatNumber(n, locale),
+                  (t) => formatInventoryTimestamp(t, locale, timeZone),
+                );
                 const reference = movement.reference.openable ? (
                   <button
                     className="table-link"
@@ -1475,10 +1482,10 @@ export function InventoryMovements({
                       }
                     }}
                   >
-                    {referenceLabel}
+                    <bdi>{referenceLabel}</bdi>
                   </button>
                 ) : (
-                  <span>{referenceLabel}</span>
+                  <bdi>{referenceLabel}</bdi>
                 );
                 return (
                   <tr key={movement.id}>
@@ -1488,12 +1495,22 @@ export function InventoryMovements({
                     <td>{movementKindLabel(movement.kind, copy)}</td>
                     <td>
                       <bdi>
-                        {formatDate(new Date(movement.occurredAt), locale)}
+                        {formatInventoryTimestamp(
+                          movement.occurredAt,
+                          locale,
+                          timeZone,
+                          "date",
+                        )}
                       </bdi>
                     </td>
                     <td>
                       <bdi>
-                        {formatTime(new Date(movement.occurredAt), locale)}
+                        {formatInventoryTimestamp(
+                          movement.occurredAt,
+                          locale,
+                          timeZone,
+                          "time",
+                        )}
                       </bdi>
                     </td>
                     <td>{movement.user.displayName}</td>

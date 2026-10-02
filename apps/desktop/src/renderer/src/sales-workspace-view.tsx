@@ -1,3 +1,5 @@
+import { formatDateOnly } from "./preferences";
+import { unitDisplayName } from "../../shared/unit-display";
 import type {
   SaleDraft,
   SaleDraftLine,
@@ -155,7 +157,7 @@ export function SalesDraftContextPanel({
           <dl>
             <div>
               <dt>{itemCopy.unit}</dt>
-              <dd>{selectedLine.unitName}</dd>
+              <dd>{unitDisplayName(selectedLine.unitName, locale)}</dd>
             </div>
             <div>
               <dt>{itemCopy.capturedPrice}</dt>
@@ -187,9 +189,10 @@ export function SalesDraftContextPanel({
                     {itemContext.packageUnits
                       .map(
                         (unit) =>
-                          `${unit.name} = ${unit.baseUnitsPerPackage} ${itemContext.inventoryUnitName}`,
+                          `${unitDisplayName(unit.name, locale)} = ${formatNumber(unit.baseUnitsPerPackage, locale)} ${unitDisplayName(itemContext.inventoryUnitName, locale)}`,
                       )
-                      .join(" · ") || itemContext.inventoryUnitName}
+                      .join(" · ") ||
+                      unitDisplayName(itemContext.inventoryUnitName, locale)}
                   </dd>
                 </div>
                 <div>
@@ -209,7 +212,7 @@ export function SalesDraftContextPanel({
                   <dd>
                     {itemContext.inventory.onHandBaseUnits === null
                       ? itemCopy.noStockRecord
-                      : `${formatNumber(BigInt(itemContext.inventory.onHandBaseUnits), locale)} ${itemContext.inventoryUnitName}`}
+                      : `${formatNumber(BigInt(itemContext.inventory.onHandBaseUnits), locale)} ${unitDisplayName(itemContext.inventoryUnitName, locale)}`}
                   </dd>
                 </div>
                 <div>
@@ -219,7 +222,7 @@ export function SalesDraftContextPanel({
                       ? itemCopy.maximumNotSet
                       : itemContext.inventory.estimatedSurplusBaseUnits === null
                         ? itemCopy.noStockRecord
-                        : `${formatNumber(BigInt(itemContext.inventory.estimatedSurplusBaseUnits), locale)} ${itemContext.inventoryUnitName}`}
+                        : `${formatNumber(BigInt(itemContext.inventory.estimatedSurplusBaseUnits), locale)} ${unitDisplayName(itemContext.inventoryUnitName, locale)}`}
                   </dd>
                 </div>
               </>
@@ -241,14 +244,14 @@ export function SalesDraftContextPanel({
                     </strong>
                     <span>
                       {formatNumber(BigInt(batch.balanceBaseUnits), locale)}{" "}
-                      {itemContext.inventoryUnitName}
+                      {unitDisplayName(itemContext.inventoryUnitName, locale)}
                     </span>
                     <span>{itemCopy.batchStatus[batch.status]}</span>
                     <span>
                       {itemCopy.expiry}:{" "}
                       {batch.effectiveExpiryDate === null
                         ? itemCopy.noExpiry
-                        : batch.effectiveExpiryDate}
+                        : formatDateOnly(batch.effectiveExpiryDate, locale)}
                       {batch.daysRemaining === null
                         ? null
                         : ` · ${

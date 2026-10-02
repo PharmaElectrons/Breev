@@ -1,3 +1,4 @@
+import { formatDateOnly } from "./preferences";
 import { useEffect, useRef, useState } from "react";
 import type {
   InventoryBatch,
@@ -196,19 +197,31 @@ export function PurchaseItemPanel({
           (value) => formatNumber(value, locale),
           new Date(),
         );
-  const shownLargeCount = inventoryView?.largeCount ?? largeCount;
+  const shownLargeCount =
+    inventoryView?.largeCount ?? formatNumber(largeCount, locale);
   const shownLargeLabel = inventoryView?.largeLabel ?? largeLabel;
   const shownIntermediateCount =
     inventoryView === null
-      ? intermediateCount
+      ? intermediateCount === null
+        ? null
+        : formatNumber(intermediateCount, locale)
       : inventoryView.intermediateCount;
   const shownIntermediateLabel =
     inventoryView?.intermediateLabel ?? intermediateLabel;
-  const shownRemainder = inventoryView?.remainder ?? remainderUnits;
-  const shownTotal = inventoryView?.total ?? totalUnits.toLocaleString();
+  const shownRemainder =
+    inventoryView?.remainder ?? formatNumber(remainderUnits, locale);
+  const shownTotal = inventoryView?.total ?? formatNumber(totalUnits, locale);
   const shownSmallLabel = inventoryView?.inventoryUnitName ?? smallLabel;
-  const shownMin = inventoryView ? inventoryView.minimumLevel : minStock;
-  const shownMax = inventoryView ? inventoryView.maximumLevel : maxStock;
+  const shownMin = inventoryView
+    ? inventoryView.minimumLevel
+    : minStock === null
+      ? null
+      : formatNumber(minStock, locale);
+  const shownMax = inventoryView
+    ? inventoryView.maximumLevel
+    : maxStock === null
+      ? null
+      : formatNumber(maxStock, locale);
   const shownLevelUnit = panelUnitLabel(
     inventoryView?.levelUnitName ?? largeLabel,
     1n,
@@ -465,7 +478,7 @@ export function PurchaseItemPanel({
                 {shownExpiryDate !== null && shownExpiryDays !== null ? (
                   <div className="purchase-expiry-details">
                     <span className="font-mono text-[11px] text-foreground/80">
-                      {shownExpiryDate}
+                      {formatDateOnly(shownExpiryDate, locale)}
                     </span>
                     <span
                       className={`purchase-expiry-badge ${
@@ -477,8 +490,8 @@ export function PurchaseItemPanel({
                       }`}
                     >
                       {shownExpiryDays < 0
-                        ? `${copy.expiredAgo} ${-shownExpiryDays} ${copy.dayUnit}`
-                        : `${shownExpiryDays} ${copy.daysRemaining}`}
+                        ? `${copy.expiredAgo} ${formatNumber(-shownExpiryDays, locale)} ${copy.dayUnit}`
+                        : `${formatNumber(shownExpiryDays, locale)} ${copy.daysRemaining}`}
                     </span>
                   </div>
                 ) : (
@@ -511,7 +524,7 @@ export function PurchaseItemPanel({
               {selection.fields?.includes("packaging") ? (
                 <div>
                   <dt>{copy.packaging}</dt>
-                  <dd>{packagingText(product)}</dd>
+                  <dd>{packagingText(product, locale)}</dd>
                 </div>
               ) : null}
               {selection.fields?.includes("wholesale-price") ? (
@@ -554,12 +567,16 @@ function packagingEquation(
   const ratio = BigInt(
     Math.max(0, Math.trunc(Number.isFinite(unitsPerLarge) ? unitsPerLarge : 0)),
   );
-  return `1 ${panelUnitLabel(largeLabel, 1n, locale)} = ${unitsPerLarge} ${panelUnitLabel(smallLabel, ratio, locale)}`;
+  return `${formatNumber(1, locale)} ${panelUnitLabel(largeLabel, 1n, locale)} = ${formatNumber(unitsPerLarge, locale)} ${panelUnitLabel(smallLabel, ratio, locale)}`;
 }
 
-function packagingText(product: Product): string {
+function packagingText(product: Product, locale: Locale): string {
   const packages = product.packaging.packageUnits.map(
-    (unit) => `${unit.name} × ${unit.baseUnitsPerPackage}`,
+    (unit) =>
+      `${panelUnitLabel(unit.name, 1n, locale)} × ${formatNumber(unit.baseUnitsPerPackage, locale)}`,
   );
-  return [product.packaging.inventoryUnitName, ...packages].join(" · ");
+  return [
+    panelUnitLabel(product.packaging.inventoryUnitName, 1n, locale),
+    ...packages,
+  ].join(" · ");
 }

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  integerFromFormatted,
-  localizeUnitPhrase,
-  panelUnitLabel,
-} from "./panel-unit-label";
+import { integerFromFormatted, panelUnitLabel } from "./panel-unit-label";
 
 describe("panel unit labels", () => {
   it("keeps stored English names in English", () => {
@@ -29,7 +25,7 @@ describe("panel unit labels", () => {
   });
 
   it("leaves unit names that have no Arabic presentation form unchanged", () => {
-    expect(panelUnitLabel("Box", 3n, "ar")).toBe("Box");
+    expect(panelUnitLabel("Box", 3n, "ar")).toBe("علبة");
     expect(panelUnitLabel("—", 0n, "ar")).toBe("—");
   });
 
@@ -37,19 +33,6 @@ describe("panel unit labels", () => {
     expect(panelUnitLabel("علبة", 3n, "ar")).toBe("علب");
     expect(panelUnitLabel("شريط", 20n, "ar")).toBe("شريط");
     expect(panelUnitLabel("شريط", 4n, "ar")).toBe("أشرطة");
-  });
-
-  it("localizes unit words inside a stored count caption", () => {
-    expect(localizeUnitPhrase(" Pack + ", 2n, "ar")).toBe(" علبتان + ");
-    expect(localizeUnitPhrase(" Strip", 1n, "ar")).toBe(" شريط");
-    expect(localizeUnitPhrase(" Pack", 3n, "ar")).toBe(" علب");
-    expect(localizeUnitPhrase(" Strip", 9n, "ar")).toBe(" أشرطة");
-    expect(localizeUnitPhrase(" Strip", 20n, "ar")).toBe(" شريط");
-    expect(localizeUnitPhrase(" Strip", 24n, "ar")).toBe(" شريط");
-    expect(localizeUnitPhrase("2 Pack + 1 Strip", 1n, "en")).toBe(
-      "2 Pack + 1 Strip",
-    );
-    expect(localizeUnitPhrase(" Box", 3n, "ar")).toBe(" Box");
   });
 
   it("reads grouped and Arabic-Indic numerals back to an integer", () => {

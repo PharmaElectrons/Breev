@@ -97,9 +97,9 @@ describe("Adjustment actions and authoritative display", () => {
       const markup = render(locale);
       expect(markup).toContain("INV-9921");
       expect(markup).toContain("Al-Nahrain Medical");
-      expect(markup).toContain(locale === "en" ? "320 IQD" : "٣٢٠ د.ع");
-      expect(markup).toContain(locale === "en" ? "312 IQD" : "٣١٢ د.ع");
-      expect(markup).toContain(locale === "en" ? "8 IQD" : "٨ د.ع");
+      expect(markup).toContain(locale === "en" ? "IQD 320.000" : "٣٢٠٫٠٠٠ د.ع");
+      expect(markup).toContain(locale === "en" ? "IQD 312.000" : "٣١٢٫٠٠٠ د.ع");
+      expect(markup).toContain(locale === "en" ? "IQD 8.000" : "٨٫٠٠٠ د.ع");
       expect(markup).toContain(locale === "en" ? "Unavailable" : "غير متاح");
       for (const action of ["previous", "next", "search", "back"])
         expect(markup).toContain('data-adjustment-action="' + action + '"');
@@ -136,8 +136,8 @@ describe("Adjustment actions and authoritative display", () => {
         costAfterDiscountFils: null,
       })),
     });
-    expect(markup).not.toContain("320 IQD");
-    expect(markup).not.toContain("0 IQD");
+    expect(markup).not.toContain("IQD 320.000");
+    expect(markup).not.toContain("IQD 0.000");
     expect(markup).toContain("Unavailable");
   });
   it.each(["en", "ar"] as const)(

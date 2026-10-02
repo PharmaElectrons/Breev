@@ -418,7 +418,7 @@ test.describe.serial("durable count sessions", () => {
     });
     await expect(movement).toBeVisible();
     const reference = movement.getByRole("button");
-    await expect(reference).toHaveText(/C\d+\/\d+ · line 1/u);
+    await expect(reference).toHaveText(/\u2068C\d+\/\d+\u2069 · line 1/u);
     await reference.click();
     const review = page.locator(".count-session-review-dialog");
     await expect(review).toBeVisible();
@@ -427,6 +427,11 @@ test.describe.serial("durable count sessions", () => {
     await close.click();
     await expect(review).toBeHidden();
     await expect(reference).toBeFocused();
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+    await page.getByRole("button", { name: "Switch to Arabic" }).click();
+    await expect(
+      page.getByRole("button", { name: /C\d+\/\d+.*السطر ١/u }),
+    ).toHaveText(/\u2068C\d+\/\d+\u2069 · السطر ١/u);
   });
 
   test("reports stale balances and refuses a blocked-stock variance", async ({

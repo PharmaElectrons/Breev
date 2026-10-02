@@ -217,8 +217,15 @@ describe("desktop preload API", () => {
   });
 
   it("saves inventory export through a validated pathless request with optional format", async () => {
+    let resumeSave: (() => void) | undefined;
+    let holdSave = false;
     const invoke = vi.fn(async (channel: string) => {
       if (channel === "breev:desktop:begin-inventory-export") {
+        if (holdSave) {
+          await new Promise<void>((resolve) => {
+            resumeSave = resolve;
+          });
+        }
         return { status: "opened" };
       }
       if (channel === "breev:desktop:append-inventory-export") {
@@ -266,6 +273,34 @@ describe("desktop preload API", () => {
         format: "csv",
         locale: "ar",
       },
+    );
+
+    // A caller's language change while Save is open cannot alter this export.
+    invoke.mockClear();
+    holdSave = true;
+    const pendingRequest = {
+      bundle,
+      format: "csv" as const,
+      locale: "ar" as "ar" | "en",
+    };
+    const pendingSave = api.saveInventoryExport(pendingRequest);
+    pendingRequest.locale = "en";
+    expect(resumeSave).toBeDefined();
+    resumeSave?.();
+    await expect(pendingSave).resolves.toEqual({ status: "saved" });
+    expect(invoke).toHaveBeenCalledWith(
+      "breev:desktop:append-inventory-export",
+      expect.objectContaining({
+        chunk: expect.stringContaining("معرّف الصيدلية"),
+      }),
+    );
+    holdSave = false;
+
+    invoke.mockClear();
+    await api.saveInventoryExport({ bundle, locale: "ar" });
+    expect(invoke).toHaveBeenCalledWith(
+      "breev:desktop:append-inventory-export",
+      { chunk: JSON.stringify(bundle, null, 2) + "\n" },
     );
 
     await expect(

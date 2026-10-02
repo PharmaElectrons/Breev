@@ -1,29 +1,29 @@
-import { countEntryLabelParts } from "./count-entry";
-import { localizeUnitPhrase, panelUnitLabel } from "./panel-unit-label";
+import type { CountEntry } from "@breev/contracts/local-rest";
+import { panelUnitLabel } from "./panel-unit-label";
 import { formatNumber } from "./preferences";
 
 export function CountEntryLabel({
-  label,
+  entries,
+  inventoryUnitName,
   locale,
 }: {
-  readonly label: string;
+  readonly entries: readonly CountEntry[];
+  readonly inventoryUnitName: string;
   readonly locale: "ar" | "en";
 }): React.JSX.Element {
-  let count = 1n;
   return (
     <>
-      {countEntryLabelParts(label).map((part, index) => {
-        if (typeof part === "bigint") {
-          count = part;
-          return (
-            <bdi key={`${part.toString()}-${index}`}>
-              {formatNumber(part, locale)}
-            </bdi>
-          );
-        }
+      {entries.map((entry, index) => {
+        const count = BigInt(entry.count);
+        const name =
+          entry.unit.kind === "inventory-unit"
+            ? inventoryUnitName
+            : entry.unit.packageUnitName;
         return (
-          <span key={`${part}-${index}`}>
-            {localizeUnitPhrase(part, count, locale)}
+          <span key={index}>
+            {index > 0 ? " + " : ""}
+            <bdi>{formatNumber(count, locale)}</bdi>{" "}
+            <bdi>{panelUnitLabel(name, count, locale)}</bdi>
           </span>
         );
       })}

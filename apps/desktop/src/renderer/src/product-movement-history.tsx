@@ -1,3 +1,9 @@
+import { generatedReferenceDisplay } from "../../shared/generated-reference-display";
+import {
+  useInventoryTimeZone,
+  formatInventoryTimestamp,
+} from "./inventory-time";
+import { formatNumber, formatCurrencyFromFils } from "./preferences";
 import type { InventoryMovement } from "@breev/contracts/local-rest";
 import { useState } from "react";
 import { History } from "lucide-react";
@@ -27,6 +33,7 @@ export function ProductMovementHistory({
   >("idle");
   const [movements, setMovements] = useState<readonly InventoryMovement[]>([]);
 
+  const timeZone = useInventoryTimeZone(baseUrl, status !== "idle");
   const canReview =
     identityState?.state === "authenticated" &&
     identityState.allowedPermissions.includes("inventory.review");
@@ -51,42 +58,15 @@ export function ProductMovementHistory({
     }
   };
 
-  const formatDate = (value: string): string => {
-    const date = new Date(value);
-    return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
-  };
-  const formatTime = (value: string): string =>
-    new Intl.DateTimeFormat(locale, {
-      hour: "numeric",
-      minute: "2-digit",
-      numberingSystem: "latn",
-      second: "2-digit",
-    }).format(new Date(value));
-  const formatQuantity = (value: string): string => {
-    const quantity = BigInt(value);
-    const amount = new Intl.NumberFormat(locale, {
-      numberingSystem: "latn",
-    }).format(quantity < 0n ? -quantity : quantity);
-    if (quantity === 0n) return amount;
-    const sign = quantity < 0n ? "-" : "+";
-    return locale === "ar" ? `${amount}${sign}` : `${sign}${amount}`;
-  };
-  const formatValue = (value: string): string => {
-    const fils = BigInt(value);
-    const absoluteFils = fils < 0n ? -fils : fils;
-    const whole = absoluteFils / 1000n;
-    const fraction = absoluteFils % 1000n;
-    const formattedWhole = new Intl.NumberFormat(locale, {
-      numberingSystem: "latn",
-    }).format(whole);
-    const decimal =
-      fraction === 0n
-        ? ""
-        : `.${fraction.toString().padStart(3, "0").replace(/0+$/u, "")}`;
-    const sign = fils < 0n ? "-" : "";
-    const unit = locale === "ar" ? "د.ع" : "IQD";
-    return `${sign}${formattedWhole}${decimal} ${unit}`;
-  };
+  const formatDate = (value: string) =>
+    formatInventoryTimestamp(value, locale, timeZone, "date");
+  const formatTime = (value: string) =>
+    formatInventoryTimestamp(value, locale, timeZone, "time");
+  const formatQuantity = (value: string) =>
+    BigInt(value) > 0n
+      ? "+" + formatNumber(value, locale)
+      : formatNumber(value, locale);
+  const formatValue = (value: string) => formatCurrencyFromFils(value, locale);
   const kindLabel = (kind: InventoryMovement["kind"]): string => {
     switch (kind) {
       case "purchase-adjustment":
@@ -170,7 +150,7 @@ export function ProductMovementHistory({
                     return (
                       <tr key={movement.id}>
                         <td>
-                          <bdi dir="ltr">{formatDate(movement.occurredAt)}</bdi>
+                          <bdi>{formatDate(movement.occurredAt)}</bdi>
                         </td>
                         <td>
                           <bdi dir={locale === "ar" ? "rtl" : "ltr"}>
@@ -184,10 +164,24 @@ export function ProductMovementHistory({
                               className="catalog-movement-reference"
                               href={referenceHref}
                             >
-                              {movement.reference.label}
+                              {generatedReferenceDisplay(
+                                movement.reference,
+                                locale,
+                                (n) => formatNumber(n, locale),
+                                (t) =>
+                                  formatInventoryTimestamp(t, locale, timeZone),
+                              )}
                             </a>
                           ) : (
-                            <span>{movement.reference.label}</span>
+                            <span>
+                              {generatedReferenceDisplay(
+                                movement.reference,
+                                locale,
+                                (n) => formatNumber(n, locale),
+                                (t) =>
+                                  formatInventoryTimestamp(t, locale, timeZone),
+                              )}
+                            </span>
                           )}
                         </td>
                         <td>{movement.user.displayName}</td>

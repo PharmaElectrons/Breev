@@ -101,7 +101,7 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
       if (began.status !== "opened") return began;
       const serialized =
         request.format === "csv"
-          ? serializeInventoryCsv(request.bundle)
+          ? serializeInventoryCsv(request.bundle, request.locale)
           : JSON.stringify(request.bundle, null, 2) + "\n";
       if (
         Buffer.byteLength(serialized, "utf8") > MAXIMUM_INVENTORY_EXPORT_BYTES

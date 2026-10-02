@@ -1,3 +1,11 @@
+import {
+  catalogError,
+  catalogErrorText,
+  type CatalogError,
+} from "./catalog-error";
+import { unitDisplayName } from "../../shared/unit-display";
+import { formatPercentage, formatNumber } from "./preferences";
+import { formatCurrencyFromFils } from "./preferences";
 import type {
   InventoryCapableUnit,
   Product,
@@ -8,7 +16,6 @@ import { useId, useRef, useState } from "react";
 import {
   archiveProduct,
   addProductBarcode,
-  CatalogApiDenied,
   mergeProduct,
   newIdempotencyKey,
   requestBarcodePrint,
@@ -21,51 +28,15 @@ import { ProductSupplierLinks } from "./product-supplier-links";
 import { useIdentityState } from "./identity-state-provider";
 import { usePreferences } from "./preferences-provider";
 
-function formatBigIntWithCommas(n: bigint): string {
-  const s = n.toString();
-  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
-
-/**
- * Format integer fils into human IQD display without binary floating-point.
- * 1 IQD = 1,000 fils.
- */
-export function formatFilsToIqd(
-  filsStr: string | null | undefined,
-  locale: "ar" | "en" = "en",
-): string {
-  if (!filsStr || !/^(?:0|[1-9]\d*)$/.test(filsStr)) {
-    return "—";
-  }
-  const fils = BigInt(filsStr);
-  const whole = fils / 1000n;
-  const fraction = fils % 1000n;
-  const wholeFormatted = formatBigIntWithCommas(whole);
-  const unit = locale === "ar" ? "د.ع" : "IQD";
-  const amount =
-    fraction === 0n
-      ? wholeFormatted
-      : `${wholeFormatted}.${fraction.toString().padStart(3, "0").replace(/0+$/, "")}`;
-
-  return `${localizeAmount(amount, locale)} ${unit}`;
-}
-
-function localizeAmount(amount: string, locale: "ar" | "en"): string {
-  if (locale === "en") return amount;
-  return amount
-    .replace(/[0-9]/g, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)] ?? digit)
-    .replaceAll(",", "٬")
-    .replaceAll(".", "٫");
-}
-
 export function formatDefaultUnit(
   unit: InventoryCapableUnit,
   inventoryUnitName: string,
+  locale: "ar" | "en" = "en",
 ): string {
   if (unit.kind === "inventory-unit") {
-    return inventoryUnitName;
+    return unitDisplayName(inventoryUnitName, locale);
   }
-  return unit.packageUnitName;
+  return unitDisplayName(unit.packageUnitName, locale);
 }
 
 export interface ProductRecordProps {
@@ -96,8 +67,16 @@ export function ProductRecord({
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [survivorProductId, setSurvivorProductId] = useState("");
-  const [mergeError, setMergeError] = useState<string | null>(null);
-  const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [mergeErrorState, setMergeError] = useState<CatalogError | null>(null);
+  const mergeError =
+    mergeErrorState === null ? null : catalogErrorText(mergeErrorState, locale);
+  const [errorBannerState, setErrorBanner] = useState<CatalogError | null>(
+    null,
+  );
+  const errorBanner =
+    errorBannerState === null
+      ? null
+      : catalogErrorText(errorBannerState, locale);
   const [busy, setBusy] = useState(false);
   const [newBarcode, setNewBarcode] = useState("");
   const [newBarcodeKind, setNewBarcodeKind] =
@@ -112,13 +91,6 @@ export function ProductRecord({
     identityState?.state === "authenticated" &&
     identityState.allowedPermissions.includes("catalog.item.manage");
   const canModify = canManageCatalog && !isArchived && !isMerged;
-
-  const barcodeError = (failure: unknown): string =>
-    failure instanceof CatalogApiDenied
-      ? copy.denials[failure.denial.code]
-      : failure instanceof Error
-        ? failure.message
-        : String(failure);
 
   const handleAddBarcode = async (): Promise<void> => {
     const value = newBarcode.trim();
@@ -137,7 +109,7 @@ export function ProductRecord({
       setNewBarcode("");
       onProductChanged?.(updated);
     } catch (failure) {
-      setErrorBanner(barcodeError(failure));
+      setErrorBanner(catalogError(failure, "barcode"));
       requestAnimationFrame(() => barcodeInputRef.current?.focus());
     } finally {
       setBusy(false);
@@ -155,7 +127,7 @@ export function ProductRecord({
       });
       onProductChanged?.(response.product);
     } catch (failure) {
-      setErrorBanner(barcodeError(failure));
+      setErrorBanner(catalogError(failure, "barcode"));
     } finally {
       setBusy(false);
     }
@@ -178,7 +150,7 @@ export function ProductRecord({
       const result = await window.breevDesktop.printBarcodeLabel(handoff);
       if (result.status === "failed") throw new Error(result.message);
     } catch (failure) {
-      setErrorBanner(barcodeError(failure));
+      setErrorBanner(catalogError(failure, "print"));
     } finally {
       setBusy(false);
     }
@@ -195,14 +167,7 @@ export function ProductRecord({
       setShowArchiveDialog(false);
       onArchiveSuccess?.(updated);
     } catch (error) {
-      if (error instanceof CatalogApiDenied) {
-        setErrorBanner(
-          copy.denials[error.denial.code] ??
-            `Error (${error.denial.code}): ${error.message}`,
-        );
-      } else if (error instanceof Error) {
-        setErrorBanner(error.message);
-      }
+      setErrorBanner(catalogError(error, "archive"));
       setShowArchiveDialog(false);
     } finally {
       setBusy(false);
@@ -212,7 +177,7 @@ export function ProductRecord({
   const handleMergeConfirm = async (): Promise<void> => {
     const trimmedSurvivor = survivorProductId.trim();
     if (!trimmedSurvivor) {
-      setMergeError(copy.fieldErrors.required);
+      setMergeError({ kind: "required", action: "merge" });
       return;
     }
 
@@ -229,14 +194,7 @@ export function ProductRecord({
       setSurvivorProductId("");
       onMergeSuccess?.(updated);
     } catch (error) {
-      if (error instanceof CatalogApiDenied) {
-        setMergeError(
-          copy.denials[error.denial.code] ??
-            `Error (${error.denial.code}): ${error.message}`,
-        );
-      } else if (error instanceof Error) {
-        setMergeError(error.message);
-      }
+      setMergeError(catalogError(error, "merge"));
     } finally {
       setBusy(false);
     }
@@ -254,11 +212,11 @@ export function ProductRecord({
             !
           </span>
           <div>
-            <strong>{copy.denials["product-not-found"]}</strong>
+            <strong>{copy.errors.title}</strong>
             <p>{errorBanner}</p>
           </div>
           <button
-            aria-label="Dismiss error"
+            aria-label={copy.errors.dismiss}
             className="dismiss-button"
             type="button"
             onClick={() => setErrorBanner(null)}
@@ -357,7 +315,9 @@ export function ProductRecord({
                   {copy.stockLevels.minimum}
                 </dt>
                 <dd className="font-semibold">
-                  {product.stockLevels.minimumLevel ?? "—"}
+                  {product.stockLevels.minimumLevel === null
+                    ? "—"
+                    : formatNumber(product.stockLevels.minimumLevel, locale)}
                 </dd>
               </div>
               <div>
@@ -365,7 +325,9 @@ export function ProductRecord({
                   {copy.stockLevels.maximum}
                 </dt>
                 <dd className="font-semibold">
-                  {product.stockLevels.maximumLevel ?? "—"}
+                  {product.stockLevels.maximumLevel === null
+                    ? "—"
+                    : formatNumber(product.stockLevels.maximumLevel, locale)}
                 </dd>
               </div>
               <div>
@@ -373,7 +335,9 @@ export function ProductRecord({
                   {copy.stockLevels.reorderPoint}
                 </dt>
                 <dd className="font-semibold">
-                  {product.stockLevels.reorderPoint ?? "—"}
+                  {product.stockLevels.reorderPoint === null
+                    ? "—"
+                    : formatNumber(product.stockLevels.reorderPoint, locale)}
                 </dd>
               </div>
             </dl>
@@ -506,7 +470,7 @@ export function ProductRecord({
                 className="font-bold text-base mt-0.5"
                 data-testid="product-inventory-unit"
               >
-                {product.packaging.inventoryUnitName}
+                {unitDisplayName(product.packaging.inventoryUnitName, locale)}
               </dd>
             </div>
 
@@ -523,14 +487,19 @@ export function ProductRecord({
                   <ul className="flex flex-wrap gap-2 list-none p-0 m-0">
                     {product.packaging.packageUnits.map((pkg) => (
                       <li
-                        key={pkg.name}
+                        key={unitDisplayName(pkg.name, locale)}
                         className="inline-flex items-center gap-2 px-2.5 py-1 rounded border border-[color:var(--control-border)] font-mono text-xs"
                       >
-                        <span className="font-semibold">{pkg.name}</span>
+                        <span className="font-semibold">
+                          {unitDisplayName(pkg.name, locale)}
+                        </span>
                         <span className="text-muted-foreground">=</span>
                         <span>
-                          {pkg.baseUnitsPerPackage}{" "}
-                          {product.packaging.inventoryUnitName}
+                          {formatNumber(pkg.baseUnitsPerPackage, locale)}{" "}
+                          {unitDisplayName(
+                            product.packaging.inventoryUnitName,
+                            locale,
+                          )}
                         </span>
                       </li>
                     ))}
@@ -575,6 +544,7 @@ export function ProductRecord({
                       {formatDefaultUnit(
                         product.packaging.defaultUnits.count,
                         product.packaging.inventoryUnitName,
+                        locale,
                       )}
                     </dd>
                   </div>
@@ -586,6 +556,7 @@ export function ProductRecord({
                       {formatDefaultUnit(
                         product.packaging.defaultUnits.purchase,
                         product.packaging.inventoryUnitName,
+                        locale,
                       )}
                     </dd>
                   </div>
@@ -597,6 +568,7 @@ export function ProductRecord({
                       {formatDefaultUnit(
                         product.packaging.defaultUnits.sale,
                         product.packaging.inventoryUnitName,
+                        locale,
                       )}
                     </dd>
                   </div>
@@ -640,7 +612,10 @@ export function ProductRecord({
                 className="font-bold text-base text-primary mt-0.5"
                 data-testid="product-retail-price"
               >
-                {formatFilsToIqd(product.pricing.retailPriceFils, locale)}
+                {formatCurrencyFromFils(
+                  product.pricing.retailPriceFils,
+                  locale,
+                )}
               </dd>
             </div>
 
@@ -653,7 +628,10 @@ export function ProductRecord({
                 data-testid="product-wholesale-price"
               >
                 {product.pricing.wholesalePriceFils
-                  ? formatFilsToIqd(product.pricing.wholesalePriceFils, locale)
+                  ? formatCurrencyFromFils(
+                      product.pricing.wholesalePriceFils,
+                      locale,
+                    )
                   : "—"}
               </dd>
             </div>
@@ -668,7 +646,10 @@ export function ProductRecord({
                     className="font-semibold mt-0.5"
                     data-testid="product-margin-percentage"
                   >
-                    {product.pricing.marginPercentage}%
+                    {formatPercentage(
+                      product.pricing.marginPercentage!,
+                      locale,
+                    )}
                   </dd>
                 </div>
 
@@ -705,7 +686,7 @@ export function ProductRecord({
             id="supporting-fields-heading"
             className="text-base font-bold border-b border-[color:var(--border)] pb-2"
           >
-            {copy.fields.category} &amp; {copy.barcodes.label}
+            {copy.record.classificationBarcodes}
           </h3>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
@@ -846,7 +827,9 @@ export function ProductRecord({
                 {copy.instructions.usesPerDay}
               </dt>
               <dd className="font-semibold">
-                {product.instructions.usesPerDay ?? "—"}
+                {product.instructions.usesPerDay === null
+                  ? "—"
+                  : formatNumber(product.instructions.usesPerDay, locale)}
               </dd>
             </div>
             <div>
@@ -854,7 +837,9 @@ export function ProductRecord({
                 {copy.instructions.usesPerWeek}
               </dt>
               <dd className="font-semibold">
-                {product.instructions.usesPerWeek ?? "—"}
+                {product.instructions.usesPerWeek === null
+                  ? "—"
+                  : formatNumber(product.instructions.usesPerWeek, locale)}
               </dd>
             </div>
             <div>
@@ -862,7 +847,9 @@ export function ProductRecord({
                 {copy.instructions.usesPerMonth}
               </dt>
               <dd className="font-semibold">
-                {product.instructions.usesPerMonth ?? "—"}
+                {product.instructions.usesPerMonth === null
+                  ? "—"
+                  : formatNumber(product.instructions.usesPerMonth, locale)}
               </dd>
             </div>
             <div>
@@ -949,7 +936,10 @@ export function ProductRecord({
         <ProductInventoryBatches
           baseUrl={baseUrl}
           productId={product.id}
-          unitName={product.packaging.inventoryUnitName}
+          unitName={unitDisplayName(
+            product.packaging.inventoryUnitName,
+            locale,
+          )}
         />
         <ProductMovementHistory baseUrl={baseUrl} productId={product.id} />
 
@@ -1066,7 +1056,11 @@ export function ProductRecord({
             </p>
 
             {mergeError ? (
-              <p className="field-error mb-3" role="alert">
+              <p
+                id="merge-input-error"
+                className="field-error mb-3"
+                role="alert"
+              >
                 {mergeError}
               </p>
             ) : null}

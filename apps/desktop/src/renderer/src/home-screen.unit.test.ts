@@ -570,7 +570,7 @@ describe("HomeScreen", () => {
       expect(markup).toContain("Warehouse Retail Value");
       expect(markup).toContain("Total Debts");
       expect(markup).toContain("Near Expiry Ratio");
-      expect(markup).toContain("0 IQD");
+      expect(markup).toContain("IQD 0.000");
       expect(markup).toContain("0.0%");
     });
 
@@ -589,8 +589,8 @@ describe("HomeScreen", () => {
       expect(markup).toContain("قيمة المخزن - سعر البيع");
       expect(markup).toContain("اجمالي الديون");
       expect(markup).toContain("نسبة قريب الانتهاء");
-      expect(markup).toContain("0 د.ع");
-      expect(markup).toContain("0.0%");
+      expect(markup).toContain("٠٫٠٠٠ د.ع");
+      expect(markup).toContain("٠٫٠٪");
     });
   });
 
@@ -655,13 +655,13 @@ describe("HomeScreen", () => {
       const markup = renderHomeScreen();
       expect(markup).toContain("تحليل الأداء — الأكثر مبيعاً والأكثر ربحاً");
       expect(markup).toContain('placeholder="بحث عن مادة بالاسم أو الرمز..."');
-      expect(markup).toContain('aria-label="Table Filters"');
+      expect(markup).toContain('aria-label="مرشحات الجدول"');
       expect(markup).toContain("الأكثر مبيعاً");
       expect(markup).toContain("الأعلى ربحاً");
       expect(markup).toContain("نواقص المخزون");
       expect(markup).toContain("قريب الانتهاء");
       expect(markup).toContain("مقترح الفائض");
-      expect(markup).toContain("0 مادة");
+      expect(markup).toContain("٠ مادة");
       expect(markup).toContain("المادة");
       expect(markup).toContain("كمية المباع");
       expect(markup).toContain("الربح");

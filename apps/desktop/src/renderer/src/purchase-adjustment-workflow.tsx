@@ -1,3 +1,7 @@
+import { unitDisplayName } from "../../shared/unit-display";
+import { normalizeNumericInput } from "./numeric-input";
+import { formatDateOnly, formatNumber } from "./preferences";
+import { formatPercentage } from "./preferences";
 /*!
  * FilePen SVG paths from lucide-react 0.575.0, matching the prototype icon.
  * ISC License
@@ -57,7 +61,7 @@ import {
 import { useCommittedFocus } from "./committed-focus";
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 import { usePreferences } from "./preferences-provider";
-import { formatFilsToIqd } from "./product-record";
+import { formatCurrencyFromFils } from "./preferences";
 import { PurchaseAdjustmentHeaderComparisonTable } from "./purchase-adjustment-header-comparison";
 import { formatAdjustmentFils } from "./purchase-adjustment-money";
 import { PurchasingSupportDetails } from "./purchasing-support-details";
@@ -346,8 +350,8 @@ export function PurchaseAdjustmentWorkflow({
           idempotencyKey: newPurchasingIdempotencyKey(),
           reason,
           rows: currentDraft.rows.map((row) => ({
-            costFils: row.costFils,
-            enteredQuantity: row.enteredQuantity,
+            costFils: normalizeNumericInput(row.costFils),
+            enteredQuantity: normalizeNumericInput(row.enteredQuantity),
             expiryDate: row.expiryDate,
             itemId: row.itemId,
             lineageId: row.lineageId,
@@ -356,9 +360,15 @@ export function PurchaseAdjustmentWorkflow({
             originalRowId: row.originalRowId,
             pricing:
               row.pricingMethod === "by-price"
-                ? { method: "by-price", retailPriceFils: row.retailPriceFils }
+                ? {
+                    method: "by-price",
+                    retailPriceFils: normalizeNumericInput(row.retailPriceFils),
+                  }
                 : {
-                    marginPercentage: row.marginPercentage ?? "0",
+                    marginPercentage: normalizeNumericInput(
+                      row.marginPercentage ?? "0",
+                      true,
+                    ),
                     method: "by-percentage",
                   },
             unit: row.unit,
@@ -849,7 +859,10 @@ export function PurchaseAdjustmentWorkflow({
             <div className="adjustment-metadata-field">
               <span className="adjustment-metadata-label">{copy.date}:</span>
               <bdi className="adjustment-metadata-value">
-                {draft?.invoiceDate ?? detail.invoiceDate}
+                {formatDateOnly(
+                  draft?.invoiceDate ?? detail.invoiceDate,
+                  locale,
+                )}
               </bdi>
             </div>
             <div className="adjustment-metadata-field">
@@ -996,7 +1009,7 @@ export function PurchaseAdjustmentWorkflow({
                           </td>
                           <td>{copy.unavailable}</td>
                           <td>
-                            <bdi>{unitName}</bdi>
+                            <bdi>{unitDisplayName(unitName, locale)}</bdi>
                           </td>
                           <td>
                             <input
@@ -1037,7 +1050,7 @@ export function PurchaseAdjustmentWorkflow({
                           <td>
                             <bdi>
                               {row.marginPercentage
-                                ? `${row.marginPercentage}%`
+                                ? `${formatPercentage(row.marginPercentage, locale)}`
                                 : copy.unavailable}
                             </bdi>
                           </td>
@@ -1118,7 +1131,7 @@ export function PurchaseAdjustmentWorkflow({
                           </td>
                           <td>{copy.unavailable}</td>
                           <td>
-                            <bdi>{unitName}</bdi>
+                            <bdi>{unitDisplayName(unitName, locale)}</bdi>
                           </td>
                           <td>
                             <input
@@ -1480,7 +1493,8 @@ export function PurchaseAdjustmentWorkflow({
                     {summary.stockEffects.map((effect, index) => (
                       <li key={`${effect.itemId}-${index}`}>
                         {effect.itemDisplayName}: {copy.qtyDelta}{" "}
-                        <bdi>{effect.quantityDelta}</bdi>; {copy.valueDelta}{" "}
+                        <bdi>{formatNumber(effect.quantityDelta, locale)}</bdi>;{" "}
+                        {copy.valueDelta}{" "}
                         <bdi>
                           {formatAdjustmentFils(
                             effect.primarySupplierCostDeltaFils,
@@ -1535,8 +1549,8 @@ export function PurchaseAdjustmentWorkflow({
                       const qtyDeltaNum = BigInt(row.quantityDelta);
                       const formattedQtyDelta =
                         qtyDeltaNum > 0n
-                          ? `+${row.quantityDelta}`
-                          : `${row.quantityDelta}`;
+                          ? `+${formatNumber(row.quantityDelta, locale)}`
+                          : `${formatNumber(row.quantityDelta, locale)}`;
                       const costBeforeFils = row.before?.costFils ?? "0";
                       const costAfterFils = row.after?.costFils ?? "0";
                       const costDeltaFils = row.primarySupplierCostDeltaFils;
@@ -1554,14 +1568,14 @@ export function PurchaseAdjustmentWorkflow({
                               <p>
                                 {purchasingMessages[locale].sellingPrice}:{" "}
                                 <bdi>
-                                  {formatFilsToIqd(
+                                  {formatCurrencyFromFils(
                                     row.before?.retailPriceFils ?? "0",
                                     locale,
                                   )}
                                 </bdi>{" "}
                                 →{" "}
                                 <bdi>
-                                  {formatFilsToIqd(
+                                  {formatCurrencyFromFils(
                                     row.after?.retailPriceFils ?? "0",
                                     locale,
                                   )}
@@ -1570,15 +1584,17 @@ export function PurchaseAdjustmentWorkflow({
                             ) : null}
                           </th>
                           <td>
-                            <bdi>{beforeQty}</bdi>
+                            <bdi>{formatNumber(beforeQty, locale)}</bdi>
                           </td>
                           <td>
-                            <bdi>{afterQty}</bdi>
+                            <bdi>{formatNumber(afterQty, locale)}</bdi>
                           </td>
                           <td>
                             {/* Accessible quantity comparison includes the signed movement. */}
                             <span className="visually-hidden">
-                              {beforeQty} → {afterQty} ({row.quantityDelta})
+                              {formatNumber(beforeQty, locale)} →{" "}
+                              {formatNumber(afterQty, locale)} (
+                              {formatNumber(row.quantityDelta, locale)})
                             </span>
                             <bdi
                               className={
@@ -1593,10 +1609,14 @@ export function PurchaseAdjustmentWorkflow({
                             </bdi>
                           </td>
                           <td>
-                            <bdi>{formatFilsToIqd(costBeforeFils, locale)}</bdi>
+                            <bdi>
+                              {formatCurrencyFromFils(costBeforeFils, locale)}
+                            </bdi>
                           </td>
                           <td>
-                            <bdi>{formatFilsToIqd(costAfterFils, locale)}</bdi>
+                            <bdi>
+                              {formatCurrencyFromFils(costAfterFils, locale)}
+                            </bdi>
                           </td>
                           <td>
                             <bdi

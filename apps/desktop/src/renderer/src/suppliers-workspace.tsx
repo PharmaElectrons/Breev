@@ -534,7 +534,11 @@ export function SuppliersWorkspace({
                         type="button"
                         onClick={() => adjustDiscount(-0.5)}
                         className="size-7 grid place-items-center bg-muted border border-control-border rounded hover:bg-danger/20 hover:text-danger text-xs font-bold"
-                        aria-label="Decrease discount by 0.5 percent"
+                        aria-label={
+                          locale === "ar"
+                            ? "خفض السماح بمقدار ٠٫٥ بالمئة"
+                            : "Decrease discount by 0.5 percent"
+                        }
                       >
                         －
                       </button>
@@ -554,7 +558,11 @@ export function SuppliersWorkspace({
                         type="button"
                         onClick={() => adjustDiscount(0.5)}
                         className="size-7 grid place-items-center bg-muted border border-control-border rounded hover:bg-ready/20 hover:text-ready text-xs font-bold"
-                        aria-label="Increase discount by 0.5 percent"
+                        aria-label={
+                          locale === "ar"
+                            ? "زيادة السماح بمقدار ٠٫٥ بالمئة"
+                            : "Increase discount by 0.5 percent"
+                        }
                       >
                         ＋
                       </button>

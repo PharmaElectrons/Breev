@@ -1,4 +1,10 @@
 import {
+  catalogError,
+  catalogErrorText,
+  type CatalogError,
+} from "./catalog-error";
+import { normalizeNumericInput } from "./numeric-input";
+import {
   CURRENT_PRODUCT_NAME_TEMPLATE_VERSION,
   DEFAULT_PRODUCT_PRICING_METHOD,
   PRICE_ROUNDING_SETTINGS,
@@ -70,7 +76,7 @@ import {
 } from "./product-form-drafts";
 import { usePreferences } from "./preferences-provider";
 import { useIdentityState } from "./identity-state-provider";
-import { formatFilsToIqd } from "./product-record";
+import { formatCurrencyFromFils } from "./preferences";
 import { calculateRetailPricePreview } from "./product-pricing";
 
 /**
@@ -171,7 +177,7 @@ export function buildPackagingPayload({
     },
     inventoryUnitName: inventoryUnitName.trim(),
     packageUnits: packageUnits.map((u) => ({
-      baseUnitsPerPackage: u.baseUnitsPerPackage.trim(),
+      baseUnitsPerPackage: normalizeNumericInput(u.baseUnitsPerPackage.trim()),
       name: u.name.trim(),
     })),
     thirdUnit:
@@ -199,20 +205,20 @@ export function buildPricingPayload({
   readonly rounding: PriceRoundingSetting;
   readonly wholesalePriceFils: string;
 }): ProductPricingInput {
-  const trimmedWholesale = wholesalePriceFils.trim();
+  const trimmedWholesale = normalizeNumericInput(wholesalePriceFils.trim());
   const wholesale = trimmedWholesale.length > 0 ? trimmedWholesale : null;
 
   if (method === "by-price") {
     return {
       method: "by-price",
-      retailPriceFils: retailPriceFils.trim(),
+      retailPriceFils: normalizeNumericInput(retailPriceFils.trim()),
       wholesalePriceFils: wholesale,
     };
   }
 
   return {
-    costFils: costFils.trim(),
-    marginPercentage: marginPercentage.trim(),
+    costFils: normalizeNumericInput(costFils.trim()),
+    marginPercentage: normalizeNumericInput(marginPercentage.trim(), true),
     method: "by-percentage",
     rounding,
     wholesalePriceFils: wholesale,
@@ -410,12 +416,16 @@ export function ModeSwitchConfirmationDialog({
 }
 
 function decimalFractionDigits(value: string): number | null {
-  const match = /^-?\d+(?:\.(\d*))?$/u.exec(value.trim());
+  const match = /^-?\d+(?:\.(\d*))?$/u.exec(
+    normalizeNumericInput(value.trim(), true),
+  );
   return match === null ? null : (match[1]?.length ?? 0);
 }
 
 function toScaledInteger(value: string, scale: number): bigint | null {
-  const match = /^(-?)(\d+)(?:\.(\d*))?$/u.exec(value.trim());
+  const match = /^(-?)(\d+)(?:\.(\d*))?$/u.exec(
+    normalizeNumericInput(value.trim(), true),
+  );
   if (match === null) return null;
   const fraction = match[3] ?? "";
   const magnitude = BigInt(match[2] + fraction.padEnd(scale, "0"));
@@ -454,7 +464,8 @@ export function stepNumericText(
     0,
     ...values.map((candidate) => decimalFractionDigits(candidate) ?? 0),
   );
-  const current = toScaledInteger(value, scale) ?? 0n;
+  const current = value.trim() === "" ? 0n : toScaledInteger(value, scale);
+  if (current === null) return null;
   const amount = toScaledInteger(stepText, scale);
   const minimum = toScaledInteger(minText, scale);
   const maximum = maxText === null ? null : toScaledInteger(maxText, scale);
@@ -471,7 +482,7 @@ export function stepNumericText(
 }
 
 interface StepperInputProps {
-  readonly "aria-describedby"?: string;
+  readonly "aria-describedby"?: string | undefined;
   readonly "aria-invalid"?: boolean;
   readonly "aria-label"?: string;
   readonly "aria-required"?: boolean | "true" | "false";
@@ -629,7 +640,9 @@ export function ProductForm({
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
   const [survivorProductId, setSurvivorProductId] = useState("");
-  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeErrorState, setMergeError] = useState<CatalogError | null>(null);
+  const mergeError =
+    mergeErrorState === null ? null : catalogErrorText(mergeErrorState, locale);
   const [printLabel, setPrintLabel] = useState<Awaited<
     ReturnType<typeof requestBarcodePrint>
   > | null>(null);
@@ -709,7 +722,8 @@ export function ProductForm({
   const [addedCategoryOptions, setAddedCategoryOptions] = useState<string[]>(
     [],
   );
-  const [categoryActionStatus, setCategoryActionStatus] = useState("");
+  const [categoryAdded, setCategoryActionStatus] = useState(false);
+  const categoryActionStatus = categoryAdded ? copy.fields.categoryAdded : "";
   const categorySuggestions = useMemo(() => {
     const categories = new Map<string, string>();
     for (const option of [...categoryOptions, ...addedCategoryOptions]) {
@@ -901,21 +915,29 @@ export function ProductForm({
   );
 
   const calculatedRetailFils = calculateRetailPricePreview(
-    costFils,
-    marginPercentage,
+    normalizeNumericInput(costFils.trim()),
+    normalizeNumericInput(marginPercentage.trim(), true),
     rounding,
   );
   const displayRetailPreview =
     calculatedRetailFils !== "0"
-      ? formatFilsToIqd(calculatedRetailFils, locale)
+      ? formatCurrencyFromFils(calculatedRetailFils, locale)
       : initialProduct?.pricing.method === "by-percentage"
-        ? formatFilsToIqd(initialProduct.pricing.retailPriceFils, locale)
+        ? formatCurrencyFromFils(initialProduct.pricing.retailPriceFils, locale)
         : copy.pricing.retailPricePendingCalculation;
 
   const [pendingModeSwitch, setPendingModeSwitch] =
     useState<ProductDefinitionMode | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<
+    Record<string, CatalogFieldError["code"]>
+  >({});
+  const [generalErrorState, setGeneralError] = useState<CatalogError | null>(
+    null,
+  );
+  const generalError =
+    generalErrorState === null
+      ? null
+      : catalogErrorText(generalErrorState, locale);
   const [busy, setBusy] = useState(false);
   const [versionConflict, setVersionConflict] = useState(false);
   const [pendingFocusKeys, setPendingFocusKeys] = useState<string[] | null>(
@@ -1020,18 +1042,18 @@ export function ProductForm({
   };
 
   const handleContinue = (): void => {
-    const identityErrors: Record<string, string> = {};
+    const identityErrors: Record<string, CatalogFieldError["code"]> = {};
     if (
       mode === "medication" &&
       medicationFields.tradeName.trim().length === 0
     ) {
-      identityErrors.tradeName = copy.fieldErrors.required;
+      identityErrors.tradeName = "required";
     }
     if (
       mode === "general-item" &&
       generalItemFields.company.trim().length === 0
     ) {
-      identityErrors.company = copy.fieldErrors.required;
+      identityErrors.company = "required";
     }
     setFieldErrors(identityErrors);
     if (Object.keys(identityErrors).length > 0) {
@@ -1078,9 +1100,7 @@ export function ProductForm({
       setHasUnsavedChanges(false);
       setVersionConflict(false);
     } catch (failure) {
-      setGeneralError(
-        failure instanceof Error ? failure.message : String(failure),
-      );
+      setGeneralError(catalogError(failure, "load"));
       errorSummaryRef.current?.focus();
     }
   };
@@ -1168,13 +1188,7 @@ export function ProductForm({
       );
       clearDraftAfterServerChange(result.product);
     } catch (failure) {
-      setGeneralError(
-        failure instanceof CatalogApiDenied
-          ? (copy.denials[failure.denial.code] ?? failure.message)
-          : failure instanceof Error
-            ? failure.message
-            : String(failure),
-      );
+      setGeneralError(catalogError(failure, "barcode"));
     } finally {
       setBusy(false);
     }
@@ -1202,13 +1216,7 @@ export function ProductForm({
         throw new Error(result.message);
       }
     } catch (failure) {
-      setGeneralError(
-        failure instanceof CatalogApiDenied
-          ? (copy.denials[failure.denial.code] ?? failure.message)
-          : failure instanceof Error
-            ? failure.message
-            : String(failure),
-      );
+      setGeneralError(catalogError(failure, "print"));
       errorSummaryRef.current?.focus();
     } finally {
       setBusy(false);
@@ -1229,13 +1237,7 @@ export function ProductForm({
       setShowArchiveDialog(false);
       clearDraftAfterServerChange(updated);
     } catch (failure) {
-      setGeneralError(
-        failure instanceof CatalogApiDenied
-          ? (copy.denials[failure.denial.code] ?? failure.message)
-          : failure instanceof Error
-            ? failure.message
-            : String(failure),
-      );
+      setGeneralError(catalogError(failure, "archive"));
     } finally {
       setBusy(false);
     }
@@ -1247,7 +1249,7 @@ export function ProductForm({
     }
     const trimmedSurvivor = survivorProductId.trim();
     if (trimmedSurvivor.length === 0) {
-      setMergeError(copy.fieldErrors.required);
+      setMergeError({ kind: "required", action: "merge" });
       document.getElementById(mergeInputId)?.focus();
       return;
     }
@@ -1263,13 +1265,7 @@ export function ProductForm({
       setShowMergeDialog(false);
       clearDraftAfterServerChange(updated);
     } catch (failure) {
-      setMergeError(
-        failure instanceof CatalogApiDenied
-          ? (copy.denials[failure.denial.code] ?? failure.message)
-          : failure instanceof Error
-            ? failure.message
-            : String(failure),
-      );
+      setMergeError(catalogError(failure, "merge"));
     } finally {
       setBusy(false);
     }
@@ -1336,15 +1332,17 @@ export function ProductForm({
   };
 
   const mapFieldErrors = useCallback(
-    (serverErrors: readonly CatalogFieldError[]): Record<string, string> => {
-      const result: Record<string, string> = {};
+    (
+      serverErrors: readonly CatalogFieldError[],
+    ): Record<string, CatalogFieldError["code"]> => {
+      const result: Record<string, CatalogFieldError["code"]> = {};
       for (const err of serverErrors) {
         const key = serverPathToFormKey(err.path);
-        result[key] = copy.fieldErrors[err.code] ?? err.code;
+        result[key] = err.code;
       }
       return result;
     },
-    [copy.fieldErrors],
+    [],
   );
 
   const focusFirstErrorField = (errors: Record<string, string>): void => {
@@ -1390,32 +1388,46 @@ export function ProductForm({
     setFieldErrors({});
     setVersionConflict(false);
 
-    const localErrors: Record<string, string> = {};
+    const localErrors: Record<string, CatalogFieldError["code"]> = {};
     if (mode === "medication") {
       if (medicationFields.tradeName.trim().length === 0) {
-        localErrors.tradeName = copy.fieldErrors.required;
+        localErrors.tradeName = "required";
       }
     } else if (generalItemFields.company.trim().length === 0) {
-      localErrors.company = copy.fieldErrors.required;
+      localErrors.company = "required";
     }
 
     if (inventoryUnitName.trim().length === 0) {
-      localErrors["packaging.inventoryUnitName"] = copy.fieldErrors.required;
+      localErrors["packaging.inventoryUnitName"] = "required";
     }
     if (isEditing && hasThirdUnit && thirdUnitName.trim().length === 0) {
-      localErrors["packaging.thirdUnit.name"] = copy.fieldErrors.required;
+      localErrors["packaging.thirdUnit.name"] = "required";
     }
 
     if (pricingMethod === "by-price") {
-      if (retailPriceFils.trim().length === 0) {
-        localErrors["pricing.retailPriceFils"] = copy.fieldErrors.required;
+      if (normalizeNumericInput(retailPriceFils.trim()).length === 0) {
+        localErrors["pricing.retailPriceFils"] = "required";
       }
     } else {
-      if (costFils.trim().length === 0) {
-        localErrors["pricing.costFils"] = copy.fieldErrors.required;
+      if (normalizeNumericInput(costFils.trim()).length === 0) {
+        localErrors["pricing.costFils"] = "required";
       }
-      if (marginPercentage.trim().length === 0) {
-        localErrors["pricing.marginPercentage"] = copy.fieldErrors.required;
+      if (normalizeNumericInput(marginPercentage.trim(), true).length === 0) {
+        localErrors["pricing.marginPercentage"] = "required";
+      }
+    }
+
+    for (const field of [
+      "usesPerDay",
+      "usesPerWeek",
+      "usesPerMonth",
+    ] as const) {
+      const value = normalizeNumericInput(instructions[field].trim());
+      if (
+        value !== "" &&
+        (!/^[0-9]+$/u.test(value) || !Number.isSafeInteger(Number(value)))
+      ) {
+        localErrors["instructions." + field] = "invalid";
       }
     }
 
@@ -1449,12 +1461,11 @@ export function ProductForm({
           };
 
     const parseFrequency = (val: string): number | null => {
-      const trimmed = val.trim();
+      const trimmed = normalizeNumericInput(val.trim());
       if (!trimmed) {
         return null;
       }
-      const num = Number.parseInt(trimmed, 10);
-      return Number.isNaN(num) ? null : num;
+      return /^[0-9]+$/u.test(trimmed) ? Number(trimmed) : NaN;
     };
 
     const packagingPayload = buildPackagingPayload({
@@ -1510,9 +1521,12 @@ export function ProductForm({
             manual: stateColours.manual || null,
           },
           stockLevels: {
-            maximumLevel: stockLevels.maximumLevel.trim() || null,
-            minimumLevel: stockLevels.minimumLevel.trim() || null,
-            reorderPoint: stockLevels.reorderPoint.trim() || null,
+            maximumLevel:
+              normalizeNumericInput(stockLevels.maximumLevel.trim()) || null,
+            minimumLevel:
+              normalizeNumericInput(stockLevels.minimumLevel.trim()) || null,
+            reorderPoint:
+              normalizeNumericInput(stockLevels.reorderPoint.trim()) || null,
           },
         };
         const updated = await editProduct(baseUrl, initialProduct.id, request);
@@ -1543,9 +1557,12 @@ export function ProductForm({
             manual: stateColours.manual || null,
           },
           stockLevels: {
-            maximumLevel: stockLevels.maximumLevel.trim() || null,
-            minimumLevel: stockLevels.minimumLevel.trim() || null,
-            reorderPoint: stockLevels.reorderPoint.trim() || null,
+            maximumLevel:
+              normalizeNumericInput(stockLevels.maximumLevel.trim()) || null,
+            minimumLevel:
+              normalizeNumericInput(stockLevels.minimumLevel.trim()) || null,
+            reorderPoint:
+              normalizeNumericInput(stockLevels.reorderPoint.trim()) || null,
           },
         };
         const created = await createProduct(baseUrl, request);
@@ -1564,11 +1581,11 @@ export function ProductForm({
           setFieldErrors(mapped);
           focusFirstErrorField(mapped);
         }
-        setGeneralError(copy.denials[failure.denial.code] ?? failure.message);
+        setGeneralError(catalogError(failure, "save"));
       } else if (failure instanceof Error) {
-        setGeneralError(failure.message);
+        setGeneralError(catalogError(failure, "save"));
       } else {
-        setGeneralError(String(failure));
+        setGeneralError(catalogError(failure, "save"));
       }
       errorSummaryRef.current?.focus();
     } finally {
@@ -1911,7 +1928,7 @@ export function ProductForm({
         </div>
 
         {/* Global Errors and Conflict Alerts */}
-        {generalError ? (
+        {generalError || Object.keys(fieldErrors).length > 0 ? (
           <div
             ref={errorSummaryRef}
             className="p-2.5 rounded-[6px] bg-[var(--product-form-danger-soft)] border border-[color:var(--product-form-danger)] text-xs text-[color:var(--product-form-danger-text)] font-medium flex items-center justify-between"
@@ -1923,7 +1940,13 @@ export function ProductForm({
               {Object.keys(fieldErrors).length > 0 ? (
                 <ul id={`${formId}-field-errors`}>
                   {[...new Set(Object.values(fieldErrors))].map((message) => (
-                    <li key={message}>{message}</li>
+                    <li key={message}>
+                      {
+                        copy.fieldErrors[
+                          message as keyof typeof copy.fieldErrors
+                        ]
+                      }
+                    </li>
                   ))}
                 </ul>
               ) : null}
@@ -2267,7 +2290,7 @@ export function ProductForm({
                       value={category}
                       onChange={(e) => {
                         markDraftDirty();
-                        setCategoryActionStatus("");
+                        setCategoryActionStatus(false);
                         setCategory(e.target.value);
                       }}
                     />
@@ -2286,7 +2309,7 @@ export function ProductForm({
                           ...current,
                           value,
                         ]);
-                        setCategoryActionStatus(copy.fields.categoryAdded);
+                        setCategoryActionStatus(true);
                         requestAnimationFrame(() =>
                           categoryInputRef.current?.focus(),
                         );
@@ -2622,6 +2645,14 @@ export function ProductForm({
                         aria-label={copy.pricing.retailPriceFils}
                         aria-required="true"
                         data-field-key="pricing.retailPriceFils"
+                        aria-invalid={Boolean(
+                          fieldErrors["pricing.retailPriceFils"],
+                        )}
+                        aria-describedby={
+                          fieldErrors["pricing.retailPriceFils"]
+                            ? `${formId}-field-errors`
+                            : undefined
+                        }
                         isBold
                         name="pricing.retailPriceFils"
                         step={500}
@@ -2662,6 +2693,14 @@ export function ProductForm({
                         aria-label={copy.pricing.marginPercentage}
                         aria-required="true"
                         data-field-key="pricing.marginPercentage"
+                        aria-invalid={Boolean(
+                          fieldErrors["pricing.marginPercentage"],
+                        )}
+                        aria-describedby={
+                          fieldErrors["pricing.marginPercentage"]
+                            ? `${formId}-field-errors`
+                            : undefined
+                        }
                         name="pricing.marginPercentage"
                         step={5}
                         value={marginPercentage}
@@ -2714,6 +2753,12 @@ export function ProductForm({
                       id={`${formId}-pricing.costFils`}
                       aria-label={copy.pricing.costFils}
                       data-field-key="pricing.costFils"
+                      aria-invalid={Boolean(fieldErrors["pricing.costFils"])}
+                      aria-describedby={
+                        fieldErrors["pricing.costFils"]
+                          ? `${formId}-field-errors`
+                          : undefined
+                      }
                       name="pricing.costFils"
                       step={500}
                       value={costFils}
@@ -3089,6 +3134,14 @@ export function ProductForm({
                     <StepperInput
                       id={formId + "-stockLevels.reorderPoint"}
                       data-field-key="stockLevels.reorderPoint"
+                      aria-invalid={Boolean(
+                        fieldErrors["stockLevels.reorderPoint"],
+                      )}
+                      aria-describedby={
+                        fieldErrors["stockLevels.reorderPoint"]
+                          ? `${formId}-field-errors`
+                          : undefined
+                      }
                       name="reorderPoint"
                       min={0}
                       step={1}

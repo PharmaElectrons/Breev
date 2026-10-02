@@ -106,4 +106,36 @@ describe("unsubmitted sale row drafts", () => {
     });
     expect(readSaleLineEdit("session", "draft", line).quantity).toBe("1");
   });
+
+  it("acknowledges equivalent Indic numbers without normalizing dirty text or unit IDs", () => {
+    const edit = {
+      quantity: "٧",
+      unitId: "package:۱۲",
+      lineDiscountPercentage: "۱۲",
+    };
+    saveSaleLineEdit("session", "draft", line, edit);
+    reconcileSaleLineEdits("session", {
+      id: "draft",
+      status: "active",
+      lines: [line],
+    });
+    expect(readSaleLineEdit("session", "draft", line)).toEqual(edit);
+    const saved = { ...line, quantity: "7", lineDiscountPercentage: "12" };
+    reconcileSaleLineEdits("session", {
+      id: "draft",
+      status: "active",
+      lines: [saved],
+    });
+    expect(
+      readSaleLineEdit("session", "draft", {
+        ...saved,
+        quantity: "3",
+        lineDiscountPercentage: "5",
+      }),
+    ).toEqual({
+      quantity: "3",
+      lineDiscountPercentage: "5",
+      unitId: "package:۱۲",
+    });
+  });
 });

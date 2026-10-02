@@ -7,7 +7,7 @@ import {
   type ProductStateColour,
 } from "@breev/contracts/local-rest";
 
-import type { Locale } from "./preferences";
+import { formatDateOnly, formatNumber, type Locale } from "./preferences";
 
 export const COUNT_DENIAL_CODES = [
   "count-session-not-found",
@@ -521,7 +521,7 @@ function statusSentence(
       case "near-expiry":
         return (
           "قريب الانتهاء — قابل للبيع، ينتهي خلال " +
-          (daysToExpiry ?? "؟") +
+          (daysToExpiry === null ? "؟" : formatNumber(daysToExpiry, locale)) +
           " يوماً"
         );
       case "expired":
@@ -539,7 +539,9 @@ function statusSentence(
       return "Eligible — sellable";
     case "near-expiry":
       return (
-        "Near expiry — sellable, expires in " + (daysToExpiry ?? "?") + " days"
+        "Near expiry — sellable, expires in " +
+        (daysToExpiry === null ? "?" : formatNumber(daysToExpiry, locale)) +
+        " days"
       );
     case "expired":
       return "Expired — sale blocked";
@@ -616,7 +618,10 @@ const arabicSafety: InventoryCopy["safety"] = {
   runNow: "تشغيل التقييم الآن",
   runQueued: "تم طلب تشغيل تقييم سلامة الدفعات.",
   runSummary: (completed, missed) =>
-    "التقييمات المكتملة: " + completed + "، التواريخ الفائتة: " + missed,
+    "التقييمات المكتملة: " +
+    formatNumber(completed, "ar") +
+    "، التواريخ الفائتة: " +
+    formatNumber(missed, "ar"),
   safetyStatus: "سلامة الدفعات",
   status: "الحالة",
   statusEvents: "الأحداث",
@@ -631,9 +636,9 @@ const arabicSafety: InventoryCopy["safety"] = {
   gate: "إعداد هندسي مؤقت بانتظار بوابة الصيدلي G-02 — غير معتمد",
   missedRuns: (count, date) =>
     "تقييم السلامة اليومي متأخر بمقدار " +
-    count +
+    formatNumber(count, "ar") +
     " تواريخ عمل؛ آخر إكمال " +
-    (date ?? "لم يُشغّل بعد") +
+    (date === null ? "لم يُشغّل بعد" : formatDateOnly(date, "ar")) +
     ".",
 };
 
@@ -703,7 +708,10 @@ const englishSafety: InventoryCopy["safety"] = {
   runNow: "Run evaluation now",
   runQueued: "Batch safety evaluation requested.",
   runSummary: (completed, missed) =>
-    "Completed evaluations: " + completed + "; missed dates: " + missed,
+    "Completed evaluations: " +
+    formatNumber(completed, "en") +
+    "; missed dates: " +
+    formatNumber(missed, "en"),
   safetyStatus: "Batch safety",
   status: "Status",
   statusEvents: "Events",
@@ -719,9 +727,9 @@ const englishSafety: InventoryCopy["safety"] = {
   gate: "Engineering default pending pharmacist gate G-02 — not approved",
   missedRuns: (count, date) =>
     "Daily safety evaluation is behind by " +
-    count +
+    formatNumber(count, "en") +
     " business dates; last completed " +
-    (date ?? "never") +
+    (date === null ? "never" : formatDateOnly(date, "en")) +
     ".",
 };
 

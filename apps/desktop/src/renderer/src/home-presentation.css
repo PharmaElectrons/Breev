@@ -1,0 +1,17 @@
+/* Exact amounts must remain readable inside the existing Dashboard cards. */
+.home-dashboard .home-kpi-top-value,
+.home-dashboard .home-kpi-sub-value {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.home-dashboard .home-kpi-sub-value {
+  flex-shrink: 0;
+  max-inline-size: 60%;
+}
+
+.home-dashboard .home-kpi-sub-label {
+  min-inline-size: 0;
+}
