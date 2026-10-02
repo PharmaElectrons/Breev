@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   PurchaseDraft,
   PurchaseInvoiceOfferInput,
@@ -31,11 +31,15 @@ import {
 } from "./purchasing-api";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
-import { PostedPurchaseReview } from "./posted-purchase-review";
+import {
+  PostedPurchaseReview,
+  type CorrectionLeaveGuard,
+} from "./posted-purchase-review";
 import { SuppliersWorkspace } from "./suppliers-workspace";
 import { useCommittedFocus } from "./committed-focus";
 import { filterPurchaseDrafts } from "./purchasing-draft-filter";
 import { PurchaseInvoiceOfferFields } from "./purchase-invoice-offer-fields";
+import "./purchasing.css";
 
 const today = (): string => {
   const date = new Date();
@@ -83,6 +87,13 @@ export function PurchasingRouteView({
     }
     return !canManageDrafts ? "posted" : "invoice";
   });
+  const correctionLeaveGuard = useRef<CorrectionLeaveGuard | null>(null);
+  const registerCorrectionLeaveGuard = useCallback(
+    (guard: CorrectionLeaveGuard | null) => {
+      correctionLeaveGuard.current = guard;
+    },
+    [],
+  );
   const invoiceRef = useRef<HTMLInputElement>(null);
   const discardDialogRef = useRef<HTMLDialogElement>(null);
   const supplierRef = useRef<HTMLInputElement>(null);
@@ -634,12 +645,30 @@ export function PurchasingRouteView({
   }
 
   function focusDraftRegister(): void {
-    setView("drafts");
-    queueMicrotask(() => {
-      const heading = document.getElementById("draft-list-title");
-      heading?.scrollIntoView({ block: "start" });
-      heading?.focus();
-    });
+    switchPurchasingView("drafts", () =>
+      queueMicrotask(() => {
+        const heading = document.getElementById("draft-list-title");
+        heading?.scrollIntoView({ block: "start" });
+        heading?.focus();
+      }),
+    );
+  }
+
+  function switchPurchasingView(
+    next: PurchasingView,
+    after?: () => void,
+  ): void {
+    const change = () => {
+      setView(next);
+      after?.();
+    };
+    if (
+      view === "posted" &&
+      next !== "posted" &&
+      correctionLeaveGuard.current !== null
+    ) {
+      correctionLeaveGuard.current(change);
+    } else change();
   }
 
   const activeIndex = drafts.findIndex((draft) => draft.id === activeDraft?.id);
@@ -666,7 +695,7 @@ export function PurchasingRouteView({
             className="purchase-view-tab"
             aria-pressed={view === "invoice"}
             aria-controls="purchase-invoice-view"
-            onClick={() => setView("invoice")}
+            onClick={() => switchPurchasingView("invoice")}
           >
             <span aria-hidden="true">🧾</span> {copy.invoiceWorkspace}
           </button>
@@ -697,7 +726,7 @@ export function PurchasingRouteView({
             className="purchase-view-tab"
             aria-pressed={view === "suppliers"}
             aria-controls="purchase-suppliers-view"
-            onClick={() => setView("suppliers")}
+            onClick={() => switchPurchasingView("suppliers")}
           >
             <span aria-hidden="true">🏬</span> {copy.suppliers}
           </button>
@@ -790,6 +819,7 @@ export function PurchasingRouteView({
                       aria-autocomplete="list"
                       aria-label={copy.supplier}
                       aria-activedescendant={
+                        isSupplierOpen &&
                         highlightedSupplierIndex >= 0 &&
                         filteredSuppliers[highlightedSupplierIndex]
                           ? `purchase-supplier-opt-${filteredSuppliers[highlightedSupplierIndex]!.id}`
@@ -1557,6 +1587,7 @@ export function PurchasingRouteView({
               : undefined
           }
           inline={true}
+          onLeaveGuardChange={registerCorrectionLeaveGuard}
           open={view === "posted"}
           onClose={() => {
             setView(canManageDrafts ? "invoice" : "idle");

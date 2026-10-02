@@ -36,6 +36,7 @@ import { formatFilsToIqd } from "./product-record";
 import "./posted-purchase-review.css";
 
 type CorrectionKind = "adjustment" | "return";
+export type CorrectionLeaveGuard = (leave: () => void) => void;
 type CurrentRecord =
   | { readonly kind: "item"; readonly value: Product }
   | { readonly kind: "supplier"; readonly value: Supplier };
@@ -102,6 +103,7 @@ export function PostedPurchaseReview({
   inline = false,
   onClose,
   onNewInvoice,
+  onLeaveGuardChange,
   open,
   returnHash = "#/purchases",
 }: {
@@ -110,6 +112,7 @@ export function PostedPurchaseReview({
   readonly inline?: boolean;
   readonly onClose: () => void;
   readonly onNewInvoice?: (() => void) | undefined;
+  readonly onLeaveGuardChange?: (guard: CorrectionLeaveGuard | null) => void;
   readonly open: boolean;
   readonly returnHash?: string;
 }): React.JSX.Element {
@@ -145,6 +148,7 @@ export function PostedPurchaseReview({
   const [adjustmentLeaveRequest, setAdjustmentLeaveRequest] = useState(0);
   const [returnDraftActive, setReturnDraftActive] = useState(false);
   const [returnLeaveRequest, setReturnLeaveRequest] = useState(0);
+  const pendingExternalLeave = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [denial, setDenial] = useState<string | null>(null);
@@ -157,6 +161,24 @@ export function PostedPurchaseReview({
     direction: "descending",
     sort: "posted-at",
   });
+
+  useEffect(() => {
+    if (!inline || !open || correction === null) {
+      onLeaveGuardChange?.(null);
+      return;
+    }
+    onLeaveGuardChange?.((leave) => {
+      pendingExternalLeave.current = leave;
+      if (correction === "adjustment")
+        setAdjustmentLeaveRequest((value) => value + 1);
+      else setReturnLeaveRequest((value) => value + 1);
+    });
+    return () => onLeaveGuardChange?.(null);
+  }, [correction, inline, onLeaveGuardChange, open]);
+
+  function cancelExternalLeave(): void {
+    pendingExternalLeave.current = null;
+  }
 
   useLayoutEffect(() => {
     const container = listScrollRef.current;
@@ -412,6 +434,11 @@ export function PostedPurchaseReview({
       setPostedAdjustment(
         await requestPostedPurchaseAdjustment(baseUrl, adjustmentId),
       );
+      requestCommittedFocus(() =>
+        containerRef.current?.querySelector<HTMLElement>(
+          ".posted-adjustment-view button",
+        ),
+      );
     } catch (caught) {
       handleFailure(caught);
     } finally {
@@ -435,6 +462,11 @@ export function PostedPurchaseReview({
     setDenial(null);
     try {
       setPostedReturn(await requestPostedPurchaseReturn(baseUrl, returnId));
+      requestCommittedFocus(() =>
+        containerRef.current?.querySelector<HTMLElement>(
+          ".posted-return-view button",
+        ),
+      );
     } catch (caught) {
       handleFailure(caught);
     } finally {
@@ -462,13 +494,18 @@ export function PostedPurchaseReview({
       opener?.dataset.reviewFocus ?? `${correction}-${detail.id}`;
     setCorrection(null);
     setAdjustmentDraftActive(false);
+    setAdjustmentLeaveRequest(0);
     setReturnDraftActive(false);
+    setReturnLeaveRequest(0);
     window.history.replaceState(null, "", `#/purchases/posted/${detail.id}`);
     requestCommittedFocus(() =>
       containerRef.current?.querySelector<HTMLElement>(
         `[data-review-focus="${focusKey}"]`,
       ),
     );
+    const leave = pendingExternalLeave.current;
+    pendingExternalLeave.current = null;
+    leave?.();
   }
 
   // Focus returns to the opener in the same commit that renders the view it
@@ -626,6 +663,7 @@ export function PostedPurchaseReview({
               leaveRequest={adjustmentLeaveRequest}
               onBack={closeCorrection}
               onDraftActive={setAdjustmentDraftActive}
+              onLeaveCancelled={cancelExternalLeave}
               onPosted={async (purchaseId) => {
                 setDetail(await requestPostedPurchase(baseUrl, purchaseId));
                 await loadList(currentFilter());
@@ -638,6 +676,7 @@ export function PostedPurchaseReview({
               leaveRequest={returnLeaveRequest}
               onBack={closeCorrection}
               onDraftActive={setReturnDraftActive}
+              onLeaveCancelled={cancelExternalLeave}
               onPosted={async (purchaseId) => {
                 setDetail(await requestPostedPurchase(baseUrl, purchaseId));
                 await loadList(currentFilter());

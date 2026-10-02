@@ -4950,6 +4950,832 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
     ).toBeVisible();
   });
 
+  for (const locale of ["en", "ar"] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`P2 complete Purchasing presentation and modal focus ${locale} ${theme}`, async ({
+        page,
+      }) => {
+        test.setTimeout(240_000);
+        page.setDefaultTimeout(10_000);
+        const copy =
+          locale === "en"
+            ? {
+                discard: "Discard draft",
+                suppliers: "Suppliers",
+                saveSupplier: "Save supplier",
+                editInvoice: "Edit Invoice",
+              }
+            : {
+                discard: "استبعاد المسودة",
+                suppliers: "الموردون",
+                saveSupplier: "حفظ المورد",
+                editInvoice: "تعديل الفاتورة",
+              };
+        const adjustmentCopy =
+          locale === "en"
+            ? {
+                start: "Create adjustment copy",
+                quantity: "Quantity",
+                evidence: "Reason evidence",
+                back: "Back to original invoice",
+                continue: "Continue draft",
+                saveReview: "Save and review Delta",
+                cancel: "Cancel",
+                confirm: "Confirm and post Delta",
+              }
+            : {
+                start: "إنشاء نسخة التعديل",
+                quantity: "كمية",
+                evidence: "دليل السبب",
+                back: "العودة إلى الفاتورة الأصلية",
+                continue: "متابعة المسودة",
+                saveReview: "حفظ ومراجعة الفرق",
+                cancel: "إلغاء",
+                confirm: "تأكيد وحفظ التعديل",
+              };
+        const out = path.resolve(
+          import.meta.dirname,
+          "../../../../evidence/issue-206/current/matrix",
+          `${locale}-${theme}`,
+        );
+        await mkdir(out, { recursive: true });
+        const report: unknown[] = [];
+        const capture = async (state: string, settled = true) => {
+          if (settled) await page.waitForLoadState("networkidle");
+          await page.evaluate("document.fonts.ready");
+          for (const viewport of [
+            { width: 1366, height: 768 },
+            { width: 1280, height: 800 },
+          ]) {
+            await page.setViewportSize(viewport);
+            await page.locator(".purchasing-workspace").evaluate((element) => {
+              const animations = element.getAnimations({ subtree: true }) as {
+                effect?: { getComputedTiming(): { endTime: number } };
+                finish(): void;
+              }[];
+              // Match screenshot's finite-animation endpoint without waiting
+              // forever on paused/idle animations exposed by a resized rail.
+              for (const animation of animations) {
+                if (
+                  Number.isFinite(animation.effect?.getComputedTiming().endTime)
+                ) {
+                  try {
+                    animation.finish();
+                  } catch {
+                    // Scroll-driven timelines cannot be finished.
+                  }
+                }
+              }
+            });
+            const axe = await new AxeBuilder({ page })
+              .include(".purchasing-workspace")
+              .options({ rules: { "target-size": { enabled: true } } })
+              .analyze();
+            if (axe.violations.length > 0) {
+              await page.screenshot({
+                path: path.join(out, `${state}-failure.png`),
+                animations: "disabled",
+              });
+              await writeFile(
+                path.join(out, `${state}-failure.json`),
+                JSON.stringify(
+                  {
+                    violations: axe.violations,
+                    buttons: await page
+                      .locator(".supplier-toolbar button")
+                      .evaluateAll((elements) =>
+                        elements.map((element) => {
+                          const style =
+                            element.ownerDocument.defaultView!.getComputedStyle(
+                              element,
+                            );
+                          return {
+                            text: element.textContent,
+                            font: style.font,
+                            color: style.color,
+                            background: style.backgroundColor,
+                            opacity: style.opacity,
+                            filter: style.filter,
+                          };
+                        }),
+                      ),
+                  },
+                  null,
+                  2,
+                ),
+              );
+            }
+            expect(axe.violations, `${state} ${viewport.width}`).toEqual([]);
+            const geometry = await page
+              .locator(".purchasing-workspace")
+              .evaluate((element) => ({
+                width: element.getBoundingClientRect().width,
+                overflow:
+                  element.ownerDocument.documentElement.scrollWidth >
+                  element.ownerDocument.documentElement.clientWidth,
+                dialogs: [...element.querySelectorAll("dialog[open]")].map(
+                  (dialog) => ({
+                    class: dialog.className,
+                    width: dialog.getBoundingClientRect().width,
+                    height: dialog.getBoundingClientRect().height,
+                    modal: dialog.matches(":modal"),
+                    focusInside: dialog.contains(
+                      element.ownerDocument.activeElement,
+                    ),
+                  }),
+                ),
+                targets: [
+                  ...element.querySelectorAll(
+                    "button:not(:disabled), a[href], summary",
+                  ),
+                ]
+                  .filter(
+                    (target) =>
+                      target.getClientRects().length > 0 &&
+                      !target.closest("[inert]"),
+                  )
+                  .map((target) => ({
+                    name:
+                      target.getAttribute("aria-label") ?? target.textContent,
+                    width: target.getBoundingClientRect().width,
+                    height: target.getBoundingClientRect().height,
+                  })),
+              }));
+            expect(geometry.overflow).toBe(false);
+            report.push({
+              state,
+              viewport,
+              geometry,
+              violations: axe.violations,
+            });
+            await page.screenshot({
+              path: path.join(
+                out,
+                `${state}-${viewport.width}x${viewport.height}.png`,
+              ),
+              animations: "disabled",
+              caret: "hide",
+            });
+          }
+        };
+        const modalCycle = async (modal: Locator) => {
+          const buttons = modal
+            .locator("button:not(:disabled)")
+            .filter({ visible: true });
+          await buttons.last().focus();
+          await page.keyboard.press("Tab");
+          await expect
+            .poll(() =>
+              modal.evaluate((element) =>
+                element.contains(element.ownerDocument.activeElement),
+              ),
+            )
+            .toBe(true);
+          await page.keyboard.press("Shift+Tab");
+          await expect(buttons.last()).toBeFocused();
+          const composing = await modal.evaluate((element) => {
+            const event = element.ownerDocument.createEvent("KeyboardEvent");
+            event.initEvent("keydown", true, true);
+            Object.defineProperty(event, "key", { value: "Escape" });
+            Object.defineProperty(event, "isComposing", { value: true });
+            element.ownerDocument.activeElement?.dispatchEvent(event);
+            return element.matches(":modal");
+          });
+          expect(composing).toBe(true);
+          await expect(modal).toBeVisible();
+        };
+        const responsive = async (state: string, action: Locator) => {
+          for (const width of [900, 560]) {
+            await page.setViewportSize({ width, height: 800 });
+            await action.scrollIntoViewIfNeeded();
+            // Paint the resized canvas at the same finite-animation endpoint
+            // used for the comparison before testing its action reachability.
+            await page.screenshot({
+              path: path.join(out, `${state}-${width}.png`),
+              animations: "disabled",
+              caret: "hide",
+            });
+            await expect(action).toBeInViewport({ ratio: 1 });
+            await action.click({ trial: true });
+            expect(
+              await page.evaluate(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+              ),
+            ).toBe(true);
+            const accessibility = await new AxeBuilder({ page })
+              .include(".purchasing-workspace")
+              .options({ rules: { "target-size": { enabled: true } } })
+              .analyze();
+            await writeFile(
+              path.join(out, `${state}-${width}.json`),
+              JSON.stringify(
+                { state, width, violations: accessibility.violations },
+                null,
+                2,
+              ),
+            );
+            expect(accessibility.violations).toEqual([]);
+          }
+          await page.setViewportSize({ width: 1280, height: 800 });
+          await page.route("**/p2-text-zoom.css", (route) =>
+            route.fulfill({
+              contentType: "text/css",
+              body: "html { font-size: 200%; }",
+            }),
+          );
+          const enlarged = await page.addStyleTag({
+            url: `${renderer.origin}/p2-text-zoom.css`,
+          });
+          expect(
+            await page.evaluate(
+              "getComputedStyle(document.documentElement).fontSize",
+            ),
+          ).toBe("32px");
+          await action.scrollIntoViewIfNeeded();
+          await expect(action).toBeInViewport({ ratio: 1 });
+          expect(
+            await page.evaluate(
+              "document.documentElement.scrollWidth <= document.documentElement.clientWidth",
+            ),
+          ).toBe(true);
+          expect(
+            (
+              await new AxeBuilder({ page })
+                .include(".purchasing-workspace")
+                .options({ rules: { "target-size": { enabled: true } } })
+                .analyze()
+            ).violations,
+          ).toEqual([]);
+          await page.screenshot({
+            path: path.join(out, `${state}-text-200.png`),
+            animations: "disabled",
+            caret: "hide",
+          });
+          await enlarged.evaluate((element) => element.remove());
+          await page.unroute("**/p2-text-zoom.css");
+        };
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/purchases`);
+        await expect(page.locator(".purchase-header-form")).toBeVisible();
+        await capture("invoice-empty");
+        await page
+          .getByRole("button", {
+            name: locale === "en" ? "Show item details" : "عرض تفاصيل المادة",
+            exact: true,
+          })
+          .click();
+        await capture("invoice-empty-rail");
+        await createPurchaseWithOneRow(
+          page,
+          renderer.origin,
+          supplierId,
+          `P2-ENTRY-${locale}-${theme}`,
+          "2029-05-31",
+          locale,
+        );
+        const row = page
+          .locator(".purchase-row-table tbody tr[data-row-id]")
+          .first();
+        await expectBaseUnitColumnOnScreen(
+          row.locator('[data-column-field="inventory-units"]'),
+        );
+        await capture("invoice-populated");
+        const selectedItem = page.locator(
+          '.purchase-entry-row [data-enter-field="item"]',
+        );
+        await selectedItem.fill("5012345678949");
+        await selectedItem.press("Enter");
+        await expect(
+          page.locator('[data-panel-field="balance"]'),
+        ).toBeVisible();
+        await expectBaseUnitColumnOnScreen(
+          page.locator(
+            '.purchase-entry-row [data-column-field="inventory-units"]',
+          ),
+        );
+        await capture("invoice-selected-rail");
+        await responsive(
+          "invoice",
+          page.locator(".purchase-review-actions button"),
+        );
+        await row.locator(".purchase-action-icon-btn.edit").click();
+        await capture("invoice-edit-row");
+        const optionalRowControls = row.locator(
+          "summary.purchase-action-icon-btn.optional",
+        );
+        await optionalRowControls.click();
+        await capture("invoice-optional-controls");
+        await responsive(
+          "invoice-optional-controls",
+          row.locator(".purchase-optional-done-btn"),
+        );
+        await row.locator(".purchase-optional-done-btn").click();
+        await row.locator(".purchase-action-icon-btn.cancel").click();
+        await page
+          .getByRole("button", { name: copy.discard, exact: true })
+          .click();
+        const discard = page.locator(".purchase-discard-dialog");
+        await expect(discard).toBeVisible();
+        await capture("invoice-discard");
+        await page.keyboard.press("Escape");
+        await expect(discard).toBeHidden();
+        await page
+          .getByRole("button", {
+            name: locale === "en" ? "Saved drafts" : "المسودات المحفوظة",
+            exact: true,
+          })
+          .click();
+        await capture("saved-drafts");
+        await page
+          .getByRole("button", { name: copy.suppliers, exact: true })
+          .click();
+        await page
+          .locator(".supplier-tile", { hasText: "Al-Nahrain Medical" })
+          .click();
+        await capture("supplier-profile");
+        await responsive(
+          "supplier",
+          page.locator(".supplier-toolbar > button"),
+        );
+        await page.locator(".supplier-toolbar button").first().click();
+        await capture("supplier-new");
+        const supplier = page.locator(".supplier-manager");
+        const supplierName = `P2-SUPPLIER-${locale}-${theme}`;
+        await supplier.getByRole("textbox").first().fill("");
+        await expect(
+          supplier.locator(".supplier-toolbar > button"),
+        ).toBeDisabled();
+        await capture("supplier-empty-name");
+        await supplier.getByRole("textbox").first().fill(supplierName);
+        await supplier.getByRole("spinbutton").first().fill("3.5");
+        await supplier.getByRole("spinbutton").nth(1).fill("45");
+        await supplier.locator("form select").selectOption("cash");
+        await expect(
+          supplier.getByRole("button", {
+            name:
+              locale === "en"
+                ? "Increase allowance by 0.5 percent"
+                : "زيادة السماح بنسبة ٠٫٥ بالمئة",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await capture("supplier-edited-terms");
+        const supplierSaved = page.waitForResponse(
+          (response) =>
+            response.request().method() === "POST" &&
+            new URL(response.url()).pathname === "/suppliers",
+        );
+        await supplier.locator(".supplier-toolbar > button").click();
+        const supplierResult = await supplierSaved;
+        expect(supplierResult.status()).toBe(201);
+        const newSupplier = supplierSchema.parse(await supplierResult.json());
+        await expect(supplier.getByRole("spinbutton").first()).toHaveValue(
+          "3.5",
+        );
+        await capture("supplier-saved");
+        // A real concurrent revision must produce the existing explicit refusal.
+        const concurrentSupplier = await apiRequest(
+          apiOrigin,
+          credentials,
+          "PUT",
+          `/suppliers/${newSupplier.id}`,
+          {
+            name: `${newSupplier.name} Concurrent`,
+            terms: newSupplier.terms,
+            defaultAllowancePercentage: newSupplier.defaultAllowancePercentage,
+            allowanceEffectiveFrom: newSupplier.allowanceEffectiveFrom,
+            expectedRevision: newSupplier.revision,
+            idempotencyKey: uuidV7(),
+          },
+        );
+        expect(
+          concurrentSupplier.status,
+          JSON.stringify(concurrentSupplier.body),
+        ).toBe(200);
+        await supplier.locator(".supplier-toolbar > button").click();
+        await expect(supplier.getByRole("alert")).toBeVisible();
+        await capture("supplier-version-conflict");
+        await page.reload();
+        await page
+          .getByRole("button", { name: copy.suppliers, exact: true })
+          .click();
+        await page.locator(".supplier-tile", { hasText: supplierName }).click();
+        await capture("supplier-reloaded");
+        page.once("dialog", async (dialog) => {
+          expect(dialog.type()).toBe("confirm");
+          expect(dialog.message()).toBe(
+            locale === "en" ? "Archive supplier" : "أرشفة المورد",
+          );
+          await dialog.accept();
+        });
+        await supplier
+          .locator(".supplier-toolbar button[title]")
+          .nth(1)
+          .click();
+        await expect(
+          supplier.locator(".supplier-tile", { hasText: supplierName }),
+        ).toHaveCount(0);
+        await supplier.getByRole("searchbox").fill(supplierName);
+        await supplier
+          .locator(".supplier-tile", { hasText: supplierName })
+          .click();
+        await expect(
+          supplier.locator(".supplier-toolbar > button"),
+        ).toBeDisabled();
+        await capture("supplier-archived");
+        const mergedFixture = await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          "/suppliers",
+          {
+            name: `P2-MERGED-${locale}-${theme}`,
+            terms: "Synthetic merged duplicate",
+            defaultAllowancePercentage: "0",
+            allowanceEffectiveFrom: "2026-01-01",
+            idempotencyKey: uuidV7(),
+          },
+        );
+        expect(mergedFixture.status).toBe(201);
+        const mergeSource = supplierSchema.parse(mergedFixture.body);
+        const merged = await apiRequest(
+          apiOrigin,
+          credentials,
+          "POST",
+          `/suppliers/${mergeSource.id}/merges`,
+          {
+            expectedRevision: mergeSource.revision,
+            survivorSupplierId: supplierId,
+            idempotencyKey: uuidV7(),
+          },
+        );
+        expect(merged.status).toBe(201);
+        await page.reload();
+        await page
+          .getByRole("button", { name: copy.suppliers, exact: true })
+          .click();
+        await supplier.getByRole("searchbox").fill(mergeSource.name);
+        await supplier
+          .locator(".supplier-tile", { hasText: mergeSource.name })
+          .click();
+        await expect(
+          supplier.locator(".supplier-toolbar > button"),
+        ).toBeDisabled();
+        await capture("supplier-merged");
+
+        const original = await postPurchaseForReview(
+          apiOrigin,
+          credentials,
+          supplierId,
+          purchaseProduct.id,
+          `P2-POSTED-${locale}-${theme}`,
+        );
+        await page.goto(`${renderer.origin}#/purchases`);
+        await postedInvoicesTab(page).click();
+        const review = page.locator("#purchase-posted-view");
+        await review
+          .getByRole("searchbox")
+          .fill(`P2-POSTED-${locale}-${theme}`);
+        await expect(
+          review.locator(".posted-purchase-list tbody tr"),
+        ).toHaveCount(1);
+        await capture("posted-list");
+        await review.locator(".proto-doc-btn").click();
+        await expect(review.locator("#posted-detail-title")).toBeVisible();
+        await capture("posted-detail");
+        await review.locator(".posted-row-snapshots > summary").click();
+        await capture("posted-saved-facts");
+        await review.locator(".posted-row-snapshots > summary").click();
+        await review.locator('[data-review-focus="supplier"]').click();
+        await capture("posted-current-supplier");
+        await page.keyboard.press("Escape");
+        await expect(
+          review.locator('[data-review-focus="supplier"]'),
+        ).toBeFocused();
+        await review.locator('[data-review-focus^="item-"]').first().click();
+        await capture("posted-current-item");
+        await page.keyboard.press("Escape");
+        await responsive(
+          "posted-detail",
+          review.getByRole("button", { name: copy.editInvoice, exact: true }),
+        );
+        await review
+          .getByRole("button", { name: copy.editInvoice, exact: true })
+          .click();
+        await capture("adjustment-start");
+        await review
+          .getByRole("button", { name: adjustmentCopy.start, exact: true })
+          .click();
+        await review
+          .getByRole("textbox", {
+            name: `${adjustmentCopy.quantity} ${purchaseProduct.displayName}`,
+            exact: true,
+          })
+          .fill("8");
+        await review
+          .getByLabel(adjustmentCopy.evidence, { exact: true })
+          .fill("P2 synthetic quantity evidence");
+        await capture("adjustment-edit");
+        const suppliersTab = page.getByRole("button", {
+          name: copy.suppliers,
+          exact: true,
+        });
+        await suppliersTab.focus();
+        await page.keyboard.press("Enter");
+        const tabWarning = review.locator("dialog.adjustment-warning");
+        await expect(
+          tabWarning.getByRole("button", { name: adjustmentCopy.continue }),
+        ).toBeFocused();
+        await capture("adjustment-tab-leave");
+        await page.keyboard.press("Enter");
+        await expect(tabWarning).toBeHidden();
+        await expect(suppliersTab).toBeFocused();
+        await review
+          .getByRole("button", { name: adjustmentCopy.back, exact: true })
+          .click();
+        const warning = review.locator("dialog.adjustment-warning");
+        await expect(
+          warning.getByRole("button", { name: adjustmentCopy.continue }),
+        ).toBeFocused();
+        await modalCycle(warning);
+        await capture("adjustment-dirty");
+        await page.keyboard.press("Escape");
+        await expect(
+          review.getByRole("button", {
+            name: adjustmentCopy.back,
+            exact: true,
+          }),
+        ).toBeFocused();
+        await review
+          .getByRole("button", { name: adjustmentCopy.saveReview, exact: true })
+          .click();
+        const delta = review.locator(".delta-summary-dialog");
+        await expect(
+          delta.getByRole("button", {
+            name: adjustmentCopy.cancel,
+            exact: true,
+          }),
+        ).toBeFocused();
+        await modalCycle(delta);
+        await capture("adjustment-summary");
+        // A parent leave request may arrive while a summary is already open.
+        // Native inertness blocks pointer input; dispatch its existing callback
+        // to verify the second modal's stack without adding a production hook.
+        await delta
+          .getByRole("button", { name: adjustmentCopy.cancel, exact: true })
+          .focus();
+        await review
+          .getByRole("button", { name: adjustmentCopy.back, exact: true })
+          .evaluate((button) => (button as { click(): void }).click());
+        await expect(warning).toBeVisible();
+        await modalCycle(warning);
+        await capture("adjustment-nested-warning");
+        await page.keyboard.press("Escape");
+        await expect(warning).toBeHidden();
+        await expect(delta).toBeVisible();
+        await expect(
+          delta.getByRole("button", {
+            name: adjustmentCopy.cancel,
+            exact: true,
+          }),
+        ).toBeFocused();
+        await responsive(
+          "adjustment-summary",
+          delta.getByRole("button", {
+            name: adjustmentCopy.confirm,
+            exact: true,
+          }),
+        );
+        await page.keyboard.press("Escape");
+        await expect(
+          review.getByRole("button", {
+            name: adjustmentCopy.saveReview,
+            exact: true,
+          }),
+        ).toBeFocused();
+        await suppliersTab.click();
+        await review.locator('[data-adjustment-action="save-leave"]').click();
+        await expect(page.locator("#purchase-suppliers-view")).toBeVisible();
+        await postedInvoicesTab(page).click();
+        await expect(review.locator("#posted-detail-title")).toBeVisible();
+        await review
+          .getByRole("button", { name: copy.editInvoice, exact: true })
+          .click();
+        await capture("adjustment-unfinished-resume");
+        await review
+          .getByRole("button", { name: adjustmentCopy.continue, exact: true })
+          .click();
+        await review
+          .getByRole("button", { name: adjustmentCopy.saveReview, exact: true })
+          .click();
+        await delta
+          .getByRole("button", { name: adjustmentCopy.confirm, exact: true })
+          .click();
+        await expect(
+          review.locator(".adjustment-posted-success-card"),
+        ).toBeVisible();
+        await capture("adjustment-success");
+        await review
+          .getByRole("button", { name: adjustmentCopy.back, exact: true })
+          .click();
+
+        await review
+          .getByRole("button", {
+            name: locale === "en" ? /Purchase return/iu : "فاتورة مردود",
+            exact: true,
+          })
+          .click();
+        const reasonLabel = locale === "en" ? "Return reason" : "سبب المردود";
+        const evidenceLabel =
+          locale === "en" ? "Disposition evidence" : "دليل التصرف بالبضاعة";
+        const returnBack = review.getByRole("button", {
+          name: adjustmentCopy.back,
+          exact: true,
+        });
+        await capture("return-start");
+        await review
+          .getByRole("textbox", { name: reasonLabel, exact: true })
+          .fill("Supplier accepted damaged goods");
+        await suppliersTab.focus();
+        await page.keyboard.press("Enter");
+        const returnTabWarning = review.locator("dialog.return-warning");
+        await expect(
+          returnTabWarning.getByRole("button").first(),
+        ).toBeFocused();
+        await capture("return-tab-leave");
+        await page.keyboard.press("Escape");
+        await expect(returnTabWarning).toBeHidden();
+        await expect(suppliersTab).toBeFocused();
+        await returnBack.click();
+        const returnWarning = review.locator("dialog.return-warning");
+        await expect(returnWarning.getByRole("button").first()).toBeFocused();
+        await modalCycle(returnWarning);
+        await capture("return-unsaved");
+        await page.keyboard.press("Escape");
+        await expect(returnBack).toBeFocused();
+        await expect(
+          review.getByRole("textbox", { name: reasonLabel, exact: true }),
+        ).toHaveValue("Supplier accepted damaged goods");
+        await returnBack.click();
+        await returnWarning.getByRole("button").last().click();
+        await expect(review.locator("#posted-detail-title")).toBeVisible();
+        await expect(page.locator("#purchase-suppliers-view")).toBeHidden();
+        await review
+          .getByRole("button", {
+            name: locale === "en" ? /Purchase return/iu : "فاتورة مردود",
+            exact: true,
+          })
+          .click();
+        await review
+          .getByRole("textbox", { name: reasonLabel, exact: true })
+          .fill("Supplier accepted damaged goods");
+        await capture("return-reopened-start");
+        await review
+          .getByLabel(evidenceLabel)
+          .fill("P2 supplier collection note");
+        await review
+          .getByRole("button", {
+            name:
+              locale === "en" ? "Create Purchase Return" : "إنشاء مردود شراء",
+            exact: true,
+          })
+          .click();
+        const returnQuantity = review.getByRole("textbox", {
+          name: `${locale === "en" ? "Return quantity" : "كمية المردود"} ${purchaseProduct.displayName}`,
+          exact: true,
+        });
+        await returnQuantity.fill("99");
+        const returnSave = review.getByRole("button", {
+          name:
+            locale === "en"
+              ? "Save and review physical return"
+              : "حفظ ومراجعة مردود البضاعة",
+          exact: true,
+        });
+        await returnSave.click();
+        await expect(
+          review.locator(".purchase-return [role=alert]"),
+        ).toBeFocused();
+        await capture("return-validation");
+        await returnQuantity.fill("1");
+        await capture("return-edit");
+        await responsive("return-edit", returnSave);
+        await returnBack.click();
+        await modalCycle(returnWarning);
+        await capture("return-dirty");
+        await page.keyboard.press("Escape");
+        await expect(returnBack).toBeFocused();
+        await returnSave.click();
+        const returnSummary = review.locator("dialog.return-summary");
+        const returnCancel = returnSummary.getByRole("button").first();
+        await expect(returnCancel).toBeFocused();
+        await modalCycle(returnSummary);
+        await capture("return-summary-step-up");
+        await returnCancel.focus();
+        await returnBack.evaluate((button) =>
+          (button as { click(): void }).click(),
+        );
+        await expect(returnWarning).toBeVisible();
+        await modalCycle(returnWarning);
+        await capture("return-nested-warning");
+        await page.keyboard.press("Escape");
+        await expect(returnWarning).toBeHidden();
+        await expect(returnSummary).toBeVisible();
+        await expect(returnCancel).toBeFocused();
+        const returnConfirm = returnSummary.getByRole("button").last();
+        await returnSummary
+          .getByLabel(locale === "en" ? "Your password" : "كلمة مرورك")
+          .fill("wrong fixture password");
+        await returnConfirm.click();
+        await expect(returnSummary.getByRole("alert")).toBeFocused();
+        await capture("return-step-up-denied");
+        await responsive("return-summary", returnConfirm);
+        await page.keyboard.press("Escape");
+        await expect(returnSave).toBeFocused();
+        await returnSave.click();
+        await expect(
+          returnSummary.getByLabel(
+            locale === "en" ? "Your password" : "كلمة مرورك",
+          ),
+        ).toHaveValue("");
+        await returnSummary
+          .getByLabel(locale === "en" ? "Your password" : "كلمة مرورك")
+          .fill(OWNER_PASSWORD);
+        let releaseStepUp!: () => void;
+        let observedStepUp!: () => void;
+        const heldStepUp = new Promise<void>((resolve) => {
+          releaseStepUp = resolve;
+        });
+        const stepUpStarted = new Promise<void>((resolve) => {
+          observedStepUp = resolve;
+        });
+        await page.route("**/identity/step-up-challenges", async (route) => {
+          observedStepUp();
+          await heldStepUp;
+          await route.continue();
+        });
+        await returnConfirm.click();
+        await stepUpStarted;
+        await expect(review.locator(".purchase-return")).toHaveAttribute(
+          "aria-busy",
+          "true",
+        );
+        await page.keyboard.press("Escape");
+        await expect(returnSummary).toBeVisible();
+        await expect(returnWarning).toBeHidden();
+        await capture("return-posting-busy", false);
+        releaseStepUp();
+        await expect(
+          review.locator(".purchase-return .adjustment-posted-success-card"),
+        ).toBeVisible();
+        await capture("return-success");
+        await returnBack.click();
+        await expect(review.locator("#posted-detail-title")).toBeVisible();
+        await review
+          .locator('[data-review-focus^="posted-adjustment-"]')
+          .first()
+          .click();
+        await expect(review.locator(".posted-adjustment-view")).toBeVisible();
+        await expect(
+          review.locator(".posted-adjustment-view button"),
+        ).toBeFocused();
+        await capture("posted-adjustment-document");
+        await page.keyboard.press("Escape");
+        await expect(
+          review.locator('[data-review-focus^="posted-adjustment-"]').first(),
+        ).toBeFocused();
+        await review
+          .locator('[data-review-focus^="posted-return-"]')
+          .first()
+          .click();
+        await expect(review.locator(".posted-return-view")).toBeVisible();
+        await expect(
+          review.locator(".posted-return-view button"),
+        ).toBeFocused();
+        await capture("posted-return-document");
+        await page.keyboard.press("Escape");
+        await expect(
+          review.locator('[data-review-focus^="posted-return-"]').first(),
+        ).toBeFocused();
+        const facts = await apiRequest(
+          apiOrigin,
+          credentials,
+          "GET",
+          `/purchases/posted/${original.posted.id}`,
+        );
+        expect(facts.body).toMatchObject({
+          adjustments: [{ quantityDelta: "4" }],
+          rows: [{ enteredQuantity: "4" }],
+          returns: [{ reason: "Supplier accepted damaged goods" }],
+        });
+        await writeFile(
+          path.join(out, "metrics.json"),
+          JSON.stringify(report, null, 2),
+        );
+      });
+    }
+  }
+
   test("prints the purchase snapshot as an A4 document in Arabic and English", async ({
     page,
   }) => {

@@ -17,6 +17,7 @@ import {
   updatePurchaseReturnDraft,
 } from "./purchasing-api";
 import { useCommittedFocus } from "./committed-focus";
+import { PurchasingModal } from "./purchasing-modal";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
 import {
@@ -39,6 +40,10 @@ const text = {
     difference: "Difference pending G-01 approval",
     discardQuestion:
       "This physical return is unfinished. Continue it or delete its draft before leaving.",
+    discardInput: "Discard entered information",
+    unsavedQuestion: "Leave this return and discard the entered information?",
+    summary: "Review physical Purchase Return",
+    saving: "Saving Purchase Return…",
     evidence: "Disposition evidence",
     evidenceHint: "Required proof of why and how these goods left",
     item: "Item and batch",
@@ -63,6 +68,10 @@ const text = {
     difference: "الفرق بانتظار اعتماد G-01",
     discardQuestion:
       "مردود البضاعة الفعلي غير مكتمل. تابع المسودة أو احذفها قبل المغادرة.",
+    discardInput: "تجاهل المعلومات المدخلة",
+    unsavedQuestion: "مغادرة المردود وتجاهل المعلومات المدخلة؟",
+    summary: "مراجعة مردود الشراء الفعلي",
+    saving: "جارٍ حفظ مردود الشراء…",
     evidence: "دليل التصرف بالبضاعة",
     evidenceHint: "إثبات إلزامي لسبب وكيفية خروج البضاعة",
     item: "المادة والتشغيلة",
@@ -84,6 +93,7 @@ export function PurchaseReturnWorkflow({
   leaveRequest,
   onBack,
   onDraftActive,
+  onLeaveCancelled,
   onPosted,
 }: {
   readonly baseUrl: string;
@@ -91,6 +101,7 @@ export function PurchaseReturnWorkflow({
   readonly leaveRequest: number;
   readonly onBack: () => void;
   readonly onDraftActive: (active: boolean) => void;
+  readonly onLeaveCancelled?: () => void;
   readonly onPosted: (purchaseId: string) => Promise<void>;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -111,13 +122,17 @@ export function PurchaseReturnWorkflow({
   const [leaveWarning, setLeaveWarning] = useState(false);
   const [postedNumber, setPostedNumber] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
+  const warningRef = useRef<HTMLDialogElement>(null);
+  const summaryRef = useRef<HTMLDialogElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
+  const leaveOpener = useRef<HTMLElement | null>(null);
   const requestFocus = useCommittedFocus();
 
   useEffect(() => {
     onDraftActive(detail.activeReturnDrafts.length > 0);
   }, [detail.activeReturnDrafts.length, onDraftActive]);
   useEffect(() => {
-    if (leaveRequest > 0) setLeaveWarning(true);
+    if (leaveRequest > 0) leave();
   }, [leaveRequest]);
 
   /**
@@ -196,7 +211,11 @@ export function PurchaseReturnWorkflow({
 
   async function discardDraft(): Promise<void> {
     const active = draft ?? detail.activeReturnDrafts[0];
-    if (active === undefined) return;
+    if (active === undefined) {
+      setLeaveWarning(false);
+      onBack();
+      return;
+    }
     setBusy(true);
     try {
       await discardPurchaseReturnDraft(baseUrl, active.id, {
@@ -231,6 +250,7 @@ export function PurchaseReturnWorkflow({
       });
       setDraft(updated);
       setSummary(await requestPurchaseReturnSummary(baseUrl, updated.id));
+      setPassword("");
       setStage("summary");
     } catch (caught) {
       handleError(caught);
@@ -273,48 +293,109 @@ export function PurchaseReturnWorkflow({
   }
 
   function leave(): void {
-    if (stage === "unfinished" || stage === "edit" || stage === "summary") {
+    if (busy) {
+      onLeaveCancelled?.();
+      return;
+    }
+    if (
+      stage === "unfinished" ||
+      stage === "edit" ||
+      stage === "summary" ||
+      (stage === "start" && (reason !== "" || evidence !== ""))
+    ) {
+      leaveOpener.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
       setLeaveWarning(true);
     } else onBack();
   }
 
+  function dismissWarning(): void {
+    setLeaveWarning(false);
+    onLeaveCancelled?.();
+    requestFocus(() => leaveOpener.current);
+  }
+
+  function closeSummary(): void {
+    setPassword("");
+    setError(null);
+    setStage("edit");
+    requestFocus(() => saveRef.current);
+  }
+
+  const errorNotice =
+    error === null ? null : (
+      <div className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
+        <span>{error.message}</span>
+        {error.tracking ? (
+          <PurchasingSupportDetails reference={error.tracking} />
+        ) : null}
+      </div>
+    );
+
   return (
-    <section className="purchase-return" aria-labelledby="return-title">
+    <section
+      className="purchase-return"
+      aria-labelledby="return-title"
+      aria-busy={busy}
+      onKeyDownCapture={(event) => {
+        if (leaveWarning || stage === "summary") return;
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          if (event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          leave();
+        }
+      }}
+    >
       <h3 id="return-title">{copy.title}</h3>
-      {error === null ? null : (
-        <div className="form-error" role="alert" ref={errorRef} tabIndex={-1}>
-          <span>{error.message}</span>
-          {error.tracking ? (
-            <PurchasingSupportDetails reference={error.tracking} />
-          ) : null}
-        </div>
-      )}
+      <span className="visually-hidden" role="status" aria-live="polite">
+        {busy ? copy.saving : ""}
+      </span>
+      {!leaveWarning && stage !== "summary" ? errorNotice : null}
       {leaveWarning ? (
-        <div
+        <PurchasingModal
           className="return-warning"
-          role="alertdialog"
-          aria-label={copy.discardQuestion}
-          aria-modal="true"
+          dialogRef={warningRef}
+          alert
+          label={
+            draft === null && stage === "start"
+              ? copy.unsavedQuestion
+              : copy.discardQuestion
+          }
+          initialFocus='[data-return-action="continue-editing"]'
+          blocked={busy}
+          onDismiss={dismissWarning}
         >
-          <p>{copy.discardQuestion}</p>
+          <p>
+            {draft === null && stage === "start"
+              ? copy.unsavedQuestion
+              : copy.discardQuestion}
+          </p>
+          {errorNotice}
           <div className="return-actions">
             <button
               type="button"
               className="quiet-button"
-              autoFocus
-              onClick={() => setLeaveWarning(false)}
+              data-return-action="continue-editing"
+              disabled={busy}
+              onClick={dismissWarning}
             >
               {copy.continue}
             </button>
             <button
               type="button"
               className="danger-button"
+              disabled={busy}
               onClick={() => void discardDraft()}
             >
-              {copy.delete}
+              {draft === null && stage === "start"
+                ? copy.discardInput
+                : copy.delete}
             </button>
           </div>
-        </div>
+        </PurchasingModal>
       ) : null}
       {stage === "unfinished" ? (
         <div className="return-warning" role="alert">
@@ -332,7 +413,7 @@ export function PurchaseReturnWorkflow({
               type="button"
               className="danger-button"
               disabled={busy}
-              onClick={() => void discardDraft()}
+              onClick={leave}
             >
               {copy.delete}
             </button>
@@ -443,6 +524,7 @@ export function PurchaseReturnWorkflow({
               evidence.trim() === "" ||
               !draft.rows.some((row) => isPositiveQuantity(row.returnQuantity))
             }
+            ref={saveRef}
             onClick={() => void saveAndReview()}
           >
             {copy.saveReview}
@@ -450,7 +532,18 @@ export function PurchaseReturnWorkflow({
         </div>
       ) : null}
       {stage === "summary" && summary !== null ? (
-        <div className="return-summary">
+        <PurchasingModal
+          className="return-summary"
+          dialogRef={summaryRef}
+          labelledBy="return-summary-title"
+          initialFocus='[data-return-action="cancel-summary"]'
+          blocked={busy}
+          onDismiss={closeSummary}
+        >
+          <header className="return-summary-header">
+            <h4 id="return-summary-title">{copy.summary}</h4>
+          </header>
+          {!leaveWarning ? errorNotice : null}
           <dl>
             <div>
               <dt>{copy.carrying}</dt>
@@ -499,6 +592,7 @@ export function PurchaseReturnWorkflow({
             <input
               type="password"
               autoComplete="current-password"
+              disabled={busy}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
@@ -508,7 +602,8 @@ export function PurchaseReturnWorkflow({
               type="button"
               className="quiet-button"
               disabled={busy}
-              onClick={() => setStage("edit")}
+              data-return-action="cancel-summary"
+              onClick={closeSummary}
             >
               {copy.cancel}
             </button>
@@ -521,7 +616,7 @@ export function PurchaseReturnWorkflow({
               {copy.confirm}
             </button>
           </div>
-        </div>
+        </PurchasingModal>
       ) : null}
       {stage === "posted" ? (
         <div role="status" className="adjustment-posted-success-card">

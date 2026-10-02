@@ -162,6 +162,15 @@ server audit evidence. T03 and the later owning module tasks must verify it.
 
 ## Validation record
 
+The 1 October [Phase 2 candidate](../evidence/issue-206/README.md), issue #206,
+continues from accepted Phase 1 and current `dev` at `ad1d492`. Its authorized
+T01–T05 batch covers Purchasing presentation and modal accessibility, with one
+final stakeholder PASS/FAIL pending. The source, complete state inventory,
+automated checks and reference/current comparisons are indexed separately.
+This bounded candidate does not declare M2 complete, close Sales #204, supply
+physical Windows Narrator proof or decide G-01/G-02/G-16. Accepted registers remain
+inline; protected Quick Product and Purchase row keys retain their behavior.
+
 - Issues inspected: #45–#59, #63, #75, #190, and #191. Their milestone, state, labels, and named dependencies were checked through GitHub.
 - All source, test, migration, and documentation paths used by the scope audit exist at baseline commit `74f0811`; the fresh before-state evidence was captured from source commit `7164fbf`.
 - Existing evidence under `evidence/issue-59/` is retained as historical evidence and is not represented as current-candidate proof.

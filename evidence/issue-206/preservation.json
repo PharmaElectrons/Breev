@@ -1,0 +1,68 @@
+{
+  "protectedHashes": [
+    {
+      "Path": "P:\\Projects\\PharmaElectrons\\apps\\desktop\\src\\renderer\\src\\use-startup-connection.ts",
+      "Hash": "27ACD8E447DEE24964A1137E441FBF7F91F7748F8246010FF5BA5CD7C0EA913B"
+    },
+    {
+      "Path": "P:\\Projects\\PharmaElectrons\\tooling\\dev.mjs",
+      "Hash": "73AAF0EE0779D110862F5E9A062DB5F8625AA3075D338FAB6C6622146C1D3E3B"
+    }
+  ],
+  "manualReady": true,
+  "acceptance": "pending",
+  "retainedOwnersUnchanged": true,
+  "checkedAt": "2026-10-01T20:10:31.0780055Z",
+  "listeners": [
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 51892,
+      "OwningProcess": 21472
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 51686,
+      "OwningProcess": 9788
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5558,
+      "OwningProcess": 4152
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5557,
+      "OwningProcess": 4860
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5556,
+      "OwningProcess": 19956
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5555,
+      "OwningProcess": 12876
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5554,
+      "OwningProcess": 21436
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5553,
+      "OwningProcess": 1596
+    },
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 5551,
+      "OwningProcess": 18688
+    }
+  ],
+  "historicalManualApiRendererAbsentAtStart": [
+    23008,
+    19868
+  ],
+  "stagingEmpty": true
+}

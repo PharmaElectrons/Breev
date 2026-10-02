@@ -1,0 +1,586 @@
+{
+  "exactRasterComparison": true,
+  "maskedRegions": [],
+  "pairs": 48,
+  "identical": 48,
+  "geometryIdentical": true,
+  "findingsIdentical": true,
+  "results": [
+    {
+      "file": "basket-ar-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "basket-ar-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "basket-ar-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "basket-ar-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "basket-en-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "basket-en-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "basket-en-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "basket-en-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "dashboard-ar-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "dashboard-ar-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "dashboard-ar-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "dashboard-ar-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "dashboard-en-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "dashboard-en-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "dashboard-en-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "dashboard-en-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "inventory-ar-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "inventory-ar-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "inventory-ar-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "inventory-ar-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "inventory-en-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "inventory-en-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "inventory-en-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "inventory-en-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "products-ar-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "products-ar-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "products-ar-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "products-ar-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "products-en-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "products-en-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "products-en-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "products-en-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "sales-ar-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "sales-ar-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "sales-ar-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "sales-ar-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "sales-en-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "sales-en-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "sales-en-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "sales-en-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "settings-ar-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "settings-ar-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "settings-ar-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "settings-ar-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "settings-en-dark-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "settings-en-dark-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "settings-en-light-1280.png",
+      "size": [
+        1280,
+        800
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    },
+    {
+      "file": "settings-en-light-1366.png",
+      "size": [
+        1366,
+        768
+      ],
+      "changedPixels": 0,
+      "changedFraction": 0.0,
+      "maximumChannelDifference": 0,
+      "boundingBox": null,
+      "equal": true
+    }
+  ]
+}

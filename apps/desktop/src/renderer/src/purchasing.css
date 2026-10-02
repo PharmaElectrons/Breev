@@ -1,0 +1,347 @@
+/* Prototype density and Breev semantic colors, confined to Purchasing.
+   Quick Product and the accepted entry-field keyboard path are excluded. */
+.purchasing-workspace {
+  --purchase-surface: var(--card);
+  --purchase-divider: var(--border);
+  --purchase-accent: var(--primary);
+  --purchase-muted: var(--muted-foreground);
+  --purchase-radius: 0.75rem;
+}
+
+.purchasing-workspace
+  :is(button, input, select, textarea, table):not(.purchase-product-dialog *) {
+  font-family: var(--font-family-display);
+}
+
+.purchasing-workspace :is(.proto-font-mono, .proto-money, .proto-doc-btn bdi) {
+  font-family: var(--font-family-mono);
+}
+
+.purchasing-workspace
+  :is(
+    .purchase-row-heading,
+    .purchase-review,
+    .posted-purchase-view,
+    .supplier-manager,
+    .purchase-header-form
+  ) {
+  font-family: var(--font-family-display);
+}
+
+.purchasing-workspace .supplier-toolbar button {
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition-property: background-color, border-color, color;
+}
+
+.purchasing-workspace .supplier-toolbar > button {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  filter: none;
+}
+
+.purchasing-workspace .supplier-toolbar button:not(:disabled) {
+  opacity: 1;
+}
+
+/* Inactive suppliers remain searchable; their status badge carries the state. */
+.purchasing-workspace .supplier-tile {
+  opacity: 1;
+}
+
+.purchasing-workspace .supplier-toolbar button[title]:first-child {
+  color: var(--primary);
+  background: var(--primary-wash);
+  border-color: var(--control-border);
+}
+
+.purchasing-workspace .supplier-toolbar button[title]:nth-child(2) {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.purchasing-workspace :is(.proto-doc-btn, .proto-ref-link) {
+  color: var(--purchase-accent);
+}
+
+.purchasing-workspace
+  :is(.proto-badge-purchase, .purchase-badge-type-purchase) {
+  color: var(--primary);
+  background: var(--primary-wash);
+  border-color: var(--control-border);
+}
+
+.purchasing-workspace :is(.proto-badge-modified, .proto-badge-adjustment) {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+
+.purchasing-workspace .proto-badge-return {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.purchasing-workspace .proto-posted-table thead th {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.5rem 0.75rem;
+}
+
+.purchasing-workspace .proto-posted-table td {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.purchasing-workspace .proto-search-input {
+  border-color: var(--control-border);
+  border-radius: 0.5rem;
+  padding-block: 0.375rem;
+  font-size: 0.75rem;
+}
+
+.purchasing-workspace .purchase-row-workspace {
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.purchasing-workspace .purchase-row-table {
+  min-inline-size: 55rem;
+}
+
+/* The row popover owns its scroll. Scrolling its ancestor clips its actions
+   behind the invoice header, especially with the horizontal item-details band. */
+.purchasing-workspace
+  .purchase-row-workspace:has(.purchase-row-optional-details[open]) {
+  overflow: visible;
+}
+
+/* Authoritative review supplements the prototype's six-part footer. */
+.purchasing-workspace .purchase-review {
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--purchase-radius);
+  box-shadow: none;
+}
+
+.purchasing-workspace .purchase-review-stats-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.purchasing-workspace .purchase-review-stat {
+  align-items: start;
+  text-align: start;
+  min-inline-size: 0;
+}
+
+.purchasing-workspace .purchase-review-stat-label {
+  text-align: start;
+  font-size: 0.625rem;
+  white-space: normal;
+  letter-spacing: 0.08em;
+}
+
+.purchasing-workspace .purchase-review-stat-value {
+  text-align: start;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  font-family: var(--font-family-mono);
+}
+
+.purchasing-workspace .purchase-review-batches,
+.purchasing-workspace .purchase-review-warnings {
+  font-size: 0.75rem;
+}
+
+.purchasing-workspace .purchase-review :is(ul, p) {
+  margin-block: 0;
+}
+
+.purchasing-workspace .purchase-review-actions > button {
+  min-block-size: 2rem;
+  font-size: 0.75rem;
+}
+
+.purchasing-workspace .posted-purchase-totals {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.75rem;
+}
+
+.purchasing-workspace .posted-purchase-totals > div {
+  padding: 0.5rem 0.75rem;
+  background: var(--purchase-surface);
+  box-shadow: none;
+}
+
+.purchasing-workspace .posted-purchase-totals dt {
+  font-size: 0.625rem;
+}
+
+.purchasing-workspace .posted-purchase-totals dd {
+  font-family: var(--font-family-mono);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.purchasing-workspace .purchase-return {
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: var(--purchase-radius);
+  box-shadow: none;
+  border-inline-start-width: 0.2rem;
+}
+
+.purchasing-workspace .purchase-return h3 {
+  font-size: 0.875rem;
+}
+
+.purchasing-workspace .return-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.purchasing-workspace .return-form :is(.purchase-table-wrap, button) {
+  grid-column: 1 / -1;
+}
+
+.purchasing-workspace .return-form > button {
+  justify-self: end;
+}
+
+.purchasing-workspace .return-form textarea {
+  min-block-size: 4rem;
+}
+
+.purchasing-workspace .purchase-return .visually-hidden[role="status"] {
+  padding: 0;
+  border: 0;
+}
+
+/* Native top-layer dialogs isolate the entire shell, including nested warnings. */
+.purchasing-workspace dialog.purchasing-modal {
+  color: var(--foreground);
+  margin: auto;
+  inline-size: min(640px, calc(100vw - 2rem));
+  max-inline-size: calc(100vw - 2rem);
+  max-block-size: calc(100dvh - 2rem);
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: auto;
+  border: 1px solid var(--purchase-divider);
+  border-radius: var(--purchase-radius);
+  background: var(--purchase-surface);
+  box-shadow: 0 1.5rem 3rem rgb(0 0 0 / 0.3);
+}
+
+.purchasing-workspace dialog.purchasing-modal::backdrop {
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.purchasing-workspace dialog.delta-summary-dialog {
+  padding: 0;
+  overflow: hidden;
+}
+
+.purchasing-workspace dialog:is(.adjustment-warning, .return-warning) {
+  inline-size: min(640px, calc(100vw - 2rem));
+  padding: 1rem;
+  border-inline-start: 0.2rem solid var(--warning);
+}
+
+.purchasing-workspace dialog.return-summary {
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.purchasing-workspace .return-summary-header {
+  border-block-end: 1px solid var(--purchase-divider);
+  padding-block-end: 0.75rem;
+}
+
+.purchasing-workspace .return-summary h4 {
+  font-size: 0.875rem;
+}
+
+.purchasing-workspace .return-summary dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.purchasing-workspace .return-summary dl > div {
+  padding: 0.5rem;
+  box-shadow: none;
+}
+
+.purchasing-workspace .return-summary dt {
+  font-size: 0.625rem;
+}
+
+.purchasing-workspace .return-summary dd {
+  font-size: 0.875rem;
+  font-family: var(--font-family-mono);
+  overflow-wrap: anywhere;
+}
+
+.purchasing-workspace .return-summary .return-actions {
+  justify-content: end;
+}
+
+.purchasing-workspace
+  dialog.purchasing-modal
+  :is(button, input, textarea):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 56.25rem) {
+  .purchasing-workspace .purchase-review-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 80rem) {
+  .purchasing-workspace .purchase-item-sidebar {
+    z-index: 60;
+  }
+
+  /* At band widths and enlarged text the popover must escape the row scroller. */
+  .purchasing-workspace
+    .purchase-row-workspace:has(.purchase-row-optional-details[open]) {
+    overflow: auto;
+  }
+
+  .purchasing-workspace
+    .purchase-row-optional-details[open]
+    .purchase-optional-controls-body {
+    position: fixed;
+    inset-block: 8rem auto;
+    inset-inline: auto 1rem;
+    inline-size: min(30rem, calc(100vw - 2rem));
+    min-inline-size: min(24rem, calc(100vw - 2rem));
+    max-inline-size: calc(100vw - 2rem);
+    max-block-size: calc(100dvh - 10rem);
+    white-space: normal;
+  }
+
+  .purchasing-workspace .purchase-optional-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 37.5rem) {
+  .purchasing-workspace .purchase-review-stats-grid,
+  .purchasing-workspace .return-form,
+  .purchasing-workspace .return-summary dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

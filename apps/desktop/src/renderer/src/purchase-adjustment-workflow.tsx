@@ -55,6 +55,7 @@ import {
   updatePurchaseAdjustmentDraft,
 } from "./purchasing-api";
 import { useCommittedFocus } from "./committed-focus";
+import { PurchasingModal } from "./purchasing-modal";
 import { IdentityApiDenied, LicensingApiDenied } from "./identity-api";
 import { usePreferences } from "./preferences-provider";
 import { formatFilsToIqd } from "./product-record";
@@ -77,6 +78,7 @@ export function PurchaseAdjustmentWorkflow({
   leaveRequest,
   onBack,
   onDraftActive,
+  onLeaveCancelled,
   onPosted,
   navigation,
   onNavigate,
@@ -89,6 +91,7 @@ export function PurchaseAdjustmentWorkflow({
   readonly leaveRequest: number;
   readonly onBack: () => void;
   readonly onDraftActive: (active: boolean) => void;
+  readonly onLeaveCancelled?: () => void;
   readonly onPosted: (purchaseId: string) => Promise<void>;
   readonly navigation: PurchasePostedDetail["navigation"];
   readonly onNavigate: (direction: "previous" | "next") => void;
@@ -121,8 +124,8 @@ export function PurchaseAdjustmentWorkflow({
   );
   const pendingLeave = useRef<() => void>(onBack);
   const leaveOpener = useRef<HTMLElement | null>(null);
-  const warningRef = useRef<HTMLDivElement>(null);
-  const summaryRef = useRef<HTMLDivElement>(null);
+  const warningRef = useRef<HTMLDialogElement>(null);
+  const summaryRef = useRef<HTMLDialogElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
   const [postedNumber, setPostedNumber] = useState("");
   const [previewCurrent, setPreviewCurrent] = useState(false);
@@ -448,7 +451,10 @@ export function PurchaseAdjustmentWorkflow({
   }
 
   function leave(destination: () => void = onBack, deleting = false): void {
-    if (busy || postUncertain) return;
+    if (busy || postUncertain) {
+      onLeaveCancelled?.();
+      return;
+    }
     if (stage === "posted") {
       destination();
       return;
@@ -476,6 +482,7 @@ export function PurchaseAdjustmentWorkflow({
 
   function dismissWarning(): void {
     setLeaveWarning(false);
+    onLeaveCancelled?.();
     requestFocus(() => leaveOpener.current);
   }
 
@@ -485,33 +492,16 @@ export function PurchaseAdjustmentWorkflow({
   }
 
   function modalKeys(event: KeyboardEvent<HTMLElement>): void {
-    const modal = leaveWarning
-      ? warningRef.current
-      : stage === "summary"
-        ? summaryRef.current
-        : null;
+    if (leaveWarning || stage === "summary") return;
+    if (event.nativeEvent.isComposing) {
+      if (event.key === "Escape") event.stopPropagation();
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
       if (busy || postUncertain) return;
-      if (leaveWarning) dismissWarning();
-      else if (stage === "summary") closeSummary();
-      else leave();
-    } else if (event.key === "Tab" && modal !== null) {
-      const targets = [
-        ...modal.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]',
-        ),
-      ].filter((target) => target.getClientRects().length > 0);
-      const first = targets[0];
-      const last = targets.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
+      leave();
     }
   }
 
@@ -590,77 +580,77 @@ export function PurchaseAdjustmentWorkflow({
       ) : null}
 
       {leaveWarning ? (
-        <div className="delta-summary-backdrop" role="presentation">
-          <div
-            className="adjustment-warning"
-            ref={warningRef}
-            role="alertdialog"
-            aria-label={deleteOnly ? copy.discardOnly : copy.discardQuestion}
-            aria-modal="true"
-          >
-            <p>{deleteOnly ? copy.discardOnly : copy.discardQuestion}</p>
-            <p>{dirty ? copy.dirty : copy.saved}</p>
-            {error === null ? null : (
-              <div
-                className="form-error"
-                role="alert"
-                ref={errorRef}
-                tabIndex={-1}
-              >
-                <span>{error.message}</span>
-                {error.tracking ? (
-                  <PurchasingSupportDetails reference={error.tracking} />
-                ) : null}
-              </div>
-            )}
-            <div className="adjustment-actions">
+        <PurchasingModal
+          className="adjustment-warning"
+          dialogRef={warningRef}
+          alert
+          label={deleteOnly ? copy.discardOnly : copy.discardQuestion}
+          initialFocus='[data-adjustment-action="continue-editing"]'
+          blocked={busy || postUncertain}
+          onDismiss={dismissWarning}
+        >
+          <p>{deleteOnly ? copy.discardOnly : copy.discardQuestion}</p>
+          <p>{dirty ? copy.dirty : copy.saved}</p>
+          {error === null ? null : (
+            <div
+              className="form-error"
+              role="alert"
+              ref={errorRef}
+              tabIndex={-1}
+            >
+              <span>{error.message}</span>
+              {error.tracking ? (
+                <PurchasingSupportDetails reference={error.tracking} />
+              ) : null}
+            </div>
+          )}
+          <div className="adjustment-actions">
+            <button
+              type="button"
+              className="quiet-button"
+              disabled={busy}
+              data-adjustment-action="continue-editing"
+              onClick={dismissWarning}
+            >
+              {copy.continue}
+            </button>
+            {!deleteOnly && !dirty ? (
               <button
                 type="button"
                 className="quiet-button"
                 disabled={busy}
-                data-adjustment-action="continue-editing"
-                onClick={dismissWarning}
+                data-adjustment-action="keep-leave"
+                onClick={() => {
+                  setLeaveWarning(false);
+                  onDraftActive(false);
+                  pendingLeave.current();
+                }}
               >
-                {copy.continue}
+                {copy.keepLeave}
               </button>
-              {!deleteOnly && !dirty ? (
-                <button
-                  type="button"
-                  className="quiet-button"
-                  disabled={busy}
-                  data-adjustment-action="keep-leave"
-                  onClick={() => {
-                    setLeaveWarning(false);
-                    onDraftActive(false);
-                    pendingLeave.current();
-                  }}
-                >
-                  {copy.keepLeave}
-                </button>
-              ) : null}
-              {!deleteOnly && stage !== "unfinished" ? (
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={busy || reloadRequired || postUncertain}
-                  data-adjustment-action="save-leave"
-                  onClick={() => void saveAndReview(false)}
-                >
-                  {copy.saveLeave}
-                </button>
-              ) : null}
+            ) : null}
+            {!deleteOnly && stage !== "unfinished" ? (
               <button
                 type="button"
-                className="danger-button"
-                disabled={busy || postUncertain}
-                data-adjustment-action="discard-leave"
-                onClick={() => void discardDraft()}
+                className="primary-button"
+                disabled={busy || reloadRequired || postUncertain}
+                data-adjustment-action="save-leave"
+                onClick={() => void saveAndReview(false)}
               >
-                {copy.delete}
+                {copy.saveLeave}
               </button>
-            </div>
+            ) : null}
+            <button
+              type="button"
+              className="danger-button"
+              disabled={busy || postUncertain}
+              data-adjustment-action="discard-leave"
+              onClick={() => void discardDraft()}
+            >
+              {copy.delete}
+            </button>
           </div>
-        </div>
+        </PurchasingModal>
       ) : null}
 
       {stage === "unfinished" ? (
@@ -784,7 +774,7 @@ export function PurchaseAdjustmentWorkflow({
                     disabled={busy}
                     onClick={() => void createDraft()}
                   >
-                    <span>📝</span> {copy.start}
+                    <span aria-hidden="true">📝</span> {copy.start}
                   </button>
                 </div>
               </>
@@ -1350,7 +1340,7 @@ export function PurchaseAdjustmentWorkflow({
                 disabled={busy || postUncertain || reloadRequired}
                 onClick={() => void saveAndReview()}
               >
-                <span>💾</span> {copy.saveReview}
+                <span aria-hidden="true">💾</span> {copy.saveReview}
               </button>
             </div>
           </div>
@@ -1359,352 +1349,350 @@ export function PurchaseAdjustmentWorkflow({
 
       {/* Delta Summary Modal (Screenshot 1) */}
       {stage === "summary" && summary !== null ? (
-        <div className="delta-summary-backdrop" role="presentation">
-          <div
-            className="delta-summary-dialog"
-            inert={leaveWarning}
-            ref={summaryRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delta-summary-title"
-          >
-            {/* Header */}
-            <div className="delta-summary-header">
-              <h3 id="delta-summary-title" className="delta-summary-title">
-                <svg
-                  className="delta-summary-icon"
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34" />
-                  <path d="M14 2v5a1 1 0 0 0 1 1h5" />
-                  <path d="M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z" />
-                </svg>
-                <span>{copy.difference}</span>
-              </h3>
-              <span className="delta-summary-badge">
-                {copy.deltaSummarySubtitle} {originalNumberDisplay} —{" "}
-                {nextSuffix}-{originalNumberDisplay}
-              </span>
-            </div>
-
-            {/* Comparison Table */}
-            <div
-              className="delta-summary-table-wrap"
-              role="group"
-              aria-label={copy.difference}
-              tabIndex={0}
-            >
-              <PurchaseAdjustmentHeaderComparisonTable
-                comparison={summary.headerComparison}
-              />
-              <table
-                className="delta-summary-table"
-                data-adjustment-totals="comparison"
+        <PurchasingModal
+          className="delta-summary-dialog"
+          dialogRef={summaryRef}
+          labelledBy="delta-summary-title"
+          initialFocus='[data-adjustment-action="close-summary"]'
+          blocked={busy || postUncertain}
+          onDismiss={closeSummary}
+        >
+          {/* Header */}
+          <div className="delta-summary-header">
+            <h3 id="delta-summary-title" className="delta-summary-title">
+              <svg
+                className="delta-summary-icon"
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
+                <path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34" />
+                <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+                <path d="M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z" />
+              </svg>
+              <span>{copy.difference}</span>
+            </h3>
+            <span className="delta-summary-badge">
+              {copy.deltaSummarySubtitle} {originalNumberDisplay} — {nextSuffix}
+              -{originalNumberDisplay}
+            </span>
+          </div>
+
+          {/* Comparison Table */}
+          <div
+            className="delta-summary-table-wrap"
+            role="group"
+            aria-label={copy.difference}
+            tabIndex={0}
+          >
+            <PurchaseAdjustmentHeaderComparisonTable
+              comparison={summary.headerComparison}
+            />
+            <table
+              className="delta-summary-table"
+              data-adjustment-totals="comparison"
+            >
+              <thead>
+                <tr>
+                  <th scope="col">{copy.total}</th>
+                  <th scope="col">{copy.before}</th>
+                  <th scope="col">{copy.after}</th>
+                  <th scope="col">{copy.valueDelta}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(
+                  [
+                    [
+                      "primarySupplierCostFils",
+                      copy.totalCost,
+                      summary.primarySupplierCostDeltaFils,
+                    ],
+                    [
+                      "allowanceFils",
+                      copy.discountAmount,
+                      summary.allowanceDeltaFils,
+                    ],
+                    [
+                      "offerFils",
+                      purchasingMessages[locale].invoiceOffer,
+                      summary.offerDeltaFils,
+                    ],
+                    [
+                      "costAfterDiscountFils",
+                      copy.afterDiscount,
+                      summary.costAfterDiscountDeltaFils,
+                    ],
+                  ] as const
+                ).map(([field, label, delta]) => (
+                  <tr key={field}>
+                    <th scope="row">{label}</th>
+                    <td>
+                      <bdi>
+                        {formatAdjustmentFils(
+                          summary.totalsComparison.before[field],
+                          locale,
+                        )}
+                      </bdi>
+                    </td>
+                    <td>
+                      <bdi>
+                        {formatAdjustmentFils(
+                          summary.totalsComparison.after[field],
+                          locale,
+                        )}
+                      </bdi>
+                    </td>
+                    <td>
+                      <bdi>{formatAdjustmentFils(delta, locale)}</bdi>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {summary.warnings.length > 0 ? (
+              <p role="status" className="adjustment-warning">
+                {purchasingMessages[locale].duplicate}{" "}
+                {purchasingMessages[locale].openDecision}
+              </p>
+            ) : null}
+            <div>
+              <p>{copy.stockImpact}</p>
+              {summary.stockEffects.length === 0 ? (
+                <p>{copy.noStockImpact}</p>
+              ) : (
+                <ul className="adjustment-supplier-effects">
+                  {summary.stockEffects.map((effect, index) => (
+                    <li key={`${effect.itemId}-${index}`}>
+                      {effect.itemDisplayName}: {copy.qtyDelta}{" "}
+                      <bdi>{effect.quantityDelta}</bdi>; {copy.valueDelta}{" "}
+                      <bdi>
+                        {formatAdjustmentFils(
+                          effect.primarySupplierCostDeltaFils,
+                          locale,
+                        )}
+                      </bdi>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {summary.supplierEffects.length > 0 ? (
+              <div>
+                <p>{copy.supplierImpact}</p>
+                <ul className="adjustment-supplier-effects">
+                  {summary.supplierEffects.map((effect) => (
+                    <li key={effect.supplierId}>
+                      {effect.supplierNameSnapshot}:{" "}
+                      <bdi>
+                        {formatAdjustmentFils(effect.deltaFils, locale)}
+                      </bdi>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p>{copy.noSupplierImpact}</p>
+            )}
+            {summary.rowDeltas.length === 0 ? (
+              <p>{copy.unchanged}</p>
+            ) : (
+              <table className="delta-summary-table">
                 <thead>
                   <tr>
-                    <th scope="col">{copy.total}</th>
-                    <th scope="col">{copy.before}</th>
-                    <th scope="col">{copy.after}</th>
+                    <th scope="col">{copy.item}</th>
+                    <th scope="col">{copy.qtyBefore}</th>
+                    <th scope="col">{copy.qtyAfter}</th>
+                    <th scope="col">{copy.qtyDelta}</th>
+                    <th scope="col">{copy.costBefore}</th>
+                    <th scope="col">{copy.costAfter}</th>
                     <th scope="col">{copy.valueDelta}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(
-                    [
-                      [
-                        "primarySupplierCostFils",
-                        copy.totalCost,
-                        summary.primarySupplierCostDeltaFils,
-                      ],
-                      [
-                        "allowanceFils",
-                        copy.discountAmount,
-                        summary.allowanceDeltaFils,
-                      ],
-                      [
-                        "offerFils",
-                        purchasingMessages[locale].invoiceOffer,
-                        summary.offerDeltaFils,
-                      ],
-                      [
-                        "costAfterDiscountFils",
-                        copy.afterDiscount,
-                        summary.costAfterDiscountDeltaFils,
-                      ],
-                    ] as const
-                  ).map(([field, label, delta]) => (
-                    <tr key={field}>
-                      <th scope="row">{label}</th>
-                      <td>
-                        <bdi>
-                          {formatAdjustmentFils(
-                            summary.totalsComparison.before[field],
-                            locale,
-                          )}
-                        </bdi>
-                      </td>
-                      <td>
-                        <bdi>
-                          {formatAdjustmentFils(
-                            summary.totalsComparison.after[field],
-                            locale,
-                          )}
-                        </bdi>
-                      </td>
-                      <td>
-                        <bdi>{formatAdjustmentFils(delta, locale)}</bdi>
-                      </td>
-                    </tr>
-                  ))}
+                  {summary.rowDeltas.map((row) => {
+                    const itemName =
+                      row.after?.itemDisplayName ??
+                      row.before?.itemDisplayName ??
+                      copy.item;
+                    const beforeQty = row.before?.enteredQuantity ?? "0";
+                    const afterQty = row.after?.enteredQuantity ?? "0";
+                    const qtyDeltaNum = BigInt(row.quantityDelta);
+                    const formattedQtyDelta =
+                      qtyDeltaNum > 0n
+                        ? `+${row.quantityDelta}`
+                        : `${row.quantityDelta}`;
+                    const costBeforeFils = row.before?.costFils ?? "0";
+                    const costAfterFils = row.after?.costFils ?? "0";
+                    const costDeltaFils = row.primarySupplierCostDeltaFils;
+                    const isPositiveCost =
+                      BigInt(costDeltaFils.replace(/^-/u, "") || "0") > 0n &&
+                      !costDeltaFils.startsWith("-");
+
+                    return (
+                      <tr key={row.lineageId}>
+                        <th scope="row">
+                          <span>{itemName}</span>
+                          {row.changes.some(
+                            (change) => change.field === "retail-price",
+                          ) ? (
+                            <p>
+                              {purchasingMessages[locale].sellingPrice}:{" "}
+                              <bdi>
+                                {formatFilsToIqd(
+                                  row.before?.retailPriceFils ?? "0",
+                                  locale,
+                                )}
+                              </bdi>{" "}
+                              →{" "}
+                              <bdi>
+                                {formatFilsToIqd(
+                                  row.after?.retailPriceFils ?? "0",
+                                  locale,
+                                )}
+                              </bdi>
+                            </p>
+                          ) : null}
+                        </th>
+                        <td>
+                          <bdi>{beforeQty}</bdi>
+                        </td>
+                        <td>
+                          <bdi>{afterQty}</bdi>
+                        </td>
+                        <td>
+                          {/* Accessible quantity comparison includes the signed movement. */}
+                          <span className="visually-hidden">
+                            {beforeQty} → {afterQty} ({row.quantityDelta})
+                          </span>
+                          <bdi
+                            className={
+                              qtyDeltaNum > 0n
+                                ? "delta-positive"
+                                : qtyDeltaNum < 0n
+                                  ? "delta-negative"
+                                  : ""
+                            }
+                          >
+                            {formattedQtyDelta}
+                          </bdi>
+                        </td>
+                        <td>
+                          <bdi>{formatFilsToIqd(costBeforeFils, locale)}</bdi>
+                        </td>
+                        <td>
+                          <bdi>{formatFilsToIqd(costAfterFils, locale)}</bdi>
+                        </td>
+                        <td>
+                          <bdi
+                            className={
+                              isPositiveCost
+                                ? "delta-positive"
+                                : costDeltaFils.startsWith("-")
+                                  ? "delta-negative"
+                                  : ""
+                            }
+                          >
+                            {formatAdjustmentFils(costDeltaFils, locale)}
+                          </bdi>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
-              {summary.warnings.length > 0 ? (
-                <p role="status" className="adjustment-warning">
-                  {purchasingMessages[locale].duplicate}{" "}
-                  {purchasingMessages[locale].openDecision}
-                </p>
-              ) : null}
-              <div>
-                <p>{copy.stockImpact}</p>
-                {summary.stockEffects.length === 0 ? (
-                  <p>{copy.noStockImpact}</p>
-                ) : (
-                  <ul className="adjustment-supplier-effects">
-                    {summary.stockEffects.map((effect, index) => (
-                      <li key={`${effect.itemId}-${index}`}>
-                        {effect.itemDisplayName}: {copy.qtyDelta}{" "}
-                        <bdi>{effect.quantityDelta}</bdi>; {copy.valueDelta}{" "}
-                        <bdi>
-                          {formatAdjustmentFils(
-                            effect.primarySupplierCostDeltaFils,
-                            locale,
-                          )}
-                        </bdi>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              {summary.supplierEffects.length > 0 ? (
-                <div>
-                  <p>{copy.supplierImpact}</p>
-                  <ul className="adjustment-supplier-effects">
-                    {summary.supplierEffects.map((effect) => (
-                      <li key={effect.supplierId}>
-                        {effect.supplierNameSnapshot}:{" "}
-                        <bdi>
-                          {formatAdjustmentFils(effect.deltaFils, locale)}
-                        </bdi>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <p>{copy.noSupplierImpact}</p>
-              )}
-              {summary.rowDeltas.length === 0 ? (
-                <p>{copy.unchanged}</p>
-              ) : (
-                <table className="delta-summary-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">{copy.item}</th>
-                      <th scope="col">{copy.qtyBefore}</th>
-                      <th scope="col">{copy.qtyAfter}</th>
-                      <th scope="col">{copy.qtyDelta}</th>
-                      <th scope="col">{copy.costBefore}</th>
-                      <th scope="col">{copy.costAfter}</th>
-                      <th scope="col">{copy.valueDelta}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.rowDeltas.map((row) => {
-                      const itemName =
-                        row.after?.itemDisplayName ??
-                        row.before?.itemDisplayName ??
-                        copy.item;
-                      const beforeQty = row.before?.enteredQuantity ?? "0";
-                      const afterQty = row.after?.enteredQuantity ?? "0";
-                      const qtyDeltaNum = BigInt(row.quantityDelta);
-                      const formattedQtyDelta =
-                        qtyDeltaNum > 0n
-                          ? `+${row.quantityDelta}`
-                          : `${row.quantityDelta}`;
-                      const costBeforeFils = row.before?.costFils ?? "0";
-                      const costAfterFils = row.after?.costFils ?? "0";
-                      const costDeltaFils = row.primarySupplierCostDeltaFils;
-                      const isPositiveCost =
-                        BigInt(costDeltaFils.replace(/^-/u, "") || "0") > 0n &&
-                        !costDeltaFils.startsWith("-");
+            )}
+          </div>
 
-                      return (
-                        <tr key={row.lineageId}>
-                          <th scope="row">
-                            <span>{itemName}</span>
-                            {row.changes.some(
-                              (change) => change.field === "retail-price",
-                            ) ? (
-                              <p>
-                                {purchasingMessages[locale].sellingPrice}:{" "}
-                                <bdi>
-                                  {formatFilsToIqd(
-                                    row.before?.retailPriceFils ?? "0",
-                                    locale,
-                                  )}
-                                </bdi>{" "}
-                                →{" "}
-                                <bdi>
-                                  {formatFilsToIqd(
-                                    row.after?.retailPriceFils ?? "0",
-                                    locale,
-                                  )}
-                                </bdi>
-                              </p>
-                            ) : null}
-                          </th>
-                          <td>
-                            <bdi>{beforeQty}</bdi>
-                          </td>
-                          <td>
-                            <bdi>{afterQty}</bdi>
-                          </td>
-                          <td>
-                            {/* Accessible quantity comparison includes the signed movement. */}
-                            <span className="visually-hidden">
-                              {beforeQty} → {afterQty} ({row.quantityDelta})
-                            </span>
-                            <bdi
-                              className={
-                                qtyDeltaNum > 0n
-                                  ? "delta-positive"
-                                  : qtyDeltaNum < 0n
-                                    ? "delta-negative"
-                                    : ""
-                              }
-                            >
-                              {formattedQtyDelta}
-                            </bdi>
-                          </td>
-                          <td>
-                            <bdi>{formatFilsToIqd(costBeforeFils, locale)}</bdi>
-                          </td>
-                          <td>
-                            <bdi>{formatFilsToIqd(costAfterFils, locale)}</bdi>
-                          </td>
-                          <td>
-                            <bdi
-                              className={
-                                isPositiveCost
-                                  ? "delta-positive"
-                                  : costDeltaFils.startsWith("-")
-                                    ? "delta-negative"
-                                    : ""
-                              }
-                            >
-                              {formatAdjustmentFils(costDeltaFils, locale)}
-                            </bdi>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+          {/* Footer */}
+          <div className="delta-summary-footer">
+            {error === null ? null : (
+              <div
+                className="form-error"
+                role="alert"
+                ref={errorRef}
+                tabIndex={-1}
+              >
+                <span>{error.message}</span>
+                {error.tracking ? (
+                  <PurchasingSupportDetails reference={error.tracking} />
+                ) : null}
+              </div>
+            )}
+            <div className="delta-summary-net">
+              <span>{copy.netDeltaPosted}</span>
+              <span className="delta-summary-grand-total">
+                <bdi>
+                  {formatAdjustmentFils(
+                    summary.primarySupplierCostDeltaFils,
+                    locale,
+                  )}
+                </bdi>
+              </span>
             </div>
 
-            {/* Footer */}
-            <div className="delta-summary-footer">
-              {error === null ? null : (
-                <div
-                  className="form-error"
-                  role="alert"
-                  ref={errorRef}
-                  tabIndex={-1}
-                >
-                  <span>{error.message}</span>
-                  {error.tracking ? (
-                    <PurchasingSupportDetails reference={error.tracking} />
-                  ) : null}
-                </div>
-              )}
-              <div className="delta-summary-net">
-                <span>{copy.netDeltaPosted}</span>
-                <span className="delta-summary-grand-total">
-                  <bdi>
-                    {formatAdjustmentFils(
-                      summary.primarySupplierCostDeltaFils,
-                      locale,
-                    )}
-                  </bdi>
-                </span>
-              </div>
+            <div className="delta-summary-reason-field">
+              <input
+                type="text"
+                className="delta-summary-reason-input"
+                placeholder={copy.addEvidence}
+                aria-label={copy.evidence}
+                value={evidence}
+                disabled={busy || postUncertain}
+                onChange={(event) => editEvidence(event.target.value)}
+              />
+            </div>
 
-              <div className="delta-summary-reason-field">
-                <input
-                  type="text"
-                  className="delta-summary-reason-input"
-                  placeholder={copy.addEvidence}
-                  aria-label={copy.evidence}
-                  value={evidence}
-                  disabled={busy || postUncertain}
-                  onChange={(event) => editEvidence(event.target.value)}
-                />
-              </div>
+            <p>{getAdjustmentReasonLabel(summary.reason, locale)}</p>
+            {!previewCurrent ? (
+              <p role="status">{copy.previewChanged}</p>
+            ) : null}
 
-              <p>{getAdjustmentReasonLabel(summary.reason, locale)}</p>
-              {!previewCurrent ? (
-                <p role="status">{copy.previewChanged}</p>
-              ) : null}
-
-              <div className="delta-summary-actions">
+            <div className="delta-summary-actions">
+              <button
+                type="button"
+                className="quiet-button"
+                data-adjustment-action="close-summary"
+                disabled={busy || postUncertain}
+                onClick={closeSummary}
+              >
+                {copy.cancel}
+              </button>
+              {reloadRequired ? (
                 <button
                   type="button"
                   className="quiet-button"
-                  data-adjustment-action="close-summary"
-                  disabled={busy || postUncertain}
-                  onClick={closeSummary}
+                  disabled={busy}
+                  onClick={() => void reloadSavedDraft()}
                 >
-                  {copy.cancel}
+                  {copy.reloadDraft}
                 </button>
-                {reloadRequired ? (
-                  <button
-                    type="button"
-                    className="quiet-button"
-                    disabled={busy}
-                    onClick={() => void reloadSavedDraft()}
-                  >
-                    {copy.reloadDraft}
-                  </button>
-                ) : !previewCurrent ? (
-                  <button
-                    type="button"
-                    className="quiet-button"
-                    disabled={busy || postUncertain}
-                    onClick={() => void saveAndReview()}
-                  >
-                    {copy.saveReview}
-                  </button>
-                ) : null}
+              ) : !previewCurrent ? (
                 <button
                   type="button"
-                  className="primary-button"
-                  data-adjustment-action="confirm"
-                  disabled={busy || !previewCurrent}
-                  onClick={() => void post()}
+                  className="quiet-button"
+                  disabled={busy || postUncertain}
+                  onClick={() => void saveAndReview()}
                 >
-                  {copy.confirm}
+                  {copy.saveReview}
                 </button>
-              </div>
+              ) : null}
+              <button
+                type="button"
+                className="primary-button"
+                data-adjustment-action="confirm"
+                disabled={busy || !previewCurrent}
+                onClick={() => void post()}
+              >
+                {copy.confirm}
+              </button>
             </div>
           </div>
-        </div>
+        </PurchasingModal>
       ) : null}
     </section>
   );
