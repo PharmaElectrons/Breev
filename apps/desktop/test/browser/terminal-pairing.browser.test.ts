@@ -342,7 +342,8 @@ test.describe("terminal pairing screen", () => {
       theme: "light",
     });
     const page = screen.page;
-    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({
+    const home = page.getByRole("region", { name: "Home", exact: true });
+    await expect(home).toBeVisible({
       timeout: 20_000,
     });
     await expect(page.getByTestId("terminal-pairing")).toHaveCount(0);
@@ -355,7 +356,7 @@ test.describe("terminal pairing screen", () => {
     await captureSpread(page, "terminal-main-unavailable");
 
     renderer.setMode("pass");
-    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+    await expect(home).toBeVisible();
     await expectBrowserStorageToContainPreferencesOnly(page);
     await screen.context.close();
   });
