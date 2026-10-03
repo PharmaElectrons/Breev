@@ -41,6 +41,7 @@ exports[`local REST contract registries > pins the renderer mutation surface the
   "POST /inventory/reorder-basket/items/:itemId/confirmations",
   "POST /inventory/reorder-basket/items/:itemId/removals",
   "POST /inventory/reorder-basket/items/:itemId/returns",
+  "POST /inventory/report-exports",
   "POST /inventory/sensitive-exports",
   "POST /licensing/capability-proof",
   "POST /licensing/licence-deactivations",

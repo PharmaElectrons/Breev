@@ -15,12 +15,18 @@ export function CountSessionReview({
   onClose,
   open,
   returnHash = "#/inventory/count",
+  className = "",
+  displayUnit,
+  onKeyDown,
 }: {
   readonly address?: { readonly id: string };
   readonly baseUrl: string;
   readonly onClose: () => void;
   readonly open: boolean;
   readonly returnHash?: string;
+  readonly className?: string;
+  readonly displayUnit?: (name: string) => string;
+  readonly onKeyDown?: React.KeyboardEventHandler<HTMLDialogElement>;
 }): React.JSX.Element {
   const { locale } = usePreferences();
   const copy = inventoryMessages[locale].count;
@@ -84,8 +90,11 @@ export function CountSessionReview({
       ref={dialogRef}
       aria-describedby="count-session-review-boundary"
       aria-labelledby="count-session-review-title"
-      className="posted-purchase-dialog count-session-review-dialog"
+      className={`posted-purchase-dialog count-session-review-dialog ${className}`}
+      dir={locale === "ar" ? "rtl" : "ltr"}
+      lang={locale}
       onClose={handleDialogClose}
+      onKeyDown={onKeyDown}
     >
       <header className="posted-review-heading">
         <div>
@@ -141,7 +150,14 @@ export function CountSessionReview({
               <dd>{session.startedBy.displayName}</dd>
             </div>
           </dl>
-          <div className="count-review-table-wrap">
+          <div
+            className="count-review-table-wrap"
+            tabIndex={displayUnit === undefined ? undefined : 0}
+            role={displayUnit === undefined ? undefined : "region"}
+            aria-label={
+              displayUnit === undefined ? undefined : copy.tableCaption
+            }
+          >
             <table className="count-lines-table">
               <caption className="visually-hidden">{copy.tableCaption}</caption>
               <thead>
@@ -162,6 +178,7 @@ export function CountSessionReview({
                     key={line.id}
                     line={line}
                     locale={locale}
+                    displayUnit={displayUnit}
                   />
                 ))}
               </tbody>
@@ -177,49 +194,55 @@ function CountReviewLine({
   copy,
   line,
   locale,
+  displayUnit,
 }: {
   readonly copy: typeof inventoryMessages.en.count;
   readonly line: CountLine;
   readonly locale: "ar" | "en";
+  readonly displayUnit?: ((name: string) => string) | undefined;
 }): React.JSX.Element {
   const application = line.application;
   const after = application?.balanceAfter ?? line.countedQuantity;
   const variance = application?.variance ?? line.varianceAtObservation;
+  const unit = displayUnit?.(line.inventoryUnitName) ?? line.inventoryUnitName;
   return (
     <>
       <tr>
         <th scope="row">{line.itemDisplayName}</th>
         <td>
-          <CountEntryLabel label={line.enteredLabel} locale={locale} />
+          <CountEntryLabel
+            label={
+              displayUnit === undefined
+                ? line.enteredLabel
+                : line.enteredLabel.replace(
+                    /(\d+\s+)([^+]+?)(?=\s*\+|$)/gu,
+                    (_match, count: string, name: string) =>
+                      `${count}${displayUnit(name.trim())}`,
+                  )
+            }
+            locale={locale}
+          />
         </td>
         <td>
           <bdi>{formatNumber(BigInt(line.countedQuantity), locale)}</bdi>{" "}
-          {panelUnitLabel(
-            line.inventoryUnitName,
-            BigInt(line.countedQuantity),
-            locale,
-          )}
+          {panelUnitLabel(unit, BigInt(line.countedQuantity), locale)}
         </td>
         <td>
           <CountMeasure
             count={BigInt(line.balanceAtObservation)}
             locale={locale}
-            unit={line.inventoryUnitName}
+            unit={unit}
           />
         </td>
         <td>
-          <CountMeasure
-            count={BigInt(after)}
-            locale={locale}
-            unit={line.inventoryUnitName}
-          />
+          <CountMeasure count={BigInt(after)} locale={locale} unit={unit} />
         </td>
         <td>
           <CountMeasure
             count={BigInt(variance)}
             locale={locale}
             signed
-            unit={line.inventoryUnitName}
+            unit={unit}
           />
         </td>
         <td>

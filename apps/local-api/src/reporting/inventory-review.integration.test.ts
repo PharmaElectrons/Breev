@@ -7,6 +7,13 @@ import {
   inventoryMovementHistoryContract,
   inventoryMovementHistoryPath,
   inventorySensitiveExportContract,
+  INVENTORY_REPORT_KINDS,
+  inventoryReportPath,
+  inventoryReportSchema,
+  inventoryReportExportSchema,
+  inventoryReportActivityPageSchema,
+  inventoryReportProtectedExportContract,
+  type InventoryReport,
   productArchivePath,
   purchaseAdjustmentDraftPath,
   purchaseAdjustmentDraftsPath,
@@ -40,9 +47,10 @@ import {
 } from "@testcontainers/postgresql";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -57,6 +65,12 @@ import {
   valuationValueFils,
 } from "../inventory/inventory-valuation.js";
 import { divideFilsRounded } from "../posting/money.js";
+import {
+  readInventoryReportPage,
+  readInventoryReportActivity,
+  InventoryReportExportTooLarge,
+} from "../inventory/inventory-report-query.js";
+import { inventoryReportQueryFor } from "@breev/contracts/local-rest";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_USERNAME = "inventory.review.owner";
@@ -390,6 +404,74 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       reconciliation: "consistent",
     });
 
+    // Expected amounts come from the frozen documents above, not the report
+    // projection or child ledger timestamps. Each posting is indivisible.
+    for (const [id, beforeQuantity, afterQuantity, beforeValue, afterValue] of [
+      [quantityPosted.posted.id, "17", "19", "26000", "28000"],
+      [pricePosted.posted.id, "19", "19", "28000", "30400"],
+      [returnPosted.posted.id, "19", "18", "30400", "28800"],
+    ]) {
+      const boundaries = await administrator.query<{
+        cutoff: string;
+        offset: number;
+      }>(
+        `select to_char((posted_at + delta * interval '1 microsecond') at time zone 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cutoff, delta as offset
+         from (select posted_at from posted_purchase_adjustments where pharmacy_id = $1 and id = $2
+               union all select posted_at from posted_purchase_returns where pharmacy_id = $1 and id = $2) parent
+         cross join (values (-1), (0), (1)) boundary(delta) order by delta`,
+        [pharmacyId, id],
+      );
+      expect(boundaries.rows).toHaveLength(3);
+      for (const boundary of boundaries.rows) {
+        const response = await request(
+          "GET",
+          `${inventoryReportPath("value")}?query=${encodeURIComponent(
+            JSON.stringify({
+              from: "2020-01-01T00:00:00Z",
+              to: boundary.cutoff,
+            }),
+          )}`,
+        );
+        expect(response.status, diagnostics(response)).toBe(200);
+        const row = inventoryReportSchema
+          .parse(response.body)
+          .rows.find((r) => r.productId === product.id)!;
+        expect(row.cells.closingQuantity).toBe(
+          boundary.offset <= 0 ? beforeQuantity : afterQuantity,
+        );
+        expect(row.cells.closingValueFils).toBe(
+          boundary.offset <= 0 ? beforeValue : afterValue,
+        );
+      }
+      const response = await request(
+        "GET",
+        `${inventoryReportPath("value")}?query=${encodeURIComponent(
+          JSON.stringify({
+            from: boundaries.rows[1]!.cutoff,
+            to: boundaries.rows[2]!.cutoff,
+          }),
+        )}`,
+      );
+      const row = inventoryReportSchema
+        .parse(response.body)
+        .rows.find((r) => r.productId === product.id)!;
+      expect(row.cells.openingQuantity).toBe(beforeQuantity);
+      expect(row.cells.periodQuantity).toBe(
+        (BigInt(afterQuantity!) - BigInt(beforeQuantity!)).toString(),
+      );
+      expect(row.cells.activityValueFils).toBe(
+        (BigInt(afterValue!) - BigInt(beforeValue!)).toString(),
+      );
+      const activities = await reportActivity("value", row.id, {
+        from: boundaries.rows[1]!.cutoff,
+        to: boundaries.rows[2]!.cutoff,
+      });
+      expect(activities.rows.every((a) => a.source?.documentId === id)).toBe(
+        true,
+      );
+    }
+
     const challenge = await request("POST", "/identity/step-up-challenges", {
       action: "inventory.sensitive.export",
       idempotencyKey: uuidV7(),
@@ -473,6 +555,301 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     );
   });
 
+  it("reports all seven categories from one historical cutoff without changing stock", async () => {
+    const before = await stockFacts();
+    const clock = await administrator.query<{ now: Date }>("select now()");
+    const query = {
+      from: "2020-01-01T00:00:00.000Z",
+      to: clock.rows[0]!.now.toISOString(),
+    };
+    const path = (
+      kind: (typeof INVENTORY_REPORT_KINDS)[number],
+      extra: Record<string, unknown> = {},
+    ) =>
+      `${inventoryReportPath(kind)}?query=${encodeURIComponent(JSON.stringify({ ...query, ...extra }))}`;
+    const reports = new Map<string, InventoryReport>();
+    for (const kind of INVENTORY_REPORT_KINDS) {
+      const response = await request("GET", path(kind));
+      expect(response.status, `${kind}: ${diagnostics(response)}`).toBe(200);
+      const report = inventoryReportSchema.parse(response.body);
+      expect(report.kind).toBe(kind);
+      expect(report.query).toMatchObject(query);
+      expect(report.dateBasis).toBe("immutable-posting-time");
+      reports.set(kind, report);
+      for (const suffix of ["/export", "/activity"]) {
+        const parameters =
+          suffix === "/activity" ? { query, rowId: product.id } : query;
+        const response = await request(
+          "GET",
+          `${inventoryReportPath(kind)}${suffix}?query=${encodeURIComponent(JSON.stringify(parameters))}`,
+        );
+        expect(response.status, diagnostics(response)).toBe(200);
+        for (const verb of ["POST", "PUT", "DELETE"] as const) {
+          expect(
+            (await request(verb, `${inventoryReportPath(kind)}${suffix}`, {}))
+              .status,
+          ).toBe(404);
+        }
+      }
+    }
+    const quantity = reports
+      .get("quantity")!
+      .rows.find((row) => row.productId === product.id)!;
+    const value = reports
+      .get("value")!
+      .rows.find((row) => row.productId === product.id)!;
+    const average = reports
+      .get("average-cost")!
+      .rows.find((row) => row.productId === product.id)!;
+    const independentMovements = await administrator.query<{
+      quantity: string;
+      carrying_amount_fils: string;
+      reason: string;
+      source_document_id: string;
+    }>(
+      "select quantity::text, carrying_amount_fils::text, reason, source_document_id::text from inventory_movements where pharmacy_id = $1 and product_id = $2",
+      [pharmacyId, product.id],
+    );
+    const independentEffects = await administrator.query<{
+      carrying_amount_delta_fils: string;
+    }>(
+      "select carrying_amount_delta_fils::text from inventory_value_effects where pharmacy_id = $1 and product_id = $2",
+      [pharmacyId, product.id],
+    );
+    const balance = independentMovements.rows.reduce(
+      (sum, row) => sum + BigInt(row.quantity),
+      0n,
+    );
+    const amount =
+      independentMovements.rows.reduce(
+        (sum, row) =>
+          sum +
+          (row.reason === "purchase-adjustment"
+            ? 0n
+            : BigInt(row.carrying_amount_fils)),
+        0n,
+      ) +
+      independentEffects.rows.reduce(
+        (sum, row) => sum + BigInt(row.carrying_amount_delta_fils),
+        0n,
+      );
+    expect(quantity.cells).toMatchObject({
+      openingQuantity: "0",
+      closingQuantity: balance.toString(),
+      periodQuantity: balance.toString(),
+    });
+    expect(value.cells.closingValueFils).toBe(amount.toString());
+    const independentState = await administrator.query<{
+      total_quantity: string;
+      total_value_scaled: string;
+    }>(
+      "select total_quantity::text, total_value_scaled::text from inventory_valuation_state where pharmacy_id = $1 and product_id = $2",
+      [pharmacyId, product.id],
+    );
+    expect(independentState.rows[0]?.total_quantity).toBe(balance.toString());
+    expect(
+      valuationValueFils({
+        totalQuantity: BigInt(independentState.rows[0]!.total_quantity),
+        totalValueScaled: BigInt(independentState.rows[0]!.total_value_scaled),
+      }),
+    ).toBe(amount);
+    const independentJournal = await administrator.query<{ value: string }>(
+      "select coalesce(sum(debit_fils - credit_fils), 0)::text as value from accounting_journal_lines where pharmacy_id = $1 and account_code = 'inventory'",
+      [pharmacyId],
+    );
+    // The pending G-01 return template puts its explicit WAC/source-cost offset
+    // on Inventory. Reconcile that separately from the frozen carrying amount.
+    const independentReturnOffset = await administrator.query<{
+      value: string;
+    }>(
+      "select coalesce(sum(inventory_carrying_amount_fils - supplier_reduction_fils), 0)::text as value from posted_purchase_returns where pharmacy_id = $1",
+      [pharmacyId],
+    );
+    expect(
+      BigInt(independentJournal.rows[0]!.value) -
+        BigInt(independentReturnOffset.rows[0]!.value),
+    ).toBe(amount);
+    expect(average.cells.closingAverageCostScaled).toBe(
+      reportAverage({
+        totalQuantity: balance,
+        totalValueScaled: amount * 10_000_000_000n,
+      })?.toString(),
+    );
+    const quantityActivity = await reportActivity(
+      "quantity",
+      quantity.id,
+      query,
+    );
+    expect(
+      quantityActivity.rows.find((a) => a.reason === "purchase-adjustment")
+        ?.source?.documentId,
+    ).toBe(
+      independentMovements.rows.find(
+        (row) => row.reason === "purchase-adjustment",
+      )?.source_document_id,
+    );
+    const count = reports.get("stocktake-movements")!;
+    expect(count.rows).toHaveLength(0);
+    expect(
+      reports
+        .get("consumption")
+        ?.rows.find((row) => row.productId === product.id)?.cells
+        .consumedQuantity,
+    ).toBe("0");
+    expect(
+      reports
+        .get("alerts")
+        ?.rows.some(
+          (row) => row.cells.availability === "historical-policy-unavailable",
+        ),
+    ).toBe(true);
+    const userFiltered = await request(
+      "GET",
+      path("quantity", { actorId: quantityActivity.rows[0]!.actorId }),
+    );
+    expect(userFiltered.status, diagnostics(userFiltered)).toBe(200);
+    const filteredRow = inventoryReportSchema
+      .parse(userFiltered.body)
+      .rows.find((row) => row.productId === product.id)!;
+    expect(filteredRow.cells.closingQuantity).toBe(balance.toString());
+    expect(filteredRow.activityCount).toBeLessThanOrEqual(
+      quantity.activityCount,
+    );
+    const ordinary = await request(
+      "GET",
+      `${inventoryReportPath("quantity")}/export?query=${encodeURIComponent(JSON.stringify(query))}`,
+    );
+    expect(ordinary.status, diagnostics(ordinary)).toBe(200);
+    const exported = inventoryReportExportSchema.parse(ordinary.body);
+    expect(exported.rows).toHaveLength(exported.totalRows);
+    expect(
+      exported.rows.find((row) => row.productId === product.id)?.cells
+        .closingValueFils,
+    ).toBeUndefined();
+    expect(await stockFacts()).toEqual(before);
+    for (const kind of INVENTORY_REPORT_KINDS) {
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
+        expect(
+          (await request(method, inventoryReportPath(kind), {})).status,
+        ).toBe(404);
+      }
+    }
+    expect(await stockFacts()).toEqual(before);
+  });
+
+  it("reconciles historical cutoffs and keeps inactive-period balances under activity filters", async () => {
+    const cutoffs = await administrator.query<{ cutoff: string }>(
+      `select to_char(posted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cutoff
+       from posted_purchases where pharmacy_id = $1 order by posted_at, id limit 3`,
+      [pharmacyId],
+    );
+    const from = cutoffs.rows[1]!.cutoff;
+    const to = cutoffs.rows[2]!.cutoff;
+    const read = async (extra: Record<string, unknown>) => {
+      const response = await request(
+        "GET",
+        `${inventoryReportPath("quantity")}?query=${encodeURIComponent(JSON.stringify({ from, to, ...extra }))}`,
+      );
+      expect(response.status, diagnostics(response)).toBe(200);
+      return inventoryReportSchema
+        .parse(response.body)
+        .rows.find((row) => row.productId === product.id)!;
+    };
+    const complete = await read({});
+    expect(complete.cells).toMatchObject({
+      openingQuantity: "10",
+      periodQuantity: "5",
+      closingQuantity: "15",
+    });
+    expect(
+      BigInt(complete.cells.openingQuantity!) +
+        BigInt(complete.cells.periodQuantity!),
+    ).toBe(BigInt(complete.cells.closingQuantity!));
+    for (const extra of [
+      { actorId: uuidV7() },
+      { businessFrom: "1900-01-01", businessTo: "1900-01-01" },
+    ]) {
+      const filtered = await read(extra);
+      expect(filtered.cells.openingQuantity).toBe(
+        complete.cells.openingQuantity,
+      );
+      expect(filtered.cells.closingQuantity).toBe(
+        complete.cells.closingQuantity,
+      );
+      expect(filtered.cells.activityQuantity).toBe("0");
+      expect(filtered.activityCount).toBe(0);
+    }
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const denied = await request(
+      "GET",
+      `${inventoryReportPath("quantity")}?query=${encodeURIComponent(JSON.stringify({ from, to: future }))}`,
+    );
+    expect(denied.status).toBe(400);
+    expect(denied.body).toMatchObject({ code: "future-cutoff" });
+  });
+
+  it("protects a filtered valuation bundle with owner step-up and query-bound idempotency", async () => {
+    const clock = await administrator.query<{ now: Date }>("select now()");
+    const query = {
+      from: "2020-01-01T00:00:00.000Z",
+      to: clock.rows[0]!.now.toISOString(),
+    };
+    const challenge = await request("POST", "/identity/step-up-challenges", {
+      action: "inventory.sensitive.export",
+      idempotencyKey: uuidV7(),
+    });
+    expect(challenge.status, diagnostics(challenge)).toBe(201);
+    const challengeId = String((challenge.body as { id?: string }).id ?? "");
+    const approved = await request(
+      "POST",
+      `/identity/step-up-challenges/${challengeId}/approve`,
+      { idempotencyKey: uuidV7(), password: OWNER_PASSWORD },
+    );
+    expect(approved.status, diagnostics(approved)).toBe(200);
+    const command = {
+      challengeId,
+      idempotencyKey: uuidV7(),
+      kind: "value",
+      query,
+    };
+    const first = await request(
+      "POST",
+      inventoryReportProtectedExportContract.path,
+      command,
+    );
+    expect(first.status, diagnostics(first)).toBe(201);
+    const bundle = inventoryReportExportSchema.parse(first.body);
+    expect(
+      bundle.rows.find((row) => row.productId === product.id)?.cells
+        .closingValueFils,
+    ).toBe("28800");
+    const replay = await request(
+      "POST",
+      inventoryReportProtectedExportContract.path,
+      command,
+    );
+    expect(replay.status, diagnostics(replay)).toBe(201);
+    expect(replay.body).toEqual(first.body);
+    const conflict = await request(
+      "POST",
+      inventoryReportProtectedExportContract.path,
+      {
+        ...command,
+        query: {
+          ...query,
+          filters: [{ column: "item", operator: "contains", value: "nothing" }],
+        },
+      },
+    );
+    expect(conflict.status).toBe(409);
+    const reusedChallenge = await request(
+      "POST",
+      inventoryReportProtectedExportContract.path,
+      { ...command, idempotencyKey: uuidV7() },
+    );
+    expect(reusedChallenge.status).toBe(409);
+  });
+
   it("keeps all stock and posted facts unchanged across every review route", async () => {
     const before = await stockFacts();
     const list = await request("GET", inventoryItemListContract.path);
@@ -533,6 +910,18 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
   });
 
   it("rejects direct and maintenance-adjacent stock writes as the application role", async () => {
+    for (const projection of [
+      "purchasing_report_sources",
+      "inventory_report_facts",
+      "identity_report_actors",
+    ]) {
+      const access = await application.query<{ read: boolean; write: boolean }>(
+        `select has_table_privilege(current_user, $1, 'SELECT') as read,
+                has_table_privilege(current_user, $1, 'INSERT,UPDATE,DELETE') as write`,
+        [projection],
+      );
+      expect(access.rows[0]).toEqual({ read: true, write: false });
+    }
     const movement = await administrator.query<{ id: string }>(
       `select id from inventory_movements
        where pharmacy_id = $1 and product_id = $2 order by occurred_at, id limit 1`,
@@ -608,6 +997,802 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     );
   });
 
+  it("introduces a multi-line backdated receipt and its return only at their complete postings", async () => {
+    const before = await inventoryItem();
+    let draft = await createPostableDraft(
+      supplierA.id,
+      "MULTI-CUTOFF",
+      "1000",
+      "4",
+      "MULTI-A",
+      "2029-01-01",
+    );
+    const added = await request("POST", purchaseDraftRowsPath(draft.id), {
+      costFils: "2000",
+      enteredQuantity: "3",
+      expectedVersion: draft.version,
+      expiryDate: "2029-02-01",
+      idempotencyKey: uuidV7(),
+      itemId: product.id,
+      lotNumber: "MULTI-B",
+      notes: null,
+      pricing: { method: "by-price", retailPriceFils: "999999" },
+      unit: { kind: "inventory-unit" },
+    });
+    expect(added.status, diagnostics(added)).toBe(201);
+    draft = (added.body as { draft: PurchaseDraft }).draft;
+    const posted = await request("POST", purchaseDraftPostingsPath(draft.id), {
+      expectedVersion: draft.version,
+      idempotencyKey: uuidV7(),
+    });
+    expect(posted.status, diagnostics(posted)).toBe(201);
+    const document = (posted.body as PurchasePostResult).posted;
+    const boundaries = await administrator.query<{ at: string; after: string }>(
+      `select to_char(posted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at,
+              to_char((posted_at + interval '1 microsecond') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as after
+       from posted_purchases where id = $1`,
+      [document.id],
+    );
+    const { at, after } = boundaries.rows[0]!;
+    const read = async (
+      kind: "value" | "batches-expiry",
+      from: string,
+      to: string,
+    ) => {
+      const response = await request(
+        "GET",
+        `${inventoryReportPath(kind)}?query=${encodeURIComponent(JSON.stringify({ from, to }))}`,
+      );
+      expect(response.status, diagnostics(response)).toBe(200);
+      return inventoryReportSchema.parse(response.body);
+    };
+    const value = await read("value", at, after);
+    expect(
+      value.rows.find((r) => r.productId === product.id)!.cells,
+    ).toMatchObject({
+      periodQuantity: "7",
+      activityQuantity: "7",
+      periodValueFils: "10000",
+      activityValueFils: "10000",
+    });
+    const beforeBatches = await read(
+      "batches-expiry",
+      "2020-01-01T00:00:00Z",
+      at,
+    );
+    expect(
+      beforeBatches.rows.some((r) => r.cells.batch?.startsWith("MULTI-")),
+    ).toBe(false);
+    const afterBatches = await read("batches-expiry", at, after);
+    expect(
+      afterBatches.rows.filter((r) => r.cells.batch?.startsWith("MULTI-"))
+        .length,
+    ).toBe(2);
+    const activity = await reportActivity("value", value.rows[0]!.id, {
+      from: at,
+      to: after,
+    });
+    expect(activity.rows.every((a) => a.businessDate === "2026-06-15")).toBe(
+      true,
+    );
+    const returned = await postPurchaseReturn(document.id, "1");
+    expect(returned.posted.rows).toHaveLength(2);
+    const returnTimes = await administrator.query<{
+      at: string;
+      after: string;
+    }>(
+      `select to_char(posted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at,
+              to_char((posted_at + interval '1 microsecond') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as after
+       from posted_purchase_returns where id = $1`,
+      [returned.posted.id],
+    );
+    const returnTime = returnTimes.rows[0]!;
+    const returnedValue = await read("value", returnTime.at, returnTime.after);
+    // Use the independently posted owner position, the frozen receipt, and
+    // the return's own carrying allocations, never the report projection.
+    const openingQuantity = BigInt(before.balance) + 7n;
+    const openingValue = BigInt(before.valueFils!) + 10000n;
+    const releasedValue = returned.posted.rows.reduce(
+      (sum, row) => sum + BigInt(row.carryingAmountFils),
+      0n,
+    );
+    expect(
+      returnedValue.rows.find((r) => r.productId === product.id)!.cells,
+    ).toMatchObject({
+      openingQuantity: openingQuantity.toString(),
+      closingQuantity: (openingQuantity - 2n).toString(),
+      periodQuantity: "-2",
+      openingValueFils: openingValue.toString(),
+      closingValueFils: (openingValue - releasedValue).toString(),
+      periodValueFils: (-releasedValue).toString(),
+    });
+    const returnActivity = await reportActivity("value", value.rows[0]!.id, {
+      from: returnTime.at,
+      to: returnTime.after,
+    });
+    expect(returnActivity.rows).toHaveLength(2);
+    expect(new Set(returnActivity.rows.map((a) => a.id)).size).toBe(2);
+    expect(
+      returnActivity.rows.every(
+        (a) => a.source?.documentId === returned.posted.id,
+      ),
+    ).toBe(true);
+  });
+
+  it("bounds reports and activity above 250,000 immutable facts, with complete cross-page groups", async () => {
+    // Synthetic volume on a disposable database; posting reconciliation uses
+    // the separate frozen-document fixtures above. No posting algorithm changes.
+    const before = await inventoryItem();
+    await administrator.query(
+      `insert into inventory_movements
+      (pharmacy_id, product_id, batch_id, quantity, carrying_amount_fils, reason,
+       source_document_type, source_document_id, source_row_ordinal, created_by)
+      select pharmacy_id, product_id, batch_id, 1, 1, reason, source_document_type,
+             source_document_id, source_row_ordinal, created_by
+      from (select * from inventory_movements where pharmacy_id = $1 and reason = 'purchase-receipt' order by id limit 1) receipt
+      cross join generate_series(1, 250001)`,
+      [pharmacyId],
+    );
+    const query = {
+      from: "2020-01-01T00:00:00Z",
+      to: new Date().toISOString(),
+      pageSize: 2,
+    };
+    const rss = async () =>
+      process.platform === "linux"
+        ? Number(
+            (await readFile(`/proc/${api.pid}/status`, "utf8")).match(
+              /VmRSS:\s+(\d+)/u,
+            )![1],
+          ) * 1024
+        : null;
+    const memoryBefore = await rss();
+    let memoryPeak = memoryBefore;
+    let memorySample = Promise.resolve();
+    const sampler = setInterval(() => {
+      memorySample = memorySample.then(async () => {
+        const sample = await rss();
+        if (sample !== null)
+          memoryPeak = Math.max(memoryPeak ?? sample, sample);
+      });
+    }, 50);
+    const measurements = [];
+    try {
+      for (const kind of INVENTORY_REPORT_KINDS) {
+        const start = performance.now();
+        const response = await request(
+          "GET",
+          `${inventoryReportPath(kind)}?query=${encodeURIComponent(JSON.stringify(query))}`,
+        );
+        const elapsedMs = performance.now() - start;
+        expect(response.status, diagnostics(response)).toBe(200);
+        const report = inventoryReportSchema.parse(response.body);
+        const responseBytes = Buffer.byteLength(JSON.stringify(response.body));
+        measurements.push({ kind, elapsedMs, responseBytes });
+        expect(responseBytes).toBeLessThan(32_768);
+        expect(report.rows.length).toBeLessThanOrEqual(2);
+        expect(elapsedMs).toBeLessThan(10_000);
+        if (kind === "quantity")
+          expect(report.rows[0]!.cells.closingQuantity).toBe(
+            (BigInt(before.balance) + 250001n).toString(),
+          );
+        if (kind === "consumption")
+          expect(report.rows[0]!.cells.consumedQuantity).toBe("0");
+      }
+    } finally {
+      clearInterval(sampler);
+      await memorySample;
+    }
+    const memoryAfter = await rss();
+    if (memoryBefore !== null && memoryPeak !== null)
+      expect(memoryPeak - memoryBefore).toBeLessThan(64 * 1024 * 1024);
+    const artifactPath = path.resolve(
+      import.meta.dirname,
+      "../../../../artifacts/issue-64",
+    );
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      path.join(artifactPath, "scale.json"),
+      JSON.stringify(
+        {
+          factsAdded: 250001,
+          measurements,
+          memoryBefore,
+          memoryPeak,
+          memoryAfter,
+        },
+        null,
+        2,
+      ),
+    );
+
+    const first = await request(
+      "GET",
+      `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(JSON.stringify({ ...query, groupBy: "item" }))}`,
+    );
+    const firstPage = inventoryReportSchema.parse(first.body);
+    const second = await request(
+      "GET",
+      `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(JSON.stringify({ ...query, groupBy: "item", page: 2 }))}`,
+    );
+    const secondPage = inventoryReportSchema.parse(second.body);
+    expect(
+      new Set([...firstPage.rows, ...secondPage.rows].map((r) => r.id)).size,
+    ).toBe(4);
+    expect(firstPage.groups[0]!.rowIds).toEqual(
+      firstPage.rows.map((r) => r.id),
+    );
+    expect(firstPage.groups[0]!.rowCount).toBe(firstPage.totalRows);
+    expect(firstPage.groups[0]!.continuesAfter).toBe(true);
+    expect(secondPage.groups[0]!.continuesBefore).toBe(true);
+    expect(secondPage.groups[0]!.totals).toEqual(firstPage.groups[0]!.totals);
+    const noBatches = await request(
+      "GET",
+      `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(
+        JSON.stringify({
+          ...query,
+          filters: [
+            {
+              column: "batch",
+              operator: "eq",
+              value: "NO-MATCHING-HISTORICAL-BATCH",
+            },
+          ],
+        }),
+      )}`,
+    );
+    expect(noBatches.status, diagnostics(noBatches)).toBe(200);
+    const emptyBatchReport = inventoryReportSchema.parse(noBatches.body);
+    expect(emptyBatchReport.rows).toEqual([]);
+    expect(emptyBatchReport.actors).toEqual(firstPage.actors);
+
+    const pages = [];
+    for (const page of [1, 2]) {
+      const response = await request(
+        "GET",
+        `${inventoryReportPath("quantity")}/activity?query=${encodeURIComponent(JSON.stringify({ query, rowId: product.id, page, pageSize: 100 }))}`,
+      );
+      expect(response.status, diagnostics(response)).toBe(200);
+      const result = inventoryReportActivityPageSchema.parse(response.body);
+      expect(result.rows).toHaveLength(100);
+      expect(result.totalRows).toBeGreaterThan(250000);
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(100_000);
+      const filtered = await request(
+        "GET",
+        `${inventoryReportPath("quantity")}/activity?query=${encodeURIComponent(
+          JSON.stringify({
+            query: {
+              ...query,
+              filters: [
+                { column: "closingQuantity", operator: "gte", value: "0" },
+              ],
+            },
+            rowId: product.id,
+            page,
+            pageSize: 100,
+          }),
+        )}`,
+      );
+      expect(filtered.status, diagnostics(filtered)).toBe(200);
+      expect(inventoryReportActivityPageSchema.parse(filtered.body)).toEqual(
+        result,
+      );
+      pages.push(result);
+    }
+    expect(new Set(pages.flatMap((p) => p.rows.map((r) => r.id))).size).toBe(
+      200,
+    );
+
+    const inactive = await request(
+      "GET",
+      `${inventoryReportPath("quantity")}?query=${encodeURIComponent(
+        JSON.stringify({
+          from: query.to,
+          to: new Date().toISOString(),
+          actorId: uuidV7(),
+        }),
+      )}`,
+    );
+    const inactiveRow = inventoryReportSchema.parse(inactive.body).rows[0]!;
+    expect(inactiveRow.cells.openingQuantity).toBe(
+      (BigInt(before.balance) + 250001n).toString(),
+    );
+    expect(inactiveRow.activityCount).toBe(0);
+    const exported = await request(
+      "GET",
+      `${inventoryReportPath("batches-expiry")}/export?query=${encodeURIComponent(JSON.stringify(query))}`,
+    );
+    expect(exported.status, diagnostics(exported)).toBe(200);
+    const complete = inventoryReportExportSchema.parse(exported.body);
+    expect(complete.rows.length).toBe(complete.totalRows);
+    expect(complete.totalRows).toBeGreaterThan(query.pageSize);
+    const client = await application.connect();
+    try {
+      const completeRows = await readInventoryReportPage(
+        client,
+        pharmacyId,
+        "batches-expiry",
+        {
+          ...inventoryReportQueryFor("batches-expiry").parse(query),
+          ...query,
+        },
+        "2026-09-30",
+        true,
+        24 * 1024 * 1024,
+      );
+      const bytes = Buffer.byteLength(JSON.stringify(completeRows.rows));
+      const atLimit = await readInventoryReportPage(
+        client,
+        pharmacyId,
+        "batches-expiry",
+        {
+          ...inventoryReportQueryFor("batches-expiry").parse(query),
+          ...query,
+        },
+        "2026-09-30",
+        true,
+        bytes,
+      );
+      expect(atLimit.rows).toEqual(completeRows.rows);
+      await expect(
+        readInventoryReportPage(
+          client,
+          pharmacyId,
+          "batches-expiry",
+          {
+            ...inventoryReportQueryFor("batches-expiry").parse(query),
+            ...query,
+          },
+          "2026-09-30",
+          true,
+          bytes - 1,
+        ),
+      ).rejects.toBeInstanceOf(InventoryReportExportTooLarge);
+      await expect(
+        readInventoryReportPage(
+          client,
+          pharmacyId,
+          "batches-expiry",
+          {
+            ...inventoryReportQueryFor("batches-expiry").parse(query),
+            ...query,
+          },
+          "2026-09-30",
+          true,
+          100,
+        ),
+      ).rejects.toBeInstanceOf(InventoryReportExportTooLarge);
+    } finally {
+      client.release();
+    }
+  }, 120_000);
+
+  it("keeps duplicate item labels and different units in distinct, exact groups", async () => {
+    const from = new Date().toISOString();
+    const products = [product];
+    for (const unit of ["Strip", "Bottle"]) {
+      const input = medicationRequest("Movement Review Item");
+      const created = await request("POST", "/catalog/products", {
+        ...input,
+        packaging: { ...input.packaging, inventoryUnitName: unit },
+      });
+      expect(created.status, diagnostics(created)).toBe(201);
+      products.push(created.body as Product);
+    }
+    for (const item of products) {
+      const draft = await createPostableDraft(
+        supplierA.id,
+        `GROUP-${item.id}`,
+        "1000",
+        "1",
+        `GROUP-${item.id}`,
+        "2029-06-01",
+        item.id,
+      );
+      const posted = await request(
+        "POST",
+        purchaseDraftPostingsPath(draft.id),
+        { expectedVersion: draft.version, idempotencyKey: uuidV7() },
+      );
+      expect(posted.status, diagnostics(posted)).toBe(201);
+    }
+    const query = {
+      from,
+      to: new Date().toISOString(),
+      groupBy: "item",
+      pageSize: 1,
+    };
+    const groups = [];
+    const rowIds = [];
+    for (const page of [1, 2, 3]) {
+      const response = await request(
+        "GET",
+        `${inventoryReportPath("value")}?query=${encodeURIComponent(JSON.stringify({ ...query, page }))}`,
+      );
+      expect(response.status, diagnostics(response)).toBe(200);
+      const report = inventoryReportSchema.parse(response.body);
+      expect(report.totalRows).toBe(3);
+      expect(report.groups).toHaveLength(1);
+      const group = report.groups[0]!;
+      expect(group.rowIds).toEqual(report.rows.map((r) => r.id));
+      expect(group.rowCount).toBe(1);
+      expect(group.totals).toEqual({
+        activityQuantity: "1",
+        activityValueFils: "1000",
+      });
+      expect(group.continuesBefore || group.continuesAfter).toBe(false);
+      expect(group.item).toBe(product.displayName);
+      groups.push(group);
+      rowIds.push(report.rows[0]!.id);
+    }
+    expect(new Set(rowIds).size).toBe(3);
+    expect(new Set(groups.map((g) => g.id)).size).toBe(3);
+    expect(new Set(groups.map((g) => g.productId)).size).toBe(3);
+    expect(groups.map((g) => g.unit).sort()).toEqual([
+      "Bottle",
+      "Strip",
+      "Strip",
+    ]);
+
+    const batches = await administrator.query<{ id: string }>(
+      "select id from inventory_batches where pharmacy_id = $1 and product_id = $2 order by id",
+      [pharmacyId, products[1]!.id],
+    );
+    const batchId = batches.rows[0]!.id;
+    const challenge = await request("POST", "/identity/step-up-challenges", {
+      action: "inventory.batch_expiry.correct",
+      subjectId: batchId,
+      idempotencyKey: uuidV7(),
+    });
+    expect(challenge.status, diagnostics(challenge)).toBe(201);
+    const challengeId = (challenge.body as { id: string }).id;
+    const approval = await request(
+      "POST",
+      `/identity/step-up-challenges/${challengeId}/approve`,
+      {
+        idempotencyKey: uuidV7(),
+        password: OWNER_PASSWORD,
+      },
+    );
+    expect(approval.status, diagnostics(approval)).toBe(200);
+    const correction = await request(
+      "POST",
+      `/inventory/batches/${batchId}/expiry-corrections`,
+      {
+        challengeId,
+        correctedExpiryDate: "2030-06-01",
+        reason: "Supplier expiry correction",
+        evidence: "Frozen supplier correction fixture",
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(correction.status, diagnostics(correction)).toBe(201);
+    const recall = await request(
+      "POST",
+      `/inventory/batches/${batchId}/status-changes`,
+      {
+        kind: "recall",
+        reason: "Supplier recall",
+        evidence: "Frozen supplier notice",
+        idempotencyKey: uuidV7(),
+      },
+    );
+    expect(recall.status, diagnostics(recall)).toBe(201);
+    const transitions = await administrator.query<{
+      at: string;
+      after: string;
+      type: string;
+    }>(
+      `select to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at,
+              to_char((occurred_at + interval '1 microsecond') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as after, type
+       from (select occurred_at, 'expiry' as type from inventory_batch_expiry_amendments where batch_id = $1
+             union all select occurred_at, 'recall' from inventory_batch_status_events where batch_id = $1 and kind = 'recalled') event
+       order by occurred_at`,
+      [batchId],
+    );
+    const beforeFacts = await stockFacts();
+    for (const transition of transitions.rows) {
+      for (const to of [transition.at, transition.after]) {
+        const response = await request(
+          "GET",
+          `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(
+            JSON.stringify({
+              from,
+              to,
+              pageSize: 100,
+              filters: [
+                {
+                  column: "batch",
+                  operator: "eq",
+                  value: `GROUP-${products[1]!.id}`,
+                },
+              ],
+            }),
+          )}`,
+        );
+        expect(response.status, diagnostics(response)).toBe(200);
+        const row = inventoryReportSchema.parse(response.body).rows[0]!;
+        expect(row.cells.expiry).toBe(
+          transition.type === "expiry" && to === transition.at
+            ? "2029-06-01"
+            : "2030-06-01",
+        );
+        expect(row.cells.status).toBe(
+          transition.type === "recall" && to === transition.after
+            ? "recalled"
+            : "eligible",
+        );
+        expect(row.cells.closingQuantity).toBe("1");
+      }
+    }
+    expect(await stockFacts()).toEqual(beforeFacts);
+  }, 120_000);
+
+  it("rejects an actual oversized export while retaining bounded ordinary pages", async () => {
+    // Disposable synthetic sizing fixture, separate from posting reconciliation.
+    await administrator.query(
+      `with receipt as (
+      select * from inventory_movements where pharmacy_id = $1 and reason = 'purchase-receipt' order by id limit 1
+    ), batches as (
+      insert into inventory_batches (pharmacy_id, product_id, lot_number, expiry_date, quantity, created_by)
+      select pharmacy_id, product_id, 'OVERSIZE-' || lpad(number::text, 110, '0'), '2030-01-01', 1, created_by
+      from receipt cross join generate_series(1, 50000) number returning id, pharmacy_id, product_id
+    ) insert into inventory_movements (pharmacy_id, product_id, batch_id, quantity, carrying_amount_fils,
+      reason, source_document_type, source_document_id, source_row_ordinal, created_by)
+      select batch.pharmacy_id, batch.product_id, batch.id, 1, 1, receipt.reason, receipt.source_document_type,
+             receipt.source_document_id, receipt.source_row_ordinal, receipt.created_by
+      from batches batch cross join receipt`,
+      [pharmacyId],
+    );
+    const query = {
+      from: "2020-01-01T00:00:00Z",
+      to: new Date().toISOString(),
+      pageSize: 100,
+      filters: [{ column: "batch", operator: "contains", value: "OVERSIZE-" }],
+    };
+    const before = await stockFacts();
+    const viewed = await request(
+      "GET",
+      `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(JSON.stringify(query))}`,
+    );
+    expect(viewed.status, diagnostics(viewed)).toBe(200);
+    const report = inventoryReportSchema.parse(viewed.body);
+    expect(report.totalRows).toBe(50000);
+    expect(report.rows).toHaveLength(100);
+    expect(Buffer.byteLength(JSON.stringify(viewed.body))).toBeLessThan(
+      128 * 1024,
+    );
+    // Both requests must fail at the cheap pre-check under concurrent load,
+    // rather than occupying connections until the 10-second SQL timeout.
+    const exportDenialTimes = await Promise.all(
+      Array.from({ length: 2 }, async () => {
+        const exportStarted = performance.now();
+        const exported = await request(
+          "GET",
+          `${inventoryReportPath("batches-expiry")}/export?query=${encodeURIComponent(JSON.stringify(query))}`,
+        );
+        expect(exported.status, diagnostics(exported)).toBe(413);
+        expect(exported.body).toMatchObject({
+          status: "denied",
+          code: "export-too-large",
+        });
+        expect(exported.body).not.toHaveProperty("rows");
+        const elapsed = performance.now() - exportStarted;
+        expect(elapsed).toBeLessThan(5_000);
+        expect(Buffer.byteLength(JSON.stringify(exported.body))).toBeLessThan(
+          1024,
+        );
+        return elapsed;
+      }),
+    );
+    const exportDenialMs = Math.max(...exportDenialTimes);
+    const normalPageStarted = performance.now();
+    const normalPage = await request(
+      "GET",
+      `${inventoryReportPath("quantity")}?query=${encodeURIComponent(
+        JSON.stringify({ from: query.from, to: query.to, pageSize: 100 }),
+      )}`,
+    );
+    expect(normalPage.status, diagnostics(normalPage)).toBe(200);
+    expect(
+      inventoryReportSchema.parse(normalPage.body).rows.length,
+    ).toBeGreaterThan(0);
+    const normalPageMs = performance.now() - normalPageStarted;
+    expect(normalPageMs).toBeLessThan(5_000);
+    const afterDenialStarted = performance.now();
+    const afterDenial = await request(
+      "GET",
+      `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(JSON.stringify(query))}`,
+    );
+    expect(afterDenial.status, diagnostics(afterDenial)).toBe(200);
+    expect(inventoryReportSchema.parse(afterDenial.body).rows).toHaveLength(
+      100,
+    );
+    const afterDenialMs = performance.now() - afterDenialStarted;
+    if (process.env.BREEV_REPORT_PERFORMANCE_LABEL) {
+      // Benchmark saturated history with current planner statistics. The cold
+      // concurrent export and recovery assertions above run before this step.
+      for (const table of [
+        "inventory_movements",
+        "inventory_batches",
+        "inventory_value_effects",
+      ])
+        await administrator.query(`analyze ${table}`);
+      const period = {
+        from: "2020-01-01T00:00:00Z",
+        to: query.to,
+        pageSize: 100,
+      };
+      const scenarios = [
+        {
+          name: "movement-activity",
+          path: `${inventoryReportPath("quantity")}/activity`,
+          query: { query: period, rowId: product.id, page: 1, pageSize: 100 },
+        },
+        {
+          name: "historical-value",
+          path: inventoryReportPath("value"),
+          query: period,
+        },
+        {
+          name: "batch-history",
+          path: inventoryReportPath("batches-expiry"),
+          query: period,
+        },
+      ];
+      const measurements = [];
+      const sqlMeasurements = [];
+      const plans: Record<string, unknown> = {};
+      for (const scenario of scenarios) {
+        const samples = [];
+        for (let sample = 0; sample < 20; sample++) {
+          const start = performance.now();
+          const response = await request(
+            "GET",
+            `${scenario.path}?query=${encodeURIComponent(JSON.stringify(scenario.query))}`,
+          );
+          expect(response.status, diagnostics(response)).toBe(200);
+          samples.push(performance.now() - start);
+        }
+        const sorted = [...samples].sort((a, b) => a - b);
+        measurements.push({
+          name: scenario.name,
+          samples,
+          p95: sorted[18],
+          p99: sorted[19],
+        });
+        const client = await application.connect();
+        try {
+          await client.query("begin read only");
+          await client.query("set local enable_nestloop = off");
+          await client.query("set local jit = off");
+          let statement: string | undefined;
+          let values: unknown[] | undefined;
+          const observed = new Proxy(client, {
+            get(target, property) {
+              if (property !== "query") return Reflect.get(target, property);
+              return (...arguments_: unknown[]) => {
+                if (
+                  typeof arguments_[0] === "string" &&
+                  arguments_[0].startsWith("with report_date")
+                ) {
+                  statement = arguments_[0];
+                  values = arguments_[1] as unknown[];
+                }
+                return Reflect.apply(target.query, target, arguments_);
+              };
+            },
+          }) as PoolClient;
+          const kind =
+            scenario.name === "historical-value"
+              ? "value"
+              : scenario.name === "batch-history"
+                ? "batches-expiry"
+                : "quantity";
+          const canonical = {
+            ...inventoryReportQueryFor(kind).parse(period),
+            ...period,
+          };
+          if (scenario.name === "movement-activity")
+            await readInventoryReportActivity(
+              observed,
+              pharmacyId,
+              kind,
+              canonical,
+              "2026-10-01",
+              product.id,
+              1,
+              100,
+            );
+          else
+            await readInventoryReportPage(
+              observed,
+              pharmacyId,
+              kind,
+              canonical,
+              "2026-10-01",
+              false,
+              24 * 1024 * 1024,
+            );
+          const sqlSamples: number[] = [];
+          for (let sample = 0; sample < 20; sample++) {
+            const plan = (
+              await client.query(
+                `explain (analyze, buffers, format json) ${statement!}`,
+                values,
+              )
+            ).rows[0]["QUERY PLAN"];
+            sqlSamples.push(plan[0]["Execution Time"] as number);
+            plans[scenario.name] = plan;
+          }
+          const sortedSql = [...sqlSamples].sort((a, b) => a - b);
+          sqlMeasurements.push({
+            name: scenario.name,
+            samples: sqlSamples,
+            p95: sortedSql[18]!,
+            p99: sortedSql[19]!,
+          });
+          await client.query("rollback");
+        } finally {
+          client.release();
+        }
+      }
+      const directory = path.resolve(
+        import.meta.dirname,
+        "../../../../artifacts/issue-64",
+      );
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        path.join(
+          directory,
+          `performance-${process.env.BREEV_REPORT_PERFORMANCE_LABEL}.json`,
+        ),
+        JSON.stringify(
+          {
+            platform: process.platform,
+            samples: 20,
+            facts: (
+              await administrator.query(
+                "select count(*)::integer as count from inventory_report_facts",
+              )
+            ).rows[0].count,
+            measurements,
+            sqlMeasurements,
+            exportDenialMs,
+            exportDenialTimes,
+            afterDenialMs,
+            normalPageMs,
+          },
+          null,
+          2,
+        ),
+      );
+      await writeFile(
+        path.join(
+          directory,
+          `plans-${process.env.BREEV_REPORT_PERFORMANCE_LABEL}.json`,
+        ),
+        JSON.stringify(plans, null, 2),
+      );
+      for (const measurement of sqlMeasurements)
+        if (measurement.name !== "batch-history")
+          expect(measurement.p95, measurement.name).toBeLessThanOrEqual(300);
+    }
+    expect(await stockFacts()).toEqual(before);
+  }, 300_000);
+
+  async function reportActivity(
+    kind: (typeof INVENTORY_REPORT_KINDS)[number],
+    rowId: string,
+    query: unknown,
+  ) {
+    const response = await request(
+      "GET",
+      `${inventoryReportPath(kind)}/activity?query=${encodeURIComponent(JSON.stringify({ query, rowId }))}`,
+    );
+    expect(response.status, diagnostics(response)).toBe(200);
+    return inventoryReportActivityPageSchema.parse(response.body);
+  }
   async function inventoryItem(): Promise<InventoryItem> {
     const response = await request("GET", inventoryItemListContract.path);
     expect(response.status, diagnostics(response)).toBe(200);
@@ -629,7 +1814,16 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       ["posted_purchases", "id"],
       ["posted_purchase_rows", "id"],
       ["posted_purchase_adjustments", "id"],
+      ["posted_purchase_adjustment_rows", "id"],
       ["posted_purchase_returns", "id"],
+      ["posted_purchase_return_rows", "id"],
+      ["inventory_batch_status_events", "id"],
+      ["inventory_batch_expiry_amendments", "id"],
+      ["inventory_count_sessions", "id"],
+      ["inventory_count_lines", "id"],
+      ["inventory_count_variance_applications", "id"],
+      ["accounting_journal_entries", "id"],
+      ["accounting_journal_lines", "id"],
     ] as const;
     const result: Record<string, { count: string; digest: string }> = {};
     for (const [table, orderColumn] of tables) {
@@ -831,6 +2025,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     quantity: string,
     lotNumber: string,
     expiryDate: string,
+    itemId = product.id,
   ): Promise<PurchaseDraft> {
     const created = await request("POST", "/purchases/drafts", {
       invoiceOffer: { mode: "none", value: "0" },
@@ -848,7 +2043,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       expectedVersion: draft.version,
       expiryDate,
       idempotencyKey: uuidV7(),
-      itemId: product.id,
+      itemId,
       lotNumber,
       notes: null,
       pricing: { method: "by-price", retailPriceFils: "999999" },
@@ -888,7 +2083,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
   }
 
   async function request(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     route: string,
     body?: unknown,
   ): Promise<ApiResponse> {

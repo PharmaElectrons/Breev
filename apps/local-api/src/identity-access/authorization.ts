@@ -29,6 +29,8 @@ export const PERMISSION_NAMES = [
   "purchases.drafts.manage",
   "purchases.posted.view",
   "purchases.returns.manage",
+  "reports.inventory.export",
+  "reports.inventory.view",
   "sales.drafts.manage",
   "sales.misc.manage",
   "sales.quick_access.manage",

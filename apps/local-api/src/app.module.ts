@@ -27,10 +27,14 @@ import { PurchaseReturnsService } from "./purchasing/purchase-returns.service.js
 import { PurchasingService } from "./purchasing/purchasing.service.js";
 import { InventoryReviewController } from "./reporting/inventory-review.controller.js";
 import { InventoryReviewService } from "./reporting/inventory-review.service.js";
+import { InventoryReportController } from "./reporting/inventory-report.controller.js";
+import { InventoryReportService } from "./reporting/inventory-report.service.js";
 import { InventorySafetyController } from "./inventory/inventory-safety.controller.js";
 import { InventorySafetyService } from "./inventory/inventory-safety.service.js";
 import { InventoryCountController } from "./inventory/inventory-count.controller.js";
 import { InventoryCountService } from "./inventory/inventory-count.service.js";
+import { InventoryReportExportController } from "./inventory/inventory-report-export.controller.js";
+import { InventoryReportExportService } from "./inventory/inventory-report-export.service.js";
 import { InventoryReorderController } from "./inventory/inventory-reorder.controller.js";
 import { InventoryReorderService } from "./inventory/inventory-reorder.service.js";
 import { RecoveryCoordinatorService } from "./recovery/recovery-coordinator.service.js";
@@ -51,7 +55,9 @@ import { SaleQuickAccessService } from "./sales/sale-quick-access.service.js";
     HealthController,
     IdentityAccessController,
     InventoryReviewController,
+    InventoryReportController,
     InventoryCountController,
+    InventoryReportExportController,
     InventoryReorderController,
     InventorySafetyController,
     LicensingController,
@@ -72,7 +78,9 @@ import { SaleQuickAccessService } from "./sales/sale-quick-access.service.js";
     },
     IdentityAccessService,
     InventoryReviewService,
+    InventoryReportService,
     InventoryCountService,
+    InventoryReportExportService,
     InventoryReorderService,
     InventorySafetyService,
     LocalDatabaseService,

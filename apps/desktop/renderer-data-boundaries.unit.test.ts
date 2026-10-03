@@ -160,9 +160,9 @@ describe("production renderer data boundaries", () => {
       "patients",
       "messages",
       "basket",
+      "reports",
       "settings",
     ]);
-    expect(registered).not.toContain("reports");
     expect(registered).not.toContain("accounts");
     for (const definition of MODULE_DEFINITIONS) {
       expect(definition.hash).not.toMatch(

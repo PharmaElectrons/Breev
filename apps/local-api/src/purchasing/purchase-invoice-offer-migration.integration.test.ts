@@ -40,7 +40,7 @@ describe.sequential("0032 invoice offer forward migration", () => {
   let purchaseId: string;
   let oldPosted: unknown;
   let oldReceipt: unknown;
-  let oldRoleRevisions: unknown;
+  let oldRoleRevisions: { id: string; revision: string }[];
   const receiptHash = randomBytes(32);
   const receiptKey = "11111111-1111-4111-8111-111111111111";
   beforeAll(async () => {
@@ -153,7 +153,7 @@ describe.sequential("0032 invoice offer forward migration", () => {
       )
     ).rows[0]!.facts;
     oldRoleRevisions = (
-      await application.query(
+      await application.query<{ id: string; revision: string }>(
         "select id,revision::text from pharmacy_roles order by id",
       )
     ).rows;
@@ -190,13 +190,19 @@ describe.sequential("0032 invoice offer forward migration", () => {
       invoice_offer: { mode: "none", value: "0" },
       offer_rule_version: 1,
     });
+    // Migration 0036 grants reports.inventory.view and reports.inventory.export to owner (+1).
     expect(
       (
         await application.query(
           "select id,revision::text from pharmacy_roles order by id",
         )
       ).rows,
-    ).toEqual(oldRoleRevisions);
+    ).toEqual(
+      oldRoleRevisions.map((role) => ({
+        ...role,
+        revision: String(BigInt(role.revision) + 1n),
+      })),
+    );
     const receipt = (
       await application.query(
         "select response_body,request_hash,purchase_offer_receipt_version from posting_command_results where idempotency_key=$1",

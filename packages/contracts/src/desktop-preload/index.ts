@@ -1,7 +1,9 @@
 import { z } from "zod";
 import {
   inventorySensitiveExportSchema,
+  inventoryReportExportSchema,
   type InventorySensitiveExport,
+  type InventoryReportExport,
 } from "../local-rest/index.js";
 
 export const DESKTOP_API_GLOBAL = "breevDesktop" as const;
@@ -245,7 +247,10 @@ export const desktopExportDiagnosticsResponseSchema = z.discriminatedUnion(
 );
 
 export const desktopSaveInventoryExportRequestSchema = z.strictObject({
-  bundle: inventorySensitiveExportSchema,
+  bundle: z.union([
+    inventorySensitiveExportSchema,
+    inventoryReportExportSchema,
+  ]),
   format: z.enum(["json", "csv"]).optional(),
   locale: z.enum(["ar", "en"]),
 });
@@ -436,7 +441,7 @@ export interface BreevDesktopApi {
   ): Promise<DesktopExportDiagnosticsResponse>;
   saveInventoryExport(request: {
     readonly locale: "ar" | "en";
-    readonly bundle: InventorySensitiveExport;
+    readonly bundle: InventorySensitiveExport | InventoryReportExport;
     readonly format?: "json" | "csv";
   }): Promise<DesktopSaveInventoryExportResponse>;
   getStartupConfig(): Promise<DesktopStartupConfig>;

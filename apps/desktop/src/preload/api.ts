@@ -47,6 +47,7 @@ import {
 } from "@breev/contracts/desktop-preload";
 
 import { serializeInventoryCsv } from "../main/inventory-export-csv.js";
+import { serializeInventoryReportCsv } from "../main/inventory-report-csv.js";
 
 type Invoke = (channel: string, payload: unknown) => Promise<unknown>;
 
@@ -101,7 +102,9 @@ export function createBreevDesktopApi(invoke: Invoke): BreevDesktopApi {
       if (began.status !== "opened") return began;
       const serialized =
         request.format === "csv"
-          ? serializeInventoryCsv(request.bundle)
+          ? "kind" in request.bundle
+            ? serializeInventoryReportCsv(request.bundle, request.locale)
+            : serializeInventoryCsv(request.bundle)
           : JSON.stringify(request.bundle, null, 2) + "\n";
       if (
         Buffer.byteLength(serialized, "utf8") > MAXIMUM_INVENTORY_EXPORT_BYTES

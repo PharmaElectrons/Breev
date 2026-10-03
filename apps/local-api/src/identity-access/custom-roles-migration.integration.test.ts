@@ -54,7 +54,7 @@ interface RoleSnapshot {
  * or identity revisions.
  */
 describe.sequential("migration 0011: custom roles upgrade", () => {
-  const EXPECTED_IDENTITY_REVISION_DELTA = 16n;
+  const EXPECTED_IDENTITY_REVISION_DELTA = 17n;
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -180,9 +180,10 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     );
     for (const before of rolesBefore) {
       const after = rolesAfter.find((role) => role.id === before.id);
+      // 0033 replaces a report index and has no role-modifying statements (+0).
       expect(after?.revision, before.role_key ?? before.id).toBe(
         before.role_key === "owner"
-          ? String(BigInt(before.revision) + 15n)
+          ? String(BigInt(before.revision) + 16n)
           : before.role_key === "manager"
             ? String(BigInt(before.revision) + 12n)
             : before.revision,
@@ -192,6 +193,16 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
     expect(await snapshotGrants()).toEqual(
       [
         ...grantsBefore,
+        {
+          granted_by: ownerId,
+          permission_name: "reports.inventory.export",
+          role_id: ownerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "reports.inventory.view",
+          role_id: ownerRoleId,
+        },
         {
           granted_by: ownerId,
           permission_name: "draft.price.override",
