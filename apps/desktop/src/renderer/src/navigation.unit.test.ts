@@ -40,7 +40,6 @@ describe("navigationModules", () => {
       "marketing",
       "external",
       "integration",
-      "reports",
     ]) {
       expect(ids).not.toContain(forbidden);
     }
@@ -64,6 +63,15 @@ describe("navigationModules", () => {
       "products",
     );
     expect(idsFor(FREE_CORE_ACCESS)).toContain("products");
+  });
+
+  it("shows reports to a delegated report viewer without a paid capability", () => {
+    expect(
+      idsFor({
+        allowedPermissions: ["reports.inventory.view"],
+        capabilities: [],
+      }),
+    ).toContain("reports");
   });
 
   it("allows posted-purchase reviewers into purchases without draft access", () => {
@@ -137,8 +145,8 @@ describe("moduleIdForHash", () => {
     expect(moduleIdForHash("#/patients")).toBe("patients");
   });
 
-  it("sends quarantined accounting and report hashes to the default workspace", () => {
-    expect(moduleIdForHash("#/reports")).toBe("dashboard");
+  it("resolves reports while keeping accounting outside the workspace", () => {
+    expect(moduleIdForHash("#/reports")).toBe("reports");
     expect(moduleIdForHash("#/accounts")).toBe("dashboard");
   });
 

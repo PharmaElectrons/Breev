@@ -10,6 +10,8 @@ import {
   inventoryBatchStatusChangePath,
   inventoryItemListContract,
   inventoryMovementHistoryPath,
+  inventoryReportPath,
+  inventoryReportSchema,
   productPath,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
@@ -189,6 +191,78 @@ describe.sequential("Inventory count PostgreSQL seam", () => {
     );
     expect(multiApplied.line.application?.variance).toBe("-6");
     expect(multiApplied.line.application?.movementIds).toHaveLength(2);
+    // Consecutive applications share a session but never share a cutoff.
+    for (const [applicationCase, stocked, before, after] of [
+      [applied, singleBatch, "8", "9"],
+      [secondApplied, second, "4", "3"],
+      [multiApplied, multiBatch, "8", "2"],
+    ] as const) {
+      const boundaries = await administrator.query<{
+        cutoff: string;
+        offset: number;
+      }>(
+        `select to_char((applied_at + delta * interval '1 microsecond') at time zone 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cutoff, delta as offset
+         from inventory_count_variance_applications
+         cross join (values (-1), (0), (1)) boundary(delta)
+         where pharmacy_id = $1 and id = $2 order by delta`,
+        [pharmacyId, applicationCase.line.application!.id],
+      );
+      for (const boundary of boundaries.rows) {
+        const response = await request(
+          "GET",
+          `${inventoryReportPath("quantity")}?query=${encodeURIComponent(
+            JSON.stringify({
+              from: "2020-01-01T00:00:00Z",
+              to: boundary.cutoff,
+            }),
+          )}`,
+        );
+        expect(response.status, diagnostics(response)).toBe(200);
+        const row = inventoryReportSchema
+          .parse(response.body)
+          .rows.find((r) => r.productId === stocked.product.id)!;
+        expect(row.cells.closingQuantity).toBe(
+          boundary.offset <= 0 ? before : after,
+        );
+      }
+      const response = await request(
+        "GET",
+        `${inventoryReportPath("stocktake-movements")}?query=${encodeURIComponent(
+          JSON.stringify({
+            from: boundaries.rows[1]!.cutoff,
+            to: boundaries.rows[2]!.cutoff,
+          }),
+        )}`,
+      );
+      expect(response.status, diagnostics(response)).toBe(200);
+      const rows = inventoryReportSchema.parse(response.body).rows;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.id).toBe(applicationCase.line.application!.id);
+      expect(rows[0]!.activityCount).toBe(
+        applicationCase.line.application!.movementIds.length,
+      );
+    }
+    const reportResponse = await request(
+      "GET",
+      inventoryReportPath("stocktake-movements"),
+    );
+    expect(reportResponse.status, diagnostics(reportResponse)).toBe(200);
+    const report = inventoryReportSchema.parse(reportResponse.body);
+    const appliedRow = report.rows.find(
+      (row) => row.productId === multiBatch.product.id,
+    );
+    expect(appliedRow?.cells.activityQuantity).toBe("-6");
+    expect(appliedRow?.cells.observedQuantity).toBe("8");
+    expect(appliedRow?.activityCount).toBe(2);
+    expect(appliedRow?.source).toMatchObject({
+      documentId: multiApplied.session.id,
+      documentType: "count-session",
+      openable: true,
+    });
+    expect(
+      report.rows.filter((row) => row.productId === multiBatch.product.id),
+    ).toHaveLength(1);
     const fefoMovements = await administrator.query<{
       batch_id: string;
       quantity: string;

@@ -95,6 +95,12 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
     ],
   },
   {
+    hash: "#/reports",
+    id: "reports",
+    implemented: true,
+    requiredPermissionsAny: ["reports.inventory.view"],
+  },
+  {
     hash: "#/settings",
     id: "settings",
     implemented: true,

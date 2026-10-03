@@ -195,13 +195,12 @@ describe.sequential("0032 invoice offer forward migration", () => {
         "select id,revision::text from pharmacy_roles order by id",
       )
     ).rows;
-    // The pharmacy and owner are created after this fixture migrates through
-    // 0031, so 0035 finds no patient grants for this tenant to remove. Migration
-    // 0037 inserts its two sales grants in one role-update statement.
+    // This fixture creates only the owner after its 0031 baseline. Migration
+    // 0036 adds owner report grants, and 0042 adds owner sales grants (+1 each).
     expect(downstreamRoleRevisions).toEqual(
       oldRoleRevisions.map((role) => ({
         ...role,
-        revision: String(BigInt(role.revision) + 1n),
+        revision: String(BigInt(role.revision) + 2n),
       })),
     );
     const receipt = (

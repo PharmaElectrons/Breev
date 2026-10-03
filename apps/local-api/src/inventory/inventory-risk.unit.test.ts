@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   automaticStateColour,
   consumptionRatePer30Days,
+  consumptionOverWindow,
   effectiveStateColour,
   riskIndicators,
 } from "./inventory-risk.js";
@@ -10,6 +11,34 @@ import {
 const now = new Date("2026-09-10T12:00:00.000Z");
 
 describe("inventory risk calculations", () => {
+  it.each([30, 60, 90] as const)(
+    "uses exact %i-day half-open eligible-demand windows",
+    (days) => {
+      const to = new Date("2026-09-30T12:00:00Z");
+      const start = new Date(to.getTime() - days * 86400000);
+      expect(
+        consumptionOverWindow(
+          [
+            {
+              occurredAt: start,
+              quantity: -BigInt(days),
+              eligibleDemand: true,
+            },
+            {
+              occurredAt: new Date(start.getTime() - 1),
+              quantity: -1000n,
+              eligibleDemand: true,
+            },
+            { occurredAt: to, quantity: -1000n, eligibleDemand: true },
+            { occurredAt: start, quantity: -1000n, eligibleDemand: false },
+            { occurredAt: start, quantity: 1000n, eligibleDemand: true },
+          ],
+          to,
+          days,
+        ),
+      ).toEqual({ consumed: BigInt(days), per30Days: 30n });
+    },
+  );
   it("computes trailing consumption as an exact 30-day integer rate", () => {
     expect(
       consumptionRatePer30Days(

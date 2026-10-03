@@ -5,6 +5,13 @@ import {
   LOCAL_DEVICE_SESSION_HEADER,
   inventoryItemListContract,
   inventoryMovementHistoryPath,
+  inventoryReportPath,
+  inventoryReportProtectedExportContract,
+  inventoryReportSchema,
+  INVENTORY_REPORT_KINDS,
+  inventoryReportActivityPageSchema,
+  inventoryReportExportSchema,
+  inventoryReportQueryFor,
   inventorySensitiveExportContract,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
@@ -31,6 +38,7 @@ import {
   createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../../test/database-roles.js";
+import { readInventoryReportPage } from "../inventory/inventory-report-query.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_USERNAME = "inventory.auth.owner";
@@ -202,6 +210,57 @@ describe.sequential(
       expect(allowed.status, diagnostics(allowed)).toBe(200);
     });
 
+    it("separates report view, ordinary export, valuation, and owner-only sensitive export", async () => {
+      await login(PHARMACIST_USERNAME, PHARMACIST_PASSWORD);
+      const noView = await request("GET", inventoryReportPath("quantity"));
+      expect(noView.status, diagnostics(noView)).toBe(403);
+      await expectAudit(noView);
+
+      await login(CUSTOM_USERNAME, CUSTOM_PASSWORD);
+      const quantity = await request("GET", inventoryReportPath("quantity"));
+      expect(quantity.status, diagnostics(quantity)).toBe(200);
+      const report = inventoryReportSchema.parse(quantity.body);
+      expect(report.sensitivity).toBe("redacted");
+      expect(report.rows[0]?.cells.closingValueFils).toBeUndefined();
+      expect(report.rows[0]?.source?.openable).toBe(true);
+      const noValuation = await request("GET", inventoryReportPath("value"));
+      expect(noValuation.status, diagnostics(noValuation)).toBe(403);
+      const sensitiveSort = await request(
+        "GET",
+        `${inventoryReportPath("stocktake-movements")}?query=${encodeURIComponent(JSON.stringify({ sort: "activityValueFils" }))}`,
+      );
+      expect(sensitiveSort.status, diagnostics(sensitiveSort)).toBe(403);
+      const ordinary = await request(
+        "GET",
+        `${inventoryReportPath("quantity")}/export`,
+      );
+      expect(ordinary.status, diagnostics(ordinary)).toBe(200);
+      const protectedAttempt = await request(
+        "POST",
+        inventoryReportProtectedExportContract.path,
+        {
+          kind: "value",
+          query: {
+            from: "2020-01-01T00:00:00.000Z",
+            to: "2026-01-01T00:00:00.000Z",
+          },
+          challengeId: uuidV7(),
+          idempotencyKey: uuidV7(),
+        },
+      );
+      expect(protectedAttempt.status, diagnostics(protectedAttempt)).toBe(403);
+      expect(protectedAttempt.body).toMatchObject({
+        code: "owner-role-required",
+      });
+
+      await login(MANAGER_USERNAME, MANAGER_PASSWORD);
+      const managerNoView = await request(
+        "GET",
+        inventoryReportPath("quantity"),
+      );
+      expect(managerNoView.status, diagnostics(managerNoView)).toBe(403);
+    });
+
     it("allows preferences for review roles and audits all protected export decisions", async () => {
       await login(PHARMACIST_USERNAME, PHARMACIST_PASSWORD);
       const preferences = await request("GET", "/inventory/review-preferences");
@@ -312,6 +371,287 @@ describe.sequential(
       expect(found.rows).toHaveLength(1);
     }
 
+    it("rechecks all seven report, activity and export paths for each role and revoked sessions", async () => {
+      const query = {
+        from: "2020-01-01T00:00:00Z",
+        to: new Date().toISOString(),
+      };
+      for (const [username, password, view, valuation] of [
+        [OWNER_USERNAME, OWNER_PASSWORD, true, true],
+        [CUSTOM_USERNAME, CUSTOM_PASSWORD, true, false],
+        [PHARMACIST_USERNAME, PHARMACIST_PASSWORD, false, false],
+      ] as const) {
+        await login(username, password);
+        for (const kind of INVENTORY_REPORT_KINDS) {
+          const authorized =
+            view &&
+            (valuation || (kind !== "value" && kind !== "average-cost"));
+          const endpoints = [
+            `${inventoryReportPath(kind)}?query=${encodeURIComponent(JSON.stringify(query))}`,
+            `${inventoryReportPath(kind)}/export?query=${encodeURIComponent(JSON.stringify(query))}`,
+            `${inventoryReportPath(kind)}/activity?query=${encodeURIComponent(JSON.stringify({ query, rowId: product.id, pageSize: 1 }))}`,
+          ];
+          for (const endpoint of endpoints) {
+            const response = await request("GET", endpoint);
+            expect(
+              response.status,
+              `${username} ${endpoint}: ${diagnostics(response)}`,
+            ).toBe(authorized ? 200 : 403);
+            if (authorized && endpoint.includes("/activity?")) {
+              const page = inventoryReportActivityPageSchema.parse(
+                response.body,
+              );
+              expect(page.rows.length).toBeLessThanOrEqual(1);
+              if (!valuation)
+                expect(page.rows.every((a) => a.valueFils === null)).toBe(true);
+            } else if (authorized && endpoint.includes("/export?")) {
+              const bundle = inventoryReportExportSchema.parse(response.body);
+              expect(bundle.sensitivity).toBe("redacted");
+              expect(
+                bundle.rows.every(
+                  (r) => r.cells.activityValueFils === undefined,
+                ),
+              ).toBe(true);
+            }
+          }
+        }
+      }
+      await login(OWNER_USERNAME, OWNER_PASSWORD);
+      for (const filter of [
+        "openingValueFils",
+        "closingValueFils",
+        "activityValueFils",
+      ] as const) {
+        const response = await request(
+          "GET",
+          `${inventoryReportPath("value")}/export?query=${encodeURIComponent(
+            JSON.stringify({
+              ...query,
+              filters: [{ column: filter, operator: "gte", value: "0" }],
+            }),
+          )}`,
+        );
+        expect(response.status, diagnostics(response)).toBe(403);
+        expect(response.body).toMatchObject({ code: "sensitive-query-denied" });
+      }
+      const foreignActivity = await request(
+        "GET",
+        `${inventoryReportPath("quantity")}/activity?query=${encodeURIComponent(JSON.stringify({ query, rowId: uuidV7() }))}`,
+      );
+      expect(foreignActivity.status, diagnostics(foreignActivity)).toBe(200);
+      expect(
+        inventoryReportActivityPageSchema.parse(foreignActivity.body).totalRows,
+      ).toBe(0);
+      await administrator.query(
+        "update identity_sessions set revoked_at = now(), revocation_reason = 'logout' where pharmacy_id = $1 and revoked_at is null",
+        [pharmacyId],
+      );
+      for (const kind of INVENTORY_REPORT_KINDS) {
+        for (const suffix of ["", "/export", "/activity"]) {
+          const response = await request(
+            "GET",
+            `${inventoryReportPath(kind)}${suffix}`,
+          );
+          expect(response.status, diagnostics(response)).toBe(401);
+        }
+      }
+    });
+
+    it("rechecks owner grants and rejects a foreign device binding on every report seam", async () => {
+      await login(OWNER_USERNAME, OWNER_PASSWORD);
+      const query = {
+        from: "2020-01-01T00:00:00Z",
+        to: new Date().toISOString(),
+      };
+      const command = {
+        kind: "quantity",
+        query,
+        challengeId: uuidV7(),
+        idempotencyKey: uuidV7(),
+      };
+      for (const permission of [
+        "reports.inventory.view",
+        "reports.inventory.export",
+        "inventory.valuation.view",
+      ] as const) {
+        const removed = await administrator.query<{
+          pharmacy_id: string;
+          role_id: string;
+          permission_name: string;
+          granted_at: Date;
+          granted_by: string;
+        }>(
+          `delete from role_permission_grants grant_row using pharmacy_roles role
+            where grant_row.role_id = role.id and role.pharmacy_id = $1 and role.role_key = 'owner'
+              and grant_row.permission_name = $2 returning grant_row.*`,
+          [pharmacyId, permission],
+        );
+        expect(removed.rows).toHaveLength(1);
+        try {
+          for (const kind of INVENTORY_REPORT_KINDS) {
+            for (const suffix of ["", "/export", "/activity"]) {
+              const body =
+                suffix === "/activity" ? { query, rowId: product.id } : query;
+              const response = await request(
+                "GET",
+                `${inventoryReportPath(kind)}${suffix}?query=${encodeURIComponent(JSON.stringify(body))}`,
+              );
+              const denied =
+                permission === "reports.inventory.view" ||
+                (permission === "reports.inventory.export" &&
+                  suffix === "/export") ||
+                (permission === "inventory.valuation.view" &&
+                  (kind === "value" || kind === "average-cost"));
+              expect(
+                response.status,
+                `${permission} ${kind}${suffix}: ${diagnostics(response)}`,
+              ).toBe(denied ? 403 : 200);
+            }
+          }
+          const protectedExport = await request(
+            "POST",
+            inventoryReportProtectedExportContract.path,
+            command,
+          );
+          expect(protectedExport.status, diagnostics(protectedExport)).toBe(
+            403,
+          );
+        } finally {
+          const grant = removed.rows[0]!;
+          await administrator.query(
+            `insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_at, granted_by)
+            values ($1,$2,$3,$4,$5)`,
+            [
+              grant.pharmacy_id,
+              grant.role_id,
+              grant.permission_name,
+              grant.granted_at,
+              grant.granted_by,
+            ],
+          );
+        }
+      }
+      for (const kind of INVENTORY_REPORT_KINDS) {
+        for (const suffix of ["", "/export", "/activity"]) {
+          const response = await request(
+            "GET",
+            `${inventoryReportPath(kind)}${suffix}`,
+            undefined,
+            { [LOCAL_DEVICE_ID_HEADER]: uuidV7() },
+          );
+          expect(response.status, diagnostics(response)).toBe(401);
+        }
+      }
+      const foreignProtected = await request(
+        "POST",
+        inventoryReportProtectedExportContract.path,
+        command,
+        {
+          [LOCAL_DEVICE_SESSION_HEADER]: randomBytes(32).toString("base64url"),
+        },
+      );
+      expect(foreignProtected.status, diagnostics(foreignProtected)).toBe(401);
+    });
+
+    it("binds report facts to the authenticated pharmacy and refuses expired or mismatched protected Step-Up", async () => {
+      await login(OWNER_USERNAME, OWNER_PASSWORD);
+      const query = {
+        from: "2020-01-01T00:00:00Z",
+        to: new Date().toISOString(),
+      };
+      const foreignPharmacy = uuidV7();
+      const pool = new Pool({ connectionString: databaseRoles.applicationUrl });
+      const client = await pool.connect();
+      try {
+        for (const kind of INVENTORY_REPORT_KINDS) {
+          const foreign = await readInventoryReportPage(
+            client,
+            foreignPharmacy,
+            kind,
+            { ...inventoryReportQueryFor(kind).parse(query), ...query },
+            "2026-10-01",
+            false,
+            24 * 1024 * 1024,
+          );
+          expect(foreign).toEqual({
+            rows: [],
+            totalRows: 0,
+            groups: [],
+            actors: [],
+          });
+          for (const suffix of ["", "/export", "/activity"]) {
+            const injected = { ...query, pharmacyId: foreignPharmacy };
+            const input =
+              suffix === "/activity"
+                ? { query: injected, rowId: product.id }
+                : injected;
+            const response = await request(
+              "GET",
+              `${inventoryReportPath(kind)}${suffix}?query=${encodeURIComponent(JSON.stringify(input))}`,
+            );
+            expect(response.status, diagnostics(response)).toBe(400);
+          }
+          const invalid = await request(
+            "POST",
+            inventoryReportProtectedExportContract.path,
+            {
+              kind,
+              query,
+              challengeId: uuidV7(),
+              idempotencyKey: uuidV7(),
+            },
+          );
+          expect(invalid.status, diagnostics(invalid)).toBe(404);
+        }
+      } finally {
+        client.release();
+        await pool.end();
+      }
+      const expired = await createChallenge(
+        "inventory.sensitive.export",
+        OWNER_PASSWORD,
+      );
+      await administrator.query(
+        "update step_up_challenges set expires_at = created_at + interval '1 millisecond' where id = $1",
+        [expired],
+      );
+      for (const kind of INVENTORY_REPORT_KINDS) {
+        const response = await request(
+          "POST",
+          inventoryReportProtectedExportContract.path,
+          {
+            kind,
+            query,
+            challengeId: expired,
+            idempotencyKey: uuidV7(),
+          },
+        );
+        expect(response.status, diagnostics(response)).toBe(409);
+        expect(response.body).toMatchObject({ code: "step-up-expired" });
+      }
+      const previousSession = await createChallenge(
+        "inventory.sensitive.export",
+        OWNER_PASSWORD,
+      );
+      await login(OWNER_USERNAME, OWNER_PASSWORD);
+      for (const kind of INVENTORY_REPORT_KINDS) {
+        const response = await request(
+          "POST",
+          inventoryReportProtectedExportContract.path,
+          {
+            kind,
+            query,
+            challengeId: previousSession,
+            idempotencyKey: uuidV7(),
+          },
+        );
+        expect(response.status, diagnostics(response)).toBe(403);
+        expect(response.body).toMatchObject({
+          code: "step-up-context-mismatch",
+        });
+      }
+    });
+
     async function createCustomRole(): Promise<string> {
       await login(OWNER_USERNAME, OWNER_PASSWORD);
       const challengeId = await createChallenge(
@@ -322,7 +662,12 @@ describe.sequential(
         challengeId,
         idempotencyKey: uuidV7(),
         name: "Inventory Review Custom",
-        permissions: ["inventory.review", "purchases.posted.view"],
+        permissions: [
+          "inventory.review",
+          "purchases.posted.view",
+          "reports.inventory.view",
+          "reports.inventory.export",
+        ],
       });
       expect(response.status, diagnostics(response)).toBe(201);
       return String((response.body as { id?: string }).id ?? "");
@@ -393,6 +738,9 @@ describe.sequential(
         username,
       });
       expect(response.status, diagnostics(response)).toBe(200);
+      expect(response.body).toMatchObject({
+        entitlement: { status: "free-core", licence: null },
+      });
     }
 
     async function createSupplier(): Promise<Supplier> {
@@ -478,10 +826,11 @@ describe.sequential(
       method: "GET" | "POST" | "PUT",
       route: string,
       body?: unknown,
+      extraHeaders: Record<string, string> = {},
     ): Promise<ApiResponse> {
       const response = await fetch(`${apiOrigin}${route}`, {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        headers: headers(body !== undefined),
+        headers: { ...headers(body !== undefined), ...extraHeaders },
         method,
       });
       const text = await response.text();

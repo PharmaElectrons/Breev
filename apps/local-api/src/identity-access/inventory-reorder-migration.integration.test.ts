@@ -347,16 +347,16 @@ describe.sequential("migration 0024: inventory reorder basket", () => {
  * under test. Migration 0025 grants `sales.drafts.manage` to owner, manager,
  * pharmacist, and sales employee; migrations 0027–0029 each grant another
  * permission to owner and manager. Migration 0031 grants patient permissions,
- * 0035 advances owner/manager revisions while removing those grants, and 0037
- * adds two sensitive sales grants to owner and manager.
+ * 0035 removes those grants, 0036 adds owner report grants, and 0042 adds
+ * sensitive sales grants to owner and manager.
  */
 const LATER_ROLE_REVISION_INCREMENTS: Readonly<Record<string, bigint>> = {
-  owner: 7n,
+  owner: 8n,
   manager: 7n,
   pharmacist: 2n,
   sales_employee: 1n,
 };
-const LATER_PHARMACY_REVISIONS = 7n;
+const LATER_PHARMACY_REVISIONS = 8n;
 
 function expectRevisionDelta(
   before: DatabaseSnapshot,

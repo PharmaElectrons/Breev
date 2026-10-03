@@ -21,6 +21,7 @@ export type PermissionGroupId =
   | "products"
   | "sales"
   | "inventory"
+  | "reports"
   | "purchasing";
 
 export interface PermissionGroup {
@@ -75,6 +76,10 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       "inventory.reorder.manage",
       "inventory.reorder.confirm",
     ],
+  },
+  {
+    id: "reports",
+    permissions: ["reports.inventory.view", "reports.inventory.export"],
   },
   { id: "attendance", permissions: ["attendance.record"] },
   {

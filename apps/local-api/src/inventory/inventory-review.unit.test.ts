@@ -67,7 +67,7 @@ describe("inventory review movement folding", () => {
     expect(value).toBe(11_000n);
   });
 
-  it("does not count purchase adjustments or returns as consumption", () => {
+  it("excludes every non-demand M2 movement from consumption", () => {
     const now = new Date("2026-09-10T12:00:00.000Z");
 
     expect(
@@ -91,7 +91,7 @@ describe("inventory review movement folding", () => {
         ],
         now,
       ),
-    ).toBe(2n);
+    ).toBe(0n);
   });
 
   it("reconciles balance, value, and WAC from movement fixtures", () => {

@@ -258,14 +258,49 @@
       "idx": 36,
       "version": "7",
       "when": 1791072000000,
-      "tag": "0036_sale_misc_cost",
+      "tag": "0036_inventory_reports",
       "breakpoints": true
     },
     {
       "idx": 37,
       "version": "7",
       "when": 1791158400000,
-      "tag": "0037_sale_panel_and_drawer",
+      "tag": "0037_report_posting_cutoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791244800000,
+      "tag": "0038_report_bounded_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791331200000,
+      "tag": "0039_report_effect_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791417600000,
+      "tag": "0040_report_source_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791504000000,
+      "tag": "0041_sale_misc_cost",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791590400000,
+      "tag": "0042_sale_panel_and_drawer",
       "breakpoints": true
     }
   ]

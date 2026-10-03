@@ -12,7 +12,10 @@ export interface InventoryRiskMovement {
   readonly occurredAt: Date;
   readonly quantity: bigint;
   readonly reason?:
-    "purchase-adjustment" | "purchase-receipt" | "purchase-return";
+    | "purchase-adjustment"
+    | "purchase-receipt"
+    | "purchase-return"
+    | "count-variance";
 }
 
 export interface InventoryRiskInput {
@@ -35,21 +38,45 @@ export function consumptionRatePer30Days(
   now: Date,
   months: 1 | 2 | 3 = 3,
 ): bigint {
-  const windowDays = months * 30;
-  const windowStart = now.getTime() - windowDays * 24 * 60 * 60 * 1_000;
-  const consumed = movements.reduce((total, movement) => {
-    if (
-      movement.occurredAt.getTime() < windowStart ||
-      movement.occurredAt.getTime() > now.getTime() ||
-      movement.quantity >= 0n ||
-      movement.reason === "purchase-adjustment" ||
-      movement.reason === "purchase-return"
-    ) {
-      return total;
-    }
-    return total - movement.quantity;
-  }, 0n);
-  return divideFilsRounded(consumed * 30n, BigInt(windowDays));
+  const windowDays = months === 1 ? 30 : months === 2 ? 60 : 90;
+  return consumptionOverWindow(
+    movements.map((movement) => ({
+      occurredAt: movement.occurredAt,
+      quantity: movement.quantity,
+      eligibleDemand: movement.reason === undefined,
+    })),
+    now,
+    windowDays,
+    true,
+  ).per30Days;
+}
+
+/** Only the owner identifies eligible posted demand. Reports use [To-window, To). */
+export function consumptionOverWindow(
+  movements: readonly {
+    readonly occurredAt: Date;
+    readonly quantity: bigint;
+    readonly eligibleDemand: boolean;
+  }[],
+  to: Date,
+  days: 30 | 60 | 90,
+  includeCutoff = false,
+): { readonly consumed: bigint; readonly per30Days: bigint } {
+  const start = to.getTime() - days * 86_400_000;
+  const consumed = movements.reduce(
+    (sum, m) =>
+      m.eligibleDemand &&
+      m.quantity < 0n &&
+      m.occurredAt.getTime() >= start &&
+      (includeCutoff ? m.occurredAt <= to : m.occurredAt < to)
+        ? sum - m.quantity
+        : sum,
+    0n,
+  );
+  return {
+    consumed,
+    per30Days: divideFilsRounded(consumed * 30n, BigInt(days)),
+  };
 }
 
 export function riskIndicators(

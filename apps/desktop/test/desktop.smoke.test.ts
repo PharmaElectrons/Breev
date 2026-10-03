@@ -1,5 +1,5 @@
 import { FuseState, FuseV1Options, getCurrentFuseWire } from "@electron/fuses";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -65,7 +65,7 @@ interface MainDeviceCredentials {
   readonly sessionToken: string;
 }
 
-test("the packaged desktop enforces its outer security and health seams", async () => {
+test("the packaged desktop enforces its outer security and health seams", async ({}, testInfo) => {
   const { databaseRoles, postgres } = await prepareDatabase();
   const credentials = createMainDeviceCredentials();
   const apiPort = await reservePort();
@@ -79,11 +79,28 @@ test("the packaged desktop enforces its outer security and health seams", async 
   let browser: Browser | undefined;
   let desktop: ChildProcessWithoutNullStreams | undefined;
   let proxy: HealthProxy | undefined;
+  let packagedWindow: Page | undefined;
+  let electronErrors = "";
+  const rendererEvents: string[] = [];
+  const healthEvents: { at: number; status?: number; failure?: string }[] = [];
+  const apiLogs: { phase: string; stdout: string; stderr: string }[] = [];
+  const observeApi = (child: ChildProcessWithoutNullStreams, phase: string) => {
+    const log = { phase, stdout: "", stderr: "" };
+    apiLogs.push(log);
+    child.stdout.on("data", (chunk: Buffer) => {
+      log.stdout = (log.stdout + chunk.toString()).slice(-4096);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      log.stderr = (log.stderr + chunk.toString()).slice(-4096);
+    });
+  };
+  let ownTrace = false;
   const userDataDirectory = await mkdtemp(
     path.join(os.tmpdir(), "breev-desktop-smoke-"),
   );
 
   try {
+    observeApi(api, "initial-ready");
     const readinessStartedAt = Date.now();
     await waitForHealth(
       apiOrigin,
@@ -117,7 +134,6 @@ test("the packaged desktop enforces its outer security and health seams", async 
         },
       },
     );
-    let electronErrors = "";
     desktop.stderr.on("data", (chunk: Buffer) => {
       electronErrors += chunk.toString();
     });
@@ -126,6 +142,32 @@ test("the packaged desktop enforces its outer security and health seams", async 
       () => electronErrors,
     );
     const window = await waitForPackagedWindow(browser, () => electronErrors);
+    packagedWindow = window;
+    // CDP-attached contexts need their own trace with the default runner config.
+    // Respect an explicitly enabled runner trace instead of starting it twice.
+    if (
+      testInfo.project.use.trace === undefined ||
+      testInfo.project.use.trace === "off"
+    ) {
+      await window
+        .context()
+        .tracing.start({ screenshots: true, snapshots: true });
+      ownTrace = true;
+    }
+    window.on("pageerror", (error) => rendererEvents.push(error.message));
+    window.on("crash", () => rendererEvents.push("renderer-crash"));
+    window.on("close", () => rendererEvents.push("window-close"));
+    window.on("response", (response) => {
+      if (response.url() === `${proxy!.origin}/health`)
+        healthEvents.push({ at: Date.now(), status: response.status() });
+    });
+    window.on("requestfailed", (request) => {
+      if (request.url() === `${proxy!.origin}/health`)
+        healthEvents.push({
+          at: Date.now(),
+          failure: request.failure()?.errorText ?? "unknown request failure",
+        });
+    });
     await expect(window.getByTestId("shell-state")).toHaveText("Ready");
     expect(window.url()).toBe("breev://app/index.html");
 
@@ -203,6 +245,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
     await expectNoFallbackStorage(window);
 
     api = spawnLocalApi(apiPort, databaseRoles, "ready", credentials);
+    observeApi(api, "restart-ready");
     await waitForHealth(apiOrigin, "healthy", api);
     await expect(window.getByTestId("shell-state")).toHaveText("Ready");
 
@@ -215,6 +258,7 @@ test("the packaged desktop enforces its outer security and health seams", async 
 
     await stopProcess(api);
     api = spawnLocalApi(apiPort, databaseRoles, "repair-required", credentials);
+    observeApi(api, "repair-required");
     await waitForHealth(apiOrigin, "repair-required", api);
     await expect(window.getByTestId("shell-state")).toHaveText(
       "Repair required",
@@ -223,6 +267,35 @@ test("the packaged desktop enforces its outer security and health seams", async 
     await expectNavigationDenied(window, "https://example.com/forged");
     await expectNavigationDenied(window, "file:///etc/passwd");
   } finally {
+    if (packagedWindow !== undefined) {
+      const state = await packagedWindow
+        .locator("body")
+        .innerText()
+        .catch((error) => String(error));
+      await testInfo.attach("packaged-recovery-state", {
+        body: Buffer.from(
+          JSON.stringify(
+            {
+              state,
+              rendererEvents,
+              healthEvents,
+              apiLogs,
+              electronErrors: electronErrors.slice(-8192),
+              apiExitCode: api?.exitCode,
+              desktopExitCode: desktop?.exitCode,
+            },
+            null,
+            2,
+          ),
+        ),
+        contentType: "application/json",
+      });
+      if (ownTrace)
+        await packagedWindow
+          .context()
+          .tracing.stop({ path: testInfo.outputPath("packaged-trace.zip") })
+          .catch(() => undefined);
+    }
     await browser?.close();
     await stopProcess(desktop);
     await closeServer(proxy?.server);

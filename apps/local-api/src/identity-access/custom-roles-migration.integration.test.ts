@@ -49,14 +49,14 @@ interface RoleSnapshot {
  * found them. The built-in manager receives role administration in 0011. The
  * owner receives the live purchasing permissions in 0012, 0018, 0019, and
  * 0020, and built-in roles receive patient permissions in 0031. Migration
- * 0035 advances owner and manager revisions while removing those grants; 0037
- * adds the sensitive sales grants to owner and manager. Each touched role
- * revision advances once per migration. Later table grants, including 0033's
- * supplier-link grant to breev_app, do not change pharmacy role grants or
- * identity revisions.
+ * 0035 advances owner and manager revisions while removing those grants; 0036
+ * adds inventory-report grants to the owner, and 0042 adds sensitive sales
+ * grants to owner and manager. Each touched role revision advances once per
+ * migration. Later table grants, including 0033's supplier-link grant to
+ * breev_app, do not change pharmacy role grants or identity revisions.
  */
 describe.sequential("migration 0011: custom roles upgrade", () => {
-  const EXPECTED_IDENTITY_REVISION_DELTA = 17n;
+  const EXPECTED_IDENTITY_REVISION_DELTA = 18n;
   let administrator: Pool;
   let application: Pool;
   let databaseRoles: SeparatedDatabaseRoles;
@@ -184,7 +184,7 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
       const after = rolesAfter.find((role) => role.id === before.id);
       expect(after?.revision, before.role_key ?? before.id).toBe(
         before.role_key === "owner"
-          ? String(BigInt(before.revision) + 16n)
+          ? String(BigInt(before.revision) + 17n)
           : before.role_key === "manager"
             ? String(BigInt(before.revision) + 13n)
             : before.revision,
@@ -202,6 +202,16 @@ describe.sequential("migration 0011: custom roles upgrade", () => {
               role_id,
             })),
         ),
+        {
+          granted_by: ownerId,
+          permission_name: "reports.inventory.export",
+          role_id: ownerRoleId,
+        },
+        {
+          granted_by: ownerId,
+          permission_name: "reports.inventory.view",
+          role_id: ownerRoleId,
+        },
         {
           granted_by: ownerId,
           permission_name: "draft.price.override",

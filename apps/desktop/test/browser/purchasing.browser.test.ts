@@ -34,6 +34,7 @@ import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
 import { cpus, totalmem, platform, release } from "node:os";
 import { pressKeyOnFocused } from "./focus.js";
+import { evidencePath } from "./evidence-path.js";
 import { Pool } from "pg";
 
 import {
@@ -81,30 +82,12 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
   let supplierId = "";
   let purchaseProduct: Product;
   let percentageProduct: Product;
-  const evidenceDir = path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/purchases-prototype-alignment/after",
-  );
-  const rowEvidenceDir = path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/issue-18/after",
-  );
-  const postingEvidenceDir = path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/issue-50/after",
-  );
-  const reviewEvidenceDir = path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/issue-51/after",
-  );
-  const adjustmentEvidenceDir = path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/issue-52/after",
-  );
-  const returnEvidenceDir = path.resolve(
-    import.meta.dirname,
-    "../../../../evidence/issue-53/after",
-  );
+  const evidenceDir = evidencePath("purchases-prototype-alignment", "after");
+  const rowEvidenceDir = evidencePath("issue-18", "after");
+  const postingEvidenceDir = evidencePath("issue-50", "after");
+  const reviewEvidenceDir = evidencePath("issue-51", "after");
+  const adjustmentEvidenceDir = evidencePath("issue-52", "after");
+  const returnEvidenceDir = evidencePath("issue-53", "after");
 
   test.beforeAll(async () => {
     await mkdir(evidenceDir, { recursive: true });

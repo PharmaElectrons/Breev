@@ -27,6 +27,7 @@ import {
   inventorySensitiveExportRequestSchema,
   inventorySensitiveExportSchema,
   inventorySensitiveExportContract,
+  inventoryReportProtectedExportContract,
   reorderItemAddContract,
   reorderItemConfirmContract,
   reorderItemRemoveContract,
@@ -206,10 +207,11 @@ describe("inventory review contracts", () => {
     ).toBe(false);
   });
 
-  it("keeps the inventory transport surface read-only except its two commands", () => {
+  it("keeps report reads separate from the protected export command", () => {
     expect(
       INVENTORY_CONTRACTS.filter((contract) => contract.method === "POST"),
     ).toEqual([
+      inventoryReportProtectedExportContract,
       inventoryAllocationPreviewContract,
       inventoryBatchExpiryCorrectionContract,
       inventoryBatchSafetyRunContract,

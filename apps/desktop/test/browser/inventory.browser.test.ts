@@ -10,8 +10,10 @@ import {
   purchaseAdjustmentPostingsPath,
   purchaseAdjustmentSummaryPath,
   inventoryBatchStatusChangePath,
+  inventoryReportExportSchema,
   purchaseDraftPostingsPath,
   purchaseDraftRowsPath,
+  purchasePostedPath,
   purchaseReturnDraftPath,
   purchaseReturnDraftsPath,
   purchaseReturnPostingsPath,
@@ -28,14 +30,14 @@ import {
   type PurchaseReturnSummary,
   type Supplier,
 } from "@breev/contracts/local-rest";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
@@ -53,6 +55,7 @@ import {
 } from "../local-api-process.js";
 import { evidencePath } from "./evidence-path.js";
 import { pressKeyOnFocused } from "./focus.js";
+import { serializeInventoryReportCsv } from "../../src/main/inventory-report-csv.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_USERNAME = "inventory.browser.owner";
@@ -81,6 +84,8 @@ let sharedAdministrator: Pool | undefined;
 let sharedCredentials: Credentials | undefined;
 let sharedDatabaseRoles: SeparatedDatabaseRoles | undefined;
 
+test.use({ trace: "retain-on-failure" });
+
 test.describe.serial("read-only inventory review", () => {
   let administrator: Pool;
   let api: ChildProcessWithoutNullStreams | undefined;
@@ -90,6 +95,7 @@ test.describe.serial("read-only inventory review", () => {
   let pharmacyId: string;
   let postgres: StartedPostgreSqlContainer | undefined;
   let product: Product;
+  let supplier: Supplier;
   let renderer: RendererServer;
 
   test.beforeAll("inventory fixture", async () => {
@@ -129,7 +135,7 @@ test.describe.serial("read-only inventory review", () => {
     );
     expect(pharmacyId).not.toBe("");
     await login(OWNER_USERNAME, OWNER_PASSWORD);
-    const supplier = await createSupplier();
+    supplier = await createSupplier();
     const created = await apiRequest(
       "POST",
       "/catalog/products",
@@ -487,6 +493,879 @@ test.describe.serial("read-only inventory review", () => {
         await context.close();
       }
     }
+  });
+
+  test("shows all seven read-only reports in both languages and themes", async ({
+    browser,
+  }) => {
+    test.setTimeout(240_000);
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await mkdir(evidencePath("issue-64", "after"), { recursive: true });
+    for (const locale of ["ar", "en"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = await browser.newContext({
+          viewport: { height: 800, width: 1280 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+        await expect(page.locator("#inventory-reports-title")).toHaveText(
+          locale === "ar" ? "تقارير المخزون" : "Inventory reports",
+        );
+        await expect(page.locator(".report-categories button")).toHaveCount(7);
+        await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+        await expect(
+          page.locator(".report-table th[aria-sort='ascending']"),
+        ).toHaveCount(1);
+        await expect(page.locator("html")).toHaveAttribute(
+          "dir",
+          locale === "ar" ? "rtl" : "ltr",
+        );
+        await expect(page.locator(".report-actions")).toBeInViewport({
+          ratio: 1,
+        });
+        await page.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: evidencePath(
+            "issue-64",
+            "after",
+            `quantity-${locale}-${theme}.png`,
+          ),
+        });
+        await assertReportTextResize(page);
+        const sourceButton = page
+          .locator(".report-table tbody tr")
+          .first()
+          .locator("td")
+          .last()
+          .getByRole("button");
+        await sourceButton.click();
+        await expect(page.locator(".report-source-dialog")).toBeVisible();
+        await expect(
+          page
+            .locator(
+              ".report-source-dialog .posted-purchase-snapshot, .report-source-dialog .report-correction-snapshot",
+            )
+            .first(),
+        ).toBeVisible();
+        await page.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: evidencePath(
+            "issue-64",
+            "after",
+            `purchase-source-${locale}-${theme}.png`,
+          ),
+        });
+        await page.locator(".report-source-dialog header button").click();
+        await expect(sourceButton).toBeFocused();
+        const captureActivity = async (kind: string) => {
+          const rows = page.locator(".report-table tbody tr");
+          if ((await rows.count()) === 0) return;
+          const opener = rows.first().locator("td").nth(-2).getByRole("button");
+          await opener.focus();
+          await pressKeyOnFocused(page, opener, "Enter");
+          const activity = page.locator(
+            "dialog[aria-labelledby='report-activity-title']",
+          );
+          await expect(activity).toBeVisible();
+          await expect(activity).toHaveAttribute(
+            "dir",
+            locale === "ar" ? "rtl" : "ltr",
+          );
+          await expect(activity.locator("header button")).toBeFocused();
+          await expect(activity.locator("footer")).toBeInViewport({ ratio: 1 });
+          await expect(
+            activity.locator("footer button").first(),
+          ).toHaveAttribute("aria-disabled", "true");
+          await expect(
+            activity
+              .locator(".report-activity-list, p[role='status']")
+              .filter({ hasNotText: locale === "ar" ? "جارٍ" : "Loading" }),
+          ).toHaveCount(1);
+          if (locale === "ar") {
+            await expect(activity).not.toContainText(
+              /Count session|purchase-receipt|purchase-adjustment|purchase-return|count-variance|Asia\/Baghdad/u,
+            );
+          }
+          if (kind === "quantity") {
+            const references = activity.locator(
+              ".report-source-reference:enabled",
+            );
+            for (let index = 0; index < (await references.count()); index++) {
+              const reference = references.nth(index);
+              await reference.focus();
+              await pressKeyOnFocused(page, reference, "Enter");
+              const snapshot = page.locator(".report-source-dialog");
+              await expect(snapshot).toBeVisible();
+              await expect(snapshot).toHaveAttribute(
+                "dir",
+                locale === "ar" ? "rtl" : "ltr",
+              );
+              await expect(snapshot.locator("table")).toBeVisible();
+              for (const total of await snapshot
+                .locator(".report-snapshot-totals dd")
+                .all())
+                await expect(total).not.toHaveText("—");
+              const close = snapshot.locator("header button");
+              await expect(close).toBeFocused();
+              if (locale === "ar")
+                await expect(snapshot).not.toContainText(
+                  /Strip|quantity error/u,
+                );
+              for (const viewport of [
+                { width: 800, height: 600 },
+                { width: 640, height: 480 },
+              ]) {
+                await page.setViewportSize(viewport);
+                await expect(close).toBeInViewport({ ratio: 1 });
+                await expect
+                  .poll(() =>
+                    snapshot.evaluate(
+                      (element) => element.scrollWidth <= element.clientWidth,
+                    ),
+                  )
+                  .toBe(true);
+              }
+              await page.setViewportSize({ width: 1280, height: 800 });
+              expect(
+                (await new AxeBuilder({ page }).analyze()).violations,
+              ).toEqual([]);
+              await page.screenshot({
+                path: evidencePath(
+                  "issue-64",
+                  "after",
+                  `report-snapshot-${index}-${locale}-${theme}.png`,
+                ),
+              });
+              await pressKeyOnFocused(page, close, "Shift+Tab");
+              expect(
+                await snapshot.evaluate((element) =>
+                  element.contains(element.ownerDocument.activeElement),
+                ),
+              ).toBe(true);
+              await page.keyboard.press("Escape");
+              await expect(snapshot).toHaveCount(0);
+              await expect(reference).toBeFocused();
+            }
+            await page.setViewportSize({ width: 640, height: 480 });
+            await expect(activity.locator("footer")).toBeInViewport({
+              ratio: 1,
+            });
+            await expect(activity.locator("header button")).toBeInViewport({
+              ratio: 1,
+            });
+            await expect
+              .poll(() =>
+                activity.evaluate(
+                  (element) => element.scrollWidth <= element.clientWidth,
+                ),
+              )
+              .toBe(true);
+            await page.setViewportSize({ width: 1280, height: 800 });
+          }
+          expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+            [],
+          );
+          await page.screenshot({
+            animations: "disabled",
+            fullPage: true,
+            path: evidencePath(
+              "issue-64",
+              "after",
+              `${kind}-activity-${locale}-${theme}.png`,
+            ),
+          });
+          await activity.locator("header button").click();
+          await expect(opener).toBeFocused();
+        };
+        await captureActivity("quantity");
+        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+          [],
+        );
+        for (const kind of [
+          "value",
+          "average-cost",
+          "batches-expiry",
+          "consumption",
+          "alerts",
+          "stocktake-movements",
+        ] as const) {
+          await page.goto(`${renderer.origin}#/reports/inventory/${kind}`);
+          await expect(
+            page.locator(".report-categories button[aria-current='page']"),
+          ).toBeVisible();
+          await expect(page.locator(".report-actions")).toBeVisible();
+          await expect(page.locator(".report-timezone")).toHaveText(
+            locale === "ar" ? "توقيت بغداد" : "Asia/Baghdad",
+          );
+          if (locale === "ar")
+            await expect(page.locator(".report-table")).not.toContainText(
+              /Strip|Count session|Report saved|eligible|available|quarantined/u,
+            );
+          expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
+            [],
+          );
+          await page.screenshot({
+            animations: "disabled",
+            fullPage: true,
+            path: evidencePath(
+              "issue-64",
+              "after",
+              `${kind}-${locale}-${theme}.png`,
+            ),
+          });
+          await assertReportTextResize(page);
+          await captureActivity(kind);
+        }
+        await context.close();
+      }
+    }
+  });
+
+  test("normalizes Arabic report date entry including month ١٠ and submitted business dates", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "ar", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+    const posting = page.locator(
+      ".report-date-toolbar input:not([aria-hidden])",
+    );
+    await expect(
+      page.getByRole("button", { name: "اختيار التاريخ", exact: true }),
+    ).toHaveCount(4);
+    for (const control of await page.locator(".report-date-entry").all()) {
+      const field = await control
+        .locator("input:not([aria-hidden])")
+        .boundingBox();
+      const picker = await control.getByRole("button").boundingBox();
+      expect(picker!.x).toBeGreaterThanOrEqual(field!.x + field!.width - 32);
+      expect(picker!.x + picker!.width).toBeLessThanOrEqual(
+        field!.x + field!.width,
+      );
+    }
+    await page
+      .getByRole("button", { name: "اختيار التاريخ", exact: true })
+      .first()
+      .click();
+    await page.keyboard.press("Escape");
+    await posting.nth(0).fill("٢٠٢٠-٠١-٠١T٠٠:٠٠:٠٠.٠٠٠");
+    await expect(posting.nth(0)).toHaveValue("2020-01-01T00:00:00.000");
+    await posting.nth(0).evaluate((input) => {
+      const field = input as typeof input & {
+        focus(): void;
+        setSelectionRange(start: number, end: number): void;
+      };
+      field.focus();
+      field.setSelectionRange(5, 7);
+    });
+    await expect(posting.nth(0)).toBeFocused();
+    await page.keyboard.insertText("١");
+    await page.keyboard.insertText("٠");
+    await expect(posting.nth(0)).toHaveValue("2020-10-01T00:00:00.000");
+    await posting.nth(1).fill("٢٠٢٦-١٠-٠١T٠٠:٠٠:٠٠.٠٠٠");
+    await expect(posting.nth(1)).toHaveValue("2026-10-01T00:00:00.000");
+    for (const name of ["businessFrom", "businessTo"]) {
+      const input = page.locator(`[name='${name}']`);
+      await input.fill(name === "businessFrom" ? "٢٠٢٠-٠١-٠١" : "٢٠٢٦-٠١-٠١");
+      await input.evaluate((element) => {
+        const field = element as typeof element & {
+          focus(): void;
+          setSelectionRange(start: number, end: number): void;
+        };
+        field.focus();
+        field.setSelectionRange(5, 7);
+      });
+      await expect(input).toBeFocused();
+      await page.keyboard.insertText("١");
+      await page.keyboard.insertText("٠");
+      await expect(input).toHaveValue(
+        name === "businessFrom" ? "2020-10-01" : "2026-10-01",
+      );
+    }
+    for (const language of ["التبديل إلى الإنجليزية", "Switch to Arabic"]) {
+      await page.getByTestId("collapse-menu-trigger").click();
+      await page.getByRole("button", { name: language, exact: true }).click();
+      await expect(page.locator("[name='businessFrom']")).toHaveValue(
+        "2020-10-01",
+      );
+      await expect(page.locator("[name='businessTo']")).toHaveValue(
+        "2026-10-01",
+      );
+    }
+    const sent = page.waitForRequest("**/reports/inventory/quantity?*");
+    await page.locator(".report-controls button[type='submit']").click();
+    expect(
+      JSON.parse(new URL((await sent).url()).searchParams.get("query")!),
+    ).toMatchObject({
+      from: "2020-09-30T21:00:00.000Z",
+      to: "2026-09-30T21:00:00.000Z",
+      businessFrom: "2020-10-01",
+      businessTo: "2026-10-01",
+    });
+    await expect(page.locator(".report-controls [role='alert']")).toHaveCount(
+      0,
+    );
+  });
+
+  test("keeps the Reports label fully visible on direct entry at 1280×800 in both languages and themes", async ({
+    browser,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = await browser.newContext({
+          viewport: { width: 1280, height: 800 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+        await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+        const link = page.locator(".module-tab[data-module='reports']");
+        await expectNavigationLabelVisible(link);
+        await page.screenshot({
+          path: evidencePath(
+            "issue-64",
+            "remediation",
+            `reports-navigation-${locale}-${theme}.png`,
+          ),
+        });
+        await context.close();
+      }
+    }
+  });
+
+  for (const theme of ["light", "dark"] as const) {
+    for (const locale of ["ar", "en"] as const) {
+      test(`keeps active Reports navigation visible after ${locale === "ar" ? "Arabic -> English" : "English -> Arabic"} at 1280×800 (${theme})`, async ({
+        browser,
+      }) => {
+        await login(OWNER_USERNAME, OWNER_PASSWORD);
+        const context = await browser.newContext({
+          viewport: { width: 1280, height: 800 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+        await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+        const link = page.locator(".module-tab[data-module='reports']");
+        await expectNavigationLabelVisible(link);
+        const menu = page.getByTestId("collapse-menu-trigger");
+        await menu.click();
+        const language = page.getByRole("button", {
+          name: locale === "ar" ? "التبديل إلى الإنجليزية" : "Switch to Arabic",
+          exact: true,
+        });
+        await language.focus();
+        await pressKeyOnFocused(page, language, "Enter");
+        await expect(page.locator("html")).toHaveAttribute(
+          "lang",
+          locale === "ar" ? "en" : "ar",
+        );
+        await expect(link).not.toBeFocused();
+        await expect(link).toHaveAttribute("aria-current", "page");
+        await expectNavigationLabelVisible(link);
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        await context.close();
+      });
+
+      test(`keeps active Reports navigation visible after resize 1920 -> 1280 (${locale}, ${theme})`, async ({
+        browser,
+      }) => {
+        await login(OWNER_USERNAME, OWNER_PASSWORD);
+        const context = await browser.newContext({
+          viewport: { width: 1920, height: 800 },
+        });
+        const page = await context.newPage();
+        await installDesktopFake(page, renderer.origin, locale, theme);
+        await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+        await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+        const link = page.locator(".module-tab[data-module='reports']");
+        await expectNavigationLabelVisible(link);
+        const submit = page.locator(".report-controls button[type='submit']");
+        await submit.focus();
+        await expect(submit).toBeFocused();
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await expectNavigationLabelVisible(link);
+        await expect(submit).toBeFocused();
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+
+        // Keyboard focus can still reveal other tabs, and leaving Reports
+        // removes its visibility subscription before the next resize.
+        const inventory = page.locator(".module-tab[data-module='inventory']");
+        await inventory.focus();
+        await expectNavigationLabelVisible(inventory);
+        await pressKeyOnFocused(page, inventory, "Enter");
+        await expect(page.locator("#inventory-title")).toBeVisible();
+        await page.setViewportSize({ width: 1920, height: 800 });
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await expectNavigationLabelVisible(inventory);
+        await expect(inventory).toBeFocused();
+        await expect(inventory).toHaveAttribute("aria-current", "page");
+        await context.close();
+      });
+    }
+  }
+
+  test("traverses immutable adjustment and return sources to the permission-checked parent invoice", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    await page
+      .locator(".report-table tbody tr")
+      .first()
+      .locator("td")
+      .nth(-2)
+      .getByRole("button")
+      .click();
+    const activity = page.locator(".report-activity-dialog");
+    for (const type of ["purchase-adjustment", "purchase-return"]) {
+      const record = (
+        await administrator.query<{ id: string; original_purchase_id: string }>(
+          `select id, original_purchase_id from ${type === "purchase-adjustment" ? "posted_purchase_adjustments" : "posted_purchase_returns"} order by posted_at limit 1`,
+        )
+      ).rows[0]!;
+      const source = activity
+        .locator(".report-source-reference")
+        .filter({ hasText: type === "purchase-adjustment" ? "-A01" : "PR" })
+        .first();
+      await source.click();
+      const snapshot = page.locator(".report-source-dialog");
+      await expect(
+        snapshot.locator(".report-correction-snapshot"),
+      ).toBeVisible();
+      const title = await snapshot.locator("h2").textContent();
+      const parent = snapshot.getByRole("button", {
+        name: "Open original purchase invoice",
+        exact: true,
+      });
+      const opened = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+          purchasePostedPath(record.original_purchase_id),
+      );
+      await parent.click();
+      expect((await opened).status()).toBe(200);
+      await expect(snapshot.locator(".posted-purchase-snapshot")).toBeVisible();
+      await expect(snapshot.locator(".posted-purchase-snapshot")).toContainText(
+        product.displayName,
+      );
+      await snapshot
+        .getByRole("button", { name: "Back to source record", exact: true })
+        .click();
+      await expect(snapshot.locator("h2")).toHaveText(title!);
+      await expect(parent).toBeFocused();
+      await snapshot.locator("header button").click();
+      await expect(source).toBeFocused();
+    }
+    await activity.locator("header button").click();
+    // Permission can change while the immutable correction is already open.
+    const temporary = await administrator.query<{
+      role_id: string;
+      permission_name: string;
+    }>(
+      `insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by)
+       select role.pharmacy_id, role.id, permission, (select granted_by from role_permission_grants where role_id = role.id limit 1)
+       from pharmacy_roles role cross join unnest(array['reports.inventory.view', 'purchases.posted.view', 'purchases.costs.view']) permission
+       where role.role_key = 'manager' on conflict do nothing returning role_id, permission_name`,
+    );
+    await login(MANAGER_USERNAME, MANAGER_PASSWORD);
+    await page.reload();
+    await page
+      .locator(".report-table tbody tr")
+      .first()
+      .locator("td")
+      .nth(-2)
+      .getByRole("button")
+      .click();
+    await activity
+      .locator(".report-source-reference")
+      .filter({ hasText: "-A01" })
+      .first()
+      .click();
+    const snapshot = page.locator(".report-source-dialog");
+    await expect(snapshot.locator(".report-correction-snapshot")).toBeVisible();
+    const revoked = await administrator.query<{
+      pharmacy_id: string;
+      role_id: string;
+      granted_by: string;
+    }>(
+      "delete from role_permission_grants where role_id = (select id from pharmacy_roles where role_key = 'manager') and permission_name = 'purchases.posted.view' returning pharmacy_id, role_id, granted_by",
+    );
+    try {
+      expect(revoked.rows).toHaveLength(1);
+      await snapshot
+        .getByRole("button", {
+          name: "Open original purchase invoice",
+          exact: true,
+        })
+        .click();
+      await expect(snapshot.getByRole("alert")).toHaveText(
+        "Your account cannot access this report or source record.",
+      );
+      await expect(snapshot.locator(".posted-purchase-snapshot")).toHaveCount(
+        0,
+      );
+      await expect(
+        snapshot.locator(".report-correction-snapshot"),
+      ).toBeVisible();
+    } finally {
+      const grant = revoked.rows[0];
+      if (grant)
+        await administrator.query(
+          "insert into role_permission_grants (pharmacy_id, role_id, permission_name, granted_by) values ($1, $2, 'purchases.posted.view', $3)",
+          [grant.pharmacy_id, grant.role_id, grant.granted_by],
+        );
+      for (const permission of temporary.rows)
+        await administrator.query(
+          "delete from role_permission_grants where role_id = $1 and permission_name = $2",
+          [permission.role_id, permission.permission_name],
+        );
+      await login(OWNER_USERNAME, OWNER_PASSWORD);
+    }
+  });
+
+  test("preserves report keyboard focus through delayed, superseded and failed refreshes", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/batches-expiry`);
+    await expect(page.locator(".report-table tbody tr").first()).toBeVisible();
+    const header = page
+      .getByRole("columnheader", { name: "Closing quantity" })
+      .getByRole("button");
+    const gates: Array<{ release: () => void; entered: Promise<void> }> = [];
+    let fail = false;
+    await page.route("**/reports/inventory/batches-expiry?*", async (route) => {
+      if (fail) {
+        await route.fulfill({
+          status: 503,
+          json: { message: "deterministic unavailable fixture" },
+        });
+        return;
+      }
+      let release!: () => void;
+      let entered!: () => void;
+      const wait = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const acknowledged = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      gates.push({ release, entered: acknowledged });
+      const response = await route.fetch();
+      entered();
+      await wait;
+      await route.fulfill({ response });
+    });
+    const requested = page.waitForRequest(
+      "**/reports/inventory/batches-expiry?*",
+    );
+    await header.focus();
+    await pressKeyOnFocused(page, header, "Enter");
+    await requested;
+    await expect(
+      page.getByRole("status").filter({ hasText: "Loading report" }),
+    ).toBeVisible();
+    await expect(header).toBeFocused();
+    const nextRequest = page.waitForRequest(
+      "**/reports/inventory/batches-expiry?*",
+    );
+    await pressKeyOnFocused(page, header, "Space");
+    await nextRequest;
+    await expect.poll(() => gates.length).toBe(2);
+    await gates[1]!.entered;
+    gates[1]!.release();
+    await expect(header.locator("..")).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    await expect(header).toBeFocused();
+    const from = page.getByLabel("From · posting time", { exact: true });
+    await from.focus();
+    await expect(from).toBeFocused();
+    await gates[0]!.entered;
+    gates[0]!.release();
+    await expect(header.locator("..")).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    await expect(from).toBeFocused();
+    fail = true;
+    await header.focus();
+    await pressKeyOnFocused(page, header, "Enter");
+    await expect(page.getByRole("alert")).toContainText("could not");
+    await expect(header).toBeFocused();
+    await expect(
+      page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await from.fill("2026-09-01T00:00:00.123");
+    await page.unroute("**/reports/inventory/batches-expiry?*");
+    const retry = page.getByRole("button", { name: "Retry", exact: true });
+    await retry.focus();
+    await pressKeyOnFocused(page, retry, "Enter");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(from).toHaveValue("2026-09-01T00:00:00.123");
+    await expect(
+      page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await page
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      }),
+    ).toBeEnabled();
+  });
+
+  test("filters exact displayed IQD and localized enums with announced validation", async ({
+    browser,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    for (const locale of ["en", "ar"] as const) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await installDesktopFake(page, renderer.origin, locale, "light");
+      await page.goto(`${renderer.origin}#/reports/inventory/value`);
+      await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+      const add = page.getByRole("button", {
+        name: locale === "en" ? "Add column filter" : "إضافة مرشح عمود",
+        exact: true,
+      });
+      await add.click();
+      const filter = page.locator(".report-filter-row").first();
+      await filter.locator("select").first().selectOption("closingValueFils");
+      await filter.locator("input").fill("1.0001");
+      const apply = page.getByRole("button", {
+        name: locale === "en" ? "Apply filters" : "تطبيق المرشحات",
+        exact: true,
+      });
+      await apply.click();
+      await expect(filter.getByRole("alert")).toBeVisible();
+      await expect(filter.locator("input")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      await filter.locator("select").nth(1).selectOption("gte");
+      await filter.locator("input").fill(locale === "ar" ? "-٠٫٠٠١" : "-0.001");
+      const submitted = page.waitForRequest("**/reports/inventory/value?*");
+      await apply.click();
+      const wire = JSON.parse(
+        new URL((await submitted).url()).searchParams.get("query")!,
+      ) as { filters: Array<{ value: string }> };
+      expect(wire.filters[0]!.value).toBe("-1");
+      await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+      await expect(filter.getByRole("alert")).toHaveCount(0);
+      await page.locator(".report-categories button").nth(3).click();
+      await expect(page.locator(".report-table caption")).toContainText(
+        locale === "en" ? "Batches" : "الدفعات",
+      );
+      await add.click();
+      await page
+        .locator(".report-filter-row select")
+        .first()
+        .selectOption("status");
+      const enumSelect = page.locator(".report-filter-row select").nth(2);
+      await enumSelect.selectOption({
+        label: locale === "en" ? "Eligible" : "مؤهل",
+      });
+      const enumRequest = page.waitForRequest(
+        "**/reports/inventory/batches-expiry?*",
+      );
+      await apply.click();
+      const enumWire = JSON.parse(
+        new URL((await enumRequest).url()).searchParams.get("query")!,
+      ) as { filters: Array<{ value: string }> };
+      expect(enumWire.filters[0]!.value).toBe("eligible");
+      await expect(
+        page.locator(".report-table tbody tr").first(),
+      ).toBeVisible();
+      await context.close();
+    }
+  });
+
+  test("filters, groups, sorts, and exports the complete report without costs", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+    await page.getByLabel(/^Group by/u).selectOption("item");
+    await page
+      .getByRole("button", { name: "Add column filter", exact: true })
+      .click();
+    await page
+      .getByLabel("Filter value", { exact: true })
+      .fill("Browser Inventory");
+    await page
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(page.locator(".report-groups li")).toHaveCount(1);
+    await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+    const sort = page
+      .getByRole("columnheader", { name: "Closing quantity" })
+      .getByRole("button");
+    await sort.focus();
+    await pressKeyOnFocused(page, sort, "Enter");
+    await expect(
+      page.getByRole("columnheader", { name: "Closing quantity" }),
+    ).toHaveAttribute("aria-sort", "ascending");
+    await page
+      .getByRole("button", { name: "Export CSV · without costs", exact: true })
+      .click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Report saved." }),
+    ).toBeVisible();
+    const wire = await page.evaluate(
+      () => (globalThis as { __inventoryExport?: unknown }).__inventoryExport,
+    );
+    expect(wire).toBeDefined();
+    const { format, ...bundle } = wire as Record<string, unknown>;
+    expect(format).toBe("csv");
+    const exported = inventoryReportExportSchema.parse(bundle);
+    const csv = serializeInventoryReportCsv(exported, "en");
+    expect(csv.split("\r\n")[0]).toContain('"Recorded item"');
+    expect(csv).not.toMatch(
+      /Pharmacy ID|Product ID|Applied query|Explanations|openingQuantity/u,
+    );
+    expect(csv).not.toContain(exported.pharmacyId);
+    await mkdir(evidencePath("issue-64", "remediation"), { recursive: true });
+    await writeFile(
+      evidencePath("issue-64", "remediation", "quantity-en.csv"),
+      csv,
+    );
+    expect(exported.sensitivity).toBe("redacted");
+    expect(exported.rows).toHaveLength(exported.totalRows);
+    expect(exported.query).toMatchObject({
+      groupBy: "item",
+      sort: "closingQuantity",
+      filters: [
+        { column: "item", operator: "contains", value: "Browser Inventory" },
+      ],
+    });
+    expect(
+      exported.rows.every((row) => row.cells.closingValueFils === undefined),
+    ).toBe(true);
+    await page
+      .getByRole("button", {
+        name: "Protected export · with costs",
+        exact: true,
+      })
+      .click();
+    const stepUp = page
+      .getByRole("dialog")
+      .filter({ has: page.getByLabel("Password", { exact: true }) });
+    await stepUp.getByLabel("Password", { exact: true }).fill(OWNER_PASSWORD);
+    await stepUp.getByRole("button", { name: "Confirm password" }).click();
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(
+            () =>
+              (globalThis as { __inventoryExport?: { sensitivity?: string } })
+                .__inventoryExport?.sensitivity,
+          ),
+      )
+      .toBe("valuation");
+    await page
+      .getByLabel("Filter value", { exact: true })
+      .fill("No matching pharmacy item");
+    await page
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "No matching rows for this period and filters." }),
+    ).toBeVisible();
+  });
+
+  test("redacts exports after sensitive sorting and refuses sensitive membership", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    for (const kind of ["value", "average-cost"]) {
+      await page.goto(`${renderer.origin}#/reports/inventory/${kind}`);
+      await expect(page.locator(".report-table tbody tr")).toHaveCount(1);
+      const column = kind === "value" ? "Closing value" : "Closing WAC / unit";
+      const header = page
+        .getByRole("columnheader", { name: column })
+        .getByRole("button");
+      await header.click();
+      await expect(header.locator("..")).toHaveAttribute(
+        "aria-sort",
+        "ascending",
+      );
+      const exportButton = page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      });
+      await expect(exportButton).toBeEnabled();
+      await exportButton.click();
+      const confirmation = page.getByRole("dialog", {
+        name: "Export CSV · without costs",
+        exact: true,
+      });
+      await expect(confirmation).toContainText(
+        "order items by name, ascending",
+      );
+      await confirmation
+        .getByRole("button", { name: "Continue to save", exact: true })
+        .click();
+      await expect(
+        page.getByRole("status").filter({ hasText: "Report saved." }),
+      ).toBeVisible();
+      const saved = await page.evaluate(
+        () =>
+          (globalThis as { __inventoryExport?: Record<string, unknown> })
+            .__inventoryExport,
+      );
+      expect(saved).toBeDefined();
+      delete saved!.format;
+      const exported = inventoryReportExportSchema.parse(saved);
+      expect(exported.query.sort).toBe("item");
+      expect(exported.query.direction).toBe("ascending");
+      expect(exported.rows[0]!.cells.closingValueFils).toBeUndefined();
+      expect(exported.rows[0]!.cells.closingAverageCostScaled).toBeUndefined();
+    }
+    await page
+      .getByRole("button", { name: "Add column filter", exact: true })
+      .click();
+    await page
+      .locator(".report-filter-row select")
+      .first()
+      .selectOption("closingAverageCostScaled");
+    await page.locator(".report-filter-row input").fill("1");
+    await page.locator(".report-filter-row select").nth(1).selectOption("gte");
+    await page
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(page.locator("#report-ordinary-blocked")).toContainText(
+      "Cost criteria determine",
+    );
+    await expect(
+      page.getByRole("button", {
+        name: "Export CSV · without costs",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await expect(page.locator("#report-sensitive-export")).toBeEnabled();
   });
 
   test("shows a recoverable API-down state and owner-only export", async ({
@@ -868,6 +1747,7 @@ test.describe.serial("read-only inventory review", () => {
 
   test("blocks count completion until the pending variance is applied", async ({
     page,
+    browser,
   }) => {
     await login(OWNER_USERNAME, OWNER_PASSWORD);
     const stocked = await stockNamedItem(
@@ -905,12 +1785,23 @@ test.describe.serial("read-only inventory review", () => {
       .getByRole("button", { name: "Apply variance", exact: true })
       .click();
     const dialog = page.getByRole("dialog", { name: "Apply variance" });
+    // Visibility precedes the dialog's initial focus commit. Synchronize on
+    // that commit before typing so a late focus request cannot steal evidence.
+    await expect(
+      dialog.getByRole("textbox", { name: "Application reason", exact: true }),
+    ).toBeFocused();
     await dialog
       .getByRole("textbox", { name: "Application reason", exact: true })
       .fill("Shelf was one strip short");
     await dialog
       .getByRole("textbox", { name: "Evidence", exact: true })
       .fill("Count sheet gate");
+    await expect(
+      dialog.getByRole("textbox", { name: "Application reason", exact: true }),
+    ).toHaveValue("Shelf was one strip short");
+    await expect(
+      dialog.getByRole("textbox", { name: "Evidence", exact: true }),
+    ).toHaveValue("Count sheet gate");
     await dialog
       .getByRole("button", { name: "Apply variance", exact: true })
       .click();
@@ -919,6 +1810,349 @@ test.describe.serial("read-only inventory review", () => {
     await expect(page.locator("#count-complete-blocked")).toHaveCount(0);
     await complete.click();
     await expect(complete).toHaveText("Session completed.");
+    for (const locale of ["ar", "en"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const context = await browser.newContext({
+          viewport: { height: 800, width: 1280 },
+        });
+        const reportPage = await context.newPage();
+        await installDesktopFake(reportPage, renderer.origin, locale, theme);
+        await reportPage.goto(
+          `${renderer.origin}#/reports/inventory/stocktake-movements`,
+        );
+        const reportRow = reportPage
+          .locator(".report-table tbody tr")
+          .filter({ hasText: "Count Gate Item" });
+        await expect(reportRow).toHaveCount(1);
+        expect(
+          (await new AxeBuilder({ page: reportPage }).analyze()).violations,
+        ).toEqual([]);
+        await reportPage.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: evidencePath(
+            "issue-64",
+            "after",
+            `stocktake-movements-${locale}-${theme}.png`,
+          ),
+        });
+        const source = reportRow.locator("td").last().getByRole("button");
+        await source.click();
+        const review = reportPage.locator(".count-session-review-dialog");
+        await expect(review).toBeVisible();
+        await expect(review).toHaveAttribute(
+          "dir",
+          locale === "ar" ? "rtl" : "ltr",
+        );
+        if (locale === "ar")
+          await expect(review).not.toContainText(
+            /Strip|Count session|applied/u,
+          );
+        await expect(review.locator("tbody")).toContainText("Count Gate Item");
+        await expect(review.locator("input, textarea, select")).toHaveCount(0);
+        const reviewClose = review.locator("header button");
+        await expect(reviewClose).toBeFocused();
+        await pressKeyOnFocused(reportPage, reviewClose, "Shift+Tab");
+        await expect(review.locator(".count-review-table-wrap")).toBeFocused();
+        await pressKeyOnFocused(
+          reportPage,
+          review.locator(".count-review-table-wrap"),
+          "Tab",
+        );
+        await expect(reviewClose).toBeFocused();
+        await reportPage.setViewportSize({ width: 640, height: 480 });
+        await expect(reviewClose).toBeInViewport({ ratio: 1 });
+        await expect
+          .poll(() =>
+            review.evaluate(
+              (element) => element.scrollWidth <= element.clientWidth,
+            ),
+          )
+          .toBe(true);
+        await reportPage.setViewportSize({ width: 1280, height: 800 });
+        expect(
+          (await new AxeBuilder({ page: reportPage }).analyze()).violations,
+        ).toEqual([]);
+        await reportPage.screenshot({
+          animations: "disabled",
+          fullPage: true,
+          path: evidencePath(
+            "issue-64",
+            "after",
+            `count-source-${locale}-${theme}.png`,
+          ),
+        });
+        await review.locator("header button").click();
+        await expect(source).toBeFocused();
+        await expect(reportRow).toHaveCount(1);
+        await context.close();
+      }
+    }
+  });
+
+  test("pages complete posted activity and restores nested source and drawer focus", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    for (let index = 0; index < 51; index++)
+      await postPurchase(supplier, product, `ACTIVITY-${index}`);
+    const frozen = await administrator.query<{
+      movements: string;
+      journals: string;
+    }>(
+      `select (select count(*)::text from inventory_movements) as movements,
+              (select count(*)::text from accounting_journal_entries) as journals`,
+    );
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    const row = page
+      .locator(".report-table tbody tr")
+      .filter({ hasText: product.displayName });
+    const opener = row.locator("td").nth(-2).getByRole("button");
+    await opener.focus();
+    await pressKeyOnFocused(page, opener, "Enter");
+    const activity = page.locator(
+      "dialog[aria-labelledby='report-activity-title']",
+    );
+    await expect(activity.locator("li")).toHaveCount(50);
+    await expect(activity.locator("footer")).toBeInViewport({ ratio: 1 });
+    await expect(
+      activity.locator("footer span[aria-live='polite']"),
+    ).toHaveText("Page 1");
+    const source = activity.locator("li").first().getByRole("button");
+    await source.focus();
+    await pressKeyOnFocused(page, source, "Space");
+    await expect(page.locator(".report-source-dialog")).toBeVisible();
+    await page.locator(".report-source-dialog header button").click();
+    await expect(source).toBeFocused();
+    const next = activity.getByRole("button", {
+      name: "Next page",
+      exact: true,
+    });
+    await next.focus();
+    await pressKeyOnFocused(page, next, "Enter");
+    await expect(next).toHaveAttribute("aria-disabled", "true");
+    await expect(next).toBeFocused();
+    await expect(activity.locator("li")).toHaveCount(5);
+    await expect(
+      activity.locator("footer span[aria-live='polite']"),
+    ).toHaveText("Page 2");
+    await activity
+      .getByRole("button", { name: "Previous page", exact: true })
+      .click();
+    await expect(activity.locator("li")).toHaveCount(50);
+    await activity.locator("header button").click();
+    await expect(opener).toBeFocused();
+    const after = await administrator.query<{
+      movements: string;
+      journals: string;
+    }>(
+      `select (select count(*)::text from inventory_movements) as movements,
+              (select count(*)::text from accounting_journal_entries) as journals`,
+    );
+    expect(after.rows).toEqual(frozen.rows);
+  });
+  test("localizes report units, timezone and export outcomes across language switches", async ({
+    page,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    const bottleRequest = medicationRequest();
+    bottleRequest.definition = {
+      mode: "medication",
+      fields: {
+        tradeName: "Report Bottle Item",
+        strength: null,
+        dosageForm: null,
+        manufacturer: null,
+      },
+    };
+    bottleRequest.packaging.inventoryUnitName = "Bottle";
+    const created = await apiRequest(
+      "POST",
+      "/catalog/products",
+      bottleRequest,
+    );
+    expect(created.status).toBe(201);
+    const bottle = created.body as Product;
+    await postPurchase(supplier, bottle, "REPORT-BOTTLE");
+    await installDesktopFake(page, renderer.origin, "en", "light");
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.goto(`${renderer.origin}#/reports/inventory/quantity`);
+    const screen = page.locator(".inventory-reports-workspace");
+    const bottleRow = screen
+      .locator("tbody tr")
+      .filter({ hasText: bottle.displayName });
+    const stripRow = screen
+      .locator("tbody tr")
+      .filter({ hasText: product.displayName });
+    await expect(bottleRow.locator("td").first()).toHaveText("Bottle");
+    await expect(stripRow.locator("td").first()).toHaveText("Strip");
+    await expect(screen.locator(".report-timezone")).toHaveText("Asia/Baghdad");
+    await page.getByLabel(/^Group by/u).selectOption("item");
+    await screen
+      .getByRole("button", { name: "Apply filters", exact: true })
+      .click();
+    await expect(screen.locator(".report-groups")).toContainText("Bottle");
+    const switchLanguage = async (from: "ar" | "en") => {
+      await page.getByTestId("collapse-menu-trigger").click();
+      await page
+        .getByRole("button", {
+          name: from === "en" ? "Switch to Arabic" : "التبديل إلى الإنجليزية",
+          exact: true,
+        })
+        .click();
+      await expect(page.locator("html")).toHaveAttribute(
+        "lang",
+        from === "en" ? "ar" : "en",
+      );
+    };
+    const exportButton = () =>
+      screen.getByRole("button", {
+        name: /^(Export CSV · without costs|تصدير جدول · دون التكاليف)$/u,
+      });
+    await exportButton().click();
+    await expect(screen.locator(".report-actions")).toContainText(
+      "Report saved.",
+    );
+    await page.screenshot({
+      path: evidencePath("inventory-report-localization", "english.png"),
+      fullPage: true,
+    });
+    await screen.locator(".report-table").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: evidencePath("inventory-report-localization", "english-table.png"),
+    });
+    await switchLanguage("en");
+    await expect(bottleRow.locator("td").first()).toHaveText("زجاجة");
+    await expect(stripRow.locator("td").first()).toHaveText("شريط");
+    await expect(screen.locator(".report-timezone")).toHaveText("توقيت بغداد");
+    await expect(screen.locator(".report-groups")).toContainText("زجاجة");
+    await expect(screen.locator(".report-groups")).toContainText("شريط");
+    await expect(screen.locator(".report-actions")).toContainText(
+      "تم حفظ التقرير.",
+    );
+    await expect(screen.locator(".report-actions")).not.toContainText(
+      "Report saved",
+    );
+    const activityOpener = bottleRow.locator("td").nth(-2).getByRole("button");
+    await activityOpener.click();
+    const movementDialog = page.locator(".report-activity-dialog");
+    await expect(movementDialog).toContainText("زجاجة");
+    await movementDialog.locator(".report-source-reference").first().click();
+    const bottleSnapshot = page.locator(".report-source-dialog");
+    await expect(bottleSnapshot.locator("table")).toContainText("زجاجة");
+    await expect(bottleSnapshot.locator("tbody tr td").nth(2)).toHaveText(
+      "زجاجة",
+    );
+    await expect(bottleSnapshot.locator("tbody tr td").first()).toHaveText(
+      bottle.displayName,
+    );
+    await bottleSnapshot.locator("header button").click();
+    await movementDialog.locator("header button").click();
+    await page.screenshot({
+      path: evidencePath("inventory-report-localization", "arabic.png"),
+      fullPage: true,
+    });
+    await screen.locator(".report-table").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: evidencePath("inventory-report-localization", "arabic-table.png"),
+    });
+
+    // A native save finishing after a language change uses the current UI locale.
+    await switchLanguage("ar");
+    await page.evaluate(() => {
+      (globalThis as { __holdReportExport?: boolean }).__holdReportExport =
+        true;
+    });
+    await exportButton().click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            typeof (globalThis as { __releaseReportExport?: () => void })
+              .__releaseReportExport,
+        ),
+      )
+      .toBe("function");
+    await switchLanguage("en");
+    await page.evaluate(() => {
+      (
+        globalThis as { __releaseReportExport?: () => void }
+      ).__releaseReportExport?.();
+    });
+    await expect(screen.locator(".report-actions")).toContainText(
+      "تم حفظ التقرير.",
+    );
+    await expect(screen.locator(".report-actions")).not.toContainText(
+      "Report saved",
+    );
+    await page.evaluate(() => {
+      (globalThis as { __holdReportExport?: boolean }).__holdReportExport =
+        false;
+    });
+
+    for (const outcome of [
+      { status: "cancelled", ar: "أُلغي التصدير.", en: "Export cancelled." },
+      {
+        status: "export-too-large",
+        ar: "يتجاوز التقرير حد التصدير.",
+        en: "The report exceeds the export limit.",
+      },
+      {
+        status: "failed",
+        ar: "تعذّر حفظ التقرير.",
+        en: "The report could not be saved.",
+      },
+    ] as const) {
+      await page.evaluate((status) => {
+        (
+          globalThis as { __reportExportResult?: { status: string } }
+        ).__reportExportResult = { status };
+      }, outcome.status);
+      await exportButton().click();
+      await expect(screen.locator(".report-actions")).toContainText(outcome.ar);
+      await switchLanguage("ar");
+      await expect(screen.locator(".report-actions")).toContainText(outcome.en);
+      await switchLanguage("en");
+      await expect(screen.locator(".report-actions")).toContainText(outcome.ar);
+    }
+    const wire = await page.evaluate(
+      () => (globalThis as { __inventoryExport?: unknown }).__inventoryExport,
+    );
+    const { format, ...bundle } = wire as Record<string, unknown>;
+    expect(format).toBe("csv");
+    const exported = inventoryReportExportSchema.parse(bundle);
+    expect(exported.timeZone).toBe("Asia/Baghdad");
+    expect(
+      exported.rows.find((row) => row.productId === bottle.id)?.cells.unit,
+    ).toBe("Bottle");
+    expect(
+      exported.rows.find((row) => row.productId === product.id)?.cells.unit,
+    ).toBe("Strip");
+
+    await screen
+      .getByRole("button", { name: "إضافة مرشح عمود", exact: true })
+      .click();
+    await screen
+      .locator(".report-filter-row select")
+      .first()
+      .selectOption("closingQuantity");
+    await screen.getByLabel("قيمة المرشح", { exact: true }).fill("1.5");
+    await screen
+      .getByRole("button", { name: "تطبيق المرشحات", exact: true })
+      .click();
+    await expect(
+      screen.locator(".report-filter-row [role='alert']"),
+    ).toContainText("المنازل العشرية زائدة");
+    await switchLanguage("ar");
+    await expect(
+      screen.locator(".report-filter-row [role='alert']"),
+    ).toContainText("Too many decimal places");
+    await switchLanguage("en");
+    await expect(
+      screen.locator(".report-filter-row [role='alert']"),
+    ).not.toContainText("Too many decimal places");
   });
 });
 
@@ -1036,6 +2270,52 @@ async function changeBatchStatus(
   expect(response.status).toBe(201);
 }
 
+async function expectNavigationLabelVisible(link: Locator): Promise<void> {
+  await expect
+    .poll(() =>
+      link.evaluate((element) => {
+        const label = element
+          .querySelector(".module-tab-label")!
+          .getBoundingClientRect();
+        const list = element.closest("ul")!;
+        const bounds = list.getBoundingClientRect();
+        const left = bounds.left + list.clientLeft;
+        const right = left + list.clientWidth;
+        return Math.max(0, left - label.left, label.right - right);
+      }),
+    )
+    .toBe(0);
+  await expect(link).toBeInViewport({ ratio: 1 });
+}
+
+async function assertReportTextResize(page: Page): Promise<void> {
+  await page.setViewportSize({ height: 768, width: 1024 });
+  await page.locator("html").evaluate((root) => {
+    root.style.fontSize = "200%";
+  });
+  for (const control of [
+    page.locator(".report-controls button[type='submit']"),
+    page.locator(".report-actions button").last(),
+    page.locator(".report-categories button[aria-current='page']"),
+  ]) {
+    await control.scrollIntoViewIfNeeded();
+    // Chromium can round a scrolled boundary by a fraction of a CSS pixel.
+    await expect(control).toBeInViewport({ ratio: 0.99 });
+    const bounds = await control.boundingBox();
+    expect(bounds?.width).toBeGreaterThanOrEqual(24);
+    expect(bounds?.height).toBeGreaterThanOrEqual(24);
+  }
+  expect(
+    await page
+      .locator("html")
+      .evaluate((root) => root.scrollWidth <= root.clientWidth),
+  ).toBe(true);
+  await page.locator("html").evaluate((root) => {
+    root.style.fontSize = "";
+  });
+  await page.setViewportSize({ height: 800, width: 1280 });
+}
+
 async function riskOrder(page: Page): Promise<string[]> {
   const wanted = [
     "Zebra Recalled Item",
@@ -1135,7 +2415,8 @@ function isApiRoute(url: string | undefined): boolean {
     url?.startsWith("/catalog/") === true ||
     url?.startsWith("/suppliers") === true ||
     url?.startsWith("/purchases/") === true ||
-    url?.startsWith("/inventory/") === true
+    url?.startsWith("/inventory/") === true ||
+    url?.startsWith("/reports/") === true
   );
 }
 
@@ -1167,6 +2448,32 @@ async function installDesktopFake(
           if (actual.join(",") !== sortedExpected.join(","))
             throw new Error(`${label} has unexpected keys`);
         };
+
+        if (typeof bundle === "object" && bundle !== null && "kind" in bundle) {
+          exactKeys(
+            bundle,
+            [
+              "kind",
+              "pharmacyId",
+              "capturedAt",
+              "exportedAt",
+              "timeZone",
+              "query",
+              "dateBasis",
+              "balanceBasis",
+              "sensitivity",
+              "columns",
+              "actors",
+              "rows",
+              "totalRows",
+              "hasMore",
+              "groups",
+              "explanations",
+            ],
+            "inventory report export",
+          );
+          return;
+        }
 
         exactKeys(
           bundle,
@@ -1278,7 +2585,18 @@ async function installDesktopFake(
             ...request.bundle,
             format: request.format,
           };
-          return { status: "saved" as const };
+          const controls = globalThis as {
+            __holdReportExport?: boolean;
+            __releaseReportExport?: () => void;
+            __reportExportResult?: Awaited<
+              ReturnType<BreevDesktopApi["saveInventoryExport"]>
+            >;
+          };
+          if (controls.__holdReportExport)
+            await new Promise<void>((resolve) => {
+              controls.__releaseReportExport = resolve;
+            });
+          return controls.__reportExportResult ?? { status: "saved" as const };
         },
         submitDiagnostics: async () => ({ status: "unavailable" as const }),
         submitManualEndpoint: async () => pairing,
@@ -1371,6 +2689,7 @@ async function createSupplier(
 async function postPurchase(
   supplier: Supplier,
   item: Product,
+  reference = "BROWSER-INVENTORY-1",
 ): Promise<PurchasePostResult> {
   const created = await apiRequest("POST", "/purchases/drafts", {
     invoiceOffer: { mode: "none", value: "0" },
@@ -1378,7 +2697,7 @@ async function postPurchase(
     invoiceDate: "2026-06-15",
     settlementContext: "debt",
     supplierId: supplier.id,
-    supplierInvoiceNumber: "BROWSER-INVENTORY-1",
+    supplierInvoiceNumber: reference,
   });
   expect(created.status).toBe(201);
   let draft = (created.body as { draft: PurchaseDraft }).draft;
@@ -1389,7 +2708,8 @@ async function postPurchase(
     expiryDate: "2027-01-31",
     idempotencyKey: uuidV7(),
     itemId: item.id,
-    lotNumber: "BROWSER-LOT-1",
+    lotNumber:
+      reference === "BROWSER-INVENTORY-1" ? "BROWSER-LOT-1" : reference,
     notes: null,
     pricing: { method: "by-price", retailPriceFils: "999999" },
     unit: { kind: "inventory-unit" },

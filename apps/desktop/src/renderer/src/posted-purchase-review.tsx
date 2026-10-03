@@ -1,5 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  formatNumber,
+  formatAdjustmentNumber,
+  formatReturnNumber,
+  formatTimestamp,
+} from "./posted-purchase-snapshots";
 import type {
   PostedPurchaseAdjustmentDetail,
   PostedPurchaseReturn,
@@ -2104,42 +2110,6 @@ function PurchaseSnapshotPrint({
     </article>,
     document.body,
   );
-}
-
-function formatNumber(value: {
-  readonly number: {
-    readonly series: "P";
-    readonly value: string;
-    readonly year: number;
-  };
-}): string {
-  return `${value.number.series}${value.number.value}/${value.number.year}`;
-}
-
-function formatAdjustmentNumber(number: {
-  readonly original: {
-    readonly series: "P";
-    readonly value: string;
-    readonly year: number;
-  };
-  readonly suffix: string;
-}): string {
-  return `${number.original.series}${number.original.value}-A${number.suffix.padStart(2, "0")}/${number.original.year}`;
-}
-
-function formatReturnNumber(number: {
-  readonly series: "PR";
-  readonly value: string;
-  readonly year: number;
-}): string {
-  return `${number.series}${number.value}/${number.year}`;
-}
-
-function formatTimestamp(value: string, locale: "ar" | "en"): string {
-  return new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }
 
 function postedPurchaseAddress(hash: string): {

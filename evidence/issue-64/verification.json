@@ -1,0 +1,399 @@
+{
+  "schemaVersion": 1,
+  "reviewedHead": "6e41528cfa61849d4b747480e76b004da9c1ec38",
+  "environment": {
+    "platform": "linux-x64",
+    "kernel": "7.1.8-1-cachyos",
+    "node": "24.19.0",
+    "pnpm": "11.23.0",
+    "postgres": "18.6-bookworm disposable Testcontainers",
+    "display": ":1",
+    "xvfb": "unavailable"
+  },
+  "cleanGate": {
+    "snapshot": "f5c9d5dc454f8472ca37761e154a9c76efe84e8e",
+    "statusBefore": "",
+    "platform": "linux",
+    "display": ":1",
+    "checks": [
+      {
+        "command": "pnpm format:write",
+        "startedAt": "2026-09-30T22:16:24Z",
+        "status": "passed",
+        "exitCode": 0,
+        "seconds": 10.24
+      },
+      {
+        "command": "pnpm format:check",
+        "startedAt": "2026-09-30T22:16:34Z",
+        "status": "passed",
+        "exitCode": 0,
+        "seconds": 10.26
+      },
+      {
+        "command": "pnpm lint",
+        "startedAt": "2026-09-30T22:16:44Z",
+        "status": "passed",
+        "exitCode": 0,
+        "seconds": 8.97
+      },
+      {
+        "command": "pnpm typecheck",
+        "startedAt": "2026-09-30T22:16:53Z",
+        "status": "failed",
+        "exitCode": 2,
+        "seconds": 8.87
+      },
+      {
+        "command": "pnpm typecheck",
+        "startedAt": "2026-09-30T22:18:14Z",
+        "status": "passed",
+        "sourceSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+        "log": "04-attempt2.log",
+        "exitCode": 0,
+        "seconds": 14.09
+      },
+      {
+        "command": "pnpm build",
+        "startedAt": "2026-09-30T22:18:28Z",
+        "status": "passed",
+        "sourceSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+        "log": "05-attempt1.log",
+        "exitCode": 0,
+        "seconds": 7.08
+      },
+      {
+        "command": "pnpm check:licence-artifact",
+        "startedAt": "2026-09-30T22:18:35Z",
+        "status": "passed",
+        "sourceSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+        "log": "06-attempt1.log",
+        "exitCode": 0,
+        "seconds": 0.67
+      },
+      {
+        "command": "pnpm test:unit",
+        "startedAt": "2026-09-30T22:18:36Z",
+        "status": "passed",
+        "sourceSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+        "log": "07-attempt1.log",
+        "exitCode": 0,
+        "seconds": 18.63
+      },
+      {
+        "command": "pnpm test:integration",
+        "startedAt": "2026-09-30T22:18:55Z",
+        "status": "passed",
+        "sourceSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+        "log": "08-attempt1.log",
+        "exitCode": 0,
+        "seconds": 839.79
+      },
+      {
+        "command": "pnpm test:browser",
+        "startedAt": "2026-09-30T22:32:54Z",
+        "status": "passed",
+        "sourceSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+        "log": "09-attempt1.log",
+        "exitCode": 0,
+        "seconds": 656.71
+      },
+      {
+        "command": "pnpm package:desktop",
+        "startedAt": "2026-09-30T22:43:51Z",
+        "status": "passed",
+        "sourceSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+        "log": "10-attempt1.log",
+        "exitCode": 0,
+        "seconds": 3.54
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec playwright test --config playwright.config.ts",
+        "startedAt": "2026-09-30T22:43:55Z",
+        "status": "passed",
+        "sourceSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+        "log": "11-attempt1.log",
+        "exitCode": 0,
+        "seconds": 45.72
+      }
+    ],
+    "statusAfter": " M evidence/issue-18/after/keyboard-row-loop.webm\n M evidence/issue-50/after/posted-purchase-ar-dark.png\n M evidence/issue-50/after/posted-purchase-en-light.png\n M evidence/issue-51/after/posted-purchase-detail-ar-dark.png\n M evidence/issue-51/after/posted-purchase-detail-ar-light.png\n M evidence/issue-51/after/posted-purchase-detail-en-dark.png\n M evidence/issue-51/after/posted-purchase-detail-en-light.png\n M evidence/issue-51/after/posted-purchase-list-ar-dark.png\n M evidence/issue-51/after/posted-purchase-list-ar-light.png\n M evidence/issue-51/after/posted-purchase-list-en-dark.png\n M evidence/issue-51/after/posted-purchase-list-en-light.png\n M evidence/issue-52/after/purchase-adjustment-ar-dark.png\n M evidence/issue-52/after/purchase-adjustment-ar-light.png\n M evidence/issue-52/after/purchase-adjustment-before-en-light.png\n M evidence/issue-52/after/purchase-adjustment-en-dark.png\n M evidence/issue-52/after/purchase-adjustment-en-light.png\n M evidence/issue-52/after/purchase-adjustment-summary-en-light.png\n M evidence/issue-53/after/purchase-return-ar-dark.png\n M evidence/issue-53/after/purchase-return-ar-light.png\n M evidence/issue-53/after/purchase-return-en-dark.png\n M evidence/issue-53/after/purchase-return-en-light.png\n M evidence/issue-53/after/purchase-return-keyboard.webm\n M evidence/issue-53/after/purchase-return-summary-en-light.png\n M evidence/purchases-prototype-alignment/after/purchase-header-ar-dark.png\n M evidence/purchases-prototype-alignment/after/purchase-header-ar-light.png\n M evidence/purchases-prototype-alignment/after/purchase-header-en-dark.png\n M evidence/purchases-prototype-alignment/after/purchase-header-en-light.png\n M evidence/purchases-prototype-alignment/after/purchase-register-ar-dark.png\n M evidence/purchases-prototype-alignment/after/purchase-register-ar-light.png\n M evidence/purchases-prototype-alignment/after/purchase-register-en-dark.png\n M evidence/purchases-prototype-alignment/after/purchase-register-en-light.png\n M evidence/purchases-prototype-alignment/after/purchase-selected-ar-dark.png\n M evidence/purchases-prototype-alignment/after/purchase-selected-ar-light.png\n M evidence/purchases-prototype-alignment/after/purchase-selected-en-dark.png\n M evidence/purchases-prototype-alignment/after/purchase-selected-en-light.png\n M evidence/purchases-prototype-alignment/after/purchase-suppliers-ar-dark.png\n M evidence/purchases-prototype-alignment/after/purchase-suppliers-ar-light.png\n M evidence/purchases-prototype-alignment/after/purchase-suppliers-en-dark.png\n M evidence/purchases-prototype-alignment/after/purchase-suppliers-en-light.png\n",
+    "finalSnapshot": "cfe8c7cdd1b8dfbccd5a5ece6b011a9f335dd531",
+    "generatedTrackedArtifactsRestored": [
+      "evidence/issue-18/after/keyboard-row-loop.webm",
+      "evidence/issue-50/after/posted-purchase-ar-dark.png",
+      "evidence/issue-50/after/posted-purchase-en-light.png",
+      "evidence/issue-51/after/posted-purchase-detail-ar-dark.png",
+      "evidence/issue-51/after/posted-purchase-detail-ar-light.png",
+      "evidence/issue-51/after/posted-purchase-detail-en-dark.png",
+      "evidence/issue-51/after/posted-purchase-detail-en-light.png",
+      "evidence/issue-51/after/posted-purchase-list-ar-dark.png",
+      "evidence/issue-51/after/posted-purchase-list-ar-light.png",
+      "evidence/issue-51/after/posted-purchase-list-en-dark.png",
+      "evidence/issue-51/after/posted-purchase-list-en-light.png",
+      "evidence/issue-52/after/purchase-adjustment-ar-dark.png",
+      "evidence/issue-52/after/purchase-adjustment-ar-light.png",
+      "evidence/issue-52/after/purchase-adjustment-before-en-light.png",
+      "evidence/issue-52/after/purchase-adjustment-en-dark.png",
+      "evidence/issue-52/after/purchase-adjustment-en-light.png",
+      "evidence/issue-52/after/purchase-adjustment-summary-en-light.png",
+      "evidence/issue-53/after/purchase-return-ar-dark.png",
+      "evidence/issue-53/after/purchase-return-ar-light.png",
+      "evidence/issue-53/after/purchase-return-en-dark.png",
+      "evidence/issue-53/after/purchase-return-en-light.png",
+      "evidence/issue-53/after/purchase-return-keyboard.webm",
+      "evidence/issue-53/after/purchase-return-summary-en-light.png",
+      "evidence/purchases-prototype-alignment/after/purchase-header-ar-dark.png",
+      "evidence/purchases-prototype-alignment/after/purchase-header-ar-light.png",
+      "evidence/purchases-prototype-alignment/after/purchase-header-en-dark.png",
+      "evidence/purchases-prototype-alignment/after/purchase-header-en-light.png",
+      "evidence/purchases-prototype-alignment/after/purchase-register-ar-dark.png",
+      "evidence/purchases-prototype-alignment/after/purchase-register-ar-light.png",
+      "evidence/purchases-prototype-alignment/after/purchase-register-en-dark.png",
+      "evidence/purchases-prototype-alignment/after/purchase-register-en-light.png",
+      "evidence/purchases-prototype-alignment/after/purchase-selected-ar-dark.png",
+      "evidence/purchases-prototype-alignment/after/purchase-selected-ar-light.png",
+      "evidence/purchases-prototype-alignment/after/purchase-selected-en-dark.png",
+      "evidence/purchases-prototype-alignment/after/purchase-selected-en-light.png",
+      "evidence/purchases-prototype-alignment/after/purchase-suppliers-ar-dark.png",
+      "evidence/purchases-prototype-alignment/after/purchase-suppliers-ar-light.png",
+      "evidence/purchases-prototype-alignment/after/purchase-suppliers-en-dark.png",
+      "evidence/purchases-prototype-alignment/after/purchase-suppliers-en-light.png"
+    ],
+    "statusAfterRestoration": ""
+  },
+  "lateTargetedChecks": {
+    "snapshot": "2727dd82f7a37727e44924c42960f83dd3ebe8ec",
+    "statusBefore": "",
+    "checks": [
+      {
+        "command": "pnpm prettier --check apps/desktop/test/browser/inventory.browser.test.ts apps/desktop/test/browser/purchasing.browser.test.ts apps/desktop/test/desktop.smoke.test.ts apps/local-api/src/reporting/inventory-authorization.integration.test.ts apps/local-api/src/reporting/inventory-terminal-authorization.integration.test.ts tooling/windows/run-report-checks.mjs",
+        "status": "passed",
+        "startedAt": "2026-09-30T22:48:33Z",
+        "exitCode": 0,
+        "seconds": 1.38
+      },
+      {
+        "command": "pnpm exec eslint apps/desktop/test/browser/inventory.browser.test.ts apps/desktop/test/browser/purchasing.browser.test.ts apps/desktop/test/desktop.smoke.test.ts apps/local-api/src/reporting/inventory-authorization.integration.test.ts apps/local-api/src/reporting/inventory-terminal-authorization.integration.test.ts tooling/windows/run-report-checks.mjs",
+        "status": "passed",
+        "startedAt": "2026-09-30T22:48:34Z",
+        "exitCode": 0,
+        "seconds": 1.75
+      },
+      {
+        "command": "pnpm typecheck",
+        "status": "passed",
+        "startedAt": "2026-09-30T22:48:36Z",
+        "exitCode": 0,
+        "seconds": 14.92
+      },
+      {
+        "command": "pnpm --filter @breev/local-api exec vitest run src/reporting/inventory-authorization.integration.test.ts src/reporting/inventory-terminal-authorization.integration.test.ts",
+        "status": "passed",
+        "startedAt": "2026-09-30T22:48:51Z",
+        "exitCode": 0,
+        "seconds": 54.32
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec playwright test test/browser/purchasing.browser.test.ts --config playwright.browser.config.ts -g is accessible in Arabic",
+        "status": "failed",
+        "startedAt": "2026-09-30T22:49:45Z",
+        "exitCode": 1,
+        "seconds": 143.71
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec playwright test test/browser/purchasing.browser.test.ts --config playwright.browser.config.ts -g enters the header|enters durable rows|is accessible in Arabic",
+        "status": "passed",
+        "startedAt": "2026-09-30T22:52:33Z",
+        "log": "05-resumed.log",
+        "exitCode": 0,
+        "seconds": 58.25
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts -g all seven|preserves report keyboard|blocks count completion|pages complete posted",
+        "status": "failed",
+        "startedAt": "2026-09-30T22:53:31Z",
+        "log": "06-resumed.log",
+        "exitCode": 1,
+        "seconds": 2.03
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec playwright test test/browser/inventory.browser.test.ts --config playwright.browser.config.ts -g all seven|preserves report keyboard|blocks count completion|pages complete posted",
+        "status": "passed",
+        "startedAt": "2026-09-30T22:55:04Z",
+        "sourceSnapshot": "d1dccb87e1ef2dc1e3cfb837411602508aa95979",
+        "log": "06-resumed-2.log",
+        "exitCode": 0,
+        "seconds": 99.04
+      },
+      {
+        "command": "pnpm --filter @breev/desktop exec playwright test --config playwright.config.ts",
+        "status": "passed",
+        "startedAt": "2026-09-30T22:56:43Z",
+        "sourceSnapshot": "d1dccb87e1ef2dc1e3cfb837411602508aa95979",
+        "log": "07-resumed-1.log",
+        "exitCode": 0,
+        "seconds": 66.18
+      },
+      {
+        "command": "pnpm typecheck",
+        "sourceSnapshot": "d1dccb87e1ef2dc1e3cfb837411602508aa95979",
+        "status": "passed",
+        "exitCode": 0,
+        "seconds": null,
+        "log": "final-typecheck.log"
+      }
+    ],
+    "statusAfter": "",
+    "finalSnapshot": "d1dccb87e1ef2dc1e3cfb837411602508aa95979"
+  },
+  "counts": {
+    "unit": {
+      "contractsPassed": 219,
+      "desktopPassed": 678,
+      "apiPassed": 639,
+      "apiSkipped": 2
+    },
+    "integrationBeforeLateTests": {
+      "suitesPassed": 38,
+      "passed": 325,
+      "skipped": 2
+    },
+    "lateAuthorization": {
+      "suitesPassed": 2,
+      "passed": 8
+    },
+    "browser": {
+      "passed": 137,
+      "inventoryScenarios": 16
+    },
+    "packagedSmoke": {
+      "fullGatePassed": 3,
+      "finalDiagnosticsPassed": 3
+    }
+  },
+  "failureClassifications": [
+    {
+      "check": "offline install",
+      "classification": "prerequisite configuration",
+      "cause": "Default /tmp store lacked a cached package; explicit existing Addation store completed frozen offline installation."
+    },
+    {
+      "check": "initial clean typecheck",
+      "classification": "test diagnostic type error",
+      "cause": "Optional failure string was assigned undefined; explicit fallback corrected exactOptionalPropertyTypes."
+    },
+    {
+      "check": "late authorization first attempt",
+      "classification": "test fixture SQL mistake",
+      "cause": "Misnamed Step-Up table; corrected to maintained step_up_challenges."
+    },
+    {
+      "check": "isolated Purchasing screenshot",
+      "classification": "serial fixture prerequisites missing",
+      "cause": "Referenced invoice is created by two earlier tests; targeted slice with both prerequisites passed."
+    },
+    {
+      "check": "Inventory trace configuration",
+      "classification": "Playwright configuration scope",
+      "cause": "Trace is a worker option and must be set at file scope; four focused scenarios passed after correction."
+    }
+  ],
+  "scale": {
+    "factsAdded": 250001,
+    "measurements": [
+      {
+        "kind": "quantity",
+        "elapsedMs": 2487.029283,
+        "responseBytes": 1271
+      },
+      {
+        "kind": "value",
+        "elapsedMs": 2359.2380669999984,
+        "responseBytes": 1451
+      },
+      {
+        "kind": "average-cost",
+        "elapsedMs": 2442.73084,
+        "responseBytes": 1402
+      },
+      {
+        "kind": "batches-expiry",
+        "elapsedMs": 2609.676556999999,
+        "responseBytes": 2251
+      },
+      {
+        "kind": "consumption",
+        "elapsedMs": 2281.518566999999,
+        "responseBytes": 1387
+      },
+      {
+        "kind": "alerts",
+        "elapsedMs": 3013.528385999998,
+        "responseBytes": 1154
+      },
+      {
+        "kind": "stocktake-movements",
+        "elapsedMs": 10.778972000000067,
+        "responseBytes": 709
+      }
+    ],
+    "memoryBefore": 342867968,
+    "memoryPeak": 342917120,
+    "memoryAfter": 342917120
+  },
+  "windowsAutomated": {
+    "status": "passed",
+    "sourceCommit": "03d4dd1d3d439f2a6805cdf8f6fa5c2edc5886f4",
+    "runUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36789073200",
+    "host": "Windows Server 2025 Datacenter build 26100",
+    "reportIntegrationPassed": 31,
+    "inventoryBrowserPassed": 16,
+    "packagedSmokePassed": 3,
+    "certificationEvidence": false,
+    "captureUploadCorrection": "First artifact omitted report PNGs and scale JSON; follow-up upload correction pending.",
+    "cng": {
+      "passed": 11,
+      "skipped": 1,
+      "skipReason": "Linux-specific serial encoding"
+    }
+  },
+  "physicalWindowsNarrator": "unverified",
+  "followUpEvidence": {
+    "sourceCommit": "3d9f56657f3d28bc4037c81e939ee546f06e0eb8",
+    "runUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36791265348",
+    "prRunUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36791208168",
+    "lastObservedStatus": "in progress",
+    "completion": "unverified",
+    "windowsCaptures": "not retrieved",
+    "windowsScaleMeasurements": "not retrieved",
+    "retrievalAttemptAt": "2026-10-01T02:23:46Z",
+    "classification": "host/network limitation",
+    "cliResult": "error connecting to api.github.com",
+    "webResult": "Both run pages failed to fetch: Cache miss.",
+    "sessionConstraints": "Restricted network; read-only .git; no escalation permitted.",
+    "publication": "This retrieval note is a local documentation update."
+  },
+  "readinessBlockers": [
+    "Original count reason/evidence failure cause remains unestablished.",
+    "Intermittent packaged Main unavailable versus Repair required cause remains unresolved.",
+    "Physical Windows report/native export/Narrator evidence unavailable."
+  ],
+  "implementationCommit": "03d4dd1d3d439f2a6805cdf8f6fa5c2edc5886f4",
+  "hostedLinux": {
+    "status": "passed",
+    "sourceCommit": "03d4dd1d3d439f2a6805cdf8f6fa5c2edc5886f4",
+    "runUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36789073200",
+    "prRunUrl": "https://github.com/PharmaElectrons/Breev/actions/runs/36789009169",
+    "integrationSuitesPassed": 39,
+    "integrationPassed": 327,
+    "integrationSkipped": 2,
+    "browserPassed": 137,
+    "packagedSmokePassed": 3
+  },
+  "canceledPreviousHeadDispatch": {
+    "runId": 36788921027,
+    "sourceCommit": "6e41528cfa61849d4b747480e76b004da9c1ec38",
+    "reason": "Dispatch raced push and selected previous head; canceled before using it as remediation evidence."
+  }
+}

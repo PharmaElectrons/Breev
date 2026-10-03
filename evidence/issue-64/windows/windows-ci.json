@@ -1,0 +1,63 @@
+{
+    "schemaVersion":  1,
+    "sourceCommit":  "03d4dd1d3d439f2a6805cdf8f6fa5c2edc5886f4",
+    "environmentPurpose":  "windows-build-validation-only",
+    "certificationEvidence":  false,
+    "repository":  "PharmaElectrons/Breev",
+    "workflow":  "Verify",
+    "workflowRunId":  36789073200,
+    "workflowRunAttempt":  1,
+    "workflowRunUrl":  "https://github.com/PharmaElectrons/Breev/actions/runs/36789073200",
+    "runner":  {
+                   "name":  "GitHub Actions 1000000427",
+                   "os":  "Windows",
+                   "architecture":  "X64",
+                   "windows":  {
+                                   "WindowsProductName":  "Windows Server 2025 Datacenter",
+                                   "WindowsVersion":  "2009",
+                                   "OsBuildNumber":  "26100",
+                                   "OsArchitecture":  "64-bit"
+                               }
+               },
+    "candidateVersions":  [
+                              "0.0.0",
+                              "0.0.1"
+                          ],
+    "payloadLockSha256":  "9280d21448f6d550c196fe2d627ddf2a0c68ea07066419ef530b90f83089010d",
+    "fuses":  [
+                  {
+                      "version":  "0.0.0",
+                      "candidate":  "electron-builder",
+                      "passed":  true,
+                      "executableSha256":  "cc846ded3164289bc8e9578f0f5916cf5e098d218557c7904d6242e8ba711105"
+                  },
+                  {
+                      "version":  "0.0.0",
+                      "candidate":  "electron-forge",
+                      "passed":  true,
+                      "executableSha256":  "8e7eb49ad8fed0c0c805e4fa832c72b630c59d2ea2c5578dac9644838f393dd1"
+                  },
+                  {
+                      "version":  "0.0.1",
+                      "candidate":  "electron-builder",
+                      "passed":  true,
+                      "executableSha256":  "ebac3994ee9ded228f88a50b17f0520a5649c8789ffcdf2bec712a35a848d70b"
+                  },
+                  {
+                      "version":  "0.0.1",
+                      "candidate":  "electron-forge",
+                      "passed":  true,
+                      "executableSha256":  "6c2886cbc94200b8b5069bd1d630af0bb24bffa51770c261f799570abd6d5318"
+                  }
+              ],
+    "checks":  {
+                   "lint":  true,
+                   "format":  true,
+                   "strictTypecheck":  true,
+                   "build":  true,
+                   "unit":  true,
+                   "bothWindowsCandidatesBuilt":  true
+               },
+    "completedAtUtc":  "2026-09-30T23:14:35.2939550Z",
+    "passed":  true
+}

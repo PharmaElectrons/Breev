@@ -107,7 +107,7 @@ describe("NavbarCollapseMenu", () => {
           handshake: {
             apiVersion: "20",
             database: "available",
-            schemaVersion: "20",
+            schemaVersion: "21",
             status: "healthy",
           },
           isChecking: false,
@@ -118,7 +118,7 @@ describe("NavbarCollapseMenu", () => {
       }),
     );
     expect(markup).toContain("collapse-menu-connection");
-    expect(markup).toContain("19");
+    expect(markup).toContain("20");
     expect(markup).toContain("Check now");
     expect(markup).toContain("collapse-menu-device-proof");
   });

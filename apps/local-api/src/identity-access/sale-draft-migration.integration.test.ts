@@ -217,22 +217,21 @@ describe.sequential("migration 0025: Sale Drafts", () => {
       Object.fromEntries(
         Object.entries(roleRevisionsBefore).map(([roleKey, revision]) => [
           roleKey,
-          ["manager", "owner"].includes(roleKey)
-            ? // The baseline advances these roles six times; 0037 adds both
-              // sales grants in one role-update statement.
-              String(BigInt(revision) + 7n)
-            : roleKey === "pharmacist"
-              ? String(BigInt(revision) + 2n)
-              : roleKey === "sales_employee"
-                ? String(BigInt(revision) + 1n)
-                : revision,
+          roleKey === "owner"
+            ? String(BigInt(revision) + 8n)
+            : roleKey === "manager"
+              ? String(BigInt(revision) + 7n)
+              : roleKey === "pharmacist"
+                ? String(BigInt(revision) + 2n)
+                : roleKey === "sales_employee"
+                  ? String(BigInt(revision) + 1n)
+                  : revision,
         ]),
       ),
     );
     expect(await pharmacyRevision()).toBe(
-      // The baseline advances the pharmacy six times; 0037 adds one tenant
-      // revision for its two new grants.
-      String(BigInt(pharmacyRevisionBefore) + 7n),
+      // The two later permission migrations each advance the tenant once.
+      String(BigInt(pharmacyRevisionBefore) + 8n),
     );
 
     await runMigrations(application, databaseRoles.migrationUrl);

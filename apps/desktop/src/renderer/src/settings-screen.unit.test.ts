@@ -342,7 +342,7 @@ describe("SettingsRouteView", () => {
           handshake: {
             apiVersion: "20",
             database: "available",
-            schemaVersion: "20",
+            schemaVersion: "21",
             status: "healthy",
           },
           lastCheckedAt: new Date("2026-09-23T12:00:00Z"),
