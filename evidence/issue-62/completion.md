@@ -93,6 +93,6 @@ The review remediation keeps the item panel honest when there is no recorded sal
 | Full desktop browser suite | 174 passed, 4 skipped, 1 failed, 5 not run. The licensed device-pairing case was rerun alone and reproduced the host's Main-unavailable/CNG failure; all 34 Sales scenarios passed. |
 | Windows desktop package and packaged Playwright smoke | Passed; package succeeded and smoke passed 3/3. |
 | Full local unit suite | Contracts (223) and desktop (694) passed. Local API reported 695 passed and 12 skipped; one Pharmacy CA/CNG suite was blocked by Windows MachineKey access denied. |
-| Supported Windows CNG and GitHub Actions verification | Pending the post-push workflow run. |
+| Supported Windows CNG and GitHub Actions verification | Passed on implementation commit `b779681` in [Verify run 37120615205](https://github.com/PharmaElectrons/Breev/actions/runs/37120615205); all three jobs passed. This evidence update is documentation-only. |
 
 This evidence records local results without treating the host-limited CNG boundary as a product pass. The issue remains open for the upstream cash-writer and posted-sales-history dependencies, the supported-Windows CNG result, and certified minimum-profile/G-16 evidence.
