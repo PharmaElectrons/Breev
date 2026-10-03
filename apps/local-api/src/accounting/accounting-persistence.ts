@@ -417,3 +417,24 @@ export async function readSupplierPayableContributions(
     balanceFils: BigInt(row.balance_fils),
   }));
 }
+
+/** Reads only the authenticated employee's assigned Cash Box journal lines. */
+export async function readEmployeeCashDrawerBalance(
+  client: PoolClient,
+  pharmacyId: string,
+  drawerUserId: string,
+): Promise<bigint | null> {
+  const result = await client.query<{
+    balance_fils: string | null;
+    line_count: string;
+  }>(
+    `select sum(debit_fils - credit_fils)::text as balance_fils,
+            count(*)::text as line_count
+     from accounting_journal_lines
+     where pharmacy_id = $1 and drawer_user_id = $2 and account_code = 'cash'`,
+    [pharmacyId, drawerUserId],
+  );
+  const row = result.rows[0];
+  if (row === undefined || BigInt(row.line_count) === 0n) return null;
+  return BigInt(row.balance_fils ?? "0");
+}

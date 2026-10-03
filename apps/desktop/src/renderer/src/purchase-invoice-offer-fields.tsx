@@ -1,5 +1,5 @@
 import type { PurchaseInvoiceOfferInput } from "@breev/contracts/local-rest";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { purchasingMessages } from "./purchasing-messages";
 import { usePreferences } from "./preferences-provider";
 import {
@@ -22,18 +22,7 @@ export function PurchaseInvoiceOfferFields({
   const [amountText, setAmountText] = useState(
     value.mode === "fixed" ? invoiceOfferFilsToIqd(value.value) : "0",
   );
-  const emitted = useRef(JSON.stringify(value));
-  useEffect(() => {
-    const fingerprint = JSON.stringify(value);
-    if (fingerprint !== emitted.current) {
-      emitted.current = fingerprint;
-      setAmountText(
-        value.mode === "fixed" ? invoiceOfferFilsToIqd(value.value) : "0",
-      );
-    }
-  }, [value]);
   function change(next: PurchaseInvoiceOfferInput): void {
-    emitted.current = JSON.stringify(next);
     onChange(next);
   }
   return (

@@ -190,17 +190,17 @@ describe.sequential("0032 invoice offer forward migration", () => {
       invoice_offer: { mode: "none", value: "0" },
       offer_rule_version: 1,
     });
-    // Migration 0036 grants reports.inventory.view and reports.inventory.export to owner (+1).
-    expect(
-      (
-        await application.query(
-          "select id,revision::text from pharmacy_roles order by id",
-        )
-      ).rows,
-    ).toEqual(
+    const downstreamRoleRevisions = (
+      await application.query<{ id: string; revision: string }>(
+        "select id,revision::text from pharmacy_roles order by id",
+      )
+    ).rows;
+    // This fixture creates only the owner after its 0031 baseline. Migration
+    // 0036 adds owner report grants, and 0042 adds owner sales grants (+1 each).
+    expect(downstreamRoleRevisions).toEqual(
       oldRoleRevisions.map((role) => ({
         ...role,
-        revision: String(BigInt(role.revision) + 1n),
+        revision: String(BigInt(role.revision) + 2n),
       })),
     );
     const receipt = (

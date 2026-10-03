@@ -36,11 +36,17 @@ export interface InventoryRiskInput {
 export function consumptionRatePer30Days(
   movements: readonly InventoryRiskMovement[],
   now: Date,
+  months: 1 | 2 | 3 = 3,
 ): bigint {
+  const windowDays = months === 1 ? 30 : months === 2 ? 60 : 90;
   return consumptionOverWindow(
-    movements.map((m) => ({ ...m, eligibleDemand: m.reason === undefined })),
+    movements.map((movement) => ({
+      occurredAt: movement.occurredAt,
+      quantity: movement.quantity,
+      eligibleDemand: movement.reason === undefined,
+    })),
     now,
-    90,
+    windowDays,
     true,
   ).per30Days;
 }

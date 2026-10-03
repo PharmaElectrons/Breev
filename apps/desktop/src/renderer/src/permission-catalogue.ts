@@ -47,8 +47,10 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
     id: "sales",
     permissions: [
       "sales.drafts.manage",
+      "sales.drawer_balance.view",
       "sales.misc.manage",
       "sales.quick_access.manage",
+      "sales.wholesale_price.view",
       "draft.price.override",
     ],
   },

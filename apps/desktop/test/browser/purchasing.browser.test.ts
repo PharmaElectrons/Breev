@@ -2755,6 +2755,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
         await expect(panel.locator('[data-panel-field="balance"]')).toHaveCount(
           0,
         );
+        await expect(panel).toHaveCSS("opacity", "1");
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -2905,6 +2906,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           .click();
         await expect(percent).toHaveValue("5");
         await amount.fill("4");
+        await expect(amount).toHaveValue("4");
         await expect(percent).toHaveValue("0");
         await headerSave.click();
         await expect(page.locator(".purchase-invoice-offer")).toContainText(
@@ -3001,6 +3003,7 @@ test.describe.serial("Supplier and Purchase Draft screens", () => {
           supplierEffects: [],
         });
         const dialog = page.locator(".delta-summary-dialog");
+        await expect(dialog).toHaveCSS("opacity", "1");
         const confirm = dialog.getByRole("button", {
           name:
             locale === "en" ? "Confirm and post Delta" : "تأكيد وحفظ التعديل",

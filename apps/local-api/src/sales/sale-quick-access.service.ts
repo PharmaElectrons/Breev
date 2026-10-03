@@ -2,6 +2,8 @@ import {
   saleQuickAccessReadContract,
   saleQuickAccessReplaceContract,
   saleQuickAccessReplaceRequestSchema,
+  salePanelSettingsSchema,
+  DEFAULT_SALE_PANEL_SETTINGS,
   salesDenialSchema,
   type CatalogFieldError,
   type IdentityDenial,
@@ -39,6 +41,7 @@ type FieldError = CatalogFieldError & { readonly rule?: string };
 interface SettingsRow {
   readonly version: string;
   readonly categories: unknown;
+  readonly panel_settings: unknown;
 }
 
 interface ProductUnitRow {
@@ -179,7 +182,7 @@ export class SaleQuickAccessService {
             [context.pharmacyId],
           );
           const current = await client.query<SettingsRow>(
-            `select version::text, categories from sale_quick_access_settings
+            `select version::text, categories, panel_settings from sale_quick_access_settings
              where pharmacy_id=$1 for update`,
             [context.pharmacyId],
           );
@@ -210,12 +213,16 @@ export class SaleQuickAccessService {
           await client.query(
             `update sale_quick_access_settings
              set version=version+1, categories=$2::jsonb,
+                 panel_settings=coalesce($4::jsonb,panel_settings),
                  updated_at=statement_timestamp(), updated_by=$3
              where pharmacy_id=$1`,
             [
               context.pharmacyId,
               JSON.stringify(input.categories),
               context.actorId,
+              input.panelSettings === undefined
+                ? null
+                : JSON.stringify(input.panelSettings),
             ],
           );
           value = saleQuickAccessReplaceContract.responses[200].parse(
@@ -301,7 +308,7 @@ export class SaleQuickAccessService {
     pharmacyId: string,
   ): Promise<SaleQuickAccess> {
     const settings = await client.query<SettingsRow>(
-      `select version::text, categories from sale_quick_access_settings
+      `select version::text, categories, panel_settings from sale_quick_access_settings
        where pharmacy_id=$1`,
       [pharmacyId],
     );
@@ -314,6 +321,10 @@ export class SaleQuickAccessService {
           );
     return {
       version: row?.version ?? "1",
+      panelSettings:
+        row === undefined
+          ? DEFAULT_SALE_PANEL_SETTINGS
+          : salePanelSettingsSchema.parse(row.panel_settings),
       categories: await this.projectCategories(
         client,
         pharmacyId,
@@ -388,6 +399,7 @@ export class SaleQuickAccessService {
               productId: tile.productId,
               unitId: tile.unitId,
               available: false,
+              thumbnailDataUrl: tile.thumbnailDataUrl ?? null,
               displayName: null,
               unitName: null,
               currentUnitPriceFils: null,
@@ -421,6 +433,7 @@ export class SaleQuickAccessService {
               productId: tile.productId,
               unitId: tile.unitId,
               available: false,
+              thumbnailDataUrl: tile.thumbnailDataUrl ?? null,
               displayName: null,
               unitName: null,
               currentUnitPriceFils: null,
@@ -432,6 +445,7 @@ export class SaleQuickAccessService {
             productId: tile.productId,
             unitId: tile.unitId,
             available: true,
+            thumbnailDataUrl: tile.thumbnailDataUrl ?? null,
             displayName: row.display_name,
             unitName: row.unit_name,
             currentUnitPriceFils: price.toString(),

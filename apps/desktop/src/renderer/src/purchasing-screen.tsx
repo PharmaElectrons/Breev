@@ -1157,6 +1157,11 @@ export function PurchasingRouteView({
                   </output>
                 </div>
                 <PurchaseInvoiceOfferFields
+                  key={
+                    activeDraft === null
+                      ? "new-draft"
+                      : `${activeDraft.id}:${activeDraft.version}`
+                  }
                   value={invoiceOffer}
                   onChange={(next) => {
                     setInvoiceOffer(next);

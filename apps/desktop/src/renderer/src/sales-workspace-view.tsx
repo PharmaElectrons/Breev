@@ -1,7 +1,9 @@
-import type {
-  SaleDraft,
-  SaleDraftLine,
-  SaleProductContext,
+import {
+  DEFAULT_SALE_PANEL_SETTINGS,
+  type SaleDraft,
+  type SaleDraftLine,
+  type SalePanelSettings,
+  type SaleProductContext,
 } from "@breev/contracts/local-rest";
 import type { ReactNode } from "react";
 
@@ -12,6 +14,7 @@ import {
   formatNumber,
 } from "./preferences";
 import type { Locale } from "./preferences";
+import { SalesItemPanel } from "./sales-item-panel";
 import { salesUpdatedLabel, type SalesCopy } from "./sales-messages";
 
 export interface SalesWorkspaceViewProps {
@@ -41,6 +44,7 @@ export interface SalesDraftContextPanelProps {
   readonly selectedLine: SaleDraftLine | null;
   readonly itemContext: SaleProductContext | null;
   readonly itemContextUnavailable: boolean;
+  readonly panelSettings?: SalePanelSettings;
   readonly onToggleCollapse?: () => void;
 }
 
@@ -51,74 +55,24 @@ export function SalesDraftContextPanel({
   selectedLine,
   itemContext,
   itemContextUnavailable,
+  panelSettings,
   onToggleCollapse,
 }: SalesDraftContextPanelProps): React.JSX.Element {
   const updatedAt = new Date(draft.updatedAt);
+  const settings = panelSettings ?? DEFAULT_SALE_PANEL_SETTINGS;
   const itemCopy =
     locale === "ar"
       ? {
           heading: "تفاصيل المادة المحددة",
           unit: "الوحدة",
           capturedPrice: "سعر البيع في المسودة",
-          currentPrice: "سعر البيع الحالي",
-          scientific: "الاسم العلمي",
-          packaging: "التعبئة",
-          minimum: "الحد الأدنى",
-          maximum: "الحد الأقصى",
-          balance: "الرصيد الفعلي",
-          surplus: "الفائض التقديري",
-          maximumNotSet: "الحد الأقصى غير محدد",
-          noStockRecord: "لا توجد حركة مخزون مسجلة",
-          batches: "الدفعات المسجلة",
-          batch: "دفعة",
-          expiry: "انتهاء الصلاحية",
-          noExpiry: "لم يسجل تاريخ انتهاء",
-          daysRemaining: (days: number) =>
-            `${formatNumber(days, locale)} يوم متبقٍ`,
-          daysExpired: (days: number) =>
-            `منتهية منذ ${formatNumber(days, locale)} يوم`,
-          batchStatus: {
-            eligible: "صالحة",
-            "near-expiry": "قريبة الانتهاء",
-            expired: "منتهية",
-            recalled: "مستدعاة",
-            quarantined: "محجوزة",
-            "postponed-blocked": "محظورة مؤقتاً",
-          },
           unavailable: "غير متاح لهذا المستخدم",
-          notSet: "غير محدد",
         }
       : {
           heading: "Selected item details",
           unit: "Unit",
           capturedPrice: "Draft selling price",
-          currentPrice: "Current retail price",
-          scientific: "Scientific name",
-          packaging: "Packaging",
-          minimum: "Minimum level",
-          maximum: "Maximum level",
-          balance: "On-hand balance",
-          surplus: "Estimated surplus",
-          maximumNotSet: "Maximum not set",
-          noStockRecord: "No stock movement recorded",
-          batches: "Recorded batches",
-          batch: "Batch",
-          expiry: "Expiry",
-          noExpiry: "No expiry recorded",
-          daysRemaining: (days: number) =>
-            `${formatNumber(days, locale)} days remaining`,
-          daysExpired: (days: number) =>
-            `Expired ${formatNumber(days, locale)} days ago`,
-          batchStatus: {
-            eligible: "Eligible",
-            "near-expiry": "Near expiry",
-            expired: "Expired",
-            recalled: "Recalled",
-            quarantined: "Quarantined",
-            "postponed-blocked": "Temporarily blocked",
-          },
           unavailable: "Unavailable for this user",
-          notSet: "Not set",
         };
 
   return (
@@ -166,106 +120,23 @@ export function SalesDraftContextPanel({
                 )}
               </dd>
             </div>
-            {itemContext === null ? null : (
-              <>
-                <div>
-                  <dt>{itemCopy.currentPrice}</dt>
-                  <dd>
-                    {formatCurrencyFromFils(
-                      BigInt(itemContext.currentRetailPriceFils),
-                      locale,
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{itemCopy.scientific}</dt>
-                  <dd>{itemContext.scientificName ?? itemCopy.notSet}</dd>
-                </div>
-                <div>
-                  <dt>{itemCopy.packaging}</dt>
-                  <dd>
-                    {itemContext.packageUnits
-                      .map(
-                        (unit) =>
-                          `${unit.name} = ${unit.baseUnitsPerPackage} ${itemContext.inventoryUnitName}`,
-                      )
-                      .join(" · ") || itemContext.inventoryUnitName}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{itemCopy.minimum}</dt>
-                  <dd>
-                    {itemContext.stockLevels.minimumLevel ?? itemCopy.notSet}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{itemCopy.maximum}</dt>
-                  <dd>
-                    {itemContext.stockLevels.maximumLevel ?? itemCopy.notSet}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{itemCopy.balance}</dt>
-                  <dd>
-                    {itemContext.inventory.onHandBaseUnits === null
-                      ? itemCopy.noStockRecord
-                      : `${formatNumber(BigInt(itemContext.inventory.onHandBaseUnits), locale)} ${itemContext.inventoryUnitName}`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{itemCopy.surplus}</dt>
-                  <dd>
-                    {itemContext.stockLevels.maximumLevel === null
-                      ? itemCopy.maximumNotSet
-                      : itemContext.inventory.estimatedSurplusBaseUnits === null
-                        ? itemCopy.noStockRecord
-                        : `${formatNumber(BigInt(itemContext.inventory.estimatedSurplusBaseUnits), locale)} ${itemContext.inventoryUnitName}`}
-                  </dd>
-                </div>
-              </>
-            )}
           </dl>
-          {itemContext === null ||
-          itemContext.inventory.batches.length === 0 ? null : (
-            <section
-              className="sales-item-batches"
-              aria-label={itemCopy.batches}
-            >
-              <h4>{itemCopy.batches}</h4>
-              <ul>
-                {itemContext.inventory.batches.map((batch) => (
-                  <li key={batch.batchId}>
-                    <strong>
-                      {batch.lotNumber ??
-                        `${itemCopy.batch} ${batch.batchId.slice(0, 8)}`}
-                    </strong>
-                    <span>
-                      {formatNumber(BigInt(batch.balanceBaseUnits), locale)}{" "}
-                      {itemContext.inventoryUnitName}
-                    </span>
-                    <span>{itemCopy.batchStatus[batch.status]}</span>
-                    <span>
-                      {itemCopy.expiry}:{" "}
-                      {batch.effectiveExpiryDate === null
-                        ? itemCopy.noExpiry
-                        : batch.effectiveExpiryDate}
-                      {batch.daysRemaining === null
-                        ? null
-                        : ` · ${
-                            batch.daysRemaining < 0
-                              ? itemCopy.daysExpired(
-                                  Math.abs(batch.daysRemaining),
-                                )
-                              : itemCopy.daysRemaining(batch.daysRemaining)
-                          }`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {itemContextUnavailable ? (
+          {itemContext !== null ? (
+            <SalesItemPanel
+              context={itemContext}
+              settings={settings}
+              locale={locale}
+            />
+          ) : itemContextUnavailable ? (
             <p role="status">{itemCopy.unavailable}</p>
+          ) : null}
+          {itemContext === null ? (
+            <div
+              className="sales-ai-recommendations-slot"
+              data-slot="ai-recommendations"
+              aria-hidden="true"
+              hidden
+            />
           ) : null}
         </section>
       )}

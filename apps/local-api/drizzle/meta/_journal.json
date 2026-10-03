@@ -288,6 +288,20 @@
       "when": 1791417600000,
       "tag": "0040_report_source_pages",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791504000000,
+      "tag": "0041_sale_misc_cost",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791590400000,
+      "tag": "0042_sale_panel_and_drawer",
+      "breakpoints": true
     }
   ]
 }

@@ -1,12 +1,15 @@
-import type {
-  IdentityDenial,
-  InventoryDenial,
-  LicensingDenial,
-  SaleProductSearchResponse,
-  SaleProductContext,
-  SaleQuickAccess,
-  SaleDraft,
-  SalesDenial,
+import {
+  DEFAULT_SALE_PANEL_SETTINGS,
+  type IdentityDenial,
+  type InventoryDenial,
+  type LicensingDenial,
+  type SaleProductSearchResponse,
+  type SaleProductContext,
+  type SaleQuickAccess,
+  type SalePanelSettings,
+  type SaleQuickAccessReplaceRequest,
+  type SaleDraft,
+  type SalesDenial,
 } from "@breev/contracts/local-rest";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -40,10 +43,12 @@ import {
   newSalesIdempotencyKey,
   readSaleDraft,
   readSaleDrafts,
+  readSaleDrawerBalance,
   removeSaleDraftLine,
   overrideSaleDraftLinePrice,
   resumeSaleDraft,
   SalesApiDenied,
+  SalesRequestTooLarge,
   setSaleDraftDiscount,
   searchSaleProducts,
   readSaleProductContext,
@@ -57,17 +62,20 @@ import {
   reconcileSaleLineEdits,
   saveSaleLineEdit,
 } from "./sales-line-drafts";
-import { SaleQuickAccessPanel } from "./sales-quick-access-panel";
+import { getSalesPanelMessages } from "./sales-panel-messages";
+import { SalesPresentationSettings } from "./sales-presentation-settings";
 import { SalePriceDialog } from "./sales-price-dialog";
 import {
   SalesDraftContextPanel,
   SalesWorkspaceView,
 } from "./sales-workspace-view";
+import "./sales-panel.css";
 import {
   salesLoadMoreMessage,
   salesMessages,
   type SalesCopy,
 } from "./sales-messages";
+import "./sales-quick-create.css";
 
 type AnyDenial =
   IdentityDenial | InventoryDenial | LicensingDenial | SalesDenial;
@@ -119,6 +127,10 @@ export function SalesRouteView({
   const canOverridePrice =
     authenticated &&
     identity.allowedPermissions.includes("draft.price.override");
+  const canViewDrawerBalance =
+    authenticated &&
+    identity.allowedPermissions.includes("sales.drawer_balance.view");
+  const actorId = authenticated ? identity.user.id : null;
   const route = salesRoute(hash);
   const { locale } = usePreferences();
   const copy = salesMessages[locale];
@@ -138,6 +150,7 @@ export function SalesRouteView({
 
   return (
     <SaleDraftWorkspace
+      actorId={actorId}
       baseUrl={baseUrl}
       canAddToBasket={canAddToBasket}
       canCreateProduct={canCreateProduct}
@@ -145,12 +158,14 @@ export function SalesRouteView({
       canManageQuickAccess={canManageQuickAccess}
       canOverridePrice={canOverridePrice}
       canSearch={canSearch}
+      canViewDrawerBalance={canViewDrawerBalance}
       route={route}
     />
   );
 }
 
 function SaleDraftWorkspace({
+  actorId,
   baseUrl,
   canAddToBasket,
   canCreateProduct,
@@ -158,8 +173,10 @@ function SaleDraftWorkspace({
   canManageQuickAccess,
   canOverridePrice,
   canSearch,
+  canViewDrawerBalance,
   route,
 }: {
+  readonly actorId: string | null;
   readonly baseUrl: string;
   readonly canAddToBasket: boolean;
   readonly canCreateProduct: boolean;
@@ -167,6 +184,7 @@ function SaleDraftWorkspace({
   readonly canManageQuickAccess: boolean;
   readonly canOverridePrice: boolean;
   readonly canSearch: boolean;
+  readonly canViewDrawerBalance: boolean;
   readonly route: SalesRoute;
 }): React.JSX.Element {
   const { locale } = usePreferences();
@@ -340,6 +358,7 @@ function SaleDraftWorkspace({
         <SaleDraftScreen
           actionDenial={actionDenial}
           actionError={actionError}
+          actorId={actorId}
           baseUrl={baseUrl}
           canAddToBasket={canAddToBasket}
           canCreateProduct={canCreateProduct}
@@ -347,6 +366,7 @@ function SaleDraftWorkspace({
           canManageQuickAccess={canManageQuickAccess}
           canOverridePrice={canOverridePrice}
           canSearch={canSearch}
+          canViewDrawerBalance={canViewDrawerBalance}
           draftId={route.draftId}
           onReloadDrafts={load}
           resumeToken={resumeToken}
@@ -374,6 +394,7 @@ function SaleDraftWorkspace({
 function SaleDraftScreen({
   actionDenial,
   actionError,
+  actorId,
   baseUrl,
   canAddToBasket,
   canCreateProduct,
@@ -381,12 +402,14 @@ function SaleDraftScreen({
   canManageQuickAccess,
   canOverridePrice,
   canSearch,
+  canViewDrawerBalance,
   draftId,
   onReloadDrafts,
   resumeToken,
 }: {
   readonly actionDenial: AnyDenial | null;
   readonly actionError: string | null;
+  readonly actorId: string | null;
   readonly baseUrl: string;
   readonly canAddToBasket: boolean;
   readonly canCreateProduct: boolean;
@@ -394,6 +417,7 @@ function SaleDraftScreen({
   readonly canManageQuickAccess: boolean;
   readonly canOverridePrice: boolean;
   readonly canSearch: boolean;
+  readonly canViewDrawerBalance: boolean;
   readonly draftId: string;
   readonly onReloadDrafts: () => Promise<void>;
   readonly resumeToken: number;
@@ -414,6 +438,7 @@ function SaleDraftScreen({
   const basketCopy = basketMessages[locale];
   const commitFocus = useCommittedFocus();
   const searchRef = useRef<HTMLInputElement>(null);
+  const quickToggleRef = useRef<HTMLButtonElement>(null);
   const requestSequence = useRef(0);
   const draftRequestSequence = useRef(0);
   const attemptRef = useRef<InventoryCommandAttempt | null>(null);
@@ -445,12 +470,7 @@ function SaleDraftScreen({
       returnTarget?.isConnected ? returnTarget : searchRef.current,
     );
   };
-  useEffect(() => {
-    if (recordProductId !== null)
-      commitFocus(() =>
-        document.querySelector<HTMLElement>(".sales-item-record-dialog"),
-      );
-  }, [commitFocus, recordProductId]);
+  const recordDialogRef = useRef<HTMLDivElement>(null);
   const [itemContext, setItemContext] = useState<SaleProductContext | null>(
     null,
   );
@@ -466,40 +486,130 @@ function SaleDraftScreen({
     if (!quickLinksOpen) return;
     const close = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"]') !== null
+      )
+        return;
       setQuickLinksOpen(false);
-      document.querySelector<HTMLElement>("[data-sale-quick-toggle]")?.focus();
+      commitFocus(() => quickToggleRef.current);
     };
     document.addEventListener("keydown", close);
     return () => document.removeEventListener("keydown", close);
-  }, [quickLinksOpen]);
+  }, [quickLinksOpen, commitFocus]);
   const [createProductOpen, setCreateProductOpen] = useState(false);
+  const [createdBarcode, setCreatedBarcode] = useState<string | null>(null);
   const [miscOpen, setMiscOpen] = useState(false);
   const [miscName, setMiscName] = useState("");
   const [miscUnit, setMiscUnit] = useState("");
   const [miscQuantity, setMiscQuantity] = useState("1");
   const [miscPrice, setMiscPrice] = useState("");
+  const [miscCost, setMiscCost] = useState("");
   const [miscValidation, setMiscValidation] = useState<string | null>(null);
+  const resolvingRef = useRef(false);
+  const [resolving, setResolving] = useState(false);
+  const createProductReturnFocus = useRef<HTMLElement | null>(null);
+  const createDialogRef = useRef<HTMLDivElement>(null);
+  const debounceTimerRef = useRef<number | null>(null);
+
+  const openCreateProductDialog = useCallback(
+    (barcode?: string): void => {
+      createProductReturnFocus.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      setCreatedBarcode(barcode ?? null);
+      setCreateProductOpen(true);
+      commitFocus(() => createDialogRef.current);
+    },
+    [commitFocus],
+  );
+
+  const closeCreateProductDialog = useCallback((): void => {
+    const returnTarget = createProductReturnFocus.current;
+    createProductReturnFocus.current = null;
+    setCreateProductOpen(false);
+    setCreatedBarcode(null);
+    commitFocus(() => returnTarget ?? searchRef.current);
+  }, [commitFocus]);
   const [quickAccess, setQuickAccess] = useState<SaleQuickAccess | null>(null);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [quickBusy, setQuickBusy] = useState(false);
+  const [presentationSettingsOpen, setPresentationSettingsOpen] =
+    useState(false);
+  const presentationSettingsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelMessages = getSalesPanelMessages(locale);
+
+  // Drawer balance state & effect
+  const [drawerBalance, setDrawerBalance] = useState<{
+    actorId: string | null;
+    value: bigint | null;
+  } | null>(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    const shouldQueryDrawer =
+      canViewDrawerBalance &&
+      quickAccess !== null &&
+      quickAccess.panelSettings.showDrawerBalance;
+
+    if (!shouldQueryDrawer) {
+      setDrawerBalance(null);
+      setDrawerLoading(false);
+      setDrawerError(null);
+      return () => {
+        live = false;
+      };
+    }
+
+    setDrawerLoading(true);
+    setDrawerBalance(null);
+    setDrawerError(null);
+    void readSaleDrawerBalance(baseUrl)
+      .then((result) => {
+        if (!live) return;
+        setDrawerBalance({
+          actorId,
+          value:
+            result.balanceFils === null ? null : BigInt(result.balanceFils),
+        });
+        setDrawerLoading(false);
+      })
+      .catch(() => {
+        if (!live) return;
+        setDrawerBalance(null);
+        setDrawerLoading(false);
+        setDrawerError(panelMessages.drawerBalanceError);
+      });
+
+    return () => {
+      live = false;
+    };
+  }, [
+    baseUrl,
+    actorId,
+    canViewDrawerBalance,
+    quickAccess?.panelSettings.showDrawerBalance,
+    panelMessages.drawerBalanceError,
+  ]);
+
   const [pinContext, setPinContext] = useState<SaleProductContext | null>(null);
   const [pinCategory, setPinCategory] = useState("");
   const [pinUnitId, setPinUnitId] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
   const pendingQuick = useRef<{
-    readonly categories: {
-      name: string;
-      tiles: { productId: string; unitId: string }[];
-    }[];
+    readonly categories: SaleQuickAccessReplaceRequest["categories"];
     readonly expectedVersion: string;
     readonly idempotencyKey: string;
+    readonly panelSettings?: SalePanelSettings;
   } | null>(null);
   const loadQuickAccess = useCallback(async (): Promise<void> => {
     setQuickError(null);
     try {
       setQuickAccess(await readSaleQuickAccess(baseUrl));
     } catch {
-      setQuickAccess(null);
       setQuickError(
         locale === "ar"
           ? "تعذر تحميل الوصول السريع."
@@ -513,12 +623,6 @@ function SaleDraftScreen({
   const [calculatorSlot, setCalculatorSlot] = useState<HTMLElement | null>(
     null,
   );
-  useEffect(() => {
-    if (createProductOpen)
-      commitFocus(() =>
-        document.querySelector<HTMLElement>(".sales-create-dialog"),
-      );
-  }, [commitFocus, createProductOpen]);
   const [results, setResults] = useState<SaleProductSearchResponse | null>(
     null,
   );
@@ -581,6 +685,7 @@ function SaleDraftScreen({
   const priceDialogLine =
     draft?.lines.find((line) => line.id === priceDialog?.lineId) ?? null;
   const selectedProductId = selectedLine?.productId ?? null;
+  const [itemContextRevision, setItemContextRevision] = useState(0);
   useEffect(() => {
     let live = true;
     setItemContext(null);
@@ -598,7 +703,7 @@ function SaleDraftScreen({
     return () => {
       live = false;
     };
-  }, [baseUrl, selectedProductId]);
+  }, [baseUrl, selectedProductId, itemContextRevision]);
 
   const performSearch = useCallback(async (): Promise<void> => {
     const normalized = query.trim();
@@ -674,8 +779,10 @@ function SaleDraftScreen({
     const timer = window.setTimeout(() => {
       void performSearch();
     }, 100);
+    debounceTimerRef.current = timer;
     return () => {
       window.clearTimeout(timer);
+      debounceTimerRef.current = null;
     };
   }, [canSearch, performSearch]);
 
@@ -816,20 +923,128 @@ function SaleDraftScreen({
     );
   }
 
+  const resolveAndSubmit = useCallback(
+    async (rawTerm: string, isBarcode: boolean): Promise<void> => {
+      if (editBusy || pendingEdit.current !== null || resolvingRef.current)
+        return;
+      const term = rawTerm.trim();
+      if (term.length === 0) {
+        if (!isBarcode && canCreateProduct) {
+          openCreateProductDialog();
+        }
+        return;
+      }
+
+      if (debounceTimerRef.current !== null) {
+        window.clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+
+      if (results !== null && results.query === term && !searching) {
+        if (results.results.length === 0) {
+          if (canCreateProduct) {
+            openCreateProductDialog(
+              isBarcode || /^[0-9]{6,64}$/u.test(term) ? term : undefined,
+            );
+          }
+          return;
+        }
+        if (isBarcode) {
+          const match = results.results.find(
+            (r) => r.matchedField === "barcode",
+          );
+          if (match !== undefined) addToSale(match.product.id);
+          else if (canCreateProduct) openCreateProductDialog(term);
+          return;
+        }
+        const selected = results.results[focusedResult] ?? results.results[0]!;
+        addToSale(selected.product.id);
+        return;
+      }
+
+      resolvingRef.current = true;
+      setResolving(true);
+      const sequence = ++requestSequence.current;
+      setSearching(true);
+      setSearchError(null);
+      try {
+        const response = await searchSaleProducts(baseUrl, {
+          limit: "50",
+          query: term,
+        });
+        if (sequence !== requestSequence.current) return;
+        setResults(response);
+        if (isBarcode) {
+          setQuery(term);
+        }
+        if (response.results.length === 0) {
+          if (canCreateProduct) {
+            openCreateProductDialog(
+              isBarcode || /^[0-9]{6,64}$/u.test(term) ? term : undefined,
+            );
+          }
+        } else {
+          if (isBarcode) {
+            const match = response.results.find(
+              (r) => r.matchedField === "barcode",
+            );
+            if (match !== undefined) addToSale(match.product.id);
+            else if (canCreateProduct) openCreateProductDialog(term);
+          } else {
+            addToSale(response.results[0]!.product.id);
+          }
+        }
+      } catch (caught) {
+        if (sequence !== requestSequence.current) return;
+        setSearchError(
+          caught instanceof IdentityApiDenied
+            ? copy.searchDenied
+            : copy.searchUnavailable,
+        );
+      } finally {
+        resolvingRef.current = false;
+        setResolving(false);
+        if (sequence === requestSequence.current) {
+          setSearching(false);
+        }
+      }
+    },
+    [
+      baseUrl,
+      canCreateProduct,
+      copy,
+      editBusy,
+      focusedResult,
+      openCreateProductDialog,
+      results,
+      searching,
+    ],
+  );
+
+  const handleAddClick = useCallback((): void => {
+    if (query.trim().length > 0 && query.trim() !== scanQuery.trim()) {
+      void resolveAndSubmit(query, false);
+    } else if (scanQuery.trim().length > 0) {
+      void resolveAndSubmit(scanQuery, true);
+    } else {
+      void resolveAndSubmit(query, false);
+    }
+  }, [query, resolveAndSubmit, scanQuery]);
+
   function addMiscLine(): void {
     const price = miscPrice.trim();
+    const cost = miscCost.trim();
     const validPrice = /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(price);
+    const validCost =
+      cost.length === 0 || /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(cost);
     if (
       miscName.trim().length === 0 ||
       miscUnit.trim().length === 0 ||
       !/^[1-9][0-9]*$/u.test(miscQuantity) ||
-      !validPrice
+      !validPrice ||
+      !validCost
     ) {
-      setMiscValidation(
-        locale === "ar"
-          ? "تحقق من الاسم والوحدة والكمية والسعر."
-          : "Check the name, unit, quantity, and price.",
-      );
+      setMiscValidation(copy.miscValidationMessage);
       return;
     }
     const [whole = "0", fractional = ""] = price.split(".");
@@ -838,10 +1053,21 @@ function SaleDraftScreen({
       BigInt(fractional.padEnd(3, "0"))
     ).toString();
     if (BigInt(unitPriceFils) > 9_223_372_036_854_775_807n) {
-      setMiscValidation(
-        locale === "ar" ? "السعر كبير جداً." : "Price is too large.",
-      );
+      setMiscValidation(copy.miscPriceTooLargeMessage);
       return;
+    }
+    let costFils = "0";
+    if (cost.length > 0) {
+      const [costWhole = "0", costFractional = ""] = cost.split(".");
+      const parsedCostFils = (
+        BigInt(costWhole) * 1_000n +
+        BigInt(costFractional.padEnd(3, "0"))
+      ).toString();
+      if (BigInt(parsedCostFils) > 9_223_372_036_854_775_807n) {
+        setMiscValidation(copy.miscCostTooLargeMessage);
+        return;
+      }
+      costFils = parsedCostFils;
     }
     setMiscValidation(null);
     void mutateDraft(
@@ -851,6 +1077,7 @@ function SaleDraftScreen({
           unitName: miscUnit.trim(),
           quantity: miscQuantity,
           unitPriceFils,
+          costFils,
           expectedVersion,
           idempotencyKey,
         }),
@@ -860,6 +1087,7 @@ function SaleDraftScreen({
         setMiscUnit("");
         setMiscQuantity("1");
         setMiscPrice("");
+        setMiscCost("");
       },
     );
   }
@@ -881,30 +1109,45 @@ function SaleDraftScreen({
     );
   }
 
-  function quickCategories(): {
-    name: string;
-    tiles: { productId: string; unitId: string }[];
-  }[] {
+  function quickCategories(): SaleQuickAccessReplaceRequest["categories"] {
     return (quickAccess?.categories ?? []).map((category) => ({
       name: category.name,
-      tiles: category.tiles.map(({ productId, unitId }) => ({
+      tiles: category.tiles.map(({ productId, unitId, thumbnailDataUrl }) => ({
         productId,
         unitId,
+        ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}),
       })),
     }));
   }
 
-  async function sendPendingQuick(): Promise<void> {
+  async function sendPendingQuick(isSettingsSave = false): Promise<void> {
     const attempt = pendingQuick.current;
     if (attempt === null) return;
     setQuickBusy(true);
     setQuickError(null);
+    if (isSettingsSave || presentationSettingsOpen) {
+      commitFocus(() =>
+        document.querySelector<HTMLElement>(".sales-presentation-dialog"),
+      );
+    }
     try {
-      const saved = await replaceSaleQuickAccess(baseUrl, attempt);
+      const saved = await replaceSaleQuickAccess(baseUrl, {
+        categories: attempt.categories,
+        expectedVersion: attempt.expectedVersion,
+        idempotencyKey: attempt.idempotencyKey,
+        ...(attempt.panelSettings
+          ? { panelSettings: attempt.panelSettings }
+          : {}),
+      });
       pendingQuick.current = null;
       setQuickAccess(saved);
       setPinContext(null);
       setPinError(null);
+      if (isSettingsSave || presentationSettingsOpen) {
+        setPresentationSettingsOpen(false);
+        commitFocus(() => presentationSettingsTriggerRef.current);
+      }
+      setItemContextRevision((revision) => revision + 1);
     } catch (caught) {
       if (
         caught instanceof SalesApiDenied &&
@@ -917,6 +1160,9 @@ function SaleDraftScreen({
             ? "تغيرت إعدادات الوصول السريع. راجعها وأعد التعديل."
             : "Quick access changed elsewhere. Review it and retry your edit.",
         );
+      } else if (caught instanceof SalesRequestTooLarge) {
+        pendingQuick.current = null;
+        setQuickError(panelMessages.quickAccessPayloadTooLargeError);
       } else if (
         caught instanceof SalesApiDenied &&
         caught.denial.code === "sale-quick-access-invalid"
@@ -949,6 +1195,22 @@ function SaleDraftScreen({
     }
   }
 
+  function handleSavePresentationSettings(input: {
+    categories: SaleQuickAccessReplaceRequest["categories"];
+    panelSettings: SalePanelSettings;
+  }): void {
+    if (quickBusy) return;
+    if (pendingQuick.current === null) {
+      pendingQuick.current = {
+        categories: input.categories,
+        panelSettings: input.panelSettings,
+        expectedVersion: quickAccess!.version,
+        idempotencyKey: newSalesIdempotencyKey(),
+      };
+    }
+    void sendPendingQuick(true);
+  }
+
   function replaceQuickCategories(
     categories: ReturnType<typeof quickCategories>,
   ): void {
@@ -963,6 +1225,9 @@ function SaleDraftScreen({
       categories,
       expectedVersion: quickAccess.version,
       idempotencyKey: newSalesIdempotencyKey(),
+      ...(quickAccess.panelSettings
+        ? { panelSettings: quickAccess.panelSettings }
+        : {}),
     };
     void sendPendingQuick();
   }
@@ -1028,7 +1293,13 @@ function SaleDraftScreen({
       );
       return;
     }
-    category.tiles.push({ productId: pinContext.id, unitId: pinUnitId });
+    category.tiles.push({
+      productId: pinContext.id,
+      unitId: pinUnitId,
+      ...(pinContext.thumbnailDataUrl
+        ? { thumbnailDataUrl: pinContext.thumbnailDataUrl }
+        : {}),
+    });
     replaceQuickCategories(categories);
   }
 
@@ -1102,11 +1373,28 @@ function SaleDraftScreen({
               aria-expanded={quickLinksOpen}
               className="sales-quick-toggle"
               data-sale-quick-toggle
+              ref={quickToggleRef}
               onClick={() => setQuickLinksOpen((open) => !open)}
               type="button"
             >
               {locale === "ar" ? "روابط سريعة" : "Quick Links"}
             </button>
+            {canManageQuickAccess ? (
+              <button
+                aria-haspopup="dialog"
+                aria-label={panelMessages.settingsModalTitle}
+                className="sales-presentation-settings-trigger"
+                data-sale-presentation-settings-trigger
+                disabled={quickAccess === null || quickBusy}
+                type="button"
+                onClick={(event) => {
+                  presentationSettingsTriggerRef.current = event.currentTarget;
+                  setPresentationSettingsOpen(true);
+                }}
+              >
+                <span aria-hidden="true">⚙</span>
+              </button>
+            ) : null}
             <div className="sales-search">
               <label className="sales-search-label" htmlFor="sale-draft-search">
                 {copy.searchLabel}
@@ -1144,21 +1432,9 @@ function SaleDraftScreen({
                     setResults(null);
                     return;
                   }
-                  if (
-                    event.key === "Enter" &&
-                    results?.results[focusedResult]
-                  ) {
+                  if (event.key === "Enter") {
                     event.preventDefault();
-                    addToSale(results.results[focusedResult]!.product.id);
-                    return;
-                  }
-                  if (
-                    event.key === "Enter" &&
-                    canCreateProduct &&
-                    results?.results.length === 0
-                  ) {
-                    event.preventDefault();
-                    setCreateProductOpen(true);
+                    void resolveAndSubmit(query, false);
                   }
                 }}
               />
@@ -1177,14 +1453,19 @@ function SaleDraftScreen({
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
                   event.preventDefault();
-                  const code = scanQuery.trim();
-                  if (code.length === 0) return;
-                  setQuery(code);
-                  setResults(null);
-                  setFocusedResult(0);
+                  void resolveAndSubmit(scanQuery, true);
                 }}
               />
             </div>
+            <button
+              className="sales-scan-add-btn"
+              data-sale-entry-add
+              disabled={editBusy || pendingEdit.current !== null || resolving}
+              type="button"
+              onClick={handleAddClick}
+            >
+              {copy.scanAddButton}
+            </button>
           </div>
         ) : draft?.status === "suspended" ? (
           <p className="sales-selection-prompt" role="status">
@@ -1217,7 +1498,7 @@ function SaleDraftScreen({
                 }}
               >
                 <label>
-                  {locale === "ar" ? "الاسم" : "Name"}
+                  {copy.miscNameLabel}
                   <input
                     maxLength={160}
                     required
@@ -1226,7 +1507,7 @@ function SaleDraftScreen({
                   />
                 </label>
                 <label>
-                  {locale === "ar" ? "الوحدة" : "Unit"}
+                  {copy.miscUnitLabel}
                   <input
                     maxLength={64}
                     required
@@ -1235,7 +1516,7 @@ function SaleDraftScreen({
                   />
                 </label>
                 <label>
-                  {locale === "ar" ? "الكمية" : "Quantity"}
+                  {copy.miscQuantityLabel}
                   <input
                     inputMode="numeric"
                     min="1"
@@ -1246,7 +1527,7 @@ function SaleDraftScreen({
                   />
                 </label>
                 <label>
-                  {locale === "ar" ? "سعر الوحدة (د.ع)" : "Unit price (IQD)"}
+                  {copy.miscPriceLabel}
                   <input
                     inputMode="decimal"
                     min="0"
@@ -1257,11 +1538,22 @@ function SaleDraftScreen({
                     onChange={(event) => setMiscPrice(event.target.value)}
                   />
                 </label>
+                <label>
+                  {copy.miscCostLabel}
+                  <input
+                    inputMode="decimal"
+                    min="0"
+                    step="0.001"
+                    type="number"
+                    value={miscCost}
+                    onChange={(event) => setMiscCost(event.target.value)}
+                  />
+                </label>
                 <button
                   disabled={editBusy || pendingEdit.current !== null}
                   type="submit"
                 >
-                  {locale === "ar" ? "إضافة إلى الفاتورة" : "Add to sale"}
+                  {copy.miscSubmitButton}
                 </button>
                 {miscValidation === null ? null : (
                   <p role="alert">{miscValidation}</p>
@@ -1351,8 +1643,17 @@ function SaleDraftScreen({
           <div className="sales-no-results">
             <p>{copy.noResults}</p>
             {canCreateProduct ? (
-              <button type="button" onClick={() => setCreateProductOpen(true)}>
-                {locale === "ar" ? "إنشاء مادة جديدة" : "Create new item"}
+              <button
+                type="button"
+                onClick={() =>
+                  openCreateProductDialog(
+                    /^[0-9]{6,64}$/u.test(query.trim())
+                      ? query.trim()
+                      : undefined,
+                  )
+                }
+              >
+                {copy.createNewItemButton}
               </button>
             ) : null}
           </div>
@@ -1556,65 +1857,266 @@ function SaleDraftScreen({
               }
             }}
           >
-            <SaleQuickAccessPanel
-              value={quickAccess}
-              locale={locale}
-              busy={
-                quickBusy ||
-                pendingQuick.current !== null ||
-                editBusy ||
-                pendingEdit.current !== null
-              }
-              error={quickError}
-              canManage={canManageQuickAccess}
-              onReload={() => {
-                void loadQuickAccess();
-              }}
-              onAdd={(productId, unitId) => {
-                void mutateDraft((expectedVersion, idempotencyKey) =>
-                  addSaleDraftLine(baseUrl, draftId, {
-                    productId,
-                    unitId,
-                    expectedVersion,
-                    idempotencyKey,
-                  }),
-                );
-              }}
-              onRemove={(categoryIndex, tileIndex) => {
-                const categories = quickCategories();
-                categories[categoryIndex]?.tiles.splice(tileIndex, 1);
-                if (categories[categoryIndex]?.tiles.length === 0)
-                  categories.splice(categoryIndex, 1);
-                replaceQuickCategories(categories);
-              }}
-              onRemoveCategory={(categoryIndex) => {
-                const categories = quickCategories();
-                categories.splice(categoryIndex, 1);
-                replaceQuickCategories(categories);
-              }}
-              onMoveTile={(categoryIndex, tileIndex, change) => {
-                const categories = quickCategories();
-                const tiles = categories[categoryIndex]?.tiles;
-                if (tiles === undefined) return;
-                const other = tileIndex + change;
-                if (other < 0 || other >= tiles.length) return;
-                [tiles[tileIndex], tiles[other]] = [
-                  tiles[other]!,
-                  tiles[tileIndex]!,
-                ];
-                replaceQuickCategories(categories);
-              }}
-              onMoveCategory={(categoryIndex, change) => {
-                const categories = quickCategories();
-                const other = categoryIndex + change;
-                if (other < 0 || other >= categories.length) return;
-                [categories[categoryIndex], categories[other]] = [
-                  categories[other]!,
-                  categories[categoryIndex]!,
-                ];
-                replaceQuickCategories(categories);
-              }}
-            />
+            <section
+              className="sales-quick-access"
+              aria-label={locale === "ar" ? "الوصول السريع" : "Quick access"}
+            >
+              <header>
+                <div className="sales-quick-access-title-wrap">
+                  <h3>{locale === "ar" ? "الوصول السريع" : "Quick access"}</h3>
+                  {(quickAccess?.categories.reduce(
+                    (acc, cat) => acc + cat.tiles.length,
+                    0,
+                  ) ?? 0) > 0 ? (
+                    <span className="sales-quick-count-pill">
+                      {locale === "ar"
+                        ? `${quickAccess!.categories.reduce((acc, cat) => acc + cat.tiles.length, 0)} مادة`
+                        : `${quickAccess!.categories.reduce((acc, cat) => acc + cat.tiles.length, 0)} items`}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="sales-quick-access-header-actions">
+                  {canManageQuickAccess ? (
+                    <button
+                      aria-haspopup="dialog"
+                      aria-label={panelMessages.settingsModalTitle}
+                      className="sales-presentation-settings-trigger"
+                      data-sale-presentation-settings-trigger
+                      disabled={quickAccess === null || quickBusy}
+                      type="button"
+                      onClick={(event) => {
+                        presentationSettingsTriggerRef.current =
+                          event.currentTarget;
+                        setPresentationSettingsOpen(true);
+                      }}
+                    >
+                      <span aria-hidden="true">⚙</span>
+                    </button>
+                  ) : null}
+                  {quickError === null ? null : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void loadQuickAccess();
+                      }}
+                    >
+                      {locale === "ar" ? "إعادة التحميل" : "Reload"}
+                    </button>
+                  )}
+                </div>
+              </header>
+              {quickError === null ? null : <p role="status">{quickError}</p>}
+              {quickAccess !== null &&
+              quickAccess.categories.length === 0 &&
+              canManageQuickAccess ? (
+                <p>
+                  {locale === "ar"
+                    ? "ابحث عن مادة ثم ثبّتها هنا."
+                    : "Search for an item, then pin it here."}
+                </p>
+              ) : null}
+              {quickAccess === null || quickAccess.categories.length === 0
+                ? null
+                : quickAccess.categories.map((category, categoryIndex) => (
+                    <div
+                      className="sales-quick-category"
+                      key={`${category.name}-${categoryIndex}`}
+                    >
+                      <div className="sales-quick-category-header">
+                        <strong>{category.name}</strong>
+                        {canManageQuickAccess ? (
+                          <span className="sales-quick-order">
+                            <button
+                              aria-label={`${locale === "ar" ? "نقل الفئة للأعلى" : "Move category up"}: ${category.name}`}
+                              disabled={
+                                quickBusy ||
+                                pendingQuick.current !== null ||
+                                categoryIndex === 0
+                              }
+                              type="button"
+                              onClick={() => {
+                                const categories = quickCategories();
+                                const other = categoryIndex - 1;
+                                if (other < 0) return;
+                                [categories[categoryIndex], categories[other]] =
+                                  [
+                                    categories[other]!,
+                                    categories[categoryIndex]!,
+                                  ];
+                                replaceQuickCategories(categories);
+                              }}
+                            >
+                              ↑
+                            </button>
+                            <button
+                              aria-label={`${locale === "ar" ? "نقل الفئة للأسفل" : "Move category down"}: ${category.name}`}
+                              disabled={
+                                quickBusy ||
+                                pendingQuick.current !== null ||
+                                categoryIndex ===
+                                  quickAccess.categories.length - 1
+                              }
+                              type="button"
+                              onClick={() => {
+                                const categories = quickCategories();
+                                const other = categoryIndex + 1;
+                                if (other >= categories.length) return;
+                                [categories[categoryIndex], categories[other]] =
+                                  [
+                                    categories[other]!,
+                                    categories[categoryIndex]!,
+                                  ];
+                                replaceQuickCategories(categories);
+                              }}
+                            >
+                              ↓
+                            </button>
+                            <button
+                              aria-label={`${locale === "ar" ? "إزالة الفئة" : "Remove category"}: ${category.name}`}
+                              disabled={
+                                quickBusy || pendingQuick.current !== null
+                              }
+                              type="button"
+                              onClick={() => {
+                                const categories = quickCategories();
+                                categories.splice(categoryIndex, 1);
+                                replaceQuickCategories(categories);
+                              }}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="sales-quick-tiles">
+                        {category.tiles.map((tile, tileIndex) => (
+                          <div
+                            className="sales-quick-tile"
+                            key={`${tile.productId}-${tile.unitId}`}
+                          >
+                            <button
+                              aria-label={`${locale === "ar" ? "إضافة إلى الفاتورة" : "Add to sale"}: ${tile.displayName ?? (locale === "ar" ? "مادة غير متاحة" : "Unavailable item")} (${tile.unitName ?? ""})`}
+                              className="sales-quick-tile-add"
+                              data-sale-quick-add={tile.productId}
+                              disabled={
+                                quickBusy ||
+                                pendingQuick.current !== null ||
+                                !tile.available
+                              }
+                              type="button"
+                              onClick={() => {
+                                void mutateDraft(
+                                  (expectedVersion, idempotencyKey) =>
+                                    addSaleDraftLine(baseUrl, draftId, {
+                                      productId: tile.productId,
+                                      unitId: tile.unitId,
+                                      expectedVersion,
+                                      idempotencyKey,
+                                    }),
+                                );
+                              }}
+                            >
+                              {tile.thumbnailDataUrl ? (
+                                <img
+                                  alt=""
+                                  className="sales-quick-tile-thumbnail"
+                                  src={tile.thumbnailDataUrl}
+                                />
+                              ) : null}
+                              <strong>
+                                {tile.displayName ??
+                                  (locale === "ar"
+                                    ? "مادة غير متاحة"
+                                    : "Unavailable item")}
+                              </strong>
+                              <span>
+                                {tile.currentUnitPriceFils === null
+                                  ? locale === "ar"
+                                    ? "تحتاج إلى مراجعة المدير"
+                                    : "Manager review needed"
+                                  : `${tile.unitName} · ${formatCurrencyFromFils(BigInt(tile.currentUnitPriceFils), locale)}`}
+                              </span>
+                            </button>
+                            {canManageQuickAccess ? (
+                              <div className="sales-quick-order">
+                                <button
+                                  aria-label={`${locale === "ar" ? "نقل المادة للأعلى" : "Move item up"}: ${tile.displayName ?? tile.productId}`}
+                                  disabled={
+                                    quickBusy ||
+                                    pendingQuick.current !== null ||
+                                    tileIndex === 0
+                                  }
+                                  type="button"
+                                  onClick={() => {
+                                    const categories = quickCategories();
+                                    const tiles =
+                                      categories[categoryIndex]?.tiles;
+                                    if (tiles === undefined) return;
+                                    const other = tileIndex - 1;
+                                    if (other < 0) return;
+                                    [tiles[tileIndex], tiles[other]] = [
+                                      tiles[other]!,
+                                      tiles[tileIndex]!,
+                                    ];
+                                    replaceQuickCategories(categories);
+                                  }}
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  aria-label={`${locale === "ar" ? "نقل المادة للأسفل" : "Move item down"}: ${tile.displayName ?? tile.productId}`}
+                                  disabled={
+                                    quickBusy ||
+                                    pendingQuick.current !== null ||
+                                    tileIndex === category.tiles.length - 1
+                                  }
+                                  type="button"
+                                  onClick={() => {
+                                    const categories = quickCategories();
+                                    const tiles =
+                                      categories[categoryIndex]?.tiles;
+                                    if (tiles === undefined) return;
+                                    const other = tileIndex + 1;
+                                    if (other >= tiles.length) return;
+                                    [tiles[tileIndex], tiles[other]] = [
+                                      tiles[other]!,
+                                      tiles[tileIndex]!,
+                                    ];
+                                    replaceQuickCategories(categories);
+                                  }}
+                                >
+                                  ↓
+                                </button>
+                                <button
+                                  aria-label={`${locale === "ar" ? "إزالة المادة" : "Remove item"}: ${tile.displayName ?? tile.productId}`}
+                                  disabled={
+                                    quickBusy || pendingQuick.current !== null
+                                  }
+                                  type="button"
+                                  onClick={() => {
+                                    const categories = quickCategories();
+                                    categories[categoryIndex]?.tiles.splice(
+                                      tileIndex,
+                                      1,
+                                    );
+                                    if (
+                                      categories[categoryIndex]?.tiles
+                                        .length === 0
+                                    )
+                                      categories.splice(categoryIndex, 1);
+                                    replaceQuickCategories(categories);
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+            </section>
             {pendingQuick.current === null ? null : (
               <button
                 disabled={quickBusy}
@@ -1655,6 +2157,7 @@ function SaleDraftScreen({
               if (line.productId === null) return;
               setSelectedLineId(line.id);
               setRecordProductId(line.productId);
+              commitFocus(() => recordDialogRef.current);
             }}
             onOpenPrice={(line) => {
               setSelectedLineId(line.id);
@@ -1720,24 +2223,57 @@ function SaleDraftScreen({
           onCancelDelete={() => setDeleteConfirm(false)}
         />
       </section>
-      {draft === null || selectedLine === null ? null : (
-        <div className="sales-side-stack">
+      <div className="sales-side-stack">
+        {draft === null || selectedLine === null ? null : (
           <SalesDraftContextPanel
             copy={copy}
             draft={draft}
             locale={locale}
             selectedLine={selectedLine}
-            itemContext={itemContext}
+            itemContext={
+              itemContext?.id === selectedLine.productId ? itemContext : null
+            }
             itemContextUnavailable={itemContextUnavailable}
+            panelSettings={
+              quickAccess?.panelSettings ?? DEFAULT_SALE_PANEL_SETTINGS
+            }
             onToggleCollapse={() => setIsContextCollapsed((prev) => !prev)}
           />
+        )}
+        <div className="sales-calculator-slot-wrap">
+          {canViewDrawerBalance &&
+          (quickAccess?.panelSettings.showDrawerBalance ?? false) ? (
+            <div
+              className="sales-drawer-balance"
+              data-sales-drawer-balance
+              role="status"
+              aria-live="polite"
+              data-testid="sales-drawer-balance"
+            >
+              <span className="sales-drawer-balance-label">
+                {panelMessages.currentEmployeeDrawer}
+              </span>
+              <span className="sales-drawer-balance-value">
+                {drawerLoading
+                  ? panelMessages.drawerBalanceLoading
+                  : drawerError !== null
+                    ? drawerError
+                    : drawerBalance !== null &&
+                        drawerBalance.actorId === actorId
+                      ? drawerBalance.value === null
+                        ? panelMessages.drawerBalanceUnavailable
+                        : formatCurrencyFromFils(drawerBalance.value, locale)
+                      : "—"}
+              </span>
+            </div>
+          ) : null}
           <div
             className="sales-calculator-slot"
             id="sales-calculator-slot"
             ref={setCalculatorSlot}
           />
         </div>
-      )}
+      </div>
       {isContextCollapsed && draft !== null ? (
         <button
           type="button"
@@ -1830,28 +2366,62 @@ function SaleDraftScreen({
       {createProductOpen ? (
         <div className="sales-create-backdrop">
           <div
-            aria-label={
-              locale === "ar" ? "إنشاء مادة جديدة" : "Create new item"
-            }
+            aria-label={copy.createNewItemButton}
             aria-modal="true"
             className="sales-create-dialog"
+            ref={createDialogRef}
             role="dialog"
             tabIndex={-1}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closeCreateProductDialog();
+                return;
+              }
+              if (event.key !== "Tab") return;
+              const focusable = Array.from(
+                createDialogRef.current?.querySelectorAll<HTMLElement>(
+                  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+                ) ?? [],
+              ).filter(
+                (element) =>
+                  element.getClientRects().length > 0 &&
+                  getComputedStyle(element).visibility !== "hidden",
+              );
+              if (focusable.length === 0) {
+                event.preventDefault();
+                createDialogRef.current?.focus();
+                return;
+              }
+              const activeIndex = focusable.indexOf(
+                document.activeElement as HTMLElement,
+              );
+              if (event.shiftKey && activeIndex <= 0) {
+                event.preventDefault();
+                focusable[focusable.length - 1]?.focus();
+              } else if (
+                !event.shiftKey &&
+                (activeIndex === -1 || activeIndex === focusable.length - 1)
+              ) {
+                event.preventDefault();
+                focusable[0]?.focus();
+              }
+            }}
           >
             <ProductForm
               baseUrl={baseUrl}
-              {...(/^[0-9]{6,64}$/u.test(query.trim())
-                ? { initialBarcode: query.trim() }
-                : {})}
-              onCancel={() => {
-                setCreateProductOpen(false);
-                commitFocus(() => searchRef.current);
-              }}
+              {...(createdBarcode !== null
+                ? { initialBarcode: createdBarcode }
+                : /^[0-9]{6,64}$/u.test(query.trim())
+                  ? { initialBarcode: query.trim() }
+                  : {})}
+              onCancel={closeCreateProductDialog}
               onSuccess={(created) => {
                 setCreateProductOpen(false);
-                setQuery(created.displayName);
-                setResults(null);
-                commitFocus(() => searchRef.current);
+                setCreatedBarcode(null);
+                createProductReturnFocus.current = null;
+                addToSale(created.id);
               }}
             />
           </div>
@@ -1863,10 +2433,18 @@ function SaleDraftScreen({
             aria-label={locale === "ar" ? "سجل المادة" : "Item record"}
             aria-modal="true"
             className="sales-create-dialog sales-item-record-dialog"
+            ref={recordDialogRef}
             role="dialog"
             tabIndex={-1}
             onKeyDown={(event) => {
-              if (event.key === "Escape") closeRecord();
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closeRecord();
+              } else if (event.key === "Tab") {
+                event.preventDefault();
+                recordDialogRef.current?.querySelector("button")?.focus();
+              }
             }}
           >
             <h3>{locale === "ar" ? "سجل المادة" : "Item record"}</h3>
@@ -1946,6 +2524,22 @@ function SaleDraftScreen({
           </div>
         </div>
       )}
+      {presentationSettingsOpen && quickAccess !== null ? (
+        <SalesPresentationSettings
+          key={quickAccess.version}
+          value={quickAccess}
+          locale={locale}
+          busy={quickBusy}
+          retryRequired={pendingQuick.current !== null}
+          error={quickError}
+          onSave={handleSavePresentationSettings}
+          onClose={() => {
+            if (quickBusy || pendingQuick.current !== null) return;
+            setPresentationSettingsOpen(false);
+            commitFocus(() => presentationSettingsTriggerRef.current);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1970,10 +2564,9 @@ function SalesFooter({
   readonly onCancelDelete?: () => void;
 }): React.JSX.Element {
   const ar = locale === "ar";
-  const [returnOpen, setReturnOpen] = useState(false);
   const disabledReason = ar
-    ? "إتمام البيع والبحث في الفواتير والطباعة غير متاحة حتى اعتماد قواعد المحاسبة والصلاحيات. تغييرات المسودة المؤكدة محفوظة تلقائياً."
-    : "Checkout, completed invoices, and printing are unavailable until accounting rules and permissions are approved. Confirmed draft edits are saved automatically.";
+    ? "إتمام البيع والبحث في الفواتير والإرجاع والطباعة غير متاحة حتى اعتماد قواعد المحاسبة والصلاحيات. تغييرات المسودة المؤكدة محفوظة تلقائياً."
+    : "Checkout, completed-invoice search, returns, and printing are unavailable until accounting rules and permissions are approved. Confirmed draft edits are saved automatically.";
   return (
     <footer
       className="sales-action-footer"
@@ -1989,12 +2582,7 @@ function SalesFooter({
         <button disabled type="button">
           {ar ? "نقد" : "Cash"}
         </button>
-        <button
-          aria-expanded={returnOpen}
-          disabled={state === "no-draft"}
-          onClick={() => setReturnOpen((open) => !open)}
-          type="button"
-        >
+        <button disabled aria-describedby="sales-save-gate" type="button">
           {ar ? "إرجاع" : "Return"}
         </button>
         <button disabled aria-describedby="sales-save-gate" type="button">
@@ -2031,13 +2619,6 @@ function SalesFooter({
             {ar ? "إلغاء" : "Cancel"}
           </button>
         </div>
-      ) : null}
-      {returnOpen ? (
-        <p role="status">
-          {ar
-            ? "يفتح الإرجاع من فاتورة مكتملة. نشر الإرجاع ينتظر اعتماد قواعد التصرف في البضاعة G-02 وأمثلة المحاسبة G-01."
-            : "Start a return from a completed invoice. Return posting awaits approved G-02 disposition rules and G-01 accounting examples."}
-        </p>
       ) : null}
       <p id="sales-save-gate" role="status">
         {disabledReason}

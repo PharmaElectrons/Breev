@@ -432,8 +432,10 @@ describe("local REST health contract", () => {
       "reports.inventory.export",
       "reports.inventory.view",
       "sales.drafts.manage",
+      "sales.drawer_balance.view",
       "sales.misc.manage",
       "sales.quick_access.manage",
+      "sales.wholesale_price.view",
       "suppliers.manage",
     ]);
   });

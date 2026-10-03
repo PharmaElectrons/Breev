@@ -5,6 +5,10 @@ import {
   BREEV_CSRF_VALUE,
   LOCAL_DEVICE_ID_HEADER,
   LOCAL_DEVICE_SESSION_HEADER,
+  entitlementContextSchema,
+  identityStateSchema,
+  type EntitlementContext,
+  type IdentityAuthenticatedState,
   type StepUpAction,
 } from "@breev/contracts/local-rest";
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -18,14 +22,17 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { Pool } from "pg";
 
 import {
   createSeparatedDatabaseRoles,
+  createSeparatedDatabaseRolesFromUrl,
   type SeparatedDatabaseRoles,
 } from "../database-roles.js";
 import { mintLicence, TEST_ISSUER_PUBLIC_KEYS } from "../licence-issuer.js";
 import {
+  COLD_LOCAL_API_READY_TIMEOUT_MS,
   spawnLocalApiProcess,
   stopProcess,
   waitForHealth as waitForLocalApiHealth,
@@ -87,21 +94,36 @@ test.describe.serial("Main pairing screen", () => {
   let databaseRoles: SeparatedDatabaseRoles;
   let lanPort: number;
   let pharmacyId: string;
-  let postgres: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: PairingRenderer;
   let terminal: JoinedTerminal;
   let terminalDeviceName: string;
 
   test.beforeAll(async () => {
     await mkdir(evidenceDirectory(), { recursive: true });
-    postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-    databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    const administratorUrl = process.env.BREEV_TEST_POSTGRES_ADMIN_URL;
+    if (administratorUrl === undefined) {
+      postgres = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+      databaseRoles = await createSeparatedDatabaseRoles(postgres);
+    } else {
+      databaseRoles =
+        await createSeparatedDatabaseRolesFromUrl(administratorUrl);
+    }
     credentials = createMainDeviceCredentials();
     apiPort = await reservePort();
     lanPort = await reservePort();
     apiOrigin = `http://127.0.0.1:${apiPort}`;
     api = spawnLocalApi(apiPort, lanPort, databaseRoles, credentials);
-    await waitForLocalApiHealth(apiOrigin, "healthy", api, 30_000);
+    const readinessStartedAt = Date.now();
+    await waitForLocalApiHealth(
+      apiOrigin,
+      "healthy",
+      api,
+      COLD_LOCAL_API_READY_TIMEOUT_MS,
+    );
+    console.info(
+      `[test readiness] devices-pairing cold local API healthy in ${String(Date.now() - readinessStartedAt)} ms`,
+    );
     administrator = new Pool({ connectionString: databaseRoles.migrationUrl });
     renderer = await startPairingRenderer(apiOrigin, credentials);
   });
@@ -150,16 +172,32 @@ test.describe.serial("Main pairing screen", () => {
     await expect(page.getByText("Seats in use")).not.toBeVisible();
 
     pharmacyId = await readPharmacyId(apiOrigin, credentials);
-    await installLicence(apiOrigin, credentials, {
+    const installedEntitlement = await installLicence(apiOrigin, credentials, {
       mainDeviceId: credentials.deviceId,
       permittedDeviceCount: 4,
       pharmacyId,
     });
-
-    // Once the licence is installed, the capability is granted and the panel appears.
+    expect(
+      installedEntitlement.capabilities,
+      "licence-install response should grant the device capability",
+    ).toContain("additional-device-pos");
+    const identityAfterInstall = await readAuthenticatedIdentityState(
+      apiOrigin,
+      credentials,
+    );
+    expect(
+      identityAfterInstall.entitlement.capabilities,
+      "fresh identity state should reflect the installed device capability",
+    ).toContain("additional-device-pos");
+    // The authoritative API snapshots are licensed; this live wait checks that
+    // the renderer's shared identity state catches up without a page reload.
+    const additionalPosHeading = page.getByRole("heading", {
+      name: "Additional POS terminals",
+    });
     await expect(
-      page.getByRole("heading", { name: "Additional POS terminals" }),
-    ).toBeVisible();
+      additionalPosHeading,
+      `API entitlement is licensed after installation; renderer panel did not appear (capabilities: ${identityAfterInstall.entitlement.capabilities.join(", ")})`,
+    ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("Seats in use")).toBeVisible();
     await expect(seatUsage(page)).toHaveText("1 / 4");
     await expect(seatUsageBreakdown(page)).toHaveText("1 Main + 0 terminals");
@@ -762,7 +800,7 @@ async function installLicence(
     readonly permittedDeviceCount: number;
     readonly pharmacyId: string;
   },
-): Promise<void> {
+): Promise<EntitlementContext> {
   const challengeId = await approveStepUp(
     origin,
     mainDevice,
@@ -784,11 +822,45 @@ async function installLicence(
       idempotencyKey: randomUUID(),
     },
   );
-  if (installed.status !== 201) {
+  const entitlement = entitlementContextSchema.safeParse(installed.body);
+  const capabilities = entitlement.success ? entitlement.data.capabilities : [];
+  if (
+    installed.status !== 201 ||
+    !entitlement.success ||
+    !capabilities.includes("additional-device-pos")
+  ) {
     throw new Error(
-      `The test licence was not installed: ${JSON.stringify(installed)}`,
+      `Licence install phase did not return the device capability (status=${String(installed.status)}; capabilities=${capabilities.join(",") || "unavailable"})`,
     );
   }
+  return entitlement.data;
+}
+
+async function readAuthenticatedIdentityState(
+  origin: string,
+  mainDevice: MainDeviceCredentials,
+): Promise<IdentityAuthenticatedState> {
+  const response = await apiRequest(
+    origin,
+    mainDevice,
+    "GET",
+    "/identity/state",
+  );
+  const identity = identityStateSchema.safeParse(response.body);
+  if (
+    response.status !== 200 ||
+    !identity.success ||
+    identity.data.state !== "authenticated"
+  ) {
+    const state =
+      typeof response.body.state === "string"
+        ? response.body.state
+        : "unavailable";
+    throw new Error(
+      `Identity-state phase did not return an authenticated session (status=${String(response.status)}; state=${state})`,
+    );
+  }
+  return identity.data;
 }
 
 async function createUser(
@@ -951,7 +1023,7 @@ async function startPairingRenderer(
             [LOCAL_DEVICE_SESSION_HEADER]: mainDevice.sessionToken,
             Origin: "breev://app",
           },
-          method: request.method ?? "GET",
+          method,
         });
         response.writeHead(upstream.status, {
           "cache-control": "no-store",
@@ -1031,7 +1103,9 @@ function spawnLocalApi(
     },
     [
       "--import",
-      path.resolve(import.meta.dirname, "../licence-key-override.mjs"),
+      pathToFileURL(
+        path.resolve(import.meta.dirname, "../licence-key-override.mjs"),
+      ).href,
     ],
   );
 }

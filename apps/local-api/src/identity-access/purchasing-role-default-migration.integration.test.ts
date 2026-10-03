@@ -133,10 +133,11 @@ describe.sequential("purchasing role default migrations", () => {
       "catalog.item.search",
       "suppliers.manage",
     ]);
-    // 0018–0025, 0027–0029, 0031/0035, and 0036 each advance the pharmacy identity revision
-    // when their new permission is granted to the owner. This customized
-    // purchasing role remains untouched by every default migration.
-    expect(await revisions()).toEqual({ pharmacy: "15", role: "1" });
+    // 0018–0025 and 0027–0029 advance the pharmacy identity revision for
+    // owner grants; 0031/0035 add and remove patient grants; 0036 adds report
+    // grants to owner; and 0042 adds sales grants to owner/manager. The
+    // customized purchasing role remains untouched by every default migration.
+    expect(await revisions()).toEqual({ pharmacy: "16", role: "1" });
 
     // Recreate the exact legacy default and execute the migration body to
     // prove the eligible path independently of Drizzle's migration journal.
@@ -155,7 +156,7 @@ describe.sequential("purchasing role default migrations", () => {
       "catalog.item.search",
       "purchases.drafts.manage",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "16", role: "2" });
+    expect(await revisions()).toEqual({ pharmacy: "17", role: "2" });
 
     const reviewMigrationSql = await readFile(
       path.join(MIGRATIONS_FOLDER, "0018_review_posted_purchases.sql"),
@@ -168,7 +169,7 @@ describe.sequential("purchasing role default migrations", () => {
       "purchases.drafts.manage",
       "purchases.posted.view",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "17", role: "3" });
+    expect(await revisions()).toEqual({ pharmacy: "18", role: "3" });
 
     // Replaying the previous migration must not add duplicate grants or
     // advance either revision.
@@ -179,7 +180,7 @@ describe.sequential("purchasing role default migrations", () => {
       "purchases.drafts.manage",
       "purchases.posted.view",
     ]);
-    expect(await revisions()).toEqual({ pharmacy: "17", role: "3" });
+    expect(await revisions()).toEqual({ pharmacy: "18", role: "3" });
   }, 120_000);
 
   async function purchasingGrants(): Promise<string[]> {

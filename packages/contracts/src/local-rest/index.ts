@@ -38,6 +38,23 @@ export function normalizeIndicDigits(value: string): string {
   return normalized;
 }
 
+function utf8ByteLength(value: string): number {
+  let byteLength = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined) continue;
+    byteLength +=
+      codePoint <= 0x7f
+        ? 1
+        : codePoint <= 0x7ff
+          ? 2
+          : codePoint <= 0xffff
+            ? 3
+            : 4;
+  }
+  return byteLength;
+}
+
 export const PHARMACY_ROLE_KEYS = [
   "owner",
   "manager",
@@ -137,8 +154,10 @@ export const IMPLEMENTED_PERMISSION_NAMES = [
   "reports.inventory.export",
   "reports.inventory.view",
   "sales.drafts.manage",
+  "sales.drawer_balance.view",
   "sales.misc.manage",
   "sales.quick_access.manage",
+  "sales.wholesale_price.view",
   "suppliers.manage",
 ] as const;
 export type ImplementedPermissionName =
@@ -5039,6 +5058,7 @@ export const saleDraftMiscLineAddRequestSchema =
     unitName: z.string().trim().min(1).max(64),
     quantity: saleQuantitySchema,
     unitPriceFils: saleMoneySchema,
+    costFils: saleMoneySchema.optional(),
   });
 export const saleDraftLineChangeRequestSchema = saleDraftMutationRequestSchema
   .extend({
@@ -5088,7 +5108,14 @@ export const saleProductContextSchema = z.strictObject({
   id: z.uuidv7(),
   displayName: z.string().min(1),
   scientificName: optionalProductTextSchema(160),
+  wholesalePriceFils: saleMoneySchema.nullable(),
+  thumbnailDataUrl: z
+    .string()
+    .max(100_000)
+    .regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/u)
+    .nullable(),
   currentRetailPriceFils: saleMoneySchema,
+  currentRetailUnitName: productUnitNameSchema,
   inventoryUnitName: productUnitNameSchema,
   packageUnits: z.array(
     z.strictObject({
@@ -5110,6 +5137,11 @@ export const saleProductContextSchema = z.strictObject({
   inventory: z.strictObject({
     onHandBaseUnits: signedIntegerStringSchema.nullable(),
     estimatedSurplusBaseUnits: nonNegativeIntegerStringSchema.nullable(),
+    consumptionAverages: z.strictObject({
+      oneMonth: nonNegativeIntegerStringSchema.nullable(),
+      twoMonths: nonNegativeIntegerStringSchema.nullable(),
+      threeMonths: nonNegativeIntegerStringSchema.nullable(),
+    }),
     batches: z.array(
       z.strictObject({
         batchId: z.uuidv7(),
@@ -5137,17 +5169,54 @@ const saleQuickAccessCategoryInputSchema = z.strictObject({
       z.strictObject({
         productId: z.uuidv7(),
         unitId: z.uuidv7(),
+        thumbnailDataUrl:
+          saleProductContextSchema.shape.thumbnailDataUrl.optional(),
       }),
     )
     .max(30),
 });
-export const saleQuickAccessReplaceRequestSchema = z.strictObject({
-  expectedVersion: decimalRevisionSchema,
-  idempotencyKey: z.uuid(),
-  categories: z.array(saleQuickAccessCategoryInputSchema).max(12),
+export const SALE_QUICK_ACCESS_REPLACE_MAX_BODY_BYTES = 1024 * 1024;
+export const SALE_ITEM_PANEL_FIELDS = [
+  "scientificName",
+  "balance",
+  "packaging",
+  "levels",
+  "batches",
+  "expiry",
+  "consumption",
+  "surplus",
+  "thumbnail",
+  "wholesalePrice",
+] as const;
+export const salePanelSettingsSchema = z.strictObject({
+  visibleFields: z
+    .array(z.enum(SALE_ITEM_PANEL_FIELDS))
+    .max(10)
+    .refine((fields) => new Set(fields).size === fields.length),
+  consumptionMonths: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  showDrawerBalance: z.boolean(),
 });
+export const DEFAULT_SALE_PANEL_SETTINGS = salePanelSettingsSchema.parse({
+  visibleFields: [...SALE_ITEM_PANEL_FIELDS],
+  consumptionMonths: 3,
+  showDrawerBalance: true,
+});
+export const saleQuickAccessReplaceRequestSchema = z
+  .strictObject({
+    expectedVersion: decimalRevisionSchema,
+    idempotencyKey: z.uuid(),
+    categories: z.array(saleQuickAccessCategoryInputSchema).max(12),
+    panelSettings: salePanelSettingsSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      utf8ByteLength(JSON.stringify(value)) <=
+      SALE_QUICK_ACCESS_REPLACE_MAX_BODY_BYTES,
+    { message: "Quick-access settings body is too large" },
+  );
 export const saleQuickAccessSchema = z.strictObject({
   version: decimalRevisionSchema,
+  panelSettings: salePanelSettingsSchema,
   categories: z.array(
     z.strictObject({
       name: z.string().min(1),
@@ -5156,6 +5225,7 @@ export const saleQuickAccessSchema = z.strictObject({
           productId: z.uuidv7(),
           unitId: z.uuidv7(),
           available: z.boolean(),
+          thumbnailDataUrl: saleProductContextSchema.shape.thumbnailDataUrl,
           displayName: z.string().min(1).nullable(),
           unitName: z.string().min(1).nullable(),
           currentUnitPriceFils: saleMoneySchema.nullable(),
@@ -5194,6 +5264,17 @@ const salesReadDenialResponses = {
   401: identityDenialSchema,
   403: identityOrEntitlementDenialSchema,
 } as const;
+export const saleDrawerBalanceSchema = z.strictObject({
+  balanceFils: signedBigintSchema.nullable(),
+});
+export const saleDrawerBalanceContract = {
+  method: "GET",
+  path: "/sales/drawer-balance",
+  request: {},
+  responses: { 200: saleDrawerBalanceSchema, ...salesReadDenialResponses },
+} as const;
+export const saleDrawerBalancePath = (): string =>
+  saleDrawerBalanceContract.path;
 const salesCommandDenialResponses = {
   ...salesReadDenialResponses,
   400: salesDenialSchema,
@@ -5239,7 +5320,11 @@ export const saleQuickAccessReplaceContract = {
   method: "POST",
   path: "/sales/quick-access",
   request: { body: saleQuickAccessReplaceRequestSchema },
-  responses: { 200: saleQuickAccessSchema, ...salesCommandDenialResponses },
+  responses: {
+    200: saleQuickAccessSchema,
+    413: localSecurityDenialSchema,
+    ...salesCommandDenialResponses,
+  },
 } as const;
 export const saleDraftReadContract = {
   method: "GET",
@@ -5353,6 +5438,7 @@ export const saleDraftDiscardsPath = (draftId: string): string =>
   `/sales/drafts/${draftId}/discards`;
 
 export const SALES_CONTRACTS = [
+  saleDrawerBalanceContract,
   saleProductSearchContract,
   saleProductContextContract,
   saleQuickAccessReadContract,
@@ -5809,6 +5895,8 @@ export type SaleProductSearchResponse = z.infer<
   typeof saleProductSearchResponseSchema
 >;
 export type SaleProductContext = z.infer<typeof saleProductContextSchema>;
+export type SalePanelSettings = z.infer<typeof salePanelSettingsSchema>;
+export type SaleDrawerBalance = z.infer<typeof saleDrawerBalanceSchema>;
 export type SaleQuickAccess = z.infer<typeof saleQuickAccessSchema>;
 export type SaleQuickAccessReplaceRequest = z.infer<
   typeof saleQuickAccessReplaceRequestSchema

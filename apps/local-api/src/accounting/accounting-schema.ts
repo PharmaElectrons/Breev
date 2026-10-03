@@ -42,6 +42,7 @@ export const accountingJournalLines = pgTable(
     entryId: uuid("entry_id").notNull(),
     ordinal: integer().notNull(),
     accountCode: text("account_code").notNull(),
+    drawerUserId: uuid("drawer_user_id"),
     supplierId: uuid("supplier_id"),
     debitFils: bigint("debit_fils", { mode: "bigint" }).default(0n).notNull(),
     creditFils: bigint("credit_fils", { mode: "bigint" }).default(0n).notNull(),

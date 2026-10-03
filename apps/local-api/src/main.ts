@@ -1,7 +1,7 @@
 import "reflect-metadata";
 
 import { NestFactory } from "@nestjs/core";
-import { json, type RequestHandler } from "express";
+import type { RequestHandler } from "express";
 import type { Server } from "node:https";
 
 import { AppModule } from "./app.module.js";
@@ -15,6 +15,7 @@ import { createPairingChannelHandler } from "./devices/pairing.routes.js";
 import { LocalDatabaseService } from "./local-database.service.js";
 import {
   createMainRequestBodyErrorMiddleware,
+  createMainRequestBodyParser,
   createMainRequestSecurityMiddleware,
   MainDeviceSecurityService,
 } from "./main-device/main-device-security.service.js";
@@ -48,7 +49,7 @@ async function bootstrap(): Promise<void> {
       security: mainDeviceSecurity,
     }),
   );
-  app.use(json({ limit: 8 * 1024, strict: true, type: "application/json" }));
+  app.use(createMainRequestBodyParser());
   app.use(createMainRequestBodyErrorMiddleware(mainDeviceSecurity));
   // One handler, mounted twice: the loopback pipeline runs it inside Nest, and
   // the LAN listener runs it ahead of the pairing channel so a quarantined

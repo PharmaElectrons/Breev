@@ -3,6 +3,7 @@ import {
   productSearchRequestSchema,
   saleProductSearchContract,
   saleProductContextContract,
+  saleDrawerBalanceContract,
   saleDraftCreateContract,
   saleDraftCreateRequestSchema,
   saleDraftListContract,
@@ -84,6 +85,13 @@ export class SaleDraftController {
       }
       return await this.drafts.readProductContext(request, parsedId.data);
     });
+  }
+
+  @Get(saleDrawerBalanceContract.path)
+  public async readDrawerBalance(@Req() request: Request) {
+    return await translateSaleDraftDenial(() =>
+      this.drafts.readDrawerBalance(request),
+    );
   }
 
   @Get(saleDraftListContract.path)

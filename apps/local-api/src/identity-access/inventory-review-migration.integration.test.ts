@@ -157,18 +157,18 @@ describe.sequential("migration 0021: inventory review", () => {
       ["pharmacist", "inventory.review"],
       ["purchasing_employee", "inventory.review"],
     ]);
-    // Migration 0025 grants sales.drafts.manage to owner, manager, and
-    // pharmacist among these roles. Migrations 0027–0029 each grant another
-    // permission to owner and manager; 0030 grants report permissions to owner.
+    // Migrations 0025 and 0027–0029 grant sales permissions; 0031 grants
+    // patient permissions; 0035 removes those grants; 0036 grants report
+    // permissions to the owner; and 0042 adds two sales grants to owner/manager.
     expect(first.revisions).toEqual({
       accountant: "2",
       inventory_employee: "4",
-      manager: "11",
-      owner: "14",
+      manager: "12",
+      owner: "15",
       pharmacist: "7",
       purchasing_employee: "5",
     });
-    expect(first.pharmacyRevision).toBe("14");
+    expect(first.pharmacyRevision).toBe("15");
 
     await runMigrations(application, databaseRoles.migrationUrl);
     expect(await snapshot()).toEqual(first);

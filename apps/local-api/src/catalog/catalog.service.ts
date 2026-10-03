@@ -258,7 +258,9 @@ export class CatalogService {
   public async readSaleContext(
     request: Request,
     productId: string,
-  ): Promise<Omit<SaleProductContext, "inventory"> | undefined> {
+  ): Promise<
+    Omit<SaleProductContext, "inventory" | "thumbnailDataUrl"> | undefined
+  > {
     const context = await this.identity.requirePermission(
       request,
       CATALOG_SEARCH_PERMISSION,
@@ -281,23 +283,31 @@ export class CatalogService {
        order by ordinal`,
       [context.pharmacyId, productId],
     );
-    return saleProductContextSchema.omit({ inventory: true }).parse({
-      id: product.id,
-      displayName: product.displayName,
-      scientificName: product.scientificName,
-      currentRetailPriceFils: product.pricing.retailPriceFils,
-      inventoryUnitName: product.packaging.inventoryUnitName,
-      packageUnits: product.packaging.packageUnits,
-      eligibleUnits: units.rows.map((unit) => ({
-        unitId: unit.id,
-        unitName: unit.name,
-        baseUnitsPerUnit: unit.ratio,
-      })),
-      stockLevels: {
-        minimumLevel: product.stockLevels.minimumLevel,
-        maximumLevel: product.stockLevels.maximumLevel,
-      },
-    });
+    return saleProductContextSchema
+      .omit({ inventory: true, thumbnailDataUrl: true })
+      .parse({
+        id: product.id,
+        displayName: product.displayName,
+        scientificName: product.scientificName,
+        wholesalePriceFils: context.permissions.includes(
+          "sales.wholesale_price.view",
+        )
+          ? product.pricing.wholesalePriceFils
+          : null,
+        currentRetailPriceFils: product.pricing.retailPriceFils,
+        currentRetailUnitName: row.sale_default_name,
+        inventoryUnitName: product.packaging.inventoryUnitName,
+        packageUnits: product.packaging.packageUnits,
+        eligibleUnits: units.rows.map((unit) => ({
+          unitId: unit.id,
+          unitName: unit.name,
+          baseUnitsPerUnit: unit.ratio,
+        })),
+        stockLevels: {
+          minimumLevel: product.stockLevels.minimumLevel,
+          maximumLevel: product.stockLevels.maximumLevel,
+        },
+      });
   }
 
   public async create(
