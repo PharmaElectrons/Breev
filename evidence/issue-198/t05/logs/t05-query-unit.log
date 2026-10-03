@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/local-api
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  13:05:53
+   Duration  1.59s (transform 484ms, setup 0ms, import 1.36s, tests 4ms, environment 0ms)
+

@@ -18,6 +18,86 @@ export class InventoryReportExportTooLarge extends Error {}
 const numericColumn = (column: string) =>
   /Quantity|Fils|Scaled|Per30Days/u.test(column);
 
+function matchingBatchPredicates(
+  kind: InventoryReportKind,
+  query: InventoryReportQuery,
+) {
+  if (kind !== "batches-expiry") return [];
+  return query.filters.flatMap((filter, index) => {
+    const parameter = `$${8 + index}::text`;
+    if (filter.column !== "batch") return [];
+    if (filter.operator === "eq") return [`lot_number = ${parameter}`];
+    if (filter.operator === "contains")
+      return [
+        `position(lower(normalize(${parameter}, NFKC)) in lower(normalize(lot_number, NFKC))) > 0`,
+      ];
+    return [];
+  });
+}
+
+/** Reject provably oversized batch exports before balances, row JSON or sorting.
+ * A positive historical receipt guarantees membership. Empty cell strings and
+ * source labels give a conservative byte lower bound, never a row-count cap.
+ * More selective queries retain the exact size check below. */
+async function checkBatchExportSize(
+  client: PoolClient,
+  pharmacyId: string,
+  query: InventoryReportQuery & { from: string; to: string },
+  maximumExportBytes: number,
+) {
+  if (
+    query.actorId !== undefined ||
+    query.businessFrom !== undefined ||
+    query.businessTo !== undefined ||
+    query.filters.some(
+      (f) => f.column !== "batch" || !["contains", "eq"].includes(f.operator),
+    )
+  )
+    return;
+  const uuid = "0".repeat(36);
+  const minimumRowBytes = Buffer.byteLength(
+    JSON.stringify({
+      id: uuid,
+      productId: uuid,
+      batchId: uuid,
+      activityCount: 0,
+      source: {
+        documentId: uuid,
+        documentType: "",
+        originalDocumentId: "",
+        label: "",
+        openable: true,
+      },
+      cells: Object.fromEntries(
+        INVENTORY_REPORT_DEFINITIONS["batches-expiry"].columns.map((c) => [
+          c,
+          "",
+        ]),
+      ),
+    }),
+  );
+  const filters = query.filters.map((f, i) =>
+    f.operator === "eq"
+      ? `batch.lot_number = $${i + 3}::text`
+      : `position(lower(normalize($${i + 3}::text, NFKC)) in lower(normalize(batch.lot_number, NFKC))) > 0`,
+  );
+  const result = await client.query<{ bytes: string | null }>(
+    `with introduced as (
+      select distinct movement.batch_id from inventory_movements movement
+      join purchasing_report_sources source on source.pharmacy_id = $1
+        and source.id = movement.source_document_id and source.type = movement.source_document_type
+        and source.ordinal = movement.source_row_ordinal
+      where movement.pharmacy_id = $1 and movement.quantity > 0
+        and movement.reason in ('purchase-receipt', 'purchase-adjustment') and source.posted_at < $2::timestamptz
+    ) select sum(${minimumRowBytes} + octet_length(to_jsonb(batch.lot_number)::text) - 2)::text as bytes
+      from inventory_batches batch join introduced on introduced.batch_id = batch.id
+      where batch.pharmacy_id = $1 ${filters.length === 0 ? "" : `and ${filters.join(" and ")}`}`,
+    [pharmacyId, query.to, ...query.filters.map((f) => f.value)],
+  );
+  if (BigInt(result.rows[0]!.bytes ?? "0") > BigInt(maximumExportBytes))
+    throw new InventoryReportExportTooLarge();
+}
+
 /** Inventory owns aggregation of frozen quantities/values. Only SQL aggregates
  * and selected rows cross this seam; lifetime facts never enter application memory.
  * All interpolated names come from runtime-validated contract enums. */
@@ -45,6 +125,14 @@ function reportSql(
   const filters =
     query.filters
       .map((filter, index) => {
+        // These predicates already selected immutable batch IDs before balances.
+        // Reapplying them to JSON cells would rebuild and normalize every row.
+        if (
+          kind === "batches-expiry" &&
+          filter.column === "batch" &&
+          ["contains", "eq"].includes(filter.operator)
+        )
+          return "true";
         const param = `$${8 + index}`;
         const value = `cells->>'${filter.column}'`;
         if (filter.operator === "contains")
@@ -69,7 +157,8 @@ function reportSql(
         : ""
     }
     ${kind === "consumption" ? ", 'consumedQuantity', '0', 'consumptionPer30Days', '0'" : ""})`;
-  const selectedFact =
+  const batchPredicates = matchingBatchPredicates(kind, query);
+  const rowSelection =
     rowParam === undefined
       ? "true"
       : kind === "stocktake-movements"
@@ -77,13 +166,23 @@ function reportSql(
         : batches
           ? `(batch_id = split_part(${rowParam}::text, ':', 1)::uuid ${kind === "alerts" ? `or (${rowParam}::text like '%:policy' and product_id = split_part(${rowParam}::text, ':', 1)::uuid)` : ""})`
           : `product_id = ${rowParam}::uuid`;
+  const selectedFact =
+    batchPredicates.length === 0
+      ? rowSelection
+      : `(${rowSelection}) and batch_id in (select id from matching_batches)`;
   const selectedLedger = selectedFact.replaceAll(
     "application_id",
     "null::uuid",
   );
   // Collapse repeated allocations before joining immutable document labels.
   // Balances still include every effect before To; attribution applies only to activity.
-  return `with report_date as (select $7::date), allocations as (
+  return `with report_date as (select $7::date)${
+    batchPredicates.length === 0
+      ? ""
+      : `, matching_batches as materialized (
+    select id from inventory_batches where pharmacy_id = $1 and ${batchPredicates.join(" and ")}
+  )`
+  }, allocations as (
     select max(id::text)::uuid as id, product_id, ${batches ? "batch_id" : "null::uuid as batch_id"},
       source_document_id, source_document_type, source_row_ordinal, reason,
       sum(quantity) as quantity,
@@ -159,10 +258,10 @@ function reportSql(
       case when status.kind in ('recalled', 'quarantined') then status.kind
         when coalesce(amendment.corrected_expiry_date, batch.expiry_date) < $7::date then 'expired' else 'eligible' end as status
     from inventory_batches batch
-    left join lateral (select corrected_expiry_date from inventory_batch_expiry_amendments
-      where pharmacy_id = $1 and batch_id = batch.id and occurred_at < $3::timestamptz order by sequence desc limit 1) amendment on true
-    left join lateral (select kind from inventory_batch_status_events
-      where pharmacy_id = $1 and batch_id = batch.id and occurred_at < $3::timestamptz order by sequence desc limit 1) status on true
+    left join (select distinct on (batch_id) batch_id, corrected_expiry_date from inventory_batch_expiry_amendments
+      where pharmacy_id = $1 and occurred_at < $3::timestamptz order by batch_id, sequence desc) amendment on amendment.batch_id = batch.id
+    left join (select distinct on (batch_id) batch_id, kind from inventory_batch_status_events
+      where pharmacy_id = $1 and occurred_at < $3::timestamptz order by batch_id, sequence desc) status on status.batch_id = batch.id
     where batch.pharmacy_id = $1
   )`
       : ""
@@ -221,7 +320,7 @@ function reportSql(
         : ""
     }`
     }
-  ), filtered as not materialized (
+  ), filtered as ${batches ? "materialized" : "not materialized"} (
     select * ${query.groupBy === undefined ? "" : `, row_number() over (order by ${sort} ${query.direction === "ascending" ? "asc" : "desc"} nulls last, id) as ordinal`}
     from raw_rows where ${filters}
   )`;
@@ -253,7 +352,27 @@ export async function readInventoryReportPage(
   maximumExportBytes: number,
   valuation = true,
 ): Promise<InventoryReportPage> {
+  if (exportAll && kind === "batches-expiry")
+    await checkBatchExportSize(client, pharmacyId, query, maximumExportBytes);
   const values = params(pharmacyId, query, businessDate);
+  if (exportAll) {
+    // Every query shape gets a scalar pre-check before ordered row encoding.
+    // Omit envelope keys/quotes and over-subtract jsonb's separator spaces: the
+    // result is a lower bound. The exact boundary check still governs acceptance.
+    const cells = valuation
+      ? "cells"
+      : "cells - array['openingValueFils','closingValueFils','periodValueFils','activityValueFils','openingAverageCostScaled','closingAverageCostScaled']";
+    const size = await client.query<{ bytes: string | null }>(
+      `${reportSql(kind, { ...query, groupBy: undefined })}
+      select sum(octet_length((${cells})::text) - ${2 * INVENTORY_REPORT_DEFINITIONS[kind].columns.length}
+        + greatest(coalesce(octet_length(source::text), 4) - 10, 0)
+        + octet_length(id) + octet_length(product_id::text) + coalesce(octet_length(batch_id::text), 0))::text as bytes
+      from filtered`,
+      values,
+    );
+    if (BigInt(size.rows[0]!.bytes ?? "0") > BigInt(maximumExportBytes))
+      throw new InventoryReportExportTooLarge();
+  }
   const start = (query.page - 1) * query.pageSize;
   const group = query.groupBy;
   const sort =
@@ -266,6 +385,18 @@ export async function readInventoryReportPage(
     (c) =>
       ["activityQuantity", "activityValueFils", "consumedQuantity"].includes(c),
   );
+  // Batch predicates can narrow balances safely: each position belongs to one
+  // batch. Actor choices still describe the complete attributed period, rather
+  // than disappearing when a column filter matches no rows.
+  const actorRows =
+    matchingBatchPredicates(kind, query).length === 0
+      ? `select distinct a.actor_id as id, a.actor as "displayName" from activity a where a.actor_id is not null`
+      : `select actor.id, actor.display_name as "displayName" from identity_report_actors actor
+      where actor.pharmacy_id = $1 and ($4::uuid is null or actor.id = $4)
+        and (exists (select 1 from inventory_report_facts f where f.pharmacy_id = $1 and f.actor_id = actor.id
+          and f.posted_at >= $2::timestamptz and f.posted_at < $3::timestamptz
+          and ($5::date is null or f.business_date >= $5) and ($6::date is null or f.business_date <= $6))
+        or exists (select 1 from activity a where a.source is null and a.actor_id = actor.id))`;
   const sql = `${reportSql(kind, query)}, page as (
     ${
       group === undefined
@@ -310,7 +441,7 @@ export async function readInventoryReportPage(
     (select count(*)::integer from filtered) as "totalRows",
     ${group === undefined ? "'[]'::jsonb" : "coalesce((select jsonb_agg(to_jsonb(g) order by id) from page_groups g), '[]'::jsonb)"} as groups,
     coalesce((select jsonb_agg(to_jsonb(actor) order by actor."displayName", actor.id) from (
-      select distinct a.actor_id as id, a.actor as "displayName" from activity a where a.actor_id is not null
+      ${actorRows}
       order by "displayName", id limit 100
     ) actor), '[]'::jsonb) as actors
   from payload`;
@@ -341,6 +472,11 @@ export async function readInventoryReportActivity(
   const values = params(pharmacyId, query, businessDate);
   values.push(rowId);
   const rowParam = `$${values.length}`;
+  if (
+    !["stocktake-movements", "alerts", "batches-expiry"].includes(kind) &&
+    query.filters.length === 0
+  )
+    return readProductActivity(client, values, rowParam, page, pageSize);
   const condition =
     kind === "stocktake-movements"
       ? "a.application_id::text = r.id"
@@ -351,7 +487,7 @@ export async function readInventoryReportActivity(
     rows: InventoryReportActivityPage["rows"];
     totalRows: number;
   }>(
-    `${reportSql(kind, query, kind === "stocktake-movements" || kind === "alerts" || kind === "batches-expiry" ? rowParam : undefined)}, activity_sources as (
+    `${reportSql(kind, query, rowParam)}, activity_sources as (
       select distinct product_id, batch_id, source_document_id, source_document_type, source_row_ordinal,
         posted_at, actor_id, business_date, original_document_id, label, reason
       from facts where source_document_type <> 'count-session' and posted_at >= $2::timestamptz
@@ -402,6 +538,90 @@ export async function readInventoryReportActivity(
       'businessDate', business_date::text, 'actorId', actor_id, 'actor', actor, 'source', source, 'reason', reason)
       order by posted_at, id) from page), '[]'::jsonb) as rows,
       (select coalesce(sum(a.fact_count), 0)::integer from activity a join filtered r on r.id = ${rowParam}::text and ${condition}) as "totalRows"`,
+    values,
+  );
+  const resultPage = result.rows[0]!;
+  return {
+    ...resultPage,
+    page,
+    hasMore: page * pageSize < resultPage.totalRows,
+  };
+}
+
+/** Activity needs exact effect counts and a bounded page, not lifetime balances.
+ * Column-filtered activity still evaluates the complete report row above. */
+async function readProductActivity(
+  client: PoolClient,
+  values: unknown[],
+  rowParam: string,
+  page: number,
+  pageSize: number,
+): Promise<InventoryReportActivityPage> {
+  const result = await client.query<{
+    rows: InventoryReportActivityPage["rows"];
+    totalRows: number;
+  }>(
+    `with report_date as (select $7::date), sources as materialized (
+      select * from purchasing_report_sources where pharmacy_id = $1
+        and posted_at >= $2::timestamptz and posted_at < $3::timestamptz
+        and ($4::uuid is null or actor_id = $4)
+        and ($5::date is null or business_date >= $5) and ($6::date is null or business_date <= $6)
+    ), movement_counts as materialized (
+      select m.source_document_type, m.source_document_id, m.source_row_ordinal, count(*) as count
+      from inventory_movements m join sources source on source.type = m.source_document_type
+        and source.id = m.source_document_id and source.ordinal = m.source_row_ordinal
+      where m.pharmacy_id = $1 and m.product_id = ${rowParam}::uuid
+      group by m.source_document_type, m.source_document_id, m.source_row_ordinal
+    ), value_counts as materialized (
+      select e.source_document_type, e.source_document_id, e.source_row_ordinal, count(*) as count
+      from inventory_value_effects e join sources source on source.type = e.source_document_type
+        and source.id = e.source_document_id and source.ordinal = e.source_row_ordinal
+      where e.pharmacy_id = $1 and e.product_id = ${rowParam}::uuid
+      group by e.source_document_type, e.source_document_id, e.source_row_ordinal
+    ), source_counts as materialized (
+      select source.*, coalesce(m.count, 0) as movement_count, coalesce(e.count, 0) as value_count
+      from sources source
+      left join movement_counts m on m.source_document_type = source.type and m.source_document_id = source.id and m.source_row_ordinal = source.ordinal
+      left join value_counts e on e.source_document_type = source.type and e.source_document_id = source.id and e.source_row_ordinal = source.ordinal
+    ), count_facts as materialized (
+      select * from inventory_report_facts where pharmacy_id = $1 and product_id = ${rowParam}::uuid
+        and source_document_type = 'count-session' and posted_at >= $2::timestamptz and posted_at < $3::timestamptz
+        and ($4::uuid is null or actor_id = $4)
+        and ($5::date is null or business_date >= $5) and ($6::date is null or business_date <= $6)
+    ), candidates as (
+      select effect.id, effect.movement_id, effect.quantity, effect.value_fils, source.posted_at, source.actor_id,
+        source.business_date, source.id as source_document_id, source.type as source_document_type,
+        source.original_document_id, source.label, effect.reason
+      from source_counts source join lateral (
+        select * from (
+          select id, id as movement_id, quantity,
+            case when reason = 'purchase-adjustment' then 0 else carrying_amount_fils end as value_fils, reason
+          from inventory_movements where pharmacy_id = $1 and product_id = ${rowParam}::uuid
+            and source_document_type = source.type and source_document_id = source.id and source_row_ordinal = source.ordinal
+          order by id limit least(${page * pageSize}, source.movement_count)
+        ) movements
+        union all select * from (
+          select id, null::uuid, 0, carrying_amount_delta_fils, 'purchase-adjustment'
+          from inventory_value_effects where pharmacy_id = $1 and product_id = ${rowParam}::uuid
+            and source_document_type = source.type and source_document_id = source.id and source_row_ordinal = source.ordinal
+          order by id limit least(${page * pageSize}, source.value_count)
+        ) effects
+      ) effect on true
+      union all
+      select id, movement_id, quantity, value_fils, posted_at, actor_id, business_date,
+        source_document_id, source_document_type, original_document_id, label, reason from count_facts
+    ), page as (
+      select * from candidates order by posted_at, id limit ${pageSize} offset ${(page - 1) * pageSize}
+    ) select coalesce((select jsonb_agg(jsonb_build_object(
+      'id', p.id, 'movementId', p.movement_id, 'quantity', p.quantity::text, 'valueFils', p.value_fils::text,
+      'postedAt', to_char(p.posted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+      'businessDate', p.business_date::text, 'actorId', p.actor_id, 'actor', coalesce(actor.display_name, p.actor_id::text),
+      'source', jsonb_build_object('documentId', p.source_document_id, 'documentType', p.source_document_type,
+        'originalDocumentId', p.original_document_id, 'label', p.label, 'openable', false), 'reason', p.reason)
+      order by p.posted_at, p.id) from page p
+      left join identity_report_actors actor on actor.pharmacy_id = $1 and actor.id = p.actor_id), '[]'::jsonb) as rows,
+      ((select coalesce(sum(movement_count + value_count), 0) from source_counts)
+        + (select count(*) from count_facts))::integer as "totalRows"`,
     values,
   );
   const resultPage = result.rows[0]!;

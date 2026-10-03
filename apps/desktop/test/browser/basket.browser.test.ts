@@ -1222,6 +1222,7 @@ function productRequest(
       wholesalePriceFils: "90000",
     },
     scientificName: tradeName,
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: null },
     stockLevels,
@@ -1247,6 +1248,7 @@ async function postPurchase(
   invoiceNumber: string,
 ): Promise<PurchasePostResult> {
   const created = await apiRequest("POST", "/purchases/drafts", {
+    invoiceOffer: { mode: "none", value: "0" },
     idempotencyKey: uuidV7(),
     invoiceDate: "2026-06-15",
     settlementContext: "debt",

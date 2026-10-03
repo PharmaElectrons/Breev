@@ -3,7 +3,7 @@ import {
   BREEV_CSRF_VALUE,
   identityDenialSchema,
   licensingDenialSchema,
-  postedPurchaseAdjustmentSchema,
+  postedPurchaseAdjustmentDetailSchema,
   postedPurchaseReturnSchema,
   purchaseAdjustmentDraftDiscardContract,
   purchaseAdjustmentDraftDiscardPath,
@@ -44,6 +44,9 @@ import {
   purchaseDraftRowsPath,
   purchaseDraftSchema,
   purchaseEntryPreferencesReadContract,
+  purchaseItemDetailsPath,
+  purchaseItemDetailsSchema,
+  type PurchaseItemDetails,
   purchaseEntryPreferencesSchema,
   purchaseEntryPreferencesUpdateContract,
   purchasePostContract,
@@ -70,7 +73,7 @@ import {
   supplierReadContract,
   supplierSchema,
   type PurchaseDraft,
-  type PostedPurchaseAdjustment,
+  type PostedPurchaseAdjustmentDetail,
   type PostedPurchaseReturn,
   type PurchaseAdjustmentDraft,
   type PurchaseAdjustmentDraftCreateRequest,
@@ -122,6 +125,23 @@ export class PurchasingApiDenied extends Error {
     super(denial.code);
     this.name = "PurchasingApiDenied";
   }
+}
+
+/** Independently cancellable read; never awaited by search, barcode or Save row. */
+export async function requestPurchaseItemDetails(
+  baseUrl: string,
+  productId: string,
+  signal: AbortSignal,
+): Promise<PurchaseItemDetails> {
+  return await requestJson(
+    baseUrl,
+    purchaseItemDetailsPath(productId),
+    "GET",
+    200,
+    purchaseItemDetailsSchema,
+    undefined,
+    signal,
+  );
 }
 
 export const requestSuppliers = async (
@@ -446,13 +466,13 @@ export const postPurchaseAdjustment = async (
 export const requestPostedPurchaseAdjustment = async (
   baseUrl: string,
   adjustmentId: string,
-): Promise<PostedPurchaseAdjustment> =>
+): Promise<PostedPurchaseAdjustmentDetail> =>
   await requestJson(
     baseUrl,
     purchasePostedAdjustmentPath(adjustmentId),
     purchasePostedAdjustmentReadContract.method,
     200,
-    postedPurchaseAdjustmentSchema,
+    postedPurchaseAdjustmentDetailSchema,
   );
 
 export const createPurchaseReturnDraft = async (
@@ -649,6 +669,7 @@ async function requestJson<T>(
   successStatus: number,
   parser: Parser<T>,
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(new URL(path, baseUrl), {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -663,7 +684,10 @@ async function requestJson<T>(
             [BREEV_CSRF_HEADER]: BREEV_CSRF_VALUE,
           },
     method,
-    signal: AbortSignal.timeout(5_000),
+    signal:
+      signal === undefined
+        ? AbortSignal.timeout(5_000)
+        : AbortSignal.any([signal, AbortSignal.timeout(5_000)]),
   });
   if (response.status !== successStatus) throw await denial(response);
   return parser.parse(await response.json());

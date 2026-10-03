@@ -1,0 +1,148 @@
+{
+  "scope": "Synthetic MANUAL-T02 documents only; read-only inspection",
+  "originals": [
+    {
+      "id": "01a0f299-2398-7176-ab3d-72294010aa9e",
+      "supplier_invoice_number": "MANUAL-T02-DUPLICATE",
+      "supplier_name_snapshot": "Al-Nahrain Medical"
+    },
+    {
+      "id": "01a0f299-22da-7646-ae88-8c9a028c931d",
+      "supplier_invoice_number": "MANUAL-T02-INVOICE",
+      "supplier_name_snapshot": "Al-Nahrain Medical"
+    },
+    {
+      "id": "01a0f299-233a-7277-805f-e38a31af8990",
+      "supplier_invoice_number": "MANUAL-T02-OTHER",
+      "supplier_name_snapshot": "Al-Nahrain Medical"
+    },
+    {
+      "id": "01a0f299-21fa-7c25-a829-3cdc951f9077",
+      "supplier_invoice_number": "MANUAL-T02-PRICE",
+      "supplier_name_snapshot": "Al-Nahrain Medical"
+    },
+    {
+      "id": "01a0f299-2190-72de-baf8-7adcad7d6915",
+      "supplier_invoice_number": "MANUAL-T02-QUANTITY",
+      "supplier_name_snapshot": "Al-Nahrain Medical"
+    },
+    {
+      "id": "01a0f299-2286-7214-bdb6-de8766f58091",
+      "supplier_invoice_number": "MANUAL-T02-SUPPLIER",
+      "supplier_name_snapshot": "Al-Nahrain Medical"
+    }
+  ],
+  "drafts": [
+    {
+      "original_invoice": "MANUAL-T02-INVOICE",
+      "id": "01a0f2ba-48bb-7daf-a6e0-6c96c8a2ae94",
+      "reason": "invoice-number error",
+      "evidence": null,
+      "status": "posted",
+      "version": "3",
+      "rows": [
+        {
+          "quantity": "4"
+        }
+      ]
+    },
+    {
+      "original_invoice": "MANUAL-T02-OTHER",
+      "id": "01a0f2c9-7ccc-7021-8a77-ef19b4f86c57",
+      "reason": "other",
+      "evidence": "T02 documented quantity correction",
+      "status": "posted",
+      "version": "3",
+      "rows": [
+        {
+          "quantity": "3"
+        }
+      ]
+    },
+    {
+      "original_invoice": "MANUAL-T02-PRICE",
+      "id": "01a0f2b2-6291-71aa-8057-232c0e3b5920",
+      "reason": "quantity error",
+      "evidence": null,
+      "status": "posted",
+      "version": "3",
+      "rows": [
+        {
+          "quantity": "4"
+        }
+      ]
+    },
+    {
+      "original_invoice": "MANUAL-T02-QUANTITY",
+      "id": "01a0f29a-3f33-74ba-86be-eb6f3716d861",
+      "reason": "quantity error",
+      "evidence": null,
+      "status": "active",
+      "version": "2",
+      "rows": [
+        {
+          "quantity": "8"
+        }
+      ]
+    },
+    {
+      "original_invoice": "MANUAL-T02-SUPPLIER",
+      "id": "01a0f2b7-d8f6-7c0e-b1dc-248b8d6ddc09",
+      "reason": "supplier error",
+      "evidence": "the money is deducted and added successfully",
+      "status": "posted",
+      "version": "4",
+      "rows": [
+        {
+          "quantity": "4"
+        }
+      ]
+    }
+  ],
+  "adjustments": [
+    {
+      "original_invoice": "MANUAL-T02-INVOICE",
+      "id": "01a0f2bb-e684-7d04-92df-81f522255dc8",
+      "suffix_value": "1",
+      "reason": "invoice-number error",
+      "evidence": null,
+      "supplier_name_snapshot": "Al-Nahrain Medical",
+      "supplier_invoice_number": "MANUAL-T02-DUPLICATE",
+      "quantity_delta": "0",
+      "primary_supplier_cost_delta_fils": "0"
+    },
+    {
+      "original_invoice": "MANUAL-T02-OTHER",
+      "id": "01a0f2cf-7eba-7781-9a60-5f112ddb02ae",
+      "suffix_value": "1",
+      "reason": "other",
+      "evidence": "T02 documented quantity correction",
+      "supplier_name_snapshot": "Al-Nahrain Medical",
+      "supplier_invoice_number": "MANUAL-T02-OTHER",
+      "quantity_delta": "-1",
+      "primary_supplier_cost_delta_fils": "-80000"
+    },
+    {
+      "original_invoice": "MANUAL-T02-PRICE",
+      "id": "01a0f2b3-5ae8-762e-a0e8-4f557e1ce558",
+      "suffix_value": "1",
+      "reason": "quantity error",
+      "evidence": null,
+      "supplier_name_snapshot": "Al-Nahrain Medical",
+      "supplier_invoice_number": "MANUAL-T02-PRICE",
+      "quantity_delta": "0",
+      "primary_supplier_cost_delta_fils": "80000"
+    },
+    {
+      "original_invoice": "MANUAL-T02-SUPPLIER",
+      "id": "01a0f2b9-03c1-77bc-af8d-03ba91b411e9",
+      "suffix_value": "1",
+      "reason": "supplier error",
+      "evidence": "the money is deducted and added successfully",
+      "supplier_name_snapshot": "Manual T02 Supplier B",
+      "supplier_invoice_number": "MANUAL-T02-SUPPLIER",
+      "quantity_delta": "0",
+      "primary_supplier_cost_delta_fils": "0"
+    }
+  ]
+}

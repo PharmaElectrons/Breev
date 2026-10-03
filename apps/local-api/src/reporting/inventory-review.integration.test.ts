@@ -1226,6 +1226,25 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     expect(firstPage.groups[0]!.continuesAfter).toBe(true);
     expect(secondPage.groups[0]!.continuesBefore).toBe(true);
     expect(secondPage.groups[0]!.totals).toEqual(firstPage.groups[0]!.totals);
+    const noBatches = await request(
+      "GET",
+      `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(
+        JSON.stringify({
+          ...query,
+          filters: [
+            {
+              column: "batch",
+              operator: "eq",
+              value: "NO-MATCHING-HISTORICAL-BATCH",
+            },
+          ],
+        }),
+      )}`,
+    );
+    expect(noBatches.status, diagnostics(noBatches)).toBe(200);
+    const emptyBatchReport = inventoryReportSchema.parse(noBatches.body);
+    expect(emptyBatchReport.rows).toEqual([]);
+    expect(emptyBatchReport.actors).toEqual(firstPage.actors);
 
     const pages = [];
     for (const page of [1, 2]) {
@@ -1238,6 +1257,26 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
       expect(result.rows).toHaveLength(100);
       expect(result.totalRows).toBeGreaterThan(250000);
       expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(100_000);
+      const filtered = await request(
+        "GET",
+        `${inventoryReportPath("quantity")}/activity?query=${encodeURIComponent(
+          JSON.stringify({
+            query: {
+              ...query,
+              filters: [
+                { column: "closingQuantity", operator: "gte", value: "0" },
+              ],
+            },
+            rowId: product.id,
+            page,
+            pageSize: 100,
+          }),
+        )}`,
+      );
+      expect(filtered.status, diagnostics(filtered)).toBe(200);
+      expect(inventoryReportActivityPageSchema.parse(filtered.body)).toEqual(
+        result,
+      );
       pages.push(result);
     }
     expect(new Set(pages.flatMap((p) => p.rows.map((r) => r.id))).size).toBe(
@@ -1523,20 +1562,44 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     expect(Buffer.byteLength(JSON.stringify(viewed.body))).toBeLessThan(
       128 * 1024,
     );
-    const exportStarted = performance.now();
-    const exported = await request(
-      "GET",
-      `${inventoryReportPath("batches-expiry")}/export?query=${encodeURIComponent(JSON.stringify(query))}`,
+    // Both requests must fail at the cheap pre-check under concurrent load,
+    // rather than occupying connections until the 10-second SQL timeout.
+    const exportDenialTimes = await Promise.all(
+      Array.from({ length: 2 }, async () => {
+        const exportStarted = performance.now();
+        const exported = await request(
+          "GET",
+          `${inventoryReportPath("batches-expiry")}/export?query=${encodeURIComponent(JSON.stringify(query))}`,
+        );
+        expect(exported.status, diagnostics(exported)).toBe(413);
+        expect(exported.body).toMatchObject({
+          status: "denied",
+          code: "export-too-large",
+        });
+        expect(exported.body).not.toHaveProperty("rows");
+        const elapsed = performance.now() - exportStarted;
+        expect(elapsed).toBeLessThan(5_000);
+        expect(Buffer.byteLength(JSON.stringify(exported.body))).toBeLessThan(
+          1024,
+        );
+        return elapsed;
+      }),
     );
-    expect(exported.status, diagnostics(exported)).toBe(413);
-    expect(exported.body).toMatchObject({
-      status: "denied",
-      code: "export-too-large",
-    });
-    expect(exported.body).not.toHaveProperty("rows");
-    const exportDenialMs = performance.now() - exportStarted;
-    expect(exportDenialMs).toBeLessThan(10_000);
-    expect(Buffer.byteLength(JSON.stringify(exported.body))).toBeLessThan(1024);
+    const exportDenialMs = Math.max(...exportDenialTimes);
+    const normalPageStarted = performance.now();
+    const normalPage = await request(
+      "GET",
+      `${inventoryReportPath("quantity")}?query=${encodeURIComponent(
+        JSON.stringify({ from: query.from, to: query.to, pageSize: 100 }),
+      )}`,
+    );
+    expect(normalPage.status, diagnostics(normalPage)).toBe(200);
+    expect(
+      inventoryReportSchema.parse(normalPage.body).rows.length,
+    ).toBeGreaterThan(0);
+    const normalPageMs = performance.now() - normalPageStarted;
+    expect(normalPageMs).toBeLessThan(5_000);
+    const afterDenialStarted = performance.now();
     const afterDenial = await request(
       "GET",
       `${inventoryReportPath("batches-expiry")}?query=${encodeURIComponent(JSON.stringify(query))}`,
@@ -1545,7 +1608,16 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     expect(inventoryReportSchema.parse(afterDenial.body).rows).toHaveLength(
       100,
     );
+    const afterDenialMs = performance.now() - afterDenialStarted;
     if (process.env.BREEV_REPORT_PERFORMANCE_LABEL) {
+      // Benchmark saturated history with current planner statistics. The cold
+      // concurrent export and recovery assertions above run before this step.
+      for (const table of [
+        "inventory_movements",
+        "inventory_batches",
+        "inventory_value_effects",
+      ])
+        await administrator.query(`analyze ${table}`);
       const period = {
         from: "2020-01-01T00:00:00Z",
         to: query.to,
@@ -1569,6 +1641,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
         },
       ];
       const measurements = [];
+      const sqlMeasurements = [];
       const plans: Record<string, unknown> = {};
       for (const scenario of scenarios) {
         const samples = [];
@@ -1592,6 +1665,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
         try {
           await client.query("begin read only");
           await client.query("set local enable_nestloop = off");
+          await client.query("set local jit = off");
           let statement: string | undefined;
           let values: unknown[] | undefined;
           const observed = new Proxy(client, {
@@ -1640,12 +1714,24 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
               false,
               24 * 1024 * 1024,
             );
-          plans[scenario.name] = (
-            await client.query(
-              `explain (analyze, buffers, format json) ${statement!}`,
-              values,
-            )
-          ).rows[0]["QUERY PLAN"];
+          const sqlSamples: number[] = [];
+          for (let sample = 0; sample < 20; sample++) {
+            const plan = (
+              await client.query(
+                `explain (analyze, buffers, format json) ${statement!}`,
+                values,
+              )
+            ).rows[0]["QUERY PLAN"];
+            sqlSamples.push(plan[0]["Execution Time"] as number);
+            plans[scenario.name] = plan;
+          }
+          const sortedSql = [...sqlSamples].sort((a, b) => a - b);
+          sqlMeasurements.push({
+            name: scenario.name,
+            samples: sqlSamples,
+            p95: sortedSql[18]!,
+            p99: sortedSql[19]!,
+          });
           await client.query("rollback");
         } finally {
           client.release();
@@ -1671,7 +1757,11 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
               )
             ).rows[0].count,
             measurements,
+            sqlMeasurements,
             exportDenialMs,
+            exportDenialTimes,
+            afterDenialMs,
+            normalPageMs,
           },
           null,
           2,
@@ -1684,6 +1774,9 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
         ),
         JSON.stringify(plans, null, 2),
       );
+      for (const measurement of sqlMeasurements)
+        if (measurement.name !== "batch-history")
+          expect(measurement.p95, measurement.name).toBeLessThanOrEqual(300);
     }
     expect(await stockFacts()).toEqual(before);
   }, 300_000);
@@ -1935,6 +2028,7 @@ describe.sequential("Inventory review PostgreSQL seam", () => {
     itemId = product.id,
   ): Promise<PurchaseDraft> {
     const created = await request("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: "2026-06-15",
       settlementContext: "debt",
@@ -2051,6 +2145,7 @@ function adjustmentUpdateBody(
   rows: ReturnType<typeof adjustmentRows>,
 ) {
   return {
+    invoiceOffer: draft.invoiceOffer,
     evidence: draft.evidence,
     expectedVersion: draft.version,
     idempotencyKey: uuidV7(),
@@ -2100,6 +2195,7 @@ function medicationRequest(tradeName: string): ProductCreateRequest {
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: null },
     stockLevels: { maximumLevel: "30", minimumLevel: "20", reorderPoint: "17" },

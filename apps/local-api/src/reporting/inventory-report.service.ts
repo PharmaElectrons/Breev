@@ -182,6 +182,7 @@ export class InventoryReportService {
     // rescans; PostgreSQL retains necessary indexed/lateral nested loops.
     // This setting ends with the caller's transaction, including protected export.
     await client.query("set local enable_nestloop = off");
+    await client.query("set local jit = off");
     let page;
     try {
       page = await readInventoryReportPage(
@@ -348,6 +349,9 @@ export class InventoryReportService {
         timeZone,
       );
       await client.query("set local enable_nestloop = off");
+      // Bounded source pages should not pay JIT compilation costs before reading
+      // their first rows. This setting remains inside the read-only transaction.
+      await client.query("set local jit = off");
       const page = await readInventoryReportActivity(
         client,
         fresh.pharmacyId,

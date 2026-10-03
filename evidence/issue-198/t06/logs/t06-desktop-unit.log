@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/apps/desktop
+
+
+ Test Files  3 passed (3)
+      Tests  33 passed (33)
+   Start at  15:55:04
+   Duration  1.41s (transform 1.09s, setup 0ms, import 2.68s, tests 145ms, environment 0ms)
+

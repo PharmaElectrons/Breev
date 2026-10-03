@@ -85,6 +85,8 @@ export interface PurchaseInvoiceJournalFacts {
    * for consistency, never posted: it becomes a transaction at settlement.
    */
   readonly allowanceFils: bigint;
+  /** Separate informational invoice offer; never a journal amount. */
+  readonly invoiceOfferFils: bigint;
   /** The informational net. Checked for consistency, never posted. */
   readonly costAfterDiscountFils: bigint;
   /**
@@ -123,13 +125,16 @@ export function renderPurchaseInvoiceJournal(
     "A Primary Supplier Cost",
   );
   assertExactNonNegative(facts.allowanceFils, "An allowance");
+  assertExactNonNegative(facts.invoiceOfferFils, "An invoice offer");
   assertExactNonNegative(facts.costAfterDiscountFils, "A Cost After Discount");
   if (
-    facts.costAfterDiscountFils + facts.allowanceFils !==
+    facts.costAfterDiscountFils +
+      facts.allowanceFils +
+      facts.invoiceOfferFils !==
     facts.primarySupplierCostFils
   ) {
     throw new RangeError(
-      "A purchase invoice's Cost After Discount and allowance must add up to its Primary Supplier Cost",
+      "A purchase invoice's Cost After Discount, allowance and invoice offer must add up to its Primary Supplier Cost",
     );
   }
 

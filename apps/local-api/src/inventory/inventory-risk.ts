@@ -1,5 +1,7 @@
 import type {
   InventoryRiskIndicator,
+  ProductDisplayColour,
+  ProductManualStateColour,
   ProductStateColour,
 } from "@breev/contracts/local-rest";
 
@@ -128,8 +130,8 @@ export function automaticStateColour(
 }
 
 export function effectiveStateColour(
-  manual: ProductStateColour | null,
+  manual: ProductManualStateColour | null,
   automatic: ProductStateColour,
-): ProductStateColour {
+): ProductDisplayColour {
   return manual ?? automatic;
 }

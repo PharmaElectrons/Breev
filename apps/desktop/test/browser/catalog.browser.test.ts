@@ -20,7 +20,7 @@ import {
   type ProductCreateRequest,
   type ProductDefinitionMode,
 } from "@breev/contracts/local-rest";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -44,6 +44,7 @@ import {
   waitForHealth as waitForLocalApiHealth,
 } from "../local-api-process.js";
 import { evidencePath } from "./evidence-path.js";
+import { pressKeyOnFocused } from "./focus.js";
 
 const POSTGRES_IMAGE = "postgres:18.6-bookworm";
 const OWNER_USERNAME = "catalog.browser.owner";
@@ -120,13 +121,14 @@ function sampleMedicationRequest(barcode: string): ProductCreateRequest {
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol + Caffeine",
+    supplierIds: [],
     sharing: {
       aiSharingAllowed: true,
       externallyVisible: true,
     },
     stateColours: {
       coldStorageRequired: false,
-      manual: "blue",
+      manual: "#0000ff",
     },
     stockLevels: { maximumLevel: null, minimumLevel: null, reorderPoint: null },
   };
@@ -152,7 +154,8 @@ async function startRendererServer(
 
       if (
         request.url?.startsWith("/identity/") ||
-        request.url?.startsWith("/catalog/")
+        request.url?.startsWith("/catalog/") ||
+        request.url?.startsWith("/inventory/")
       ) {
         const body = await readRequestBody(request);
         const upstream = await fetch(`${apiOrigin}${request.url}`, {
@@ -270,6 +273,7 @@ test.describe.serial("Product catalog screens", () => {
   let matrixProduct: Product;
   let mergeProduct: Product;
   let mergeSurvivor: Product;
+  let uiSupplierId = "";
   let postgres: StartedPostgreSqlContainer | undefined;
   let renderer: RendererServer;
   const evidenceDir = evidencePath("issue-47/after");
@@ -322,6 +326,28 @@ test.describe.serial("Product catalog screens", () => {
     if (ownerState.state !== "authenticated") {
       throw new Error("Catalog browser owner was not authenticated");
     }
+
+    const uiSupplierResponse = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "POST",
+      "/suppliers",
+      {
+        allowanceEffectiveFrom: "2026-01-01",
+        defaultAllowancePercentage: "2",
+        idempotencyKey: randomUUID(),
+        name: "Breev UI Supplier Link",
+        terms: "Net 30",
+      },
+    );
+    expect(
+      uiSupplierResponse.status,
+      JSON.stringify(uiSupplierResponse.body),
+    ).toBe(201);
+    uiSupplierId = String(
+      (uiSupplierResponse.body as { id?: string } | undefined)?.id ?? "",
+    );
+    expect(uiSupplierId).not.toBe("");
 
     const challenge = await requestLocalApi(
       apiOrigin,
@@ -448,7 +474,61 @@ test.describe.serial("Product catalog screens", () => {
     await postgres?.stop().catch(() => undefined);
   });
 
-  test("Keyboard-only entry of a full medication, start to submit — no mouse", async ({
+  test("Product card scrolls by mouse wheel while its actions stay in the viewport", async ({
+    browser,
+  }) => {
+    for (const locale of ["ar", "en"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const page = await browser.newPage({
+          viewport: { width: 1280, height: 800 },
+        });
+        try {
+          await installDesktopFake(page, renderer.origin, { locale, theme });
+          await page.goto(
+            `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
+          );
+          await expect(page.locator("html")).toHaveAttribute("lang", locale);
+          await expect(page.locator("html")).toHaveAttribute(
+            "data-theme",
+            theme,
+          );
+          const form = page.locator(".catalog-product-form");
+          const actions = form.locator(".catalog-product-form-actions");
+          await expect(form).toBeVisible();
+          await expect(actions).toBeInViewport({ ratio: 1 });
+          await expect
+            .poll(() =>
+              form.evaluate(
+                (element) => element.scrollHeight > element.clientHeight,
+              ),
+            )
+            .toBe(true);
+          await form.hover({ position: { x: 30, y: 120 } });
+          await page.mouse.wheel(0, -10000);
+          await expect
+            .poll(() => form.evaluate((element) => element.scrollTop))
+            .toBe(0);
+          await expect(actions).toBeInViewport({ ratio: 1 });
+          await page.mouse.wheel(0, 400);
+          await expect
+            .poll(() => form.evaluate((element) => element.scrollTop))
+            .toBeGreaterThan(0);
+          await expect(actions).toBeInViewport({ ratio: 1 });
+          await page.screenshot({
+            animations: "disabled",
+            path: path.join(
+              adoptionEvidenceDir,
+              `products-merge-scroll-${locale}-${theme}-1280x800.png`,
+            ),
+          });
+        } finally {
+          await page.close();
+        }
+      }
+    }
+  });
+
+  test("Keyboard-operable medication entry preserves the generated identity", async ({
     page,
   }) => {
     await installDesktopFake(page, renderer.origin, {
@@ -462,7 +542,7 @@ test.describe.serial("Product catalog screens", () => {
     ).toBeVisible();
 
     // 1. Trade Name
-    const tradeNameInput = page.getByLabel("Trade name *");
+    const tradeNameInput = page.getByLabel("Trade name");
     await tradeNameInput.focus();
     await expect(tradeNameInput).toBeFocused();
     await page.keyboard.type("Panadol Extra");
@@ -472,8 +552,18 @@ test.describe.serial("Product catalog screens", () => {
       "Panadol Extra",
     );
 
-    // 2. Strength
+    // Verify tab order across the controls that follow Trade Name in the rendered form.
     await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: "Clear color" }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.locator('input[type="color"]')).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Arabic search name")).toBeFocused();
+
+    // 2. Strength
+    await page.getByLabel("Strength").focus();
     await expect(page.getByLabel("Strength")).toBeFocused();
     await page.keyboard.type("500mg");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
@@ -481,7 +571,7 @@ test.describe.serial("Product catalog screens", () => {
     );
 
     // 3. Dosage Form
-    await page.keyboard.press("Tab");
+    await page.getByLabel("Dosage form").focus();
     await expect(page.getByLabel("Dosage form")).toBeFocused();
     await page.keyboard.type("Tablet");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
@@ -489,7 +579,7 @@ test.describe.serial("Product catalog screens", () => {
     );
 
     // 4. Manufacturer
-    await page.keyboard.press("Tab");
+    await page.getByLabel("Manufacturer").focus();
     await expect(page.getByLabel("Manufacturer")).toBeFocused();
     await page.keyboard.type("GSK");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
@@ -497,8 +587,8 @@ test.describe.serial("Product catalog screens", () => {
     );
 
     // 5. Arabic Search Name (below English display name)
-    await page.keyboard.press("Tab");
     const arabicInput = page.getByLabel("Arabic search name");
+    await arabicInput.focus();
     await expect(arabicInput).toBeFocused();
     await page.keyboard.type("بنادول اكسترا");
 
@@ -508,29 +598,35 @@ test.describe.serial("Product catalog screens", () => {
     );
 
     // 6. Scientific Name & Category
-    await page.keyboard.press("Tab");
-    await expect(page.getByLabel("Scientific / Generic name")).toBeFocused();
+    const scientificNameInput = page.getByLabel("Scientific / Generic name");
+    await scientificNameInput.focus();
+    await expect(scientificNameInput).toBeFocused();
     await page.keyboard.type("Paracetamol");
 
-    await page.keyboard.press("Tab");
-    await expect(page.getByLabel("Category")).toBeFocused();
+    const categoryInput = page.getByRole("combobox", { name: "Category" });
+    await categoryInput.focus();
+    await expect(categoryInput).toBeFocused();
     await page.keyboard.type("Analgesic");
 
     // 7. Barcode entry
-    await page.keyboard.press("Tab");
-    await expect(page.getByLabel("Barcode kind")).toBeFocused();
-    await page.keyboard.press("Tab");
+    const barcodeKind = page.getByLabel("Barcode kind");
+    await barcodeKind.focus();
+    await expect(barcodeKind).toBeFocused();
     const barcodeInput = page.getByPlaceholder("Enter barcode");
+    await barcodeInput.focus();
     await expect(barcodeInput).toBeFocused();
     await page.keyboard.type("5000167000001");
     await page.keyboard.press("Enter");
     await expect(page.getByText("5000167000001")).toBeVisible();
 
     // 8. Required quantity and price model
-    const inventoryUnitInput = page.getByLabel("Inventory Unit (base unit) *");
+    const continueButton = page.getByRole("button", { name: "Continue" });
+    await continueButton.focus();
+    await page.keyboard.press("Enter");
+    const inventoryUnitInput = page.getByLabel("Inventory Unit (base unit)");
     await inventoryUnitInput.focus();
     await page.keyboard.type("Tablet");
-    const retailPriceInput = page.getByLabel("Retail price (fils) *");
+    const retailPriceInput = page.getByLabel("Retail price (fils)");
     await retailPriceInput.focus();
     await page.keyboard.type("100000");
 
@@ -550,25 +646,106 @@ test.describe.serial("Product catalog screens", () => {
     await createButton.focus();
     await page.keyboard.press("Enter");
 
-    // Record view reached
+    // The successful create routes to the product's editable record for managers.
     await expect(page.getByTestId("product-display-name")).toHaveText(
       "Panadol Extra 500mg Tablet GSK",
     );
-    await expect(page.getByTestId("product-arabic-search-name")).toHaveText(
-      "بنادول اكسترا",
-    );
-    await expect(page.getByTestId("inventory-balance-readonly")).toBeVisible();
-    await expect(page.getByTestId("product-inventory-unit")).toHaveText(
-      "Tablet",
-    );
-    await expect(page.getByTestId("product-retail-price")).toHaveText(
-      "100 IQD",
-    );
+    await expect(arabicInput).toHaveValue("بنادول اكسترا");
+    await expect(inventoryUnitInput).toHaveValue("Tablet");
+    await expect(retailPriceInput).toHaveValue("100000");
 
-    // Save evidence screenshot of product form & record
+    // Save evidence screenshot of the editable product record.
     await page.screenshot({
       path: path.join(evidenceDir, "keyboard-medication-record.png"),
     });
+  });
+
+  test("Create steps retain values and persist informational supplier links", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products/new`);
+
+    const tradeName = page.getByLabel("Trade name");
+    await tradeName.fill("Supplier Link Workflow Item");
+    await expect(page.getByLabel("Inventory Unit (base unit)")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByLabel("Inventory Unit (base unit)")).toBeVisible();
+    await expect(page.getByLabel("Trade name")).toHaveCount(0);
+
+    const supplierSelect = page.locator(".catalog-supplier-add select");
+    await expect(
+      supplierSelect.getByRole("option", { name: "Breev UI Supplier Link" }),
+    ).toHaveCount(1);
+    await supplierSelect.selectOption(uiSupplierId);
+    await page.getByRole("button", { name: "Add supplier" }).click();
+    await expect(page.getByText("Breev UI Supplier Link")).toBeVisible();
+
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(tradeName).toHaveValue("Supplier Link Workflow Item");
+    await expect(page.getByLabel("Inventory Unit (base unit)")).toHaveCount(0);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByText("Breev UI Supplier Link")).toBeVisible();
+
+    await page.getByLabel("Inventory Unit (base unit)").fill("Tablet");
+    await page.getByLabel("Retail price (fils)").fill("100000");
+    await page.getByRole("button", { name: "Create product" }).click();
+
+    await expect(page.getByTestId("product-display-name")).toHaveText(
+      "Supplier Link Workflow Item",
+    );
+    await expect(page.getByText("Breev UI Supplier Link")).toBeVisible();
+    const productId = new URL(page.url()).hash.split("/").at(-1);
+    expect(productId).toBeDefined();
+    const readback = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/catalog/products/${productId}`,
+    );
+    expect(readback.status).toBe(200);
+    expect((readback.body as Product).supplierIds).toEqual([uiSupplierId]);
+  });
+
+  test("A supplier-option failure preserves existing links without a remove action", async ({
+    page,
+  }) => {
+    const linkedProduct = await createCatalogProduct(apiOrigin, credentials, {
+      ...sampleMedicationRequest("5000167000197"),
+      barcodes: [],
+      supplierIds: [uiSupplierId],
+    });
+    await page.route("**/catalog/supplier-options", (route) => route.abort());
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(`${renderer.origin}#/catalog/products/${linkedProduct.id}`);
+    await expect(
+      page.getByText("Supplier options could not be loaded."),
+    ).toBeVisible();
+    await expect(page.getByLabel("Scientific / Generic name")).toBeVisible();
+    await expect(page.getByText(uiSupplierId)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: new RegExp(`Remove ${uiSupplierId}`) }),
+    ).toHaveCount(0);
+
+    await page
+      .getByLabel("Scientific / Generic name")
+      .fill("Changed generic name");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    const readback = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/catalog/products/${linkedProduct.id}`,
+    );
+    expect(readback.status).toBe(200);
+    expect((readback.body as Product).supplierIds).toEqual([uiSupplierId]);
   });
 
   test("Instant English, Arabic, and scanner search announces counts in both directions and themes", async ({
@@ -716,12 +893,10 @@ test.describe.serial("Product catalog screens", () => {
     await page.goto(
       `${renderer.origin}#/catalog/products/${matchingProduct.id}`,
     );
-    await page
-      .getByRole("button", { name: "Suggest internal barcode" })
-      .press("Enter");
+    await page.getByRole("button", { name: "Suggest barcode" }).press("Enter");
     const internalCode = page.getByText(/^BRV-[0-9]{12}/u);
     await expect(internalCode).toBeVisible();
-    await page.getByRole("button", { name: "Print" }).press("Enter");
+    await page.getByRole("button", { name: "Print barcode" }).press("Enter");
     await expect
       .poll(async () =>
         page.evaluate(() =>
@@ -780,16 +955,30 @@ test.describe.serial("Product catalog screens", () => {
     await modeSelect.focus();
     await modeSelect.selectOption("general-item");
 
-    // Fill general item fields in order:
-    // Company → Sub-brand → Type/Use → Property → Target → Size
-    const companyInput = page.getByLabel("Company / Manufacturer *");
+    // Follow the definition card's keyboard order, including its shared controls.
+    const companyInput = page.getByLabel("Company / Manufacturer");
     await companyInput.focus();
     await page.keyboard.type("Nivea");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
       "Nivea",
     );
 
-    await page.keyboard.press("Tab");
+    await pressKeyOnFocused(page, companyInput, "Tab");
+    const clearColor = page.getByRole("button", { name: "Clear color" });
+    await expect(clearColor).toBeFocused();
+    await pressKeyOnFocused(page, clearColor, "Tab");
+    const manualColor = page.getByLabel("Manual state color");
+    await expect(manualColor).toBeFocused();
+    await pressKeyOnFocused(page, manualColor, "Tab");
+    const arabicName = page.getByLabel("Arabic search name");
+    await expect(arabicName).toBeFocused();
+    await pressKeyOnFocused(page, arabicName, "Tab");
+    const category = page.getByRole("combobox", {
+      name: "Category",
+      exact: true,
+    });
+    await expect(category).toBeFocused();
+    await pressKeyOnFocused(page, category, "Tab");
     await expect(page.getByLabel("Sub-brand / Series")).toBeFocused();
     await page.keyboard.type("Men");
     await expect(page.getByTestId("generated-display-name")).toHaveText(
@@ -824,8 +1013,9 @@ test.describe.serial("Product catalog screens", () => {
       "Nivea Men Body Lotion Hydrating Adults 250ml",
     );
 
-    await page.getByLabel("Inventory Unit (base unit) *").fill("Piece");
-    await page.getByLabel("Retail price (fils) *").fill("250000");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByLabel("Inventory Unit (base unit)").fill("Piece");
+    await page.getByLabel("Retail price (fils)").fill("250000");
 
     // Submit
     const createButton = page.getByRole("button", { name: "Create product" });
@@ -847,7 +1037,7 @@ test.describe.serial("Product catalog screens", () => {
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
-    const tradeNameInput = page.getByLabel("Trade name *");
+    const tradeNameInput = page.getByLabel("Trade name");
     const invalidTradeName = "I".repeat(121);
     await tradeNameInput.evaluate((element) =>
       element.removeAttribute("maxlength"),
@@ -857,14 +1047,15 @@ test.describe.serial("Product catalog screens", () => {
     await strengthInput.fill("500mg");
     const arabicInput = page.getByLabel("Arabic search name");
     await arabicInput.fill("دواء تجريبي");
-    await page.getByLabel("Inventory Unit (base unit) *").fill("Tablet");
-    await page.getByLabel("Retail price (fils) *").fill("100000");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByLabel("Inventory Unit (base unit)").fill("Tablet");
+    await page.getByLabel("Retail price (fils)").fill("100000");
 
     const submitBtn = page.getByRole("button", { name: "Create product" });
     await submitBtn.click();
 
     // Verifies error alert is shown
-    await expect(page.locator(".denial-alert")).toBeVisible();
+    await expect(page.getByRole("alert")).toBeVisible();
     await expect(
       page.getByText("Value exceeds maximum allowed length."),
     ).toBeVisible();
@@ -891,29 +1082,30 @@ test.describe.serial("Product catalog screens", () => {
     });
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
-    await page.getByLabel("Trade name *").fill("Exact Margin Product");
-    const inventoryUnit = page.getByLabel("Inventory Unit (base unit) *");
+    await page.getByLabel("Trade name").fill("Exact Margin Product");
+    await page.getByRole("button", { name: "Continue" }).click();
+    const inventoryUnit = page.getByLabel("Inventory Unit (base unit)");
     await inventoryUnit.focus();
     await page.keyboard.type("Strip");
 
-    const addPackage = page.getByRole("button", { name: "+ Add package unit" });
+    const addPackage = page.getByRole("button", { name: "Enable packaging" });
     await addPackage.focus();
     await page.keyboard.press("Enter");
-    const packageName = page.getByLabel("Package Name *");
+    const packageName = page.getByLabel("Package Name");
     await packageName.focus();
     await page.keyboard.type("Pack");
-    const ratio = page.getByLabel("Ratio (Inventory Units per package) *");
+    const ratio = page.getByLabel("Ratio (Inventory Units per package)");
     await ratio.focus();
+    await pressKeyOnFocused(page, ratio, "ControlOrMeta+A");
     await page.keyboard.type("4");
-    await page.getByLabel("Purchase invoice default").selectOption("Pack");
-
-    const pricingMethod = page.getByLabel("Pricing method");
-    await pricingMethod.selectOption("by-percentage");
-    const cost = page.getByLabel("Approved cost (fils) *");
+    await page.getByRole("button", { name: "By %", exact: true }).click();
+    const cost = page.getByLabel("Approved cost (fils)");
     await cost.focus();
+    await pressKeyOnFocused(page, cost, "ControlOrMeta+A");
     await page.keyboard.type("80000");
-    const margin = page.getByLabel("Profit margin percentage (%) *");
+    const margin = page.getByLabel("Profit margin percentage (%)");
     await margin.focus();
+    await pressKeyOnFocused(page, margin, "ControlOrMeta+A");
     await page.keyboard.type("20");
     const rounding = page.getByLabel("Price rounding step");
     await rounding.selectOption("nearest-250-iqd");
@@ -921,19 +1113,38 @@ test.describe.serial("Product catalog screens", () => {
     await rounding.selectOption("off");
 
     await page.getByRole("button", { name: "Create product" }).click();
-    await expect(page.getByTestId("product-package-units")).toContainText(
-      "Pack",
+    await expect(page.getByTestId("product-display-name")).toHaveText(
+      "Exact Margin Product",
     );
-    await expect(page.getByTestId("product-package-units")).toContainText("4");
-    await expect(page.getByTestId("product-pricing-method")).toContainText(
-      "Sell by percentage",
+    const productId = new URL(page.url()).hash.split("/").at(-1);
+    const readback = await requestLocalApi(
+      apiOrigin,
+      credentials,
+      "GET",
+      `/catalog/products/${productId}`,
     );
-    await expect(page.getByTestId("product-retail-price")).toHaveText(
-      "100 IQD",
-    );
-    await expect(page.getByTestId("product-margin-percentage")).toHaveText(
-      "20%",
-    );
+    expect(readback.status).toBe(200);
+    const saved = productSchema.parse(readback.body);
+    expect(saved.packaging.packageUnits).toEqual([
+      { name: "Pack", baseUnitsPerPackage: "4" },
+    ]);
+    expect(saved.pricing).toMatchObject({
+      method: "by-percentage",
+      marginPercentage: "20",
+      retailPriceFils: "100000",
+      rounding: "off",
+    });
+    await page.reload();
+    await expect(page.getByLabel("Package Name")).toHaveValue("Pack");
+    await expect(
+      page.getByLabel("Ratio (Inventory Units per package)"),
+    ).toHaveValue("4");
+    await expect(
+      page.getByRole("button", { name: "By %", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByLabel("Stored / calculated retail price"),
+    ).toHaveText("100 IQD");
     await page.screenshot({
       fullPage: true,
       path: path.join(evidenceDir, "units-percentage-pricing-en-light.png"),
@@ -946,13 +1157,14 @@ test.describe.serial("Product catalog screens", () => {
       theme: "light",
     });
     await page.goto(`${renderer.origin}#/catalog/products/new`);
-    await page.getByLabel("Trade name *").fill("Invalid Ratio Product");
-    await page.getByLabel("Inventory Unit (base unit) *").fill("Strip");
-    await page.getByRole("button", { name: "+ Add package unit" }).click();
-    await page.getByLabel("Package Name *").fill("Pack");
-    const ratio = page.getByLabel("Ratio (Inventory Units per package) *");
+    await page.getByLabel("Trade name").fill("Invalid Ratio Product");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByLabel("Inventory Unit (base unit)").fill("Strip");
+    await page.getByRole("button", { name: "Enable packaging" }).click();
+    await page.getByLabel("Package Name").fill("Pack");
+    const ratio = page.getByLabel("Ratio (Inventory Units per package)");
     await ratio.fill("0");
-    await page.getByLabel("Retail price (fils) *").fill("100000");
+    await page.getByLabel("Retail price (fils)").fill("100000");
 
     await page.getByRole("button", { name: "Create product" }).click();
     await expect(
@@ -973,7 +1185,7 @@ test.describe.serial("Product catalog screens", () => {
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
-    await page.getByLabel("Trade name *").fill("Augmentin");
+    await page.getByLabel("Trade name").fill("Augmentin");
     await page.getByLabel("Strength").fill("1g");
 
     const modeSelect = page.getByLabel("Product definition mode");
@@ -999,7 +1211,7 @@ test.describe.serial("Product catalog screens", () => {
     // Cancel preserves fields and current mode
     await dialog.getByRole("button", { name: "Keep current mode" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByLabel("Trade name *")).toHaveValue("Augmentin");
+    await expect(page.getByLabel("Trade name")).toHaveValue("Augmentin");
     await expect(page.getByLabel("Product definition mode")).toHaveValue(
       "medication",
     );
@@ -1013,7 +1225,7 @@ test.describe.serial("Product catalog screens", () => {
     await expect(page.getByLabel("Product definition mode")).toHaveValue(
       "general-item",
     );
-    await expect(page.getByLabel("Company / Manufacturer *")).toHaveValue("");
+    await expect(page.getByLabel("Company / Manufacturer")).toHaveValue("");
   });
 
   test("The Arabic search name appears below the English name and never inside it", async ({
@@ -1026,7 +1238,7 @@ test.describe.serial("Product catalog screens", () => {
 
     await page.goto(`${renderer.origin}#/catalog/products/new`);
 
-    await page.getByLabel("Trade name *").fill("Amoxicillin");
+    await page.getByLabel("Trade name").fill("Amoxicillin");
     await page.getByLabel("Strength").fill("500mg");
     await page.getByLabel("Arabic search name").fill("أموكسيسيلين");
 
@@ -1060,17 +1272,17 @@ test.describe.serial("Product catalog screens", () => {
     const outputElement = page.getByTestId("generated-display-name");
     await expect(outputElement).toHaveJSProperty("tagName", "OUTPUT");
 
-    // Navigate with Tab from Manufacturer to Arabic Search Name
+    // Tab follows the definition row without an editable generated-name field.
     const manufacturerInput = page.getByLabel("Manufacturer");
     await manufacturerInput.focus();
     await expect(manufacturerInput).toBeFocused();
 
-    await page.keyboard.press("Tab");
-    // Directly reaches Arabic search name without focusing an editable display name
-    await expect(page.getByLabel("Arabic search name")).toBeFocused();
+    await pressKeyOnFocused(page, manufacturerInput, "Tab");
+    await expect(page.getByLabel("Dosage form")).toBeFocused();
+    await expect(outputElement).not.toBeFocused();
   });
 
-  test("The inventory balance renders read-only and is announced as read-only to assistive technology", async ({
+  test("Batch facts load from Inventory as read-only product data", async ({
     page,
   }) => {
     await installDesktopFake(page, renderer.origin, {
@@ -1082,14 +1294,17 @@ test.describe.serial("Product catalog screens", () => {
       `${renderer.origin}#/catalog/products/${inventoryProduct.id}`,
     );
 
-    const balanceRegion = page.getByRole("region", {
-      name: "Read-only inventory balance. Stock cannot be directly modified through Catalog.",
-    });
-    await expect(balanceRegion).toBeVisible();
-
-    const balanceDisplay = page.getByTestId("inventory-balance-readonly");
-    await expect(balanceDisplay).toHaveAttribute("aria-readonly", "true");
-    await expect(balanceDisplay).toContainText("0 Inventory Units");
+    const batchFacts = page.getByText("Batch facts", { exact: true });
+    await expect(batchFacts).toBeVisible();
+    await batchFacts.click();
+    await expect(
+      page.getByText("There are no batches with balance for this item."),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "Batch balances are read-only here and are managed in Inventory.",
+      ),
+    ).toBeVisible();
 
     // Assert no writable input for balance exists
     await expect(page.locator("input[name*='balance']")).toHaveCount(0);
@@ -1136,65 +1351,259 @@ test.describe.serial("Product catalog screens", () => {
       for (const theme of themes) {
         const context = await browser.newContext();
         const page = await context.newPage();
-        await installDesktopFake(page, renderer.origin, { locale, theme });
+        try {
+          await installDesktopFake(page, renderer.origin, { locale, theme });
 
-        // 1. Product Form
+          // 1. Product Form
+          await page.goto(`${renderer.origin}#/catalog/products/new`);
+          await expect(page.locator("html")).toHaveAttribute("lang", locale);
+          await expect(page.locator("html")).toHaveAttribute(
+            "dir",
+            locale === "ar" ? "rtl" : "ltr",
+          );
+          await expect(page.locator("html")).toHaveAttribute(
+            "data-theme",
+            theme,
+          );
+
+          const formAxe = await new AxeBuilder({ page }).analyze();
+          expect(formAxe.violations).toEqual([]);
+
+          // Focus outline check
+          const firstInput = page.locator("input").first();
+          await firstInput.focus();
+          const outlineWidth = await firstInput.evaluate((el) => {
+            const view = el.ownerDocument.defaultView;
+            return view === null
+              ? 0
+              : Number.parseFloat(view.getComputedStyle(el).outlineWidth);
+          });
+          expect(outlineWidth).toBeGreaterThanOrEqual(3);
+
+          const formScreenshotName = `catalog-product-form-${locale}-${theme}.png`;
+          await page.screenshot({
+            fullPage: true,
+            path: path.join(evidenceDir, formScreenshotName),
+          });
+          await page.screenshot({
+            fullPage: true,
+            path: path.join(testResultsDir, formScreenshotName),
+          });
+
+          // 2. Product Record View
+          await page.goto(
+            `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
+          );
+          await expect(page.locator("html")).toHaveAttribute("lang", locale);
+          await expect(page.locator("html")).toHaveAttribute(
+            "dir",
+            locale === "ar" ? "rtl" : "ltr",
+          );
+          await expect(page.locator("html")).toHaveAttribute(
+            "data-theme",
+            theme,
+          );
+
+          const recordAxe = await new AxeBuilder({ page }).analyze();
+          expect(recordAxe.violations).toEqual([]);
+
+          const recordScreenshotName = `catalog-product-record-${locale}-${theme}.png`;
+          await page.screenshot({
+            fullPage: true,
+            path: path.join(evidenceDir, recordScreenshotName),
+          });
+          await page.screenshot({
+            fullPage: true,
+            path: path.join(testResultsDir, recordScreenshotName),
+          });
+        } finally {
+          await context.close();
+        }
+      }
+    }
+  });
+
+  test("Catalog edit canvas and packaging panels follow the theme in both locales", async ({
+    browser,
+  }) => {
+    test.setTimeout(180_000);
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        for (const viewport of [
+          { width: 1280, height: 800 },
+          { width: 1366, height: 768 },
+          { width: 1920, height: 1047 },
+        ]) {
+          const context = await browser.newContext({ viewport });
+          const page = await context.newPage();
+          try {
+            await installDesktopFake(page, renderer.origin, { locale, theme });
+            await page.goto(
+              `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
+            );
+            const canvas = page.locator(".product-screen-root");
+            await expect(canvas).toBeVisible();
+            const cards = canvas.locator(".catalog-packaging-card");
+            await expect(cards).toHaveCount(2);
+            const surfaces = await canvas.evaluate((element) => {
+              const view = element.ownerDocument.defaultView!;
+              const background = (
+                node: Parameters<typeof view.getComputedStyle>[0],
+              ): string => view.getComputedStyle(node).backgroundColor;
+              return {
+                canvas: background(element),
+                cards: Array.from(
+                  element.querySelectorAll(".catalog-packaging-card"),
+                  background,
+                ),
+                headers: Array.from(
+                  element.querySelectorAll(".catalog-packaging-header"),
+                  background,
+                ),
+                whitePanels: Array.from(
+                  element.querySelectorAll("div, section, details, header"),
+                ).filter(
+                  (node) =>
+                    view.getComputedStyle(node).display !== "none" &&
+                    background(node) === "rgb(255, 255, 255)",
+                ).length,
+              };
+            });
+            expect(surfaces.canvas).toBe(
+              theme === "dark" ? "rgb(22, 33, 42)" : "rgb(255, 255, 255)",
+            );
+            expect(surfaces.cards).toEqual(Array(2).fill(surfaces.canvas));
+            expect(surfaces.headers).toEqual(
+              Array(2).fill(
+                theme === "dark" ? "rgb(28, 41, 51)" : "rgb(246, 247, 249)",
+              ),
+            );
+            if (theme === "dark") expect(surfaces.whitePanels).toBe(0);
+            const axes = await new AxeBuilder({ page }).analyze();
+            expect(axes.violations).toEqual([]);
+            await expect(
+              canvas.locator(".catalog-product-form-actions"),
+            ).toBeInViewport({ ratio: 1 });
+            expect(
+              await page.locator("html").evaluate((element) => ({
+                client: element.clientWidth,
+                scroll: element.scrollWidth,
+              })),
+            ).toEqual({ client: viewport.width, scroll: viewport.width });
+            await page.screenshot({
+              animations: "disabled",
+              path: test
+                .info()
+                .outputPath(
+                  `catalog-edit-${locale}-${theme}-${viewport.width}.png`,
+                ),
+              fullPage: true,
+            });
+          } finally {
+            await context.close();
+          }
+        }
+      }
+    }
+  });
+
+  test("Catalog text controls keep themed surfaces and visible boundaries", async ({
+    browser,
+  }) => {
+    for (const theme of ["light", "dark"] as const) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await installDesktopFake(page, renderer.origin, {
+          locale: "ar",
+          theme,
+        });
         await page.goto(`${renderer.origin}#/catalog/products/new`);
-        await expect(page.locator("html")).toHaveAttribute("lang", locale);
-        await expect(page.locator("html")).toHaveAttribute(
-          "dir",
-          locale === "ar" ? "rtl" : "ltr",
+
+        const arabicName = page.locator('input[name="arabicSearchName"]');
+        const railSearch = page.locator(".catalog-rail-search");
+        await expect(arabicName).toBeVisible();
+        await expect(railSearch).toBeVisible();
+
+        const expectedBorder =
+          theme === "dark" ? "rgb(91, 120, 136)" : "rgb(120, 142, 157)";
+        const expectedSurface =
+          theme === "dark" ? "rgb(19, 29, 52)" : "rgb(255, 255, 255)";
+        const expectThemedBoundary = async (
+          control: Locator,
+          surface = expectedSurface,
+        ) => {
+          const appearance = await control.evaluate((element) => {
+            const style =
+              element.ownerDocument.defaultView!.getComputedStyle(element);
+            return {
+              background: style.backgroundColor,
+              borderColor: style.borderTopColor,
+              borderWidth: style.borderTopWidth,
+            };
+          });
+          expect(appearance).toEqual({
+            background: surface,
+            borderColor: expectedBorder,
+            borderWidth: "1px",
+          });
+          const luminance = (colour: string): number => {
+            const channels = colour.match(/\d+/gu)!.slice(0, 3).map(Number);
+            return channels.reduce((total, channel, index) => {
+              const value = channel / 255;
+              const linear =
+                value <= 0.04045
+                  ? value / 12.92
+                  : ((value + 0.055) / 1.055) ** 2.4;
+              return total + linear * [0.2126, 0.7152, 0.0722][index]!;
+            }, 0);
+          };
+          const border = luminance(appearance.borderColor);
+          const background = luminance(appearance.background);
+          expect(
+            (Math.max(border, background) + 0.05) /
+              (Math.min(border, background) + 0.05),
+          ).toBeGreaterThanOrEqual(3);
+        };
+        await expectThemedBoundary(arabicName);
+        await expectThemedBoundary(
+          railSearch,
+          theme === "dark" ? "rgb(15, 23, 29)" : expectedSurface,
         );
-        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 
-        const formAxe = await new AxeBuilder({ page }).analyze();
-        expect(formAxe.violations).toEqual([]);
-
-        // Focus outline check
-        const firstInput = page.locator("input").first();
-        await firstInput.focus();
-        const outlineWidth = await firstInput.evaluate((el) => {
-          const view = el.ownerDocument.defaultView;
-          return view === null
-            ? 0
-            : Number.parseFloat(view.getComputedStyle(el).outlineWidth);
-        });
-        expect(outlineWidth).toBeGreaterThanOrEqual(3);
-
-        const formScreenshotName = `catalog-product-form-${locale}-${theme}.png`;
-        await page.screenshot({
-          fullPage: true,
-          path: path.join(evidenceDir, formScreenshotName),
-        });
-        await page.screenshot({
-          fullPage: true,
-          path: path.join(testResultsDir, formScreenshotName),
-        });
-
-        // 2. Product Record View
-        await page.goto(
-          `${renderer.origin}#/catalog/products/${matrixProduct.id}`,
+        await page.locator('input[name="tradeName"]').fill("Theme check");
+        await page
+          .locator("form.catalog-product-form button[type=submit]")
+          .click();
+        await expect(page.locator("form.catalog-product-form")).toHaveAttribute(
+          "data-create-step",
+          "2",
         );
-        await expect(page.locator("html")).toHaveAttribute("lang", locale);
-        await expect(page.locator("html")).toHaveAttribute(
-          "dir",
-          locale === "ar" ? "rtl" : "ltr",
+        const wholesale = page.locator(
+          '[data-catalog-stepper]:has(input[name="pricing.wholesalePriceFils"])',
         );
-        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-
-        const recordAxe = await new AxeBuilder({ page }).analyze();
-        expect(recordAxe.violations).toEqual([]);
-
-        const recordScreenshotName = `catalog-product-record-${locale}-${theme}.png`;
+        const cost = page.locator(
+          '[data-catalog-stepper]:has(input[name="pricing.costFils"])',
+        );
+        await expect(wholesale).toBeVisible();
+        await expect(cost).toBeVisible();
+        await expectThemedBoundary(wholesale);
+        await expectThemedBoundary(cost);
+        if (theme === "dark") {
+          await wholesale.locator("input").focus();
+          const focus = await wholesale.evaluate((element) => {
+            const style =
+              element.ownerDocument.defaultView!.getComputedStyle(element);
+            return { border: style.borderTopColor, shadow: style.boxShadow };
+          });
+          expect(focus.border).toBe("rgb(127, 166, 192)");
+          expect(focus.shadow).not.toBe("none");
+        }
         await page.screenshot({
+          path: test.info().outputPath(`catalog-controls-${theme}.png`),
           fullPage: true,
-          path: path.join(evidenceDir, recordScreenshotName),
         });
-        await page.screenshot({
-          fullPage: true,
-          path: path.join(testResultsDir, recordScreenshotName),
-        });
-
+      } finally {
         await context.close();
       }
     }

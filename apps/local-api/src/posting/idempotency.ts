@@ -99,7 +99,7 @@ export async function beginPostingIdempotency(
     ],
   );
   const result = await client.query<CommandResultRow>(
-    `select request_hash, response_status, response_body
+    `select request_hash, response_status, response_projection as response_body
      from posting_command_results
      where pharmacy_id = $1 and command_name = $2 and idempotency_key = $3`,
     [input.pharmacyId, input.commandName, input.idempotencyKey],

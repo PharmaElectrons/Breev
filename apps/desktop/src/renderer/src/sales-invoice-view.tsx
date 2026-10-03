@@ -6,6 +6,7 @@ import {
   formatNumber,
   type Locale,
 } from "./preferences";
+import { saleLineEditValues, type SaleLineEdit } from "./sales-line-drafts";
 
 interface InvoiceCopy {
   readonly heading: string;
@@ -16,6 +17,7 @@ interface InvoiceCopy {
   readonly price: string;
   readonly discount: string;
   readonly lineTotal: string;
+  readonly actions: string;
   readonly gross: string;
   readonly lineDiscount: string;
   readonly invoiceDiscount: string;
@@ -36,18 +38,22 @@ interface InvoiceCopy {
   readonly awaiting: string;
   readonly unavailable: string;
   readonly selectLine: string;
+  readonly collapse: string;
+  readonly expand: string;
+  readonly itemsCount: string;
 }
 
 const invoiceCopy: Record<Locale, InvoiceCopy> = {
   ar: {
     heading: "فاتورة البيع الجارية",
-    empty: "المسودة فارغة. ابحث عن مادة وأضفها إلى الفاتورة.",
-    item: "المادة",
+    empty: "امسح باركود أو أضف مادة للبدء",
+    item: "اسم المادة",
     unit: "الوحدة",
     quantity: "الكمية",
     price: "السعر",
     discount: "خصم السطر %",
     lineTotal: "الإجمالي",
+    actions: "الإجراءات",
     gross: "قبل الخصم",
     lineDiscount: "خصم السطور",
     invoiceDiscount: "خصم الفاتورة (د.ع)",
@@ -57,7 +63,7 @@ const invoiceCopy: Record<Locale, InvoiceCopy> = {
     increase: "زيادة الكمية",
     decrease: "تقليل الكمية",
     invalidDiscount: "أدخل مبلغاً صحيحاً بالدينار، حتى ثلاثة منازل عشرية.",
-    clear: "إفراغ الفاتورة",
+    clear: "حذف الفاتورة",
     suspend: "تعليق المسودة",
     discard: "استبعاد المسودة",
     confirmClear: "سيُحذف كل سطر وخصم من هذه المسودة. هل تريد المتابعة؟",
@@ -68,16 +74,20 @@ const invoiceCopy: Record<Locale, InvoiceCopy> = {
     awaiting: "بانتظار تأكيد الحفظ — أعد المحاولة",
     unavailable: "لا يمكن تعديل هذه المسودة.",
     selectLine: "اختر سطراً لتعديله",
+    collapse: "طي الفاتورة",
+    expand: "توسيع الفاتورة",
+    itemsCount: "عدد المواد",
   },
   en: {
     heading: "Current sale invoice",
-    empty: "This draft is empty. Search for an item and add it to the sale.",
+    empty: "Scan a barcode or add an item to start",
     item: "Item",
     unit: "Unit",
     quantity: "Quantity",
     price: "Price",
     discount: "Line discount %",
     lineTotal: "Total",
+    actions: "Actions",
     gross: "Before discounts",
     lineDiscount: "Line discounts",
     invoiceDiscount: "Invoice discount (IQD)",
@@ -94,19 +104,36 @@ const invoiceCopy: Record<Locale, InvoiceCopy> = {
       "This removes every line and discount from this draft. Continue?",
     confirmDiscard: "This discards the unfinished sale. Continue?",
     cancel: "Cancel",
-    saved: "Draft saved on the server",
+    saved: "Draft saved on server",
     saving: "Saving…",
-    awaiting: "Save unconfirmed — retry the edit",
+    awaiting: "Awaiting save confirmation — retry",
     unavailable: "This draft cannot be edited.",
-    selectLine: "Select a line to edit it",
+    selectLine: "Select line to edit",
+    collapse: "Collapse invoice",
+    expand: "Expand invoice",
+    itemsCount: "Items",
   },
 };
 
-type LineChange = {
-  readonly quantity: string;
-  readonly unitId: string;
-  readonly lineDiscountPercentage: string;
-};
+function currency(fils: string, locale: Locale): string {
+  return formatCurrencyFromFils(BigInt(fils), locale);
+}
+
+function parseIqd(input: string): string | null {
+  const normalized = input.trim();
+  if (normalized.length === 0) return null;
+  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(normalized)) return null;
+  const [whole = "0", fraction = ""] = normalized.split(".");
+  return (BigInt(whole) * 1_000n + BigInt(fraction.padEnd(3, "0"))).toString();
+}
+
+function iqdInput(fils: string): string {
+  const value = BigInt(fils);
+  const whole = value / 1_000n;
+  const fraction = value % 1_000n;
+  if (fraction === 0n) return whole.toString();
+  return `${whole.toString()}.${fraction.toString().padStart(3, "0").replace(/0+$/u, "")}`;
+}
 
 export interface SalesInvoiceViewProps {
   readonly draft: SaleDraft;
@@ -114,63 +141,49 @@ export interface SalesInvoiceViewProps {
   readonly busy: boolean;
   readonly canOverridePrice: boolean;
   readonly pendingConfirmation: boolean;
+  readonly readOnly?: boolean;
   readonly selectedLineId: string | null;
+  readonly lineEdit: SaleLineEdit | null;
+  readonly onEditLine: (lineId: string, edit: SaleLineEdit) => void;
   readonly onSelectLine: (lineId: string | null) => void;
   readonly onOpenProduct: (line: SaleDraftLine) => void;
   readonly onOpenPrice: (line: SaleDraftLine) => void;
-  readonly onChangeLine: (lineId: string, change: Partial<LineChange>) => void;
+  readonly onChangeLine: (
+    lineId: string,
+    change: {
+      readonly quantity?: string;
+      readonly unitId?: string;
+      readonly lineDiscountPercentage?: string;
+    },
+  ) => void;
   readonly onRemoveLine: (lineId: string) => void;
   readonly onSetInvoiceDiscount: (fils: string) => void;
   readonly onClear: () => void;
-  readonly onSuspend: () => void;
-  readonly onDiscard: () => void;
-}
-
-function currency(value: string, locale: Locale): string {
-  return formatCurrencyFromFils(BigInt(value), locale);
-}
-
-function iqdInput(value: string): string {
-  const fils = BigInt(value);
-  const whole = fils / 1_000n;
-  const remainder = fils % 1_000n;
-  return remainder === 0n
-    ? String(whole)
-    : `${whole}.${String(remainder).padStart(3, "0").replace(/0+$/u, "")}`;
-}
-
-function parseIqd(value: string): string | null {
-  const normalized = value.trim();
-  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(normalized)) return null;
-  const [whole = "0", fractional = ""] = normalized.split(".");
-  return (
-    BigInt(whole) * 1_000n +
-    BigInt(fractional.padEnd(3, "0"))
-  ).toString();
 }
 
 function LineEditor({
-  busy,
   line,
+  edit,
+  onEdit,
   locale,
+  busy,
   onChange,
   onRemove,
 }: {
-  readonly busy: boolean;
   readonly line: SaleDraftLine;
+  readonly edit: SaleLineEdit;
+  readonly onEdit: (edit: SaleLineEdit) => void;
   readonly locale: Locale;
-  readonly onChange: (change: Partial<LineChange>) => void;
+  readonly busy: boolean;
+  readonly onChange: (change: {
+    readonly quantity?: string;
+    readonly unitId?: string;
+    readonly lineDiscountPercentage?: string;
+  }) => void;
   readonly onRemove: () => void;
 }): React.JSX.Element {
   const copy = invoiceCopy[locale];
-  const [unitId, setUnitId] = useState(line.unitId ?? "");
-  const [quantity, setQuantity] = useState(line.quantity);
-  const [percentage, setPercentage] = useState(line.lineDiscountPercentage);
-  useEffect(() => {
-    setUnitId(line.unitId ?? "");
-    setQuantity(line.quantity);
-    setPercentage(line.lineDiscountPercentage);
-  }, [line.id, line.quantity, line.unitId, line.lineDiscountPercentage]);
+  const { quantity, unitId, lineDiscountPercentage: percentage } = edit;
 
   return (
     <form
@@ -183,7 +196,7 @@ function LineEditor({
         )
           return;
         onChange({
-          ...(line.kind === "catalog" && unitId !== line.unitId
+          ...(line.kind === "catalog" && unitId !== "" && unitId !== line.unitId
             ? { unitId }
             : {}),
           ...(quantity === line.quantity ? {} : { quantity }),
@@ -200,7 +213,9 @@ function LineEditor({
           <select
             disabled={busy}
             value={unitId}
-            onChange={(event) => setUnitId(event.target.value)}
+            onChange={(event) =>
+              onEdit({ ...edit, unitId: event.target.value })
+            }
           >
             {line.eligibleUnits.map((unit) => (
               <option key={unit.unitId} value={unit.unitId}>
@@ -221,7 +236,9 @@ function LineEditor({
           required
           type="number"
           value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
+          onChange={(event) =>
+            onEdit({ ...edit, quantity: event.target.value })
+          }
         />
       </label>
       <label>
@@ -234,7 +251,9 @@ function LineEditor({
           required
           type="number"
           value={percentage}
-          onChange={(event) => setPercentage(event.target.value)}
+          onChange={(event) =>
+            onEdit({ ...edit, lineDiscountPercentage: event.target.value })
+          }
         />
       </label>
       <div className="sales-line-editor-actions">
@@ -255,7 +274,10 @@ export function SalesInvoiceView({
   busy,
   canOverridePrice,
   pendingConfirmation,
+  readOnly = false,
   selectedLineId,
+  lineEdit,
+  onEditLine,
   onSelectLine,
   onOpenProduct,
   onOpenPrice,
@@ -263,19 +285,17 @@ export function SalesInvoiceView({
   onRemoveLine,
   onSetInvoiceDiscount,
   onClear,
-  onSuspend,
-  onDiscard,
 }: SalesInvoiceViewProps): React.JSX.Element {
   const copy = invoiceCopy[locale];
   const [discountInput, setDiscountInput] = useState(
     iqdInput(draft.invoiceDiscountFils),
   );
   const [discountError, setDiscountError] = useState(false);
-  const [confirmation, setConfirmation] = useState<"clear" | "discard" | null>(
-    null,
-  );
+  const [confirmation, setConfirmation] = useState<"clear" | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const selectedLine =
     draft.lines.find((line) => line.id === selectedLineId) ?? null;
+
   useEffect(() => {
     setDiscountInput(iqdInput(draft.invoiceDiscountFils));
     setDiscountError(false);
@@ -286,120 +306,251 @@ export function SalesInvoiceView({
       aria-label={copy.heading}
       className="sales-invoice"
       data-sale-invoice={draft.id}
+      data-collapsed={isCollapsed ? "true" : undefined}
     >
       <div className="sales-invoice-heading">
-        <h3>{copy.heading}</h3>
-        <span aria-live="polite" role="status">
-          {pendingConfirmation
-            ? copy.awaiting
-            : busy
-              ? copy.saving
-              : copy.saved}
-        </span>
+        <div className="sales-invoice-heading-left">
+          <h3>{copy.heading}</h3>
+          {draft.lines.length > 0 && isCollapsed ? (
+            <span className="sales-invoice-heading-pill">
+              {locale === "ar"
+                ? `${draft.lines.length} مواد · ${currency(draft.totals.totalFils, locale)}`
+                : `${draft.lines.length} items · ${currency(draft.totals.totalFils, locale)}`}
+            </span>
+          ) : null}
+        </div>
+        <div className="sales-invoice-heading-actions">
+          <span aria-live="polite" role="status">
+            {readOnly
+              ? locale === "ar"
+                ? "مسودة معلقة · للقراءة فقط"
+                : "Suspended draft · read only"
+              : pendingConfirmation
+                ? copy.awaiting
+                : busy
+                  ? copy.saving
+                  : copy.saved}
+          </span>
+          <button
+            type="button"
+            className="sales-collapse-toggle-btn sales-invoice-collapse-btn"
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? copy.expand : copy.collapse}
+            title={isCollapsed ? copy.expand : copy.collapse}
+            onClick={() => setIsCollapsed((prev) => !prev)}
+          >
+            <svg
+              aria-hidden="true"
+              className="sales-collapse-icon"
+              fill="none"
+              height="14"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              width="14"
+            >
+              <path d={isCollapsed ? "M6 9l6 6 6-6" : "M6 15l6-6 6 6"} />
+            </svg>
+            <span>{isCollapsed ? copy.expand : copy.collapse}</span>
+          </button>
+        </div>
       </div>
+
       <div className="sales-invoice-table-wrap">
         {draft.lines.length === 0 ? (
-          <p className="sales-invoice-empty">{copy.empty}</p>
+          <div className="sales-invoice-empty-wrap">
+            <p className="sales-invoice-empty">{copy.empty}</p>
+          </div>
         ) : (
           <table className="sales-invoice-table">
             <thead>
               <tr>
-                <th scope="col">#</th>
-                <th scope="col">{copy.item}</th>
-                <th scope="col">{copy.unit}</th>
-                <th scope="col">{copy.quantity}</th>
-                <th scope="col">{copy.price}</th>
-                <th scope="col">{copy.discount}</th>
-                <th scope="col">{copy.lineTotal}</th>
+                <th scope="col" className="sales-col-num">
+                  #
+                </th>
+                <th scope="col" className="sales-col-item">
+                  {copy.item}
+                </th>
+                <th scope="col" className="sales-col-unit">
+                  {copy.unit}
+                </th>
+                <th scope="col" className="sales-col-qty">
+                  {copy.quantity}
+                </th>
+                <th scope="col" className="sales-col-price">
+                  {copy.price}
+                </th>
+                <th scope="col" className="sales-col-total">
+                  {copy.lineTotal}
+                </th>
+                <th scope="col" className="sales-col-actions">
+                  {copy.actions}
+                </th>
               </tr>
             </thead>
             <tbody>
-              {draft.lines.map((line, index) => (
-                <tr
-                  data-sale-line-id={line.id}
-                  data-selected={selectedLineId === line.id || undefined}
-                  key={line.id}
-                >
-                  <td>{formatNumber(index + 1, locale)}</td>
-                  <td>
-                    <button
-                      aria-label={`${copy.selectLine}: ${line.displayName}`}
-                      className="sales-line-select"
-                      type="button"
-                      onClick={() => onSelectLine(line.id)}
+              {draft.lines.map((line, index) => {
+                const isSelected = selectedLineId === line.id;
+                const hasDiscount = line.lineDiscountPercentage !== "0";
+                return (
+                  <tr
+                    data-sale-line-id={line.id}
+                    data-selected={isSelected || undefined}
+                    key={line.id}
+                    onClick={() => onSelectLine(line.id)}
+                  >
+                    <td className="sales-col-num">
+                      {formatNumber(index + 1, locale)}
+                    </td>
+                    <td className="sales-col-item">
+                      <div className="sales-line-name-wrap">
+                        <button
+                          aria-label={`${copy.selectLine}: ${line.displayName}`}
+                          className="sales-line-select"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectLine(line.id);
+                          }}
+                        >
+                          {line.displayName}
+                        </button>
+                        {line.productId === null ? null : (
+                          <button
+                            aria-label={`${locale === "ar" ? "فتح سجل المادة" : "Open item record"}: ${line.displayName}`}
+                            className="sales-line-open-product"
+                            data-sale-line-record={line.id}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenProduct(line);
+                            }}
+                          >
+                            ↗
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td className="sales-col-unit">
+                      <span className="sales-line-unit-badge">
+                        {line.unitName}
+                      </span>
+                    </td>
+                    <td
+                      className="sales-col-qty sales-quantity-cell"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {line.displayName}
-                    </button>
-                    {line.productId === null ? null : (
                       <button
-                        aria-label={`${locale === "ar" ? "فتح سجل المادة" : "Open item record"}: ${line.displayName}`}
-                        className="sales-line-open-product"
-                        data-sale-line-record={line.id}
+                        aria-label={`${copy.decrease}: ${line.displayName}`}
+                        disabled={readOnly || busy || line.quantity === "1"}
                         type="button"
-                        onClick={() => onOpenProduct(line)}
+                        onClick={() =>
+                          onChangeLine(line.id, {
+                            quantity: String(BigInt(line.quantity) - 1n),
+                          })
+                        }
                       >
-                        ↗
+                        −
                       </button>
-                    )}
-                  </td>
-                  <td>{line.unitName}</td>
-                  <td className="sales-quantity-cell">
-                    <button
-                      aria-label={`${copy.decrease}: ${line.displayName}`}
-                      disabled={busy || line.quantity === "1"}
-                      type="button"
-                      onClick={() =>
-                        onChangeLine(line.id, {
-                          quantity: String(BigInt(line.quantity) - 1n),
-                        })
-                      }
-                    >
-                      −
-                    </button>
-                    <span>{formatNumber(BigInt(line.quantity), locale)}</span>
-                    <button
-                      aria-label={`${copy.increase}: ${line.displayName}`}
-                      disabled={busy}
-                      type="button"
-                      onClick={() =>
-                        onChangeLine(line.id, {
-                          quantity: String(BigInt(line.quantity) + 1n),
-                        })
-                      }
-                    >
-                      +
-                    </button>
-                  </td>
-                  <td>
-                    {canOverridePrice && line.kind === "catalog" ? (
+                      <span className="sales-quantity-val">
+                        {formatNumber(BigInt(line.quantity), locale)}
+                      </span>
                       <button
-                        aria-label={`${locale === "ar" ? "تغيير سعر السطر" : "Change line price"}: ${line.displayName}`}
-                        className="sales-line-price-button"
-                        disabled={busy}
+                        aria-label={`${copy.increase}: ${line.displayName}`}
+                        disabled={readOnly || busy}
                         type="button"
-                        onClick={() => onOpenPrice(line)}
+                        onClick={() =>
+                          onChangeLine(line.id, {
+                            quantity: String(BigInt(line.quantity) + 1n),
+                          })
+                        }
                       >
-                        {currency(line.unitPriceFils, locale)}
+                        +
                       </button>
-                    ) : (
-                      currency(line.unitPriceFils, locale)
-                    )}
-                  </td>
-                  <td>
-                    {formatNumber(BigInt(line.lineDiscountPercentage), locale)}%
-                  </td>
-                  <td>{currency(line.totalFils, locale)}</td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="sales-col-price">
+                      {!readOnly &&
+                      canOverridePrice &&
+                      line.kind === "catalog" ? (
+                        <button
+                          aria-label={`${locale === "ar" ? "تغيير سعر السطر" : "Change line price"}: ${line.displayName}`}
+                          className="sales-line-price-button"
+                          disabled={busy}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenPrice(line);
+                          }}
+                        >
+                          {currency(line.unitPriceFils, locale)}
+                        </button>
+                      ) : (
+                        <span>{currency(line.unitPriceFils, locale)}</span>
+                      )}
+                    </td>
+                    <td className="sales-col-total">
+                      <div className="sales-line-total-cell">
+                        <strong>{currency(line.totalFils, locale)}</strong>
+                        {hasDiscount ? (
+                          <span className="sales-line-discount-tag">
+                            -
+                            {formatNumber(
+                              BigInt(line.lineDiscountPercentage),
+                              locale,
+                            )}
+                            %
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td
+                      className="sales-col-actions"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        aria-label={`${copy.remove}: ${line.displayName}`}
+                        className="sales-line-remove-btn"
+                        disabled={readOnly || busy}
+                        type="button"
+                        onClick={() => {
+                          onRemoveLine(line.id);
+                          if (selectedLineId === line.id) {
+                            onSelectLine(null);
+                          }
+                        }}
+                      >
+                        <svg
+                          aria-hidden="true"
+                          fill="none"
+                          height="14"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                          width="14"
+                        >
+                          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
-      {selectedLine === null ? null : (
+
+      {selectedLine === null || readOnly ? null : (
         <LineEditor
           busy={busy}
           key={selectedLine.id}
           line={selectedLine}
+          edit={lineEdit ?? saleLineEditValues(selectedLine)}
+          onEdit={(edit) => onEditLine(selectedLine.id, edit)}
           locale={locale}
           onChange={(change) => onChangeLine(selectedLine.id, change)}
           onRemove={() => {
@@ -408,105 +559,114 @@ export function SalesInvoiceView({
           }}
         />
       )}
+
       <div className="sales-invoice-summary">
-        <dl>
-          <div>
-            <dt>{copy.gross}</dt>
-            <dd>{currency(draft.totals.grossFils, locale)}</dd>
-          </div>
-          <div>
-            <dt>{copy.lineDiscount}</dt>
-            <dd>{currency(draft.totals.lineDiscountFils, locale)}</dd>
-          </div>
-        </dl>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const fils = parseIqd(discountInput);
-            if (fils === null) {
-              setDiscountError(true);
-              return;
-            }
-            setDiscountError(false);
-            onSetInvoiceDiscount(fils);
-          }}
-        >
-          <label htmlFor="sale-invoice-discount">{copy.invoiceDiscount}</label>
-          <input
-            disabled={busy}
-            id="sale-invoice-discount"
-            inputMode="decimal"
-            type="text"
-            value={discountInput}
-            onChange={(event) => setDiscountInput(event.target.value)}
-          />
-          <button disabled={busy} type="submit">
-            {copy.apply}
-          </button>
-          {discountError ? (
-            <span role="alert">{copy.invalidDiscount}</span>
-          ) : null}
-        </form>
         <div className="sales-invoice-final">
-          <span>{copy.total}</span>
-          <strong>{currency(draft.totals.totalFils, locale)}</strong>
+          <span className="sales-invoice-final-label">{copy.total}</span>
+          <strong className="sales-invoice-final-amount">
+            {currency(draft.totals.totalFils, locale)}
+          </strong>
         </div>
+
+        <div className="sales-invoice-meta-row">
+          <span className="sales-invoice-item-count">
+            {copy.itemsCount}:{" "}
+            <strong>
+              {formatNumber(BigInt(draft.lines.length), locale).padStart(
+                2,
+                "0",
+              )}
+            </strong>
+          </span>
+
+          <dl className="sales-invoice-breakdown">
+            <div>
+              <dt>{copy.gross}</dt>
+              <dd>{currency(draft.totals.grossFils, locale)}</dd>
+            </div>
+            {BigInt(draft.totals.lineDiscountFils) > 0n ? (
+              <div>
+                <dt>{copy.lineDiscount}</dt>
+                <dd>{currency(draft.totals.lineDiscountFils, locale)}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
+
+        {readOnly ? null : (
+          <form
+            className="sales-invoice-inline-discount"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const fils = parseIqd(discountInput);
+              if (fils === null) {
+                setDiscountError(true);
+                return;
+              }
+              setDiscountError(false);
+              onSetInvoiceDiscount(fils);
+            }}
+          >
+            <label htmlFor="sale-invoice-discount">
+              {copy.invoiceDiscount}
+            </label>
+            <input
+              disabled={busy}
+              id="sale-invoice-discount"
+              inputMode="decimal"
+              type="text"
+              value={discountInput}
+              onChange={(event) => setDiscountInput(event.target.value)}
+            />
+            <button disabled={busy} type="submit">
+              {copy.apply}
+            </button>
+            {discountError ? (
+              <span role="alert">{copy.invalidDiscount}</span>
+            ) : null}
+          </form>
+        )}
       </div>
-      <div className="sales-invoice-actions">
-        {confirmation === null ? (
-          <>
+
+      {readOnly ? null : (
+        <div className="sales-invoice-actions">
+          {confirmation === null ? (
             <button
+              className="sales-clear-invoice-btn"
               disabled={busy || draft.lines.length === 0}
               type="button"
               onClick={() => setConfirmation("clear")}
             >
               {copy.clear}
             </button>
-            <button disabled={busy} type="button" onClick={onSuspend}>
-              {copy.suspend}
-            </button>
-            <button
-              disabled={busy}
-              type="button"
-              onClick={() => setConfirmation("discard")}
+          ) : (
+            <div
+              className="sales-invoice-confirm"
+              role="group"
+              aria-label={copy.confirmClear}
             >
-              {copy.discard}
-            </button>
-          </>
-        ) : (
-          <div
-            className="sales-invoice-confirm"
-            role="group"
-            aria-label={
-              confirmation === "clear" ? copy.confirmClear : copy.confirmDiscard
-            }
-          >
-            <span>
-              {confirmation === "clear"
-                ? copy.confirmClear
-                : copy.confirmDiscard}
-            </span>
-            <button
-              disabled={busy}
-              type="button"
-              onClick={() => {
-                if (confirmation === "clear") onClear();
-                else onDiscard();
-                setConfirmation(null);
-              }}
-            >
-              {confirmation === "clear" ? copy.clear : copy.discard}
-            </button>
-            <button
-              disabled={busy}
-              type="button"
-              onClick={() => setConfirmation(null)}
-            >
-              {copy.cancel}
-            </button>
-          </div>
-        )}
-      </div>
+              <span>{copy.confirmClear}</span>
+              <button
+                disabled={busy}
+                type="button"
+                onClick={() => {
+                  onClear();
+                  setConfirmation(null);
+                }}
+              >
+                {copy.clear}
+              </button>
+              <button
+                disabled={busy}
+                type="button"
+                onClick={() => setConfirmation(null)}
+              >
+                {copy.cancel}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

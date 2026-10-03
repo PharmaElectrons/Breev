@@ -1,6 +1,6 @@
 import type {
+  ProductManualStateColour,
   ProductStatus,
-  ProductStateColour,
 } from "@breev/contracts/local-rest";
 import type { PoolClient } from "pg";
 
@@ -8,7 +8,7 @@ export interface CatalogInventoryFacts {
   readonly coldStorageRequired: boolean;
   readonly displayName: string;
   readonly hasBarcode: boolean;
-  readonly manualStateColour: ProductStateColour | null;
+  readonly manualStateColour: ProductManualStateColour | null;
   readonly productId: string;
   readonly status: ProductStatus;
   readonly mergedIntoProductId?: string | null;
@@ -24,7 +24,7 @@ interface CatalogInventoryRow {
   readonly display_name: string;
   readonly has_barcode: boolean;
   readonly id: string;
-  readonly manual_state_colour: ProductStateColour | null;
+  readonly manual_state_colour: ProductManualStateColour | null;
   readonly merged_into_product_id: string | null;
   readonly maximum_level: string | null;
   readonly minimum_level: string | null;

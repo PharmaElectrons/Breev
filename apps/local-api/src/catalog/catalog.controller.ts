@@ -4,6 +4,7 @@ import {
   catalogMatchingBatchOpenContract,
   catalogMatchingBatchOpenRequestSchema,
   catalogMatchingBatchSchema,
+  catalogSupplierOptionsContract,
   productBarcodeAddContract,
   productBarcodeAddRequestSchema,
   productBarcodePrintContract,
@@ -28,6 +29,7 @@ import {
   type BarcodePrintHandoff,
   type CatalogMatchingBatch,
   type CatalogFieldError,
+  type CatalogSupplierOption,
   type Product,
   type ProductBarcodeInput,
   type ProductBarcodeSuggestionResponse,
@@ -53,6 +55,15 @@ import { CatalogDenied, CatalogService } from "./catalog.service.js";
 @Controller()
 export class CatalogController {
   public constructor(private readonly catalog: CatalogService) {}
+
+  @Get(catalogSupplierOptionsContract.path)
+  public async supplierOptions(
+    @Req() request: Request,
+  ): Promise<{ suppliers: CatalogSupplierOption[] }> {
+    return await translateCatalogDenial(() =>
+      this.catalog.supplierOptions(request),
+    );
+  }
 
   @Get(productListContract.path)
   public async list(@Req() request: Request): Promise<{ products: Product[] }> {

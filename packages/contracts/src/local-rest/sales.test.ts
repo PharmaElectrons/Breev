@@ -44,6 +44,53 @@ const draft = {
 };
 
 describe("sales contracts", () => {
+  it("requires a barcode slot in the retail-only Sale search projection", () => {
+    const response = {
+      hasMore: false,
+      query: "Amoxicillin",
+      resultCount: 1,
+      results: [
+        {
+          matchedField: "english-name",
+          product: {
+            id: DRAFT_ID,
+            displayName: "Amoxicillin",
+            arabicSearchName: null,
+            barcodeValue: "1234567890123",
+            retailPriceFils: "45000",
+          },
+        },
+      ],
+    };
+    const schema = saleProductSearchContract.responses[200];
+    expect(schema.parse(response)).toEqual(response);
+    expect(
+      schema.parse({
+        ...response,
+        results: [
+          {
+            ...response.results[0],
+            product: { ...response.results[0]!.product, barcodeValue: null },
+          },
+        ],
+      }).results[0]?.product.barcodeValue,
+    ).toBeNull();
+    expect(
+      schema.safeParse({
+        ...response,
+        results: [
+          {
+            ...response.results[0],
+            product: {
+              ...response.results[0]!.product,
+              barcodeValue: undefined,
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("exposes only POS-safe inventory context and requires a complete projection", () => {
     const response = {
       id: DRAFT_ID,

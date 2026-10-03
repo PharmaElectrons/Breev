@@ -1,0 +1,24 @@
+$ node --test tooling/release/verify-version.test.mjs
+✔ accepts one stable version shared by tag and manifests (3.5348ms)
+✔ accepts the current unreleased manifest pair without a tag (0.2855ms)
+✔ rejects non-stable release tag 1.2.3 (0.8587ms)
+✔ rejects non-stable release tag v1.2 (0.2093ms)
+✔ rejects non-stable release tag v01.2.3 (0.2511ms)
+✔ rejects non-stable release tag v1.02.3 (0.2258ms)
+✔ rejects non-stable release tag v1.2.03 (0.2124ms)
+✔ rejects non-stable release tag v1.2.3-beta.1 (0.2542ms)
+✔ rejects non-stable release tag v1.2.3+build.1 (0.2834ms)
+✔ rejects mismatched package versions (0.5385ms)
+✔ rejects a tag that does not match the package version (0.3342ms)
+✔ rejects an unexpected workspace identity (0.2795ms)
+✔ accepts a dated changelog section for the release version (0.6912ms)
+✔ rejects a release version missing from the changelog (0.4218ms)
+✔ rejects a changelog without an Unreleased section (0.3558ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 140.9864

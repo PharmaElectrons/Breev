@@ -1,0 +1,33 @@
+.purchasing-authoritative-panel .purchase-item-body {
+  overflow-anchor: none;
+}
+.purchasing-authoritative-panel .purchase-item-body > * {
+  flex-shrink: 0;
+}
+.purchasing-authoritative-panel .purchase-fact-value {
+  min-inline-size: 0;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+.purchasing-authoritative-panel .purchase-fact-row {
+  gap: 0.5rem;
+}
+.purchasing-authoritative-panel .purchase-expiry-details {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.purchasing-authoritative-panel .purchase-expiry-details > bdi {
+  white-space: nowrap;
+}
+.purchasing-authoritative-panel .purchase-panel-package-equation {
+  display: block;
+}
+.purchasing-authoritative-panel .purchase-panel-batch {
+  margin-block-end: 0.5rem;
+}
+.purchasing-authoritative-panel .purchase-fraction-grid {
+  grid-template-columns: repeat(auto-fit, minmax(4rem, 1fr));
+}
+.purchasing-authoritative-panel .purchase-item-section > p {
+  overflow-wrap: anywhere;
+}

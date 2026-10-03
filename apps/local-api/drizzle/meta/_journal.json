@@ -216,28 +216,77 @@
       "idx": 30,
       "version": "7",
       "when": 1790467200000,
-      "tag": "0030_inventory_reports",
+      "tag": "0030_patient_profiles",
       "breakpoints": true
     },
     {
       "idx": 31,
       "version": "7",
       "when": 1790553600000,
-      "tag": "0031_report_posting_cutoffs",
+      "tag": "0031_patient_permissions",
       "breakpoints": true
     },
     {
       "idx": 32,
       "version": "7",
-      "when": 1790640000000,
-      "tag": "0032_report_bounded_reads",
+      "when": 1790726400000,
+      "tag": "0032_purchase_invoice_offer",
       "breakpoints": true
     },
     {
       "idx": 33,
       "version": "7",
       "when": 1790812800000,
-      "tag": "0033_report_effect_order",
+      "tag": "0033_catalog_product_suppliers",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790899200000,
+      "tag": "0034_catalog_manual_state_colour_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790985600000,
+      "tag": "0035_revert_patient_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791072000000,
+      "tag": "0036_inventory_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791158400000,
+      "tag": "0037_report_posting_cutoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791244800000,
+      "tag": "0038_report_bounded_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791331200000,
+      "tag": "0039_report_effect_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791417600000,
+      "tag": "0040_report_source_pages",
       "breakpoints": true
     }
   ]

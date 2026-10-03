@@ -1,0 +1,10 @@
+$ vitest run
+
+ RUN  v4.1.11 P:/Projects/PharmaElectrons/packages/contracts
+
+
+ Test Files  10 passed (10)
+      Tests  219 passed (219)
+   Start at  16:17:10
+   Duration  3.49s (transform 4.29s, setup 0ms, import 11.62s, tests 1.10s, environment 2ms)
+

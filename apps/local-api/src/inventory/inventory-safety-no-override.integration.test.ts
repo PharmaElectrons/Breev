@@ -662,6 +662,7 @@ describe.sequential("inventory batch-safety refusal matrix", () => {
 
   async function postPurchase(supplierId: string): Promise<string> {
     const draftResponse = await request("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: today,
       settlementContext: "debt",
@@ -809,6 +810,7 @@ function medicationRequest(): ProductCreateRequest {
       wholesalePriceFils: "90000",
     },
     scientificName: "Paracetamol",
+    supplierIds: [],
     sharing: { aiSharingAllowed: false, externallyVisible: true },
     stateColours: { coldStorageRequired: false, manual: null },
     stockLevels: { maximumLevel: "10", minimumLevel: "5", reorderPoint: "4" },

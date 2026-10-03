@@ -3227,7 +3227,8 @@ export class IdentityAccessService {
     const result = await this.localDatabase.requirePool().query<SessionRow>(
       `${SESSION_SELECT}
        ${SESSION_BINDING_FILTER}
-       order by session.created_at desc, session.id desc
+       order by (session.revoked_at is null) desc,
+                session.created_at desc, session.id desc
        limit 1`,
       sessionBindingValues(device),
     );

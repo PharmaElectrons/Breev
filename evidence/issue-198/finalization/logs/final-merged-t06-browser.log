@@ -1,0 +1,12 @@
+
+Running 4 tests using 1 worker
+
+
+
+(node:19920) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/4] test\browser\purchasing.browser.test.ts:2365:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en light
+[2/4] test\browser\purchasing.browser.test.ts:2365:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry en dark
+[3/4] test\browser\purchasing.browser.test.ts:2365:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar light
+[4/4] test\browser\purchasing.browser.test.ts:2365:7 › Supplier and Purchase Draft screens › T06 authoritative item facts and non-blocking entry ar dark
+  4 passed (53.2s)

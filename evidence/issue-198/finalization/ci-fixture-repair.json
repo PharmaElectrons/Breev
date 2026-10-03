@@ -1,0 +1,18 @@
+{
+  "exit": 0,
+  "started": "2026-10-01T19:29:57.8927639+03:00",
+  "name": "final-ci-fixture-repair",
+  "arguments": [
+    "--filter",
+    "@breev/local-api",
+    "exec",
+    "vitest",
+    "run",
+    "src/purchasing/purchase-posting.integration.test.ts",
+    "src/patients/patients.integration.test.ts",
+    "-t",
+    "T06 preserves stock when valuation reconciliation|leaves an immutable posted purchase snapshot"
+  ],
+  "seconds": 20.58,
+  "log": "P:\\Projects\\PharmaElectrons\\.scratch\\runtime\\t06-phase-gate-1790863047507\\final-ci-fixture-repair.log"
+}

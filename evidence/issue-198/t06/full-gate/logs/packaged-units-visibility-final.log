@@ -1,0 +1,171 @@
+
+Running 4 tests using 1 worker
+
+
+(node:16788) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[1/4] test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  1) test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+    Expected: in viewport
+    Received: viewport ratio 0.7976190447807312
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+        23 × locator resolved to <td data-column-field="inventory-units">4 Strip</td>
+           - unexpected value "viewport ratio 0.7976190447807312"
+
+
+      2330 |   // window is not a subject a person can read, and the default ratio would
+      2331 |   // call that "in viewport".
+    > 2332 |   await expect(subject).toBeInViewport({ ratio: 1 });
+           |                         ^
+      2333 | }
+      2334 |
+      2335 | /**
+        at expectOnScreen (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:2332:25)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1683:15
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1657:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1614:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-4ff2e-ake-of-2-packs-1-strip-is-9\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-4ff2e-ake-of-2-packs-1-strip-is-9\error-context.md
+
+
+
+(node:15636) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[2/4] test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  2) test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+    Expected: in viewport
+    Received: viewport ratio 0.7976190447807312
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+        23 × locator resolved to <td data-column-field="inventory-units">4 Strip</td>
+           - unexpected value "viewport ratio 0.7976190447807312"
+
+
+      2330 |   // window is not a subject a person can read, and the default ratio would
+      2331 |   // call that "in viewport".
+    > 2332 |   await expect(subject).toBeInViewport({ ratio: 1 });
+           |                         ^
+      2333 | }
+      2334 |
+      2335 | /**
+        at expectOnScreen (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:2332:25)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1683:15
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1657:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1614:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-d6800-ake-of-2-packs-1-strip-is-9\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-d6800-ake-of-2-packs-1-strip-is-9\error-context.md
+
+
+
+(node:18300) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[3/4] test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  3) test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+    Expected: in viewport
+    Received: viewport ratio 0.7976190447807312
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+        23 × locator resolved to <td data-column-field="inventory-units">4 أشرطة</td>
+           - unexpected value "viewport ratio 0.7976190447807312"
+
+
+      2330 |   // window is not a subject a person can read, and the default ratio would
+      2331 |   // call that "in viewport".
+    > 2332 |   await expect(subject).toBeInViewport({ ratio: 1 });
+           |                         ^
+      2333 | }
+      2334 |
+      2335 | /**
+        at expectOnScreen (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:2332:25)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1683:15
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1657:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1614:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-24b59-ake-of-2-packs-1-strip-is-9\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-24b59-ake-of-2-packs-1-strip-is-9\error-context.md
+
+
+
+(node:19712) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+
+[4/4] test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  4) test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+    Expected: in viewport
+    Received: viewport ratio 0.7976190447807312
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('tr.purchase-entry-row [data-column-field="inventory-units"]')
+        23 × locator resolved to <td data-column-field="inventory-units">4 أشرطة</td>
+           - unexpected value "viewport ratio 0.7976190447807312"
+
+
+      2330 |   // window is not a subject a person can read, and the default ratio would
+      2331 |   // call that "in viewport".
+    > 2332 |   await expect(subject).toBeInViewport({ ratio: 1 });
+           |                         ^
+      2333 | }
+      2334 |
+      2335 | /**
+        at expectOnScreen (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:2332:25)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1683:15
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1657:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:1614:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-fa14e-ake-of-2-packs-1-strip-is-9\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-fa14e-ake-of-2-packs-1-strip-is-9\error-context.md
+
+
+  4 failed
+    test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+    test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · en · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+    test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · ar · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+    test\acceptance\milestone-2.acceptance.test.ts:1611:5 › milestone 2 acceptance · ar · dark › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9 
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.acceptance.config.ts --grep "units scenario"

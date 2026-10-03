@@ -97,11 +97,12 @@ async function report(event: SettingsCrashWorkerEvent): Promise<void> {
 }
 
 /**
- * Loses the process the way a power cut does. `SIGKILL` cannot be caught, so no
- * handler, no `finally`, and no job-runtime shutdown runs after this line.
+ * Holds at the recorded crash point until the parent applies the hard kill.
+ * That keeps the same abrupt process boundary on Windows, where a process
+ * cannot report its own termination as a POSIX signal.
  */
-function crash(): void {
-  process.kill(process.pid, "SIGKILL");
+function waitForHardKill(): Promise<never> {
+  return new Promise<never>(() => undefined);
 }
 
 /**
@@ -218,7 +219,7 @@ async function run(): Promise<void> {
             type: "crashing",
             workerId,
           });
-          crash();
+          await waitForHardKill();
           return;
         }
 
@@ -237,7 +238,7 @@ async function run(): Promise<void> {
               type: "crashing",
               workerId,
             });
-            crash();
+            await waitForHardKill();
             return;
           }
 
@@ -257,7 +258,7 @@ async function run(): Promise<void> {
               type: "crashing",
               workerId,
             });
-            crash();
+            await waitForHardKill();
             return;
           }
         } finally {

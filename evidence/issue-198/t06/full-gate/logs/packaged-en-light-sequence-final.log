@@ -1,0 +1,56 @@
+
+Running 10 tests using 1 worker
+
+
+
+(node:15856) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node.EXE --trace-warnings ...` to show where the warning was created)
+[1/10] test\acceptance\milestone-2.acceptance.test.ts:270:5 › milestone 2 acceptance · en · light › clause 1 — defines an item and finds it by smart search
+[2/10] test\acceptance\milestone-2.acceptance.test.ts:453:5 › milestone 2 acceptance · en · light › clause 2 — saves a supplier invoice with cost and price per pricing mode
+  1) test\acceptance\milestone-2.acceptance.test.ts:453:5 › milestone 2 acceptance · en · light › clause 2 — saves a supplier invoice with cost and price per pricing mode 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByText('Draft saved and durable.')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 10000ms
+      - waiting for getByText('Draft saved and durable.')
+
+
+      477 |               await expect(
+      478 |                 page.getByText(TEXT[locale].draftSaved),
+    > 479 |               ).toBeVisible();
+          |                 ^
+      480 |               return `${TEXT[locale].draftSaved} · invoice date entered by ${datePath}`;
+      481 |             },
+      482 |           );
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:479:17
+        at Take.step (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:112:24)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:462:11
+        at runRecord (P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\transcript.ts:175:5)
+        at P:\Projects\PharmaElectrons\apps\desktop\test\acceptance\milestone-2.acceptance.test.ts:454:7
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-ca8e6--and-price-per-pricing-mode\error-context.md
+
+    Error Context: ..\..\test-results\desktop-acceptance\milestone-2.acceptance-mil-ca8e6--and-price-per-pricing-mode\error-context.md
+
+
+[3/10] test\acceptance\milestone-2.acceptance.test.ts:586:5 › milestone 2 acceptance · en · light › margin scenario — 80 at 20% is 100, and rounding applies only when enabled
+[4/10] test\acceptance\milestone-2.acceptance.test.ts:710:5 › milestone 2 acceptance · en · light › clause 3 — an adjustment records only the difference, and a return is separate
+[5/10] test\acceptance\milestone-2.acceptance.test.ts:878:5 › milestone 2 acceptance · en · light › clause 4 — quantities, batches and expiry in inventory, stocktaking and the basket
+[6/10] test\acceptance\milestone-2.acceptance.test.ts:998:5 › milestone 2 acceptance · en · light › reorder from sales — the draft is byte-identical before and after
+[7/10] test\acceptance\milestone-2.acceptance.test.ts:1091:5 › milestone 2 acceptance · en · light › bilingual pass — direction, theme and keyboard operation
+[8/10] test\acceptance\milestone-2.acceptance.test.ts:1162:5 › milestone 2 acceptance · en · light › adjustment scenario — 4 to 8 posts exactly +4, unchanged lines are silent, invalid Delta blocked
+[9/10] test\acceptance\milestone-2.acceptance.test.ts:1383:5 › milestone 2 acceptance · en · light › scope — the item-details panel in purchasing
+[10/10] test\acceptance\milestone-2.acceptance.test.ts:1606:5 › milestone 2 acceptance · en · light › units scenario — one pack is four strips and a stocktake of 2 packs + 1 strip is 9
+  1 failed
+    test\acceptance\milestone-2.acceptance.test.ts:453:5 › milestone 2 acceptance · en · light › clause 2 — saves a supplier invoice with cost and price per pricing mode 
+  8 did not run
+  1 passed (26.2s)
+undefined
+P:\Projects\PharmaElectrons\apps\desktop:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: playwright test --config playwright.acceptance.config.ts -g "milestone 2 acceptance · en · light"

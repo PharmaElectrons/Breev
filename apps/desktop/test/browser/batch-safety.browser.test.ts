@@ -524,6 +524,7 @@ test.describe.serial("batch safety renderer", () => {
     item: Product,
   ): Promise<void> {
     const created = await apiRequest("POST", "/purchases/drafts", {
+      invoiceOffer: { mode: "none", value: "0" },
       idempotencyKey: uuidV7(),
       invoiceDate: "2026-06-15",
       settlementContext: "debt",
@@ -606,6 +607,7 @@ test.describe.serial("batch safety renderer", () => {
         wholesalePriceFils: "90000",
       },
       scientificName: "Batch Safety",
+      supplierIds: [],
       sharing: { aiSharingAllowed: false, externallyVisible: true },
       stateColours: { coldStorageRequired: false, manual: null },
       stockLevels: { maximumLevel: "30", minimumLevel: "5", reorderPoint: "4" },

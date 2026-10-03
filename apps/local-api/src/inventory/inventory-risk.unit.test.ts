@@ -117,7 +117,7 @@ describe("inventory risk calculations", () => {
     );
     expect(automaticStateColour(["expired", "out-of-stock"])).toBe("red");
     expect(automaticStateColour([])).toBe("green");
-    expect(effectiveStateColour("purple", "red")).toBe("purple");
+    expect(effectiveStateColour("#800080", "red")).toBe("#800080");
     expect(effectiveStateColour(null, "yellow")).toBe("yellow");
   });
 });
