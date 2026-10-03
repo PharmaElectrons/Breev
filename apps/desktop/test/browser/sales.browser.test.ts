@@ -122,7 +122,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     api = startApi(apiPort);
     // The cold PostgreSQL schema and durable-job migrations can exceed the
     // shared 15-second readiness window on Windows.
-    await waitForHealth(apiOrigin, "healthy", api, 60_000);
+    await waitForHealth(apiOrigin, "healthy", api, 120_000);
 
     const bootstrap = await apiRequest("POST", "/identity/bootstrap", {
       owner: {
@@ -234,6 +234,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     ]) {
       await expect(footer.getByRole("button", { name: label })).toBeVisible();
     }
+    await expect(footer.getByRole("button", { name: "Return" })).toBeDisabled();
     for (const viewport of [
       { width: 1280, height: 800 },
       { width: 1366, height: 768 },
@@ -2481,12 +2482,12 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     const balance = page.locator("[data-sales-drawer-balance]");
     await expect(balance).toBeVisible();
     await expect(balance.locator(".sales-drawer-balance-value")).toContainText(
-      "0",
+      "No drawer activity recorded",
     );
     await expect(page.locator(".sales-calculator")).toBeVisible();
     const serverBalance = await apiRequest("GET", saleDrawerBalancePath());
     expect(serverBalance.status).toBe(200);
-    expect(serverBalance.body).toMatchObject({ balanceFils: "0" });
+    expect(serverBalance.body).toMatchObject({ balanceFils: null });
     await expect.poll(() => drawerRequests).toBeGreaterThan(0);
     await page.screenshot({
       path: evidencePath(
@@ -2601,14 +2602,16 @@ test.describe.serial("sale drafts and the reorder row action", () => {
         await page.locator(".sales-draft-context").evaluate((element) => {
           element.scrollTop = 0;
         });
-        await expect(itemPanel.locator(".sales-item-header")).toBeInViewport();
         await expect(
-          itemPanel.locator(".sales-item-display-name"),
-        ).toContainText(panadol.scientificName ?? panadol.displayName);
+          page.locator(".sales-item-context > strong"),
+        ).toContainText(panadol.displayName);
         await expect(
           itemPanel.locator(".sales-item-balance-section"),
         ).toBeVisible();
         await expect(itemPanel.locator(".sales-item-fact-sheet")).toBeVisible();
+        await expect(itemPanel).toContainText(
+          locale === "ar" ? "لا يوجد سجل مبيعات" : "No sales history",
+        );
         await expect(
           itemPanel.locator(".sales-item-batches-section"),
         ).toBeVisible();

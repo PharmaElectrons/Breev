@@ -77,31 +77,13 @@ export function SalesItemPanel({
       className="sales-item-panel"
       dir={dir}
     >
-      {/* Header with Title Badge, Trade Name, and configured Scientific Name */}
-      <header className="sales-item-header">
-        <div className="sales-item-title-badge">
-          <span aria-hidden="true" className="sales-item-title-dot" />
-          <span>{messages.itemDetailsTitle}</span>
-        </div>
-        <h3
-          className="sales-item-display-name"
-          title={context.scientificName ?? context.displayName}
-        >
-          {isFieldVisible("scientificName") && context.scientificName
-            ? context.scientificName
-            : context.displayName}
-        </h3>
-        {isFieldVisible("scientificName") && context.scientificName ? (
-          <p className="sales-item-scientific-name">{context.displayName}</p>
-        ) : null}
-      </header>
       <div
         aria-label={messages.itemDetailsTitle}
         className="sales-item-scroll-body"
         role="group"
         tabIndex={0}
       >
-        {/* Thumbnail when configured and present */}
+        {/* Compact integrated thumbnail when configured and present */}
         {isFieldVisible("thumbnail") && context.thumbnailDataUrl ? (
           <div className="sales-item-thumbnail-wrap">
             <img
@@ -112,46 +94,7 @@ export function SalesItemPanel({
           </div>
         ) : null}
 
-        {/* Balance breakdown if configured */}
-        {isFieldVisible("balance") ? (
-          <div className="sales-item-balance-section">
-            <h4 className="sales-item-section-label">
-              {messages.detailedBalance}
-            </h4>
-            <div className="sales-item-balance-grid">
-              {primaryPackage && packageCount !== null ? (
-                <div className="sales-item-balance-cell">
-                  <p className="sales-item-balance-val">
-                    {formatNumber(packageCount, locale)}
-                  </p>
-                  <p className="sales-item-balance-lbl">
-                    {primaryPackage.name}
-                  </p>
-                </div>
-              ) : null}
-              <div
-                className={`sales-item-balance-cell${onHandBase === null ? " empty" : ""}`}
-              >
-                <p className="sales-item-balance-val">
-                  {remainderBaseCount === null
-                    ? "—"
-                    : formatNumber(remainderBaseCount, locale)}
-                </p>
-                <p className="sales-item-balance-lbl">
-                  {context.inventoryUnitName}
-                </p>
-              </div>
-            </div>
-            <p className="sales-item-balance-total">
-              {messages.totalBalance}:{" "}
-              {onHandBase === null
-                ? messages.noStockRecord
-                : `${formatNumber(onHandBase, locale)} ${context.inventoryUnitName}`}
-            </p>
-          </div>
-        ) : null}
-
-        {/* Fact sheet rows: Current retail, wholesale (when nonnull & enabled), packaging, limits, consumption, surplus, expiry */}
+        {/* Fact sheet rows: Current retail, wholesale, scientific name, packaging, limits, consumption, surplus, expiry */}
         <div className="sales-item-fact-sheet">
           {/* Retail price: Always kept */}
           <div className="sales-item-fact-row">
@@ -163,8 +106,6 @@ export function SalesItemPanel({
                 BigInt(context.currentRetailPriceFils),
                 locale,
               )}
-              {" · "}
-              {context.currentRetailUnitName}
             </span>
           </div>
 
@@ -180,8 +121,18 @@ export function SalesItemPanel({
                   BigInt(context.wholesalePriceFils),
                   locale,
                 )}
-                {" · "}
-                {context.currentRetailUnitName}
+              </span>
+            </div>
+          ) : null}
+
+          {/* Scientific name */}
+          {isFieldVisible("scientificName") ? (
+            <div className="sales-item-fact-row">
+              <span className="sales-item-fact-label">
+                {messages.scientificName}
+              </span>
+              <span className="sales-item-fact-value sales-item-display-name">
+                {context.scientificName ?? messages.notSet}
               </span>
             </div>
           ) : null}
@@ -248,9 +199,9 @@ export function SalesItemPanel({
                 {messages.consumptionRate}
               </span>
               <span className="sales-item-fact-value">
-                {formatNumber(BigInt(consumptionAverageBaseUnits), locale)}{" "}
-                {context.inventoryUnitName} (
-                {messages.consumptionPeriodLabel(settings.consumptionMonths)})
+                {consumptionAverageBaseUnits === null
+                  ? messages.noConsumptionHistory
+                  : `${formatNumber(BigInt(consumptionAverageBaseUnits), locale)} ${context.inventoryUnitName} (${messages.consumptionPeriodLabel(settings.consumptionMonths)})`}
               </span>
             </div>
           ) : null}
@@ -300,6 +251,37 @@ export function SalesItemPanel({
             </div>
           ) : null}
         </div>
+
+        {/* Balance breakdown if configured: dense label/value rows */}
+        {isFieldVisible("balance") ? (
+          <div className="sales-item-balance-section">
+            {primaryPackage && packageCount !== null ? (
+              <div className="sales-item-fact-row">
+                <span className="sales-item-fact-label">
+                  {messages.detailedBalance}
+                </span>
+                <span className="sales-item-fact-value">
+                  {formatNumber(packageCount, locale)} {primaryPackage.name}
+                  {remainderBaseCount !== null && remainderBaseCount > 0n
+                    ? ` · ${formatNumber(remainderBaseCount, locale)} ${context.inventoryUnitName}`
+                    : ""}
+                </span>
+              </div>
+            ) : null}
+            <div className="sales-item-fact-row">
+              <span className="sales-item-fact-label">
+                {primaryPackage && packageCount !== null
+                  ? messages.totalBalance
+                  : messages.balance}
+              </span>
+              <span className="sales-item-fact-value">
+                {onHandBase === null
+                  ? messages.noStockRecord
+                  : `${formatNumber(onHandBase, locale)} ${context.inventoryUnitName}`}
+              </span>
+            </div>
+          </div>
+        ) : null}
 
         {/* Batches with lot ordinals, balances, statuses, and expiry */}
         {isFieldVisible("batches") ? (

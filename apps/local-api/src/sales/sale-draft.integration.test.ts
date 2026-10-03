@@ -1215,9 +1215,9 @@ describe.sequential("Sale Draft PostgreSQL seam", () => {
       thumbnailDataUrl,
       inventory: {
         consumptionAverages: {
-          oneMonth: "0",
-          twoMonths: "0",
-          threeMonths: "0",
+          oneMonth: null,
+          twoMonths: null,
+          threeMonths: null,
         },
       },
     });

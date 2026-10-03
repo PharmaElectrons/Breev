@@ -212,7 +212,7 @@ describe.sequential("Sale Draft server-boundary authorization matrix", () => {
       await loginAs(actorToTest);
       const allowed = await request("GET", saleDrawerBalancePath());
       expect(allowed.status, diagnostics(allowed)).toBe(200);
-      expect(allowed.body).toEqual({ balanceFils: "0" });
+      expect(allowed.body).toEqual({ balanceFils: null });
     }
 
     for (const actorToTest of [actors.customAllowed, actors.salesEmployee]) {

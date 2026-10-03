@@ -18,6 +18,7 @@ export interface SalesPanelMessages {
   readonly minLimit: string;
   readonly maxLimit: string;
   readonly consumptionRate: string;
+  readonly noConsumptionHistory: string;
   readonly consumptionPeriodLabel: (months: 1 | 2 | 3) => string;
   readonly estimatedSurplus: string;
   readonly itemPreview: string;
@@ -56,6 +57,7 @@ export interface SalesPanelMessages {
   readonly drawerBalanceLabel: string;
   readonly currentEmployeeDrawer: string;
   readonly drawerBalanceLoading: string;
+  readonly drawerBalanceUnavailable: string;
   readonly drawerBalanceError: string;
   readonly quickAccessSectionTitle: string;
   readonly quickAccessSectionHint: string;
@@ -89,6 +91,8 @@ export interface SalesPanelMessages {
 }
 
 const ARABIC_MESSAGES: SalesPanelMessages = {
+  noConsumptionHistory: "لا يوجد سجل مبيعات",
+  drawerBalanceUnavailable: "لا توجد حركات درج مسجلة",
   itemDetailsTitle: "تفاصيل المادة",
   currentPrice: "سعر البيع الحالي",
   scientificName: "الاسم العلمي",
@@ -212,6 +216,7 @@ const ENGLISH_MESSAGES: SalesPanelMessages = {
   minLimit: "Min",
   maxLimit: "Max",
   consumptionRate: "Consumption Rate",
+  noConsumptionHistory: "No sales history",
   consumptionPeriodLabel: (months) =>
     months === 1 ? "1-month avg" : months === 2 ? "2-month avg" : "3-month avg",
   estimatedSurplus: "Estimated Surplus",
@@ -266,6 +271,7 @@ const ENGLISH_MESSAGES: SalesPanelMessages = {
   drawerBalanceLabel: "Show cash drawer balance in the sales interface",
   currentEmployeeDrawer: "Current employee drawer",
   drawerBalanceLoading: "Loading...",
+  drawerBalanceUnavailable: "No drawer activity recorded",
   drawerBalanceError: "Drawer balance unavailable",
   quickAccessSectionTitle: "Quick-Access Categories & Tiles",
   quickAccessSectionHint:

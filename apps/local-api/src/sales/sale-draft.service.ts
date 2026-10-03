@@ -34,6 +34,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import type { Request } from "express";
 import type { PoolClient } from "pg";
 
+import { readEmployeeCashDrawerBalance } from "../accounting/accounting-persistence.js";
 import { CatalogService } from "../catalog/catalog.service.js";
 import {
   addSaleLine,
@@ -235,21 +236,18 @@ export class SaleDraftService {
           thumbnailDataUrl: thumbnail.rows[0]?.thumbnail ?? null,
           inventory: {
             consumptionAverages: {
-              oneMonth: consumptionRatePer30Days(
-                consumption,
-                now,
-                1,
-              ).toString(),
-              twoMonths: consumptionRatePer30Days(
-                consumption,
-                now,
-                2,
-              ).toString(),
-              threeMonths: consumptionRatePer30Days(
-                consumption,
-                now,
-                3,
-              ).toString(),
+              oneMonth:
+                consumption.length === 0
+                  ? null
+                  : consumptionRatePer30Days(consumption, now, 1).toString(),
+              twoMonths:
+                consumption.length === 0
+                  ? null
+                  : consumptionRatePer30Days(consumption, now, 2).toString(),
+              threeMonths:
+                consumption.length === 0
+                  ? null
+                  : consumptionRatePer30Days(consumption, now, 3).toString(),
             },
             onHandBaseUnits: position?.balance.toString() ?? null,
             estimatedSurplusBaseUnits: surplus?.toString() ?? null,
@@ -296,17 +294,19 @@ export class SaleDraftService {
       request,
       "sales.drawer_balance.view",
     );
-    const result = await this.localDatabase
-      .requirePool()
-      .query<{ balance: string }>(
-        `select coalesce(sum(debit_fils-credit_fils),0)::text as balance
-       from accounting_journal_lines
-       where pharmacy_id=$1 and drawer_user_id=$2 and account_code='cash'`,
-        [context.pharmacyId, context.actorId],
+    const client = await this.localDatabase.requirePool().connect();
+    try {
+      const balance = await readEmployeeCashDrawerBalance(
+        client,
+        context.pharmacyId,
+        context.actorId,
       );
-    return saleDrawerBalanceSchema.parse({
-      balanceFils: result.rows[0]?.balance ?? "0",
-    });
+      return saleDrawerBalanceSchema.parse({
+        balanceFils: balance?.toString() ?? null,
+      });
+    } finally {
+      client.release();
+    }
   }
 
   public async createDraft(

@@ -20,7 +20,7 @@ Posting, patient workflows, and tender or settlement flows remain outside this i
 
 Drawer balances sum only cash journal lines explicitly assigned to the authenticated employee. Historical entries remain unassigned; no employee attribution is inferred. Cash posting and other future cash writers must populate `drawer_user_id` before their activity appears in this display.
 
-A final read-only review found no material Sales blockers. It confirmed draft/audit-only writes, tenant/versioned settings, both drawer permissions and actor-scoped cash sums, and wholesale-price redaction.
+The read-only review at the 8feb88a checkpoint found no material Sales blockers. It confirmed draft/audit-only writes, tenant/versioned settings, both drawer permissions and actor-scoped cash sums, and wholesale-price redaction.
 
 ## Checks reported for the `8feb88a`-based tree
 
@@ -79,3 +79,20 @@ After, presentation settings:
 - [Arabic, dark](./after/sales-presentation-modal-ar-dark.png)
 - [Settings at 200 percent](./after/sales-presentation-fields-en-light-200-percent.png)
 - [Quick-access category editing](./after/sales-presentation-quick-access-en-light.png)
+
+## Corrective review and final local checks
+
+The review remediation keeps the item panel honest when there is no recorded sale history or assigned drawer activity, reads drawer balances through Accounting persistence, removes the enabled Return stub, and removes the panel's height cap. Missing posted-sales history and assigned cash writers remain upstream dependencies; no history or balance is fabricated.
+
+| Check | Result |
+| --- | --- |
+| `pnpm format:write`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build` | Passed. |
+| Contracts unit suite | Passed, 223/223. |
+| Issue-specific Sales integration suites | Passed, 30/30. |
+| Full Local API integration suite | 299 passed, 35 skipped, 16 failed across five suites after Windows denied Pharmacy CA MachineKey creation. The Sales draft suites passed. |
+| Full desktop browser suite | 174 passed, 4 skipped, 1 failed, 5 not run. The licensed device-pairing case was rerun alone and reproduced the host's Main-unavailable/CNG failure; all 34 Sales scenarios passed. |
+| Windows desktop package and packaged Playwright smoke | Passed; package succeeded and smoke passed 3/3. |
+| Full local unit suite | Contracts (223) and desktop (694) passed. Local API reported 695 passed and 12 skipped; one Pharmacy CA/CNG suite was blocked by Windows MachineKey access denied. |
+| Supported Windows CNG and GitHub Actions verification | Pending the post-push workflow run. |
+
+This evidence records local results without treating the host-limited CNG boundary as a product pass. The issue remains open for the upstream cash-writer and posted-sales-history dependencies, the supported-Windows CNG result, and certified minimum-profile/G-16 evidence.

@@ -135,6 +135,19 @@ describe("sales contracts", () => {
     expect(
       saleProductContextContract.responses[200].safeParse({
         ...response,
+        inventory: {
+          ...response.inventory,
+          consumptionAverages: {
+            oneMonth: null,
+            twoMonths: null,
+            threeMonths: null,
+          },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      saleProductContextContract.responses[200].safeParse({
+        ...response,
         inventory: undefined,
       }).success,
     ).toBe(false);
@@ -454,6 +467,9 @@ describe("sales contracts", () => {
         balanceFils: "-2500",
       }),
     ).toEqual({ balanceFils: "-2500" });
+    expect(
+      saleDrawerBalanceContract.responses[200].parse({ balanceFils: null }),
+    ).toEqual({ balanceFils: null });
     expect(
       saleDrawerBalanceContract.responses[200].safeParse({
         balanceFils: "25.5",

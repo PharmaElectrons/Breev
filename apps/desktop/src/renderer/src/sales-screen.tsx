@@ -543,7 +543,7 @@ function SaleDraftScreen({
   // Drawer balance state & effect
   const [drawerBalance, setDrawerBalance] = useState<{
     actorId: string | null;
-    value: bigint;
+    value: bigint | null;
   } | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
@@ -570,7 +570,11 @@ function SaleDraftScreen({
     void readSaleDrawerBalance(baseUrl)
       .then((result) => {
         if (!live) return;
-        setDrawerBalance({ actorId, value: BigInt(result.balanceFils) });
+        setDrawerBalance({
+          actorId,
+          value:
+            result.balanceFils === null ? null : BigInt(result.balanceFils),
+        });
         setDrawerLoading(false);
       })
       .catch(() => {
@@ -2256,7 +2260,9 @@ function SaleDraftScreen({
                     ? drawerError
                     : drawerBalance !== null &&
                         drawerBalance.actorId === actorId
-                      ? formatCurrencyFromFils(drawerBalance.value, locale)
+                      ? drawerBalance.value === null
+                        ? panelMessages.drawerBalanceUnavailable
+                        : formatCurrencyFromFils(drawerBalance.value, locale)
                       : "—"}
               </span>
             </div>
@@ -2558,10 +2564,9 @@ function SalesFooter({
   readonly onCancelDelete?: () => void;
 }): React.JSX.Element {
   const ar = locale === "ar";
-  const [returnOpen, setReturnOpen] = useState(false);
   const disabledReason = ar
-    ? "إتمام البيع والبحث في الفواتير والطباعة غير متاحة حتى اعتماد قواعد المحاسبة والصلاحيات. تغييرات المسودة المؤكدة محفوظة تلقائياً."
-    : "Checkout, completed invoices, and printing are unavailable until accounting rules and permissions are approved. Confirmed draft edits are saved automatically.";
+    ? "إتمام البيع والبحث في الفواتير والإرجاع والطباعة غير متاحة حتى اعتماد قواعد المحاسبة والصلاحيات. تغييرات المسودة المؤكدة محفوظة تلقائياً."
+    : "Checkout, completed-invoice search, returns, and printing are unavailable until accounting rules and permissions are approved. Confirmed draft edits are saved automatically.";
   return (
     <footer
       className="sales-action-footer"
@@ -2577,12 +2582,7 @@ function SalesFooter({
         <button disabled type="button">
           {ar ? "نقد" : "Cash"}
         </button>
-        <button
-          aria-expanded={returnOpen}
-          disabled={state === "no-draft"}
-          onClick={() => setReturnOpen((open) => !open)}
-          type="button"
-        >
+        <button disabled aria-describedby="sales-save-gate" type="button">
           {ar ? "إرجاع" : "Return"}
         </button>
         <button disabled aria-describedby="sales-save-gate" type="button">
@@ -2619,13 +2619,6 @@ function SalesFooter({
             {ar ? "إلغاء" : "Cancel"}
           </button>
         </div>
-      ) : null}
-      {returnOpen ? (
-        <p role="status">
-          {ar
-            ? "يفتح الإرجاع من فاتورة مكتملة. نشر الإرجاع ينتظر اعتماد قواعد التصرف في البضاعة G-02 وأمثلة المحاسبة G-01."
-            : "Start a return from a completed invoice. Return posting awaits approved G-02 disposition rules and G-01 accounting examples."}
-        </p>
       ) : null}
       <p id="sales-save-gate" role="status">
         {disabledReason}

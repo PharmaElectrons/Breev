@@ -5071,9 +5071,9 @@ export const saleProductContextSchema = z.strictObject({
     onHandBaseUnits: signedIntegerStringSchema.nullable(),
     estimatedSurplusBaseUnits: nonNegativeIntegerStringSchema.nullable(),
     consumptionAverages: z.strictObject({
-      oneMonth: nonNegativeIntegerStringSchema,
-      twoMonths: nonNegativeIntegerStringSchema,
-      threeMonths: nonNegativeIntegerStringSchema,
+      oneMonth: nonNegativeIntegerStringSchema.nullable(),
+      twoMonths: nonNegativeIntegerStringSchema.nullable(),
+      threeMonths: nonNegativeIntegerStringSchema.nullable(),
     }),
     batches: z.array(
       z.strictObject({
@@ -5198,7 +5198,7 @@ const salesReadDenialResponses = {
   403: identityOrEntitlementDenialSchema,
 } as const;
 export const saleDrawerBalanceSchema = z.strictObject({
-  balanceFils: signedBigintSchema,
+  balanceFils: signedBigintSchema.nullable(),
 });
 export const saleDrawerBalanceContract = {
   method: "GET",
