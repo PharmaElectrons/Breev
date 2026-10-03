@@ -1,3 +1,4 @@
+import { formatDateOnly } from "./preferences";
 import type {
   IdentityDenial,
   InventoryAllocationPreview,
@@ -52,8 +53,26 @@ export function BatchSafetyPanel({
   const [preview, setPreview] = useState<InventoryAllocationPreview | null>(
     null,
   );
-  const [announcement, setAnnouncement] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [announcementState, setAnnouncement] = useState<
+    | { kind: "recall" | "quarantine"; status: InventoryBatch["status"] }
+    | {
+        kind: "message";
+        key: "correctionSaved" | "previewResult" | "runQueued";
+      }
+    | null
+  >(null);
+  const announcement =
+    announcementState === null
+      ? ""
+      : announcementState.kind === "message"
+        ? copy.safety[announcementState.key]
+        : copy.safety[announcementState.kind] +
+          " — " +
+          copy.safety.statusLabels[announcementState.status];
+  const [errorKey, setError] = useState<
+    "unavailable" | "reviewUnavailable" | "noPreview" | "jobUnavailable" | null
+  >(null);
+  const error = errorKey === null ? null : copy.safety[errorKey];
   const [denial, setDenial] = useState<SafetyDenial | null>(null);
   const [dialog, setDialog] = useState<ActionDialog | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,7 +80,11 @@ export function BatchSafetyPanel({
     IdentityDenial | LicensingDenial | null
   >(null);
   const [previewBusy, setPreviewBusy] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewErrorKey, setPreviewError] = useState<
+    "unavailable" | "reviewUnavailable" | "noPreview" | "jobUnavailable" | null
+  >(null);
+  const previewError =
+    previewErrorKey === null ? null : copy.safety[previewErrorKey];
   const requestCommittedFocus = useCommittedFocus();
 
   const canManage =
@@ -80,13 +103,13 @@ export function BatchSafetyPanel({
         if (caught instanceof InventoryApiDenied) {
           setDenial(caught.denial);
         } else {
-          setError(copy.safety.unavailable);
+          setError("unavailable");
         }
       } else {
-        setError(copy.safety.unavailable);
+        setError("unavailable");
       }
     }
-  }, [baseUrl, copy.safety.unavailable, productId]);
+  }, [baseUrl, productId]);
 
   useEffect(() => {
     void load();
@@ -149,15 +172,7 @@ export function BatchSafetyPanel({
         reason,
       });
       updateBatch(updated);
-      setAnnouncement(
-        kind === "recall"
-          ? copy.safety.recall +
-              " — " +
-              copy.safety.statusLabels[updated.status]
-          : copy.safety.quarantine +
-              " — " +
-              copy.safety.statusLabels[updated.status],
-      );
+      setAnnouncement({ kind, status: updated.status });
       closeAction();
     } catch (caught) {
       handleFailure(caught);
@@ -214,7 +229,7 @@ export function BatchSafetyPanel({
             },
           );
           updateBatch(updated);
-          setAnnouncement(copy.safety.correctionSaved);
+          setAnnouncement({ kind: "message", key: "correctionSaved" });
         } catch (caught) {
           handleFailure(caught);
         }
@@ -237,16 +252,16 @@ export function BatchSafetyPanel({
       return;
     }
     if (caught instanceof Error) {
-      setError(copy.safety.unavailable);
+      setError("unavailable");
       return;
     }
-    setError(copy.safety.unavailable);
+    setError("unavailable");
   }
 
   async function runPreview(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!/^[1-9]\d*$/u.test(quantity.trim())) {
-      setPreviewError(copy.safety.noPreview);
+      setPreviewError("noPreview");
       setPreview(null);
       return;
     }
@@ -257,13 +272,13 @@ export function BatchSafetyPanel({
         lines: [{ productId, quantity: quantity.trim() }],
       });
       setPreview(result);
-      setAnnouncement(copy.safety.previewResult);
+      setAnnouncement({ kind: "message", key: "previewResult" });
     } catch (caught) {
       if (caught instanceof InventoryApiDenied) {
-        setPreviewError(copy.safety.unavailable);
+        setPreviewError("unavailable");
         setDenial(caught.denial);
       } else {
-        setPreviewError(copy.safety.unavailable);
+        setPreviewError("unavailable");
       }
     } finally {
       setPreviewBusy(false);
@@ -318,7 +333,13 @@ export function BatchSafetyPanel({
         <header className="batch-safety-heading">
           <div>
             <h3 id="batch-safety-title">{copy.safety.safetyStatus}</h3>
-            <p>{businessDate === null ? "" : <bdi>{businessDate}</bdi>}</p>
+            <p>
+              {businessDate === null ? (
+                ""
+              ) : (
+                <bdi>{formatDateOnly(businessDate, locale)}</bdi>
+              )}
+            </p>
           </div>
           <a href="#/inventory/safety-review">{copy.safety.review}</a>
         </header>
@@ -469,10 +490,10 @@ function BatchRow({
         <bdi>{batch.lotNumber ?? "—"}</bdi>
       </td>
       <td>
-        <bdi>{batch.originalExpiryDate ?? "—"}</bdi>
+        <bdi>{formatDateOnly(batch.originalExpiryDate, locale)}</bdi>
       </td>
       <td>
-        <bdi>{batch.effectiveExpiryDate ?? "—"}</bdi>
+        <bdi>{formatDateOnly(batch.effectiveExpiryDate, locale)}</bdi>
         {batch.expiryCorrected ? (
           <span className="batch-safety-corrected">
             {" "}
@@ -549,6 +570,7 @@ function History({
   readonly batch: InventoryBatch;
   readonly copy: typeof inventoryMessages.en;
 }): React.JSX.Element {
+  const { locale } = usePreferences();
   if (batch.statusEvents.length === 0 && batch.expiryAmendments.length === 0) {
     return <p>{copy.safety.emptyHistory}</p>;
   }
@@ -556,7 +578,7 @@ function History({
     <div className="batch-safety-history-content">
       <p>
         {copy.safety.originalExpiry}:{" "}
-        <bdi>{batch.originalExpiryDate ?? "—"}</bdi>
+        <bdi>{formatDateOnly(batch.originalExpiryDate, locale)}</bdi>
       </p>
       {batch.statusEvents.map((event) => (
         <p key={event.id}>
@@ -569,16 +591,16 @@ function History({
             label={copy.safety.eventKinds[event.kind]}
             status={event.kind === "expired" ? "expired" : event.kind}
           />{" "}
-          <bdi>{event.businessDate}</bdi>
+          <bdi>{formatDateOnly(event.businessDate, locale)}</bdi>
           {event.reason === null ? null : " — " + event.reason}
         </p>
       ))}
       {batch.expiryAmendments.map((amendment) => (
         <p key={amendment.id}>
           {copy.safety.correction}:{" "}
-          <bdi>{amendment.originalExpiryDate ?? "—"}</bdi>
+          <bdi>{formatDateOnly(amendment.originalExpiryDate, locale)}</bdi>
           {" → "}
-          <bdi>{amendment.correctedExpiryDate}</bdi>
+          <bdi>{formatDateOnly(amendment.correctedExpiryDate, locale)}</bdi>
           {" — "}
           {amendment.reason}
         </p>
@@ -621,7 +643,9 @@ function PreviewResult({
               />{" "}
               <bdi>{formatNumber(BigInt(allocation.quantity), locale)}</bdi>
               {" — "}
-              <bdi>{allocation.effectiveExpiryDate ?? "—"}</bdi>
+              <bdi>
+                {formatDateOnly(allocation.effectiveExpiryDate, locale)}
+              </bdi>
               {allocation.status === "near-expiry" ? (
                 <span className="batch-safety-warning">
                   {copy.safety.warning}
@@ -658,8 +682,9 @@ function PreviewResult({
       )}
       {preview.shortfalls.map((shortfall) => (
         <p key={shortfall.productId} role="alert">
-          {copy.safety.quantity}: <bdi>{shortfall.requested}</bdi> —{" "}
-          <bdi>{shortfall.allocatable}</bdi>
+          {copy.safety.quantity}:{" "}
+          <bdi>{formatNumber(shortfall.requested, locale)}</bdi> —{" "}
+          <bdi>{formatNumber(shortfall.allocatable, locale)}</bdi>
         </p>
       ))}
     </div>
@@ -691,6 +716,7 @@ function BatchActionDialog({
     evidence: string,
   ) => Promise<void>;
 }): React.JSX.Element {
+  const { locale } = usePreferences();
   const dialog = useRef<HTMLDivElement>(null);
   const [correctedExpiryDate, setCorrectedExpiryDate] = useState(
     batch.effectiveExpiryDate ?? "",
@@ -744,7 +770,7 @@ function BatchActionDialog({
           <>
             <p>
               {copy.safety.originalExpiry}:{" "}
-              <bdi>{batch.effectiveExpiryDate ?? "—"}</bdi>
+              <bdi>{formatDateOnly(batch.effectiveExpiryDate, locale)}</bdi>
             </p>
             <p className="batch-safety-step-up-note">
               {copy.safety.correctionStepUp}

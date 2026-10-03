@@ -80,6 +80,15 @@ Where sources conflict or the engineering baseline deliberately differs, this ta
 
 ## Visual evidence register
 
+Issue #202's authorized presentation remediation separates localized display
+from stored facts, normalizes equivalent Indic numeric input at existing entry
+boundaries, and keeps error state independent of display language. The
+[candidate ledger](../evidence/issue-202/README.md) maps F01–F17 to current-dev
+occurrences and validation. Report reconciliation remains conditional on #201;
+general pharmacy-zone display requires separately authorized context exposure.
+This evidence does not promote the presentation family to fully proven or close
+G-01/G-02, professional decisions, or #109 physical certification.
+
 All 52 brief images (49 unique) and the client-supplied prototype at `design/prototype/` were inspected and classified against the written rules. Written requirements win; visual evidence adds no scope.
 
 **Accepted from the checked-in prototype:** the compact shell header and horizontally scrolling module bar; the pure-white and slate/teal light palette; the radius, spacing, label rhythm, and typography intent; and the Catalog master-detail workspace with its product rail, generated-name banner, dense form canvas, and Arabic search name on its own line. Production derives the required dark theme from the same hue, drives direction from the locale, uses locally resolvable fonts only, and strengthens control boundaries and motion treatment where accessibility requires it.

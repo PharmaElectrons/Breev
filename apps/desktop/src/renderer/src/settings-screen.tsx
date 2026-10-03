@@ -527,6 +527,7 @@ export function SettingsRouteView({
             <TabsContent value="roles">
               <div className="tab-pane-content">
                 <RoleEditor
+                  locale={locale}
                   baseUrl={baseUrl}
                   beginStepUp={beginStepUp}
                   busy={busy}

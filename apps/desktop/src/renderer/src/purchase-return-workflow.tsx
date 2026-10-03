@@ -1,3 +1,5 @@
+import { normalizeNumericInput } from "./numeric-input";
+import { formatNumber } from "./preferences";
 import { useEffect, useRef, useState } from "react";
 import type {
   PurchasePostedDetail,
@@ -18,7 +20,7 @@ import {
 } from "./purchasing-api";
 import { useCommittedFocus } from "./committed-focus";
 import { usePreferences } from "./preferences-provider";
-import { formatFilsToIqd } from "./product-record";
+import { formatCurrencyFromFils } from "./preferences";
 import {
   getPurchasingDenialMessage,
   purchasingMessages,
@@ -226,7 +228,7 @@ export function PurchaseReturnWorkflow({
         reason: reason.trim(),
         rows: draft.rows.map((row) => ({
           originalPurchaseRowId: row.originalPurchaseRowId,
-          returnQuantity: row.returnQuantity,
+          returnQuantity: normalizeNumericInput(row.returnQuantity),
         })),
       });
       setDraft(updated);
@@ -411,7 +413,10 @@ export function PurchaseReturnWorkflow({
                         aria-label={`${copy.quantity} ${row.itemDisplayName}`}
                         inputMode="numeric"
                         min="0"
-                        max={row.remainingEligibleQuantity}
+                        max={formatNumber(
+                          row.remainingEligibleQuantity,
+                          locale,
+                        )}
                         value={row.returnQuantity}
                         onChange={(event) =>
                           setDraft({
@@ -427,7 +432,9 @@ export function PurchaseReturnWorkflow({
                           })
                         }
                       />
-                      <small>/ {row.remainingEligibleQuantity}</small>
+                      <small>
+                        / {formatNumber(row.remainingEligibleQuantity, locale)}
+                      </small>
                     </td>
                   </tr>
                 ))}
@@ -456,7 +463,10 @@ export function PurchaseReturnWorkflow({
               <dt>{copy.carrying}</dt>
               <dd>
                 <bdi>
-                  {formatFilsToIqd(summary.inventoryCarryingAmountFils, locale)}
+                  {formatCurrencyFromFils(
+                    summary.inventoryCarryingAmountFils,
+                    locale,
+                  )}
                 </bdi>
               </dd>
             </div>
@@ -466,7 +476,10 @@ export function PurchaseReturnWorkflow({
               </dt>
               <dd>
                 <bdi>
-                  {formatFilsToIqd(summary.supplierReductionFils, locale)}
+                  {formatCurrencyFromFils(
+                    summary.supplierReductionFils,
+                    locale,
+                  )}
                 </bdi>
               </dd>
             </div>
@@ -474,7 +487,7 @@ export function PurchaseReturnWorkflow({
               <dt>{copy.difference}</dt>
               <dd>
                 <bdi>
-                  {formatFilsToIqd(
+                  {formatCurrencyFromFils(
                     (
                       BigInt(summary.supplierReductionFils) -
                       BigInt(summary.inventoryCarryingAmountFils)
@@ -488,9 +501,9 @@ export function PurchaseReturnWorkflow({
           <ul>
             {summary.rows.map((row) => (
               <li key={row.originalPurchaseRowId}>
-                {row.itemDisplayName}: {row.quantity} ·{" "}
-                {formatFilsToIqd(row.carryingAmountFils, locale)} /{" "}
-                {formatFilsToIqd(row.supplierReductionFils, locale)}
+                {row.itemDisplayName}: {formatNumber(row.quantity, locale)} ·{" "}
+                {formatCurrencyFromFils(row.carryingAmountFils, locale)} /{" "}
+                {formatCurrencyFromFils(row.supplierReductionFils, locale)}
               </li>
             ))}
           </ul>
@@ -559,5 +572,6 @@ export function PurchaseReturnWorkflow({
 }
 
 function isPositiveQuantity(value: string): boolean {
-  return /^\d+$/u.test(value) && BigInt(value) > 0n;
+  const canonical = normalizeNumericInput(value);
+  return /^\d+$/u.test(canonical) && BigInt(canonical) > 0n;
 }

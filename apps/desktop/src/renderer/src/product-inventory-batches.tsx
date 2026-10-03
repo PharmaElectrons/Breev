@@ -1,3 +1,5 @@
+import { formatDateOnly, formatNumber } from "./preferences";
+import { unitDisplayName } from "../../shared/unit-display";
 import type { InventoryBatch } from "@breev/contracts/local-rest";
 import { useState } from "react";
 import { Boxes } from "lucide-react";
@@ -51,22 +53,9 @@ export function ProductInventoryBatches({
     }
   };
 
-  const formatDate = (value: string | null): string => {
-    if (value === null) return "\u2014";
-    return new Intl.DateTimeFormat(locale, {
-      calendar: "gregory",
-      numberingSystem: "latn",
-      timeZone: "UTC",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(`${value}T00:00:00.000Z`));
-  };
-
-  const formatQuantity = (value: string): string =>
-    new Intl.NumberFormat(locale, { numberingSystem: "latn" }).format(
-      BigInt(value),
-    );
+  const formatDate = (value: string | null): string =>
+    formatDateOnly(value, locale);
+  const formatQuantity = (value: string): string => formatNumber(value, locale);
 
   return (
     <details
@@ -111,7 +100,7 @@ export function ProductInventoryBatches({
                     {copy.safety.reviewColumns.effectiveExpiry}
                   </th>
                   <th scope="col">
-                    {copy.safety.quantity} ({unitName})
+                    {copy.safety.quantity} ({unitDisplayName(unitName, locale)})
                   </th>
                   <th scope="col">{copy.safety.status}</th>
                 </tr>

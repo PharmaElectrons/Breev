@@ -37,7 +37,7 @@ import { StateColourIndicators } from "./state-indicator";
 type BasketDenial = IdentityDenial | InventoryDenial | LicensingDenial;
 type BasketKind = "basket" | "ordered";
 type BasketRoute = { readonly kind: BasketKind };
-type QuantityValidation = { readonly itemId: string; readonly message: string };
+type QuantityValidation = { readonly itemId: string };
 
 const RELOADABLE_DENIAL_CODES = new Set<InventoryDenial["code"]>([
   "reorder-item-not-found",
@@ -109,10 +109,50 @@ function BasketScreen({
     () => new Set(),
   );
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setError] = useState(false);
+  const error = failed ? copy.reviewUnavailable : null;
   const [denial, setDenial] = useState<BasketDenial | null>(null);
   const [validation, setValidation] = useState<QuantityValidation | null>(null);
-  const [announcement, setAnnouncement] = useState("");
+  const [notice, setAnnouncement] = useState<
+    | { kind: "notSaved" }
+    | { kind: "saved" | "refreshed"; item: ReorderItem }
+    | { kind: "removed" | "confirmed" | "returned"; name: string }
+    | null
+  >(null);
+  const announcement =
+    notice === null
+      ? ""
+      : notice.kind === "notSaved"
+        ? copy.notSaved
+        : notice.kind === "removed"
+          ? copy.removedAnnouncement(notice.name)
+          : notice.kind === "confirmed"
+            ? copy.confirmedAnnouncement(notice.name)
+            : notice.kind === "returned"
+              ? copy.returnedAnnouncement(notice.name)
+              : notice.kind === "refreshed"
+                ? copy.refreshedAnnouncement(
+                    notice.item.product.displayName,
+                    formatNumber(notice.item.quantity, locale),
+                    panelUnitLabel(
+                      notice.item.product.inventoryUnitName,
+                      BigInt(notice.item.quantity),
+                      locale,
+                    ),
+                  )
+                : notice.kind === "saved"
+                  ? copy.savedAnnouncement(
+                      notice.item.product.displayName,
+                      formatNumber(notice.item.quantity, locale),
+                      panelUnitLabel(
+                        notice.item.product.inventoryUnitName,
+                        BigInt(notice.item.quantity),
+                        locale,
+                      ),
+                      projectionSummary(notice.item, locale),
+                    )
+                  : "";
+
   const sequence = useRef(0);
   const pendingQuantityCommits = useRef(new Set<string>());
   const attemptRef = useRef<ReturnType<typeof inventoryCommandAttempt> | null>(
@@ -122,7 +162,7 @@ function BasketScreen({
 
   const load = useCallback(async (): Promise<ReorderItem[] | null> => {
     const current = ++sequence.current;
-    setError(null);
+    setError(false);
     setDenial(null);
     try {
       const result = await readReorderBasket(baseUrl);
@@ -153,11 +193,11 @@ function BasketScreen({
       ) {
         setDenial(caught.denial);
       } else {
-        setError(copy.reviewUnavailable);
+        setError(true);
       }
       return null;
     }
-  }, [baseUrl, copy.reviewUnavailable]);
+  }, [baseUrl]);
 
   useEffect(() => {
     void load();
@@ -223,27 +263,7 @@ function BasketScreen({
       return;
     }
     const current = refreshed?.find((candidate) => candidate.id === item.id);
-    setAnnouncement(
-      current === undefined
-        ? copy.refreshedAnnouncement(
-            item.product.displayName,
-            formatNumber(BigInt(item.quantity), locale),
-            panelUnitLabel(
-              item.product.inventoryUnitName,
-              BigInt(item.quantity),
-              locale,
-            ),
-          )
-        : copy.refreshedAnnouncement(
-            current.product.displayName,
-            formatNumber(BigInt(current.quantity), locale),
-            panelUnitLabel(
-              current.product.inventoryUnitName,
-              BigInt(current.quantity),
-              locale,
-            ),
-          ),
-    );
+    setAnnouncement({ kind: "refreshed", item: current ?? item });
     focusQuantity(item.id);
   }
 
@@ -256,7 +276,7 @@ function BasketScreen({
     }
     const quantity = countFieldQuantity(rawValue);
     if (quantity === null) {
-      setValidation({ itemId: item.id, message: copy.quantityInvalid });
+      setValidation({ itemId: item.id });
       focusQuantity(item.id);
       return;
     }
@@ -306,18 +326,7 @@ function BasketScreen({
       // The input was disabled while its own save was in flight, which drops
       // focus to the document; async completion must leave a control focused.
       focusQuantity(item.id);
-      setAnnouncement(
-        copy.savedAnnouncement(
-          result.item.product.displayName,
-          formatNumber(BigInt(result.item.quantity), locale),
-          panelUnitLabel(
-            result.item.product.inventoryUnitName,
-            BigInt(result.item.quantity),
-            locale,
-          ),
-          projectionSummary(result.item, locale),
-        ),
-      );
+      setAnnouncement({ kind: "saved", item: result.item });
     } catch (caught) {
       if (sequence.current !== currentSequence) return;
       if (caught instanceof InventoryApiDenied) {
@@ -335,7 +344,7 @@ function BasketScreen({
         focusQuantity(item.id);
       } else {
         markFailed(item.id, true);
-        setAnnouncement(copy.notSaved);
+        setAnnouncement({ kind: "notSaved" });
         focusQuantity(item.id);
       }
     } finally {
@@ -361,7 +370,7 @@ function BasketScreen({
     const currentSequence = ++sequence.current;
     const currentRows = visibleItems;
     setBusyItemId(item.id);
-    setError(null);
+    setError(false);
     setDenial(null);
     try {
       if (kind === "remove") {
@@ -375,7 +384,7 @@ function BasketScreen({
             previous?.filter((candidate) => candidate.id !== result.itemId) ??
             previous,
         );
-        setAnnouncement(copy.removedAnnouncement(item.product.displayName));
+        setAnnouncement({ kind: "removed", name: item.product.displayName });
       } else {
         const result =
           kind === "confirm"
@@ -394,11 +403,10 @@ function BasketScreen({
               candidate.id === result.item.id ? result.item : candidate,
             ) ?? previous,
         );
-        setAnnouncement(
-          kind === "confirm"
-            ? copy.confirmedAnnouncement(item.product.displayName)
-            : copy.returnedAnnouncement(item.product.displayName),
-        );
+        setAnnouncement({
+          kind: kind === "confirm" ? "confirmed" : "returned",
+          name: item.product.displayName,
+        });
       }
       focusAfterRow(item.id, currentRows);
     } catch (caught) {
@@ -417,8 +425,8 @@ function BasketScreen({
         setDenial(caught.denial);
         focusRowControl(item, kind);
       } else {
-        setError(copy.reviewUnavailable);
-        setAnnouncement(copy.notSaved);
+        setError(true);
+        setAnnouncement({ kind: "notSaved" });
         focusRowControl(item, kind);
       }
     } finally {
@@ -739,7 +747,7 @@ function BasketRow({
         </small>
         {validation === null ? null : (
           <p className="denial-alert" id={validationId} role="alert">
-            {validation.message}
+            {copy.quantityInvalid}
           </p>
         )}
         {item.proposal.quantity === "0" ? (

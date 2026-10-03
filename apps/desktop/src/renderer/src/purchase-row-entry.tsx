@@ -1,3 +1,5 @@
+import { normalizeNumericInput, stepIntegerInput } from "./numeric-input";
+import { formatNumber, formatDateOnly, type Locale } from "./preferences";
 import {
   useCallback,
   useEffect,
@@ -17,7 +19,7 @@ import {
 } from "@breev/contracts/local-rest";
 import { requestProduct, searchProducts } from "./catalog-api";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
-import { formatFilsToIqd } from "./product-record";
+import { formatCurrencyFromFils } from "./preferences";
 import { ProductForm } from "./product-form";
 import { calculateRetailPricePreview } from "./product-pricing";
 import { useCommittedFocus } from "./committed-focus";
@@ -53,7 +55,7 @@ const FIELD_COPY = {
   expiry: "rowExpiry",
   item: "itemBarcode",
   quantity: "rowQuantity",
-  "selling-price": "sellingPrice",
+  "selling-price": "rowSellingPriceFils",
 } as const;
 const PANEL_COPY = {
   category: "category",
@@ -772,6 +774,40 @@ export function PurchaseRowEntry({
     field: PurchaseEntryColumnField,
     event: KeyboardEvent<HTMLElement>,
   ): void {
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      const control =
+        field === "quantity"
+          ? { value: quantity, set: setQuantity, min: 1n }
+          : field === "cost"
+            ? { value: costFils, set: setCostFils, min: 0n }
+            : field === "selling-price" &&
+                product?.pricing.method !== "by-percentage"
+              ? { value: retailPriceFils, set: setRetailPriceFils, min: 0n }
+              : null;
+      if (control) {
+        event.preventDefault();
+        event.stopPropagation();
+        const next = stepIntegerInput(
+          control.value,
+          event.key === "ArrowUp" ? 1 : -1,
+          control.min,
+        );
+        if (next !== null) {
+          control.set(next);
+          if (field === "cost") {
+            if (product?.pricing.method === "by-percentage")
+              setRetailPriceFils(
+                calculateRetailPricePreview(
+                  next,
+                  marginPercentage,
+                  product.pricing.rounding,
+                ),
+              );
+          }
+        }
+      }
+      return;
+    }
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     event.stopPropagation();
@@ -816,11 +852,17 @@ export function PurchaseRowEntry({
     const unit = keyToUnit(unitKey);
     const pricing =
       selectedProduct.pricing.method === "by-price"
-        ? ({ method: "by-price", retailPriceFils } as const)
-        : ({ marginPercentage, method: "by-percentage" } as const);
+        ? ({
+            method: "by-price",
+            retailPriceFils: normalizeNumericInput(retailPriceFils),
+          } as const)
+        : ({
+            marginPercentage: normalizeNumericInput(marginPercentage, true),
+            method: "by-percentage",
+          } as const);
     const body = {
-      costFils,
-      enteredQuantity: quantity,
+      costFils: normalizeNumericInput(costFils),
+      enteredQuantity: normalizeNumericInput(quantity),
       expectedVersion: draft.version,
       expiryDate: expiryDate === "" ? null : expiryDate,
       itemId: selectedProduct.id,
@@ -921,15 +963,15 @@ export function PurchaseRowEntry({
       (editProduct?.pricing.method ?? row.pricingMethod) === "by-price"
         ? ({
             method: "by-price",
-            retailPriceFils: editRetailPriceFils,
+            retailPriceFils: normalizeNumericInput(editRetailPriceFils),
           } as const)
         : ({
-            marginPercentage: editMarginPercentage,
+            marginPercentage: normalizeNumericInput(editMarginPercentage, true),
             method: "by-percentage",
           } as const);
     const body = {
-      costFils: editCostFils,
-      enteredQuantity: editQuantity,
+      costFils: normalizeNumericInput(editCostFils),
+      enteredQuantity: normalizeNumericInput(editQuantity),
       expectedVersion: draft.version,
       expiryDate: editExpiryDate === "" ? null : editExpiryDate,
       itemId: editProduct?.id ?? row.itemId,
@@ -1088,7 +1130,9 @@ export function PurchaseRowEntry({
         <div>
           <h2 id="purchase-row-title">{copy.rowEntry}</h2>
           <p>
-            {draft.rows.length === 0 ? copy.noRows : `${draft.rows.length}`}
+            {draft.rows.length === 0
+              ? copy.noRows
+              : formatNumber(draft.rows.length, locale)}
           </p>
         </div>
         <details ref={settingsRef} className="purchase-entry-settings">
@@ -1285,7 +1329,7 @@ export function PurchaseRowEntry({
                   }}
                 >
                   <th scope="row" data-column-field="ordinal">
-                    {row.ordinal}
+                    {formatNumber(row.ordinal, locale)}
                   </th>
                   {visibleColumns.map(({ field }) => {
                     const hasPostError = isPostFieldError(
@@ -1321,7 +1365,7 @@ export function PurchaseRowEntry({
                       >
                         {isEditing
                           ? renderInlineEditor(row, field)
-                          : committedValue(field, row, copy)}
+                          : committedValue(field, row, copy, locale)}
                       </td>
                     );
                   })}
@@ -1350,7 +1394,9 @@ export function PurchaseRowEntry({
                       )
                     ) : (
                       <>
-                        <bdi>{row.inventoryUnitQuantity}</bdi>{" "}
+                        <bdi>
+                          {formatNumber(row.inventoryUnitQuantity, locale)}
+                        </bdi>{" "}
                         {panelUnitLabel(
                           row.inventoryUnitName,
                           unitQuantity(row.inventoryUnitQuantity),
@@ -1597,7 +1643,7 @@ export function PurchaseRowEntry({
               }}
             >
               <th scope="row" data-column-field="ordinal">
-                {draft.rows.length + 1}
+                {formatNumber(draft.rows.length + 1, locale)}
               </th>
               {visibleColumns.map(({ field }) => (
                 <td key={field} data-column-field={field}>
@@ -1732,7 +1778,7 @@ export function PurchaseRowEntry({
                                 setMarginPercentage(event.target.value);
                                 setRetailPriceFils(
                                   calculateRetailPricePreview(
-                                    costFils,
+                                    normalizeNumericInput(costFils),
                                     event.target.value,
                                     product.pricing.method === "by-percentage"
                                       ? product.pricing.rounding
@@ -1965,7 +2011,7 @@ export function PurchaseRowEntry({
                             </span>
                             {item.product.pricing.retailPriceFils ? (
                               <span className="purchase-item-price">
-                                {formatFilsToIqd(
+                                {formatCurrencyFromFils(
                                   item.product.pricing.retailPriceFils,
                                   locale,
                                 )}
@@ -1986,7 +2032,8 @@ export function PurchaseRowEntry({
           <input
             {...common}
             aria-label={copy.rowQuantity}
-            type="number"
+            type="text"
+            inputMode="numeric"
             min={1}
             className="purchase-stepper-input w-full"
             value={quantity}
@@ -1998,7 +2045,8 @@ export function PurchaseRowEntry({
           <input
             {...common}
             aria-label={copy.rowCost}
-            type="number"
+            type="text"
+            inputMode="numeric"
             min={0}
             className="purchase-stepper-input w-full"
             value={costFils}
@@ -2020,8 +2068,9 @@ export function PurchaseRowEntry({
         return (
           <input
             {...common}
-            aria-label={copy.sellingPrice}
-            type="number"
+            aria-label={copy.rowSellingPriceFils}
+            type="text"
+            inputMode="numeric"
             min={0}
             className="purchase-stepper-input w-full"
             readOnly={locked}
@@ -2065,11 +2114,24 @@ export function PurchaseRowEntry({
           <input
             className="purchase-row-edit-input purchase-stepper-input w-full"
             aria-label={copy.rowQuantity}
-            type="number"
+            type="text"
+            inputMode="numeric"
             min={1}
             value={editQuantity}
             onChange={(e) => setEditQuantity(e.target.value)}
-            onKeyDown={(e) => handleEditKeyDown(row, e)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.currentTarget.readOnly) return;
+                const next = stepIntegerInput(
+                  editQuantity,
+                  e.key === "ArrowUp" ? 1 : -1,
+                  1n,
+                );
+                if (next !== null) setEditQuantity(next);
+              } else handleEditKeyDown(row, e);
+            }}
           />
         );
       case "cost":
@@ -2077,11 +2139,24 @@ export function PurchaseRowEntry({
           <input
             className="purchase-row-edit-input purchase-stepper-input w-full"
             aria-label={copy.rowCost}
-            type="number"
+            type="text"
+            inputMode="numeric"
             min={0}
             value={editCostFils}
             onChange={(e) => setEditCostFils(e.target.value)}
-            onKeyDown={(e) => handleEditKeyDown(row, e)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.currentTarget.readOnly) return;
+                const next = stepIntegerInput(
+                  editCostFils,
+                  e.key === "ArrowUp" ? 1 : -1,
+                  0n,
+                );
+                if (next !== null) setEditCostFils(next);
+              } else handleEditKeyDown(row, e);
+            }}
           />
         );
       case "selling-price": {
@@ -2096,8 +2171,9 @@ export function PurchaseRowEntry({
         return (
           <input
             className="purchase-row-edit-input purchase-stepper-input w-full"
-            aria-label={copy.sellingPrice}
-            type="number"
+            aria-label={copy.rowSellingPriceFils}
+            type="text"
+            inputMode="numeric"
             min={0}
             readOnly={locked}
             tabIndex={locked ? -1 : 0}
@@ -2105,7 +2181,19 @@ export function PurchaseRowEntry({
             value={calculationPending ? "" : editRetailPriceFils}
             placeholder={calculationPending ? copy.priceOnSave : undefined}
             onChange={(e) => setEditRetailPriceFils(e.target.value)}
-            onKeyDown={(e) => handleEditKeyDown(row, e)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.currentTarget.readOnly) return;
+                const next = stepIntegerInput(
+                  editRetailPriceFils,
+                  e.key === "ArrowUp" ? 1 : -1,
+                  0n,
+                );
+                if (next !== null) setEditRetailPriceFils(next);
+              } else handleEditKeyDown(row, e);
+            }}
           />
         );
       }
@@ -2330,25 +2418,30 @@ function PurchaseReview({
         <div className="purchase-review-stat">
           <dt className="purchase-review-stat-label">{copy.gross}</dt>
           <dd className="purchase-review-stat-value">
-            <bdi>{draft.review.grossFils}</bdi> {copy.fils}
+            <bdi>{formatNumber(draft.review.grossFils, locale)}</bdi>{" "}
+            {copy.fils}
           </dd>
         </div>
         <div className="purchase-review-stat">
           <dt className="purchase-review-stat-label">{copy.discount}</dt>
           <dd className="purchase-review-stat-value">
-            <bdi>{draft.review.allowanceFils}</bdi> {copy.fils}
+            <bdi>{formatNumber(draft.review.allowanceFils, locale)}</bdi>{" "}
+            {copy.fils}
           </dd>
         </div>
         <div className="purchase-review-stat">
           <dt className="purchase-review-stat-label">{copy.net}</dt>
           <dd className="purchase-review-stat-value">
-            <bdi>{draft.review.netFils}</bdi> {copy.fils}
+            <bdi>{formatNumber(draft.review.netFils, locale)}</bdi> {copy.fils}
           </dd>
         </div>
         <div className="purchase-review-stat">
           <dt className="purchase-review-stat-label">{copy.invoiceOffer}</dt>
           <dd className="purchase-review-stat-value">
-            <bdi>{draft.review.invoiceOffer.offerFils}</bdi> {copy.fils}
+            <bdi>
+              {formatNumber(draft.review.invoiceOffer.offerFils, locale)}
+            </bdi>{" "}
+            {copy.fils}
           </dd>
         </div>
         <div className="purchase-review-stat">
@@ -2376,7 +2469,7 @@ function PurchaseReview({
             {draft.review.batches.map((batch, index) => (
               <li key={`${batch.itemDisplayName}-${index}`}>
                 {batch.itemDisplayName} · <bdi>{batch.lotNumber ?? "—"}</bdi> ·{" "}
-                <bdi>{batch.expiryDate ?? "—"}</bdi>
+                <bdi>{formatDateOnly(batch.expiryDate, locale)}</bdi>
               </li>
             ))}
           </ul>
@@ -2462,6 +2555,7 @@ function committedValue(
   field: PurchaseEntryColumnField,
   row: PurchaseDraftDetail["rows"][number],
   copy: (typeof purchasingMessages)["en"] | (typeof purchasingMessages)["ar"],
+  locale: Locale,
 ): React.ReactNode {
   switch (field) {
     case "item":
@@ -2491,13 +2585,13 @@ function committedValue(
         </div>
       );
     case "quantity":
-      return <bdi>{row.enteredQuantity}</bdi>;
+      return <bdi>{formatNumber(row.enteredQuantity, locale)}</bdi>;
     case "cost":
-      return <bdi>{row.costFils}</bdi>;
+      return <bdi>{formatNumber(row.costFils, locale)}</bdi>;
     case "selling-price":
-      return <bdi>{row.retailPriceFils}</bdi>;
+      return <bdi>{formatNumber(row.retailPriceFils, locale)}</bdi>;
     case "expiry":
-      return <bdi>{row.expiryDate ?? "—"}</bdi>;
+      return <bdi>{formatDateOnly(row.expiryDate, locale)}</bdi>;
     default:
       return copy.rowError;
   }
@@ -2536,7 +2630,7 @@ function unitOptions(
     </option>,
     ...product.packaging.packageUnits.map((unit) => (
       <option key={unit.name} value={`package:${unit.name}`}>
-        {`${panelUnitLabel(unit.name, 1n, locale)} (${unit.baseUnitsPerPackage} ${panelUnitLabel(product.packaging.inventoryUnitName, unitQuantity(unit.baseUnitsPerPackage), locale)})`}
+        {`${panelUnitLabel(unit.name, 1n, locale)} (${formatNumber(unit.baseUnitsPerPackage, locale)} ${panelUnitLabel(product.packaging.inventoryUnitName, unitQuantity(unit.baseUnitsPerPackage), locale)})`}
       </option>
     )),
   ];
@@ -2556,17 +2650,17 @@ function previewInventoryUnits(
             (unit) => unit.name === unitKey.slice("package:".length),
           )?.baseUnitsPerPackage ?? "0",
         );
-  const total = BigInt(quantity) * ratio;
-  return `${total.toString()} ${panelUnitLabel(product.packaging.inventoryUnitName, total, locale)}`;
+  const total = BigInt(normalizeNumericInput(quantity)) * ratio;
+  return `${formatNumber(total, locale)} ${panelUnitLabel(product.packaging.inventoryUnitName, total, locale)}`;
 }
 function looksLikeBarcode(value: string): boolean {
   return /^(?:[0-9]{4,}|BRV-[0-9]{4,})$/u.test(value);
 }
 function isPositiveInteger(value: string): boolean {
-  return /^[1-9][0-9]*$/u.test(value);
+  return /^[1-9][0-9]*$/u.test(normalizeNumericInput(value));
 }
 function isUnsignedInteger(value: string): boolean {
-  return /^(?:0|[1-9][0-9]*)$/u.test(value);
+  return /^(?:0|[1-9][0-9]*)$/u.test(normalizeNumericInput(value));
 }
 export function formatPurchaseDefaultUnit(
   product: Product,
@@ -2580,7 +2674,7 @@ export function formatPurchaseDefaultUnit(
     (u) => u.name === purchaseUnit.packageUnitName,
   );
   if (pkg) {
-    return `${panelUnitLabel(pkg.name, 1n, locale)} (${pkg.baseUnitsPerPackage} ${panelUnitLabel(product.packaging.inventoryUnitName, unitQuantity(pkg.baseUnitsPerPackage), locale)})`;
+    return `${panelUnitLabel(pkg.name, 1n, locale)} (${formatNumber(pkg.baseUnitsPerPackage, locale)} ${panelUnitLabel(product.packaging.inventoryUnitName, unitQuantity(pkg.baseUnitsPerPackage), locale)})`;
   }
   return panelUnitLabel(purchaseUnit.packageUnitName, 1n, locale);
 }

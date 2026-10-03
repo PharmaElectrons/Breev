@@ -1,3 +1,4 @@
+import { formatDateOnly, formatNumber, formatPercentage } from "./preferences";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   PurchaseDraft,
@@ -12,7 +13,7 @@ import type { PurchaseItemSelection } from "./purchase-item-details";
 import { PurchasingItemPanel } from "./purchasing-item-details";
 import { PurchaseRowEntry } from "./purchase-row-entry";
 import { panelUnitLabel, unitQuantity } from "./panel-unit-label";
-import { formatFilsToIqd } from "./product-record";
+import { formatCurrencyFromFils } from "./preferences";
 import { useIdentityState } from "./identity-state-provider";
 import {
   clearPendingPurchasePost,
@@ -1139,7 +1140,10 @@ export function PurchasingRouteView({
                     <bdi>
                       {activeDraft === null
                         ? "—"
-                        : formatFilsToIqd(activeDraft.review.grossFils, locale)}
+                        : formatCurrencyFromFils(
+                            activeDraft.review.grossFils,
+                            locale,
+                          )}
                     </bdi>
                   </output>
                 </div>
@@ -1149,7 +1153,7 @@ export function PurchasingRouteView({
                     <bdi>
                       {activeDraft === null
                         ? "—"
-                        : formatFilsToIqd(
+                        : formatCurrencyFromFils(
                             activeDraft.review.allowanceFils,
                             locale,
                           )}
@@ -1176,7 +1180,7 @@ export function PurchasingRouteView({
                     <bdi>
                       {activeDraft === null || offerDirty
                         ? "—"
-                        : formatFilsToIqd(
+                        : formatCurrencyFromFils(
                             activeDraft.review.invoiceOffer.offerFils,
                             locale,
                           )}
@@ -1189,7 +1193,10 @@ export function PurchasingRouteView({
                     <bdi>
                       {activeDraft === null || offerDirty
                         ? "—"
-                        : formatFilsToIqd(activeDraft.review.netFils, locale)}
+                        : formatCurrencyFromFils(
+                            activeDraft.review.netFils,
+                            locale,
+                          )}
                     </bdi>
                   </output>
                 </div>
@@ -1202,7 +1209,12 @@ export function PurchasingRouteView({
                 >
                   <div>
                     <dt>{copy.snapshot}</dt>
-                    <dd>{activeDraft.allowanceSnapshot.percentage}%</dd>
+                    <dd>
+                      {formatPercentage(
+                        activeDraft.allowanceSnapshot.percentage,
+                        locale,
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>{copy.basis}</dt>
@@ -1418,7 +1430,8 @@ export function PurchasingRouteView({
                 <div className="purchase-table-count-badge">
                   <span aria-hidden="true">📂</span>
                   <span>
-                    {filteredDrafts.length} {copy.draftCountUnit}
+                    {formatNumber(filteredDrafts.length, locale)}{" "}
+                    {copy.draftCountUnit}
                   </span>
                 </div>
                 <div className="purchase-table-hint">
@@ -1480,7 +1493,7 @@ export function PurchasingRouteView({
                         }}
                       >
                         <th scope="row">
-                          <bdi>{index + 1}</bdi>
+                          <bdi>{formatNumber(index + 1, locale)}</bdi>
                         </th>
                         <td>
                           <span className="purchase-badge purchase-badge-type-purchase">
@@ -1494,7 +1507,7 @@ export function PurchasingRouteView({
                         </td>
                         <td>{draft.supplierNameSnapshot}</td>
                         <td>
-                          <bdi>{draft.invoiceDate}</bdi>
+                          <bdi>{formatDateOnly(draft.invoiceDate, locale)}</bdi>
                         </td>
                         <td>
                           <span className="purchase-terms-text">
@@ -1502,7 +1515,12 @@ export function PurchasingRouteView({
                           </span>
                         </td>
                         <td>
-                          <bdi>{draft.allowanceSnapshot.percentage}%</bdi>
+                          <bdi>
+                            {formatPercentage(
+                              draft.allowanceSnapshot.percentage,
+                              locale,
+                            )}
+                          </bdi>
                         </td>
                         <td>
                           <bdi>{draft.version}</bdi>
@@ -1697,27 +1715,33 @@ function PostedPurchaseResult({
         <div>
           <dt>{copy.primarySupplierCost}</dt>
           <dd>
-            <bdi>{formatFilsToIqd(posted.primarySupplierCostFils, locale)}</bdi>
+            <bdi>
+              {formatCurrencyFromFils(posted.primarySupplierCostFils, locale)}
+            </bdi>
           </dd>
         </div>
         <div>
           <dt>{copy.allowanceAmount}</dt>
           <dd>
-            <bdi>{formatFilsToIqd(posted.allowanceFils, locale)}</bdi>
+            <bdi>{formatCurrencyFromFils(posted.allowanceFils, locale)}</bdi>
           </dd>
         </div>
         <div>
           <dt>{copy.costAfterDiscount}</dt>
           <dd>
-            <bdi>{formatFilsToIqd(posted.costAfterDiscountFils, locale)}</bdi>
+            <bdi>
+              {formatCurrencyFromFils(posted.costAfterDiscountFils, locale)}
+            </bdi>
           </dd>
         </div>
         <div>
           <dt>{copy.invoiceOffer}</dt>
           <dd>
-            <bdi>{formatFilsToIqd(posted.invoiceOffer.offerFils, locale)}</bdi>
+            <bdi>
+              {formatCurrencyFromFils(posted.invoiceOffer.offerFils, locale)}
+            </bdi>
             {posted.invoiceOffer.input.mode === "percentage"
-              ? ` (${posted.invoiceOffer.input.value}%)`
+              ? ` (${formatPercentage(posted.invoiceOffer.input.value, locale)})`
               : null}
           </dd>
         </div>
@@ -1728,7 +1752,7 @@ function PostedPurchaseResult({
               : copy.payableEffect}
           </dt>
           <dd>
-            <bdi>{formatFilsToIqd(settlementAmount, locale)}</bdi>
+            <bdi>{formatCurrencyFromFils(settlementAmount, locale)}</bdi>
           </dd>
         </div>
       </dl>
@@ -1756,10 +1780,10 @@ function PostedPurchaseResult({
           <tbody>
             {posted.rows.map((row) => (
               <tr key={row.id}>
-                <th scope="row">{row.ordinal}</th>
+                <th scope="row">{formatNumber(row.ordinal, locale)}</th>
                 <td>{row.itemDisplayName}</td>
                 <td>
-                  <bdi>{row.inventoryUnitQuantity}</bdi>{" "}
+                  <bdi>{formatNumber(row.inventoryUnitQuantity, locale)}</bdi>{" "}
                   {panelUnitLabel(
                     row.inventoryUnitName,
                     unitQuantity(row.inventoryUnitQuantity),
@@ -1768,19 +1792,24 @@ function PostedPurchaseResult({
                 </td>
                 <td>
                   <bdi>
-                    {formatFilsToIqd(row.linePrimarySupplierCostFils, locale)}
+                    {formatCurrencyFromFils(
+                      row.linePrimarySupplierCostFils,
+                      locale,
+                    )}
                   </bdi>
                 </td>
                 <td>
                   <bdi>
-                    {formatFilsToIqd(row.costAfterDiscountFils, locale)}
+                    {formatCurrencyFromFils(row.costAfterDiscountFils, locale)}
                   </bdi>
                 </td>
                 <td>
-                  <bdi>{formatFilsToIqd(row.retailPriceFils, locale)}</bdi>
+                  <bdi>
+                    {formatCurrencyFromFils(row.retailPriceFils, locale)}
+                  </bdi>
                 </td>
                 <td>
-                  <bdi>{row.expiryDate ?? "—"}</bdi>
+                  <bdi>{formatDateOnly(row.expiryDate, locale)}</bdi>
                 </td>
                 <td>
                   <bdi>{row.lotNumber ?? "—"}</bdi>
@@ -1811,15 +1840,15 @@ function PostedPurchaseResult({
             <tbody>
               {posted.journal.lines.map((line) => (
                 <tr key={line.ordinal}>
-                  <th scope="row">{line.ordinal}</th>
+                  <th scope="row">{formatNumber(line.ordinal, locale)}</th>
                   <td>
                     <bdi>{formatAccountName(line.accountCode, locale)}</bdi>
                   </td>
                   <td>
-                    <bdi>{formatFilsToIqd(line.debitFils, locale)}</bdi>
+                    <bdi>{formatCurrencyFromFils(line.debitFils, locale)}</bdi>
                   </td>
                   <td>
-                    <bdi>{formatFilsToIqd(line.creditFils, locale)}</bdi>
+                    <bdi>{formatCurrencyFromFils(line.creditFils, locale)}</bdi>
                   </td>
                 </tr>
               ))}

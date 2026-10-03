@@ -151,6 +151,45 @@ test.describe.serial("read-only inventory review", () => {
     await postgres?.stop().catch(() => undefined);
   });
 
+  test("localization: Inventory timestamps use the pharmacy zone across workstation zones", async ({
+    browser,
+  }) => {
+    await login(OWNER_USERNAME, OWNER_PASSWORD);
+    for (const zone of ["Asia/Baghdad", "America/Los_Angeles", "Asia/Tokyo"]) {
+      const page = await browser.newPage({ timezoneId: zone });
+      await installDesktopFake(page, renderer.origin, "en", "light");
+      await page.route("**/inventory/items/*/movements", async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as {
+          movements: Array<{ occurredAt: string }>;
+        };
+        body.movements.forEach((movement) => {
+          movement.occurredAt = "2026-10-01T22:05:06.000Z";
+        });
+        await route.fulfill({ response, json: body });
+      });
+      await page.goto(
+        renderer.origin + "#/inventory/items/" + product.id + "/movements",
+      );
+      const row = page.locator(".inventory-history-table tbody tr").first();
+      await expect(row).toContainText("Oct 2, 2026");
+      await expect(row).toContainText("1:05:06 AM");
+      await page.close();
+    }
+    const denied = await browser.newPage({ timezoneId: "America/Los_Angeles" });
+    await installDesktopFake(denied, renderer.origin, "ar", "dark");
+    await denied.route("**/inventory/batch-safety/status", (route) =>
+      route.abort(),
+    );
+    await denied.goto(
+      renderer.origin + "#/inventory/items/" + product.id + "/movements",
+    );
+    await expect(
+      denied.locator(".inventory-history-table tbody tr").first(),
+    ).toContainText("توقيت الصيدلية غير متاح");
+    await denied.close();
+  });
+
   test("sorts and changes visibility by keyboard while preserving table semantics", async ({
     page,
   }) => {
@@ -635,7 +674,7 @@ test.describe.serial("read-only inventory review", () => {
     const expiry = panel.locator(".purchase-fact-row").filter({
       hasText: "Expiry",
     });
-    await expect(expiry).toContainText(expiryDate);
+    await expect(expiry).toContainText("Jun 15, 2029");
     await expect(expiry).toContainText(
       `${String(daysUntil(expiryDate))} d left`,
     );
@@ -653,7 +692,7 @@ test.describe.serial("read-only inventory review", () => {
     await page.getByRole("button", { name: "Switch to Arabic" }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", "ar");
     await expect(cells.nth(0).locator(".purchase-fraction-label")).toHaveText(
-      "Box",
+      "علبة",
     );
     await expect(cells.nth(1).locator(".purchase-fraction-label")).toHaveText(
       "علبة",
@@ -662,7 +701,7 @@ test.describe.serial("read-only inventory review", () => {
       "شريط",
     );
     await expect(panel.locator(".purchase-fact-value").first()).toHaveText(
-      "١ Box = ٢٠ شريط",
+      "١ علبة = ٢٠ شريط",
     );
     await expect(wholesale).toContainText("٩٠٫٠٠٠");
     await expect(wholesale).toContainText("د.ع");

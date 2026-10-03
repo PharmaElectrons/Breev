@@ -1,3 +1,4 @@
+import { unitDisplayName } from "../../shared/unit-display";
 import type { SaleQuickAccess } from "@breev/contracts/local-rest";
 
 import { formatCurrencyFromFils } from "./preferences";
@@ -113,7 +114,7 @@ export function SaleQuickAccessPanel({
                     key={`${tile.productId}-${tile.unitId}`}
                   >
                     <button
-                      aria-label={`${ar ? "إضافة إلى الفاتورة" : "Add to sale"}: ${tile.displayName ?? (ar ? "مادة غير متاحة" : "Unavailable item")} (${tile.unitName ?? ""})`}
+                      aria-label={`${ar ? "إضافة إلى الفاتورة" : "Add to sale"}: ${tile.displayName ?? (ar ? "مادة غير متاحة" : "Unavailable item")} (${unitDisplayName(tile.unitName ?? "", locale)})`}
                       className="sales-quick-tile-add"
                       data-sale-quick-add={tile.productId}
                       disabled={busy || !tile.available}
@@ -129,7 +130,7 @@ export function SaleQuickAccessPanel({
                           ? ar
                             ? "تحتاج إلى مراجعة المدير"
                             : "Manager review needed"
-                          : `${tile.unitName} · ${formatCurrencyFromFils(BigInt(tile.currentUnitPriceFils), locale)}`}
+                          : `${unitDisplayName(tile.unitName ?? "", locale)} · ${formatCurrencyFromFils(BigInt(tile.currentUnitPriceFils), locale)}`}
                       </span>
                     </button>
                     {canManage ? (

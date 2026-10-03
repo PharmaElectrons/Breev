@@ -474,6 +474,192 @@ test.describe.serial("Product catalog screens", () => {
     await postgres?.stop().catch(() => undefined);
   });
 
+  test("localization: Dashboard keeps fractional money and logical ITEM alignment", async ({
+    browser,
+  }) => {
+    const output = path.resolve(
+      import.meta.dirname,
+      "../../../../evidence/issue-202/captures",
+    );
+    await mkdir(output, { recursive: true });
+    for (const locale of ["en", "ar"] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        const page = await browser.newPage({
+          viewport: { width: 1280, height: 800 },
+        });
+        await installDesktopFake(page, renderer.origin, { locale, theme });
+        await page.route("**/inventory/items", async (route) => {
+          const response = await route.fetch();
+          const body = (await response.json()) as {
+            fields: { valuation: string };
+            items: Array<{
+              balance: string;
+              consumptionRatePer30Days: string;
+              valueFils: string | null;
+              averageUnitCostFils: string | null;
+            }>;
+          };
+          expect(body.items.length).toBeGreaterThan(0);
+          body.fields.valuation = "granted";
+          body.items.forEach((item, index) => {
+            if (index === 0) item.balance = "9007199254740993";
+            item.consumptionRatePer30Days = "1";
+            item.valueFils = index === 0 ? "4570367034" : "0";
+            item.averageUnitCostFils = "0";
+          });
+          await route.fulfill({ response, json: body });
+        });
+        await page.goto(renderer.origin + "#/");
+        const card = page.locator('.home-kpi-card[data-tone="amber"]');
+        await expect(card).toContainText(
+          locale === "ar" ? "٤٬٥٧٠٬٣٦٧٫٠٣٤ د.ع" : "IQD 4,570,367.034",
+        );
+        await expect(page.locator(".home-table")).toContainText(
+          locale === "ar" ? "٩٬٠٠٧٬١٩٩٬٢٥٤٬٧٤٠٬٩٩٣" : "9,007,199,254,740,993",
+        );
+        await expect(card.locator(".home-kpi-top-value")).toHaveCSS(
+          "text-overflow",
+          "clip",
+        );
+        await expect(card.locator(".home-kpi-top-value")).toHaveCSS(
+          "white-space",
+          "normal",
+        );
+        await expect(
+          page.getByRole("columnheader", {
+            name: locale === "ar" ? "المادة" : "Item",
+            exact: true,
+          }),
+        ).toHaveCSS("text-align", "start");
+        await expect(
+          page.getByRole("tablist", {
+            name: locale === "ar" ? "مرشحات الجدول" : "Table Filters",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await page.screenshot({
+          path: path.join(output, "dashboard-" + locale + "-" + theme + ".png"),
+        });
+        await page.close();
+      }
+    }
+  });
+
+  test("localization: delayed validation follows language switches and keeps canonical numeric payloads", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "dark",
+    });
+    await page.goto(renderer.origin + "#/catalog/products/new");
+    await page.getByLabel("Trade name").fill("Localized entry control");
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByLabel("Inventory Unit (base unit)").fill("Pack of 10");
+    await page.getByLabel("Retail price (fils)").fill("١٢٣٤٥٦٧");
+    let release!: () => void;
+    const delayed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bodies: ProductCreateRequest[] = [];
+    await page.route("**/catalog/products", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      bodies.push(route.request().postDataJSON() as ProductCreateRequest);
+      await delayed;
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "denied",
+          code: "body-invalid",
+          requestId: "01990abc-1234-7123-8123-123456789abc",
+          fieldErrors: [
+            { path: ["pricing", "retailPriceFils"], code: "out-of-range" },
+          ],
+        }),
+      });
+    });
+    await page
+      .getByRole("button", { name: "Create product", exact: true })
+      .click();
+    await expect.poll(() => bodies.length).toBe(1);
+    expect(bodies[0]!.pricing).toEqual({
+      method: "by-price",
+      retailPriceFils: "1234567",
+      wholesalePriceFils: null,
+    });
+    expect(bodies[0]!.packaging.inventoryUnitName).toBe("Pack of 10");
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Switch to Arabic", exact: true })
+      .click();
+    release();
+    await expect(page.getByRole("alert")).toContainText(
+      "بيانات المنتج المدخلة غير صالحة.",
+    );
+    const price = page.locator('[data-field-key="pricing.retailPriceFils"]');
+    await expect(price).toHaveValue("١٢٣٤٥٦٧");
+    await expect(price).toHaveAttribute("aria-invalid", "true");
+    await page.screenshot({
+      path: path.join(testResultsDir, "issue-202-validation-ar-dark.png"),
+    });
+    await page
+      .getByRole("button", { name: "قائمة الخيارات", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "التبديل إلى الإنجليزية", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText(
+      "The submitted product data is invalid.",
+    );
+    await expect(page.getByRole("alert")).toContainText(
+      "Value is out of allowed range.",
+    );
+    await expect(price).toHaveValue("١٢٣٤٥٦٧");
+    await page.screenshot({
+      path: path.join(testResultsDir, "issue-202-validation-en-dark.png"),
+    });
+    expect(bodies).toHaveLength(1);
+    await page.unroute("**/catalog/products");
+  });
+
+  test("localization: a Catalog transport failure stays translated without repeating search", async ({
+    page,
+  }) => {
+    await installDesktopFake(page, renderer.origin, {
+      locale: "en",
+      theme: "light",
+    });
+    await page.goto(renderer.origin + "#/catalog/products");
+    let requests = 0;
+    await page.route("**/catalog/product-search?*", (route) => {
+      requests += 1;
+      return route.abort();
+    });
+    const search = page.getByRole("searchbox");
+    await search.fill("retained custom Pack of 10");
+    await expect(page.getByRole("alert")).toContainText(
+      "Unable to load items.",
+    );
+    const before = requests;
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Switch to Arabic", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText("تعذر تحميل الأصناف.");
+    await expect(search).toHaveValue("retained custom Pack of 10");
+    expect(requests).toBe(before);
+    await page.screenshot({
+      path: path.join(
+        testResultsDir,
+        "issue-202-catalog-transport-ar-light.png",
+      ),
+    });
+  });
+
   test("Product card scrolls by mouse wheel while its actions stay in the viewport", async ({
     browser,
   }) => {
@@ -1144,7 +1330,7 @@ test.describe.serial("Product catalog screens", () => {
     ).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.getByLabel("Stored / calculated retail price"),
-    ).toHaveText("100 IQD");
+    ).toHaveText("IQD 100.000");
     await page.screenshot({
       fullPage: true,
       path: path.join(evidenceDir, "units-percentage-pricing-en-light.png"),

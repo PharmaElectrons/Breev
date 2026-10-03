@@ -1,0 +1,46 @@
+{
+  "pharmacyId": "01990abc-1234-7123-8123-123456789abe",
+  "exportedAt": "2026-10-01T22:05:06.000Z",
+  "exportedBy": {
+    "displayName": "Synthetic Owner",
+    "id": "01990abc-1234-7123-8123-123456789abc"
+  },
+  "valuationMethod": "weighted-average-cost",
+  "counts": {
+    "batches": "0",
+    "items": "2",
+    "movements": "0"
+  },
+  "items": [
+    {
+      "productId": "01990abc-1234-7123-8123-123456789abd",
+      "displayName": "دواء \"Pack of 10\", sample\nSecond line",
+      "status": "active",
+      "balance": "9007199254740993001",
+      "valueFils": "1234567",
+      "averageUnitCostFils": "1234567",
+      "stockLevels": {
+        "minimumLevel": null,
+        "maximumLevel": "10000",
+        "reorderPoint": "5"
+      },
+      "batches": [],
+      "suppliers": []
+    },
+    {
+      "productId": "01990abc-1234-7123-8123-123456789abf",
+      "displayName": "=1+2",
+      "status": "archived",
+      "balance": "-2",
+      "valueFils": null,
+      "averageUnitCostFils": null,
+      "stockLevels": {
+        "minimumLevel": null,
+        "maximumLevel": null,
+        "reorderPoint": null
+      },
+      "batches": [],
+      "suppliers": []
+    }
+  ]
+}

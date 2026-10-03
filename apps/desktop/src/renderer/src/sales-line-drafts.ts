@@ -1,4 +1,5 @@
 import type { SaleDraft, SaleDraftLine } from "@breev/contracts/local-rest";
+import { normalizeNumericInput } from "./numeric-input";
 
 export interface SaleLineEdit {
   readonly quantity: string;
@@ -74,7 +75,12 @@ export function reconcileSaleLineEdits(
     }
     const baseline = saleLineEditValues(line);
     for (const field of fields) {
-      if (dirty[field] === baseline[field]) delete dirty[field];
+      const value = dirty[field];
+      const acknowledged =
+        value === undefined || field === "unitId"
+          ? value
+          : normalizeNumericInput(value);
+      if (acknowledged === baseline[field]) delete dirty[field];
     }
     if (Object.keys(dirty).length === 0) lines.delete(lineId);
   }

@@ -1,32 +1,20 @@
 import type { InventorySensitiveExport } from "@breev/contracts/local-rest";
 
-const HEADERS = [
-  "Pharmacy ID",
-  "Exported at (UTC)",
-  "Product ID",
-  "Item",
-  "Status",
-  "Balance (inventory units)",
-  "Value (fils)",
-  "Average unit cost (fils)",
-  "Minimum level",
-  "Maximum level",
-  "Reorder point",
-  "Batch count",
-  "Supplier count",
-];
+import { inventoryExportMessages } from "../shared/inventory-export-messages.js";
 
 // The CSV is an item summary. The existing JSON remains the complete export
 // with batch and supplier detail.
 export function serializeInventoryCsv(
   bundle: InventorySensitiveExport,
+  locale: "ar" | "en",
 ): string {
+  const copy = inventoryExportMessages[locale];
   const rows = bundle.items.map((item) => [
     bundle.pharmacyId,
     bundle.exportedAt,
     item.productId,
     item.displayName,
-    item.status,
+    copy.states[item.status] ?? item.status,
     item.balance,
     item.valueFils ?? "",
     item.averageUnitCostFils ?? "",
@@ -36,7 +24,7 @@ export function serializeInventoryCsv(
     String(item.batches.length),
     String(item.suppliers.length),
   ]);
-  return `\uFEFF${[HEADERS, ...rows]
+  return `\uFEFF${[copy.headers, ...rows]
     .map((row) => row.map(csvCell).join(","))
     .join("\r\n")}\r\n`;
 }

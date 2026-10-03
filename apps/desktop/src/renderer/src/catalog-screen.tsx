@@ -1,3 +1,10 @@
+import { formatDateOnly } from "./preferences";
+import {
+  catalogError,
+  catalogErrorText,
+  type CatalogError,
+} from "./catalog-error";
+import { formatNumber } from "./preferences";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ListChecks } from "lucide-react";
 
@@ -50,8 +57,12 @@ export function CatalogRouteView({
   const [productList, setProductList] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [listLoading, setListLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [listError, setListError] = useState<string | null>(null);
+  const [errorState, setError] = useState<CatalogError | null>(null);
+  const error =
+    errorState === null ? null : catalogErrorText(errorState, locale);
+  const [listErrorState, setListError] = useState<CatalogError | null>(null);
+  const listError =
+    listErrorState === null ? null : catalogErrorText(listErrorState, locale);
   const [listRevision, setListRevision] = useState(0);
   const categoryOptions = useMemo(() => {
     const categories = new Map<string, string>();
@@ -103,7 +114,7 @@ export function CatalogRouteView({
       })
       .catch((err: Error) => {
         if (active) {
-          setError(err.message);
+          setError(catalogError(err, "load"));
         }
       })
       .finally(() => {
@@ -130,7 +141,7 @@ export function CatalogRouteView({
       })
       .catch((err: Error) => {
         if (active) {
-          setListError(err.message);
+          setListError(catalogError(err, "load"));
         }
       })
       .finally(() => {
@@ -366,17 +377,30 @@ function ProductRail({
   const [searchResponse, setSearchResponse] =
     useState<ProductSearchResponse | null>(null);
   const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchErrorState, setSearchError] = useState<CatalogError | null>(
+    null,
+  );
+  const searchError =
+    searchErrorState === null
+      ? null
+      : catalogErrorText(searchErrorState, locale);
   const [matchingBatch, setMatchingBatch] =
     useState<CatalogMatchingBatch | null>(null);
   const [matchingBusy, setMatchingBusy] = useState(false);
-  const [matchingError, setMatchingError] = useState<string | null>(null);
+  const [matchingErrorState, setMatchingError] = useState<CatalogError | null>(
+    null,
+  );
+  const matchingError =
+    matchingErrorState === null
+      ? null
+      : catalogErrorText(matchingErrorState, locale);
   const labels =
     locale === "ar"
       ? {
           approve: "اعتماد",
           close: "إغلاق",
-          count: (count: number) => `عدد نتائج البحث: ${count}`,
+          count: (count: number) =>
+            `عدد نتائج البحث: ${formatNumber(count, locale)}`,
           matching: "قائمة المطابقة اليومية",
           matchingEmpty: "لا توجد اقتراحات غير مكتملة لليوم.",
           matchingTitle: "اقتراحات الباركود اليومية",
@@ -386,7 +410,8 @@ function ProductRail({
       : {
           approve: "Approve",
           close: "Close",
-          count: (count: number) => `Search results: ${count}`,
+          count: (count: number) =>
+            `Search results: ${formatNumber(count, locale)}`,
           matching: "Daily matching list",
           matchingEmpty: "There are no incomplete suggestions for today.",
           matchingTitle: "Daily barcode suggestions",
@@ -420,11 +445,7 @@ function ProductRail({
       }
     } catch (searchFailure) {
       if (sequence !== requestSequence.current) return;
-      setSearchError(
-        searchFailure instanceof Error
-          ? searchFailure.message
-          : String(searchFailure),
-      );
+      setSearchError(catalogError(searchFailure, "load"));
       requestAnimationFrame(() => inputRef.current?.focus());
     } finally {
       if (sequence === requestSequence.current) setSearching(false);
@@ -459,11 +480,7 @@ function ProductRail({
       });
     } catch (searchFailure) {
       if (sequence !== requestSequence.current) return;
-      setSearchError(
-        searchFailure instanceof Error
-          ? searchFailure.message
-          : String(searchFailure),
-      );
+      setSearchError(catalogError(searchFailure, "load"));
       requestAnimationFrame(() => inputRef.current?.focus());
     } finally {
       if (sequence === requestSequence.current) setSearching(false);
@@ -503,11 +520,7 @@ function ProductRail({
       setMatchingBatch(batch);
       opened = true;
     } catch (matchingFailure) {
-      setMatchingError(
-        matchingFailure instanceof Error
-          ? matchingFailure.message
-          : String(matchingFailure),
-      );
+      setMatchingError(catalogError(matchingFailure, "matching"));
     } finally {
       if (opened) {
         requestCommittedFocus(() =>
@@ -552,11 +565,7 @@ function ProductRail({
       );
       approved = true;
     } catch (matchingFailure) {
-      setMatchingError(
-        matchingFailure instanceof Error
-          ? matchingFailure.message
-          : String(matchingFailure),
-      );
+      setMatchingError(catalogError(matchingFailure, "matching"));
     } finally {
       if (approved) {
         requestCommittedFocus(() =>
@@ -573,7 +582,7 @@ function ProductRail({
     <div className="catalog-rail">
       <div className="catalog-rail-head">
         <div className="catalog-rail-title">
-          <h2>{`${copy.rail.count} (${products.length})`}</h2>
+          <h2>{`${copy.rail.count} (${formatNumber(products.length, locale)})`}</h2>
           <button
             ref={matchingButtonRef}
             aria-label={labels.matching}
@@ -723,7 +732,7 @@ function ProductRail({
         >
           <section className="step-up-dialog identity-card">
             <h3 id="catalog-matching-title">{labels.matchingTitle}</h3>
-            <p>{matchingBatch.businessDate}</p>
+            <p>{formatDateOnly(matchingBatch.businessDate, locale)}</p>
             {matchingError === null ? null : (
               <p className="denial-alert" role="alert">
                 {matchingError}

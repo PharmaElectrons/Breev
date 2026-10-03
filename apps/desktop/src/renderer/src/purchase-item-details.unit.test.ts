@@ -104,13 +104,13 @@ describe("PurchaseItemPanel", () => {
     );
 
     // Large count = floor(25 / 10) = 2 باكيت
-    expect(markup).toContain('<p class="purchase-fraction-num">2</p>');
+    expect(markup).toContain('<p class="purchase-fraction-num">٢</p>');
     expect(markup).toContain('<p class="purchase-fraction-label">باكيت</p>');
     // Remainder units = 25 % 10 = 5 أشرطة
-    expect(markup).toContain('<p class="purchase-fraction-num">5</p>');
+    expect(markup).toContain('<p class="purchase-fraction-num">٥</p>');
     expect(markup).toContain('<p class="purchase-fraction-label">أشرطة</p>');
     // Total detailed balance = 25 شريط (NOT 500 from draft rowQuantity * 10)
-    expect(markup).toContain("الإجمالي : <bdi>25</bdi> شريط");
+    expect(markup).toContain("الإجمالي : <bdi>٢٥</bdi> شريط");
   });
 
   it("renders 0 stock gracefully without draft quantity leakage when currentStock is 0", () => {
@@ -129,8 +129,8 @@ describe("PurchaseItemPanel", () => {
       }),
     );
 
-    expect(markup).toContain('<p class="purchase-fraction-num">0</p>');
-    expect(markup).toContain("الإجمالي : <bdi>0</bdi> شريط");
+    expect(markup).toContain('<p class="purchase-fraction-num">٠</p>');
+    expect(markup).toContain("الإجمالي : <bdi>٠</bdi> شريط");
   });
 
   it("renders two-tier packaging with .is-two-unit and no empty column", () => {
@@ -174,7 +174,7 @@ describe("PurchaseItemPanel", () => {
     );
 
     // Visible fact sheet should have concrete values and localized fallbacks
-    expect(markup).toContain("1 باكيت = 10 أشرطة");
+    expect(markup).toContain("١ باكيت = ١٠ أشرطة");
     expect(markup).toContain("غير محدد"); // Stock limits fallback
     expect(markup).toContain("سعر الجملة");
     expect(markup).toContain("٢٬٥٠٠٫٠٠٠ د.ع");
@@ -250,8 +250,8 @@ describe("PurchaseItemPanel", () => {
       }),
     );
 
-    expect(markup).toContain("↓ 15");
-    expect(markup).toContain("↑ 80");
+    expect(markup).toContain("↓ ١٥");
+    expect(markup).toContain("↑ ٨٠");
     expect(markup).toContain("باكيت");
   });
 });

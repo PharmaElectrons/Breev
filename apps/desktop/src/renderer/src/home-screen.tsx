@@ -1,4 +1,10 @@
 import {
+  formatNumber,
+  formatDecimal,
+  formatPercentage,
+  formatDateOnly,
+} from "./preferences";
+import {
   AlertCircle,
   Bell,
   Boxes,
@@ -40,7 +46,8 @@ import {
   requestInventoryItems,
 } from "./inventory-api";
 import { requestProductList } from "./catalog-api";
-import { formatFilsToIqd } from "./product-record";
+import { formatCurrencyFromFils } from "./preferences";
+import "./home-presentation.css";
 
 type SortKey =
   | "name"
@@ -57,12 +64,15 @@ interface DashboardRow {
   readonly id: string;
   readonly name: string;
   readonly sold: number;
+  readonly soldDisplay: string;
   readonly profitFils: string;
   readonly profit: number;
   readonly margin: number;
   readonly expiry: string | null;
   readonly stock: number;
+  readonly stockDisplay: string;
   readonly monthly: number;
+  readonly monthlyDisplay: string;
   readonly surplus: number;
 }
 
@@ -219,18 +229,6 @@ const dashboardCopy = {
     },
   },
 } as const;
-
-function formatIQDValue(
-  filsAmount: bigint | number,
-  locale: "ar" | "en",
-): string {
-  const iqd =
-    typeof filsAmount === "bigint"
-      ? Number(filsAmount / 1000n)
-      : Math.round(filsAmount / 1000);
-  const formatted = iqd.toLocaleString("en-US");
-  return locale === "ar" ? `${formatted} د.ع` : `${formatted} IQD`;
-}
 
 export function HomeScreen({
   startup,
@@ -520,8 +518,8 @@ export function HomeScreen({
           badge: locale === "ar" ? "منتهي الصلاحية" : "Expired",
           message:
             locale === "ar"
-              ? `تاريخ الانتهاء ${expiry ?? "غير محدد"} (غير مسموح بالصرف)`
-              : `Expired on ${expiry ?? "unknown"} (cannot dispense)`,
+              ? `تاريخ الانتهاء ${expiry ? formatDateOnly(expiry, locale) : "غير محدد"} (غير مسموح بالصرف)`
+              : `Expired on ${expiry ? formatDateOnly(expiry, locale) : "unknown"} (cannot dispense)`,
           urgency: "high",
           actionHref: "#/inventory",
           actionLabel: dCopy.notifications.viewBatch,
@@ -536,8 +534,8 @@ export function HomeScreen({
           badge: locale === "ar" ? "قريب الانتهاء" : "Near Expiry",
           message:
             locale === "ar"
-              ? `ينتهي بتاريخ ${expiry ?? ""} (أقل من 90 يوماً)`
-              : `Earliest expiry: ${expiry ?? ""} (under 90 days remaining)`,
+              ? `ينتهي بتاريخ ${formatDateOnly(expiry, locale)} (أقل من 90 يوماً)`
+              : `Earliest expiry: ${formatDateOnly(expiry, locale)} (under 90 days remaining)`,
           urgency: "medium",
           actionHref: "#/inventory",
           actionLabel: dCopy.notifications.viewBatch,
@@ -553,8 +551,8 @@ export function HomeScreen({
           badge: locale === "ar" ? "نقص مخزون" : "Low Stock",
           message:
             locale === "ar"
-              ? `الرصيد الحالي: ${stock} · حد إعادة الطلب: ${reorderPoint}`
-              : `Current Stock: ${stock} · Reorder Point: ${reorderPoint}`,
+              ? `الرصيد الحالي: ${formatNumber(m.balance, locale)} · حد إعادة الطلب: ${formatNumber(m.stockLevels?.reorderPoint ?? "5", locale)}`
+              : `Current Stock: ${formatNumber(m.balance, locale)} · Reorder Point: ${formatNumber(m.stockLevels?.reorderPoint ?? "5", locale)}`,
           urgency: stock === 0 ? "high" : "medium",
           actionHref: "#/basket",
           actionLabel: dCopy.notifications.reorder,
@@ -565,12 +563,19 @@ export function HomeScreen({
         id: m.productId,
         name: m.displayName,
         sold,
+        soldDisplay:
+          backendMonthly > 0 ? m.consumptionRatePer30Days : String(sold),
         profitFils,
         profit,
         margin,
         expiry,
         stock,
+        stockDisplay: m.balance,
         monthly,
+        monthlyDisplay:
+          backendMonthly > 0
+            ? m.consumptionRatePer30Days + ".0"
+            : monthly.toFixed(1),
         surplus,
       };
     });
@@ -586,12 +591,15 @@ export function HomeScreen({
           id: p.id,
           name: p.displayName,
           sold: 0,
+          soldDisplay: "0",
           profitFils: "0",
           profit: 0,
           margin,
           expiry: null,
           stock: 0,
+          stockDisplay: "0",
           monthly: 0,
+          monthlyDisplay: "0.0",
           surplus: 0,
         });
       }
@@ -789,15 +797,18 @@ export function HomeScreen({
       </section>
 
       {/* 3. Operational KPI Stacked Cards Grid matching Prototype Pixel-Perfect */}
-      <section className="home-kpi-grid" aria-label="KPI Metrics">
+      <section
+        className="home-kpi-grid"
+        aria-label={locale === "ar" ? "مؤشرات الأداء" : "KPI Metrics"}
+      >
         {/* Card 1: Sales (Emerald) */}
         <KpiStackedCard
           Icon={TrendingUp}
           tone="emerald"
           topLabel={dCopy.kpi.totalSales}
-          topValue={formatIQDValue(0n, locale)}
+          topValue={formatCurrencyFromFils(0n, locale)}
           subLabel={dCopy.kpi.dailySales}
-          subValue={formatIQDValue(0n, locale)}
+          subValue={formatCurrencyFromFils(0n, locale)}
         />
 
         {/* Card 2: Expenses (Rose) */}
@@ -805,9 +816,9 @@ export function HomeScreen({
           Icon={TrendingDown}
           tone="rose"
           topLabel={dCopy.kpi.totalExpenses}
-          topValue={formatIQDValue(0n, locale)}
+          topValue={formatCurrencyFromFils(0n, locale)}
           subLabel={dCopy.kpi.todayExpenses}
-          subValue={formatIQDValue(0n, locale)}
+          subValue={formatCurrencyFromFils(0n, locale)}
         />
 
         {/* Card 3: Profit (Emerald / Rose) */}
@@ -815,9 +826,9 @@ export function HomeScreen({
           Icon={Coins}
           tone="emerald"
           topLabel={dCopy.kpi.totalProfit}
-          topValue={valuationGranted ? formatIQDValue(0n, locale) : "—"}
+          topValue={valuationGranted ? formatCurrencyFromFils(0n, locale) : "—"}
           subLabel={dCopy.kpi.todayProfit}
-          subValue={valuationGranted ? formatIQDValue(0n, locale) : "—"}
+          subValue={valuationGranted ? formatCurrencyFromFils(0n, locale) : "—"}
         />
 
         {/* Card 4: Warehouse Cost & Retail (Amber) */}
@@ -826,10 +837,12 @@ export function HomeScreen({
           tone="amber"
           topLabel={dCopy.kpi.warehouseCost}
           topValue={
-            valuationGranted ? formatIQDValue(warehouseCostFils, locale) : "—"
+            valuationGranted
+              ? formatCurrencyFromFils(warehouseCostFils, locale)
+              : "—"
           }
           subLabel={dCopy.kpi.warehouseRetail}
-          subValue={formatIQDValue(warehouseRetailFils, locale)}
+          subValue={formatCurrencyFromFils(warehouseRetailFils, locale)}
         />
 
         {/* Card 5: Debts & Near Expiry Ratio (Cyan) */}
@@ -837,9 +850,9 @@ export function HomeScreen({
           Icon={CreditCard}
           tone="cyan"
           topLabel={dCopy.kpi.totalDebts}
-          topValue={formatIQDValue(0n, locale)}
+          topValue={formatCurrencyFromFils(0n, locale)}
           subLabel={dCopy.kpi.nearExpiryRatio}
-          subValue={`${nearExpiryRatio.toFixed(1)}%`}
+          subValue={formatPercentage(nearExpiryRatio.toFixed(1), locale)}
         />
       </section>
 
@@ -873,7 +886,7 @@ export function HomeScreen({
                   : "text-muted-foreground"
               }`}
             >
-              {alertItems.length}
+              {formatNumber(alertItems.length, locale)}
             </span>
           </button>
           <button
@@ -913,7 +926,7 @@ export function HomeScreen({
             {activeNotificationTab === "item" && (
               <span>
                 {alertItems.length > 0
-                  ? `${alertItems.length} ${
+                  ? `${formatNumber(alertItems.length, locale)} ${
                       locale === "ar"
                         ? "تنبيه مواد بحاجة للمتابعة"
                         : "active item alerts requiring attention"
@@ -1288,12 +1301,16 @@ function KpiStackedCard({
         </div>
         <div className="home-kpi-body">
           <p className="home-kpi-top-label">{topLabel}</p>
-          <p className="home-kpi-top-value">{topValue}</p>
+          <p className="home-kpi-top-value">
+            <bdi>{topValue}</bdi>
+          </p>
         </div>
       </div>
       <div className="home-kpi-lower">
         <p className="home-kpi-sub-label">{subLabel}</p>
-        <p className="home-kpi-sub-value">{subValue}</p>
+        <p className="home-kpi-sub-value">
+          <bdi>{subValue}</bdi>
+        </p>
       </div>
     </div>
   );
@@ -1348,7 +1365,7 @@ function PerformanceTableSection({
           />
           <h3 className="home-table-title">{dCopy.table.title}</h3>
           <span className="home-table-count">
-            {sortedRows.length} {dCopy.table.itemsUnit}
+            {formatNumber(sortedRows.length, locale)} {dCopy.table.itemsUnit}
           </span>
         </div>
 
@@ -1372,7 +1389,7 @@ function PerformanceTableSection({
       <div
         className="home-table-filters"
         role="tablist"
-        aria-label="Table Filters"
+        aria-label={locale === "ar" ? "مرشحات الجدول" : "Table Filters"}
       >
         {(
           [
@@ -1405,7 +1422,7 @@ function PerformanceTableSection({
         <table className="home-table">
           <thead>
             <tr>
-              <th className="text-right">{dCopy.table.columns.item}</th>
+              <th style={{ textAlign: "start" }}>{dCopy.table.columns.item}</th>
               <SortableTh
                 label={dCopy.table.columns.sold}
                 k="sold"
@@ -1466,11 +1483,11 @@ function PerformanceTableSection({
               <tr key={r.id}>
                 <td className="font-semibold text-foreground">{r.name}</td>
                 <td className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
-                  {r.sold}
+                  {formatNumber(r.soldDisplay, locale)}
                 </td>
                 {valuationGranted && (
                   <td className="font-mono font-bold text-foreground">
-                    {formatFilsToIqd(r.profitFils, locale)}
+                    {formatCurrencyFromFils(r.profitFils, locale)}
                   </td>
                 )}
                 {valuationGranted && (
@@ -1483,17 +1500,17 @@ function PerformanceTableSection({
                           : "text-rose-600 dark:text-rose-400"
                     }`}
                   >
-                    {r.margin.toFixed(1)}%
+                    {formatPercentage(r.margin.toFixed(1), locale)}
                   </td>
                 )}
                 <td className="font-mono text-muted-foreground text-[11px]">
-                  {r.expiry ?? "—"}
+                  {formatDateOnly(r.expiry, locale)}
                 </td>
                 <td className="font-mono text-foreground font-medium">
-                  {r.stock}
+                  {formatNumber(r.stockDisplay, locale)}
                 </td>
                 <td className="font-mono text-muted-foreground">
-                  {r.monthly.toFixed(1)}
+                  {formatDecimal(r.monthlyDisplay, locale)}
                 </td>
                 <td
                   className={`font-mono font-bold ${
@@ -1502,7 +1519,7 @@ function PerformanceTableSection({
                       : "text-muted-foreground"
                   }`}
                 >
-                  {r.surplus}
+                  {formatNumber(r.surplus, locale)}
                 </td>
               </tr>
             ))}

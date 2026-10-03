@@ -1074,7 +1074,7 @@ test.describe.serial("sale drafts and the reorder row action", () => {
     await expect(dialog).toHaveCount(0);
     await expect(priceButton).toBeFocused();
     await priceButton.click();
-    await dialog.getByLabel("Unit price (IQD)").fill("77.5");
+    await dialog.getByLabel("Unit price (IQD)").fill("٧٧٫٥");
     await dialog.getByLabel("Reason").fill("Approved local promotion");
     await dialog.getByRole("button", { name: "Save price" }).click();
     await expect(dialog).toHaveCount(0);
@@ -1136,8 +1136,8 @@ test.describe.serial("sale drafts and the reorder row action", () => {
       (unit) => unit.unitId !== line.unitId,
     )!;
     expect(alternativeUnit).toBeDefined();
-    await editor.getByLabel("Quantity").fill("7");
-    await editor.getByLabel("Line discount %").fill("12");
+    await editor.getByLabel("Quantity").fill("٧");
+    await editor.getByLabel("Line discount %").fill("۱۲");
     await editor.getByRole("combobox").selectOption(alternativeUnit.unitId);
 
     const returnToDraft = async (): Promise<void> => {
@@ -1150,8 +1150,8 @@ test.describe.serial("sale drafts and the reorder row action", () => {
       await expect(invoice).toBeVisible();
     };
     await returnToDraft();
-    await expect(editor.getByLabel("Quantity")).toHaveValue("7");
-    await expect(editor.getByLabel("Line discount %")).toHaveValue("12");
+    await expect(editor.getByLabel("Quantity")).toHaveValue("٧");
+    await expect(editor.getByLabel("Line discount %")).toHaveValue("۱۲");
     await expect(editor.getByRole("combobox")).toHaveValue(
       alternativeUnit.unitId,
     );

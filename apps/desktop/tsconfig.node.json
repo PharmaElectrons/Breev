@@ -16,6 +16,7 @@
     "scripts/**/*.mjs",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
+    "src/shared/**/*.ts",
     "test/**/*.ts",
     "vitest.config.ts"
   ]

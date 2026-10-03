@@ -1,3 +1,5 @@
+import { normalizeNumericInput } from "./numeric-input";
+import { unitDisplayName } from "../../shared/unit-display";
 import type { SaleDraftLine } from "@breev/contracts/local-rest";
 import { useEffect, useState } from "react";
 
@@ -25,7 +27,7 @@ export function stepCalculatorQuantity(
   value: string,
   direction: 1 | -1,
 ): string {
-  const normalized = value.trim();
+  const normalized = normalizeNumericInput(value.trim(), true);
   const current =
     normalized.length === 0
       ? direction === 1
@@ -118,7 +120,7 @@ export function SalesCalculator({
   }
 
   function submit(): void {
-    const normalized = value.trim();
+    const normalized = normalizeNumericInput(value.trim(), true);
     if (target === "quantity") {
       if (!/^[1-9][0-9]*$/u.test(normalized)) {
         setError(true);
@@ -380,7 +382,8 @@ export function SalesCalculator({
             </strong>
             <div className="sales-calc-preview-row">
               <span>
-                {line.unitName} × {formatNumber(BigInt(line.quantity), locale)}
+                {unitDisplayName(line.unitName, locale)} ×{" "}
+                {formatNumber(BigInt(line.quantity), locale)}
               </span>
               <strong>
                 {formatCurrencyFromFils(BigInt(line.totalFils), locale)}
@@ -414,7 +417,10 @@ export function SalesCalculator({
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                const normalized = quickDiscount.trim();
+                const normalized = normalizeNumericInput(
+                  quickDiscount.trim(),
+                  true,
+                );
                 if (/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(normalized)) {
                   const [w = "0", f = ""] = normalized.split(".");
                   onApply(
@@ -431,7 +437,10 @@ export function SalesCalculator({
             disabled={busy || quickDiscount.trim().length === 0}
             type="button"
             onClick={() => {
-              const normalized = quickDiscount.trim();
+              const normalized = normalizeNumericInput(
+                quickDiscount.trim(),
+                true,
+              );
               if (/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(normalized)) {
                 const [w = "0", f = ""] = normalized.split(".");
                 onApply(

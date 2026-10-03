@@ -1,3 +1,4 @@
+import { formatDateOnly } from "./preferences";
 import { useEffect, useState } from "react";
 import type { PurchaseItemDetails } from "@breev/contracts/local-rest";
 import type { PurchaseItemSelection } from "./purchase-item-details";
@@ -277,7 +278,9 @@ export function PurchaseItemDetailsBody({
                     {unit(stockUnit, item.baseUnitsPerPackage)}
                   </span>
                 ))}
-                {details.packaging.packageUnits.length === 0 ? stockUnit : null}
+                {details.packaging.packageUnits.length === 0
+                  ? unit(stockUnit, "1")
+                  : null}
               </>,
             )
           : null}
@@ -331,7 +334,7 @@ export function PurchaseItemDetailsBody({
             copy.noExpiry
           ) : (
             <span className="purchase-expiry-details">
-              <bdi>{earliest.effectiveExpiryDate}</bdi>
+              <bdi>{formatDateOnly(earliest.effectiveExpiryDate, locale)}</bdi>
               <span
                 className={`purchase-expiry-badge ${earliest.status === "expired" ? "is-expired" : earliest.status === "near-expiry" ? "is-soon" : "is-ok"}`}
               >
@@ -391,7 +394,8 @@ export function PurchaseItemDetailsBody({
           <p role="alert">{copy.panelMismatch}</p>
         ) : null}
         <p className="purchase-balance-total-text">
-          {copy.panelAsOf} <bdi>{details.businessDate}</bdi>
+          {copy.panelAsOf}{" "}
+          <bdi>{formatDateOnly(details.businessDate, locale)}</bdi>
         </p>
       </div>
       <div className="purchase-item-section" data-panel-field="batches">
@@ -419,7 +423,11 @@ export function PurchaseItemDetailsBody({
                 "batch-expiry",
                 copy.expiry,
                 <>
-                  <bdi>{batch.effectiveExpiryDate ?? copy.noExpiry}</bdi>
+                  <bdi>
+                    {batch.effectiveExpiryDate === null
+                      ? copy.noExpiry
+                      : formatDateOnly(batch.effectiveExpiryDate, locale)}
+                  </bdi>
                   {batch.daysRemaining === null ? null : (
                     <>
                       {" "}
@@ -433,7 +441,9 @@ export function PurchaseItemDetailsBody({
                 ? fact(
                     "original-expiry",
                     copy.panelOriginalExpiry,
-                    batch.originalExpiryDate ?? copy.noExpiry,
+                    batch.originalExpiryDate === null
+                      ? copy.noExpiry
+                      : formatDateOnly(batch.originalExpiryDate, locale),
                   )
                 : null}
               {fact(
@@ -456,7 +466,7 @@ export function PurchaseItemDetailsBody({
             {fact(
               "reference-date",
               copy.invoiceDate,
-              details.lastPostedCost.invoiceDate,
+              formatDateOnly(details.lastPostedCost.invoiceDate, locale),
             )}
             {fact(
               "reference-quantity",

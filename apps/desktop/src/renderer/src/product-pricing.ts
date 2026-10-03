@@ -1,3 +1,4 @@
+import { normalizeNumericInput } from "./numeric-input";
 /**
  * Preview the selling price implied by cost, a margin on selling price, and
  * the selected IQD rounding rule. The server remains authoritative when the
@@ -8,6 +9,8 @@ export function calculateRetailPricePreview(
   margin: string,
   rounding: "nearest-1000-iqd" | "nearest-250-iqd" | "nearest-500-iqd" | "off",
 ): string {
+  cost = normalizeNumericInput(cost);
+  margin = normalizeNumericInput(margin, true);
   if (
     !/^(?:0|[1-9][0-9]*)$/u.test(cost) ||
     !/^(?:0|[1-9][0-9]?)(?:\.[0-9]{1,6})?$/u.test(margin)

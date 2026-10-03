@@ -1,3 +1,5 @@
+import { normalizeNumericInput } from "./numeric-input";
+import { unitDisplayName } from "../../shared/unit-display";
 import type {
   IdentityDenial,
   InventoryDenial,
@@ -817,12 +819,13 @@ function SaleDraftScreen({
   }
 
   function addMiscLine(): void {
-    const price = miscPrice.trim();
+    const price = normalizeNumericInput(miscPrice.trim(), true);
+    const quantity = normalizeNumericInput(miscQuantity);
     const validPrice = /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/u.test(price);
     if (
       miscName.trim().length === 0 ||
       miscUnit.trim().length === 0 ||
-      !/^[1-9][0-9]*$/u.test(miscQuantity) ||
+      !/^[1-9][0-9]*$/u.test(quantity) ||
       !validPrice
     ) {
       setMiscValidation(
@@ -849,7 +852,7 @@ function SaleDraftScreen({
         addSaleDraftMiscLine(baseUrl, draftId, {
           displayName: miscName.trim(),
           unitName: miscUnit.trim(),
-          quantity: miscQuantity,
+          quantity,
           unitPriceFils,
           expectedVersion,
           idempotencyKey,
@@ -1240,7 +1243,7 @@ function SaleDraftScreen({
                     inputMode="numeric"
                     min="1"
                     required
-                    type="number"
+                    type="text"
                     value={miscQuantity}
                     onChange={(event) => setMiscQuantity(event.target.value)}
                   />
@@ -1252,7 +1255,7 @@ function SaleDraftScreen({
                     min="0"
                     required
                     step="0.001"
-                    type="number"
+                    type="text"
                     value={miscPrice}
                     onChange={(event) => setMiscPrice(event.target.value)}
                   />
@@ -1519,7 +1522,7 @@ function SaleDraftScreen({
               >
                 {pinContext.eligibleUnits.map((unit) => (
                   <option key={unit.unitId} value={unit.unitId}>
-                    {unit.unitName}
+                    {unitDisplayName(unit.unitName, locale)}
                   </option>
                 ))}
               </select>
@@ -1908,7 +1911,9 @@ function SaleDraftScreen({
                   </div>
                   <div>
                     <dt>{locale === "ar" ? "الوحدة الأساسية" : "Base unit"}</dt>
-                    <dd>{itemContext.inventoryUnitName}</dd>
+                    <dd>
+                      {unitDisplayName(itemContext.inventoryUnitName, locale)}
+                    </dd>
                   </div>
                   <div>
                     <dt>{locale === "ar" ? "التعبئة" : "Packaging"}</dt>
@@ -1916,9 +1921,10 @@ function SaleDraftScreen({
                       {itemContext.packageUnits
                         .map(
                           (unit) =>
-                            `${unit.name} = ${unit.baseUnitsPerPackage} ${itemContext.inventoryUnitName}`,
+                            `${unitDisplayName(unit.name, locale)} = ${formatNumber(unit.baseUnitsPerPackage, locale)} ${unitDisplayName(itemContext.inventoryUnitName, locale)}`,
                         )
-                        .join(" · ") || itemContext.inventoryUnitName}
+                        .join(" · ") ||
+                        unitDisplayName(itemContext.inventoryUnitName, locale)}
                     </dd>
                   </div>
                   <div>
