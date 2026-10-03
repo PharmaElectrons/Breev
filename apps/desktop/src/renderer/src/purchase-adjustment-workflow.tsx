@@ -1225,6 +1225,7 @@ export function PurchaseAdjustmentWorkflow({
               {draft === null ? null : (
                 <div className="purchase-invoice-offer adjustment-offer-inputs">
                   <PurchaseInvoiceOfferFields
+                    key={`${draft.id}:${draft.version}`}
                     value={draft.invoiceOffer}
                     onChange={(invoiceOffer) =>
                       editDraft({ ...draft, invoiceOffer })
